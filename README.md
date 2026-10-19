@@ -21,6 +21,28 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
   hashed Wi-Fi key.
 
+## Session view: many matches at once
+
+**Session** (top of the page) takes a whole folder of logs (an event, a practice day). Each log is read and boiled
+down to a small summary, then dropped, so hundreds of logs fit: 160 logs took 24 s in Chrome (147 ms per log), the
+page never stopped responding for more than 0.2 s, and the JS heap peaked at 222 MB.
+
+- **Sessions**: matches on the field with the same event name within 4 days are one event; other logs are grouped
+  by the day they were played. The date comes from the robot's clock, or, when the clock wasn't set (it reads late
+  2024), from the AdvantageKit file name, with a note; logs with neither go to "Logs with no date". Move a log to
+  another session or rename a session from the page.
+- **Findings across the session**, merged by issue: how many of the matches it could be checked in it fired in, a
+  95 % confidence interval (Wilson) for that rate, the range of the measured value and how far past the rule's
+  threshold it went. In words: **consistent** (most matches, at least 3 checked), **intermittent** (some), **once**,
+  or **not enough data** (under 2 matches checked). A fixed known issue that fires in a later match shows as "came
+  back after a fix".
+- **Rule × match grid**: fired, quiet or not checked, per match. Click a match to open it in Match review.
+- **Per match** small multiples on one scale per number: lowest voltage, time under 7 V, charge, battery + wiring
+  resistance, slowest follower, auto loop overruns, vision outliers; coloured by battery ID (logged, or typed in).
+- **Download for Claude** saves `<session>.session-findings.json` (grid, confidence, per-match numbers).
+
+Not used in the session view: Driver Station logs (match review only).
+
 ## Current limits (phase 2)
 
 Built to `8033/robot/hindsight-phase2-limits-brief.md`. **The tool never writes or changes robot code or motor

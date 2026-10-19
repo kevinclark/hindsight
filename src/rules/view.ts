@@ -1,7 +1,7 @@
 /**
  * What a rule sees: the match, its signals and its devices, in plain words.
  *
- * This file is the "engine" side (like the dusters in Kevin's dust lint): it walks the log and hands each rule
+ * This file is the "engine" side (like the "dusters" of the Ruby lint dust): it walks the log and hands each rule
  * exactly the thing to judge. Rules should not need anything outside this file and rule.ts.
  *
  *   match.signal('batteryVoltage').lowest(match.enabled)          → { value: 6.28, at: 402.2 }

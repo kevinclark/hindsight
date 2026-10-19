@@ -1,0 +1,241 @@
+<!--
+  Session view: many logs at once, grouped into sessions (an event, a practice day), with each finding's confidence
+  across the matches, the rule × match grid and per-match trends. Logs are read one at a time and only a small
+  summary of each is kept, so a whole event's folder fits in memory.
+-->
+<script lang="ts">
+  import { summarizeLog, type MatchSummary } from '../session/summary.ts'
+  import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
+  import { buildSessionJson } from '../session/export.ts'
+  import type { IssueEvent } from '../triage/history.ts'
+  import { downloadText } from './download.ts'
+  import Trends from './Trends.svelte'
+
+  let { issues, onOpen }: { issues: Map<string, IssueEvent>; onOpen: (file: File) => void } = $props()
+
+  let summaries = $state<MatchSummary[]>([])
+  // File handles only (not their contents), so a match can be reopened in Match review.
+  const files = new Map<string, File>()
+  let progress = $state<{ done: number; total: number; ms: number; current: string } | null>(null)
+  let problems = $state<string[]>([])
+  let selected = $state(0)
+  let overrides = $state<Record<string, string>>(readStore('hindsight.sessionOverrides'))
+  let renames = $state<Record<string, string>>(readStore('hindsight.sessionRenames'))
+  let typedBatteries = $state<Record<string, string>>(readStore('hindsight.typedBatteries'))
+  let heapMB = $state<number | null>(null)
+
+  const sessions = $derived(groupSessions(summaries, overrides, renames))
+  const session = $derived(sessions[Math.min(selected, sessions.length - 1)] as Session | undefined)
+  const grid = $derived(session ? ruleGrid(session) : [])
+  const merged = $derived(session ? mergeFindings(session) : [])
+
+  function readStore(key: string): Record<string, string> {
+    try { return JSON.parse(localStorage.getItem(key) ?? '{}') } catch { return {} }
+  }
+  function writeStore(key: string, value: Record<string, string>) {
+    try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* private window: not remembered */ }
+  }
+
+  async function load(list: FileList | File[] | null) {
+    const chosen = Array.from(list ?? []).filter((f) => /\.wpilog$/i.test(f.name))
+    if (chosen.length === 0) { problems = ['No .wpilog files in what you chose.']; return }
+    problems = []
+    const started = performance.now()
+    progress = { done: 0, total: chosen.length, ms: 0, current: '' }
+    // Collect summaries in a plain list and show them every 10 logs: redrawing the whole session after every log
+    // made a 160-log folder take minutes.
+    const collected = [...summaries]
+    const publish = () => { summaries = [...collected] }
+    for (const file of chosen) {
+      progress = { ...progress, current: file.name }
+      await new Promise((r) => setTimeout(r, 0)) // let the page paint between logs
+      try {
+        const summary = summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })
+        if (summary) {
+          const old = collected.findIndex((s) => s.fileName === summary.fileName)
+          if (old >= 0) collected.splice(old, 1)
+          collected.push(summary)
+          files.set(file.name, file)
+        } else problems = [...problems, `${file.name}: not a .wpilog`]
+      } catch (error) {
+        problems = [...problems, `${file.name}: ${error instanceof Error ? error.message : error}`]
+      }
+      progress = { ...progress, done: progress.done + 1, ms: performance.now() - started }
+      if (progress.done % 10 === 0) publish()
+      const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
+      if (mem) heapMB = Math.max(heapMB ?? 0, mem.usedJSHeapSize / 2 ** 20)
+    }
+    publish()
+  }
+
+  function moveMatch(fileName: string, label: string) {
+    if (!label) { const { [fileName]: _, ...rest } = overrides; overrides = rest } else overrides = { ...overrides, [fileName]: label }
+    writeStore('hindsight.sessionOverrides', overrides)
+  }
+  function rename(s: Session) {
+    const name = window.prompt('Session name', s.label)
+    if (!name) return
+    renames = { ...renames, [s.id]: name.trim() }
+    writeStore('hindsight.sessionRenames', renames)
+  }
+  function setBattery(fileName: string, id: string) {
+    typedBatteries = { ...typedBatteries, [fileName]: id.trim() }
+    writeStore('hindsight.typedBatteries', typedBatteries)
+  }
+  function download() {
+    if (!session) return
+    const name = session.label.replace(/[^\w-]+/g, '-').toLowerCase()
+    downloadText(`${name}.session-findings.json`, JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1))
+  }
+  function newSessionFor(fileName: string) {
+    const label = window.prompt('Move this log to the session named:', '')
+    if (label) moveMatch(fileName, label.trim())
+  }
+
+  /** Matches played after an issue was marked fixed, where it fired again. */
+  function cameBack(key: string, matchIdx: number[]): string[] {
+    const issue = issues.get(key)
+    if (!issue || issue.status !== 'fixed' || !session) return []
+    const fixedAt = Date.parse(issue.when)
+    return matchIdx.map((i) => session.matches[i]).filter((m) => m.playedAt !== null && m.playedAt > fixedAt).map(label)
+  }
+
+  const label = (m: MatchSummary) => m.matchLabel || m.fileName.replace(/\.wpilog$/i, '')
+  const pct = (x: number) => `${Math.round(100 * x)} %`
+  // How far past the line, in words: "12 % past it", or "7× the line" when it is far past.
+  const past = (margin: number) => (margin < 1 ? `${pct(margin)} past it` : `${(1 + margin).toFixed(1)}× the line`)
+  const CELL = { fired: '●', quiet: '·', 'not checked': '–' } as const
+  const fmt = (x: number) => (Number.isInteger(x) || Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(Math.abs(x) >= 10 ? 1 : 2))
+</script>
+
+<p class="intro">Drop a whole folder of match logs (an event, a practice day). Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
+
+<section class="drop" role="region" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
+  <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
+  <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
+  {#if progress}
+    <span class="progress" role="status">
+      {progress.done} of {progress.total} logs{progress.done < progress.total ? ` · reading ${progress.current}` : ''} ·
+      {(progress.ms / 1000).toFixed(1)} s{progress.done ? ` (${Math.round(progress.ms / progress.done)} ms per log)` : ''}{heapMB !== null ? ` · JS heap peak ${heapMB.toFixed(0)} MB` : ''}
+    </span>
+  {/if}
+</section>
+{#each problems as p (p)}<p class="problem">{p}</p>{/each}
+
+{#if sessions.length}
+  <nav class="sessions" aria-label="Sessions">
+    {#each sessions as s, i (s.id)}
+      <button class:active={session?.id === s.id} onclick={() => (selected = i)}>{s.label} <small>{s.matches.length} log{s.matches.length === 1 ? '' : 's'}</small></button>
+    {/each}
+  </nav>
+{/if}
+
+{#if session}
+  <section class="head">
+    <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
+    <button class="button" onclick={download}>Download for Claude</button>
+  </section>
+  {#each session.matches.filter((m) => m.clockNote) as m (m.fileName)}
+    <p class="note warn">{label(m)}: {m.clockNote}</p>
+  {/each}
+
+  <h3>Findings across the session</h3>
+  <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some. Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
+  <ul class="merged">
+    {#each merged as f (f.key)}
+      {@const back = cameBack(f.key, f.matches)}
+      <li class={f.severity}>
+        <span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span>
+        <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
+        {#if f.measured.length}
+          <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''} ${m.unit}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
+        {/if}
+        <span class="latest">Latest: {f.title}</span>
+      </li>
+    {/each}
+  </ul>
+
+  <h3>Rule × match</h3>
+  <div class="grid-wrap">
+    <table class="grid">
+      <thead>
+        <tr><th>rule</th>{#each session.matches as m (m.fileName)}<th class="match"><button class="link" title={m.fileName} onclick={() => { const f = files.get(m.fileName); if (f) onOpen(f) }}>{label(m)}</button></th>{/each}<th>across the session</th></tr>
+      </thead>
+      <tbody>
+        {#each grid as r (r.rule)}
+          <tr>
+            <th scope="row"><code>{r.rule}</code></th>
+            {#each r.cells as c, i (i)}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/each}
+            <td class="rate">{r.checkable ? `${CONFIDENCE_WORDS[r.confidence]}: ${r.fired} of ${r.checkable}` : 'not checked'}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">● fired · quiet – not checked (signals missing). Click a match to open it in Match review.</p>
+
+  <h3>Per match</h3>
+  <Trends matches={session.matches} {typedBatteries} />
+
+  <h3>Matches in this session</h3>
+  <div class="grid-wrap"><table class="list">
+    <thead><tr><th>match</th><th>played</th><th>battery</th><th>session</th></tr></thead>
+    <tbody>
+      {#each session.matches as m (m.fileName)}
+        <tr>
+          <td>{label(m)}</td>
+          <td>{m.playedAt ? new Date(m.playedAt).toLocaleString() : 'unknown'}{m.playedAtSource === 'file name' ? ' (from file name)' : ''}</td>
+          <td>{#if m.batteryId}{m.batteryId} (logged){:else}<input size="6" placeholder="label" value={typedBatteries[m.fileName] ?? ''} onchange={(e) => setBattery(m.fileName, (e.currentTarget as HTMLInputElement).value)} />{/if}</td>
+          <td>
+            <select onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; if (v === '__new') newSessionFor(m.fileName); else moveMatch(m.fileName, v === '__auto' ? '' : v) }}>
+              <option value="" selected disabled>move to…</option>
+              <option value="__auto">automatic grouping</option>
+              {#each sessions.filter((s) => s.id !== session.id) as s (s.id)}<option value={s.label}>{s.label}</option>{/each}
+              <option value="__new">a new session…</option>
+            </select>
+          </td>
+        </tr>
+      {/each}
+    </tbody>
+  </table></div>
+{/if}
+
+<style>
+  .intro, .hint, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
+  .warn { color: var(--warning); }
+  .drop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.9rem 1rem; border: 1.5px dashed var(--border); border-radius: 8px; }
+  .button { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
+  .button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .progress { font-size: 0.85rem; color: var(--muted); }
+  .problem { color: var(--error); font-size: 0.85rem; }
+  .sessions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
+  .sessions button { padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
+  .sessions button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
+  .sessions small { color: var(--muted); }
+  .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 1rem; }
+  h2 { font-size: 1.2rem; margin: 0; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 0.25rem; }
+  .link { border: none; background: none; color: var(--focus); font: inherit; font-size: 0.85rem; cursor: pointer; padding: 0; }
+  .merged { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--border); }
+  .merged li { display: grid; grid-template-columns: 8rem 1fr; gap: 0.1rem 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+  .merged .measured, .merged .latest { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
+  .merged .title { overflow-wrap: anywhere; }
+  .error .title code { color: var(--error); }
+  .warning .title code { color: var(--warning); }
+  .back { color: var(--error); }
+  .chip { justify-self: start; font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); height: fit-content; }
+  .chip.consistent { border-color: var(--error); color: var(--error); }
+  .chip.intermittent { border-color: var(--warning); color: var(--warning); }
+  .grid-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; font-size: 0.8rem; }
+  .grid th, .grid td { padding: 0.1rem 0.5rem; text-align: center; white-space: nowrap; }
+  .grid th[scope='row'], .grid thead th:first-child { text-align: left; }
+  .grid thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
+  .cell.fired { color: var(--error); font-weight: 700; }
+  .cell.not-checked { color: var(--muted); }
+  .rate { text-align: left !important; color: var(--muted); }
+  .list th, .list td { text-align: left; padding: 0.15rem 1rem 0.15rem 0; }
+  .list thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
+  input, select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; max-width: 100%; }
+  @media (max-width: 640px) { .merged li { grid-template-columns: 1fr; } .merged .measured, .merged .latest { grid-column: 1; } }
+</style>

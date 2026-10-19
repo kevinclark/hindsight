@@ -30,6 +30,7 @@ export default rule({
         'auto: share over 20 ms (%)': round(100 * overShare(auto), 1), 'auto: p99 (ms)': round(loop.percentile(99, match.auto), 0), 'auto: worst (ms)': round(maxOf(auto), 0),
         'teleop: share over 20 ms (%)': round(100 * overShare(teleop), 1), 'teleop: p99 (ms)': round(loop.percentile(99, match.teleop), 0), 'teleop: worst (ms)': round(maxOf(teleop), 0),
       },
+      measured: [{ label: `${worstName} loops over 20 ms`, value: round(100 * overShare(worst), 1), unit: '%', threshold: 10 }],
       plot: [loop], plotUnit: 'ms', plotLine: { value: 20, label: '20 ms' },
       plotFrom: (worstName === 'auto' ? match.auto : match.teleop)[0]?.start, plotTo: (worstName === 'auto' ? match.auto : match.teleop)[0]?.end,
     }

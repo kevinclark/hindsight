@@ -10,7 +10,7 @@
  *     severity: 'warning',
  *     who: ['pit'],
  *     fix: 'Put a charged battery on the robot.',
- *     incident: 'CalGames 2026 Q21 started at 12.44 V',
+ *     incident: 'A practice match that started at 12.44 V sagged deeper than the one before it',
  *     check(match) {
  *       if (match.autoStart === null) return           // never enabled: nothing to check
  *       const rest = match.signal('batteryVoltage').median(match.before(match.autoStart, 2))
@@ -45,6 +45,12 @@ export interface Problem {
   severity?: Severity
   /** What it is about, if the rule didn't use forEach: "Pitch", "Back_Left". Used to track the issue across matches. */
   about?: string
+  /**
+   * The number the rule judged, against its threshold, so a session can say how far past the line each match went
+   * (a finding that barely crosses every time is weaker than one far past it). The first entry is the one judged;
+   * any more are context shown in session summaries, e.g. "median speed vs leader 93–97 %".
+   */
+  measured?: Measurement[]
   /** Signals to draw around `at`: profile names, log keys or Signals. */
   plot?: (string | Signal)[]
   /** The plot's unit label: 'V', 'A', '°'. */
@@ -54,6 +60,14 @@ export interface Problem {
   plotTo?: number
   plotLine?: { value: number; label: string }
   plotMarks?: number[]
+}
+
+export interface Measurement {
+  label: string
+  value: number
+  unit: string
+  /** The rule's threshold for this number (leave out for context numbers). */
+  threshold?: number
 }
 
 export type Answer = Problem | Problem[] | undefined | void

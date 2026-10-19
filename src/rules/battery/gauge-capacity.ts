@@ -28,6 +28,7 @@ export default rule({
     const rated = b.ratedCapacityAh.some((key) => match.has(key)) ? match.signal(match.firstOf(b.ratedCapacityAh)).last() : 'not logged'
     return {
       message: `Fuel gauge: effective capacity ${latest.toFixed(1)} Ah (under ${LEAST_AH} Ah)`,
+      measured: [{ label: 'effective capacity', value: round(latest), unit: 'Ah', threshold: LEAST_AH }],
       evidence: { 'effective capacity (Ah)': round(latest), 'rated capacity (Ah)': rated, 'least OK (Ah)': LEAST_AH },
     }
   },

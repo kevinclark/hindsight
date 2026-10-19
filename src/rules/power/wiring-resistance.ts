@@ -25,6 +25,7 @@ export default rule({
     return {
       message: `Battery + wiring resistance ${(ohms * 1000).toFixed(1)} mΩ (want under ${MOST_OHMS * 1000} mΩ)`,
       evidence: { 'resistance (mΩ)': round(ohms * 1000, 1), 'most OK (mΩ)': MOST_OHMS * 1000 },
+      measured: [{ label: 'battery + wiring resistance', value: round(ohms * 1000, 1), unit: 'mΩ', threshold: MOST_OHMS * 1000 }],
     }
   },
 })

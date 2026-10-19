@@ -31,6 +31,7 @@ export default rule({
     if (distances.length === 0 || far / distances.length <= 0.05) return
     return {
       message: `${camera.name}: ${pct(far / distances.length)} of accepted vision poses were more than 0.5 m from odometry`,
+      measured: [{ label: 'accepted poses > 0.5 m from odometry', value: round((100 * far) / distances.length, 1), unit: '%', threshold: 5 }],
       evidence: { 'accepted poses in the match': distances.length, 'over 0.5 m': far, 'p90 distance (m)': round(percentile(distances, 90)), 'farthest (m)': round(maxOf(distances)) },
     }
   },

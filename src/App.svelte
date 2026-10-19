@@ -9,6 +9,7 @@
   import PowerTab from './ui/PowerTab.svelte'
   import LimitsTab from './ui/LimitsTab.svelte'
   import Wizard from './ui/Wizard.svelte'
+  import SessionView from './ui/SessionView.svelte'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
   import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type IssueEvent, type IssueStatus } from './triage/history.ts'
@@ -21,7 +22,14 @@
   let selected = $state(0)
   let tab = $state<'match' | 'power' | 'limits'>('match')
   // Two modes: review match logs, or run the limits wizard with the robot.
-  let mode = $state<'review' | 'wizard'>('review')
+  let mode = $state<'review' | 'session' | 'wizard'>('review')
+
+  // From the Session view: open one match's log in Match review.
+  async function openFromSession(file: File) {
+    mode = 'review'
+    tab = 'match'
+    await load([file])
+  }
   let busy = $state(false)
   let dragging = $state(false)
   let lastLoad = $state<{ files: number; readMs: number; analyzeMs: number; heapMB: number | null } | null>(null)
@@ -90,7 +98,7 @@
     e.preventDefault()
     dragging = false
     // In the wizard, logs go to a step's own "Check it" box, not to Match review.
-    if (mode === 'wizard') return
+    if (mode !== 'review') return
     if (e.dataTransfer?.files) load(e.dataTransfer.files)
   }
 
@@ -116,16 +124,19 @@
 
 <header>
   <h1>Hindsight</h1>
-  <p class="tag">Lints FRC 8033 match logs. Runs in this page; your files never leave this computer.</p>
+  <p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>
 </header>
 
 <nav class="modes" aria-label="Mode">
   <button class:active={mode === 'review'} onclick={() => (mode = 'review')}>Match review</button>
+  <button class:active={mode === 'session'} onclick={() => (mode = 'session')}>Session</button>
   <button class:active={mode === 'wizard'} onclick={() => (mode = 'wizard')}>Limits wizard</button>
 </nav>
 
 {#if mode === 'wizard'}
   <Wizard matches={analyses} />
+{:else if mode === 'session'}
+  <SessionView {issues} onOpen={openFromSession} />
 {:else}
 <section class="drop" class:dragging aria-busy={busy}>
   <label class="button">

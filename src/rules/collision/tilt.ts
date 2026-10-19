@@ -30,6 +30,7 @@ export default rule({
           at: e.start,
           about: axis.label,
           severity: phase === 'auto' ? 'error' : 'warning',
+          measured: [{ label: `${axis.label.toLowerCase()}`, value: round(Math.abs(angle), 1), unit: '°', threshold: 15 }],
           evidence: { axis: axis.label, 'peak (°)': round(angle, 1), 'seconds beyond ±15°': round(e.seconds), phase },
           plot: [pitch, roll], plotUnit: '°', plotFrom: e.start - 3, plotTo: e.end + 3,
         })

@@ -54,6 +54,7 @@ export default rule({
           'limit switched on in code': `${isOn ? 'yes' : 'no'}${asOf}`,
           'set in': group.limits.where,
         },
+        measured: [{ label: `peak ${kind} current`, value: round(worst.peak, 0), unit: 'A', threshold: round(limit * 1.2, 0) }],
         plot: group.motors.map((m) => (kind === 'supply' ? m.supply() : m.stator())), plotUnit: 'A',
         plotFrom: worst.start - 2, plotTo: worst.start + 4, plotLine: { value: limit, label: `${limit} A limit` },
       })

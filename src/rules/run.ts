@@ -156,6 +156,7 @@ function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchV
     about,
     key: about ? `${rule.id} · ${about}` : rule.id,
     evidence: p.evidence ?? {},
+    measured: p.measured,
     plot: toPlot(p, view),
   }
 }

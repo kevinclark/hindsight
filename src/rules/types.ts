@@ -41,5 +41,7 @@ export interface Finding {
   key: string
   /** The numbers behind the finding. Keys are plain-English labels. */
   evidence: Record<string, number | string>
+  /** The judged number against its threshold (first), plus context numbers. See Problem.measured. */
+  measured?: { label: string; value: number; unit: string; threshold?: number }[]
   plot?: Plot
 }

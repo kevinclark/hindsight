@@ -34,6 +34,7 @@ export default rule({
           'DS log file': d.fileName,
           'DS logs for this match': match.dsLogs.length,
         },
+        measured: [{ label: 'DS log ended before the match did', value: round(end - d.endTime, 1), unit: 's', threshold: 1 }],
       }
     })
   },

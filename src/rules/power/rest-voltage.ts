@@ -24,6 +24,7 @@ export default rule({
       message: `Battery rested at ${volts(rest)} before auto (want ${LOWEST_REST_VOLTAGE} V or more)`,
       at: match.autoStart,
       evidence: { 'rest voltage, 2 s before auto (V)': round(rest), 'lowest OK (V)': LOWEST_REST_VOLTAGE },
+      measured: [{ label: 'rest voltage before auto', value: round(rest), unit: 'V', threshold: LOWEST_REST_VOLTAGE }],
       plot: ['batteryVoltage'], plotUnit: 'V', plotFrom: match.autoStart - 10, plotTo: match.autoStart + 5,
       plotLine: { value: LOWEST_REST_VOLTAGE, label: `${LOWEST_REST_VOLTAGE} V` },
     }

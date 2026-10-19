@@ -30,6 +30,7 @@ export default rule({
         ? `${camera.name} dropped out ${drops.length} time${drops.length === 1 ? '' : 's'} during the match (first at ${drops[0].start.toFixed(1)} s for ${drops[0].seconds.toFixed(1)} s)`
         : `${camera.name} was stale ${pct(staleShare)} of the match`,
       at: drops[0]?.start,
+      measured: [{ label: 'stale share of the match', value: round(100 * staleShare, 1), unit: '%', threshold: 15 }],
       evidence: { 'stale share of the match (%)': round(100 * staleShare, 1), 'dropouts during the match': drops.length, 'seconds disconnected': round(drops.reduce((s, d) => s + d.seconds, 0), 1) },
     }
   },

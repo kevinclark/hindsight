@@ -42,6 +42,7 @@ export default rule({
         'battery + wiring resistance used (mΩ)': round(report.resistanceOhms * 1000, 1),
         'match also browned out': brownedOut ? 'yes' : 'no',
       },
+      measured: [{ label: 'below a healthy battery', value: round(worst.healthy - worst.volts), unit: 'V', threshold: MOST_BELOW_HEALTHY }],
     }
   },
 })
