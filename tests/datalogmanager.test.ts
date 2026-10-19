@@ -21,9 +21,13 @@ describe('struct entries, decoded by the schema in the log', () => {
   const log = openWpilog(writeWpilog([
     { name: '/.schema/struct:Faults', type: 'structschema', records: [[0, 'bool power_cycle:1;bool can_id_conflict:1;bool hardware_fault:1']] },
     { name: '/.schema/struct:Gyro', type: 'structschema', records: [[0, 'double pitch; Faults faults; enum {a=1, b=2} int8 mode; double temps[2]']] },
-    { name: 'NT:/.schema/struct:TalonFX', type: 'structschema', records: [[0, 'double closedLoopReference; double deviceTemp; double motorVoltage; double position; double statorCurrent; double supplyCurrent; double velocity;']] },
+    { name: 'NT:/.schema/struct:Motor', type: 'structschema', records: [[0, 'double supplyCurrent;double statorCurrent;double velocity;double deviceTemp']] },
+    // The WPILib struct spec's bit-field example: a bool bit-field joins the int16 run before it (4 bytes, not 5).
+    { name: '/.schema/struct:Packed', type: 'structschema', records: [[0, 'int16 a:4; uint16 b:5; bool c:1; int16 d:7']] },
     { name: '/gyro', type: 'struct:Gyro', records: [[1, new Uint8Array(gyro.buffer)]] },
-    { name: 'NT:/Telemetry/hood/motor/', type: 'struct:TalonFX', records: [[1, packDoubles([0, 30, 4, 1, 12, 8, 2])], [2, packDoubles([0, 31, 4, 1, 15, 9, 3])]] },
+    { name: 'NT:/Telemetry/hood/motor/', type: 'struct:Motor', records: [[1, packDoubles([8, 12, 2, 30])], [2, packDoubles([9, 15, 3, 31])]] },
+    // a = 3, b = 17, c = true, d = 100: bits 0-3, 4-8, 9 of the first int16; d in the second.
+    { name: '/packed', type: 'struct:Packed', records: [[1, new Uint8Array([0x13 | 0, (17 >> 4) | (1 << 1), 100, 0])]] },
     { name: '/mystery', type: 'struct:NoSchema', records: [[1, new Uint8Array([1, 2, 3])]] },
     { name: 'NT:/FMSInfo/FMSControlData', type: 'int64', records: [[1, 0x32], [2, 0x23]] },
     // A NetworkTables client stamps a record before its clock synced: a negative time, after later records in the file.
@@ -46,6 +50,9 @@ describe('struct entries, decoded by the schema in the log', () => {
     expect(readValues(log, '/gyro')!.v[0]).toEqual({
       pitch: 0.25, faults: { power_cycle: 0, can_id_conflict: 1, hardware_fault: 0 }, mode: -2, temps: [31.5, 32.5],
     })
+  })
+  it('packs bit-fields as the WPILib struct spec does', () => {
+    expect(readValues(log, '/packed')!.v[0]).toEqual({ a: 3, b: 17, c: 1, d: 100 })
   })
   it('reads one bit of an integer entry', () => {
     expect(Array.from(readNumbers(log, 'NT:/FMSInfo/FMSControlData:bit4')!.v)).toEqual([1, 0])
@@ -96,6 +103,20 @@ describe('match identity in a plain WPILib log', () => {
     // WPILib Alerts found by their NT .type, and passed through.
     expect(a.report.findings.some((f) => f.rule === 'alerts/passthrough' && f.title.includes('Intake jammed'))).toBe(true)
   })
+  it("another team's plain log fits no profile (the keys every such log has don't count toward fit)", () => {
+    const { analyses } = analyzeFiles([{ name: 'third.wpilog', bytes: writeWpilog(dlmMatch()) }])
+    expect(analyses[0].match.profileChoice.misfit).toBe(true)
+    expect(analyses[0].match.matchLabel).toBe('Qualification 7')
+  })
+  it('with no profile that fits, a full-length auto followed by the 2026 field\'s 4 s pause is not an early disable', () => {
+    // Auto enabled 10 → 30.5 (20.5 s), teleop at 34.5: the misfit path measures auto from the log.
+    const [a] = analyze([{ name: 'third.wpilog', bytes: writeWpilog(dlmMatch()) }], (() => undefined) as never)
+    expect(a.match.profile.game.autoSeconds).toBe(21)
+    expect(a.report.findings.filter((f) => f.rule === 'auto/early-disable')).toEqual([])
+    // Cut short (disabled at 23.5 s, teleop 11 s later), auto is still teleop start less the pause, and it fires.
+    const [cut] = analyze([{ name: 'cut.wpilog', bytes: writeWpilog(dlmMatch(23.5)) }], (() => undefined) as never)
+    expect(cut.report.findings.some((f) => f.rule === 'auto/early-disable')).toBe(true)
+  })
   it('a log with neither AdvantageKit /DriverStation nor DS: entries has no match', () => {
     const [a] = analyze([{ name: 'empty.wpilog', bytes: writeWpilog([{ name: '/x', type: 'double', records: [[1, 1], [2, 2]] }]) }], offseason2026)
     expect(a.match.matchStart).toBeNull()
@@ -103,15 +124,16 @@ describe('match identity in a plain WPILib log', () => {
   })
 })
 
+// A made-up field list in the same shape as a TalonFX status struct (the 340 profile reads these four fields).
 const TALON_SCHEMA: FixtureEntry = {
   name: 'NT:/.schema/struct:TalonFX', type: 'structschema', ...NT,
-  records: [[0, 'double closedLoopReference; double deviceTemp; double motorVoltage; double position; double statorCurrent; double supplyCurrent; double velocity;']],
+  records: [[0, 'double supplyCurrent;double statorCurrent;double velocity;double deviceTemp']],
 }
 /** One TalonFX struct entry; each record is [time, supply A, velocity rot/s]. */
 function talon(path: string, records: [number, number, number][]): FixtureEntry {
   return {
     name: `NT:/Telemetry/${path}/`, type: 'struct:TalonFX', ...NT,
-    records: records.map(([t, supply, velocity]) => [t, packDoubles([0, 30, 6, 0, supply * 1.5, supply, velocity])]),
+    records: records.map(([t, supply, velocity]) => [t, packDoubles([supply, supply * 1.5, velocity, 30])]),
   }
 }
 

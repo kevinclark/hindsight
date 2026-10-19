@@ -70,7 +70,7 @@ export default rule({
     }
     if (worst.secondsOff < 1) return
 
-    const evidence: Record<string, number> = { 'steady seconds compared': round(motors[0].ratios.length * DT, 1) }
+    const evidence: Record<string, number> = { 'steady seconds compared': round(motors[0].ratios.length * motors[0].weight, 1) }
     for (const m of motors) {
       evidence[`${m.name}: median speed vs leader (%)`] = round(100 * median(m.ratios), 0)
       evidence[`${m.name}: seconds > 15 % off`] = round(m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * m.weight, 1)

@@ -75,10 +75,9 @@ export function withDataLogManagerKeys(log: WpilogFile, profile: RobotProfile): 
     const fallback = DATALOGMANAGER_SIGNALS[name] as string
     if (fallback && own !== fallback && !hasEntry(log, own) && hasEntry(log, fallback)) (filled as Record<string, string>)[name] = fallback
   }
-  // WPILib's Alerts publish each group to NetworkTables with a .type of "Alerts" (Shuffleboard/Elastic read it).
-  // Only when none of the profile's own alert groups is in the log, so one alert is never read from two places.
-  const ownAlerts = profile.signals.alertGroups.some((g) => ['errors', 'warnings', 'infos'].some((k) => hasEntry(log, `${g}/${k}`)))
-  const alertGroups = ownAlerts ? [] : [...log.entries.values()]
+  // WPILib's Alerts publish each group to NetworkTables with a .type of "Alerts" (Shuffleboard/Elastic read it), so
+  // groups the profile doesn't name (PathPlanner's, PhotonVision's) are read too.
+  const alertGroups = [...log.entries.values()]
     .filter((e) => e.name.endsWith('/.type') && /"SmartDashboard"\s*:\s*"Alerts"/.test(e.metadata))
     .map((e) => e.name.slice(0, -'/.type'.length))
     .filter((g) => !profile.signals.alertGroups.includes(g))

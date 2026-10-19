@@ -162,17 +162,23 @@ function findMatchWindow(match: Match, fms: NumberSeries | null): void {
   match.matchEnd = inMatch.at(-1)?.end ?? null
 }
 
-/** On the field, teleop starts this long after auto ends (3.0 s in all 12 FMS matches measured, 2025 and 2026 games). */
+/**
+ * On the field, teleop starts this long after auto ends: 3.0 s in 8033's 12 FMS matches (2025 game, 2026 offseason),
+ * 4.0 s in three official 2026 event logs (teams 340 and 3602).
+ */
 const FIELD_AUTO_TO_TELEOP_SECONDS = 3
+const FIELD_AUTO_TO_TELEOP_MAX_SECONDS = 4.5
 
 /**
- * Auto and teleop lengths from the log itself, for a log no profile fits, rounded to whole seconds. On the field, auto
- * is the time from auto start to teleop start less the 3 s pause (a robot disabled early in auto doesn't shorten it);
- * off the field, the first auto period. Teleop runs from the teleop enable to the end of the match.
+ * Auto and teleop lengths from the log itself, for a log no profile fits, rounded to whole seconds. On the field, an
+ * auto period that ran until the pause before teleop is the auto length; a robot disabled earlier doesn't shorten it,
+ * so then auto is the time from auto start to teleop start less the 3 s pause. Off the field, the first auto period.
+ * Teleop runs from the teleop enable to the end of the match.
  */
 function measuredGame(match: Match): RobotProfile['game'] {
   const auto = match.auto.find((iv) => match.matchStart !== null && iv.start >= match.matchStart)
-  const autoSeconds = match.fms && match.matchStart !== null && match.teleopStart !== null && match.teleopStart > match.matchStart
+  const ranToTheEnd = auto && match.teleopStart !== null && match.teleopStart - auto.end <= FIELD_AUTO_TO_TELEOP_MAX_SECONDS
+  const autoSeconds = match.fms && !ranToTheEnd && match.matchStart !== null && match.teleopStart !== null && match.teleopStart > match.matchStart
     ? Math.round(match.teleopStart - match.matchStart - FIELD_AUTO_TO_TELEOP_SECONDS)
     : auto ? Math.round(auto.end - auto.start) : 15
   const teleopSeconds = match.teleopStart !== null && match.matchEnd !== null ? Math.round(match.matchEnd - match.teleopStart) : 135

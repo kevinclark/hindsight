@@ -329,7 +329,7 @@ export class MatchView {
   /** Measured signals (battery voltage, motor currents and speeds) the current rule item read, by key, with labels. */
   readonly sampled = new Map<string, string>()
 
-  /** Battery voltage and the motors' current, speed and temperature: things that change fast and can be under-sampled. */
+  /** Battery voltage and the motors' current and speed: things that change fast and can be under-sampled. */
   private isMeasured(key: string): boolean {
     if (key === this.profile.signals.batteryVoltage) return true
     return this.profile.motorGroups.some((g) => g.motors.some((m) => [m.supplyCurrent, m.statorCurrent, m.velocity].includes(key)))
@@ -539,10 +539,14 @@ export class MatchView {
 
   /** A profile signal name ('batteryVoltage') to its log key; a log key stays as it is. '' when the profile has none. */
   private keyFor(name: string): string {
+    const signals = this.profile.signals as unknown as Record<string, unknown>
+    if (Object.hasOwn(signals, name)) {
+      const key = signals[name]
+      if (typeof key !== 'string') throw new Error(`"${name}" is not a single signal in the robot profile (src/profiles/)`)
+      return key
+    }
     if (isLogKey(name)) return name
-    const key = (this.profile.signals as unknown as Record<string, string>)[name]
-    if (typeof key !== 'string') throw new Error(`"${name}" is not a signal name in the robot profile (src/profiles/)`)
-    return key
+    throw new Error(`"${name}" is not a signal name in the robot profile (src/profiles/)`)
   }
 }
 

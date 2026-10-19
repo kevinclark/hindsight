@@ -289,12 +289,15 @@ export function parseStruct(name: string, texts: Map<string, string>, parents: S
       const size = type === 'bool' ? 1 : SCALAR_SIZES[type]
       if (!size || type.startsWith('float') || type === 'double') return null
       const width = Number(bitWidth)
-      if (!bits || bits.size !== size || bits.used + width > size * 8) {
+      // A bool bit-field packs into the run before it whatever that run's integer type, if it fits (WPILib struct
+      // spec, "Bit-Field Data Layout"); other bit-fields start a new run when the integer size changes.
+      const joins = bits && bits.used + width <= bits.size * 8 && (type === 'bool' || bits.size === size)
+      if (!joins) {
         bits = { offset, size, used: 0 }
         offset += size
       }
-      fields.push({ name: fieldName, type, offset: bits.offset, size, bitShift: bits.used, bitWidth: width })
-      bits.used += width
+      fields.push({ name: fieldName, type, offset: bits!.offset, size: bits!.size, bitShift: bits!.used, bitWidth: width })
+      bits!.used += width
       continue
     }
     bits = null
@@ -470,6 +473,7 @@ function decodeValue(log: WpilogFile, type: string, pos: number, size: number): 
     case 'boolean': return size >= 1 ? bytes[pos] !== 0 : undefined
     case 'string':
     case 'json':
+    case 'structschema':
       return utf8.decode(bytes.subarray(pos, pos + size))
     case 'double[]': return Array.from({ length: size >> 3 }, (_, i) => view.getFloat64(pos + i * 8, true))
     case 'float[]': return Array.from({ length: size >> 2 }, (_, i) => view.getFloat32(pos + i * 4, true))

@@ -54,7 +54,8 @@ function computePowerGrid(match: Match): PowerGrid | null {
  */
 export function buildCurrentGrid(match: Match): PowerGrid | null {
   const withVolts = buildPowerGrid(match)
-  if (withVolts || has(match, match.profile.signals.batteryVoltage)) return withVolts
+  // Voltage logged (twice or more) and still no power grid: no motor currents.
+  if (withVolts || (num(match, match.profile.signals.batteryVoltage)?.t.length ?? 0) >= 2) return withVolts
   const cached = match.cache.get('power:currents') as PowerGrid | null | undefined
   if (cached !== undefined) return cached
   const t = match.logEnd > match.logStart ? makeGrid(match.logStart, match.logEnd, DT) : new Float64Array(0)
