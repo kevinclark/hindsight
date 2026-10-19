@@ -27,3 +27,33 @@ describe('the rule format', () => {
     expect(r.skipped).toEqual([{ rule: 'example/missing', reason: 'missing /Not/In/This/Log' }])
   })
 })
+
+describe('runner edge cases (review 2026-10-19)', () => {
+  const run = (entries: Parameters<typeof writeWpilog>[0]) => analyzeFiles([{ name: 'edge.wpilog', bytes: writeWpilog(entries) }]).analyses[0].report
+  const enabled = [
+    { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [35, false]] },
+    { name: '/DriverStation/Autonomous', type: 'boolean', records: [[10, true], [35, false]] },
+  ] as Parameters<typeof writeWpilog>[0]
+  it('a log with no Alerts lists alerts/passthrough as not checked, not crashed', () => {
+    const r = run(enabled)
+    expect(r.crashed).toEqual([])
+    expect(r.skipped.find((s) => s.rule === 'alerts/passthrough')?.reason).toMatch(/^missing /)
+  })
+  it('Alerts logged but none raised is a clean result', () => {
+    const r = run([...enabled, { name: '/RealOutputs/Alerts/errors', type: 'string[]', records: [[10, []]] }])
+    expect(r.skipped.map((s) => s.rule)).not.toContain('alerts/passthrough')
+  })
+  it('brownouts are reported even without the brownout setting in the log', () => {
+    const r = run([...enabled, { name: '/SystemStats/BrownedOut', type: 'boolean', records: [[10, false], [30, true], [30.2, false]] }, { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[10, 12], [30, 5.9]] }])
+    const b = r.findings.find((f) => f.rule === 'power/brownout')!
+    expect(b.evidence['brownout setting (V)']).toBe('not logged')
+  })
+  it('a never-enabled log gives no camera "stale NaN %"', () => {
+    const r = run([
+      { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false]] },
+      { name: '/Apriltag VisionBack_Left/Stale', type: 'boolean', records: [[10, true]] },
+      { name: '/Apriltag VisionBack_Left/Connected', type: 'boolean', records: [[10, true]] },
+    ])
+    expect(r.findings.filter((f) => f.rule === 'vision/stale')).toEqual([])
+  })
+})

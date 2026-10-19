@@ -10,7 +10,7 @@
 import { median } from '../../match/series.ts'
 import { rule, round } from '../rule.ts'
 
-const DT = 0.02
+const DT = 0.02 // compare every 20 ms
 
 export default rule({
   id: 'mech/follower-mismatch',
@@ -24,29 +24,43 @@ export default rule({
   check(group, match) {
     if (!group.sameLoop) return
     const grid = match.grid(DT)
-    const speeds = group.motors.map((m) => m.velocity().onGrid(grid).map(Math.abs))
-    const leader = speeds[0]
-    const halfSecond = Math.round(0.5 / DT)
-    const ratios: number[][] = group.motors.map(() => [])
-    const times: number[] = []
-    for (let i = halfSecond; i < grid.length; i++) {
-      const steady = leader[i] > 20 && Math.abs(leader[i] - leader[i - halfSecond]) <= 0.03 * leader[i]
+    const leader = group.motors[0].velocity().onGrid(grid)
+    const halfSecondAgo = Math.round(0.5 / DT)
+
+    // For each motor: its speed as a fraction of the leader's, at every steady moment.
+    const motors = group.motors.map((m) => ({ name: m.name, speed: m.velocity().onGrid(grid), ratios: [] as number[], times: [] as number[] }))
+    for (let i = halfSecondAgo; i < grid.length; i++) {
+      const now = Math.abs(leader[i])
+      const before = Math.abs(leader[i - halfSecondAgo])
+      const steady = now > 20 && Math.abs(now - before) <= 0.03 * now
       if (!steady) continue
-      times.push(grid[i])
-      speeds.forEach((s, k) => ratios[k].push(s[i] / leader[i]))
+      for (const m of motors) {
+        m.ratios.push(Math.abs(m.speed[i]) / now)
+        m.times.push(grid[i])
+      }
     }
-    const secondsOff = ratios.map((r) => r.filter((x) => Math.abs(1 - x) > 0.15).length * DT)
-    const worst = secondsOff.indexOf(Math.max(...secondsOff))
-    if (secondsOff[worst] < 1) return
-    const furthest = ratios[worst].reduce((w, x, i) => (Math.abs(1 - x) > Math.abs(1 - ratios[worst][w]) ? i : w), 0)
+
+    // The motor that spent longest more than 15 % off the leader, and its furthest moment.
+    let worst = { name: '', secondsOff: 0, median: 1, furthest: 1, at: 0 }
+    for (const m of motors) {
+      const secondsOff = m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * DT
+      if (secondsOff <= worst.secondsOff) continue
+      let furthest = 0
+      for (let k = 1; k < m.ratios.length; k++) if (Math.abs(1 - m.ratios[k]) > Math.abs(1 - m.ratios[furthest])) furthest = k
+      worst = { name: m.name, secondsOff, median: median(m.ratios), furthest: m.ratios[furthest], at: m.times[furthest] }
+    }
+    if (worst.secondsOff < 1) return
+
+    const evidence: Record<string, number> = { 'steady seconds compared': round(motors[0].ratios.length * DT, 1) }
+    for (const m of motors) {
+      evidence[`${m.name}: median speed vs leader (%)`] = round(100 * median(m.ratios), 0)
+      evidence[`${m.name}: seconds > 15 % off`] = round(m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * DT, 1)
+    }
+    evidence[`${worst.name} at its furthest (% of leader)`] = round(100 * worst.furthest, 0)
     return {
-      message: `${group.motors[worst].name} ran more than 15 % off ${group.motors[0].name} for ${secondsOff[worst].toFixed(1)} s at steady speed (median ${(100 * median(ratios[worst])).toFixed(0)} %)`,
-      at: times[furthest],
-      evidence: Object.fromEntries([
-        ['steady seconds compared', round(times.length * DT, 1)],
-        ...group.motors.map((m, k) => [`${m.name}: median speed vs leader (%)`, round(100 * median(ratios[k]), 0)]),
-        ...group.motors.map((m, k) => [`${m.name}: seconds > 15 % off`, round(secondsOff[k], 1)]),
-      ]),
+      message: `${worst.name} ran more than 15 % off ${motors[0].name} for ${worst.secondsOff.toFixed(1)} s at steady speed (median ${(100 * worst.median).toFixed(0)} %)`,
+      at: worst.at,
+      evidence,
       plot: group.motors.map((m) => m.velocity()), plotUnit: 'rot/s',
     }
   },

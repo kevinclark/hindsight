@@ -20,6 +20,7 @@ export default rule({
   forEach: 'camera',
 
   check(camera, match) {
+    if (match.wholeMatch.length === 0) return // never enabled: no match to measure
     const staleSeconds = camera.stale().episodes(isTrue, { during: match.wholeMatch }).reduce((s, e) => s + e.seconds, 0)
     const staleShare = staleSeconds / lengthOf(match.wholeMatch)
     const drops = camera.connected().episodes(isFalse, { during: match.wholeMatch })

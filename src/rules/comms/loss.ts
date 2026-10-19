@@ -23,9 +23,10 @@ export default rule({
     }
     if (losses.length === 0) return
     losses.sort((a, b) => a - b)
-    const outputs = match.signal('systemActive')
-    const battery = match.signal('batteryVoltage')
-    const deadSeconds = losses.map((t) => (outputs.turnsOn().find((on) => on > t) ?? NaN) - t)
+    // How long the outputs stayed off, and the voltage just before: extra evidence, optional.
+    const backOn = match.has('systemActive') ? match.signal('systemActive').turnsOn() : []
+    const deadSeconds = losses.map((t) => (backOn.find((on) => on > t) ?? NaN) - t)
+    const battery = match.has('batteryVoltage') ? match.signal('batteryVoltage') : null
     return {
       message: `Lost comms ${losses.length} time${losses.length === 1 ? '' : 's'}, first at ${match.when(losses[0])}`,
       at: losses[0],
@@ -33,9 +34,9 @@ export default rule({
         losses: losses.length,
         'loss times (s)': losses.map((t) => t.toFixed(1)).join(', '),
         'seconds with outputs off after each': deadSeconds.map((d) => (Number.isFinite(d) ? d.toFixed(1) : '?')).join(', '),
-        'lowest battery voltage in the 0.5 s before each (V)': losses.map((t) => battery.lowest(match.before(t, 0.5)).value.toFixed(2)).join(', '),
+        'lowest battery voltage in the 0.5 s before each (V)': battery ? losses.map((t) => battery.lowest(match.before(t, 0.5)).value.toFixed(2)).join(', ') : 'not logged',
       },
-      plot: [match.signal('dsAttached', 'DS attached'), match.signal('systemActive', 'Outputs enabled')],
+      plot: [match.signal('dsAttached', 'DS attached'), ...(match.has('systemActive') ? [match.signal('systemActive', 'Outputs enabled')] : [])],
       plotFrom: losses[0] - 5, plotTo: losses[losses.length - 1] + 10, plotMarks: losses,
     }
   },

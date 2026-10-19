@@ -12,7 +12,8 @@
  *     fix: 'Put a charged battery on the robot.',
  *     incident: 'CalGames 2026 Q21 started at 12.44 V',
  *     check(match) {
- *       const rest = match.signal('batteryVoltage').median(match.before(match.autoStart!, 2))
+ *       if (match.autoStart === null) return           // never enabled: nothing to check
+ *       const rest = match.signal('batteryVoltage').median(match.before(match.autoStart, 2))
  *       if (rest >= 12.5) return                       // nothing wrong: return nothing
  *       return { message: `Battery rested at ${volts(rest)}`, at: match.autoStart }
  *     },
@@ -96,5 +97,5 @@ export const isFalse = (v: number) => v < 0.5
 export const volts = (v: number) => `${v.toFixed(2)} V`
 export const amps = (a: number) => `${a.toFixed(0)} A`
 export const secs = (s: number) => `${s.toFixed(1)} s`
-export const pct = (fraction: number) => `${(100 * fraction).toFixed(0)} %`
+export const pct = (fraction: number) => `${(100 * fraction).toFixed(1)} %`
 export const round = (x: number, digits = 2) => +x.toFixed(digits)

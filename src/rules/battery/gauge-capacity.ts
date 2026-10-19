@@ -25,7 +25,7 @@ export default rule({
     if (readings.length === 0) return match.couldNotCheck('the fuel gauge never gave a valid reading')
     const latest = readings[readings.length - 1]
     if (latest >= LEAST_AH) return
-    const rated = match.has(b.ratedCapacityAh[0]) || match.has(b.ratedCapacityAh[1]) ? match.signal(match.firstOf(b.ratedCapacityAh)).last() : 'not logged'
+    const rated = b.ratedCapacityAh.some((key) => match.has(key)) ? match.signal(match.firstOf(b.ratedCapacityAh)).last() : 'not logged'
     return {
       message: `Fuel gauge: effective capacity ${latest.toFixed(1)} Ah (under ${LEAST_AH} Ah)`,
       evidence: { 'effective capacity (Ah)': round(latest), 'rated capacity (Ah)': rated, 'least OK (Ah)': LEAST_AH },

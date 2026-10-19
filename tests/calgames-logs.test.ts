@@ -61,6 +61,15 @@ describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
     expect(q21().report.skipped.map((s) => s.rule)).toContain('comms/ds-log-truncated')
   })
 
+  it('battery-collapse on Q21 is "partly checked" (compared up to 6.25 Ah), not "not checked"', () => {
+    expect(q21().report.skipped.find((s) => s.rule === 'power/battery-collapse')?.reason).toMatch(/^partly checked; charge past 6.25 Ah/)
+  })
+
+  it('supply and stator problems of one group are separate known issues', () => {
+    const keys = analyses.flatMap((a) => a.report.findings.filter((f) => f.rule === 'power/limit-not-applied').map((f) => f.key))
+    expect(keys).toContain('power/limit-not-applied · Flywheel supply')
+  })
+
   it('no rule crashes', () => {
     for (const a of analyses) expect(a.report.crashed).toEqual([])
   })

@@ -26,11 +26,11 @@ export default rule({
     if (report.resistanceOhms === null) return match.couldNotCheck('too few current steps to measure resistance')
     const curve = ocvCurve(grid, report.resistanceOhms, 0.5)
     const lastReference = FLEET_REFERENCE[FLEET_REFERENCE.length - 1].ah
-    if (curve.some((p) => p.ah > lastReference)) match.couldNotCheck(`charge past ${lastReference} Ah: no healthy battery to compare with there`)
+    if (curve.some((p) => p.ah > lastReference)) match.checkedOnlyPart(`charge past ${lastReference} Ah: no healthy battery to compare with there`)
     const compared = curve.filter((p) => p.ah <= lastReference).map((p) => ({ ...p, healthy: fleetVoltageAt(p.ah) }))
     const worst = compared.sort((a, b) => (b.healthy - b.volts) - (a.healthy - a.volts))[0]
     if (!worst || worst.healthy - worst.volts <= MOST_BELOW_HEALTHY) return
-    const brownedOut = match.signal('brownedOut').turnsOn().length > 0
+    const brownedOut = match.has('brownedOut') && match.signal('brownedOut').turnsOn().length > 0
     return {
       message: `Battery fell ${(worst.healthy - worst.volts).toFixed(1)} V below a healthy battery at ${worst.ah} Ah drawn`,
       at: worst.t,

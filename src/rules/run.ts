@@ -5,7 +5,7 @@
 import type { Match } from '../match/match.ts'
 import type { Finding, Plot, PlotLine } from './types.ts'
 import type { Answer, Problem, Rule, Severity } from './rule.ts'
-import { MatchView, MissingSignal, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
+import { MatchView, MissingSignal, words, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
 
 export interface SkippedRule { rule: string; reason: string }
 
@@ -29,7 +29,8 @@ export function runRules(match: Match, rules: Rule[]): Report {
       const result = runOne(rule, view)
       findings.push(...result.findings)
       if (result.notChecked.length) {
-        const all = result.notChecked.length === result.items
+        // "Not checked" only when every item was skipped and nothing was found; otherwise "partly checked".
+        const all = result.itemsSkipped === result.items && result.findings.length === 0
         skipped.push({ rule: rule.id, reason: `${all ? '' : 'partly checked; '}${result.notChecked.join('; ')}` })
       }
     } catch (error) {
@@ -50,24 +51,37 @@ export function runRules(match: Match, rules: Rule[]): Report {
 }
 
 /** Run one rule over each of its things. A thing whose signals are missing is noted, not fatal. */
-function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked: string[]; items: number } {
-  const items = itemsFor(rule, view)
+function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked: string[]; items: number; itemsSkipped: number } {
   const findings: Finding[] = []
   const notChecked: string[] = []
-  if (items.length === 0) return { findings, notChecked: [`the robot profile lists no ${rule.forEach}s`], items: 1 }
+  let items: ReturnType<typeof itemsFor>
+  try {
+    items = itemsFor(rule, view)
+  } catch (error) {
+    // e.g. no Alerts in the log at all: the rule couldn't look.
+    if (!(error instanceof MissingSignal)) throw error
+    return { findings, notChecked: [`missing ${error.key}`], items: 1, itemsSkipped: 1 }
+  }
+  // No alerts raised is a clean result; no motors or cameras in the profile means the rule couldn't look.
+  if (items.length === 0 && rule.forEach !== 'alert') {
+    return { findings, notChecked: [`the robot profile lists no ${rule.forEach}s`], items: 1, itemsSkipped: 1 }
+  }
+  let itemsSkipped = 0
   for (const item of items) {
     view.notes = []
     try {
       const answer: Answer = item.check()
       const problems = answer === undefined ? [] : Array.isArray(answer) ? answer : [answer]
       findings.push(...problems.map((p) => toFinding(rule, p, item.name, view)))
-      notChecked.push(...view.notes.map((n) => (item.name ? `${item.name}: ${n}` : n)))
+      notChecked.push(...view.notes.map((n) => (item.name ? `${item.name}: ${n.reason}` : n.reason)))
+      if (view.notes.some((n) => n.whole) && problems.length === 0) itemsSkipped++
     } catch (error) {
       if (!(error instanceof MissingSignal)) throw error
+      itemsSkipped++
       notChecked.push(item.name ? `${item.name}: missing ${error.key}` : `missing ${error.key}`)
     }
   }
-  return { findings, notChecked, items: items.length }
+  return { findings, notChecked, items: items.length, itemsSkipped }
 }
 
 /** The things a rule checks, each with its name and a call to the rule's check. */
@@ -157,9 +171,4 @@ function toPlot(p: Problem, view: MatchView): Plot | undefined {
     else if (view.has(s)) lines.push({ label: words(s), data: view.signal(s).series })
   }
   return { from, to, lines, unit: p.plotUnit ?? '', threshold: p.plotLine, markers: p.plotMarks?.map((t) => ({ t, label: '' })) }
-}
-
-/** 'batteryVoltage' → 'battery voltage'; a log key stays as it is. */
-function words(name: string): string {
-  return name.startsWith('/') ? name : name.replace(/([A-Z])/g, ' $1').toLowerCase()
 }

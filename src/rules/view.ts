@@ -80,7 +80,7 @@ export class Signal {
   /** The lowest value inside the window, and when. */
   lowest(during?: Window): { value: number; at: number } {
     let best = { value: NaN, at: NaN }
-    for (let i = 0; i < this.series.t.length; i++) {
+    for (let i = this.firstIndex(during); i < this.series.t.length; i++) {
       if (during && !inside(during, this.series.t[i])) continue
       if (Number.isNaN(best.value) || this.series.v[i] < best.value) best = { value: this.series.v[i], at: this.series.t[i] }
     }
@@ -90,7 +90,7 @@ export class Signal {
   /** The highest value inside the window, and when. */
   highest(during?: Window): { value: number; at: number } {
     let best = { value: NaN, at: NaN }
-    for (let i = 0; i < this.series.t.length; i++) {
+    for (let i = this.firstIndex(during); i < this.series.t.length; i++) {
       if (during && !inside(during, this.series.t[i])) continue
       if (Number.isNaN(best.value) || this.series.v[i] > best.value) best = { value: this.series.v[i], at: this.series.t[i] }
     }
@@ -155,6 +155,12 @@ export class Signal {
   /** The same signal with every value multiplied, e.g. radians to degrees. */
   times(factor: number, label = this.label): Signal {
     return new Signal(label, this.key, { name: this.series.name, t: this.series.t, v: this.series.v.map((x) => x * factor) }, this.logEnd)
+  }
+
+  /** Where to start scanning for a window: its first record (binary search), so short windows are fast. */
+  private firstIndex(during?: Window): number {
+    if (!during || during.length === 0) return 0
+    return Math.max(0, indexAt(this.series.t, Math.min(...during.map((w) => w.start))))
   }
 
   private describe(iv: Interval): Episode {
@@ -298,7 +304,7 @@ export class MatchView {
   }
 
   /** A numeric signal by its profile name (e.g. 'batteryVoltage') or its log key (e.g. '/Drum/Hood/Voltage'). */
-  signal(name: string, label = name): Signal {
+  signal(name: string, label = words(name)): Signal {
     const key = this.keyFor(name)
     if (!has(this.raw, key)) throw new MissingSignal(key)
     return new Signal(label, key, num(this.raw, key)!, this.raw.logEnd)
@@ -335,15 +341,20 @@ export class MatchView {
   }
 
   /**
-   * Call this when the rule can't check something (or part of something) and say why. It shows under
+   * Call this (then return) when the rule can't check this match, or this motor/camera, and say why. It shows under
    * "Not checked", so an empty report never hides "couldn't look".
    */
   couldNotCheck(reason: string): void {
-    this.notes.push(reason)
+    this.notes.push({ reason, whole: true })
   }
 
-  /** Reasons given to couldNotCheck since the runner last cleared them (the runner reads this). */
-  notes: string[] = []
+  /** Call this when the rule checked most of it but not all, and say what it skipped ("partly checked"). */
+  checkedOnlyPart(reason: string): void {
+    this.notes.push({ reason, whole: false })
+  }
+
+  /** What couldNotCheck / checkedOnlyPart said since the runner last cleared them (the runner reads this). */
+  notes: { reason: string; whole: boolean }[] = []
 
   private alertList: AlertView[] | null = null
 
@@ -365,11 +376,13 @@ export class MatchView {
         if (!a) continue
         for (let i = 0; i < a.t.length; i++) {
           const until = i + 1 < a.t.length ? a.t[i + 1] : this.raw.logEnd
-          const before = new Set(i > 0 ? a.v[i - 1] : [])
+          // Compare names with any changing counter ("It's been 12.3s ...") removed, so a counter isn't a new onset.
+          const strip = (text: string) => text.replace(/ It's been .*$/, '')
+          const before = new Set((i > 0 ? a.v[i - 1] : []).map(strip))
           for (const text of a.v[i]) {
-            const name = text.replace(/ It's been .*$/, '')
+            const name = strip(text)
             const alert = seen.get(name) ?? { name, text: name, kind, group: group.split('/').pop()!, onsetsInMatch: [], onsetsOutsideMatch: 0, secondsInMatch: 0 }
-            if (!before.has(text)) { if (this.inMatch(a.t[i])) alert.onsetsInMatch.push(a.t[i]); else alert.onsetsOutsideMatch++ }
+            if (!before.has(name)) { if (this.inMatch(a.t[i])) alert.onsetsInMatch.push(a.t[i]); else alert.onsetsOutsideMatch++ }
             alert.secondsInMatch += Math.max(0, Math.min(until, end) - Math.max(a.t[i], start))
             seen.set(name, alert)
           }
@@ -435,6 +448,11 @@ export class MatchView {
     if (typeof key !== 'string') throw new Error(`"${name}" is not a signal name in the robot profile (src/profiles/)`)
     return key
   }
+}
+
+/** 'batteryVoltage' → 'battery voltage' (for plot legends); a log key stays as it is. */
+export function words(name: string): string {
+  return name.startsWith('/') ? name : name.replace(/([A-Z])/g, ' $1').toLowerCase()
 }
 
 /** Is time t inside any interval of the window? */

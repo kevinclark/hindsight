@@ -25,7 +25,7 @@
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
   // Errors start open; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
-  let open = $state(finding.severity === 'error' && !issue)
+  let open = $state((finding.severity === 'error' && !issue) || (issue?.status === 'fixed' && !fixedLater))
 
   function mark(status: IssueStatus) {
     const ask = status === 'known' ? 'What do we know about it? (e.g. "belt slipping on 17/18, new belt before elims")'
@@ -44,7 +44,7 @@
       <span class="title">
         {#if cameBack}<span class="badge back">Came back after a fix</span>{/if}
         {#if issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
-        {#if fixedLater}<span class="badge known-badge">Fixed after this match</span>{/if}
+        {#if fixedLater}<span class="badge known-badge">{issue?.when ? 'Fixed after this match' : 'Fixed (date unknown)'}</span>{/if}
         {finding.title}
       </span>
       <span class="rule">{finding.rule}</span>

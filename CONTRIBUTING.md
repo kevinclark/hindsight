@@ -77,8 +77,9 @@ export default rule({
    ```
 
    You never check whether a signal exists. If the log doesn't have it, the engine stops your check and lists the
-   rule (or that one device) under "Not checked". If your rule can't judge something for another reason, call
-   `match.couldNotCheck('why')` and return.
+   rule (or that one device) under "Not checked". If your rule can't judge it for another reason, call
+   `match.couldNotCheck('why')` and return; if it checked most of it but had to skip a part, call
+   `match.checkedOnlyPart('what was skipped')` and carry on.
 
    Keep a rule under ~60 lines. Name thresholds (`const LOWEST_REST_VOLTAGE = 12.5`), and say in the comment
    whether a threshold was measured or assumed.
@@ -111,4 +112,6 @@ export default rule({
   `.episodes()` and `.onGrid()` already do this; don't average between records.
 - A problem's identity across matches is the rule plus what it is about (the motor, camera or device for
   `forEach` rules; set `about` yourself otherwise). Keep it stable, or a known issue won't be recognised next time.
+- Never wrap `match.signal(...)` in `try`/`catch`: the engine uses the error it throws to list your rule under "Not
+  checked". For a signal you can do without, ask `match.has('name')` first.
 - A rule that throws shows as "crashed" in the app; it doesn't take the other rules down.

@@ -87,8 +87,9 @@ Example, the CalGames flywheel belt (known slip, fixed before elims):
   mixing it into the pit list buries it.
 
 **Against (for now):**
-- Today 4 rules carry `drive`, and 2 of those are shared with software or pit; a board for ~2 drive-only rules is
-  mostly empty, and every board is one more thing to keep correct.
+- Today 5 rules carry `drive` (comms/loss, comms/ds-log-truncated, auto/early-disable, collision/tilt,
+  collision/impact); 3 are shared with software or pit, so only 2 are drive-only. A board for 2 rules is mostly
+  empty, and every board is one more thing to keep correct.
 - What they need between matches is a short checklist (battery ID and rest voltage, DS laptop plugged in, controllers
   checked), not triage across matches; triage of a comms problem usually ends with the CSA/FTA or the software team.
 - The controller-drop rule (§5b, `comms/controller-drop`) isn't built yet, so the board's main content doesn't exist.

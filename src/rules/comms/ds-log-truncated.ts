@@ -21,10 +21,20 @@ export default rule({
     const end = match.matchEnd
     // Every DS log that stops inside the match counts, including the first of two when the DS app restarted.
     const cut = match.dsLogs.filter((d) => d.endTime > match.autoStart! && d.endTime < end - 1)
-    return cut.map((d) => ({
-      message: `Driver Station log ends at ${d.endTime.toFixed(1)} s, ${(end - d.endTime).toFixed(1)} s before the match ended`,
-      at: d.endTime,
-      evidence: { 'DS log ends (s)': round(d.endTime), 'match ends (s)': round(end), 'DS log file': d.fileName, 'DS logs for this match': match.dsLogs.length },
-    }))
+    return cut.map((d) => {
+      // The DS's last record with a robot voltage: when the DS last heard from the robot.
+      const lastHeard = [...d.file.records].reverse().find((r) => r.voltage !== null)
+      return {
+        message: `Driver Station log ends at ${d.endTime.toFixed(1)} s, ${(end - d.endTime).toFixed(1)} s before the match ended`,
+        at: d.endTime,
+        evidence: {
+          'DS log ends (s)': round(d.endTime),
+          'match ends (s)': round(end),
+          'DS last saw the robot (s)': lastHeard && match.epochOffset !== null ? round(lastHeard.epochSeconds - match.epochOffset) : 'never',
+          'DS log file': d.fileName,
+          'DS logs for this match': match.dsLogs.length,
+        },
+      }
+    })
   },
 })

@@ -21,7 +21,8 @@ export default rule({
     const first = onsets[0]
     const last = onsets[onsets.length - 1]
     const battery = match.signal('batteryVoltage')
-    const setting = match.signal('brownoutVoltage').last()
+    // The setting is context; a log without it still gets its brownouts reported.
+    const setting = match.has('brownoutVoltage') ? match.signal('brownoutVoltage').last() : NaN
     return {
       message: `Browned out ${onsets.length} time${onsets.length === 1 ? '' : 's'}, first at ${match.when(first)}`,
       at: first,
@@ -30,10 +31,10 @@ export default rule({
         'first (s)': round(first),
         'last (s)': round(last),
         'lowest voltage around the first (V)': round(battery.lowest(match.between(first - 1, first + 1)).value),
-        'brownout setting (V)': setting,
+        'brownout setting (V)': Number.isNaN(setting) ? 'not logged' : setting,
       },
       plot: [battery], plotUnit: 'V', plotFrom: first - 8, plotTo: Math.min(first + 12, last + 2),
-      plotLine: { value: setting, label: 'brownout setting' }, plotMarks: onsets,
+      plotLine: Number.isNaN(setting) ? undefined : { value: setting, label: 'brownout setting' }, plotMarks: onsets,
     }
   },
 })

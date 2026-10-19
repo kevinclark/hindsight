@@ -29,7 +29,10 @@
     const issue = issues.get(f.key)
     if (!issue) return undefined
     if (issue.status === 'known') return 'known'
-    return playedAt !== null && playedAt < Date.parse(issue.when) ? 'fixed later' : 'came back'
+    const fixedAt = Date.parse(issue.when)
+    // If we can't tell when the match was played or when the fix was, don't call it "came back": file it as known.
+    if (playedAt === null || Number.isNaN(fixedAt)) return 'fixed later'
+    return playedAt < fixedAt ? 'fixed later' : 'came back'
   }
   const cameBack = $derived(shown.filter((f) => status(f) === 'came back'))
   const fresh = $derived(shown.filter((f) => !status(f)))
@@ -37,6 +40,9 @@
   const active = $derived([...cameBack, ...fresh])
   const firing = $derived(new Set(all.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
+  // A rule that couldn't run says nothing about whether an issue is gone.
+  const notRun = $derived(new Set(analysis.report.skipped.map((s) => s.rule)))
+  const ruleOf = (key: string) => key.split(' · ')[0]
   const count = (s: string) => active.filter((f) => f.severity === s).length
   const red = (id: Audience | 'all') => forAudience(id).filter((f) => f.severity === 'error' && (!status(f) || status(f) === 'came back')).length
 
@@ -96,7 +102,7 @@
     <h3>Tracked issues not seen this match</h3>
     <ul>
       {#each quiet as e (e.key)}
-        <li><code>{e.key}</code>: {e.status === 'fixed' ? 'fixed' : 'known'} on {e.when.slice(0, 10)}{e.note ? ` (${e.note})` : ''}{e.status === 'fixed' ? '; quiet this match ✓' : '; not seen this match'}</li>
+        <li><code>{e.key}</code>: {e.status === 'fixed' ? 'fixed' : 'known'} on {e.when.slice(0, 10)}{e.note ? ` (${e.note})` : ''}{notRun.has(ruleOf(e.key)) ? '; the rule could not run on this log, so this says nothing' : e.status === 'fixed' ? '; quiet this match ✓' : '; not seen this match'}</li>
       {/each}
     </ul>
   </section>
