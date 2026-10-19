@@ -53,7 +53,9 @@ export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseas
     a.report = runRules(a.match)
     a.timing.rulesMs = performance.now() - started
   }
-  analyses.sort((a, b) => a.match.fileName.localeCompare(b.match.fileName))
+  // Oldest match first (by the robot's wall clock when known, else by file name).
+  const when = (a: Analysis) => (a.match.epochOffset ?? 0) + (a.match.matchStart ?? 0)
+  analyses.sort((a, b) => when(a) - when(b) || a.match.fileName.localeCompare(b.match.fileName))
   return { analyses, problems }
 }
 

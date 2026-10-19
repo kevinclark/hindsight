@@ -48,7 +48,7 @@ describe('wpilog reader', () => {
   })
   it('warns (not throws) when the file ends mid-record', () => {
     const cut = openWpilog(bytes.subarray(0, bytes.length - 3))
-    expect(cut.warnings[0]).toMatch(/ends mid-record/)
+    expect(cut.warnings[0]).toMatch(/last record is cut off/)
     expect(cut.recordCount).toBe(13)
   })
   it('rejects a file that is not a wpilog', () => {

@@ -28,11 +28,11 @@ import { passthrough } from './alerts/passthrough.ts'
 import { identity } from './battery/identity.ts'
 import { gaugeCapacity } from './battery/gauge-capacity.ts'
 
+// Order matters: within a severity, findings are listed in this order. Things that cost the match come first.
 export const RULES: Rule[] = [
-  brownout, margin, batteryCollapse, wiringResistance, restVoltage, limitNotApplied,
-  deviceDropout, commsLoss, dsLogTruncated, earlyDisable, zeroNotCompleted, followerMismatch,
-  tilt, impact, overrun, visionOutliers, visionStale, visionTimeSync, dirty, passthrough,
-  identity, gaugeCapacity,
+  brownout, batteryCollapse, commsLoss, earlyDisable, tilt, zeroNotCompleted, deviceDropout, dsLogTruncated,
+  limitNotApplied, margin, restVoltage, wiringResistance, followerMismatch, impact, overrun,
+  visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough,
 ]
 
 export interface Report {

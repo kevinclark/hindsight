@@ -8,6 +8,7 @@
  * When it fires: capacity-test the battery (AndyMark CBA, 10 A to 11 V) before it goes on the field again.
  */
 import { firstPresent, num, type Match } from '../../match/match.ts'
+import { valueAt } from '../../match/series.ts'
 import type { Finding, NotChecked, Rule } from '../types.ts'
 
 const MIN_AH = 12
@@ -27,8 +28,7 @@ export const gaugeCapacity: Rule = {
     const cap = num(m, capKey)!
     const readings: number[] = []
     for (let i = 0; i < cap.t.length; i++) {
-      const j = valid.t.findLastIndex((t) => t <= cap.t[i])
-      if (j >= 0 && valid.v[j] > 0.5 && cap.v[i] > 0) readings.push(cap.v[i])
+      if (valueAt(valid, cap.t[i]) > 0.5 && cap.v[i] > 0) readings.push(cap.v[i])
     }
     if (readings.length === 0) return { notChecked: 'the fuel gauge never reported a valid reading' }
     const latest = readings[readings.length - 1]

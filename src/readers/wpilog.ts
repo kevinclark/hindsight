@@ -91,7 +91,7 @@ export function openWpilog(bytes: Uint8Array): WpilogFile {
   let pos = firstRecord
   while (pos < bytes.length) {
     const h = readHeader(bytes, pos)
-    if (!h) { warnings.push(`Log ends mid-record at byte ${pos} of ${bytes.length} (robot lost power?)`); break }
+    if (!h) { warnings.push(`The last record is cut off at byte ${pos} of ${bytes.length}; normal when the robot is switched off while logging`); break }
     if (h.entryId === 0) {
       readControlRecord(bytes, view, h, entries, nameById, warnings)
     } else {
