@@ -1,0 +1,30 @@
+{
+ "name": "Example robot",
+ "motorGroups": [
+  {
+   "name": "Drive",
+   "motors": [
+    { "name": "Front left drive", "canId": 1 },
+    { "name": "Front right drive", "canId": 2 },
+    { "name": "Back left drive", "canId": 3 },
+    { "name": "Back right drive", "canId": 4 }
+   ],
+   "limits": { "supplyA": 40, "supplyEnabled": true, "statorA": 120, "statorEnabled": true, "where": "DriveConstants.java:40" }
+  },
+  {
+   "name": "Shooter",
+   "sameLoop": true,
+   "motors": [
+    { "name": "Shooter leader", "canId": 10 },
+    { "name": "Shooter follower 11", "canId": 11 },
+    { "name": "Shooter follower 12", "canId": 12 }
+   ],
+   "limits": { "supplyA": 40, "supplyEnabled": true, "statorA": 80, "statorEnabled": true, "where": "Shooter.java:72-75" }
+  },
+  {
+   "name": "Intake",
+   "motors": [{ "name": "Intake roller", "canId": 20 }],
+   "limits": { "supplyA": 30, "supplyEnabled": true, "where": "Intake.java:31" }
+  }
+ ]
+}

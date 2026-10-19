@@ -1,0 +1,3267 @@
+{
+ "schema": "hindsight.robot-snapshot/1",
+ "collector": {
+  "name": "robot-snapshot.py",
+  "version": "1.0.0",
+  "python": "3.9.6"
+ },
+ "takenAt": "2026-01-10T18:00:00Z",
+ "takenAtLocal": "2026-01-10T18:00:00+00:00",
+ "address": "172.22.11.2",
+ "port": 1250,
+ "route": {
+  "command": "route -n get 172.22.11.2",
+  "output": "interface: en7\n",
+  "interface": "en7",
+  "vpn": false,
+  "note": ""
+ },
+ "getversion": {
+  "status": 200,
+  "headers": [
+   [
+    "Content-Type",
+    "application/json"
+   ],
+   [
+    "Content-Length",
+    "236"
+   ]
+  ],
+  "body": {
+   "GeneralReturn": {
+    "Action": "getversion",
+    "CANbus": "",
+    "Error": 0,
+    "ErrorMessage": "",
+    "ID": 0,
+    "Model": ""
+   },
+   "Version": "2026.3.0 (synthetic)",
+   "System": "synthetic",
+   "Compliancy": 19,
+   "SearchDirectory": "",
+   "ReleaseInfo": "FRC2026"
+  }
+ },
+ "getdevices": {
+  "body": {
+   "GeneralReturn": {
+    "Action": "getdevices",
+    "CANbus": "",
+    "Error": 0,
+    "ErrorMessage": "",
+    "ID": 0,
+    "Model": ""
+   },
+   "BusUtilPerc": 23.5,
+   "DeviceArray": [
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 1,
+     "Model": "Talon FX vers. C",
+     "Name": "Talon FX vers. C (Device ID 1)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0001",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 2,
+     "Model": "Talon FX vers. C",
+     "Name": "Talon FX vers. C (Device ID 2)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0002",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 3,
+     "Model": "Talon FX vers. C",
+     "Name": "Talon FX vers. C (Device ID 3)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0003",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 4,
+     "Model": "Talon FX vers. C",
+     "Name": "Talon FX vers. C (Device ID 4)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0004",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 10,
+     "Model": "Talon FX vers. C",
+     "Name": "Talon FX vers. C (Device ID 10)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0005",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 11,
+     "Model": "Talon FX vers. C",
+     "Name": "Talon FX vers. C (Device ID 11)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0006",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 12,
+     "Model": "Talon FX vers. C",
+     "Name": "Talon FX vers. C (Device ID 12)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0007",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 30,
+     "Model": "Talon FX vers. C",
+     "Name": "Talon FX vers. C (Device ID 30)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0008",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 1,
+     "Model": "CANCoder vers. H",
+     "Name": "CANCoder vers. H (Device ID 1)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0009",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "canivore1",
+     "CANivoreDevName": "canivore1",
+     "ID": 5,
+     "Model": "Pigeon 2",
+     "Name": "Pigeon 2 (Device ID 5)",
+     "CurrentVers": "26.3.0.0 (Phoenix 6)",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0010",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": true,
+     "SupportsControl_v2": true,
+     "SupportsDecoratedSelfTest": true,
+     "Compliancy": 19,
+     "Licenses": []
+    },
+    {
+     "CANbus": "",
+     "CANivoreDevName": "",
+     "ID": 0,
+     "Model": "CANdle",
+     "Name": "CANdle (Device ID 0)",
+     "CurrentVers": "23.0.0.0",
+     "HardwareRev": "1.0",
+     "SerialNo": "SIM-0011",
+     "IsPROApplication": false,
+     "IsPROLicensed": false,
+     "SoftStatus": "Synthetic fixture",
+     "SupportsConfigs": false,
+     "SupportsControl_v2": false,
+     "SupportsDecoratedSelfTest": false,
+     "Compliancy": 19,
+     "Licenses": []
+    }
+   ]
+  }
+ },
+ "devices": {
+  "canivore1|Talon FX vers. C|1": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 1,
+     "Model": "Talon FX vers. C"
+    },
+    "Signals": [
+     {
+      "Id": 1781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 1782,
+      "Name": "DeviceTemp",
+      "Units": "℃",
+      "Summary": "DeviceTemp"
+     },
+     {
+      "Id": 844,
+      "Name": "FaultField",
+      "Units": "",
+      "Summary": "FaultField"
+     },
+     {
+      "Id": 845,
+      "Name": "StickyFaultField",
+      "Units": "",
+      "Summary": "StickyFaultField"
+     },
+     {
+      "Id": 10001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 10002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 10010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 10011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 10013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 10014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     },
+     {
+      "Id": 10049,
+      "Name": "Fault_BridgeBrownout",
+      "Units": "",
+      "Summary": "Fault_BridgeBrownout"
+     },
+     {
+      "Id": 10050,
+      "Name": "StickyFault_BridgeBrownout",
+      "Units": "",
+      "Summary": "StickyFault_BridgeBrownout"
+     },
+     {
+      "Id": 10091,
+      "Name": "Fault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "Fault_StatorCurrLimit"
+     },
+     {
+      "Id": 10092,
+      "Name": "StickyFault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_StatorCurrLimit"
+     },
+     {
+      "Id": 10094,
+      "Name": "Fault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "Fault_SupplyCurrLimit"
+     },
+     {
+      "Id": 10095,
+      "Name": "StickyFault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_SupplyCurrLimit"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 1,
+     "Model": "Talon FX vers. C"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Current Limits",
+      "Summary": "Current limiting",
+      "Ordinal": 3,
+      "Configs": [
+       {
+        "SignalId": 1906,
+        "SignalName": "Config_StatorCurrentLimit",
+        "Name": "Stator Current Limit",
+        "Type": "double",
+        "Value": 120.0,
+        "DefaultValue": 120.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1907,
+        "SignalName": "Config_StatorCurrLimitEn",
+        "Name": "Stator Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1908,
+        "SignalName": "Config_SupplyCurrentLimit",
+        "Name": "Supply Current Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 70.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1909,
+        "SignalName": "Config_SupplyCurrLimitEn",
+        "Name": "Supply Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1992,
+        "SignalName": "Config_SupplyCurrentLowerLimit",
+        "Name": "Supply Current Lower Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 40.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1993,
+        "SignalName": "Config_SupplyCurrentLowerTime",
+        "Name": "Supply Current Lower Time",
+        "Type": "double",
+        "Value": 1.0,
+        "DefaultValue": 1.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       }
+      ]
+     },
+     {
+      "Name": "Voltage",
+      "Summary": "Voltage",
+      "Ordinal": 4,
+      "Configs": [
+       {
+        "SignalId": 1902,
+        "SignalName": "Config_SupplyVLowpassTau",
+        "Name": "Supply Voltage Lowpass Tau",
+        "Type": "double",
+        "Value": 0.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1903,
+        "SignalName": "Config_PeakForwardVoltage",
+        "Name": "Peak Forward Voltage",
+        "Type": "double",
+        "Value": 16.0,
+        "DefaultValue": 16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1904,
+        "SignalName": "Config_PeakReverseVoltage",
+        "Name": "Peak Reverse Voltage",
+        "Type": "double",
+        "Value": -16.0,
+        "DefaultValue": -16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 1,
+     "Model": "Talon FX vers. C"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Talon FX vers. C (Device ID 1)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "1781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "10001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10014": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10049": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10050": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10091": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10092": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10094": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10095": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|Talon FX vers. C|2": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 2,
+     "Model": "Talon FX vers. C"
+    },
+    "Signals": [
+     {
+      "Id": 1781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 1782,
+      "Name": "DeviceTemp",
+      "Units": "℃",
+      "Summary": "DeviceTemp"
+     },
+     {
+      "Id": 844,
+      "Name": "FaultField",
+      "Units": "",
+      "Summary": "FaultField"
+     },
+     {
+      "Id": 845,
+      "Name": "StickyFaultField",
+      "Units": "",
+      "Summary": "StickyFaultField"
+     },
+     {
+      "Id": 10001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 10002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 10010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 10011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 10013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 10014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     },
+     {
+      "Id": 10049,
+      "Name": "Fault_BridgeBrownout",
+      "Units": "",
+      "Summary": "Fault_BridgeBrownout"
+     },
+     {
+      "Id": 10050,
+      "Name": "StickyFault_BridgeBrownout",
+      "Units": "",
+      "Summary": "StickyFault_BridgeBrownout"
+     },
+     {
+      "Id": 10091,
+      "Name": "Fault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "Fault_StatorCurrLimit"
+     },
+     {
+      "Id": 10092,
+      "Name": "StickyFault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_StatorCurrLimit"
+     },
+     {
+      "Id": 10094,
+      "Name": "Fault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "Fault_SupplyCurrLimit"
+     },
+     {
+      "Id": 10095,
+      "Name": "StickyFault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_SupplyCurrLimit"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 2,
+     "Model": "Talon FX vers. C"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Current Limits",
+      "Summary": "Current limiting",
+      "Ordinal": 3,
+      "Configs": [
+       {
+        "SignalId": 1906,
+        "SignalName": "Config_StatorCurrentLimit",
+        "Name": "Stator Current Limit",
+        "Type": "double",
+        "Value": 120.0,
+        "DefaultValue": 120.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1907,
+        "SignalName": "Config_StatorCurrLimitEn",
+        "Name": "Stator Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1908,
+        "SignalName": "Config_SupplyCurrentLimit",
+        "Name": "Supply Current Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 70.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1909,
+        "SignalName": "Config_SupplyCurrLimitEn",
+        "Name": "Supply Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1992,
+        "SignalName": "Config_SupplyCurrentLowerLimit",
+        "Name": "Supply Current Lower Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 40.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1993,
+        "SignalName": "Config_SupplyCurrentLowerTime",
+        "Name": "Supply Current Lower Time",
+        "Type": "double",
+        "Value": 1.0,
+        "DefaultValue": 1.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       }
+      ]
+     },
+     {
+      "Name": "Voltage",
+      "Summary": "Voltage",
+      "Ordinal": 4,
+      "Configs": [
+       {
+        "SignalId": 1902,
+        "SignalName": "Config_SupplyVLowpassTau",
+        "Name": "Supply Voltage Lowpass Tau",
+        "Type": "double",
+        "Value": 0.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1903,
+        "SignalName": "Config_PeakForwardVoltage",
+        "Name": "Peak Forward Voltage",
+        "Type": "double",
+        "Value": 16.0,
+        "DefaultValue": 16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1904,
+        "SignalName": "Config_PeakReverseVoltage",
+        "Name": "Peak Reverse Voltage",
+        "Type": "double",
+        "Value": -16.0,
+        "DefaultValue": -16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 2,
+     "Model": "Talon FX vers. C"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Talon FX vers. C (Device ID 2)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "1781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "10001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10014": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10049": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10050": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10091": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10092": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10094": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10095": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|Talon FX vers. C|3": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 3,
+     "Model": "Talon FX vers. C"
+    },
+    "Signals": [
+     {
+      "Id": 1781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 1782,
+      "Name": "DeviceTemp",
+      "Units": "℃",
+      "Summary": "DeviceTemp"
+     },
+     {
+      "Id": 844,
+      "Name": "FaultField",
+      "Units": "",
+      "Summary": "FaultField"
+     },
+     {
+      "Id": 845,
+      "Name": "StickyFaultField",
+      "Units": "",
+      "Summary": "StickyFaultField"
+     },
+     {
+      "Id": 10001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 10002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 10010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 10011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 10013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 10014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     },
+     {
+      "Id": 10049,
+      "Name": "Fault_BridgeBrownout",
+      "Units": "",
+      "Summary": "Fault_BridgeBrownout"
+     },
+     {
+      "Id": 10050,
+      "Name": "StickyFault_BridgeBrownout",
+      "Units": "",
+      "Summary": "StickyFault_BridgeBrownout"
+     },
+     {
+      "Id": 10091,
+      "Name": "Fault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "Fault_StatorCurrLimit"
+     },
+     {
+      "Id": 10092,
+      "Name": "StickyFault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_StatorCurrLimit"
+     },
+     {
+      "Id": 10094,
+      "Name": "Fault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "Fault_SupplyCurrLimit"
+     },
+     {
+      "Id": 10095,
+      "Name": "StickyFault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_SupplyCurrLimit"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 3,
+     "Model": "Talon FX vers. C"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Current Limits",
+      "Summary": "Current limiting",
+      "Ordinal": 3,
+      "Configs": [
+       {
+        "SignalId": 1906,
+        "SignalName": "Config_StatorCurrentLimit",
+        "Name": "Stator Current Limit",
+        "Type": "double",
+        "Value": 120.0,
+        "DefaultValue": 120.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1907,
+        "SignalName": "Config_StatorCurrLimitEn",
+        "Name": "Stator Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1908,
+        "SignalName": "Config_SupplyCurrentLimit",
+        "Name": "Supply Current Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 70.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1909,
+        "SignalName": "Config_SupplyCurrLimitEn",
+        "Name": "Supply Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1992,
+        "SignalName": "Config_SupplyCurrentLowerLimit",
+        "Name": "Supply Current Lower Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 40.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1993,
+        "SignalName": "Config_SupplyCurrentLowerTime",
+        "Name": "Supply Current Lower Time",
+        "Type": "double",
+        "Value": 1.0,
+        "DefaultValue": 1.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       }
+      ]
+     },
+     {
+      "Name": "Voltage",
+      "Summary": "Voltage",
+      "Ordinal": 4,
+      "Configs": [
+       {
+        "SignalId": 1902,
+        "SignalName": "Config_SupplyVLowpassTau",
+        "Name": "Supply Voltage Lowpass Tau",
+        "Type": "double",
+        "Value": 0.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1903,
+        "SignalName": "Config_PeakForwardVoltage",
+        "Name": "Peak Forward Voltage",
+        "Type": "double",
+        "Value": 16.0,
+        "DefaultValue": 16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1904,
+        "SignalName": "Config_PeakReverseVoltage",
+        "Name": "Peak Reverse Voltage",
+        "Type": "double",
+        "Value": -16.0,
+        "DefaultValue": -16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 3,
+     "Model": "Talon FX vers. C"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Talon FX vers. C (Device ID 3)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "1781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "10001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10014": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10049": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10050": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10091": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10092": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10094": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10095": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|Talon FX vers. C|4": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 4,
+     "Model": "Talon FX vers. C"
+    },
+    "Signals": [
+     {
+      "Id": 1781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 1782,
+      "Name": "DeviceTemp",
+      "Units": "℃",
+      "Summary": "DeviceTemp"
+     },
+     {
+      "Id": 844,
+      "Name": "FaultField",
+      "Units": "",
+      "Summary": "FaultField"
+     },
+     {
+      "Id": 845,
+      "Name": "StickyFaultField",
+      "Units": "",
+      "Summary": "StickyFaultField"
+     },
+     {
+      "Id": 10001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 10002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 10010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 10011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 10013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 10014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     },
+     {
+      "Id": 10049,
+      "Name": "Fault_BridgeBrownout",
+      "Units": "",
+      "Summary": "Fault_BridgeBrownout"
+     },
+     {
+      "Id": 10050,
+      "Name": "StickyFault_BridgeBrownout",
+      "Units": "",
+      "Summary": "StickyFault_BridgeBrownout"
+     },
+     {
+      "Id": 10091,
+      "Name": "Fault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "Fault_StatorCurrLimit"
+     },
+     {
+      "Id": 10092,
+      "Name": "StickyFault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_StatorCurrLimit"
+     },
+     {
+      "Id": 10094,
+      "Name": "Fault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "Fault_SupplyCurrLimit"
+     },
+     {
+      "Id": 10095,
+      "Name": "StickyFault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_SupplyCurrLimit"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 4,
+     "Model": "Talon FX vers. C"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Current Limits",
+      "Summary": "Current limiting",
+      "Ordinal": 3,
+      "Configs": [
+       {
+        "SignalId": 1906,
+        "SignalName": "Config_StatorCurrentLimit",
+        "Name": "Stator Current Limit",
+        "Type": "double",
+        "Value": 120.0,
+        "DefaultValue": 120.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1907,
+        "SignalName": "Config_StatorCurrLimitEn",
+        "Name": "Stator Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1908,
+        "SignalName": "Config_SupplyCurrentLimit",
+        "Name": "Supply Current Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 70.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1909,
+        "SignalName": "Config_SupplyCurrLimitEn",
+        "Name": "Supply Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1992,
+        "SignalName": "Config_SupplyCurrentLowerLimit",
+        "Name": "Supply Current Lower Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 40.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1993,
+        "SignalName": "Config_SupplyCurrentLowerTime",
+        "Name": "Supply Current Lower Time",
+        "Type": "double",
+        "Value": 1.0,
+        "DefaultValue": 1.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       }
+      ]
+     },
+     {
+      "Name": "Voltage",
+      "Summary": "Voltage",
+      "Ordinal": 4,
+      "Configs": [
+       {
+        "SignalId": 1902,
+        "SignalName": "Config_SupplyVLowpassTau",
+        "Name": "Supply Voltage Lowpass Tau",
+        "Type": "double",
+        "Value": 0.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1903,
+        "SignalName": "Config_PeakForwardVoltage",
+        "Name": "Peak Forward Voltage",
+        "Type": "double",
+        "Value": 16.0,
+        "DefaultValue": 16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1904,
+        "SignalName": "Config_PeakReverseVoltage",
+        "Name": "Peak Reverse Voltage",
+        "Type": "double",
+        "Value": -16.0,
+        "DefaultValue": -16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 4,
+     "Model": "Talon FX vers. C"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Talon FX vers. C (Device ID 4)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "1781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "10001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10014": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10049": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10050": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10091": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10092": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10094": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10095": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|Talon FX vers. C|10": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 10,
+     "Model": "Talon FX vers. C"
+    },
+    "Signals": [
+     {
+      "Id": 1781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 1782,
+      "Name": "DeviceTemp",
+      "Units": "℃",
+      "Summary": "DeviceTemp"
+     },
+     {
+      "Id": 844,
+      "Name": "FaultField",
+      "Units": "",
+      "Summary": "FaultField"
+     },
+     {
+      "Id": 845,
+      "Name": "StickyFaultField",
+      "Units": "",
+      "Summary": "StickyFaultField"
+     },
+     {
+      "Id": 10001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 10002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 10010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 10011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 10013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 10014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     },
+     {
+      "Id": 10049,
+      "Name": "Fault_BridgeBrownout",
+      "Units": "",
+      "Summary": "Fault_BridgeBrownout"
+     },
+     {
+      "Id": 10050,
+      "Name": "StickyFault_BridgeBrownout",
+      "Units": "",
+      "Summary": "StickyFault_BridgeBrownout"
+     },
+     {
+      "Id": 10091,
+      "Name": "Fault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "Fault_StatorCurrLimit"
+     },
+     {
+      "Id": 10092,
+      "Name": "StickyFault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_StatorCurrLimit"
+     },
+     {
+      "Id": 10094,
+      "Name": "Fault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "Fault_SupplyCurrLimit"
+     },
+     {
+      "Id": 10095,
+      "Name": "StickyFault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_SupplyCurrLimit"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 10,
+     "Model": "Talon FX vers. C"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Current Limits",
+      "Summary": "Current limiting",
+      "Ordinal": 3,
+      "Configs": [
+       {
+        "SignalId": 1906,
+        "SignalName": "Config_StatorCurrentLimit",
+        "Name": "Stator Current Limit",
+        "Type": "double",
+        "Value": 80.0,
+        "DefaultValue": 120.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1907,
+        "SignalName": "Config_StatorCurrLimitEn",
+        "Name": "Stator Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1908,
+        "SignalName": "Config_SupplyCurrentLimit",
+        "Name": "Supply Current Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 70.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1909,
+        "SignalName": "Config_SupplyCurrLimitEn",
+        "Name": "Supply Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1992,
+        "SignalName": "Config_SupplyCurrentLowerLimit",
+        "Name": "Supply Current Lower Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 40.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1993,
+        "SignalName": "Config_SupplyCurrentLowerTime",
+        "Name": "Supply Current Lower Time",
+        "Type": "double",
+        "Value": 1.0,
+        "DefaultValue": 1.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       }
+      ]
+     },
+     {
+      "Name": "Voltage",
+      "Summary": "Voltage",
+      "Ordinal": 4,
+      "Configs": [
+       {
+        "SignalId": 1902,
+        "SignalName": "Config_SupplyVLowpassTau",
+        "Name": "Supply Voltage Lowpass Tau",
+        "Type": "double",
+        "Value": 0.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1903,
+        "SignalName": "Config_PeakForwardVoltage",
+        "Name": "Peak Forward Voltage",
+        "Type": "double",
+        "Value": 16.0,
+        "DefaultValue": 16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1904,
+        "SignalName": "Config_PeakReverseVoltage",
+        "Name": "Peak Reverse Voltage",
+        "Type": "double",
+        "Value": -16.0,
+        "DefaultValue": -16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 10,
+     "Model": "Talon FX vers. C"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Talon FX vers. C (Device ID 10)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "1781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "10001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10014": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10049": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10050": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10091": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10092": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10094": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10095": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|Talon FX vers. C|11": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 11,
+     "Model": "Talon FX vers. C"
+    },
+    "Signals": [
+     {
+      "Id": 1781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 1782,
+      "Name": "DeviceTemp",
+      "Units": "℃",
+      "Summary": "DeviceTemp"
+     },
+     {
+      "Id": 844,
+      "Name": "FaultField",
+      "Units": "",
+      "Summary": "FaultField"
+     },
+     {
+      "Id": 845,
+      "Name": "StickyFaultField",
+      "Units": "",
+      "Summary": "StickyFaultField"
+     },
+     {
+      "Id": 10001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 10002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 10010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 10011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 10013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 10014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     },
+     {
+      "Id": 10049,
+      "Name": "Fault_BridgeBrownout",
+      "Units": "",
+      "Summary": "Fault_BridgeBrownout"
+     },
+     {
+      "Id": 10050,
+      "Name": "StickyFault_BridgeBrownout",
+      "Units": "",
+      "Summary": "StickyFault_BridgeBrownout"
+     },
+     {
+      "Id": 10091,
+      "Name": "Fault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "Fault_StatorCurrLimit"
+     },
+     {
+      "Id": 10092,
+      "Name": "StickyFault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_StatorCurrLimit"
+     },
+     {
+      "Id": 10094,
+      "Name": "Fault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "Fault_SupplyCurrLimit"
+     },
+     {
+      "Id": 10095,
+      "Name": "StickyFault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_SupplyCurrLimit"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 11,
+     "Model": "Talon FX vers. C"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Current Limits",
+      "Summary": "Current limiting",
+      "Ordinal": 3,
+      "Configs": [
+       {
+        "SignalId": 1906,
+        "SignalName": "Config_StatorCurrentLimit",
+        "Name": "Stator Current Limit",
+        "Type": "double",
+        "Value": 80.0,
+        "DefaultValue": 120.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1907,
+        "SignalName": "Config_StatorCurrLimitEn",
+        "Name": "Stator Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1908,
+        "SignalName": "Config_SupplyCurrentLimit",
+        "Name": "Supply Current Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 70.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1909,
+        "SignalName": "Config_SupplyCurrLimitEn",
+        "Name": "Supply Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1992,
+        "SignalName": "Config_SupplyCurrentLowerLimit",
+        "Name": "Supply Current Lower Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 40.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1993,
+        "SignalName": "Config_SupplyCurrentLowerTime",
+        "Name": "Supply Current Lower Time",
+        "Type": "double",
+        "Value": 1.0,
+        "DefaultValue": 1.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       }
+      ]
+     },
+     {
+      "Name": "Voltage",
+      "Summary": "Voltage",
+      "Ordinal": 4,
+      "Configs": [
+       {
+        "SignalId": 1902,
+        "SignalName": "Config_SupplyVLowpassTau",
+        "Name": "Supply Voltage Lowpass Tau",
+        "Type": "double",
+        "Value": 0.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1903,
+        "SignalName": "Config_PeakForwardVoltage",
+        "Name": "Peak Forward Voltage",
+        "Type": "double",
+        "Value": 16.0,
+        "DefaultValue": 16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1904,
+        "SignalName": "Config_PeakReverseVoltage",
+        "Name": "Peak Reverse Voltage",
+        "Type": "double",
+        "Value": -16.0,
+        "DefaultValue": -16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 11,
+     "Model": "Talon FX vers. C"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Talon FX vers. C (Device ID 11)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "1781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "10001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10011": {
+      "Units": "",
+      "Value": "true"
+     },
+     "10013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10014": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10049": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10050": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10091": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10092": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10094": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10095": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|Talon FX vers. C|12": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 12,
+     "Model": "Talon FX vers. C"
+    },
+    "Signals": [
+     {
+      "Id": 1781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 1782,
+      "Name": "DeviceTemp",
+      "Units": "℃",
+      "Summary": "DeviceTemp"
+     },
+     {
+      "Id": 844,
+      "Name": "FaultField",
+      "Units": "",
+      "Summary": "FaultField"
+     },
+     {
+      "Id": 845,
+      "Name": "StickyFaultField",
+      "Units": "",
+      "Summary": "StickyFaultField"
+     },
+     {
+      "Id": 10001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 10002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 10010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 10011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 10013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 10014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     },
+     {
+      "Id": 10049,
+      "Name": "Fault_BridgeBrownout",
+      "Units": "",
+      "Summary": "Fault_BridgeBrownout"
+     },
+     {
+      "Id": 10050,
+      "Name": "StickyFault_BridgeBrownout",
+      "Units": "",
+      "Summary": "StickyFault_BridgeBrownout"
+     },
+     {
+      "Id": 10091,
+      "Name": "Fault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "Fault_StatorCurrLimit"
+     },
+     {
+      "Id": 10092,
+      "Name": "StickyFault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_StatorCurrLimit"
+     },
+     {
+      "Id": 10094,
+      "Name": "Fault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "Fault_SupplyCurrLimit"
+     },
+     {
+      "Id": 10095,
+      "Name": "StickyFault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_SupplyCurrLimit"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 12,
+     "Model": "Talon FX vers. C"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Current Limits",
+      "Summary": "Current limiting",
+      "Ordinal": 3,
+      "Configs": [
+       {
+        "SignalId": 1906,
+        "SignalName": "Config_StatorCurrentLimit",
+        "Name": "Stator Current Limit",
+        "Type": "double",
+        "Value": 80.0,
+        "DefaultValue": 120.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1907,
+        "SignalName": "Config_StatorCurrLimitEn",
+        "Name": "Stator Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1908,
+        "SignalName": "Config_SupplyCurrentLimit",
+        "Name": "Supply Current Limit",
+        "Type": "double",
+        "Value": 60.0,
+        "DefaultValue": 70.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1909,
+        "SignalName": "Config_SupplyCurrLimitEn",
+        "Name": "Supply Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1992,
+        "SignalName": "Config_SupplyCurrentLowerLimit",
+        "Name": "Supply Current Lower Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 40.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1993,
+        "SignalName": "Config_SupplyCurrentLowerTime",
+        "Name": "Supply Current Lower Time",
+        "Type": "double",
+        "Value": 1.0,
+        "DefaultValue": 1.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       }
+      ]
+     },
+     {
+      "Name": "Voltage",
+      "Summary": "Voltage",
+      "Ordinal": 4,
+      "Configs": [
+       {
+        "SignalId": 1902,
+        "SignalName": "Config_SupplyVLowpassTau",
+        "Name": "Supply Voltage Lowpass Tau",
+        "Type": "double",
+        "Value": 0.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1903,
+        "SignalName": "Config_PeakForwardVoltage",
+        "Name": "Peak Forward Voltage",
+        "Type": "double",
+        "Value": 16.0,
+        "DefaultValue": 16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1904,
+        "SignalName": "Config_PeakReverseVoltage",
+        "Name": "Peak Reverse Voltage",
+        "Type": "double",
+        "Value": -16.0,
+        "DefaultValue": -16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 12,
+     "Model": "Talon FX vers. C"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Talon FX vers. C (Device ID 12)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "1781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "10001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10014": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10049": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10050": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10091": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10092": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10094": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10095": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|Talon FX vers. C|30": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 30,
+     "Model": "Talon FX vers. C"
+    },
+    "Signals": [
+     {
+      "Id": 1781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 1782,
+      "Name": "DeviceTemp",
+      "Units": "℃",
+      "Summary": "DeviceTemp"
+     },
+     {
+      "Id": 844,
+      "Name": "FaultField",
+      "Units": "",
+      "Summary": "FaultField"
+     },
+     {
+      "Id": 845,
+      "Name": "StickyFaultField",
+      "Units": "",
+      "Summary": "StickyFaultField"
+     },
+     {
+      "Id": 10001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 10002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 10010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 10011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 10013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 10014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     },
+     {
+      "Id": 10049,
+      "Name": "Fault_BridgeBrownout",
+      "Units": "",
+      "Summary": "Fault_BridgeBrownout"
+     },
+     {
+      "Id": 10050,
+      "Name": "StickyFault_BridgeBrownout",
+      "Units": "",
+      "Summary": "StickyFault_BridgeBrownout"
+     },
+     {
+      "Id": 10091,
+      "Name": "Fault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "Fault_StatorCurrLimit"
+     },
+     {
+      "Id": 10092,
+      "Name": "StickyFault_StatorCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_StatorCurrLimit"
+     },
+     {
+      "Id": 10094,
+      "Name": "Fault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "Fault_SupplyCurrLimit"
+     },
+     {
+      "Id": 10095,
+      "Name": "StickyFault_SupplyCurrLimit",
+      "Units": "",
+      "Summary": "StickyFault_SupplyCurrLimit"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 30,
+     "Model": "Talon FX vers. C"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Current Limits",
+      "Summary": "Current limiting",
+      "Ordinal": 3,
+      "Configs": [
+       {
+        "SignalId": 1906,
+        "SignalName": "Config_StatorCurrentLimit",
+        "Name": "Stator Current Limit",
+        "Type": "double",
+        "Value": 120.0,
+        "DefaultValue": 120.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1907,
+        "SignalName": "Config_StatorCurrLimitEn",
+        "Name": "Stator Current Limit Enable",
+        "Type": "bool",
+        "Value": 1,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1908,
+        "SignalName": "Config_SupplyCurrentLimit",
+        "Name": "Supply Current Limit",
+        "Type": "double",
+        "Value": 70.0,
+        "DefaultValue": 70.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1909,
+        "SignalName": "Config_SupplyCurrLimitEn",
+        "Name": "Supply Current Limit Enable",
+        "Type": "bool",
+        "Value": 0,
+        "DefaultValue": 1,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1992,
+        "SignalName": "Config_SupplyCurrentLowerLimit",
+        "Name": "Supply Current Lower Limit",
+        "Type": "double",
+        "Value": 40.0,
+        "DefaultValue": 40.0,
+        "MinValue": 0,
+        "MaxValue": 800,
+        "Units": "A",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1993,
+        "SignalName": "Config_SupplyCurrentLowerTime",
+        "Name": "Supply Current Lower Time",
+        "Type": "double",
+        "Value": 1.0,
+        "DefaultValue": 1.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       }
+      ]
+     },
+     {
+      "Name": "Voltage",
+      "Summary": "Voltage",
+      "Ordinal": 4,
+      "Configs": [
+       {
+        "SignalId": 1902,
+        "SignalName": "Config_SupplyVLowpassTau",
+        "Name": "Supply Voltage Lowpass Tau",
+        "Type": "double",
+        "Value": 0.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "s",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1903,
+        "SignalName": "Config_PeakForwardVoltage",
+        "Name": "Peak Forward Voltage",
+        "Type": "double",
+        "Value": 16.0,
+        "DefaultValue": 16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       },
+       {
+        "SignalId": 1904,
+        "SignalName": "Config_PeakReverseVoltage",
+        "Name": "Peak Reverse Voltage",
+        "Type": "double",
+        "Value": -16.0,
+        "DefaultValue": -16.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "V",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 30,
+     "Model": "Talon FX vers. C"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Talon FX vers. C (Device ID 30)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "1781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "10001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10014": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10049": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10050": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10091": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10092": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10094": {
+      "Units": "",
+      "Value": "false"
+     },
+     "10095": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|CANCoder vers. H|1": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 1,
+     "Model": "CANCoder vers. H"
+    },
+    "Signals": [
+     {
+      "Id": 2781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 2010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 2011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 2001,
+      "Name": "Fault_Hardware",
+      "Units": "",
+      "Summary": "Fault_Hardware"
+     },
+     {
+      "Id": 2002,
+      "Name": "StickyFault_Hardware",
+      "Units": "",
+      "Summary": "StickyFault_Hardware"
+     },
+     {
+      "Id": 2013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 2014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 1,
+     "Model": "CANCoder vers. H"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Magnet Sensor",
+      "Summary": "Magnet",
+      "Ordinal": 1,
+      "Configs": [
+       {
+        "SignalId": 2900,
+        "SignalName": "Config_MagnetOffset",
+        "Name": "Magnet Offset",
+        "Type": "double",
+        "Value": 0.125,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "rotations",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 1,
+     "Model": "CANCoder vers. H"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "CANCoder vers. H (Device ID 1)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "2781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "2010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "2011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "2001": {
+      "Units": "",
+      "Value": "false"
+     },
+     "2002": {
+      "Units": "",
+      "Value": "false"
+     },
+     "2013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "2014": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "canivore1|Pigeon 2|5": {
+   "count": 1,
+   "getsignals": {
+    "GeneralReturn": {
+     "Action": "getsignals",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 5,
+     "Model": "Pigeon 2"
+    },
+    "Signals": [
+     {
+      "Id": 3781,
+      "Name": "SupplyVoltage",
+      "Units": "V",
+      "Summary": "SupplyVoltage"
+     },
+     {
+      "Id": 3010,
+      "Name": "Fault_Undervoltage",
+      "Units": "",
+      "Summary": "Fault_Undervoltage"
+     },
+     {
+      "Id": 3011,
+      "Name": "StickyFault_Undervoltage",
+      "Units": "",
+      "Summary": "StickyFault_Undervoltage"
+     },
+     {
+      "Id": 3013,
+      "Name": "Fault_BootDuringEnable",
+      "Units": "",
+      "Summary": "Fault_BootDuringEnable"
+     },
+     {
+      "Id": 3014,
+      "Name": "StickyFault_BootDuringEnable",
+      "Units": "",
+      "Summary": "StickyFault_BootDuringEnable"
+     }
+    ]
+   },
+   "getconfigv2": {
+    "GeneralReturn": {
+     "Action": "getconfigv2",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 5,
+     "Model": "Pigeon 2"
+    },
+    "JsonVersion": 2,
+    "Device": [
+     {
+      "Name": "Mount Pose",
+      "Summary": "Mount",
+      "Ordinal": 1,
+      "Configs": [
+       {
+        "SignalId": 3900,
+        "SignalName": "Config_MountPoseYaw",
+        "Name": "Mount Pose Yaw",
+        "Type": "double",
+        "Value": 90.0,
+        "DefaultValue": 0.0,
+        "MinValue": 0,
+        "MaxValue": 1,
+        "Units": "deg",
+        "EnumValues": null
+       }
+      ]
+     }
+    ]
+   },
+   "decoratedselftest": {
+    "GeneralReturn": {
+     "Action": "decoratedselftest",
+     "CANbus": "canivore1",
+     "Error": 0,
+     "ErrorMessage": "",
+     "ID": 5,
+     "Model": "Pigeon 2"
+    },
+    "SelfTest": {
+     "Device Name": {
+      "Units": "",
+      "Value": "Pigeon 2 (Device ID 5)"
+     },
+     "Firmware Version": {
+      "Units": "",
+      "Value": "26.3.0.0 (Phoenix 6)"
+     },
+     "3781": {
+      "Units": "V",
+      "Value": "12.31"
+     },
+     "3010": {
+      "Units": "",
+      "Value": "false"
+     },
+     "3011": {
+      "Units": "",
+      "Value": "false"
+     },
+     "3013": {
+      "Units": "",
+      "Value": "false"
+     },
+     "3014": {
+      "Units": "",
+      "Value": "false"
+     }
+    }
+   }
+  },
+  "|CANdle|0": {
+   "count": 1
+  }
+ },
+ "skipped": [
+  {
+   "device": "|CANdle|0",
+   "reason": "reports neither SupportsConfigs nor SupportsDecoratedSelfTest"
+  }
+ ],
+ "stopped": null,
+ "requests": [
+  {
+   "action": "getversion",
+   "device": null,
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getdevices",
+   "device": null,
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Talon FX vers. C|1",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Talon FX vers. C|1",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Talon FX vers. C|1",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Talon FX vers. C|2",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Talon FX vers. C|2",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Talon FX vers. C|2",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Talon FX vers. C|3",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Talon FX vers. C|3",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Talon FX vers. C|3",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Talon FX vers. C|4",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Talon FX vers. C|4",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Talon FX vers. C|4",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Talon FX vers. C|10",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Talon FX vers. C|10",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Talon FX vers. C|10",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Talon FX vers. C|11",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Talon FX vers. C|11",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Talon FX vers. C|11",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Talon FX vers. C|12",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Talon FX vers. C|12",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Talon FX vers. C|12",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Talon FX vers. C|30",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Talon FX vers. C|30",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Talon FX vers. C|30",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|CANCoder vers. H|1",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|CANCoder vers. H|1",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|CANCoder vers. H|1",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getsignals",
+   "device": "canivore1|Pigeon 2|5",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "getconfigv2",
+   "device": "canivore1|Pigeon 2|5",
+   "status": 200,
+   "ms": 3
+  },
+  {
+   "action": "decoratedselftest",
+   "device": "canivore1|Pigeon 2|5",
+   "status": 200,
+   "ms": 3
+  }
+ ],
+ "hoot": null,
+ "responseShapes": "simulator",
+ "provenance": "Response shapes are from CTRE's 26.3.0 simulator (via a third-party client's recordings) and not yet confirmed on a real robot."
+}

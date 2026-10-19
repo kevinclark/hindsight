@@ -171,6 +171,15 @@ settings**: it tells students what to set and which line to change, and they do 
   real sweep. It only exists to exercise the wizard; the real numbers come from the students' runs.
 - The drive wheel-slip test procedure (not runnable until Kevin agrees it).
 
+## Robot snapshot
+
+**Robot snapshot** (top of the page) reads a `snapshot.json` taken with `python3 tools/robot-snapshot.py` while the
+robot is on and tethered: every CTRE device's model, CAN ID and firmware, the current limits each motor is really
+running against the profile's, and sticky faults (Undervoltage, BridgeBrownout, BootDuringEnable first). A second
+snapshot shows exactly what changed. The collector only reads (five allowlisted actions, HTTP GET, no retries) and can
+also list, copy and convert Phoenix `.hoot` logs with the owlet AdvantageScope already cached. Student guide:
+`docs/robot-snapshot.md`.
+
 ## Build and test
 
 ```
@@ -178,6 +187,7 @@ npm install
 npm test          # unit + fixture tests; also the real CalGames logs if they are in ~/Downloads
 npm run build     # writes hindsight.html (one self-contained file) and dist/index.html
 npm run check     # type-check
+python3 -m unittest discover -s tests -p 'test_*.py'   # robot-snapshot collector (stub server, no robot)
 node --experimental-strip-types scripts/check.ts <log.wpilog> [<log.dslog>]   # report in the terminal
 node --experimental-strip-types scripts/chrome-check.ts <out-dir> <logs…>      # file:// timing in headless Chrome
 ```

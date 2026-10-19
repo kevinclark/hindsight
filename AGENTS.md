@@ -1,0 +1,35 @@
+# AGENTS.md
+
+Notes for coding agents working in this repository. `README.md` and `docs/` are for people.
+
+## Robot snapshot (`tools/robot-snapshot.py`, `src/snapshot/`, `src/ui/SnapshotView.svelte`)
+
+- **The collector is read-only by construction, and the tests enforce it.** `_get()` is the only network call.
+  `build_url()` refuses any action outside `ALLOWED_ACTIONS` (`getversion`, `getdevices`, `getsignals`,
+  `getconfigv2`, `decoratedselftest`). Never add an action, and never call `blink` (it may clear sticky faults),
+  `controlv2` (spins motors), `setconfigv2`, `setid`, `setname`, `setupdatefrequency` or `plotpro`.
+  `tests/test_robot_snapshot.py` checks this with AST tests: one network call site, `subprocess` only in
+  `run_local`, a fixed import set, and no forbidden action string outside docstrings.
+- **No retries, no variations.** The first `GeneralReturn.Error ≠ 0`, timeout or bad answer stops the run. The
+  partial snapshot is still written, and the exit code is 2.
+- **Stdlib only, Python ≥ 3.8** (macOS ships 3.9). Students run it with no install.
+- **owlet (CTRE's hoot converter) must never be downloaded, bundled, copied or committed** (CTRE EULA). The
+  collector runs it in place from AdvantageScope's cache, picked by the hoot file's compliancy byte (offset 70).
+- **Signal ids change between Phoenix versions.** Resolve sticky faults by name from `getsignals`, and configs by
+  `SignalName`. Never hard-code an id.
+- **Fixtures are synthetic.** The scenario is written by hand in `tests/robot_snapshot_fixtures.py`, from the
+  response shapes of CTRE's 26.3.0 simulator. `fixtures/robot-snapshot/snapshot-*.json` are generated with
+  `python3 scripts/make-snapshot-fixtures.py`; a test fails when they are stale. No real serial numbers, team
+  names or paths. Real robot answers may become fixtures only with serial numbers stripped.
+- `responseShapes` in a snapshot says what the parsing was checked against (`"simulator"` until a real robot's
+  answers have been compared). Until then, booleans are parsed leniently, and anything unparseable is shown as
+  "unreadable", never read as false.
+
+Tests:
+
+```
+python3 -m unittest discover -s tests -p 'test_*.py'             # collector (stub server, no robot)
+HINDSIGHT_HOOT_DIR=<folder of .hoot files> python3 -m unittest tests.test_robot_snapshot.RealHootFiles
+npx vitest run tests/snapshot.test.ts                            # Hindsight side
+npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.ts <out-dir>   # rendered check
+```

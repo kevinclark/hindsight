@@ -10,6 +10,7 @@
   import LimitsTab from './ui/LimitsTab.svelte'
   import Wizard from './ui/Wizard.svelte'
   import SessionView from './ui/SessionView.svelte'
+  import SnapshotView from './ui/SnapshotView.svelte'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
   import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type IssueEvent, type IssueStatus } from './triage/history.ts'
@@ -23,8 +24,8 @@
   let problems = $state<string[]>([])
   let selected = $state(0)
   let tab = $state<'match' | 'power' | 'limits'>('match')
-  // Two modes: review match logs, or run the limits wizard with the robot.
-  let mode = $state<'review' | 'session' | 'wizard'>('review')
+  // Review match logs, a whole session of them, the limits wizard, or a robot snapshot (device settings and faults).
+  let mode = $state<'review' | 'session' | 'wizard' | 'snapshot'>('review')
 
   // From the Session view: open one match's log (every piece, if the robot program restarted during it) in Match review.
   async function openFromSession(files: File[]) {
@@ -143,11 +144,13 @@
   <button class:active={mode === 'review'} onclick={() => (mode = 'review')}>Match review</button>
   <button class:active={mode === 'session'} onclick={() => (mode = 'session')}>Session</button>
   <button class:active={mode === 'wizard'} onclick={() => (mode = 'wizard')}>Limits wizard</button>
+  <button class:active={mode === 'snapshot'} onclick={() => (mode = 'snapshot')}>Robot snapshot</button>
 </nav>
 
-<!-- All three views stay mounted and only the active one shows, so switching never loses a loaded session,
-     the matches in review, or the wizard's progress. -->
+<!-- All the views stay mounted and only the active one shows, so switching never loses a loaded session,
+     the matches in review, the wizard's progress, or a snapshot. -->
 <div hidden={mode !== 'wizard'}><Wizard matches={analyses} /></div>
+<div hidden={mode !== 'snapshot'}><SnapshotView /></div>
 <div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} /></div>
 <div hidden={mode !== 'review'}>
 <section class="drop" class:dragging aria-busy={busy}>
@@ -273,7 +276,7 @@
   .meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
   .dirty { color: var(--warning); }
   .meta select { width: auto; max-width: 100%; font: inherit; font-size: 0.8rem; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }
-  .modes { display: flex; gap: 0.25rem; margin: 0 0 0.75rem; }
+  .modes { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.75rem; }
   .modes button { padding: 0.3rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .modes button.active { color: var(--fg); border-color: var(--focus); font-weight: 600; }
   .tabs { display: flex; gap: 0.25rem; margin: 1rem 0 0.75rem; border-bottom: 1px solid var(--border); }

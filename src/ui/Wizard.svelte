@@ -11,6 +11,8 @@
   import { matchWhen } from '../match/match.ts'
   import { downloadText } from './download.ts'
   import Scatter from './Scatter.svelte'
+  import { parseSnapshot } from '../snapshot/snapshot.ts'
+  import { stepProof, type ProofRow } from '../snapshot/report.ts'
 
   let { matches }: { matches: Analysis[] } = $props()
   // The robot of the loaded match logs (its pinned code), so group names and limits match those logs.
@@ -34,6 +36,7 @@
     if (sweep.some((s) => s !== null && !(s > 0))) { problem = 'Sweep: numbers in amps, comma-separated, "none" for no limit.'; return }
     if (new Set(sweep).size !== sweep.length) { problem = 'Sweep: each value once.'; return }
     session = newSession(profile, groupName, sweep)
+    proofs = {}
     batteryIds = session.steps.map(() => '')
     problem = ''
   }
@@ -43,6 +46,7 @@
     if (!f) return
     try {
       session = parseSession(await f.text())
+      proofs = {}
       batteryIds = session.steps.map((s) => s.batteryId)
       problem = ''
     } catch (error) { problem = `${f.name}: ${error instanceof Error ? error.message : error}` }
@@ -60,6 +64,18 @@
       problem = ''
     } catch (error) { problem = `${f.name}: ${error instanceof Error ? error.message : error}` }
     busy = -1
+  }
+
+  // Direct proof from a robot snapshot (tools/robot-snapshot.py): each motor's applied supply limit, read from the
+  // motor. Kept on this page only, not in the session file.
+  let proofs = $state<Record<number, { file: string; rows: ProofRow[]; ok: boolean; notSet: number; notChecked: number } | { file: string; error: string }>>({})
+  async function prove(index: number, files: FileList | null) {
+    const f = files?.[0]
+    if (!f || !session || !group) return
+    try {
+      const snapshot = parseSnapshot(await f.text(), f.name)
+      proofs = { ...proofs, [index]: { file: f.name, ...stepProof(snapshot, group, session.steps[index].limitA) } }
+    } catch (error) { proofs = { ...proofs, [index]: { file: f.name, error: error instanceof Error ? error.message : String(error) } } }
   }
 
   // The battery label is saved as it was when the step was checked (it's part of what was measured). To change it,
@@ -94,7 +110,7 @@
       <label class="file">or load a saved session <input type="file" accept=".json" onchange={(e) => loadSession((e.currentTarget as HTMLInputElement).files)} /></label></div>
   </section>
 {:else}
-  <div class="actions"><button onclick={save}>Save {SESSION_FILE_NAME}</button> <button class="link" onclick={() => (session = null)}>Start over</button></div>
+  <div class="actions"><button onclick={save}>Save {SESSION_FILE_NAME}</button> <button class="link" onclick={() => { session = null; proofs = {} }}>Start over</button></div>
   {#if comparable && !comparable.ok}
     <p class="warn" role="alert"><strong>These runs can't be compared fairly:</strong> {comparable.problems.join('; ')}. Re-run on the same charged battery, to the same setpoint.</p>
   {/if}
@@ -144,6 +160,17 @@
               {#each step.took.problems as p (p)}<p class="warn" role="alert">{p}</p>{/each}
             {/if}
             {#if batteryIds[i] !== step.batteryId}<p class="note">You changed the battery label after checking: check the step again to use it.</p>{/if}
+          {/if}
+        {/if}
+        <label class="file">Direct proof (optional): a <code>snapshot.json</code> taken after you saved the setting, before the run <input type="file" accept=".json" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; prove(i, input.files); input.value = '' }} /></label>
+        {#if proofs[i]}
+          {@const proof = proofs[i]}
+          {#if 'error' in proof}<p class="warn" role="alert">{proof.error}</p>
+          {:else}
+            {#if proof.ok}<p class="ok">{proof.file}: every motor holds {step.limitA === null ? 'no supply limit' : `the ${step.limitA} A supply limit, lower time 0`}.</p>
+            {:else if proof.notSet}<p class="warn" role="alert">{proof.file}: {proof.notSet} motor{proof.notSet === 1 ? ' doesn\'t' : 's don\'t'} hold this step's setting. Set it again in Phoenix Tuner X on {proof.notSet === 1 ? 'that motor' : 'those motors'}, then take a new snapshot.</p>
+            {:else}<p class="note">{proof.file}: couldn't check {proof.notChecked} motor{proof.notChecked === 1 ? '' : 's'} (see below); the ones checked hold the setting.</p>{/if}
+            <p class="note">{proof.rows.map((r) => `${r.motor}: ${r.verdict} (${r.detail})`).join('; ')}.</p>
           {/if}
         {/if}
         <details class="quiz"><summary>Check your understanding: why not judge the peak current?</summary><p>The limiter needs a few hundredths of a second to catch up, so the peak always overshoots. A limit that works holds the current near the limit after a short overshoot. Whether a run can show that depends on the motor needing more than the limit, so compare with the no-limit step: a limit that took brings the peak current and the voltage dip down.</p></details>
