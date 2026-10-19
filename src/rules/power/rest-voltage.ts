@@ -19,6 +19,7 @@ export default rule({
   check(match) {
     if (match.autoStart === null) return
     const rest = match.signal('batteryVoltage').median(match.before(match.autoStart, 2))
+    if (!Number.isFinite(rest)) return match.couldNotCheck('no battery voltage logged in the 2 s before auto (the log started too late)')
     if (rest >= LOWEST_REST_VOLTAGE) return
     return {
       message: `Battery rested at ${volts(rest)} before auto (want ${LOWEST_REST_VOLTAGE} V or more)`,

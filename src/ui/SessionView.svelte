@@ -4,7 +4,7 @@
   summary of each is kept, so a whole event's folder fits in memory.
 -->
 <script lang="ts">
-  import { summarizeLog, type MatchSummary } from '../session/summary.ts'
+  import { PROFILE_FIT_MIN, summarizeLog, type MatchSummary } from '../session/summary.ts'
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
   import type { IssueEvent } from '../triage/history.ts'
@@ -28,9 +28,12 @@
 
   const sessions = $derived(groupSessions(summaries, overrides, renames))
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
-  const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions[0]) as Session | undefined)
+  // Until one is picked, show the event (the matches that count), else the first session.
+  const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
   const grid = $derived(session ? ruleGrid(session) : [])
   const merged = $derived(session ? mergeFindings(session) : [])
+  // Logs the robot profile doesn't fit (another robot, or another year's code): their mechanism and timing findings are suspect.
+  const misfits = $derived(session ? session.matches.filter((m) => m.profileFit.present < PROFILE_FIT_MIN * m.profileFit.total) : [])
 
   function readStore(key: string): Record<string, string> {
     try { return JSON.parse(localStorage.getItem(key) ?? '{}') } catch { return {} }
@@ -102,7 +105,7 @@
     return matchIdx.map((i) => session.matches[i]).filter((m) => m.playedAt !== null && m.playedAt > fixedAt).map(label)
   }
 
-  const label = (m: MatchSummary) => m.matchLabel || m.fileName.replace(/\.wpilog$/i, '')
+  const label = (m: MatchSummary) => (m.matchLabel || m.fileName.replace(/\.wpilog$/i, '')) + (m.pieces ? ` (${m.pieces.length} logs)` : '')
   const pct = (x: number) => `${Math.round(100 * x)} %`
   // How far past the line, in words: "12 % past it", or "7× the line" when it is far past.
   const past = (margin: number) => (margin < 1 ? `${pct(margin)} past it` : `${(1 + margin).toFixed(1)}× the line`)
@@ -128,7 +131,7 @@
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
-      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{s.matches.length} log{s.matches.length === 1 ? '' : 's'}</small></button>
+      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{s.matches.length} match{s.matches.length === 1 ? '' : 'es'}</small></button>
     {/each}
   </nav>
 {/if}
@@ -138,6 +141,14 @@
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
     <button class="button" onclick={download}>Download for Claude</button>
   </section>
+  {#if misfits.length}
+    {@const f = misfits[0].profileFit}
+    {@const codebases = [...new Set(misfits.map((m) => m.profileFit.codebase).filter(Boolean))]}
+    <p class="note warn"><strong>{misfits.length} of {session.matches.length} matches don't fit the robot profile "{f.profile}"</strong>: as few as {Math.min(...misfits.map((m) => m.profileFit.present))} of its {f.total} signals are in them{codebases.length ? ` (the code in them calls itself ${codebases.map((c) => `"${c}"`).join(', ')})` : ''}. Findings about specific motors and mechanisms, and match times (how long auto and teleop are), come from that profile and may be wrong for these logs.</p>
+  {/if}
+  {#each session.matches.filter((m) => m.pieces) as m (m.fileName)}
+    <p class="note warn">{m.matchLabel} is in {m.pieces!.length} logs ({m.pieces!.join(', ')}): the robot program restarted during the match. They count as one match here.</p>
+  {/each}
   {#each session.matches.filter((m) => m.clockNote) as m (m.fileName)}
     <p class="note warn">{label(m)}: {m.clockNote}</p>
   {/each}

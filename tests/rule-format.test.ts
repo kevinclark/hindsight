@@ -34,6 +34,16 @@ describe('runner edge cases (review 2026-10-19)', () => {
     { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [35, false]] },
     { name: '/DriverStation/Autonomous', type: 'boolean', records: [[10, true], [35, false]] },
   ] as Parameters<typeof writeWpilog>[0]
+  it('median over a window with no record holds the last value before it (hold-last, never NaN)', () => {
+    const r = run([...enabled, { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[10, 12.3], [25, 12]] }])
+    const f = r.findings.find((x) => x.rule === 'power/rest-voltage')
+    expect(f?.measured?.[0].value).toBe(12.3)
+  })
+  it('rest voltage with no reading at or before the 2 s before auto is not checked', () => {
+    const r = run([...enabled, { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[21, 12.3], [25, 12]] }])
+    expect(r.findings.find((x) => x.rule === 'power/rest-voltage')).toBeUndefined()
+    expect(r.skipped.find((s) => s.rule === 'power/rest-voltage')?.reason).toMatch(/2 s before auto/)
+  })
   it('a log with no Alerts lists alerts/passthrough as not checked, not crashed', () => {
     const r = run(enabled)
     expect(r.crashed).toEqual([])

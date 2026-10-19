@@ -28,8 +28,12 @@ down to a small summary, then dropped, so hundreds of logs fit: 160 logs (53 MB 
 M5 Max (147 ms per log); the page never stopped responding for more than about 0.2 s. The JS heap peaks around
 220–240 MB while a log is being read; the summaries themselves are about 10 KB each.
 
-- **Sessions**: matches on the field with the same event name within 4 days are one event; other logs are grouped
-  by the day they were played. The date comes from the robot's clock, or, when the clock wasn't set (a roboRIO 2
+- **Sessions**: matches on the field with the same event name within 4 days are one event (when the Driver Station
+  logged no event name, on-field matches within 4 days of each other are); other logs are grouped by the day they
+  were played. One match recorded in several logs (the robot program restarted during it: same match label, starting
+  within 30 minutes) counts once, with a note. When the robot profile doesn't fit the logs (under 60 % of its
+  signals present, e.g. another robot or another year's code), a warning says findings about specific mechanisms and
+  match times may be wrong. The date comes from the robot's clock, or, when the clock wasn't set (a roboRIO 2
   that was never set reads 2024-12-18), from the AdvantageKit file name, with a note; logs with neither go to "Logs with no date". Move a log to
   another session or rename a session from the page.
 - **Findings across the session**, merged by issue: how many of the matches it could be checked in it fired in, a

@@ -2,8 +2,10 @@
  * Sessions: related matches looked at together (an event, a practice day), with how confident we can be in each
  * finding across them.
  *
- * Grouping: matches on the field (FMS) with the same event name within 4 days are one event; everything else is
- * grouped by the local date it was played (a practice day). The student can move a match or rename a session.
+ * Grouping: matches on the field (FMS) with the same event name within 4 days are one event (when the Driver Station
+ * logged no event name, on-field matches within 4 days of each other are one event); everything else is grouped by
+ * the local date it was played (a practice day). One match recorded in several logs (the robot program restarted
+ * during it) counts once. The student can move a log or rename a session.
  *
  * Confidence of a finding across a session, from k = matches where it fired and n = matches where it could be checked:
  *   consistent:      fired in most (more than half) and n ≥ 3
@@ -13,7 +15,7 @@
  * The rate comes with a 95 % Wilson interval, and with how far past its threshold the measured value sat.
  */
 
-import type { MatchSummary, RuleStatus } from './summary.ts'
+import { joinPieces, type MatchSummary, type RuleStatus } from './summary.ts'
 import { RULES } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import { median } from '../match/series.ts'
@@ -32,7 +34,7 @@ const DAY = 86400e3
  * an existing session with that label if there is one, else a new one. `renames` maps a session id to a new label.
  */
 export function groupSessions(summaries: MatchSummary[], overrides: Record<string, string> = {}, renames: Record<string, string> = {}): Session[] {
-  const sorted = [...summaries].sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity) || a.fileName.localeCompare(b.fileName))
+  const sorted = joinSplitMatches([...summaries].sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity) || a.fileName.localeCompare(b.fileName)))
   const sessions: Session[] = []
   const byId = new Map<string, Session>()
   const add = (id: string, label: string, kind: Session['kind'], m: MatchSummary) => {
@@ -44,12 +46,13 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
   for (const m of sorted) {
     if (overrides[m.fileName]) continue
     if (m.playedAt === null) { add('undated', 'Logs with no date', 'undated', m); continue }
-    if (m.onField && m.event) {
+    if (m.onField) {
       // Same event name within 4 days of the event's last match: the same event. The id is the event name and its
       // first day, so a rename survives adding more logs from that day.
       const open = sessions.find((s) => s.kind === 'event' && s.id.startsWith(`event:${m.event}:`) && m.playedAt! - (s.matches.at(-1)!.playedAt ?? 0) < 4 * DAY)
       if (open) { open.matches.push(m); continue }
-      add(`event:${m.event}:${dateText(m.playedAt)}`, `Event ${m.event} (${dateText(m.playedAt)})`, 'event', m)
+      const day = dateText(m.playedAt)
+      add(`event:${m.event}:${day}`, m.event ? `Event ${m.event} (${day})` : `Event starting ${day} (no event name logged)`, 'event', m)
       continue
     }
     const day = dateText(m.playedAt)
@@ -66,6 +69,24 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
     } else add(`manual:${label}`, label, 'practice', m)
   }
   return sessions
+}
+
+/**
+ * Logs of the same on-field match (same event and match label, each starting within 30 minutes of the last) are one
+ * match: the robot program restarted during it. A piece without auto is dated by its log start, which can be 12
+ * minutes before the match at a real event (robot on the field, waiting); a replay of the same label is hours later.
+ * `summaries` must be sorted by time.
+ */
+export function joinSplitMatches(summaries: MatchSummary[]): MatchSummary[] {
+  const out: MatchSummary[][] = []
+  for (const m of summaries) {
+    const prev = out.at(-1)?.at(-1)
+    const same = prev && m.onField && prev.onField && m.matchLabel && m.matchLabel === prev.matchLabel && m.event === prev.event
+      && m.playedAt !== null && prev.playedAt !== null && m.playedAt - prev.playedAt < 30 * 60e3
+    if (same) out.at(-1)!.push(m)
+    else out.push([m])
+  }
+  return out.map(joinPieces)
 }
 
 /** Local calendar date, YYYY-MM-DD. */
@@ -161,15 +182,16 @@ export function mergeFindings(session: Session): MergedFinding[] {
     const checkable = session.matches.filter((m) => (m.rules[rule]?.status ?? 'not checked') !== 'not checked').length
     const worst = f.reduce((a, b) => (order[b.severity] < order[a.severity] ? b : a))
     const labels = [...new Set(f.flatMap((x) => (x.measured ?? []).map((m) => m.label)))]
-    const measured = labels.map((label) => {
-      const vals = f.flatMap((x) => (x.measured ?? []).filter((m) => m.label === label))
+    const measured = labels.flatMap((label) => {
+      const vals = f.flatMap((x) => (x.measured ?? []).filter((m) => m.label === label && Number.isFinite(m.value)))
+      if (vals.length === 0) return []
       const threshold = vals.find((v) => v.threshold !== undefined)?.threshold
       const margins = threshold ? vals.map((v) => Math.abs(v.value - threshold) / Math.abs(threshold)) : []
-      return {
+      return [{
         label, unit: vals[0].unit,
         min: Math.min(...vals.map((v) => v.value)), max: Math.max(...vals.map((v) => v.value)),
         threshold, medianMargin: margins.length ? median(margins) : undefined,
-      }
+      }]
     })
     out.push({
       key, rule, severity: worst.severity, title: f[f.length - 1].title,

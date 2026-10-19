@@ -98,11 +98,21 @@ export class Signal {
   }
 
   median(during?: Window): number {
-    return median(this.samples(during))
+    return median(this.heldSamples(during))
   }
 
   percentile(p: number, during?: Window): number {
-    return percentile(this.samples(during), p)
+    return percentile(this.heldSamples(during), p)
+  }
+
+  /** Like samples(), but a window with no record inside holds the last value before it (logs record on change). */
+  private heldSamples(during?: Window): number[] {
+    const out = this.samples(during)
+    if (out.length === 0 && during?.length) {
+      const held = this.at(during[0].start)
+      if (Number.isFinite(held)) out.push(held)
+    }
+    return out
   }
 
   /**

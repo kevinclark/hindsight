@@ -10,6 +10,7 @@ import { powerReport } from '../power/power-report.ts'
 import { RULES, type Report } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
+import type { RobotProfile } from '../profiles/types.ts'
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
@@ -30,7 +31,14 @@ export interface MatchSummary {
   metrics: MatchMetrics
   timing: { parseMs: number; rulesMs: number }
   problems: string[]
+  /** How well the robot profile fits this log: how many of its signals are in it, and the code's own name for itself. */
+  profileFit: { profile: string; present: number; total: number; codebase: string | null }
+  /** When one match was recorded in several logs (the robot program restarted mid-match): every log's file name. */
+  pieces?: string[]
 }
+
+/** Below this share of the profile's signals, the log is probably from another robot or another year's code. */
+export const PROFILE_FIT_MIN = 0.6
 
 export interface MatchMetrics {
   minVolts: number | null
@@ -84,6 +92,70 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
     event: match.event, matchLabel: match.matchLabel, onField: match.fms,
     batteryId: atStart || null,
     rules, metrics: metrics(match), timing, problems: [],
+    profileFit: profileFit(match),
+  }
+}
+
+/** Every signal the profile names. */
+export function profileKeys(profile: RobotProfile): string[] {
+  const keys = [
+    ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected])),
+    ...profile.cameras.flatMap((c) => [c.acceptedPose, c.connected]),
+    ...Object.values(profile.signals),
+  ]
+  return [...new Set(keys.filter((k): k is string => typeof k === 'string'))]
+}
+
+function profileFit(match: Match): MatchSummary['profileFit'] {
+  const keys = profileKeys(match.profile)
+  const codebase = has(match, '/RealMetadata/Codebase') ? values<string>(match, '/RealMetadata/Codebase')!.v[0] ?? null : null
+  return { profile: match.profile.name, present: keys.filter((k) => has(match, k)).length, total: keys.length, codebase }
+}
+
+/**
+ * One match recorded in several logs (the robot program restarted during it) as one summary: a rule fired if it fired
+ * in any piece; lowest voltage is the lowest, time under 7 V and charge add up; the other numbers are the worst piece's.
+ */
+export function joinPieces(pieces: MatchSummary[]): MatchSummary {
+  if (pieces.length === 1) return pieces[0]
+  const [first] = pieces
+  const rules: MatchSummary['rules'] = {}
+  for (const id of Object.keys(first.rules)) {
+    const all = pieces.map((p) => p.rules[id]).filter(Boolean)
+    const status: RuleStatus = all.some((r) => r.status === 'fired') ? 'fired' : all.some((r) => r.status === 'quiet') ? 'quiet' : 'not checked'
+    // The same issue in several pieces is one finding for the match: keep the worst (then the first) so one match
+    // doesn't weigh 3× in the session's measured ranges.
+    const byKey = new Map<string, Finding>()
+    const rank = { error: 0, warning: 1, info: 2 }
+    for (const f of all.flatMap((r) => r.findings)) {
+      const kept = byKey.get(f.key)
+      if (!kept || rank[f.severity] < rank[kept.severity]) byKey.set(f.key, f)
+    }
+    rules[id] = { status, reason: status === 'not checked' ? all.find((r) => r.reason)?.reason : undefined, findings: [...byKey.values()] }
+  }
+  const nums = (k: keyof MatchMetrics) => pieces.map((p) => p.metrics[k]).filter((v): v is number => v !== null)
+  const pick = (k: keyof MatchMetrics, f: (xs: number[]) => number) => (nums(k).length ? f(nums(k)) : null)
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+  const worstFrom100 = (xs: number[]) => xs.reduce((a, b) => (Math.abs(100 - b) > Math.abs(100 - a) ? b : a))
+  return {
+    ...first,
+    fileSize: sum(pieces.map((p) => p.fileSize)),
+    batteryId: pieces.find((p) => p.batteryId)?.batteryId ?? null,
+    clockNote: pieces.find((p) => p.clockNote)?.clockNote ?? null,
+    rules,
+    metrics: {
+      minVolts: pick('minVolts', (xs) => Math.min(...xs)),
+      secondsUnder7: pick('secondsUnder7', sum),
+      chargeAh: pick('chargeAh', sum),
+      resistanceMilliohms: pick('resistanceMilliohms', (xs) => Math.max(...xs)),
+      followerSpeedPct: pick('followerSpeedPct', worstFrom100),
+      loopOverrunPct: pick('loopOverrunPct', (xs) => Math.max(...xs)),
+      visionOutlierPct: pick('visionOutlierPct', (xs) => Math.max(...xs)),
+    },
+    timing: { parseMs: sum(pieces.map((p) => p.timing.parseMs)), rulesMs: sum(pieces.map((p) => p.timing.rulesMs)) },
+    problems: pieces.flatMap((p) => p.problems),
+    profileFit: pieces.reduce((a, b) => (b.profileFit.present / b.profileFit.total < a.profileFit.present / a.profileFit.total ? b : a)).profileFit,
+    pieces: pieces.map((p) => p.fileName),
   }
 }
 

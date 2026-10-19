@@ -47,6 +47,34 @@ describe('dates and grouping', () => {
     const sessions = groupSessions([m('a', day), m('b', day + 3600e3), m('c', day + 86400e3), m('d', day + 2 * 86400e3, true, 'casf'), m('e', day + 4 * 86400e3, true, 'casf')])
     expect(sessions.map((s) => s.matches.length)).toEqual([2, 1, 2])
   })
+  it('on-field matches with no event name still make one event; a match split across logs counts once', () => {
+    const metrics = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSpeedPct: null, loopOverrunPct: 5, visionOutlierPct: null }
+    const fit = { profile: 'p', present: 40, total: 90, codebase: 'old' }
+    const m = (fileName: string, playedAt: number, matchLabel: string, fired: boolean) => ({
+      fileName, fileSize: 1, playedAt, onField: true, event: '', matchLabel, batteryId: null, clockNote: null, problems: [], profileFit: fit,
+      timing: { parseMs: 1, rulesMs: 1 }, metrics: { ...metrics, minVolts: fired ? 6 : 8 },
+      rules: { 'comms/loss': { status: fired ? 'fired' : 'quiet', findings: fired ? [{ key: 'comms/loss', rule: 'comms/loss', severity: 'warning', title: matchLabel }] : [] }, 'loop/overrun': { status: 'fired', findings: [{ key: 'loop/overrun', rule: 'loop/overrun', severity: 'warning', title: fileName }] } },
+    } as unknown as MatchSummary)
+    const day = Date.UTC(2025, 10, 8, 18)
+    const sessions = groupSessions([
+      m('q27', day, 'Qualification 27', false),
+      m('q28a', day + 3600e3, 'Qualification 28', false), m('q28b', day + 3700e3, 'Qualification 28', true), m('q28c', day + 3800e3, 'Qualification 28', false),
+      m('q61', day + 86400e3, 'Qualification 61', false),
+    ])
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].label).toMatch(/no event name logged/)
+    expect(sessions[0].matches.map((x) => x.matchLabel)).toEqual(['Qualification 27', 'Qualification 28', 'Qualification 61'])
+    const q28 = sessions[0].matches[1]
+    expect(q28.pieces).toEqual(['q28a', 'q28b', 'q28c'])
+    expect(q28.rules['comms/loss'].status).toBe('fired')
+    expect(q28.metrics.minVolts).toBe(6)
+    expect(q28.metrics.chargeAh).toBe(3)
+    // The same issue in three pieces is one finding for the match.
+    expect(q28.rules['loop/overrun'].findings).toHaveLength(1)
+    // A restart piece dated by its log start, up to ~12 min before the match, still joins.
+    const late = groupSessions([m('q5a', day, 'Qualification 5', false), m('q5b', day + 20 * 60e3, 'Qualification 5', false)])
+    expect(late[0].matches).toHaveLength(1)
+  })
 })
 
 if (!haveCalGames) console.warn('SKIPPED session checks on the CalGames logs (not in ~/Downloads)')
