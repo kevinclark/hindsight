@@ -2,6 +2,8 @@
 
 export interface Motor {
   name: string
+  /** CAN ID, for the "set it in Phoenix Tuner X" cards. */
+  canId?: number
   supplyCurrent?: string
   statorCurrent?: string
   velocity?: string
@@ -13,8 +15,16 @@ export interface CurrentLimits {
   supplyEnabled?: boolean
   statorA?: number
   statorEnabled?: boolean
+  /**
+   * SupplyCurrentLowerLimit / SupplyCurrentLowerTime. Leave out when the code doesn't set them: Phoenix's defaults
+   * apply (after 1.0 s at the supply limit, the cap drops to 40 A).
+   */
+  supplyLowerA?: number
+  supplyLowerSeconds?: number
   /** Where the limits are set in the robot code, e.g. "DrumSubsystem.java:307". */
   where: string
+  /** The lines a student edits to change the supply limit, e.g. "DrumSubsystem.java:309-310". */
+  supplyLines?: string
 }
 
 export interface MotorGroup {
@@ -23,6 +33,8 @@ export interface MotorGroup {
   limits: CurrentLimits
   /** True when every motor in the group runs on one control loop and should match speed (leader + followers). */
   sameLoop?: boolean
+  /** For the limits wizard: the group spins up to a speed (the first motor is the leader); its setpoint log key. */
+  spinUp?: { setpoint?: string; appliedVolts?: string }
 }
 
 export interface ZeroingMechanism {
@@ -34,6 +46,8 @@ export interface ZeroingMechanism {
   doneMessage: RegExp
   /** Movement (degrees) that counts as "the mechanism moved". */
   moveDegrees: number
+  /** For a current-detected zero: the motor's stator current key, the detection threshold, and where it is set. */
+  zeroCurrent?: { statorCurrent: string; thresholdA: number; statorLimitA: number; where: string }
   /**
    * Which hard stop the zero drives into: 'down' (toward lower positions) or 'up'. Travel toward that stop is the
    * zeroing itself; only travel the other way counts as moving before the zero completed.

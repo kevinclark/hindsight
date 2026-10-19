@@ -102,6 +102,7 @@ export const offseason2026: RobotProfile = {
       motors: [
         {
           name: 'Flywheel leader',
+          canId: 15,
           supplyCurrent: '/Drum/Flywheel/Leader/SupplyCurrentAmps',
           statorCurrent: '/Drum/Flywheel/Leader/StatorCurrentAmps',
           velocity: '/Drum/Flywheel/Leader/VelocityRotPerSec',
@@ -109,13 +110,17 @@ export const offseason2026: RobotProfile = {
         },
         ...[0, 1, 2].map((i) => ({
           name: `Flywheel follower ${16 + i}`,
+          canId: 16 + i,
           supplyCurrent: `/Drum/Flywheel/Follower ${i}/SupplyCurrentAmps`,
           statorCurrent: `/Drum/Flywheel/Follower ${i}/StatorCurrentAmps`,
           velocity: `/Drum/Flywheel/Follower ${i}/VelocityRotPerSec`,
           connected: `/Drum/Flywheel/Follower ${i}/Connected`,
         })),
       ],
-      limits: { supplyA: 40, supplyEnabled: false, statorA: 75, statorEnabled: true, where: 'DrumSubsystem.java:307-310' },
+      limits: { supplyA: 40, supplyEnabled: false, statorA: 75, statorEnabled: true, where: 'DrumSubsystem.java:307-310', supplyLines: 'DrumSubsystem.java:309-310' },
+      // The setpoint is only logged while spinning; between shots it stays at its last value while the wheel coasts.
+      // The leader's applied voltage says whether it is being driven.
+      spinUp: { setpoint: '/RealOutputs/Drum/Flywheel/Setpoint', appliedVolts: '/Drum/Flywheel/Leader/Voltage' },
     },
     {
       name: 'Hood',
@@ -182,6 +187,12 @@ export const offseason2026: RobotProfile = {
       doneMessage: /Rezeroed hood|Hood zeroed/,
       moveDegrees: 3,
       zeroDirection: 'down', // the current zero drives the hood into its bottom hard stop
+      zeroCurrent: {
+        statorCurrent: '/Drum/Hood/StatorCurrentAmps',
+        thresholdA: 30, // HOOD_CURRENT_ZEROING_THRESHOLD_AMPS
+        statorLimitA: 30,
+        where: 'DrumSubsystem.java:53 (HOOD_CURRENT_ZEROING_THRESHOLD_AMPS), stator limit DrumSubsystem.java:334',
+      },
     },
   ],
 

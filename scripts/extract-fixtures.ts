@@ -89,6 +89,24 @@ if (!Object.values(LOGS).every(existsSync)) { console.log('CalGames logs not in 
     entries: [...base(log), ...motors.map((x) => cut(log, x.velocity!, windows))],
   })
 }
+{ // Q13 spin-ups from standstill, and a drive stretch held at its 40 A supply limit (for the limits wizard tests)
+  const log = openWpilog(new Uint8Array(readFileSync(LOGS.q13)))
+  const fly = P.motorGroups.find((g) => g.name === 'Flywheel')!
+  const spinUps: [number, number][] = [[301.6, 305], [350.7, 354], [371.2, 374.6]]
+  write('q13-spinups', {
+    source: 'akit_26-10-17_20-07-34_cacg_q13.wpilog',
+    note: 'Three flywheel spin-ups from standstill (starts 302.13, 351.22, 371.73 s): velocities and supply currents of all four motors, the setpoint, the leader applied voltage and the battery voltage. The tests build bench logs from these.',
+    entries: [
+      ...fly.motors.flatMap((m) => [cut(log, m.velocity!, spinUps), cut(log, m.supplyCurrent!, spinUps)]),
+      cut(log, fly.spinUp!.setpoint!, spinUps), cut(log, fly.spinUp!.appliedVolts!, spinUps), cut(log, P.signals.batteryVoltage, spinUps),
+    ],
+  })
+  write('q13-drive-plateau', {
+    source: 'akit_26-10-17_20-07-34_cacg_q13.wpilog',
+    note: 'Front-left drive supply current, all of teleop (293–422 s): the 40 A supply limit (switched on) holding, mode 38–40 A.',
+    entries: [cut(log, '/Swerve/Front Left Module/DriveSupplyCurrentAmps', [[293.1, 422.3]])],
+  })
+}
 { // P0: brownout, follower 16 off CAN, uncommitted code, hood zeroed at boot (must stay quiet)
   const log = openWpilog(new Uint8Array(readFileSync(LOGS.p0)))
   write('p0-brownout', {

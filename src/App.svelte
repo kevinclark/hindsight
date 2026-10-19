@@ -7,6 +7,8 @@
   import { buildFindingsJson, findingsFileName } from './report/findings-json.ts'
   import MatchTab from './ui/MatchTab.svelte'
   import PowerTab from './ui/PowerTab.svelte'
+  import LimitsTab from './ui/LimitsTab.svelte'
+  import Wizard from './ui/Wizard.svelte'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
   import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type IssueEvent, type IssueStatus } from './triage/history.ts'
@@ -17,7 +19,9 @@
   let analyses = $state<Analysis[]>([])
   let problems = $state<string[]>([])
   let selected = $state(0)
-  let tab = $state<'match' | 'power'>('match')
+  let tab = $state<'match' | 'power' | 'limits'>('match')
+  // Two modes: review match logs, or run the limits wizard with the robot.
+  let mode = $state<'review' | 'wizard'>('review')
   let busy = $state(false)
   let dragging = $state(false)
   let lastLoad = $state<{ files: number; readMs: number; analyzeMs: number; heapMB: number | null } | null>(null)
@@ -113,6 +117,14 @@
   <p class="tag">Lints FRC 8033 match logs. Runs in this page; your files never leave this computer.</p>
 </header>
 
+<nav class="modes" aria-label="Mode">
+  <button class:active={mode === 'review'} onclick={() => (mode = 'review')}>Match review</button>
+  <button class:active={mode === 'wizard'} onclick={() => (mode = 'wizard')}>Limits wizard</button>
+</nav>
+
+{#if mode === 'wizard'}
+  <Wizard matches={analyses} />
+{:else}
 <section class="drop" class:dragging aria-busy={busy}>
   <label class="button">
     <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }} />
@@ -160,10 +172,11 @@
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected={tab === 'match'} class:active={tab === 'match'} onclick={() => (tab = 'match')}>Match</button>
     <button role="tab" aria-selected={tab === 'power'} class:active={tab === 'power'} onclick={() => (tab = 'power')}>Power</button>
+    <button role="tab" aria-selected={tab === 'limits'} class:active={tab === 'limits'} onclick={() => (tab = 'limits')}>Limits</button>
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={current} {issues} onMark={mark} />{:else}<PowerTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={current} {issues} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else}<LimitsTab analysis={current} />{/if}
   </main>
 
   <footer>
@@ -183,6 +196,7 @@
     </ol>
   </section>
 {/if}
+{/if}
 
 <style>
   :global(:root) {
@@ -201,7 +215,7 @@
   }
   :global(body) { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
   :global(#app) { max-width: 980px; margin: 0 auto; padding: 1rem 16px 3rem; }
-  :global(code) { font-family: var(--mono); font-size: 0.85em; }
+  :global(code) { font-family: var(--mono); font-size: 0.85em; overflow-wrap: anywhere; }
   header h1 { margin: 0; font-size: 1.5rem; }
   .tag { margin: 0.1rem 0 1rem; color: var(--muted); }
   .drop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.9rem 1rem; border: 1.5px dashed var(--border); border-radius: 8px; }
@@ -223,6 +237,9 @@
   .match-head h2 { margin: 0; font-size: 1.25rem; }
   .meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
   .dirty { color: var(--warning); }
+  .modes { display: flex; gap: 0.25rem; margin: 0 0 0.75rem; }
+  .modes button { padding: 0.3rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+  .modes button.active { color: var(--fg); border-color: var(--focus); font-weight: 600; }
   .tabs { display: flex; gap: 0.25rem; margin: 1rem 0 0.75rem; border-bottom: 1px solid var(--border); }
   .tabs button { padding: 0.45rem 1rem; border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .tabs button.active { color: var(--fg); border-bottom-color: var(--focus); font-weight: 600; }

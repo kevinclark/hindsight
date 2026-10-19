@@ -21,6 +21,50 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
   hashed Wi-Fi key.
 
+## Current limits (phase 2)
+
+Built to `8033/robot/hindsight-phase2-limits-brief.md`. **The tool never writes or changes robot code or motor
+settings**: it tells students what to set and which line to change, and they do it.
+
+- **Limits tab** (Match review, any match log): each motor group's configured stator and supply limits (and whether
+  the code switches them off, which removes Phoenix's default 70 A supply / 120 A stator limit), the lower limit and
+  time (Phoenix defaults when the code doesn't set them), and what the log shows per motor: peak, p99, time more than
+  5 A over the limit, the longest burst (≤ 0.2 s is the limiter catching up), and time at the limit. Plus a what-if
+  for one group's supply limit (the Power tab's model, with its error), the robot current budget on the weakest
+  fleet battery, and the hard-stop zeroing check.
+- **Limits wizard** (top of the page): a supply-limit sweep the students run with the robot. Pick the mechanism, then
+  for each limit: set it in Phoenix Tuner X, run 3 spin-ups from standstill, drop the log in. It measures each run,
+  checks the limit took effect on every motor, flags runs that can't be compared, and recommends the limit at the knee,
+  with the code line to change and a final read-back check. Progress saves to `limits-session.json`.
+  The drive wheel-slip test is shown but locked until Kevin agrees the procedure.
+- `scripts/limits-reference.ts` recomputes the Part A numbers a second way (a port of
+  `8033/robot/hindsight-research/whatif/current_limit_check.py` reading the .wpilog directly).
+
+### Where this differs from the brief (and why)
+
+- **"Did the limit take?"** The brief judges the most common 2 A bin of samples ≥ 30 A against ±10 % of the limit. On
+  real CalGames spin-ups that check fails both ways: at 60 A the mode is 33–39 A (the motor rarely needs 60 A), and
+  a follower whose 40 A limit wasn't saved has a mode of 35 A while peaking at 73 A. The wizard says a limit **didn't
+  take** when a motor stays above 110 % of it for more than 0.2 s; it **held** when the mode is within ±10 %; otherwise
+  it **never had to hold**. The drive's real 40 A plateau (mode 38–40 A) passes.
+- **Runs 5 s apart** won't start from a standstill: the CalGames flywheel took more than 5 s to coast down (45 → 7 rot/s
+  in 5 s). The run card says to wait until the wheel stops (about 10 s).
+- **Spin-up time** is to within 10 % of the target speed: holding speed, the flywheel ripples ±5 % around its setpoint.
+  With that, Q13/Q21/P0 spin-ups from standstill take 0.74 / 0.74 / 0.65 s (median), matching the P0 analysis's
+  0.5–0.8 s. Only 7–13 spin-ups per match start from standstill (the analysis counted 15–27 of all kinds).
+- **Shot recovery** (the match version of spin-up time) counts dips below 85 % of the target lasting ≥ 0.1 s: only
+  0–3 per match, so treat it as a rough number until checked against video.
+
+### To verify on the robot (unverified until a run confirms each)
+
+- A limit set in Phoenix Tuner X holds while the robot code runs, until the next boot.
+- It applies the same way to the followers (CAN IDs 16–18) as to the leader (15).
+- `SupplyCurrentLowerTime = 0` disables the step-down to the lower limit during the sweep.
+- After the final code change, the read-back in Tuner X matches the code (`apply()`'s result isn't checked in code).
+- The bench model in the tests (spin-up slows by the current ratio; battery = 12.6 V − 11 mΩ × current) predicts the
+  real sweep. It only exists to exercise the wizard; the real numbers come from the students' runs.
+- The drive wheel-slip test procedure (not runnable until Kevin agrees it).
+
 ## Build and test
 
 ```
