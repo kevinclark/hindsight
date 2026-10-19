@@ -1,7 +1,8 @@
 /**
  * Session summaries kept in this browser (IndexedDB), so a page reload doesn't mean choosing the folder again.
  * Only summaries are kept, never the logs. Each is keyed by the file's name, size and modified time, and by the
- * build of this page: a new build may read logs differently, so its summaries start fresh. Every call is wrapped:
+ * version of this page's source (a hash of src/): changed code may read logs differently, so its summaries start
+ * fresh, while a rebuild of the same code keeps them. Every call is wrapped:
  * a private window or blocked storage just means nothing is cached. Browsers treat every file:// page as one site, so
  * two different builds of this page opened from disk share the store, and each clears the other's summaries.
  */

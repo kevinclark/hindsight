@@ -16,6 +16,28 @@ import { profileId } from '../profiles/index.ts'
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
+/**
+ * A finding as a session keeps it: the words and numbers, without the plot or the rule's own text (meaning, causes,
+ * next step), which are the same for every match; only what this log said about its causes, and a next step of its
+ * own, are kept.
+ */
+export type SummaryFinding = Omit<Finding, 'plot' | 'meaning' | 'causes' | 'nextStep'> & {
+  likely: string[]
+  ruledOut: Record<string, string>
+  /** Only when this log's next step differs from the rule's usual one. */
+  nextStep?: string
+}
+
+export function toSummaryFinding(f: Finding, ruleNextStep: string | undefined): SummaryFinding {
+  const { plot: _p, meaning: _m, causes, nextStep, ...rest } = f
+  return {
+    ...rest,
+    likely: causes.filter((c) => c.likely).map((c) => c.id),
+    ruledOut: Object.fromEntries(causes.filter((c) => c.ruledOut).map((c) => [c.id, c.ruledOut!])),
+    ...(nextStep !== ruleNextStep ? { nextStep } : {}),
+  }
+}
+
 export interface MatchSummary {
   fileName: string
   fileSize: number
@@ -29,7 +51,7 @@ export interface MatchSummary {
   onField: boolean
   /** Battery ID logged at the start of the match (null until the robot code logs one). */
   batteryId: string | null
-  rules: Record<string, { status: RuleStatus; reason?: string; findings: Finding[] }>
+  rules: Record<string, { status: RuleStatus; reason?: string; findings: SummaryFinding[] }>
   metrics: MatchMetrics
   timing: { parseMs: number; rulesMs: number }
   problems: string[]
@@ -81,7 +103,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
       status: fired ? 'fired' : fullySkipped ? 'not checked' : 'quiet',
       reason: skipped?.reason,
       // Plots hold whole series; a session keeps only the words and numbers.
-      findings: findings.map((f) => ({ ...f, plot: undefined })),
+      findings: findings.map((f) => toSummaryFinding(f, rule.nextStep)),
     }
   }
   const idKey = match.profile.battery.id.find((k) => has(match, k))
@@ -117,7 +139,7 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
     const status: RuleStatus = all.some((r) => r.status === 'fired') ? 'fired' : all.some((r) => r.status === 'quiet') ? 'quiet' : 'not checked'
     // The same issue in several pieces is one finding for the match: keep the worst (then the first) so one match
     // doesn't weigh 3× in the session's measured ranges.
-    const byKey = new Map<string, Finding>()
+    const byKey = new Map<string, SummaryFinding>()
     const rank = { error: 0, warning: 1, info: 2 }
     for (const f of all.flatMap((r) => r.findings)) {
       const kept = byKey.get(f.key)

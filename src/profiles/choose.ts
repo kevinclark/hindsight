@@ -54,7 +54,7 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
   const codebase = first(log, '/RealMetadata/Codebase')
   const branch = first(log, '/RealMetadata/GitBranch')
   const sameRobot = profiles.filter((p) => codebase && p.codebase === codebase)
-  const pinned = sameRobot.find((p) => p.code.branch === branch)
+  const pinned = sameRobot.find((p) => p.code.branch === branch || (branch && p.code.alsoBranches?.includes(branch)))
   if (pinned) {
     const fit = profileFit(log, pinned)
     return { profile: pinned, choice: { how: 'codebase and branch', fit, misfit: low(fit), note: low(fit) ? `This log names "${pinned.name}" on ${branch}, but only ${fitText(fit)}: the profile may need updating. ${MISFIT_TEXT}` : null } }

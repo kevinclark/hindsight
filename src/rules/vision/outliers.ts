@@ -2,13 +2,15 @@
  * Is the robot accepting vision poses far from where odometry says it is?
  *
  * Checks: each camera's accepted vision poses during the match against the odometry pose at the same moment.
- * Fires when more than 5 % are over 0.5 m away, out of at least 20 poses (2 poses can't give a rate worth acting on).
+ * Fires when more than 5 % are over 0.5 m away, out of at least 20 poses; with fewer, the camera is listed as not checked.
  * Why: CalGames 2026: 5–15 % of accepted poses were over 0.5 m off (up to 8.7 m), and P0 had 4 odometry jumps.
  * Threshold: assumed from three logs; every log so far fires it.
  */
 import { maxOf, percentile } from '../../match/series.ts'
 import { pct, rule, round } from '../rule.ts'
 import { TIME_SYNC_ALERTS } from './time-sync.ts'
+
+const MIN_POSES = 20 // fewer accepted poses than this can't give a rate worth acting on
 
 export default rule({
   id: 'vision/outliers',
@@ -36,7 +38,8 @@ export default rule({
       if (match.inMatch(t) && odo) distances.push(Math.hypot(pose.x - odo.x, pose.y - odo.y))
     })
     const far = distances.filter((d) => d > 0.5).length
-    if (distances.length < 20 || far / distances.length <= 0.05) return
+    if (distances.length < MIN_POSES) return match.couldNotCheck(`only ${distances.length} accepted pose${distances.length === 1 ? '' : 's'} in the match (needs ${MIN_POSES} for a rate)`)
+    if (far / distances.length <= 0.05) return
     // Alerts about unsynced camera clocks (vision/time-sync) point at the clock first.
     const clockAlerts = match.alerts().some((a) => TIME_SYNC_ALERTS.some((pattern) => pattern.test(a.text)) && a.onsetsInMatch.length > 0)
     return {

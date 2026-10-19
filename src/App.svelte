@@ -26,11 +26,11 @@
   // Two modes: review match logs, or run the limits wizard with the robot.
   let mode = $state<'review' | 'session' | 'wizard'>('review')
 
-  // From the Session view: open one match's log in Match review.
-  async function openFromSession(file: File) {
+  // From the Session view: open one match's log (every piece, if the robot program restarted during it) in Match review.
+  async function openFromSession(files: File[]) {
     mode = 'review'
     tab = 'match'
-    await load([file])
+    await load(files)
   }
   let busy = $state(false)
   let dragging = $state(false)
@@ -228,6 +228,7 @@
       <li>Read the <strong>Match</strong> tab worst first: red cost or nearly cost a match, amber is a margin eroding, grey is context.</li>
       <li>Open the <strong>Power</strong> tab for brownouts and battery health.</li>
     </ol>
+    <p class="meta">Matches opened here aren't kept when the page reloads (the Session view keeps each log's summary, not the log): drop the log again.</p>
   </section>
 {/if}
 </div>

@@ -69,6 +69,8 @@ export interface CodePin {
   branch: string
   /** The commit the motor groups, keys and current limits were copied from (7+ characters). */
   sha: string
+  /** Other branches that ran this same code (e.g. a branch merged into this one): their logs use this profile too. */
+  alsoBranches?: string[]
 }
 
 export interface RobotProfile {

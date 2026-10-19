@@ -18,6 +18,7 @@
 import { joinPieces, type MatchSummary, type RuleStatus } from './summary.ts'
 import { RULES } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
+import type { SummaryFinding } from './summary.ts'
 import { median } from '../match/series.ts'
 
 export interface Session {
@@ -163,7 +164,7 @@ export interface MergedFinding {
 
 /** The same finding across matches (by key), worst first. */
 export function mergeFindings(session: Session): MergedFinding[] {
-  const byKey = new Map<string, { f: Finding[]; idx: number[] }>()
+  const byKey = new Map<string, { f: SummaryFinding[]; idx: number[] }>()
   session.matches.forEach((m, i) => {
     for (const r of Object.values(m.rules)) {
       // Grey (info) findings are context, not something that fired in the match.

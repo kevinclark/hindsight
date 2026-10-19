@@ -239,7 +239,8 @@ const mainIndexerMotors = eventGroup('Indexer').motors
 
 export const offseason2026Event: RobotProfile = {
   ...offseason2026,
-  code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'event-calgames', sha: 'd339f29' },
+  // event-calgames-new-autos was merged into event-calgames (at 123eec6), so its logs ran this code too.
+  code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'event-calgames', sha: 'd339f29', alsoBranches: ['event-calgames-new-autos'] },
 
   motorGroups: offseason2026.motorGroups.flatMap((group): MotorGroup[] => {
     switch (group.name) {

@@ -40,7 +40,10 @@ export default rule({
     if (movedAt === null || movedAt >= doneAt) return
     const zeroed = Number.isFinite(doneAt)
     const jump = zeroed ? position.at(doneAt + 0.1) - position.at(doneAt - 0.1) : NaN
-    if (zeroed && Math.abs(jump) < mechanism.moveDegrees) return
+    // Less the travel it was already making (the 0.2 s before), so motion at that moment isn't read as a jump.
+    const before = zeroed ? position.at(doneAt - 0.1) - position.at(doneAt - 0.3) : 0
+    const drift = Number.isFinite(before) ? before : 0 // a zero right at the start of the log has no travel before it
+    if (zeroed && Math.abs(jump - drift) < mechanism.moveDegrees) return
     // The log can't tell a cancelled zero from a late one, so only rule out "never ran" when it did finish.
     return {
       ruledOut: zeroed ? { 'zero-never-ran': `the zero did complete, ${(doneAt - movedAt).toFixed(1)} s after the first move` } : undefined,
@@ -51,6 +54,7 @@ export default rule({
         'zero completed (robot time, s)': zeroed ? round(doneAt) : 'never',
         'seconds moving in the wrong frame': zeroed ? round(doneAt - movedAt, 1) : 'whole match',
         'position jump when the zero landed (°)': zeroed ? round(jump, 1) : 'n/a',
+        'travel in the 0.2 s before the zero (°)': zeroed ? round(drift, 1) : 'n/a',
       },
       plot: [position], plotUnit: '°', plotFrom: movedAt - 2, plotTo: movedAt + 6, plotMarks: [movedAt],
     }

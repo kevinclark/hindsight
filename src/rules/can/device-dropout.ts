@@ -49,9 +49,9 @@ export default rule({
     const voltages = drops.map((d) => battery.lowest(match.before(d.start, 0.5)).value)
     const lowOnes = voltages.filter((v) => v < LOW_VOLTS).length
     const closeCall = voltages.some((v) => Math.abs(v - LOW_VOLTS) < 0.5)
-    // Other devices that dropped within 1 s of this one's first drop: a shared cause (power or the CAN trunk).
+    // Other devices that dropped within 1 s of any of this one's drops: a shared cause (power or the CAN trunk).
     const others = otherDevices(match, device.name)
-    const together = others.filter((o) => o.drops.some((d) => Math.abs(d - drops[0].start) < 1)).map((o) => o.name)
+    const together = others.filter((o) => o.drops.some((d) => drops.some((own) => Math.abs(d - own.start) < 1))).map((o) => o.name)
     const allLow = lowOnes === drops.length
     const likely: string[] = []
     const ruledOut: Record<string, string> = {}

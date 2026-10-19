@@ -15,7 +15,7 @@
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
 
-  let { issues, onOpen }: { issues: Map<string, IssueEvent>; onOpen: (file: File) => void } = $props()
+  let { issues, onOpen }: { issues: Map<string, IssueEvent>; onOpen: (files: File[]) => void } = $props()
 
   let summaries = $state<MatchSummary[]>([])
   // File handles only (not their contents), so a match can be reopened in Match review.
@@ -147,8 +147,8 @@
 
   /** Open a match in Match review. A summary restored after a reload has no file: ask for it again. */
   function open(m: MatchSummary) {
-    const f = files.get(m.fileName)
-    if (f) onOpen(f)
+    const fs = (m.pieces ?? [m.fileName]).map((n) => files.get(n)).filter((f): f is File => !!f)
+    if (fs.length) onOpen(fs)
     else problems = [`To open ${m.fileName} in Match review, choose it again ("Choose logs…"): between visits this page keeps each log's summary, not the log.`]
   }
 

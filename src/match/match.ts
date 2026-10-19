@@ -170,7 +170,16 @@ function measuredGame(match: Match): RobotProfile['game'] {
   const autoSeconds = match.fms && match.matchStart !== null && match.teleopStart !== null && match.teleopStart > match.matchStart
     ? Math.round(match.teleopStart - match.matchStart - FIELD_AUTO_TO_TELEOP_SECONDS)
     : auto ? Math.round(auto.end - auto.start) : 15
-  const teleopSeconds = match.teleopStart !== null && match.matchEnd !== null ? Math.round(match.matchEnd - match.teleopStart) : 135
+  // Teleop: the enable that starts it, plus re-enables within 15 s (a comms loss), so a practice enable long after the
+  // match doesn't stretch it.
+  let teleopEnd: number | null = null
+  for (const iv of match.enabled) {
+    if (match.teleopStart === null || iv.end <= match.teleopStart) continue
+    if (teleopEnd === null) { if (iv.start <= match.teleopStart + 0.5) teleopEnd = iv.end; continue }
+    if (iv.start - teleopEnd > 15) break
+    teleopEnd = iv.end
+  }
+  const teleopSeconds = match.teleopStart !== null && teleopEnd !== null ? Math.round(teleopEnd - match.teleopStart) : 135
   return { name: 'measured from this log', autoSeconds, teleopSeconds }
 }
 
