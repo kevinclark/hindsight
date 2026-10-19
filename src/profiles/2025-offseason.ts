@@ -31,7 +31,8 @@ export const offseason2025: RobotProfile = {
   codebase: '2025 Offseason',
   code: { repo: 'HighlanderRobotics/2025-Offseason-Robot', branch: 'event-mttd', sha: '493666f' },
 
-  game: { name: '2025 REEFSCAPE', autoSeconds: 15, teleopSeconds: 135 },
+  // Field size from the robot code's tag layout (src/main/deploy/vision/2025-reefscape.json at 493666f).
+  game: { name: '2025 REEFSCAPE', autoSeconds: 15, teleopSeconds: 135, field: { length: 17.548, width: 8.052 } },
 
   signals: {
     enabled: '/DriverStation/Enabled',
@@ -68,6 +69,11 @@ export const offseason2025: RobotProfile = {
     accelX: '/Swerve/Gyro/AXMetersPerSecondSq',
     accelY: '/Swerve/Gyro/AYMetersPerSecondSq',
     odometryPose: '/RealOutputs/Odometry/Robot',
+
+    emergencyStop: '/DriverStation/EmergencyStop',
+    matchTimeLeft: '/DriverStation/MatchTime',
+    autoChoice: '/NetworkInputs/SmartDashboard/Autos',
+    joystickButtonCounts: [0, 1, 2, 3, 4, 5].map((n) => `/DriverStation/Joystick${n}/ButtonCount`),
   },
 
   // This robot has no battery tracker. These are the 2026 keys (FRC8033BatteryTracker), kept so the code that
@@ -225,6 +231,36 @@ export const offseason2025: RobotProfile = {
   // CancoderAbsolutePosition), the arm CANcoder (ID 4, /Arm/CANcoder/CancoderPositionRotations) and the two intake
   // CANranges (IDs 0 and 1) log positions or distances but no connected flag, so they are not listed.
   otherDevices: [{ name: 'Gyro (Pigeon)', connected: '/Swerve/Gyro/IsConnected' }],
+
+  // Every CAN device is on the CANivore ("*": GyroIOReal.java:28, ModuleIOReal.java:60-62 and the subsystems). Only the
+  // Pigeon and the swerve modules report their health: each module logs BaseStatusSignal.refreshAll over its drive
+  // TalonFX, steer TalonFX and CANcoder signals as "Module<name>refresh status code" (ModuleIOReal.java:130).
+  // Superstructure.java logs its state and the drivers' requests (@AutoLogOutput, 493666f:232-250; the Algae Intake
+  // Request is commented out there but logged by the Friday builds); the "Has Game Piece" flags and the intake
+  // CANranges are what a state can wait for. PRE_CLIMB holds 29-39 s by design (MTTD 2025).
+  stateMachine: {
+    name: 'Superstructure',
+    state: '/RealOutputs/Superstructure/State',
+    idle: ['IDLE'],
+    waitsOnPurpose: ['PRE_CLIMB'],
+    requests: ['Score', 'Pre Score', 'Coral Intake', 'Algae Intake'].map((r) => ({ name: `${r} request`, key: `/RealOutputs/Superstructure/${r} Request` })),
+    sensors: [
+      { name: 'Arm has game piece', key: '/RealOutputs/Arm/Has Game Piece' },
+      { name: 'Intake has game piece', key: '/RealOutputs/Intake/Has Game Piece' },
+      { name: 'Superstructure: arm has game piece', key: '/RealOutputs/Superstructure/Arm Has Game Piece?' },
+      { name: 'Superstructure: intake has game piece', key: '/RealOutputs/Superstructure/Intake Has Game Piece?' },
+      { name: 'Left intake CANrange detects', key: '/Intake/Left CANrange/IsDetected' },
+      { name: 'Right intake CANrange detects', key: '/Intake/Right CANrange/IsDetected' },
+    ],
+  },
+
+  canBuses: [{
+    name: 'CANivore',
+    members: [
+      { name: 'Gyro (Pigeon)', key: '/Swerve/Gyro/IsConnected' },
+      ...swerveModules.map((m) => ({ name: `${m} module`, key: `/RealOutputs/Module${m}refresh status code`, ok: 'OK' })),
+    ],
+  }],
 
   // The what-if sliders cap this group's supply current per motor. The intake roller has the largest per-motor
   // supply charge and peak (115 A against an 80 A limit) in the 11 match logs of the Nov 2025 event.

@@ -56,6 +56,12 @@ export const DATALOGMANAGER_SIGNALS: Signals = {
   accelX: '',
   accelY: '',
   odometryPose: '',
+  // The HAL control word's e-stop bit (see the header). The match clock, the auto chooser and joystick button counts
+  // have no place WPILib always logs them.
+  emergencyStop: `${FMS}/FMSControlData:bit3`,
+  matchTimeLeft: '',
+  autoChoice: '',
+  joystickButtonCounts: [],
 }
 
 /** The signals that say which match a log holds and when the robot was enabled: always worth finding. */

@@ -84,7 +84,8 @@ export interface RobotProfile {
    */
   codebase: string
   code: CodePin
-  game: { name: string; autoSeconds: number; teleopSeconds: number }
+  /** `field`: the field's length (x) and width (y) in meters, from the season's AprilTag layout, for "is this pose on the field". */
+  game: { name: string; autoSeconds: number; teleopSeconds: number; field?: { length: number; width: number } }
   signals: {
     enabled: string
     autonomous: string
@@ -115,6 +116,14 @@ export interface RobotProfile {
     accelX: string
     accelY: string
     odometryPose: string
+    /** The Driver Station's e-stop flag (true from the e-stop until the robot program restarts). */
+    emergencyStop: string
+    /** The Driver Station's match clock: seconds left in the current period (auto or teleop). */
+    matchTimeLeft: string
+    /** The auto chooser's selection (text), e.g. AdvantageKit's LoggedDashboardChooser. */
+    autoChoice: string
+    /** Each Driver Station joystick port's button count (0 = nothing plugged in), port 0 first. */
+    joystickButtonCounts: string[]
   }
   /** Battery tracker keys. Each lists the places the key may be; the first one present is used. */
   battery: {
@@ -134,6 +143,28 @@ export interface RobotProfile {
   }
   motorGroups: MotorGroup[]
   otherDevices: { name: string; connected: string }[]
+  /**
+   * Each CAN bus and the health signals of the devices on it, so a drop of the whole bus (the CANivore, its USB cable
+   * or its power) reads as one event rather than as one device. `key` is a Connected flag (true = fine), or, with
+   * `ok`, a status text that is fine only when it equals `ok` (e.g. a Phoenix refresh status code, "OK"). A member's
+   * name matches a device's name (otherDevices, or a motor with a Connected flag) when it is one.
+   */
+  canBuses?: { name: string; members: { name: string; key: string; ok?: string }[] }[]
+  /**
+   * The robot's main state machine (a superstructure), for mech/stuck-state. Each team names it differently, so the
+   * profile author confirms the key; nothing guesses it. `idle`: states where waiting is the job; `waitsOnPurpose`:
+   * states that hold for a long time by design (e.g. before a climb); `requests`: the drivers' request flags (true
+   * while a button asks for something); `sensors`: true/false sensors that may be what a state waits for (learned
+   * from the state's normal exits, never mapped by hand).
+   */
+  stateMachine?: {
+    name: string
+    state: string
+    idle: string[]
+    waitsOnPurpose: string[]
+    requests: { name: string; key: string }[]
+    sensors: { name: string; key: string }[]
+  }
   whatIfGroup: string
   /**
    * The power distribution board on the robot, if known: a REV PDH and a CTRE PDP (v1) report each channel's current

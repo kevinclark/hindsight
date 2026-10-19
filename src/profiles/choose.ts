@@ -30,10 +30,11 @@ const GENERIC = new Set(Object.values(DATALOGMANAGER_SIGNALS).filter((k): k is s
 
 /**
  * Every signal the profile names (alert groups are folders of signals, not signals, so they don't count), less the
- * keys any plain WPILib log has: otherwise a profile made mostly of those would fit every such log.
+ * keys any plain WPILib log has: otherwise a profile made mostly of those would fit every such log. The e-stop flag,
+ * match clock, auto chooser and joystick keys are left out too: every AdvantageKit log has them, whatever the robot.
  */
 export function profileKeys(profile: RobotProfile): string[] {
-  const { alertGroups: _, ...signals } = profile.signals
+  const { alertGroups: _, emergencyStop: _e, matchTimeLeft: _m, autoChoice: _a, joystickButtonCounts: _j, ...signals } = profile.signals
   const keys = [
     ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected, m.temperature])),
     ...profile.cameras.flatMap((c) => [c.acceptedPose, c.connected]),

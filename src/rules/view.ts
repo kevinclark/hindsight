@@ -556,6 +556,48 @@ export class MatchView {
     return this.raw.ds
   }
 
+  /** The first and last record of the log (robot time). */
+  get logStart(): number {
+    return this.raw.logStart
+  }
+
+  get logEnd(): number {
+    return this.raw.logEnd
+  }
+
+  /** The event name and match ("Qualification 28") the Driver Station logged ('' off the field). */
+  get event(): string {
+    return this.raw.event
+  }
+
+  get matchLabel(): string {
+    return this.raw.matchLabel
+  }
+
+  private others: MatchView[] | null = null
+
+  /** The other robot logs loaded with this one (empty when it was loaded alone), like dsLogs. */
+  otherLogs(): MatchView[] {
+    if (!this.others) this.others = this.raw.others.map((m) => new MatchView(m))
+    return this.others
+  }
+
+  /** Robot time t as Unix epoch seconds, or null when the roboRIO clock was never set. */
+  wallClock(t: number): number | null {
+    const offset = this.raw.epochOffset
+    return offset === null || offset + t < EARLIEST_PLAUSIBLE_EPOCH ? null : offset + t
+  }
+
+  /**
+   * A device's health as a true/false signal (1 = fine): a Connected flag as it is, or, with `ok`, a status text
+   * that is fine only when it equals `ok` (a Phoenix refresh status code: "OK", "CanMessageStale", ...).
+   */
+  health(key: string, ok?: string, label = key): Signal {
+    if (ok === undefined) return this.signal(key, label)
+    const text = this.text(key).series
+    return new Signal(label, key, { name: key, t: text.t, v: Float64Array.from(text.v, (x) => (x === ok ? 1 : 0)) }, this.raw.logEnd)
+  }
+
   get epochOffset() {
     return this.raw.epochOffset
   }
@@ -590,6 +632,9 @@ function isLogKey(name: string): boolean {
 function missing(name: string, key: string): MissingSignal {
   return new MissingSignal(key || `${words(name)} (the robot profile has no key for it)`)
 }
+
+/** 2023-01-01: a wall clock earlier than this was never set. */
+const EARLIEST_PLAUSIBLE_EPOCH = Date.UTC(2023, 0, 1) / 1000
 
 /** Below this rate (records per second while enabled), a measured signal gets a sampling note on its findings. */
 export const SLOW_HZ = 30

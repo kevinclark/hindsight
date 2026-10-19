@@ -68,6 +68,8 @@ export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((file
     if (best && best.seconds > 0) attachDslog(best.a.match, ds.file, ds.name)
     else problems.push(`${ds.name}: doesn't overlap any loaded match (it is from a different match, or the robot clock was never set)`)
   }
+  // Rules can look across the logs loaded together (a match recorded in pieces, earlier runs of an auto).
+  for (const a of analyses) a.match.others = analyses.map((x) => x.match).filter((m) => m !== a.match)
   for (const a of analyses) {
     const started = performance.now()
     a.report = runRules(a.match)

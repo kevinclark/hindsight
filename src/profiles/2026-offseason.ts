@@ -29,7 +29,8 @@ export const offseason2026: RobotProfile = {
   codebase: '2026 Offseason',
   code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'main', sha: 'cb68b20' },
 
-  game: { name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 140 },
+  // Field size from the robot code's tag layout (src/main/deploy/tagmaps/2026-rebuilt-andymark.json at cb68b20).
+  game: { name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 140, field: { length: 16.518, width: 8.043 } },
 
   signals: {
     enabled: '/DriverStation/Enabled',
@@ -64,6 +65,11 @@ export const offseason2026: RobotProfile = {
     accelX: '/Swerve/Gyro/AXMetersPerSecondSq',
     accelY: '/Swerve/Gyro/AYMetersPerSecondSq',
     odometryPose: '/RealOutputs/Odometry/Robot',
+
+    emergencyStop: '/DriverStation/EmergencyStop',
+    matchTimeLeft: '/DriverStation/MatchTime',
+    autoChoice: '/NetworkInputs/SmartDashboard/Autos',
+    joystickButtonCounts: [0, 1, 2, 3, 4, 5].map((n) => `/DriverStation/Joystick${n}/ButtonCount`),
   },
 
   // FRC8033BatteryTracker (kevinclark/8033-battery-tracker). Outputs are under /RealOutputs; the gauge is logged

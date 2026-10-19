@@ -8,9 +8,12 @@ import { runRules as run, type Report } from './run.ts'
 import brownout from './power/brownout.ts'
 import batteryCollapse from './power/battery-collapse.ts'
 import commsLoss from './comms/loss.ts'
+import restartMidMatch from './loop/restart-mid-match.ts'
+import emergencyStop from './comms/emergency-stop.ts'
 import earlyDisable from './auto/early-disable.ts'
 import tilt from './collision/tilt.ts'
 import zeroNotCompleted from './mech/zero-not-completed.ts'
+import stuckState from './mech/stuck-state.ts'
 import deviceDropout from './can/device-dropout.ts'
 import dsLogTruncated from './comms/ds-log-truncated.ts'
 import limitNotApplied from './power/limit-not-applied.ts'
@@ -35,7 +38,7 @@ import zeroSanity from './foresight/zero-sanity.ts'
 import commitMatches from './foresight/commit-matches.ts'
 
 export const RULES: Rule[] = [
-  brownout, batteryCollapse, commsLoss, earlyDisable, tilt, zeroNotCompleted, deviceDropout, dsLogTruncated,
+  brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, stuckState, tilt, zeroNotCompleted, deviceDropout, dsLogTruncated,
   limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, impact, overrun,
   visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough,
 ]

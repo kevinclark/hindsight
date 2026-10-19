@@ -43,6 +43,11 @@ export interface Match {
   epochOffset: number | null
   /** Driver Station logs for this match (two if the DS app restarted), and where they start and end in log time. */
   ds: DsAttachment[]
+  /**
+   * The other robot logs loaded with this one (empty when it was loaded alone): the other pieces of a match the robot
+   * program restarted in, and earlier matches (e.g. earlier runs of the same auto).
+   */
+  others: Match[]
   /** Decoded signals, so two rules asking for the same key decode it once. */
   cache: Map<string, NumberSeries | ValueSeries<unknown> | null>
   /** Set only by Foresight (the live pit check): the disabled stretch being checked. See src/foresight/engine.ts. */
@@ -100,7 +105,7 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
     fileName, log, profile, profileChoice, logStart, logEnd,
     enabled: [], auto: [], teleop: [], matchStart: null, teleopStart: null, matchEnd: null,
     fms: false, event: '', matchLabel: '', build: { sha: '', branch: '', date: '', dirty: '' },
-    epochOffset: null, ds: [], cache: new Map(),
+    epochOffset: null, ds: [], others: [], cache: new Map(),
   }
 
   // Phases: walk the change points of Enabled and Autonomous together.
