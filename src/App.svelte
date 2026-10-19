@@ -145,11 +145,11 @@
   <button class:active={mode === 'wizard'} onclick={() => (mode = 'wizard')}>Limits wizard</button>
 </nav>
 
-{#if mode === 'wizard'}
-  <Wizard matches={analyses} />
-{:else if mode === 'session'}
-  <SessionView {issues} onOpen={openFromSession} />
-{:else}
+<!-- All three views stay mounted and only the active one shows, so switching never loses a loaded session,
+     the matches in review, or the wizard's progress. -->
+<div hidden={mode !== 'wizard'}><Wizard matches={analyses} /></div>
+<div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} /></div>
+<div hidden={mode !== 'review'}>
 <section class="drop" class:dragging aria-busy={busy}>
   <label class="button">
     <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }} />
@@ -230,7 +230,7 @@
     </ol>
   </section>
 {/if}
-{/if}
+</div>
 
 <style>
   :global(:root) {

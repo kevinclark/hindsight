@@ -6,6 +6,8 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 export default defineConfig({
   base: './',
   plugins: [svelte(), viteSingleFile()],
+  // A new build can read logs differently, so the browser's cached summaries are kept per build.
+  define: { __BUILD_ID__: JSON.stringify(new Date().toISOString()) },
   build: { target: 'es2022' },
   test: {
     include: ['tests/**/*.test.ts'],

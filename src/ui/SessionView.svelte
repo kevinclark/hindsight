@@ -10,6 +10,7 @@
   import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
+  import { clearCached, fileKey, loadCached, saveCached } from '../session/cache.ts'
   import type { IssueEvent } from '../triage/history.ts'
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
@@ -28,6 +29,48 @@
   let renames = $state<Record<string, string>>(readStore('hindsight.sessionRenames'))
   let typedBatteries = $state<Record<string, string>>(readStore('hindsight.typedBatteries'))
   let heapMB = $state<number | null>(null)
+  // Summaries saved in this browser, by file key (name, size, modified time): reused instead of reading a log again,
+  // and restored when the page reloads. The logs themselves are never kept.
+  const cache = new Map<string, MatchSummary>()
+  let restored = $state<{ count: number; savedAt: string } | null>(null)
+  // Summaries on the page whose log file this page doesn't have (restored after a reload, not chosen again yet).
+  let withoutFile = $state(0)
+  // How many summaries this browser holds, and whether saving works here (a private window or Safari from disk may refuse).
+  let savedCount = $state(0)
+  let saveFailed = $state(false)
+  // Restoring finishes before any load reads the cache, so a folder chosen right after a reload reuses it.
+  const ready = loadCached().then((saved) => {
+    // One per file name (the newest), and only those read with the robot picked for that log now.
+    const newest = new Map<string, (typeof saved)[number]>()
+    for (const c of saved) {
+      const prev = newest.get(c.summary.fileName)
+      if (!prev || c.savedAt > prev.savedAt) newest.set(c.summary.fileName, c)
+    }
+    const usable = [...newest.values()].filter((c) => reusable(c.summary, c.summary.fileName))
+    for (const c of usable) {
+      cache.set(c.key, c.summary)
+      if (!collected.some((s) => s.fileName === c.summary.fileName)) collected.push(c.summary)
+    }
+    savedCount = saved.length
+    if (usable.length) {
+      summaries = [...collected]
+      restored = { count: usable.length, savedAt: usable.map((c) => c.savedAt).sort()[0] }
+      withoutFile = collected.filter((s) => !files.has(s.fileName)).length
+    }
+  })
+  /** Remove the copies saved in this browser; what is on the page stays. */
+  async function forget() {
+    await clearCached()
+    cache.clear()
+    savedCount = 0
+    restored = null
+  }
+  /** A saved summary is reusable only if it was read with the robot the student picks now. */
+  function reusable(s: MatchSummary | undefined, fileName: string): s is MatchSummary {
+    if (!s) return false
+    const chosen = chosenRobot(fileName)
+    return chosen ? s.robot.how === 'chosen by you' && s.robot.profileId === profileId(chosen) : s.robot.how !== 'chosen by you'
+  }
 
   const sessions = $derived(groupSessions(summaries, overrides, renames))
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
@@ -55,6 +98,7 @@
   }
 
   async function load(list: FileList | File[] | null) {
+    await ready
     const chosen = Array.from(list ?? []).filter((f) => /\.wpilog$/i.test(f.name))
     if (chosen.length === 0) { problems = ['No .wpilog files in what you chose. To load a folder, use "Choose a folder…" (dragging a folder in only works for the files themselves).']; return }
     problems = []
@@ -67,7 +111,13 @@
       progress = { ...progress, current: file.name }
       await new Promise((r) => setTimeout(r, 0)) // let the page paint between logs
       try {
-        const summary = summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, chosenRobot(file.name))
+        const key = fileKey(file)
+        const saved = cache.get(key)
+        const summary = reusable(saved, file.name) ? saved : summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, chosenRobot(file.name))
+        if (summary && summary !== saved) {
+          cache.set(key, summary)
+          saveCached(key, $state.snapshot(summary) as MatchSummary).then((ok) => { if (ok) savedCount++; else saveFailed = true })
+        }
         if (summary) {
           const old = collected.findIndex((s) => s.fileName === summary.fileName)
           if (old >= 0) collected.splice(old, 1)
@@ -83,13 +133,23 @@
       if (mem) heapMB = Math.max(heapMB ?? 0, mem.usedJSHeapSize / 2 ** 20)
     }
     publish()
+    withoutFile = collected.filter((s) => !files.has(s.fileName)).length
   }
 
   // The student picked the robot for every log in this session: read them again with that profile.
   async function setRobot(s: Session, id: string) {
     const names = s.matches.flatMap((m) => m.pieces ?? [m.fileName])
     chooseRobot(names, id === 'auto' ? null : id)
-    await load(names.map((n) => files.get(n)).filter((f): f is File => !!f))
+    const have = names.map((n) => files.get(n)).filter((f): f is File => !!f)
+    if (have.length < names.length) problems = ['To read these logs again with that robot, choose them again ("Choose logs…"): between visits this page keeps summaries, not logs.']
+    if (have.length) await load(have)
+  }
+
+  /** Open a match in Match review. A summary restored after a reload has no file: ask for it again. */
+  function open(m: MatchSummary) {
+    const f = files.get(m.fileName)
+    if (f) onOpen(f)
+    else problems = [`To open ${m.fileName} in Match review, choose it again ("Choose logs…"): between visits this page keeps each log's summary, not the log.`]
   }
 
   function moveMatch(fileName: string, label: string) {
@@ -146,6 +206,13 @@
   {/if}
 </section>
 {#each problems as p (p)}<p class="problem">{p}</p>{/each}
+{#if restored || savedCount || saveFailed}
+  <p class="note">
+    {#if restored}Restored {restored.count} log summar{restored.count === 1 ? 'y' : 'ies'} saved in this browser (from {new Date(restored.savedAt).toLocaleString()}).{withoutFile ? ` The logs themselves aren't kept: choose them again (${withoutFile} without a file now) to open one in Match review.` : ''}{:else if savedCount}{savedCount} log summar{savedCount === 1 ? 'y' : 'ies'} saved in this browser, so a reload keeps this session.{/if}
+    {#if saveFailed} This browser won't save them (a private window, or a browser that blocks storage for pages opened from disk), so a reload will start empty.{/if}
+    {#if savedCount || restored}<button class="link" onclick={forget}>Clear saved copies</button>{/if}
+  </p>
+{/if}
 
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
@@ -198,7 +265,7 @@
   <div class="grid-wrap">
     <table class="grid">
       <thead>
-        <tr><th>rule</th>{#each session.matches as m (m.fileName)}<th class="match"><button class="link" title={m.fileName} onclick={() => { const f = files.get(m.fileName); if (f) onOpen(f) }}>{label(m)}</button></th>{/each}<th>across the session</th></tr>
+        <tr><th>rule</th>{#each session.matches as m (m.fileName)}<th class="match"><button class="link" title={m.fileName} onclick={() => open(m)}>{label(m)}</button></th>{/each}<th>across the session</th></tr>
       </thead>
       <tbody>
         {#each grid as r (r.rule)}

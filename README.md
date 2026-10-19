@@ -17,6 +17,11 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   the next step, the possible causes (each with what to look for and where; the ones this log points to first, any it
   rules out struck through), and why the rule exists. Advice knows what you loaded: with the `.dslog` in, it says
   what the DS log shows rather than asking for it. "Not checked" lists rules that couldn't run on this log.
+- **Switching views** (Match review, Session, Limits wizard) keeps everything loaded in each. A **reload** keeps the
+  Session: each log's summary (never the log) is saved in this browser, keyed by file name, size and modified time
+  and by the build of this page, and restored with a note and a "Clear saved copies" control. Opening a restored match
+  in Match review asks for its file again. A private window, or a browser that blocks storage for pages opened from
+  disk, just doesn't save (the page says so).
 - **Times** read in match time first, robot time in parentheses ("1:47 into the match (teleop; robot time
   532.8 s)"), and plots are labelled in match time; robot time is what AdvantageScope shows.
 - **Power rules** besides brownouts and battery health: `power/main-breaker-margin` (the 120 A main breaker heats
