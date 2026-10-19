@@ -7,6 +7,7 @@
   import { downsample } from '../report/findings-json.ts'
   import Plot from './Plot.svelte'
   import type { PlotModel } from './plot-data.ts'
+  import { matchWhen } from '../match/match.ts'
 
   let { analysis }: { analysis: Analysis } = $props()
   const m = $derived(analysis.match)
@@ -31,10 +32,10 @@
   const voltagePlot = $derived<PlotModel | null>(g && p ? {
     from, to, unit: 'V', series: [gridSeries('Battery voltage', g.volts)],
     threshold: Number.isFinite(p.brownoutVolts) ? { value: p.brownoutVolts, label: `brownout ${p.brownoutVolts} V` } : undefined,
-    markers: p.sags.map((s) => ({ t: s.t, label: '' })),
+    markers: p.sags.map((s) => ({ t: s.t, label: '' })), matchStart: m.matchStart,
   } : null)
   const currentPlot = $derived<PlotModel | null>(g ? {
-    from, to, unit: 'A', series: [gridSeries('Total current (motors + other)', g.amps), ...g.groups.filter((x) => x.name === m.profile.whatIfGroup).map((x) => gridSeries(`${x.name}`, x.amps))],
+    from, to, unit: 'A', matchStart: m.matchStart, series: [gridSeries('Total current (motors + other)', g.amps), ...g.groups.filter((x) => x.name === m.profile.whatIfGroup).map((x) => gridSeries(`${x.name}`, x.amps))],
   } : null)
   const ocvPlot = $derived<PlotModel | null>(p && p.ocv.length ? {
     from: 0, to: Math.max(p.ocv[p.ocv.length - 1].ah, FLEET_REFERENCE[FLEET_REFERENCE.length - 1].ah) + 0.25, unit: 'V',
@@ -50,7 +51,7 @@
   <p>This log has no battery voltage or no motor supply currents, so the power view can't be drawn.</p>
 {:else}
   <dl class="kpis">
-    <div><dt>Lowest voltage (enabled)</dt><dd class:bad={p.marginVolts < 0} class:warn={p.marginVolts >= 0 && p.marginVolts < m.profile.power.marginVolts}>{f2(p.minVolts)} V</dd><dd class="sub">at {p.minAt.toFixed(1)} s</dd></div>
+    <div><dt>Lowest voltage (enabled)</dt><dd class:bad={p.marginVolts < 0} class:warn={p.marginVolts >= 0 && p.marginVolts < m.profile.power.marginVolts}>{f2(p.minVolts)} V</dd><dd class="sub">at {matchWhen(m, p.minAt)}</dd></div>
     <div><dt>Margin to brownout</dt><dd class:bad={p.marginVolts < 0} class:warn={p.marginVolts >= 0 && p.marginVolts < m.profile.power.marginVolts}>{f2(p.marginVolts)} V</dd><dd class="sub">setting {p.brownoutVolts} V; want ≥ {m.profile.power.marginVolts} V</dd></div>
     <div><dt>Time under 7 V</dt><dd>{p.secondsUnder7.toFixed(1)} s</dd><dd class="sub">while enabled</dd></div>
     <div><dt>Charge drawn</dt><dd>{p.chargeAh.toFixed(2)} Ah</dd><dd class="sub">motors + {m.profile.power.otherLoadsAmps} A other (assumed)</dd></div>
@@ -64,11 +65,11 @@
 
   <h3>The {p.sags.length} deepest sags, and what was drawing</h3>
   <table class="sags">
-    <thead><tr><th>Time (s)</th><th>Voltage</th><th>Total</th><th>Top loads</th></tr></thead>
+    <thead><tr><th>When</th><th>Voltage</th><th>Total</th><th>Top loads</th></tr></thead>
     <tbody>
       {#each p.sags as s (s.t)}
         <tr>
-          <td>{s.t.toFixed(1)}</td><td>{s.volts.toFixed(2)} V</td><td>{s.totalAmps.toFixed(0)} A</td>
+          <td>{matchWhen(m, s.t)}</td><td>{s.volts.toFixed(2)} V</td><td>{s.totalAmps.toFixed(0)} A</td>
           <td>{s.loads.slice(0, 3).map((l) => `${l.group} ${l.amps.toFixed(0)} A`).join(' · ')}</td>
         </tr>
       {/each}

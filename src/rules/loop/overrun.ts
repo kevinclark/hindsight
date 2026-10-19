@@ -14,7 +14,14 @@ export default rule({
   title: 'Loop overruns',
   severity: 'warning',
   who: ['software'],
-  fix: 'Use the Tracer/* entries to find the slow step in auto (vision updates, path following, logging) and move it off the main loop or cache it.',
+  meaning: 'The robot code often took longer than 20 ms to finish one loop. While it is late the robot runs blind, and a late loop can be many centimeters of travel.',
+  causes: [
+    { id: 'heavy-work', cause: 'Heavy work inside periodic (vision, path planning, file or network calls)', look: 'the Tracer/* entries in AdvantageScope: which step takes the longest? The code file for that subsystem\'s periodic()' },
+    { id: 'gc', cause: 'Garbage collection pauses (the code makes lots of new objects every loop)', look: 'the plot: isolated spikes with a normal loop in between; look for "new" inside periodic code' },
+    { id: 'logging', cause: 'Logging too many values, or a slow USB drive', look: 'how many keys are logged; whether the spikes line up with the log flushing; try a different USB drive' },
+    { id: 'cpu', cause: 'The roboRIO is overloaded (other programs, too many threads or CAN calls)', look: '/SystemStats CPU use and CAN utilization in AdvantageScope' },
+  ],
+  nextStep: 'Use the Tracer/* entries to find the slow step in auto and move it off the main loop or cache it.',
   incident: 'CalGames 2026: auto overran 14–27 % of loops, worst 134 ms (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 3)',
 
   check(match) {
@@ -24,9 +31,15 @@ export default rule({
     const overShare = (xs: number[]) => (xs.length ? xs.filter((ms) => ms > 20).length / xs.length : 0)
     const [worstName, worst] = overShare(auto) >= overShare(teleop) ? ['auto', auto] : ['teleop', teleop]
     if (overShare(worst) <= 0.1) return
+    // Late in over 20 % of loops, or a late middle loop: the loop is too heavy (the work, or the CPU). Less often
+    // than that: the work is still the first suspect, then pauses (garbage collection).
+    const middle = loop.percentile(50, worstName === 'auto' ? match.auto : match.teleop)
+    const tooHeavy = middle > 20 || overShare(worst) > 0.2
     return {
+      likely: tooHeavy ? ['heavy-work', 'cpu'] : ['heavy-work', 'gc'],
       message: `${pct(overShare(worst))} of ${worstName} loops took longer than 20 ms (worst ${maxOf(worst).toFixed(0)} ms)`,
       evidence: {
+        [`${worstName}: median loop (ms)`]: round(middle, 1),
         'auto: share over 20 ms (%)': round(100 * overShare(auto), 1), 'auto: p99 (ms)': round(loop.percentile(99, match.auto), 0), 'auto: worst (ms)': round(maxOf(auto), 0),
         'teleop: share over 20 ms (%)': round(100 * overShare(teleop), 1), 'teleop: p99 (ms)': round(loop.percentile(99, match.teleop), 0), 'teleop: worst (ms)': round(maxOf(teleop), 0),
       },

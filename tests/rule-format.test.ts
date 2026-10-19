@@ -5,7 +5,8 @@ import { analyzeFiles } from '../src/analyze.ts'
 import { runRules } from '../src/rules/index.ts'
 import template from '../src/rules/_template/new-rule.ts'
 import { writeWpilog } from './helpers/fixture-format.ts'
-import { fired } from './helpers/load.ts'
+import { analyzeFixture, fired } from './helpers/load.ts'
+import { RULES } from '../src/rules/index.ts'
 
 const log = writeWpilog([
   { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [35, false]] },
@@ -21,7 +22,7 @@ describe('the rule format', () => {
   it('the template rule runs as copied', () => {
     const r = runRules(a.match, [{ ...template, id: 'example/template' }])
     expect(r.crashed).toEqual([])
-    expect(r.findings[0].title).toMatch(/Battery dipped under 7 V, first at 25\.0 s/)
+    expect(r.findings[0].title).toMatch(/Battery dipped under 7 V, first at 0:05 into the match \(auto; robot time 25\.0 s\)/)
   })
   it('a missing signal makes a rule "not checked", never a silent pass', () => {
     const r = runRules(a.match, [{ ...template, id: 'example/missing', check: (m) => { m.signal('/Not/In/This/Log'); return undefined } }])
@@ -66,5 +67,25 @@ describe('runner edge cases (review 2026-10-19)', () => {
       { name: '/Apriltag VisionBack_Left/Connected', type: 'boolean', records: [[10, true]] },
     ])
     expect(r.findings.filter((f) => f.rule === 'vision/stale')).toEqual([])
+  })
+})
+
+describe('cause ids', () => {
+  it('every rule has causes with unique ids, a meaning and a next step', () => {
+    for (const r of RULES) {
+      const ids = r.causes.map((c) => c.id)
+      expect(new Set(ids).size, r.id).toBe(ids.length)
+      expect(r.meaning.length, r.id).toBeGreaterThan(10)
+      expect(r.nextStep.length, r.id).toBeGreaterThan(10)
+    }
+  })
+  it('no rule names a cause it does not have (the runner reports that as a crash)', () => {
+    const logs = ['q13-auto-and-comms', 'q21-follower-mismatch', 'p0-brownout', 'q13-spinups', 'q13-drive-plateau']
+    for (const name of logs) for (const a of analyzeFixture(name).analyses) expect(a.report.crashed, name).toEqual([])
+  })
+  it('a typo in a likely id shows as a crashed rule', () => {
+    const typo = { ...template, id: 'example/typo', check: () => ({ message: 'x', likely: ['no-such-cause'] }) }
+    const match = analyzeFixture('q13-auto-and-comms').analyses[0].match
+    expect(runRules(match, [typo]).crashed[0].reason).toMatch(/no-such-cause/)
   })
 })

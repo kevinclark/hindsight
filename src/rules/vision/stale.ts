@@ -15,7 +15,13 @@ export default rule({
   title: 'Camera stale or dropped out',
   severity: 'warning',
   who: ['software', 'pit'],
-  fix: 'Check the coprocessor (CPU, temperature), the camera pipeline settings, and the camera\'s cable and power.',
+  meaning: 'A camera stopped giving fresh results for a good part of the match, or dropped out completely. While it does, the robot is flying on odometry alone.',
+  causes: [
+    { id: 'coprocessor', cause: 'The vision coprocessor is overloaded or too hot (the pipeline stalls)', look: 'the coprocessor\'s CPU and temperature in the PhotonVision dashboard; the pipeline resolution and exposure settings' },
+    { id: 'connection', cause: 'The camera or coprocessor lost its connection (loose USB or Ethernet cable, power to the coprocessor)', look: 'the camera\'s USB cable and the coprocessor\'s Ethernet and power connectors; wiggle-test them' },
+    { id: 'view', cause: 'The camera is blocked or sees nothing useful (no tags in view, glare)', look: 'the camera image in the PhotonVision dashboard from the robot\'s usual positions' },
+  ],
+  nextStep: 'Check the coprocessor (CPU, temperature), the camera pipeline settings, and the camera\'s cable and power.',
   incident: 'CalGames 2026: Back_Right stale ~3× as often as Back_Left; dropped 6 s in Q21 (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 4)',
   forEach: 'camera',
 
@@ -25,9 +31,13 @@ export default rule({
     const staleShare = staleSeconds / lengthOf(match.wholeMatch)
     const drops = camera.connected().episodes(isFalse, { during: match.wholeMatch })
     if (staleShare <= 0.15 && drops.length === 0) return
+    // The Connected flag going false points at the link; stale results with the camera still connected point at the coprocessor.
     return {
+      // Stale while connected fits a busy coprocessor and a camera seeing no tags equally, so name no favourite.
+      likely: drops.length ? ['connection', 'coprocessor'] : undefined,
+      ruledOut: drops.length ? undefined : { connection: 'the camera never reported disconnected' },
       message: drops.length
-        ? `${camera.name} dropped out ${drops.length} time${drops.length === 1 ? '' : 's'} during the match (first at ${drops[0].start.toFixed(1)} s for ${drops[0].seconds.toFixed(1)} s)`
+        ? `${camera.name} dropped out ${drops.length} time${drops.length === 1 ? '' : 's'} during the match (first at ${match.when(drops[0].start)} for ${drops[0].seconds.toFixed(1)} s)`
         : `${camera.name} was stale ${pct(staleShare)} of the match`,
       at: drops[0]?.start,
       measured: [{ label: 'stale share of the match', value: round(100 * staleShare, 1), unit: '%', threshold: 15 }],

@@ -192,6 +192,30 @@ export function matchTimeLeft(match: Match, t: number): { phase: 'auto' | 'teleo
   return { phase: 'disabled', secondsLeft: NaN }
 }
 
+/** Seconds into the match (from the start of auto) at robot time t, or null when the log has no match in it. */
+export function matchSeconds(match: Match, t: number): number | null {
+  return match.matchStart === null ? null : t - match.matchStart
+}
+
+/** 107 → "1:47". */
+export function clock(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/**
+ * When something happened, match time first (what people think in), robot time in parentheses (what the log and
+ * AdvantageScope show): "1:47 into the match (teleop; robot time 532.8 s)".
+ */
+export function matchWhen(match: Match, t: number): string {
+  const robot = `robot time ${t.toFixed(1)} s`
+  const s = matchSeconds(match, t)
+  if (s === null) return robot
+  if (s < 0) return `before the match (${robot})`
+  if (match.matchEnd !== null && t > match.matchEnd + 0.5) return `after the match (${robot})`
+  return `${clock(s)} into the match (${phaseAt(match, t)}; ${robot})`
+}
+
 /** Phase name at time t, for evidence text. */
 export function phaseAt(match: Match, t: number): 'auto' | 'teleop' | 'disabled' {
   if (match.auto.some((iv) => t >= iv.start && t < iv.end)) return 'auto'

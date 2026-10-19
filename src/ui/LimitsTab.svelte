@@ -8,6 +8,7 @@
   import { groupWhatIf, robotBudget } from '../limits/budget.ts'
   import { zeroingChecks } from '../limits/zeroing.ts'
   import { powerReport } from '../power/power-report.ts'
+  import { matchWhen } from '../match/match.ts'
 
   let { analysis }: { analysis: Analysis } = $props()
   const groups = $derived(limitsReport(analysis.match))
@@ -92,7 +93,7 @@
 <section class="group">
   <h3>Robot current budget</h3>
   {#if budgetNow}
-    <p class="why">At the moment of most total current ({budgetNow.at.toFixed(1)} s), on the weakest battery in the fleet reference ({f2(budgetNow.weakestOcv)} V open-circuit) with this robot's {(budgetNow.resistanceOhms * 1000).toFixed(1)} mΩ. Goal: at least {budgetNow.floor} V (brownout + 1 V).</p>
+    <p class="why">At the moment of most total current ({matchWhen(analysis.match, budgetNow.at)}), on the weakest battery in the fleet reference ({f2(budgetNow.weakestOcv)} V open-circuit) with this robot's {(budgetNow.resistanceOhms * 1000).toFixed(1)} mΩ. Goal: at least {budgetNow.floor} V (brownout + 1 V).</p>
     <table>
       <thead><tr><th>group</th><th>drawing then</th><th>allowed (limits now)</th>{#if budgetWhatIf}<th>allowed ({whatIfGroup} at {whatIfCap} A)</th>{/if}</tr></thead>
       <tbody>
@@ -125,7 +126,7 @@
     {#if z.zeros.length}
       <table>
         <thead><tr><th>zero completed</th><th>peak current, 0.5 s before</th><th>time at or above {z.thresholdA} A</th></tr></thead>
-        <tbody>{#each z.zeros as zero (zero.at)}<tr><td>{zero.at.toFixed(1)} s</td><td>{zero.peakA.toFixed(0)} A</td><td>{zero.secondsAtThreshold.toFixed(2)} s</td></tr>{/each}</tbody>
+        <tbody>{#each z.zeros as zero (zero.at)}<tr><td>{matchWhen(analysis.match, zero.at)}</td><td>{zero.peakA.toFixed(0)} A</td><td>{zero.secondsAtThreshold.toFixed(2)} s</td></tr>{/each}</tbody>
       </table>
     {:else}
       <p class="note">No current zero ran while enabled in this log.</p>

@@ -14,6 +14,8 @@ export interface PlotModel {
   series: PlotSeries[]
   threshold?: { value: number; label: string }
   markers?: { t: number; label: string }[]
+  /** Robot time of the start of the match: when set, the time axis is labelled in match time. */
+  matchStart?: number | null
 }
 
 const MAX_POINTS = 600
@@ -31,5 +33,5 @@ export function plotModel(match: Match, spec: PlotSpec): PlotModel {
     const scale = line.scale ?? 1
     series.push({ label: line.label, t: d.t, v: d.v.map((x) => x * scale) })
   }
-  return { from: spec.from, to: spec.to, unit: spec.unit, series, threshold: spec.threshold, markers: spec.markers }
+  return { from: spec.from, to: spec.to, unit: spec.unit, series, threshold: spec.threshold, markers: spec.markers, matchStart: match.matchStart }
 }

@@ -15,7 +15,14 @@ export default rule({
   title: 'Battery + wiring resistance',
   severity: 'warning',
   who: ['pit'],
-  fix: 'Tug-test and re-crimp the battery leads and main breaker lugs; then load-test the battery. Good is under 20 mΩ.',
+  meaning: 'Every amp the robot draws costs extra voltage in the battery and its wiring. At this resistance the voltage drops more than it should, which brings a brownout closer.',
+  causes: [
+    { id: 'crimp', cause: 'A poor crimp or loose lug on a battery lead or the main breaker', look: 'tug-test and look at both battery leads and the main breaker lugs; warm spots after a hard run' },
+    { id: 'connector', cause: 'A worn or loose battery connector (the Anderson plug on the battery or the robot side)', look: 'the connector halves: bent or burnt contacts, a plug that comes apart easily' },
+    { id: 'battery', cause: 'A tired battery with high internal resistance', look: 'try another battery and see if the resistance changes; a load test of this one' },
+    { id: 'thin-wire', cause: 'Wire that is too thin or too long between the battery and the main breaker', look: 'the battery leads and the main power path: gauge and length' },
+  ],
+  nextStep: 'Tug-test and re-crimp the battery leads and main breaker lugs; then load-test the battery. Good is under 20 mΩ.',
   incident: 'Baseline: CalGames 2026 measured 11.0–11.4 mΩ (P0 analysis); threshold from Chief Delphi (hindsight-research/battery-sources.md)',
 
   check(match) {

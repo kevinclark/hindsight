@@ -12,7 +12,7 @@
  * never has to check for missing signals itself.
  */
 
-import { has, matchTimeLeft, num, phaseAt, values, type Match } from '../match/match.ts'
+import { has, matchSeconds, matchTimeLeft, matchWhen, num, phaseAt, values, type Match } from '../match/match.ts'
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
 import type { CurrentLimits, RobotProfile } from '../profiles/types.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
@@ -420,12 +420,16 @@ export class MatchView {
     return this.wholeMatch.some((iv) => t >= iv.start && t <= iv.end)
   }
 
-  /** "532.8 s (teleop, 17.7 s left)": the standard way to say when something happened. */
+  /** "1:47 into the match (teleop; robot time 532.8 s)": the standard way to say when something happened. */
   when(t: number): string {
-    const phase = phaseAt(this.raw, t)
-    if (phase === 'disabled') return `${t.toFixed(1)} s (disabled)`
-    return `${t.toFixed(1)} s (${phase}, ${Math.max(0, matchTimeLeft(this.raw, t).secondsLeft).toFixed(1)} s left)`
+    return matchWhen(this.raw, t)
   }
+
+  /** Seconds into the match (from the start of auto) at robot time t, or null when the log has no match. */
+  matchSeconds(t: number): number | null {
+    return matchSeconds(this.raw, t)
+  }
+
 
   /** Seconds left in the phase (auto or teleop) at time t. */
   timeLeft(t: number): number {
@@ -442,6 +446,13 @@ export class MatchView {
     const report = powerReport(this.raw)
     if (!grid || !report) throw new MissingSignal('motor supply currents')
     return { report, grid }
+  }
+
+  /** Like power(), but null instead of "not checked" when the log has no motor currents: for extra evidence. */
+  powerIfLogged(): { report: PowerReport; grid: PowerGrid } | null {
+    const grid = buildPowerGrid(this.raw)
+    const report = powerReport(this.raw)
+    return grid && report ? { report, grid } : null
   }
 
   get build() {

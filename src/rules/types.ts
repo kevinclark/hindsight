@@ -33,8 +33,12 @@ export interface Finding {
   severity: Severity
   /** One line: what happened, in plain words. */
   title: string
-  /** The moment it happened, in log seconds (null for whole-match findings). */
+  /** The moment it happened, in robot (log) seconds (null for whole-match findings). */
   time: number | null
+  /** The same moment in seconds into the match (from the start of auto), or null. */
+  matchTime: number | null
+  /** The same moment in words, match time first: "1:47 into the match (teleop; robot time 532.8 s)". */
+  when: string | null
   /** What it is about (a motor, a camera, an axis), or null for the whole match. */
   about: string | null
   /** The issue's identity across matches: the rule, plus what it is about. Known-issue tracking uses it. */
@@ -44,4 +48,8 @@ export interface Finding {
   /** The judged number against its threshold (first), plus context numbers. See Problem.measured. */
   measured?: { label: string; value: number; unit: string; threshold?: number }[]
   plot?: Plot
+  /** What it probably means, the possible causes (this log's likely ones first) and the next step. */
+  meaning: string
+  causes: { id: string; cause: string; look: string; likely?: boolean; ruledOut?: string }[]
+  nextStep: string
 }

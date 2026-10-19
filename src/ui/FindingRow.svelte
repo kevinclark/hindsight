@@ -65,8 +65,20 @@
       {#if finding.plot && open}
         <Plot model={plotModel(analysis.match, finding.plot)} />
       {/if}
+      <p class="fix"><strong>What this might mean:</strong> {finding.meaning}</p>
+      <p class="fix"><strong>Next step:</strong> {finding.nextStep}</p>
+      <div class="fix">
+        <strong>Possible causes</strong>{finding.causes.some((c) => c.likely) ? ' (tagged: what this log points to)' : ', most likely first'}:
+        <ol class="causes">
+          {#each finding.causes as c (c.id)}
+            <li class:likely={c.likely} class:ruled-out={c.ruledOut}>
+              {#if c.likely}<span class="tag">likely here</span>{/if}{#if c.ruledOut}<span class="tag">ruled out: {c.ruledOut}</span>{/if}
+              {c.cause}. <span class="look">Look at: {c.look}</span>
+            </li>
+          {/each}
+        </ol>
+      </div>
       {#if rule}
-        <p class="fix"><strong>What to do:</strong> {rule.fix}</p>
         <p class="incident"><strong>Why this rule exists:</strong> {rule.incident}</p>
         <p class="incident"><strong>Who acts:</strong> {rule.who.map((a) => WHO[a]).join(', ')} · <strong>Tracked as:</strong> <code>{finding.key}</code></p>
       {/if}
@@ -100,6 +112,13 @@
   .evidence th { text-align: left; font-weight: normal; color: var(--muted); padding: 0.1rem 1rem 0.1rem 0; vertical-align: top; }
   .evidence td { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .fix, .incident { font-size: 0.85rem; margin: 0.5rem 0 0; max-width: 70ch; }
+  .causes { margin: 0.25rem 0 0; padding-left: 1.25rem; }
+  .causes li { margin: 0.15rem 0; }
+  .causes .look { color: var(--muted); }
+  .causes .tag { font-size: 0.75rem; font-weight: 600; padding: 0 0.35rem; margin-right: 0.35rem; border-radius: 4px; border: 1px solid currentColor; }
+  .causes .likely .tag { color: var(--warning); }
+  .causes .ruled-out { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border); }
+  .causes .ruled-out .tag { text-decoration: none; display: inline-block; }
   .incident { color: var(--muted); }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
   .actions button { padding: 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; font-size: 0.85rem; cursor: pointer; }

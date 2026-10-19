@@ -17,7 +17,14 @@ export default rule({
   title: 'Motors on one loop at different speeds',
   severity: 'warning',
   who: ['pit'],
-  fix: 'Check belt tension, pulleys and set screws on the slow motor(s). If they drive a separate shaft, consider closing the loop on that shaft too.',
+  meaning: 'A motor that should turn at the same speed as its leader ran slower for a while. Its speed was not holding, so the mechanism was delivering less than the code asked for.',
+  causes: [
+    { id: 'slip', cause: 'A belt or gear slipping, or a pulley loose on its shaft, all the time', look: 'the slow motor\'s belt tension, pulleys and set screws; spin it by hand with the leader disconnected' },
+    { id: 'config', cause: 'The follower is set up wrong (not following the leader, wrong gear ratio or direction)', look: 'the code file that configures this group: the follow setting and ratio for that motor' },
+    { id: 'loose', cause: 'Something loose that slips only sometimes (a set screw, key or coupling, or a belt that only slips under load)', look: 'the same parts, while the mechanism is loaded; the speed plot in this finding: dips with recovery' },
+    { id: 'motor-fault', cause: 'That motor or its controller cutting out (current limit, brownout, CAN dropout)', look: 'the can/device-dropout and power/limit-not-applied findings for that motor; the Limits tab' },
+  ],
+  nextStep: 'Check belt tension, pulleys and set screws on the slow motor. If the motors drive separate shafts, consider closing the loop on each shaft.',
   incident: 'CalGames 2026 Q21: flywheel followers 17/18 ran 25 % slow while shooting, a slipping belt (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 1)',
   forEach: 'motorGroup',
 
@@ -41,13 +48,13 @@ export default rule({
     }
 
     // The motor that spent longest more than 15 % off the leader, and its furthest moment.
-    let worst = { name: '', secondsOff: 0, median: 1, furthest: 1, at: 0 }
+    let worst = { name: '', secondsOff: 0, steadyShare: 0, median: 1, furthest: 1, at: 0 }
     for (const m of motors) {
       const secondsOff = m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * DT
       if (secondsOff <= worst.secondsOff) continue
       let furthest = 0
       for (let k = 1; k < m.ratios.length; k++) if (Math.abs(1 - m.ratios[k]) > Math.abs(1 - m.ratios[furthest])) furthest = k
-      worst = { name: m.name, secondsOff, median: median(m.ratios), furthest: m.ratios[furthest], at: m.times[furthest] }
+      worst = { name: m.name, secondsOff, steadyShare: secondsOff / (m.ratios.length * DT), median: median(m.ratios), furthest: m.ratios[furthest], at: m.times[furthest] }
     }
     if (worst.secondsOff < 1) return
 
@@ -56,8 +63,12 @@ export default rule({
       evidence[`${m.name}: median speed vs leader (%)`] = round(100 * median(m.ratios), 0)
       evidence[`${m.name}: seconds > 15 % off`] = round(m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * DT, 1)
     }
+    evidence[`${worst.name}: share of steady time > 15 % off (%)`] = round(100 * worst.steadyShare, 0)
     evidence[`${worst.name} at its furthest (% of leader)`] = round(100 * worst.furthest, 0)
+    // Off for most of the steady time: a constant offset, so slip or a wrong setup. Off only now and then: something loose.
+    const constant = worst.steadyShare > 0.5
     return {
+      likely: constant ? ['slip', 'config'] : ['loose', 'motor-fault'],
       message: `${worst.name} ran more than 15 % off ${motors[0].name} for ${worst.secondsOff.toFixed(1)} s at steady speed (median ${(100 * worst.median).toFixed(0)} %)`,
       at: worst.at,
       evidence,

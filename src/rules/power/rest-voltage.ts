@@ -13,7 +13,13 @@ export default rule({
   title: 'Battery not fully charged',
   severity: 'warning',
   who: ['pit'],
-  fix: 'Put a battery reading 12.5 V or more at rest on the robot. A charged battery that rests lower needs a load test.',
+  meaning: 'The battery started the match partly discharged, so it sags sooner and deeper under load, closer to a brownout.',
+  causes: [
+    { id: 'not-charged', cause: 'The battery wasn\'t charged, or came off the charger early', look: 'the battery cart and charger: was this battery on it, and did the charger say full?' },
+    { id: 'worn', cause: 'A worn battery that no longer holds a full charge', look: 'Power tab: battery + wiring resistance; a load test (battery beak) in the pit' },
+    { id: 'drain', cause: 'The robot sat powered on for a long time before the match', look: 'how long the robot was on in the queue (the log starts when the robot code starts)' },
+  ],
+  nextStep: 'Put a battery reading 12.5 V or more at rest on the robot. If a charged battery rests lower, load-test it.',
   incident: 'CalGames 2026 Q21: 12.44 V before auto (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 2)',
 
   check(match) {

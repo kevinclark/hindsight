@@ -12,7 +12,13 @@ export default rule({
   title: 'Driver Station log ends mid-match',
   severity: 'error',
   who: ['drive'],
-  fix: 'Treat the DS laptop as the suspect: plugged in, high-performance power plan, nothing else running, check its event log for an app crash.',
+  meaning: 'The Driver Station app stopped logging while the match was still running: it crashed, was closed, or the laptop slept.',
+  causes: [
+    { id: 'app-crash', cause: 'The Driver Station app crashed', look: 'Windows Event Viewer on the DS laptop (Application log) at that time' },
+    { id: 'laptop-power', cause: 'The laptop slept or throttled (on battery, power-saving plan)', look: 'was the laptop plugged in? Its power plan (should be High performance)' },
+    { id: 'overload', cause: 'Something else on the laptop starved the DS (dashboards, updates, browsers)', look: 'Task Manager during a practice match; the DS log\'s CPU column before it stopped' },
+  ],
+  nextStep: 'Plug the DS laptop in, set the High performance power plan, close everything but the DS and dashboard, and check Event Viewer for a Driver Station crash.',
   incident: 'CalGames 2026 Q13: DS log ends at 420.5 s; match ran to 433.1 s (2026-10-17-calgames-q13-log-analysis.md §2)',
 
   check(match) {
@@ -25,12 +31,12 @@ export default rule({
       // The DS's last record with a robot voltage: when the DS last heard from the robot.
       const lastHeard = [...d.file.records].reverse().find((r) => r.voltage !== null)
       return {
-        message: `Driver Station log ends at ${d.endTime.toFixed(1)} s, ${(end - d.endTime).toFixed(1)} s before the match ended`,
+        message: `Driver Station log ends at ${match.when(d.endTime)}, ${(end - d.endTime).toFixed(1)} s before the match ended`,
         at: d.endTime,
         evidence: {
-          'DS log ends (s)': round(d.endTime),
-          'match ends (s)': round(end),
-          'DS last saw the robot (s)': lastHeard && match.epochOffset !== null ? round(lastHeard.epochSeconds - match.epochOffset) : 'never',
+          'DS log ends': match.when(d.endTime),
+          'match ends': match.when(end - 0.001),
+          'DS last saw the robot': lastHeard && match.epochOffset !== null ? match.when(lastHeard.epochSeconds - match.epochOffset) : 'never',
           'DS log file': d.fileName,
           'DS logs for this match': match.dsLogs.length,
         },

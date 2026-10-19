@@ -4,11 +4,12 @@
 -->
 <script lang="ts">
   import type { PlotModel } from './plot-data.ts'
+  import { clock } from '../match/match.ts'
 
   let { model, height = 140, xLabel = 's' }: { model: PlotModel; height?: number; xLabel?: string } = $props()
 
   const W = 640
-  const PAD = { left: 44, right: 10, top: 10, bottom: 22 }
+  const PAD = { left: 44, right: 10, top: 18, bottom: 22 }
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
 
   const yRange = $derived.by(() => {
@@ -48,7 +49,13 @@
     return { values, digits: Math.max(0, -Math.floor(Math.log10(step) + 1e-9)) }
   }
   const yTicks = $derived(ticks(yRange.lo, yRange.hi, 4))
-  const xTicks = $derived(ticks(model.from, model.to, 6))
+  // The time axis reads in match time (what people think in) when the match start is known; robot time otherwise.
+  const ms = $derived(xLabel === 's' && model.matchStart != null ? model.matchStart : null)
+  const xTicks = $derived(ms === null ? ticks(model.from, model.to, 6) : ticks(model.from - ms, model.to - ms, 6))
+  const tickAt = (v: number) => (ms === null ? v : v + ms)
+  // Ticks closer than a second apart (a short window) read in seconds; m:ss would repeat "0:01, 0:01".
+  const tickText = (v: number) => (ms === null || xTicks.digits > 0 ? v.toFixed(xTicks.digits) : v < 0 ? `−${clock(-v)}` : clock(v))
+  const axisText = $derived(ms === null ? xLabel : `${xTicks.digits > 0 ? 'seconds into the match' : 'match time'} (robot time ${model.from.toFixed(0)}–${model.to.toFixed(0)} s)`)
 </script>
 
 <figure class="plot">
@@ -58,10 +65,10 @@
       <text class="tick" x={PAD.left - 6} y={y(v) + 4} text-anchor="end">{v.toFixed(yTicks.digits)}</text>
     {/each}
     {#each xTicks.values as t (t)}
-      <text class="tick" x={x(t)} y={height - 6} text-anchor="middle">{t.toFixed(xTicks.digits)}</text>
+      <text class="tick" x={x(tickAt(t))} y={height - 6} text-anchor="middle">{tickText(t)}</text>
     {/each}
-    <text class="tick unit" x={4} y={PAD.top + 8}>{model.unit}</text>
-    <text class="tick unit" x={W - PAD.right} y={height - 6} text-anchor="end">{xLabel}</text>
+    <text class="tick unit" x={4} y={11}>{model.unit}</text>
+    <text class="tick unit" x={W - PAD.right} y={11} text-anchor="end">{axisText}</text>
     {#if model.threshold}
       <line class="threshold" x1={PAD.left} x2={W - PAD.right} y1={y(model.threshold.value)} y2={y(model.threshold.value)} />
     {/if}

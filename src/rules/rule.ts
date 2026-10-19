@@ -9,7 +9,12 @@
  *     title: 'Battery not fully charged',
  *     severity: 'warning',
  *     who: ['pit'],
- *     fix: 'Put a charged battery on the robot.',
+ *     meaning: 'The battery started the match partly discharged, so it sags sooner and deeper under load.',
+ *     causes: [
+ *       { id: 'not-charged', cause: 'The battery wasn't charged', look: 'the charger cart: was this battery on it?' },
+ *       { id: 'worn', cause: 'A worn battery that no longer holds a charge', look: 'Power tab: its resistance' },
+ *     ],
+ *     nextStep: 'Put a battery reading 12.5 V or more at rest on the robot.',
  *     incident: 'A practice match that started at 12.44 V sagged deeper than the one before it',
  *     check(match) {
  *       if (match.autoStart === null) return           // never enabled: nothing to check
@@ -55,6 +60,15 @@ export interface Problem {
   plot?: (string | Signal)[]
   /** The plot's unit label: 'V', 'A', '°'. */
   plotUnit?: string
+  /**
+   * Causes this log points to (their ids), most likely first. The rest follow in the rule's order. Use it when the
+   * evidence says which cause fits: "the radio stayed linked, so it's the DS laptop, not the radio".
+   */
+  likely?: string[]
+  /** Causes this log rules out, by id, with the reason in a few words: { radio: 'the radio stayed linked' }. */
+  ruledOut?: Record<string, string>
+  /** The next step for this log, when the rule's usual one doesn't fit (e.g. the DS log is already loaded). */
+  nextStep?: string
   /** Plot window and extras, when the default (5 s either side of `at`) isn't right. */
   plotFrom?: number
   plotTo?: number
@@ -78,10 +92,22 @@ interface About {
   title: string
   severity: Severity
   who: Audience[]
-  /** What to do when it fires. Shown under every finding. */
-  fix: string
-  /** The incident that taught us this rule. */
+  /** What it probably means when this fires: one or two sentences a student can act on. */
+  meaning: string
+  /** What could cause it, most likely first. Each says what to look for, and where (a tab, a part, a file). */
+  causes: Cause[]
+  /** The one thing to do next. A Problem can replace it for one log (`nextStep`). */
+  nextStep: string
+  /** Why the rule exists: the failure it catches, and where it was seen or documented. */
   incident: string
+}
+
+/** One possible cause: what it is, and what to look for and where to confirm or rule it out. */
+export interface Cause {
+  /** A short name, used by a Problem's `likely` and `ruledOut`: 'radio', 'ds-laptop'. */
+  id: string
+  cause: string
+  look: string
 }
 
 export type Rule = About & (

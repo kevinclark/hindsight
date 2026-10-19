@@ -96,7 +96,7 @@ describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
       const text = JSON.stringify(buildFindingsJson(a.match, a.report))
       expect(text.length).toBeLessThan(2_000_000)
       expect(text).not.toMatch(/RadioStatus\/Status/)
-      expect(JSON.parse(text).schema).toBe('hindsight.findings/1')
+      expect(JSON.parse(text).schema).toBe('hindsight.findings/2')
     }
   })
 })

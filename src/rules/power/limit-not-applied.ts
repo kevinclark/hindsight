@@ -14,7 +14,14 @@ export default rule({
   title: 'Current limit not holding',
   severity: 'error',
   who: ['software'],
-  fix: 'If the limit is switched off in code, switch it on and measure the mechanism before and after. If it is on, check the config reaches the motor (apply() return code, followers included).',
+  meaning: 'The motors drew far more current than the limit that is supposed to hold them back, so the limit is not doing its job. Heavy current like this is a common reason for brownouts.',
+  causes: [
+    { id: 'limit-off', cause: 'The limit is configured but switched off in code (the enable flag is false)', look: 'the code file in this finding\'s "set in" evidence: the current-limit enable setting for this group' },
+    { id: 'not-saved', cause: 'The configuration never reached the motor (the apply call failed, or a follower was missed, or the controller was replaced)', look: 'the return code of the config apply call in the code, for the leader and each follower; the vendor tool\'s view of the motor\'s limits' },
+    { id: 'default-limit', cause: 'The motor is running the controller\'s default limits (Phoenix 6: 70 A supply, 120 A stator), not the one you chose', look: 'whether the code sets this limit at all, and whether supply and stator limits were mixed up' },
+    { id: 'wrong-value', cause: 'The limit is set too high for what the mechanism needs', look: 'the limit value in the code against the Limits tab: what current the mechanism actually needs' },
+  ],
+  nextStep: 'If the limit is switched off in code, switch it on and measure the mechanism before and after. If it is on, check the config reaches every motor.',
   incident: 'CalGames 2026: flywheel 78–94 A vs a disabled 40 A supply limit (hindsight-research/design-detail.md §5a)',
   forEach: 'motorGroup',
 
@@ -43,7 +50,13 @@ export default rule({
       const pin = match.profile.code
       const sameCode = match.build.sha.startsWith(pin.sha)
       const asOf = sameCode ? '' : ` (as of ${pin.branch} ${pin.sha}; this log ran ${match.build.sha.slice(0, 7) || 'unknown code'})`
+      // Switched off in code: that is the cause. Switched on (in the code the profile came from): the config likely didn't reach the motor.
+      const off = !isOn
+      const onInThisCode = isOn && sameCode
       problems.push({
+        likely: off ? ['limit-off'] : onInThisCode ? ['not-saved', 'default-limit'] : undefined,
+        ruledOut: onInThisCode ? { 'limit-off': 'the limit is switched on in the code' } : undefined,
+        nextStep: off ? `Switch the ${kind} limit on in ${group.limits.where}, then measure the mechanism before and after.` : undefined,
         message: `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${isOn ? '' : ' that is switched off in code'}${asOf}`,
         at: worst.start,
         about: `${group.name} ${kind}`,

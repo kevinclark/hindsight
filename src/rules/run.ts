@@ -39,8 +39,14 @@ export function runRules(match: Match, rules: Rule[]): Report {
   }
   if (skipped.length) {
     findings.push({
-      rule: 'meta/not-checked', severity: 'info', time: null, about: null, key: 'meta/not-checked',
+      rule: 'meta/not-checked', severity: 'info', time: null, matchTime: null, when: null, about: null, key: 'meta/not-checked',
       title: `${skipped.length} rule${skipped.length === 1 ? '' : 's'} not checked or partly checked: signals missing`,
+      meaning: 'These rules could not look at this log, so their silence says nothing about this match.',
+      causes: [
+        { id: 'not-logged', cause: 'The robot code does not log the signal', look: 'the evidence below names each missing key; search the robot code for it' },
+        { id: 'profile', cause: 'The robot profile names a key this robot logs under another name', look: 'open the log in AdvantageScope and compare key names with the profile file in src/profiles/' },
+      ],
+      nextStep: 'For each rule you care about, log the missing signal or fix its key in the robot profile.',
       evidence: Object.fromEntries(skipped.map((s) => [s.rule, s.reason])),
     })
   }
@@ -148,11 +154,26 @@ function need(key: string | undefined, what: string): string {
 
 function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchView): Finding {
   const about = p.about ?? itemName
+  const time = p.at ?? null
+  // A cause id the rule doesn't have is a typo in the rule: stop, so it shows as crashed instead of silently ranking nothing.
+  const unknown = [...(p.likely ?? []), ...Object.keys(p.ruledOut ?? {})].filter((id) => !rule.causes.some((c) => c.id === id))
+  if (unknown.length) throw new Error(`${rule.id}: no cause with id ${unknown.map((id) => `"${id}"`).join(', ')}`)
+  // This log's likely causes first (in the order the rule gave them), then the rest in the rule's order.
+  const likely = p.likely ?? []
+  const rank = (id: string) => (likely.includes(id) ? likely.indexOf(id) : likely.length + rule.causes.findIndex((c) => c.id === id))
+  const causes = [...rule.causes]
+    .sort((a, b) => Number(!!p.ruledOut?.[a.id]) - Number(!!p.ruledOut?.[b.id]) || rank(a.id) - rank(b.id))
+    .map((c) => ({ ...c, ...(likely.includes(c.id) ? { likely: true } : {}), ...(p.ruledOut?.[c.id] ? { ruledOut: p.ruledOut[c.id] } : {}) }))
   return {
     rule: rule.id,
     severity: p.severity ?? rule.severity,
     title: p.message,
-    time: p.at ?? null,
+    time,
+    matchTime: time === null ? null : view.matchSeconds(time),
+    when: time === null ? null : view.when(time),
+    meaning: rule.meaning,
+    causes,
+    nextStep: p.nextStep ?? rule.nextStep,
     about,
     key: about ? `${rule.id} · ${about}` : rule.id,
     evidence: p.evidence ?? {},

@@ -16,7 +16,7 @@ import { powerReport } from '../power/power-report.ts'
 import { buildPowerGrid } from '../power/battery-model.ts'
 import type { IssueEvent } from '../triage/history.ts'
 
-export const SCHEMA = 'hindsight.findings/1'
+export const SCHEMA = 'hindsight.findings/2'
 export { VERSION as TOOL_VERSION } from '../version.ts'
 import { VERSION } from '../version.ts'
 const EXCLUDED_PREFIXES = ['/RadioStatus/']
@@ -50,7 +50,6 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
       plot: undefined,
       issue: issues.get(f.key) ? { status: issues.get(f.key)!.status, note: issues.get(f.key)!.note, since: issues.get(f.key)!.when } : null,
       who: RULES.find((r) => r.id === f.rule)?.who ?? [],
-      fix: RULES.find((r) => r.id === f.rule)?.fix ?? null,
       incident: RULES.find((r) => r.id === f.rule)?.incident ?? null,
       window: f.plot ? windowFor(match, f.plot) : null,
     })),

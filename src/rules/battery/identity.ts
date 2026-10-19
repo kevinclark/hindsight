@@ -12,7 +12,13 @@ export default rule({
   title: 'Battery not identified',
   severity: 'warning',
   who: ['pit'],
-  fix: 'Plug in the battery\'s fuel gauge (and give it a nickname with PWF\'s tool), or type its label in the BatteryId dashboard field after every swap.',
+  meaning: 'Hindsight cannot tell which battery was in the robot, so a weak battery cannot be followed from match to match.',
+  causes: [
+    { id: 'gauge-unplugged', cause: 'The battery\'s fuel gauge is not plugged in, or is not powered', look: 'the gauge on the battery: is it connected to the robot\'s port, and does it light up? Log keys Battery/Id and Battery/IdSource' },
+    { id: 'no-label', cause: 'Nobody typed the battery\'s label into the dashboard after the swap', look: 'the battery-ID field on the dashboard: is it filled in for this match?' },
+    { id: 'code', cause: 'The robot code is not logging the battery ID at all', look: 'the robot code: is the battery tracker created in robotInit, and does it log Battery/Id?' },
+  ],
+  nextStep: 'Plug in the battery\'s fuel gauge, or type its label in the battery-ID dashboard field after every swap.',
   incident: 'CalGames 2026 P0: the weak battery could not be identified after the match (hindsight-proposal.md §3); library: kevinclark/8033-battery-tracker',
 
   check(match) {
@@ -21,7 +27,12 @@ export default rule({
     const id = match.text(match.firstOf(b.id)).at(at)
     const source = match.text(match.firstOf(b.idSource)).at(at) || 'none'
     if (id && (source === 'gauge' || source === 'gauge-cached')) return
+    // An ID from the dashboard means the code works and someone typed a label; only the gauge was missing.
+    const fromDashboard = !!id
     return {
+      likely: fromDashboard ? ['gauge-unplugged'] : undefined,
+      ruledOut: fromDashboard ? { code: 'the code logged a battery ID', 'no-label': 'a label was typed in' } : undefined,
+      nextStep: fromDashboard ? 'The ID was typed in, not read from the gauge: plug the gauge in so it is read automatically.' : undefined,
       message: id ? `Battery ${id} identified from the dashboard, not its fuel gauge` : 'Battery ID unknown for this match',
       at: match.autoStart,
       evidence: { 'battery id': id || '(none)', 'id source': source },

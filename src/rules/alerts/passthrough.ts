@@ -14,11 +14,17 @@ export default rule({
   title: 'Robot code alerts',
   severity: 'info',
   who: ['software'],
-  fix: 'Read the alert text; ask whoever wrote that alert what it means and what to check.',
+  meaning: 'The robot code raised an alert: a message its programmers chose to show on the dashboard. The type (error, warning, info) is how serious they thought it was.',
+  causes: [
+    { id: 'condition', cause: 'The condition the code watches for really happened (a device disconnected, a sensor out of range)', look: 'the alert text names the thing; check that part. Search the robot code for the exact text to see what raises it' },
+    { id: 'hardware', cause: 'A loose connector, cable or power wire on the part the alert names', look: 'the part named in the alert: its connector, cable and power; the Match tab around the time it came on' },
+    { id: 'bad-check', cause: 'The check in the code is too touchy or wrong (it fires when nothing is broken)', look: 'the code file that creates the alert: what makes it turn on, and for how long' },
+  ],
+  nextStep: 'Search the robot code for the alert text to find what raises it, then check the part it names.',
   incident: 'CalGames 2026 P0: "Flywheel Follower Disconnected" ×7, unseen during the match (hindsight-research/design-detail.md §5a)',
   forEach: 'alert',
 
-  check(alert) {
+  check(alert, match) {
     if (TIME_SYNC_ALERTS.some((pattern) => pattern.test(alert.text))) return
     const during = alert.onsetsInMatch.length
     return {
@@ -28,7 +34,7 @@ export default rule({
       evidence: {
         group: alert.group,
         'times during the match': during,
-        'onsets (s)': alert.onsetsInMatch.slice(0, 12).map((t) => t.toFixed(1)).join(', ') || '—',
+        'first times during the match': alert.onsetsInMatch.slice(0, 6).map((t) => match.when(t)).join('; ') || '—',
         'seconds on during the match': round(alert.secondsInMatch, 1),
         'times before or after the match': alert.onsetsOutsideMatch,
       },

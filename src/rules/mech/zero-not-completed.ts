@@ -16,7 +16,13 @@ export default rule({
   title: 'Mechanism moved before its zero completed',
   severity: 'error',
   who: ['software'],
-  fix: 'Make the zero finish before any command can move the mechanism: zero at boot, or put the zero command ahead of the first auto command; set the zeroed flag when it completes.',
+  meaning: 'A mechanism moved before its zero (finding its hard stop) finished, so every angle it was sent to was measured from the wrong starting point. It went to the wrong place.',
+  causes: [
+    { id: 'zero-cancelled', cause: 'The zero command was cancelled or interrupted by another command (often the first auto command)', look: 'the code file for the mechanism\'s zero command: what requires the same subsystem, and what is scheduled when auto starts' },
+    { id: 'zero-late', cause: 'The zero only runs after the robot is enabled, and something else moves the mechanism first', look: 'the code that starts the zero: can it run at boot or in disabled, before any command?' },
+    { id: 'zero-never-ran', cause: 'The zero was never started, or its \'done\' message is never printed', look: 'the code: is the zero command scheduled at all? The console log for the zero-complete message' },
+  ],
+  nextStep: 'Make the zero finish before any command can move the mechanism: zero at boot, or put the zero command ahead of the first auto command; set the zeroed flag when it completes.',
   incident: 'CalGames 2026 Q13/Q21: hood zero cancelled 0.2 s into auto; fixed by 8ba92cb (2026-10-17-calgames-q13-log-analysis.md §1)',
   forEach: 'mechanism',
 
@@ -35,12 +41,14 @@ export default rule({
     const zeroed = Number.isFinite(doneAt)
     const jump = zeroed ? position.at(doneAt + 0.1) - position.at(doneAt - 0.1) : NaN
     if (zeroed && Math.abs(jump) < mechanism.moveDegrees) return
+    // The log can't tell a cancelled zero from a late one, so only rule out "never ran" when it did finish.
     return {
-      message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed${zeroed ? ` (at ${doneAt.toFixed(1)} s)` : ' (it never did)'}`,
+      ruledOut: zeroed ? { 'zero-never-ran': `the zero did complete, ${(doneAt - movedAt).toFixed(1)} s after the first move` } : undefined,
+      message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed${zeroed ? `, ${(doneAt - movedAt).toFixed(1)} s later` : ' (it never did)'}`,
       at: movedAt,
       evidence: {
-        'first move while enabled (s)': round(movedAt),
-        'zero completed (s)': zeroed ? round(doneAt) : 'never',
+        'first move while enabled (robot time, s)': round(movedAt),
+        'zero completed (robot time, s)': zeroed ? round(doneAt) : 'never',
         'seconds moving in the wrong frame': zeroed ? round(doneAt - movedAt, 1) : 'whole match',
         'position jump when the zero landed (°)': zeroed ? round(jump, 1) : 'n/a',
       },

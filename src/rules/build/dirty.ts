@@ -11,7 +11,12 @@ export default rule({
   title: 'Uncommitted code on the robot',
   severity: 'warning',
   who: ['software'],
-  fix: 'Commit and push what was deployed, then redeploy from the commit. At events, deploy only from a clean tree.',
+  meaning: 'The code on the robot had changes that were never saved to git, so nobody can say exactly what was running.',
+  causes: [
+    { id: 'quick-fix', cause: 'Code was deployed with edits that were not committed (a quick fix between matches)', look: 'run git status in the robot code folder on the laptop that deployed; the log key /RealMetadata/GitDirty' },
+    { id: 'stray-files', cause: 'Files that should be ignored (build output, local settings) are showing up as changes', look: 'git status: which files are listed? Add generated ones to .gitignore' },
+  ],
+  nextStep: 'Commit and push what was deployed, then redeploy from the commit. At events, deploy only from a clean tree.',
   incident: 'CalGames 2026 P0: GitDirty = "Uncommitted changes" (hindsight-proposal.md, conclusion 4)',
 
   check(match) {

@@ -14,7 +14,13 @@ export default rule({
   title: 'Battery capacity low (fuel gauge)',
   severity: 'warning',
   who: ['pit'],
-  fix: 'Capacity-test this battery (AndyMark CBA, 10 A to 11 V). Under 12 Ah twice means practice only.',
+  meaning: 'The battery\'s fuel gauge has learned that this battery holds much less charge than a healthy one. It will sag early and may collapse partway through a match.',
+  causes: [
+    { id: 'worn', cause: 'The battery is worn out (old, or many hard cycles)', look: 'the gauge\'s effective capacity for this battery across several matches; a battery that keeps reading low is worn' },
+    { id: 'damaged', cause: 'A damaged battery (left empty for a long time, over-discharged, overheated, a bad cell)', look: 'the battery itself: swollen or hot case, and how it was stored; a capacity test will show it' },
+    { id: 'gauge-off', cause: 'The gauge\'s learned number is wrong (it has not seen a full cycle yet)', look: 'compare with a capacity test; check whether the reading moves after a full charge and discharge' },
+  ],
+  nextStep: 'Capacity-test this battery (a battery analyzer: 10 A down to 11 V). Under 12 Ah twice means practice only.',
   incident: 'CalGames 2026 P0 battery collapse; gauge snapshots (hindsight-proposal.md §3, battery-sources.md)',
 
   check(match) {

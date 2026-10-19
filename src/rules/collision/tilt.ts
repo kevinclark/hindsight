@@ -14,7 +14,14 @@ export default rule({
   title: 'Robot tilted or wedged',
   severity: 'warning',
   who: ['software', 'pit', 'drive'],
-  fix: 'Watch the match video at this time. If it was a field element, check what was raised (hood, intake) and add a guard in code near that element.',
+  meaning: 'The robot tipped or tilted past 15° for a while. Usually it drove onto or into something and got wedged; in auto that can cost the match.',
+  causes: [
+    { id: 'field-element', cause: 'The robot drove into or onto a field element (bump, ramp, bar) and wedged', look: 'the match video at this time; where the robot was on the field (Match tab)' },
+    { id: 'raised-mechanism', cause: 'A raised mechanism (arm, intake) caught on something', look: 'mechanism positions in AdvantageScope at this time; was something extended or not yet zeroed?' },
+    { id: 'tipping', cause: 'The robot tipped from driving or turning too hard', look: 'driver inputs and speed just before; how high the heavy parts sit' },
+    { id: 'gyro', cause: 'The gyro is mounted tilted or reads wrong', look: 'the pitch and roll plot at rest before the match: should be near 0°' },
+  ],
+  nextStep: 'Watch the match video at this time. If it was a field element, check what was raised and add a guard in code near that element.',
   incident: 'CalGames 2026 Q13: −24° pitch for 0.8 s at the trench in auto (2026-10-17-calgames-q13-log-analysis.md §1)',
 
   check(match) {
@@ -33,6 +40,8 @@ export default rule({
           measured: [{ label: `${axis.label.toLowerCase()}`, value: round(Math.abs(angle), 1), unit: '°', threshold: 15 }],
           evidence: { axis: axis.label, 'peak (°)': round(angle, 1), 'seconds beyond ±15°': round(e.seconds), phase },
           plot: [pitch, roll], plotUnit: '°', plotFrom: e.start - 3, plotTo: e.end + 3,
+          // In auto the path drives itself, so a wedge there points at the path and what was raised.
+          nextStep: phase === 'auto' ? 'It tilted during auto, so the auto path drove into something: watch the video, and check the path near this spot and what was raised.' : undefined,
         })
       }
     }

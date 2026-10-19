@@ -51,7 +51,7 @@ describe('the match window ignores enables before the match', () => {
   })
   it('says time left from the real teleop start', () => {
     const margin = a.report.findings.find((f) => f.rule === 'power/margin')!
-    expect(margin.title).toMatch(/300\.0 s \(teleop, 63\.0 s left\)/)
+    expect(margin.title).toMatch(/1:40 into the match \(teleop; robot time 300\.0 s\)/)
     expect(margin.title).toMatch(/0\.50 V above/)
   })
 })

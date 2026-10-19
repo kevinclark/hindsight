@@ -8,6 +8,7 @@
   import { offseason2026 } from '../profiles/2026-offseason.ts'
   import { checkStep, comparability, groupOf, newSession, parseSession, serializeSession, SESSION_FILE_NAME, sweepResult, type LimitsSession } from '../limits/session.ts'
   import { zeroingChecks } from '../limits/zeroing.ts'
+  import { matchWhen } from '../match/match.ts'
   import { downloadText } from './download.ts'
   import Scatter from './Scatter.svelte'
 
@@ -68,7 +69,7 @@
 
   const label = (limitA: number | null) => (limitA === null ? 'no limit' : `${limitA} A`)
   const f2 = (x: number) => (Number.isFinite(x) ? x.toFixed(2) : '—')
-  const zeroing = $derived(matches.flatMap((a) => zeroingChecks(a.match).map((z) => ({ ...z, file: a.match.fileName }))))
+  const zeroing = $derived(matches.flatMap((a) => zeroingChecks(a.match).map((z) => ({ ...z, file: a.match.fileName, match: a.match }))))
 </script>
 
 <p class="intro">
@@ -202,7 +203,7 @@
     {:else}
       {#each zeroing as z (z.file + z.mechanism)}
         <p>{z.file}: {z.mechanism} zero threshold {z.thresholdA} A vs stator limit {z.statorLimitA} A{z.thresholdAtLimit ? ' — equal, so the zero trips only on overshoot' : ''}.
-          {#if z.zeros.length}Zeros: {z.zeros.map((x) => `${x.at.toFixed(1)} s, peak ${x.peakA.toFixed(0)} A, ${x.secondsAtThreshold.toFixed(2)} s at threshold`).join('; ')}.{/if}
+          {#if z.zeros.length}Zeros: {z.zeros.map((x) => `${matchWhen(z.match, x.at)}, peak ${x.peakA.toFixed(0)} A, ${x.secondsAtThreshold.toFixed(2)} s at threshold`).join('; ')}.{/if}
           {#if z.thresholdAtLimit}Suggested: {z.suggestedThresholdA} A.{/if}</p>
       {/each}
     {/if}

@@ -13,11 +13,16 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
 - **Offline (events):** copy `hindsight.html` to the DS laptop and double-click it. Works from `file://`.
 - Drop one or more `.wpilog` files, plus `.dslog` files. A DS log is matched to the robot log it overlaps on the wall
   clock; one from another match is reported and ignored.
-- **Match** tab: findings, worst first. Each shows its evidence numbers, a plot of the moment, what to do, and the
-  incident that taught us the rule. "Not checked" lists rules that couldn't run on this log.
+- **Match** tab: findings, worst first. Each shows its evidence numbers, a plot of the moment, what it might mean,
+  the next step, the possible causes (each with what to look for and where; the ones this log points to first, any it
+  rules out struck through), and why the rule exists. Advice knows what you loaded: with the `.dslog` in, it says
+  what the DS log shows rather than asking for it. "Not checked" lists rules that couldn't run on this log.
+- **Times** read in match time first, robot time in parentheses ("1:47 into the match (teleop; robot time
+  532.8 s)"), and plots are labelled in match time; robot time is what AdvantageScope shows.
 - **Power** tab: lowest voltage and margin to the brownout setting, the loads at the deepest sags, the battery's
   estimated open-circuit voltage against charge drawn, and flywheel current-cap what-ifs with the model's error.
-- **Download for Claude** saves `<log>.findings.json` (schema `hindsight.findings/1`): findings, evidence, summary
+- **Download for Claude** saves `<log>.findings.json` (schema `hindsight.findings/2`: each finding has robot time,
+  match time, meaning, ranked causes and next step): findings, evidence, summary
   statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
   hashed Wi-Fi key.
 
