@@ -78,10 +78,10 @@ describe('Foresight checks on a robot in the pit', () => {
     const r = check([{ name: '/DriverStation/Joystick1/Name', type: 'string', records: steady('') }])
     expect(flagged(r)).toEqual(['foresight/controllers'])
     expect(r.verdict.items[0].finding.title).toMatch(/port 1 /)
-    // Proven on the backtest, so red and NO-GO, with the proof shown.
-    expect(r.verdict.items[0].level).toBe('red')
-    expect(r.verdict.verdict).toBe('NO-GO')
-    expect(r.verdict.items[0].proof).toMatch(/^proven on 3 match logs, never fired there/)
+    // Clean on the backtest but never fired on our logs: amber (Kevin, 2026-10-19), so GO with one to look at.
+    expect(r.verdict.items[0].level).toBe('amber')
+    expect(r.verdict.verdict).toBe('GO')
+    expect(r.verdict.items[0].proof).toMatch(/^amber until it catches a real fault on one of our logs \(no false reds on 3 match logs/)
   })
 
   it('controllers not checked while the Driver Station is not connected', () => {
@@ -168,13 +168,23 @@ describe('Foresight checks on a robot in the pit', () => {
 
 describe('Foresight verdict', () => {
   const finding = (rule: string, severity: 'error' | 'warning' | 'info') => ({ rule, severity, title: rule, time: null, matchTime: null, when: null, about: null, key: rule, evidence: {}, meaning: '', causes: [], nextStep: `do ${rule}` })
-  const proven = { 'power/rest-voltage': { logs: 3, fires: 1, base: 'CalGames 2026', date: '2026-10-19' } }
+  const proven = {
+    'power/rest-voltage': { logs: 3, fires: 1, ourFires: 1, base: 'CalGames 2026', date: '2026-10-19' },
+    'vision/time-sync': { logs: 8, fires: 0, ourFires: 0, base: 'CalGames 2026 + others', date: '2026-10-19' },
+    'build/dirty': { logs: 6, fires: 1, ourFires: 0, base: 'another team', date: '2026-10-19' },
+  }
   it('amber unless proven; red only for proven checks; NO-GO on any red', () => {
     const v = verdictFor({ findings: [finding('build/dirty', 'warning'), finding('power/rest-voltage', 'warning'), finding('x', 'info')], skipped: [], crashed: [] }, proven)
     expect(v.verdict).toBe('NO-GO')
     expect(v.items.map((i) => [i.finding.rule, i.level])).toEqual([['power/rest-voltage', 'red'], ['build/dirty', 'amber'], ['x', 'grey']])
     expect(v.items[0].proof).toMatch(/proven on 3 match logs, fired on 1, all real/)
     expect(v.items[0].action).toBe('do power/rest-voltage')
+  })
+  it('clean backtest but no real fire on our logs stays amber, even after firing on another team\'s log', () => {
+    const v = verdictFor({ findings: [finding('vision/time-sync', 'warning')], skipped: [], crashed: [] }, proven)
+    expect(v.items[0].level).toBe('amber')
+    expect(v.verdict).toBe('GO')
+    expect(verdictFor({ findings: [], skipped: [{ rule: 'vision/time-sync', reason: 'missing x' }], crashed: [] }, proven).verdict).toBe('GO')
   })
   it('a rule severity of error is still amber until proven', () => {
     expect(verdictFor({ findings: [finding('can/device-dropout', 'error')], skipped: [], crashed: [] }, {}).items[0].level).toBe('amber')

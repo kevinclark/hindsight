@@ -44,11 +44,11 @@ over 138–345 s of disabled robot on the field. 91 s for all 11 on the M5 Max.
 |---|---|---|---|---|
 | `power/rest-voltage` | 9 | Q21 (12.45–12.48 V; Hindsight also flags it before auto) | true | **red**, proven on 9 |
 | `build/dirty` | 6 | P0 (123eec6, uncommitted) and 2151 ILCH Q19 (a9f9b9b, uncommitted) | both true | **red**, proven on 6 |
-| `vision/time-sync` | 8 | none (start-up alerts clear before the 30 s settle) | — | **red**, proven on 8 |
-| `can/device-dropout` | 3 | none | — | **red**, proven on 3 |
-| `foresight/controllers` | 3 | none | — | **red**, proven on 3 |
-| `foresight/zero-sanity` | 3 | none | — | **red**, proven on 3 |
-| `vision/stale` (drop-outs only while disabled) | 3 | none | — | **red**, proven on 3 |
+| `vision/time-sync` | 8 | none (start-up alerts clear before the 30 s settle) | — | amber: no real fire on our logs yet |
+| `can/device-dropout` | 3 | none | — | amber: no real fire on our logs yet |
+| `foresight/controllers` | 3 | none | — | amber: no real fire on our logs yet |
+| `foresight/zero-sanity` | 3 | none | — | amber: no real fire on our logs yet |
+| `vision/stale` (drop-outs only while disabled) | 3 | none | — | amber: no real fire on our logs yet |
 | `alerts/passthrough` | 8 | rafchuk21 QM36: "limelight name … is invalid" and "Vision Camera 0 Disconnected" | the Limelight-name alert is an always-on config nag: **false** | amber |
 | `battery/identity`, `battery/gauge-capacity` | 0 | no log has the battery tracker's keys yet | — | amber |
 | `foresight/commit-matches` | 0 | needs a passing pit check on record | — | amber |
@@ -56,8 +56,10 @@ over 138–345 s of disabled robot on the field. 91 s for all 11 on the M5 Max.
 
 "Could judge" means the check read its signals there; on other teams' logs the 8033 profile doesn't fit, so the
 checks about our motors, devices, cameras and controllers skip them. The verdict colours are `src/foresight/proven.ts`;
-the screen says "proven on n match logs, never fired there" for the five reds that never fired, so nobody reads them
-as tested on a real fault.
+red needs both a clean backtest and at least one real fire on 8033's own logs (Kevin, 2026-10-19: the five checks that
+never fired stay amber until each catches a real fault on one of our logs). Today that leaves two reds, `power/rest-voltage`
+(Q21) and `build/dirty` (P0). When a later log gives one of the five a real fire, set its `ourFires` in `proven.ts` from
+that backtest run.
 
 What the base can and can't say:
 

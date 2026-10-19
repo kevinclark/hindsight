@@ -6,7 +6,7 @@ import { verdictFor } from '../src/foresight/verdict.ts'
 import type { Report } from '../src/rules/index.ts'
 
 const finding = (rule: string, severity: 'warning' | 'info', title = rule) => ({ rule, severity, title, time: null, matchTime: null, when: null, about: null, key: rule, evidence: {}, meaning: '', causes: [], nextStep: '' })
-const proven = { 'power/rest-voltage': { logs: 9, fires: 1, base: 'x', date: 'd' } }
+const proven = { 'power/rest-voltage': { logs: 9, fires: 1, ourFires: 1, base: 'x', date: 'd' } }
 const state = (marked: ReturnType<typeof markOnchecks>, line: string) => marked.find((l) => l.line === line)!.state
 
 describe('the team\'s pit checklist in Foresight', () => {
