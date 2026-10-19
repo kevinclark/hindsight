@@ -46,7 +46,7 @@ settings**: it tells students what to set and which line to change, and they do 
 
 ### Where this differs from the brief (and why)
 
-- **"Did the limit take?"** The brief judges the most common 2 A bin of samples ≥ 30 A against ±10 % of the limit. On
+- **"Did the limit take?"** (redesign accepted 2026-10-19) The brief judges the most common 2 A bin of samples ≥ 30 A against ±10 % of the limit. On
   real CalGames spin-ups that check fails both ways: at 60 A the mode is 33–39 A (the motor rarely needs 60 A), and
   a follower whose 40 A limit wasn't saved has a mode of 35 A while peaking at 73 A. Per motor the wizard says:
   **didn't take** (more than 0.3 s above 110 % of the limit; a working CalGames limiter stayed above for up to 0.21 s),
