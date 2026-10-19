@@ -14,6 +14,7 @@
   import { profileId } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
+  import { markOnchecks } from '../foresight/onchecks.ts'
 
   let { history, onPitCheck }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void } = $props()
 
@@ -86,6 +87,8 @@
     }
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
   }
+  const onchecks = $derived(markOnchecks(checked))
+  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
 
@@ -141,6 +144,18 @@
     {/if}
   {/if}
 
+  {#if status}
+    <section class="onchecks" aria-label="The team's pit checklist">
+      <h3>Pit checklist: battery, controllers, software</h3>
+      <ul>
+        {#each onchecks as l (l.line)}
+          <li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.detail}</span></li>
+        {/each}
+      </ul>
+      <p class="small">In the team's 2026 checklist order. A line is marked only from the check on screen now; "By eye" lines are for a person and never count toward GO.</p>
+    </section>
+  {/if}
+
   {#if status && status.state !== 'closed'}
     <details class="readings" open>
       <summary>Readings</summary>
@@ -191,6 +206,17 @@
   dt { color: var(--muted); }
   dd { margin: 0; overflow-wrap: anywhere; }
   .notchecked, .readings { margin-top: 1rem; font-size: 0.85rem; }
+  .onchecks { margin-top: 1rem; }
+  .onchecks h3 { font-size: 1rem; margin: 0 0 0.4rem; }
+  .onchecks ul { list-style: none; margin: 0; padding: 0; }
+  .oc { display: grid; grid-template-columns: 6.5rem minmax(10rem, 1fr) 2fr; gap: 0.15rem 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
+  .oc .mark { font-weight: 700; font-size: 0.8rem; }
+  .oc.ok .mark { color: var(--go, #188038); }
+  .oc.red .mark { color: var(--error); }
+  .oc.amber .mark { color: var(--warning); }
+  .oc.not-checked .mark, .oc.not-yet .mark, .oc.context .mark, .oc.by-eye .mark { color: var(--muted); }
+  .oc .detail-text { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+  @media (max-width: 600px) { .oc { grid-template-columns: 5.5rem 1fr; } .oc .detail-text { grid-column: 2; } }
   .field { margin: 2rem 0; padding: 2rem 1rem; text-align: center; border: 3px solid var(--error); border-radius: 10px; color: var(--error); }
   .field .big { font-size: clamp(1.5rem, 6vw, 2.75rem); }
   @media (prefers-color-scheme: dark) { :global(:root:not([data-theme='light'])) { --go: #81c995; } }
