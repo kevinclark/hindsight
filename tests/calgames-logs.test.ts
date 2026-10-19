@@ -79,7 +79,7 @@ describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
     expect(r('q21').fit!.kVoltsPerAh).toBeCloseTo(0.25, 1)
     expect(r('p0').fit!.kVoltsPerAh).toBeCloseTo(0.49, 1)
     const b = p0().report.findings.find((f) => f.rule === 'can/device-dropout')!
-    expect(b.evidence['lowest bus voltage in the 0.5 s before each drop (V)']).toBe('5.86, 6.20, 6.31, 5.85, 6.10, 6.02, 5.96')
+    expect(b.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('5.86, 6.20, 6.31, 5.85, 6.10, 6.02, 5.96')
   })
 
   it('findings.json is under 2 MB and carries no radio status', () => {

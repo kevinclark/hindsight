@@ -9,6 +9,8 @@
   import PowerTab from './ui/PowerTab.svelte'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
+  import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type IssueEvent, type IssueStatus } from './triage/history.ts'
+  import type { Finding } from './rules/types.ts'
 
   // Every file dropped so far, so a .dslog dropped after its .wpilog still finds its match. "Clear" empties it.
   let inputs: InputFile[] = []
@@ -21,6 +23,29 @@
   let lastLoad = $state<{ files: number; readMs: number; analyzeMs: number; heapMB: number | null } | null>(null)
 
   const current = $derived(analyses[selected] as Analysis | undefined)
+
+  // Known issues: kept in this browser between visits, and saved to / loaded from hindsight-history.jsonl.
+  const STORE = 'hindsight.history'
+  let history = $state<IssueEvent[]>(readStoredHistory())
+  let unsaved = $state(false)
+  const issues = $derived(currentStatus(history))
+
+  function readStoredHistory(): IssueEvent[] {
+    try { return parseHistory(localStorage.getItem(STORE) ?? '').events } catch { return [] }
+  }
+  function keep(events: IssueEvent[], changed: boolean) {
+    history = events
+    if (changed) unsaved = true
+    try { localStorage.setItem(STORE, serializeHistory(events)) } catch { /* private window: the file is the only copy */ }
+  }
+  function mark(finding: Finding, status: IssueStatus, note: string) {
+    const label = current ? `${current.match.event} ${current.match.matchLabel}`.trim() : ''
+    keep([...history, { type: 'issue', key: finding.key, status, note, when: new Date().toISOString(), match: label || undefined }], true)
+  }
+  function saveHistory() {
+    downloadText(HISTORY_FILE_NAME, serializeHistory(history), 'application/x-ndjson')
+    unsaved = false
+  }
 
   async function load(fileList: FileList | File[]) {
     const files = Array.from(fileList)
@@ -38,6 +63,7 @@
       const done = performance.now()
       analyses = result.analyses
       problems = result.problems
+      if (result.history.length) keep(mergeHistory(history, result.history), false)
       const newest = result.analyses.findIndex((a) => added.some((f) => f.name === a.match.fileName))
       selected = Math.max(0, newest)
       const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
@@ -64,7 +90,7 @@
 
   function downloadForClaude() {
     if (!current) return
-    const json = JSON.stringify(buildFindingsJson(current.match, current.report), null, 1)
+    const json = JSON.stringify(buildFindingsJson(current.match, current.report, issues), null, 1)
     downloadText(findingsFileName(current.match), json)
   }
 
@@ -89,15 +115,22 @@
 
 <section class="drop" class:dragging aria-busy={busy}>
   <label class="button">
-    <input type="file" multiple accept=".wpilog,.dslog" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }} />
+    <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }} />
     Choose logs…
   </label>
-  <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>) anywhere on the page.</span>
+  <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>, and the team's <code>{HISTORY_FILE_NAME}</code>) anywhere on the page.</span>
   {#if busy}<span class="busy">Reading…</span>{/if}
   {#if analyses.length}<button class="link" onclick={clearAll}>Clear all</button>{/if}
 </section>
 
 {#each problems as p (p)}<p class="problem" role="alert">{p}</p>{/each}
+
+{#if history.length}
+  <p class="history">
+    Known issues: {issues.size} tracked{#if unsaved}{' · '}<strong>changes not saved to a file yet</strong>{/if}
+    <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button>
+  </p>
+{/if}
 
 {#if analyses.length > 1}
   <nav class="matches" aria-label="Loaded matches">
@@ -130,7 +163,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={current} />{:else}<PowerTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={current} {issues} onMark={mark} />{:else}<PowerTab analysis={current} />{/if}
   </main>
 
   <footer>
@@ -178,6 +211,8 @@
   .button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .button:focus-within, .button:focus-visible { outline: 2px solid var(--focus); }
   .busy { color: var(--muted); }
+  .history { font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+  .history strong { color: var(--warning); }
   .link { margin-left: auto; border: none; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }
   .problem { color: var(--error); }
   .matches { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }

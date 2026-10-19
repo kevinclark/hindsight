@@ -1,59 +1,40 @@
 /**
- * collision/tilt — did the robot tip or wedge?
+ * Did the robot tip or wedge?
  *
  * Checks: gyro pitch or roll beyond ±15° for longer than 0.3 s while enabled. Red in auto, amber in teleop.
- * Bump crossings tilt the robot past 15° too, but for 0.2 s or less (every CalGames log has several); a wedge
- * or a climb onto something lasts longer. The margin is thin: 0.3 s sits 1.5× above the longest bump (0.20 s) and
- * 2.7× below the one wedge we have (0.82 s). Backtest before changing it.
- * Why: CalGames 2026 Q13: the hood hit the trench bar in auto, pitch −23° for 1.0 s, and the robot was disabled.
- * When it fires: watch the match video at that time; check what was up (hood, intake) and where the robot was.
- * Not yet checked: field bump and trench zones (the game pack, phase 2).
+ * Bump crossings tilt past 15° too, but for 0.2 s or less (every CalGames log has several). The margin is thin:
+ * 0.3 s is 1.5× the longest bump and 2.7× under the one wedge we have (0.82 s). Backtest before changing it.
+ * Why: CalGames 2026 Q13: the hood hit the trench bar in auto, pitch −24° for 0.8 s, and the robot was disabled.
+ * Not yet: field bump and trench zones (the game pack, phase 2).
  */
-import { has, num, phaseAt, type Match } from '../../match/match.ts'
-import { intervalsWhere, peakAbsIn, when } from '../helpers.ts'
-import { valueAt } from '../../match/series.ts'
-import type { Finding, Rule } from '../types.ts'
+import { beyond, rule, round, type Problem } from '../rule.ts'
 
-const LIMIT_DEG = 15
-const MIN_SECONDS = 0.3
-
-export const tilt: Rule = {
+export default rule({
   id: 'collision/tilt',
   title: 'Robot tilted or wedged',
-  audience: ['software', 'pit', 'drive'],
+  severity: 'warning',
+  who: ['software', 'pit', 'drive'],
   fix: 'Watch the match video at this time. If it was a field element, check what was raised (hood, intake) and add a guard in code near that element.',
-  incident: 'CalGames 2026 Q13: −23° pitch for 1.0 s at the trench in auto (2026-10-17-calgames-q13-log-analysis.md §1)',
-  needs: (m: Match) => [m.profile.signals.gyroPitch, m.profile.signals.gyroRoll],
-  run(m: Match): Finding[] {
-    const out: Finding[] = []
-    const toDeg = 180 / Math.PI
-    for (const [axis, key] of [['Pitch', m.profile.signals.gyroPitch], ['Roll', m.profile.signals.gyroRoll]] as const) {
-      if (!has(m, key)) continue
-      const s = num(m, key)!
-      const events = intervalsWhere(s, (r) => Math.abs(r * toDeg) > LIMIT_DEG, m.enabled, m.logEnd)
-        .filter((iv) => iv.end - iv.start > MIN_SECONDS)
-      for (const iv of events) {
-        // The peak record inside the event; if none was logged inside it, the value held from before it.
-        const peak = peakAbsIn(s, iv.start, iv.end)
-        const signed = (Number.isFinite(peak.t) ? valueAt(s, peak.t) : valueAt(s, iv.start)) * toDeg
-        const phase = phaseAt(m, iv.start)
-        out.push({
-          rule: this.id,
+  incident: 'CalGames 2026 Q13: −24° pitch for 0.8 s at the trench in auto (2026-10-17-calgames-q13-log-analysis.md §1)',
+
+  check(match) {
+    const problems: Problem[] = []
+    const pitch = match.signal('gyroPitch').times(180 / Math.PI, 'Pitch')
+    const roll = match.signal('gyroRoll').times(180 / Math.PI, 'Roll')
+    for (const axis of [pitch, roll]) {
+      for (const e of axis.episodes(beyond(15), { during: match.enabled, longerThan: 0.3 })) {
+        const angle = Math.abs(e.lowest) > Math.abs(e.highest) ? e.lowest : e.highest
+        const phase = match.phaseAt(e.start)
+        problems.push({
+          message: `${axis.label} ${angle.toFixed(0)}° for ${e.seconds.toFixed(1)} s at ${match.when(e.start)}`,
+          at: e.start,
+          about: axis.label,
           severity: phase === 'auto' ? 'error' : 'warning',
-          title: `${axis} ${signed.toFixed(0)}° for ${(iv.end - iv.start).toFixed(1)} s at ${when(m, iv.start)}`,
-          time: iv.start,
-          evidence: { axis, 'peak (°)': +signed.toFixed(1), 'seconds beyond ±15°': +(iv.end - iv.start).toFixed(2), phase },
-          plot: {
-            from: iv.start - 3, to: iv.end + 3, unit: '°',
-            lines: [
-              { label: 'Pitch', key: m.profile.signals.gyroPitch, scale: toDeg },
-              { label: 'Roll', key: m.profile.signals.gyroRoll, scale: toDeg },
-            ],
-            threshold: { value: -LIMIT_DEG, label: '−15°' },
-          },
+          evidence: { axis: axis.label, 'peak (°)': round(angle, 1), 'seconds beyond ±15°': round(e.seconds), phase },
+          plot: [pitch, roll], plotUnit: '°', plotFrom: e.start - 3, plotTo: e.end + 3,
         })
       }
     }
-    return out
+    return problems
   },
-}
+})

@@ -1,69 +1,47 @@
 /**
- * can/device-dropout — did a motor controller or sensor drop off CAN while enabled?
+ * Did a motor controller or sensor drop off CAN while enabled?
  *
- * Checks: every `Connected` flag in the profile (motors and other devices) going false while enabled, with the bus
- * voltage at that moment. A drop at low voltage points at the power path (the device browned out); a drop at
- * normal voltage points at CAN wiring or a connector.
+ * Checks: each device's Connected flag going false while the robot was enabled, and the lowest battery voltage in
+ * the 0.5 s before. A drop at low voltage points at the power path (the device browned out); a drop at normal
+ * voltage points at CAN wiring or a connector.
  * Why: CalGames 2026 P0: flywheel follower 16 alone dropped off CAN 7 times, each at 5.85–6.31 V.
- * When it fires: low voltage → check that device's power connector and wire run against its siblings. Normal
- * voltage → check the CAN connectors, terminator and wire on that branch.
  */
-import { has, num, type Match } from '../../match/match.ts'
-import { intervalsWhere, lowIn, when, withMissing } from '../helpers.ts'
-import type { Finding, Rule } from '../types.ts'
+import { isFalse, rule, round } from '../rule.ts'
 
 const LOW_VOLTS = 7
-const NEAR_VOLTS = 0.5 // within this of LOW_VOLTS, say "possibly"
 
-export const deviceDropout: Rule = {
+export default rule({
   id: 'can/device-dropout',
   title: 'Device dropped off CAN',
-  audience: ['pit'],
+  severity: 'error',
+  who: ['pit'],
   fix: 'At low voltage: check the device\'s power connector and wire run. At normal voltage: check CAN connectors, the terminator, and the wire on that branch.',
   incident: 'CalGames 2026 P0: flywheel follower 16 off CAN 7 times at 5.85–6.31 V (P0 analysis); #in-hindsight: ≥ 11 CAN dropout episodes',
-  needs: (m: Match) => [m.profile.signals.enabled, m.profile.signals.batteryVoltage],
-  run(m: Match) {
-    const volts = num(m, m.profile.signals.batteryVoltage)!
-    const devices = [
-      ...m.profile.motorGroups.flatMap((g) => g.motors.map((x) => ({ name: x.name, connected: x.connected }))),
-      ...m.profile.otherDevices,
-    ]
-    const out: Finding[] = []
-    const missing: string[] = []
-    const wholeLog = [{ start: m.logStart, end: m.logEnd }]
-    for (const d of devices) {
-      if (!d.connected) continue
-      if (!has(m, d.connected)) { missing.push(d.connected); continue }
-      // Whole-log intervals, kept when they overlap enabled time: a drop that spans the auto→teleop gap is one drop.
-      const drops = intervalsWhere(num(m, d.connected)!, (v) => v < 0.5, wholeLog, m.logEnd)
-        .filter((iv) => m.enabled.some((e) => iv.start < e.end && iv.end > e.start))
-      if (drops.length === 0) continue
-      // The flag goes false only after the device misses its status frames, so look at the 0.5 s before it.
-      const atDrop = drops.map((iv) => lowIn(volts, iv.start - 0.5, iv.start).value)
-      const lowCount = atDrop.filter((v) => v < LOW_VOLTS).length
-      const borderline = atDrop.some((v) => Math.abs(v - LOW_VOLTS) < NEAR_VOLTS)
-      const likely = (lowCount === drops.length ? 'power path (every drop at low voltage)'
-        : lowCount === 0 ? 'CAN wiring or connector (voltage was normal)' : 'mixed: some drops at low voltage')
-      const likelyText = borderline ? `possibly ${likely}; a voltage is within ${NEAR_VOLTS} V of the ${LOW_VOLTS} V line` : likely
-      out.push({
-        rule: this.id,
-        severity: 'error',
-        title: `${d.name} dropped off CAN ${drops.length} time${drops.length === 1 ? '' : 's'}, first at ${when(m, drops[0].start)}`,
-        time: drops[0].start,
-        evidence: {
-          drops: drops.length,
-          'total seconds missing': +drops.reduce((s, iv) => s + iv.end - iv.start, 0).toFixed(2),
-          'lowest bus voltage in the 0.5 s before each drop (V)': atDrop.map((v) => v.toFixed(2)).join(', '),
-          'likely cause': likelyText,
-        },
-        plot: {
-          from: drops[0].start - 3, to: drops[drops.length - 1].end + 2, unit: 'V',
-          lines: [{ label: 'Battery voltage', key: m.profile.signals.batteryVoltage }],
-          markers: drops.map((iv) => ({ t: iv.start, label: 'drop' })),
-          threshold: { value: LOW_VOLTS, label: `${LOW_VOLTS} V` },
-        },
-      })
+  forEach: 'device',
+
+  check(device, match) {
+    // `touching` keeps a drop that spans the auto→teleop gap as one drop.
+    const drops = device.connected().episodes(isFalse, { touching: match.enabled })
+    if (drops.length === 0) return
+    const battery = match.signal('batteryVoltage')
+    // The flag goes false only after the device misses its status frames, so look at the 0.5 s before it.
+    const voltages = drops.map((d) => battery.lowest(match.before(d.start, 0.5)).value)
+    const lowOnes = voltages.filter((v) => v < LOW_VOLTS).length
+    const closeCall = voltages.some((v) => Math.abs(v - LOW_VOLTS) < 0.5)
+    const cause = lowOnes === drops.length ? 'power path (every drop at low voltage)'
+      : lowOnes === 0 ? 'CAN wiring or connector (voltage was normal)'
+      : 'mixed: some drops at low voltage'
+    return {
+      message: `${device.name} dropped off CAN ${drops.length} time${drops.length === 1 ? '' : 's'}, first at ${match.when(drops[0].start)}`,
+      at: drops[0].start,
+      evidence: {
+        drops: drops.length,
+        'seconds missing': round(drops.reduce((s, d) => s + d.seconds, 0)),
+        'lowest battery voltage in the 0.5 s before each drop (V)': voltages.map((v) => v.toFixed(2)).join(', '),
+        'likely cause': closeCall ? `possibly ${cause}; a voltage is within 0.5 V of the ${LOW_VOLTS} V line` : cause,
+      },
+      plot: [battery], plotUnit: 'V', plotFrom: drops[0].start - 3, plotTo: drops[drops.length - 1].end + 2,
+      plotMarks: drops.map((d) => d.start), plotLine: { value: LOW_VOLTS, label: `${LOW_VOLTS} V` },
     }
-    return withMissing(out, missing, devices.filter((d) => d.connected).length)
   },
-}
+})

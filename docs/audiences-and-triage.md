@@ -51,34 +51,55 @@ stores in `history.jsonl` and trends per robot, per mechanism, or per battery. �
 The thresholds for these are unknown until the 808-log backtest runs; phase 2 shows the trend first and flags only
 what the backtest supports.
 
-## 3. Triage and response: the decisions
+## 3. Triage and known issues
 
-An **issue** is a finding with a stable identity: rule + subject (e.g. `mech/follower-mismatch · Flywheel follower 18`),
-so the same problem in five matches is one issue with five sightings, not five rows. Each issue has a status
-(new → acknowledged → fixed (with a commit or a pit note) → watching → closed, or won't fix), an owner (software /
-pit / drive team), and a note. A fixed issue that fires again reopens itself; that is the check that the fix worked.
+An **issue** is a finding with a stable identity: rule + what it is about (`mech/follower-mismatch · Flywheel`), so
+the same problem in five matches is one issue with five sightings, not five rows.
 
-**The pit board** (pit-centric dashboard, a tab): open issues across every loaded match, grouped by mechanism
-(Power, Flywheel, Intake, Drive, …), worst first, each with its last sighting, trend sparkline and the one action.
-Layout follows the lean "andon board" idea (one glance tells you what needs a person now) and NN/g's
-task-based navigation: the pit sees mechanisms, not rule ids. A printable "between matches" checklist comes from the
-same list.
+**Built (2026-10-19), after Kevin chose the history file (decision 2: yes):**
 
-**Where the triage state lives** (the one hard decision; the app runs from `file://` with no server):
+- Every finding has *Mark as known…*, *Mark as fixed…* and *Treat as new*, each with a short note.
+- **Known** issues leave the red list and sit under "Known issues seen this match", with the note.
+- **Fixed** issues that fire again in a match played *after* the fix show at the top as **"Came back after a fix"**:
+  the check that the fix worked. Matches played before the fix show it as "Fixed after this match".
+- "Tracked issues not seen this match" lists known and fixed issues that stayed quiet (✓ for fixed ones).
+- The record is `hindsight-history.jsonl`, one JSON line per change; lines are only added, so two laptops' files
+  combine by concatenation and the newest line per issue wins. The page also keeps a copy in the browser; *Save* writes
+  the file, and dropping it in with the logs loads it. findings.json carries each finding's status.
 
-| Option | Works offline at events | Shared between laptops | Cost |
-|---|---|---|---|
-| A. `history.jsonl` file the app loads and saves (already in the proposal) | yes | only by copying the file (or a shared Drive folder when online) | low; the save is a manual download |
-| B. A small shared web page with a database (hosted) | no (needs internet) | yes, live | medium; an account/host to run |
-| C. Software issues go to GitHub issues on the robot repo; pit issues to a Google Sheet | GitHub/Sheets need internet | yes | low per item, but two systems and the pit avoids GitHub |
+Example, the CalGames flywheel belt (known slip, fixed before elims):
 
-➡️ Recommendation: **A first, with C's "copy as GitHub issue" button for software findings** (the app writes the
-text; a student pastes it; nothing posts automatically). It keeps the zero-install, offline-at-events promise the
-whole design rests on. B can come later if laptops sharing state at events turns out to matter.
+```
+{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"known","note":"belt slipping on the 17/18 shaft","when":"2026-10-17T21:40:00Z"}
+{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"fixed","note":"new belt before elims","when":"2026-10-18T15:00:00Z"}
+```
+
+**Still to build (phase 2):** the pit board (open issues across every loaded match, grouped by mechanism — decision
+2 below), trend sparklines for the wear signals in §2, and a "copy as GitHub issue" button for software findings.
+
+## 4. Should the drive team have its own board?
+
+**For a board:**
+- Their window is the shortest (queue to field, minutes) and they're at the DS laptop, where the `.dslog` lives.
+- The most frequent problem family in `#in-hindsight` is theirs: controller drops after touching field metal (≥ 8
+  episodes), plus comms losses and DS-side crashes.
+- What they act on is behaviour and DS-laptop setup (power plan, USB hub, grounding, driving style), not parts, so
+  mixing it into the pit list buries it.
+
+**Against (for now):**
+- Today 4 rules carry `drive`, and 2 of those are shared with software or pit; a board for ~2 drive-only rules is
+  mostly empty, and every board is one more thing to keep correct.
+- What they need between matches is a short checklist (battery ID and rest voltage, DS laptop plugged in, controllers
+  checked), not triage across matches; triage of a comms problem usually ends with the CSA/FTA or the software team.
+- The controller-drop rule (§5b, `comms/controller-drop`) isn't built yet, so the board's main content doesn't exist.
+
+➡️ **Recommendation: no separate board yet.** Keep the Drive team filter, and give the drive coach a "before the next
+match" card at the top of the pit board (battery to use, its last rest voltage and collapse check, any open
+drive-tagged issue). Revisit when `comms/controller-drop` lands: if drive-only rules reach ~5 and someone on the drive
+team owns triage, split them out.
 
 ## Questions for Kevin
 
-1. Store triage state in `history.jsonl` (offline, manual save), not a hosted database? ➡️ yes (A).
+1. ~~Store triage state in `history.jsonl`?~~ Yes (2026-10-19); built.
 2. Pit board grouped by mechanism, not by rule? ➡️ yes.
-3. Should the drive team be a third audience (comms, early disable, driving-caused hits)? ➡️ yes, as a tag only; no
-   separate board.
+3. Drive team board? ➡️ not yet (§4).

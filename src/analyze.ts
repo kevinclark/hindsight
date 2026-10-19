@@ -5,6 +5,7 @@
 
 import { openWpilog } from './readers/wpilog.ts'
 import { readDslog, type DslogFile } from './readers/dslog.ts'
+import { parseHistory, type IssueEvent } from './triage/history.ts'
 import { attachDslog, buildMatch, dslogOverlap, type Match } from './match/match.ts'
 import { runRules, type Report } from './rules/index.ts'
 import { offseason2026 } from './profiles/2026-offseason.ts'
@@ -22,12 +23,15 @@ export interface AnalyzeResult {
   analyses: Analysis[]
   /** Files that couldn't be read, or DS logs that matched no robot log. */
   problems: string[]
+  /** Known-issue events from any hindsight-history.jsonl files dropped in. */
+  history: IssueEvent[]
 }
 
 export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseason2026): AnalyzeResult {
   const problems: string[] = []
   const analyses: Analysis[] = []
   const dslogs: { name: string; file: DslogFile }[] = []
+  const history: IssueEvent[] = []
   for (const f of files) {
     const kind = fileKind(f)
     try {
@@ -37,8 +41,12 @@ export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseas
         analyses.push({ match, report: { findings: [], skipped: [], crashed: [] }, timing: { parseMs: performance.now() - started, rulesMs: 0 } })
       } else if (kind === 'dslog') {
         dslogs.push({ name: f.name, file: readDslog(f.bytes) })
+      } else if (kind === 'history') {
+        const read = parseHistory(new TextDecoder().decode(f.bytes))
+        history.push(...read.events)
+        if (read.skipped) problems.push(`${f.name}: ${read.skipped} line${read.skipped === 1 ? '' : 's'} not understood (skipped)`)
       } else {
-        problems.push(`${f.name}: not a .wpilog or .dslog (skipped)`)
+        problems.push(`${f.name}: not a .wpilog, .dslog or ${'hindsight-history.jsonl'} (skipped)`)
       }
     } catch (error) {
       problems.push(`${f.name}: ${error instanceof Error ? error.message : String(error)}`)
@@ -60,7 +68,7 @@ export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseas
   // Oldest match first (by the robot's wall clock when known, else by file name).
   const when = (a: Analysis) => (a.match.epochOffset ?? 0) + (a.match.matchStart ?? 0)
   analyses.sort((a, b) => when(a) - when(b) || a.match.fileName.localeCompare(b.match.fileName))
-  return { analyses, problems }
+  return { analyses, problems, history }
 }
 
 /** Shorthand for scripts and tests: the analyses only. */
@@ -68,9 +76,10 @@ export function analyze(files: InputFile[], profile: RobotProfile = offseason202
   return analyzeFiles(files, profile).analyses
 }
 
-function fileKind(f: InputFile): 'wpilog' | 'dslog' | 'other' {
+function fileKind(f: InputFile): 'wpilog' | 'dslog' | 'history' | 'other' {
   const head = new TextDecoder().decode(f.bytes.subarray(0, 6))
   if (head === 'WPILOG') return 'wpilog'
   if (/\.dslog$/i.test(f.name)) return 'dslog'
+  if (/\.jsonl$/i.test(f.name)) return 'history'
   return 'other'
 }

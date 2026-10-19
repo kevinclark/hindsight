@@ -42,7 +42,9 @@ skips with a message when they aren't there; `fixtures/*.json` are small cuts th
 | `src/readers/` | `wpilog.ts` (indexes the file once, decodes only the signals asked for), `dslog.ts` |
 | `src/match/` | `match.ts` (phases, event, build, wall clock), `series.ts` (hold-last helpers) |
 | `src/profiles/` | `2026-offseason.ts`: log keys, motor groups and current limits for this robot |
-| `src/rules/<area>/` | one rule per file; the list is `src/rules/index.ts` |
+| `src/rules/<area>/` | one rule per file, 25–55 lines; the list is `src/rules/index.ts` |
+| `src/rules/rule.ts`, `view.ts`, `run.ts` | how a rule is written, what it can ask about a match, and the runner |
+| `src/triage/` | known issues and the history file |
 | `src/power/` | battery model, resistance from current steps, open-circuit curve, what-ifs, fleet reference |
 | `src/report/` | `findings.json` |
 | `src/ui/`, `src/App.svelte` | the page |
@@ -66,8 +68,12 @@ Details and how they were taken: [docs/measurements.md](docs/measurements.md).
 ## Who it is for
 
 Each rule names who acts when it fires: the **software team** (code and config), the **pit crew** (mechanisms,
-wiring, batteries) or the **drive team**. The Match tab filters by that. The pit board, triage across matches and
-wear trends are designed in [docs/audiences-and-triage.md](docs/audiences-and-triage.md) and wait on decisions.
+wiring, batteries) or the **drive team**. The Match tab filters by that.
+
+**Known issues:** mark a finding *known* (we're on it) or *fixed* (with a note). Known issues leave the red list; a
+fixed one that fires again in a later match comes back at the top. The record is `hindsight-history.jsonl`: save it
+from the page and drop it in with the logs next time. Design and what's next (the pit board, wear trends):
+[docs/audiences-and-triage.md](docs/audiences-and-triage.md).
 
 ## Not verified
 

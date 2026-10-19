@@ -1,72 +1,53 @@
 /**
- * power/limit-not-applied — is each motor's current staying under its configured limit?
+ * Is each motor's current staying under its configured limit?
  *
- * Checks: for every motor group with limits in the robot profile, whether supply or stator current stayed above
- * 120 % of the configured limit for more than 0.2 s while enabled. Says whether the limit is switched off in code.
- * Why: CalGames 2026: the flywheel's 40 A supply limit is configured but disabled (DrumSubsystem.java:310), so
+ * Checks: for each motor group with limits in the robot profile, supply and stator current above 120 % of the limit
+ * for more than 0.2 s while enabled. Says when the limit is switched off in code.
+ * Why: CalGames 2026: the flywheel's 40 A supply limit is configured but switched off (DrumSubsystem.java:310), so
  * four motors pulled 78–94 A each during spin-up.
- * When it fires: if the limit is switched off, turn it on (and measure spin-up time before and after). If it is
- * on and still exceeded, check the config is applied to that motor.
  */
-import { has, num, type Match } from '../../match/match.ts'
-import { intervalsWhere, peakAbsIn, withMissing } from '../helpers.ts'
-import type { Finding, Rule } from '../types.ts'
+import { amps, beyond, rule, round, type Problem } from '../rule.ts'
+import type { Episode } from '../view.ts'
 
-const OVER = 1.2
-const MIN_SECONDS = 0.2
-
-export const limitNotApplied: Rule = {
+export default rule({
   id: 'power/limit-not-applied',
   title: 'Current limit not holding',
-  audience: ['software'],
+  severity: 'error',
+  who: ['software'],
   fix: 'If the limit is switched off in code, switch it on and measure the mechanism before and after. If it is on, check the config reaches the motor (apply() return code, followers included).',
   incident: 'CalGames 2026: flywheel 78–94 A vs a disabled 40 A supply limit (hindsight-research/design-detail.md §5a)',
-  needs: (m: Match) => [m.profile.signals.enabled],
-  run(m: Match) {
-    const out: Finding[] = []
-    const missing: string[] = []
-    let total = 0
-    for (const g of m.profile.motorGroups) {
-      for (const kind of ['supply', 'stator'] as const) {
-        const limit = kind === 'supply' ? g.limits.supplyA : g.limits.statorA
-        if (limit === undefined) continue
-        let worst: { motor: string; seconds: number; peak: number; t: number } | null = null
-        for (const motor of g.motors) {
-          const key = kind === 'supply' ? motor.supplyCurrent : motor.statorCurrent
-          if (!key) continue
-          total++
-          if (!has(m, key)) { missing.push(key); continue }
-          const s = num(m, key)!
-          const over = intervalsWhere(s, (a) => Math.abs(a) > limit * OVER, m.enabled, m.logEnd).filter((iv) => iv.end - iv.start > MIN_SECONDS)
-          if (over.length === 0) continue
-          const peak = Math.max(...over.map((iv) => peakAbsIn(s, iv.start, iv.end).value))
-          const seconds = over.reduce((sum, iv) => sum + iv.end - iv.start, 0)
-          if (!worst || peak > worst.peak) worst = { motor: motor.name, seconds, peak, t: over[0].start }
+  forEach: 'motorGroup',
+
+  check(group, match) {
+    const problems: Problem[] = []
+    for (const kind of ['supply', 'stator'] as const) {
+      const limit = kind === 'supply' ? group.limits.supplyA : group.limits.statorA
+      const isOn = kind === 'supply' ? group.limits.supplyEnabled : group.limits.statorEnabled
+      if (limit === undefined) continue
+      let worst: (Episode & { motor: string }) | null = null
+      for (const motor of group.motors) {
+        const current = kind === 'supply' ? motor.supply() : motor.stator()
+        for (const e of current.episodes(beyond(limit * 1.2), { during: match.enabled, longerThan: 0.2 })) {
+          if (!worst || e.peak > worst.peak) worst = { ...e, motor: motor.name }
         }
-        if (!worst) continue
-        const on = kind === 'supply' ? g.limits.supplyEnabled : g.limits.statorEnabled
-        // The profile copies the limits from one commit; say so when this log ran different code.
-        const asOf = m.build.sha.startsWith(m.profile.configSha) ? '' : ` (as of ${m.profile.configSha}; this log ran ${m.build.sha.slice(0, 7) || 'unknown code'})`
-        out.push({
-          rule: this.id,
-          severity: 'error',
-          title: `${g.name} ${kind} current reached ${worst.peak.toFixed(0)} A against a ${limit} A limit${on ? '' : ' that is switched off in code'}${asOf}`,
-          time: worst.t,
-          evidence: {
-            'worst motor': worst.motor,
-            [`peak ${kind} current (A)`]: +worst.peak.toFixed(1),
-            'configured limit (A)': limit,
-            'limit enabled in code': `${on ? 'yes' : 'no'}${asOf}`,
-            'seconds over 120 % of the limit (worst motor)': +worst.seconds.toFixed(1),
-            'set in': g.limits.where,
-          },
-          plot: {
-            from: worst.t - 2, to: worst.t + 4, unit: 'A', threshold: { value: limit, label: `${limit} A limit` },
-            lines: g.motors.map((x) => ({ label: x.name, key: (kind === 'supply' ? x.supplyCurrent : x.statorCurrent) ?? '' })).filter((l) => has(m, l.key)),
-          },
-        })
       }
+      if (!worst) continue
+      // The profile copies the limits from one commit of the robot code; say so when this log ran other code.
+      const asOf = match.build.sha.startsWith(match.profile.configSha) ? '' : ` (as of ${match.profile.configSha}; this log ran ${match.build.sha.slice(0, 7) || 'unknown code'})`
+      problems.push({
+        message: `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${isOn ? '' : ' that is switched off in code'}${asOf}`,
+        at: worst.start,
+        evidence: {
+          'worst motor': worst.motor,
+          [`peak ${kind} current (A)`]: round(worst.peak, 1),
+          'configured limit (A)': limit,
+          'limit switched on in code': `${isOn ? 'yes' : 'no'}${asOf}`,
+          'set in': group.limits.where,
+        },
+        plot: group.motors.map((m) => (kind === 'supply' ? m.supply() : m.stator())), plotUnit: 'A',
+        plotFrom: worst.start - 2, plotTo: worst.start + 4, plotLine: { value: limit, label: `${limit} A limit` },
+      })
     }
-    return withMissing(out, missing, total)
+    return problems
   },
-}
+})

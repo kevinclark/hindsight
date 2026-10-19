@@ -45,7 +45,7 @@ describe('P0 fixture: brownout', () => {
   })
   it('has the brownout and dropout numbers from the P0 analysis', () => {
     const b = a.report.findings.find((x) => x.rule === 'power/brownout')!
-    expect(b.evidence['first onset (s)']).toBeCloseTo(532.77, 2)
+    expect(b.evidence['first (s)']).toBeCloseTo(532.77, 2)
     const d = a.report.findings.find((x) => x.rule === 'can/device-dropout')!
     expect(d.title).toMatch(/follower 16 dropped off CAN 7 times/)
     expect(d.evidence['likely cause']).toMatch(/power path/)

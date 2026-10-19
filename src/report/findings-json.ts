@@ -14,6 +14,7 @@ import { RULES, type Report } from '../rules/index.ts'
 import type { Finding, Plot } from '../rules/types.ts'
 import { powerReport } from '../power/power-report.ts'
 import { buildPowerGrid } from '../power/battery-model.ts'
+import type { IssueEvent } from '../triage/history.ts'
 
 export const SCHEMA = 'hindsight.findings/1'
 export { VERSION as TOOL_VERSION } from '../version.ts'
@@ -23,7 +24,7 @@ const MAX_POINTS = 300
 
 export interface WindowSeries { label: string; key: string | null; t: number[]; v: number[] }
 
-export function buildFindingsJson(match: Match, report: Report): object {
+export function buildFindingsJson(match: Match, report: Report, issues: Map<string, IssueEvent> = new Map()): object {
   const power = powerReport(match)
   return {
     schema: SCHEMA,
@@ -48,7 +49,8 @@ export function buildFindingsJson(match: Match, report: Report): object {
     findings: report.findings.map((f) => ({
       ...f,
       plot: undefined,
-      audience: RULES.find((r) => r.id === f.rule)?.audience ?? [],
+      issue: issues.get(f.key) ? { status: issues.get(f.key)!.status, note: issues.get(f.key)!.note, since: issues.get(f.key)!.when } : null,
+      who: RULES.find((r) => r.id === f.rule)?.who ?? [],
       fix: RULES.find((r) => r.id === f.rule)?.fix ?? null,
       incident: RULES.find((r) => r.id === f.rule)?.incident ?? null,
       window: f.plot ? windowFor(match, f.plot) : null,

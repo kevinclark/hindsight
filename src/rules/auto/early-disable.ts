@@ -1,47 +1,34 @@
 /**
- * auto/early-disable — was the robot disabled during auto with time left, on the field?
+ * Was the robot disabled during auto with time left, on the field?
  *
- * Checks: under FMS, an auto period that ends more than 1 s before the auto length while the DS is still attached.
+ * Checks: on the field (FMS attached), an auto period that ends more than 1 s early while the DS is still attached.
  * That is a deliberate disable (an A-stop or the drive team), not a comms loss.
- * Why: CalGames 2026 Q13: the robot wedged under the trench and was disabled with 7.3 s of auto left.
- * When it fires: find out why from the drive team, then look at the moments before (collision/tilt, mech/*).
+ * Why: CalGames 2026 Q13: the robot wedged under the trench and was disabled with 7.4 s of auto left.
  */
-import { matchTimeLeft, num, type Match } from '../../match/match.ts'
-import { valueAt } from '../../match/series.ts'
-import type { Finding, Rule } from '../types.ts'
+import { rule, round } from '../rule.ts'
 
-export const earlyDisable: Rule = {
+export default rule({
   id: 'auto/early-disable',
   title: 'Disabled during auto',
-  audience: ['software', 'drive'],
+  severity: 'error',
+  who: ['software', 'drive'],
   fix: 'Ask the drive team why (A-stop?), then check what happened just before: collision/tilt, a mechanism out of position, a stuck path.',
-  incident: 'CalGames 2026 Q13: disabled at 282.7 s with 7.3 s of auto left after the hood hit the trench (2026-10-17-calgames-q13-log-analysis.md §1)',
-  needs: (m: Match) => [m.profile.signals.enabled, m.profile.signals.autonomous, m.profile.signals.fmsAttached],
-  run(m: Match): Finding[] {
-    if (!m.fms || m.matchStart === null) return []
-    const autoStart = m.matchStart
-    const attached = num(m, m.profile.signals.dsAttached)
-    const out: Finding[] = []
-    for (const iv of m.auto.filter((x) => x.start >= autoStart && x.start < autoStart + m.profile.game.autoSeconds)) {
-      const left = matchTimeLeft(m, iv.end).secondsLeft
-      const dsStillThere = !attached || valueAt(attached, iv.end + 0.05) > 0.5
-      if (left <= 1 || !dsStillThere) continue
-      out.push({
-        rule: this.id,
-        severity: 'error',
-        title: `Disabled in auto at ${iv.end.toFixed(1)} s with ${left.toFixed(1)} s of auto left`,
-        time: iv.end,
-        evidence: { 'auto enabled (s)': +autoStart.toFixed(2), 'disabled (s)': +iv.end.toFixed(2), 'auto time left (s)': +left.toFixed(1), 'DS still attached': 'yes' },
-        plot: {
-          from: autoStart - 1, to: Math.min(iv.end + 5, autoStart + m.profile.game.autoSeconds + 2), unit: '°',
-          lines: [
-            { label: 'Gyro pitch', key: m.profile.signals.gyroPitch, scale: 180 / Math.PI },
-            { label: 'Gyro roll', key: m.profile.signals.gyroRoll, scale: 180 / Math.PI },
-          ],
-          markers: [{ t: iv.end, label: 'disabled' }],
-        },
-      })
-    }
-    return out
+  incident: 'CalGames 2026 Q13: disabled at 282.7 s with 7.4 s of auto left after the hood hit the trench (2026-10-17-calgames-q13-log-analysis.md §1)',
+
+  check(match) {
+    if (!match.onField || match.autoStart === null) return
+    const attached = match.signal('dsAttached')
+    const autoPeriods = match.auto.filter((a) => a.start >= match.autoStart! && a.start < match.autoStart! + match.profile.game.autoSeconds)
+    const early = autoPeriods.filter((a) => match.timeLeft(a.end) > 1 && attached.at(a.end + 0.05) > 0.5)
+    // The plot is a bonus: draw the gyro if the log has it, but don't let a missing gyro stop the rule.
+    const gyro = match.has('gyroPitch') && match.has('gyroRoll')
+      ? [match.signal('gyroPitch').times(180 / Math.PI, 'Pitch'), match.signal('gyroRoll').times(180 / Math.PI, 'Roll')] : []
+    return early.map((a) => ({
+      message: `Disabled in auto at ${a.end.toFixed(1)} s with ${match.timeLeft(a.end).toFixed(1)} s of auto left`,
+      at: a.end,
+      evidence: { 'auto enabled (s)': round(match.autoStart!), 'disabled (s)': round(a.end), 'auto time left (s)': round(match.timeLeft(a.end), 1), 'DS still attached': 'yes' },
+      plot: gyro,
+      plotUnit: '°', plotFrom: match.autoStart! - 1, plotTo: a.end + 4, plotMarks: [a.end],
+    }))
   },
-}
+})

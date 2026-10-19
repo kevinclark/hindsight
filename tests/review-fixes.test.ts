@@ -58,15 +58,18 @@ describe('the match window ignores enables before the match', () => {
 describe('rules that check several devices report what they could not check', () => {
   it('lists power/limit-not-applied as not checked when no motor current is logged', () => {
     const r = analyzeFiles([{ name: 'q13.wpilog', bytes: writeWpilog(q13.entries) }]).analyses[0].report
-    expect(r.skipped.find((s) => s.rule === 'power/limit-not-applied')?.reason).toMatch(/^missing /)
-    expect(r.skipped.find((s) => s.rule === 'can/device-dropout')?.reason).toMatch(/^missing /)
+    for (const rule of ['power/limit-not-applied', 'can/device-dropout']) {
+      const reason = r.skipped.find((s) => s.rule === rule)?.reason ?? ''
+      expect(reason, rule).toMatch(/missing /)
+      expect(reason, rule).not.toMatch(/^partly/)
+    }
   })
   it('says "partly checked" when only some keys are missing', () => {
     const r = analyzeFiles([{ name: 'p.wpilog', bytes: writeWpilog([
       ...q13.entries,
       { name: '/Drum/Hood/Connected', type: 'boolean', records: [[11.9, true]] },
     ]) }]).analyses[0].report
-    expect(r.skipped.find((s) => s.rule === 'can/device-dropout')?.reason).toMatch(/^partly checked; missing /)
+    expect(r.skipped.find((s) => s.rule === 'can/device-dropout')?.reason).toMatch(/^partly checked; .*missing /)
   })
 })
 

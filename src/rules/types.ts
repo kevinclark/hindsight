@@ -1,19 +1,19 @@
 /**
- * What a rule is and what it returns. Every rule file in src/rules/<area>/<rule>.ts exports one `Rule`.
+ * What the runner produces from a rule's answer: a finding, with everything the report and findings.json need.
+ * Rules don't build these themselves; they return a Problem (src/rules/rule.ts).
  */
 
-import type { Match } from '../match/match.ts'
 import type { NumberSeries } from '../match/series.ts'
+import type { Severity } from './rule.ts'
 
-/** red = it cost or nearly cost a match; amber = a margin is eroding; grey = context. */
-export type Severity = 'error' | 'warning' | 'info'
+export type { Audience, Severity } from './rule.ts'
 
-/** A line on a finding's plot: either a log key, or a series the rule computed (e.g. total current). */
+/** A line on a finding's plot: either a log key, or a series (e.g. degrees instead of radians). */
 export interface PlotLine {
   label: string
   key?: string
   data?: NumberSeries
-  /** Multiply values by this before plotting (e.g. radians → degrees). */
+  /** Multiply values by this before plotting. */
   scale?: number
 }
 
@@ -35,35 +35,11 @@ export interface Finding {
   title: string
   /** The moment it happened, in log seconds (null for whole-match findings). */
   time: number | null
+  /** What it is about (a motor, a camera, an axis), or null for the whole match. */
+  about: string | null
+  /** The issue's identity across matches: the rule, plus what it is about. Known-issue tracking uses it. */
+  key: string
   /** The numbers behind the finding. Keys are plain-English labels. */
   evidence: Record<string, number | string>
   plot?: Plot
-}
-
-export interface NotChecked {
-  notChecked: string
-}
-
-/** Findings from the parts a rule could check, plus what it couldn't (listed under "Not checked" as partly checked). */
-export interface PartlyChecked {
-  findings: Finding[]
-  missing: string[]
-}
-
-/** Who acts when a rule fires: the software team (code and config), the pit crew (mechanisms, wiring, batteries) or the drive team. */
-export type Audience = 'software' | 'pit' | 'drive'
-
-export interface Rule {
-  /** "<area>/<name>", matching the file path. */
-  id: string
-  title: string
-  /** Who acts when it fires (docs/audiences-and-triage.md). The Match tab filters by this. */
-  audience: Audience[]
-  /** What to do when it fires. Shown under every finding. */
-  fix: string
-  /** The incident that taught us this rule. */
-  incident: string
-  /** Log keys this rule cannot run without. If any is missing, the rule is listed as "not checked". */
-  needs: (match: Match) => string[]
-  run: (match: Match) => Finding[] | NotChecked | PartlyChecked
 }

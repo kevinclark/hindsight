@@ -46,6 +46,6 @@ describe('battery rules', () => {
       { name: '/BatteryGauge/Valid', type: 'boolean', records: [[10, false]] },
       { name: '/BatteryGauge/EffectiveCapacityAh', type: 'double', records: [[10, 0]] },
     ])
-    expect(report.skipped.find((s) => s.rule === 'battery/gauge-capacity')?.reason).toMatch(/never reported a valid/)
+    expect(report.skipped.find((s) => s.rule === 'battery/gauge-capacity')?.reason).toMatch(/never gave a valid/)
   })
 })

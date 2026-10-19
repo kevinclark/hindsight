@@ -1,0 +1,165 @@
+/**
+ * The runner: builds the things each rule checks (motors, devices, cameras, ...) from the robot profile, calls each
+ * rule's `check`, and turns what it returns into findings. Rules don't call this; read it only if you are curious.
+ */
+import type { Match } from '../match/match.ts'
+import type { Finding, Plot, PlotLine } from './types.ts'
+import type { Answer, Problem, Rule, Severity } from './rule.ts'
+import { MatchView, MissingSignal, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
+
+export interface SkippedRule { rule: string; reason: string }
+
+export interface Report {
+  findings: Finding[]
+  /** Rules (or parts of rules) that couldn't run, and why. */
+  skipped: SkippedRule[]
+  /** Rules that threw: a bug in the rule, shown so it isn't silent. */
+  crashed: SkippedRule[]
+}
+
+const ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
+
+export function runRules(match: Match, rules: Rule[]): Report {
+  const view = new MatchView(match)
+  const findings: Finding[] = []
+  const skipped: SkippedRule[] = []
+  const crashed: SkippedRule[] = []
+  for (const rule of rules) {
+    try {
+      const result = runOne(rule, view)
+      findings.push(...result.findings)
+      if (result.notChecked.length) {
+        const all = result.notChecked.length === result.items
+        skipped.push({ rule: rule.id, reason: `${all ? '' : 'partly checked; '}${result.notChecked.join('; ')}` })
+      }
+    } catch (error) {
+      crashed.push({ rule: rule.id, reason: String(error) })
+    }
+  }
+  if (skipped.length) {
+    findings.push({
+      rule: 'meta/not-checked', severity: 'info', time: null, about: null, key: 'meta/not-checked',
+      title: `${skipped.length} rule${skipped.length === 1 ? '' : 's'} not checked or partly checked: signals missing`,
+      evidence: Object.fromEntries(skipped.map((s) => [s.rule, s.reason])),
+    })
+  }
+  // Worst first: severity, then the rule's place in the list (things that cost the match first), then time.
+  const place = (f: Finding) => { const i = rules.findIndex((r) => r.id === f.rule); return i < 0 ? rules.length : i }
+  findings.sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || place(a) - place(b) || (a.time ?? Infinity) - (b.time ?? Infinity))
+  return { findings, skipped, crashed }
+}
+
+/** Run one rule over each of its things. A thing whose signals are missing is noted, not fatal. */
+function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked: string[]; items: number } {
+  const items = itemsFor(rule, view)
+  const findings: Finding[] = []
+  const notChecked: string[] = []
+  if (items.length === 0) return { findings, notChecked: [`the robot profile lists no ${rule.forEach}s`], items: 1 }
+  for (const item of items) {
+    view.notes = []
+    try {
+      const answer: Answer = item.check()
+      const problems = answer === undefined ? [] : Array.isArray(answer) ? answer : [answer]
+      findings.push(...problems.map((p) => toFinding(rule, p, item.name, view)))
+      notChecked.push(...view.notes.map((n) => (item.name ? `${item.name}: ${n}` : n)))
+    } catch (error) {
+      if (!(error instanceof MissingSignal)) throw error
+      notChecked.push(item.name ? `${item.name}: missing ${error.key}` : `missing ${error.key}`)
+    }
+  }
+  return { findings, notChecked, items: items.length }
+}
+
+/** The things a rule checks, each with its name and a call to the rule's check. */
+function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: () => Answer }[] {
+  const p = view.profile
+  const motor = (m: (typeof p.motorGroups)[0]['motors'][0], group: string): MotorView => ({
+    name: m.name, group,
+    supply: () => view.signal(need(m.supplyCurrent, `${m.name} supply current`), `${m.name} supply`),
+    stator: () => view.signal(need(m.statorCurrent, `${m.name} stator current`), `${m.name} stator`),
+    velocity: () => view.signal(need(m.velocity, `${m.name} velocity`), m.name),
+    connected: () => view.signal(need(m.connected, `${m.name} Connected flag`), `${m.name} connected`),
+  })
+  switch (rule.forEach) {
+    case undefined:
+    case 'match':
+      return [{ name: null, check: () => rule.check(view) }]
+    case 'motor':
+      return p.motorGroups.flatMap((g) => g.motors.map((m) => ({ name: m.name, check: () => rule.check(motor(m, g.name), view) })))
+    case 'motorGroup':
+      return p.motorGroups.map((g) => {
+        const group: GroupView = { name: g.name, motors: g.motors.map((m) => motor(m, g.name)), limits: g.limits, sameLoop: !!g.sameLoop }
+        return { name: g.name, check: () => rule.check(group, view) }
+      })
+    case 'device': {
+      const devices: DeviceView[] = [
+        ...p.motorGroups.flatMap((g) => g.motors.filter((m) => m.connected).map((m) => motor(m, g.name))),
+        ...p.otherDevices.map((d) => ({ name: d.name, connected: () => view.signal(d.connected, `${d.name} connected`) })),
+      ]
+      return devices.map((d) => ({ name: d.name, check: () => rule.check(d, view) }))
+    }
+    case 'camera':
+      return p.cameras.map((c) => {
+        const camera: CameraView = {
+          name: c.name,
+          acceptedPose: () => view.pose(c.acceptedPose),
+          stale: () => view.signal(c.stale, `${c.name} stale`),
+          connected: () => view.signal(c.connected, `${c.name} connected`),
+        }
+        return { name: c.name, check: () => rule.check(camera, view) }
+      })
+    case 'mechanism':
+      return p.zeroing.map((z) => ({
+        name: z.mechanism,
+        check: () => {
+          const mechanism: MechanismView = {
+            name: z.mechanism,
+            position: () => view.signal(z.position, `${z.mechanism} position (°)`).times(z.positionToDegrees),
+            zeroDoneAt: view.text('console').firstMatch(z.doneMessage),
+            zeroDirection: z.zeroDirection,
+            moveDegrees: z.moveDegrees,
+          }
+          return rule.check(mechanism, view)
+        },
+      }))
+    case 'alert':
+      return view.alerts().map((a) => ({ name: a.name, check: () => rule.check(a, view) }))
+  }
+}
+
+function need(key: string | undefined, what: string): string {
+  if (!key) throw new MissingSignal(`${what} (not in the robot profile)`)
+  return key
+}
+
+function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchView): Finding {
+  const about = p.about ?? itemName
+  return {
+    rule: rule.id,
+    severity: p.severity ?? rule.severity,
+    title: p.message,
+    time: p.at ?? null,
+    about,
+    key: about ? `${rule.id} · ${about}` : rule.id,
+    evidence: p.evidence ?? {},
+    plot: toPlot(p, view),
+  }
+}
+
+function toPlot(p: Problem, view: MatchView): Plot | undefined {
+  if (!p.plot || p.plot.length === 0) return undefined
+  const from = p.plotFrom ?? (p.at ?? NaN) - 5
+  const to = p.plotTo ?? (p.at ?? NaN) + 5
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return undefined
+  const lines: PlotLine[] = []
+  for (const s of p.plot) {
+    if (typeof s !== 'string') lines.push({ label: s.label, data: s.series })
+    else if (view.has(s)) lines.push({ label: words(s), data: view.signal(s).series })
+  }
+  return { from, to, lines, unit: p.plotUnit ?? '', threshold: p.plotLine, markers: p.plotMarks?.map((t) => ({ t, label: '' })) }
+}
+
+/** 'batteryVoltage' → 'battery voltage'; a log key stays as it is. */
+function words(name: string): string {
+  return name.startsWith('/') ? name : name.replace(/([A-Z])/g, ' $1').toLowerCase()
+}

@@ -1,58 +1,37 @@
 /**
- * vision/outliers — is the robot accepting vision poses far from where odometry says it is?
+ * Is the robot accepting vision poses far from where odometry says it is?
  *
- * Checks: for each camera, the accepted vision pose against the odometry pose at the same moment, during the
- * match. Fires when more than 5 % of a camera's accepted poses are over 0.5 m away.
- * Why: CalGames 2026: 5–15 % of accepted poses were > 0.5 m off (max 2.2–8.7 m), and P0 had 4 odometry jumps.
+ * Checks: each camera's accepted vision poses during the match against the odometry pose at the same moment.
+ * Fires when more than 5 % are over 0.5 m away.
+ * Why: CalGames 2026: 5–15 % of accepted poses were over 0.5 m off (up to 8.7 m), and P0 had 4 odometry jumps.
  * Threshold: assumed from three logs; every log so far fires it.
- * When it fires: tighten the pose rejection (ambiguity, distance, max jump vs odometry) and check camera mounts
- * and calibration.
  */
-import { has, values, type Match } from '../../match/match.ts'
-import { heldAt, maxOf, percentile } from '../../match/series.ts'
-import type { Pose2d } from '../../readers/wpilog.ts'
-import { inMatch, withMissing } from '../helpers.ts'
-import type { Finding, Rule } from '../types.ts'
+import { maxOf, percentile } from '../../match/series.ts'
+import { pct, rule, round } from '../rule.ts'
 
-const FAR_METERS = 0.5
-const SHARE = 0.05
-
-export const visionOutliers: Rule = {
+export default rule({
   id: 'vision/outliers',
   title: 'Vision poses far from odometry',
-  audience: ['software'],
+  severity: 'warning',
+  who: ['software'],
   fix: 'Reject vision poses more than ~0.5 m from odometry (or weight them by ambiguity and tag distance); check camera mounts and calibration.',
-  incident: 'CalGames 2026: 5–15 % of accepted vision poses > 0.5 m from odometry (P0 analysis, "Other issues")',
-  needs: (m: Match) => [m.profile.signals.odometryPose],
-  run(m: Match) {
-    const odometry = values<Pose2d>(m, m.profile.signals.odometryPose)!
-    const out: Finding[] = []
-    const missing: string[] = []
-    for (const cam of m.profile.cameras) {
-      if (!has(m, cam.acceptedPose)) { missing.push(cam.acceptedPose); continue }
-      const poses = values<Pose2d>(m, cam.acceptedPose)!
-      const distances: number[] = []
-      for (let i = 0; i < poses.t.length; i++) {
-        if (!inMatch(m, poses.t[i])) continue
-        const o = heldAt(odometry, poses.t[i])
-        if (o) distances.push(Math.hypot(poses.v[i].x - o.x, poses.v[i].y - o.y))
-      }
-      const far = distances.filter((d) => d > FAR_METERS).length
-      const share = distances.length ? far / distances.length : 0
-      if (share <= SHARE) continue
-      out.push({
-        rule: this.id,
-        severity: 'warning',
-        title: `${cam.name}: ${(100 * share).toFixed(1)} % of accepted vision poses were more than ${FAR_METERS} m from odometry`,
-        time: null,
-        evidence: {
-          'accepted poses in the match': distances.length,
-          [`over ${FAR_METERS} m`]: far,
-          'p90 distance (m)': +percentile(distances, 90).toFixed(2),
-          'max distance (m)': +maxOf(distances).toFixed(2),
-        },
-      })
+  incident: 'CalGames 2026: 5–15 % of accepted vision poses over 0.5 m from odometry (P0 analysis, "Other issues")',
+  forEach: 'camera',
+
+  check(camera, match) {
+    const odometry = match.pose('odometryPose')
+    const vision = camera.acceptedPose()
+    const distances: number[] = []
+    vision.series.v.forEach((pose, i) => {
+      const t = vision.series.t[i]
+      const odo = odometry.at(t)
+      if (match.inMatch(t) && odo) distances.push(Math.hypot(pose.x - odo.x, pose.y - odo.y))
+    })
+    const far = distances.filter((d) => d > 0.5).length
+    if (distances.length === 0 || far / distances.length <= 0.05) return
+    return {
+      message: `${camera.name}: ${pct(far / distances.length)} of accepted vision poses were more than 0.5 m from odometry`,
+      evidence: { 'accepted poses in the match': distances.length, 'over 0.5 m': far, 'p90 distance (m)': round(percentile(distances, 90)), 'farthest (m)': round(maxOf(distances)) },
     }
-    return withMissing(out, missing, m.profile.cameras.length)
   },
-}
+})

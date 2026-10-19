@@ -1,28 +1,60 @@
-<!-- One finding: severity, title and time; opens to evidence, a plot of the moment, the fix and the incident. -->
+<!--
+  One finding: severity, title and time; opens to evidence, a plot of the moment, the fix, the incident, and the
+  buttons that track it as a known issue.
+-->
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import type { Finding } from '../rules/types.ts'
   import { ruleById } from '../rules/index.ts'
+  import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import Plot from './Plot.svelte'
   import { plotModel } from './plot-data.ts'
 
-  let { finding, analysis }: { finding: Finding; analysis: Analysis } = $props()
+  let { finding, analysis, issue, fixedLater = false, onMark }: {
+    finding: Finding
+    analysis: Analysis
+    issue?: IssueEvent
+    /** Marked fixed, but the fix came after this match was played. */
+    fixedLater?: boolean
+    onMark: (finding: Finding, status: IssueStatus, note: string) => void
+  } = $props()
   const rule = $derived(ruleById(finding.rule))
+  const cameBack = $derived(issue?.status === 'fixed' && !fixedLater)
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
   const ICON = { error: '●', warning: '▲', info: '○' } as const
+  const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
   // Errors start open; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
-  let open = $state(finding.severity === 'error')
+  let open = $state(finding.severity === 'error' && !issue)
+
+  function mark(status: IssueStatus) {
+    const ask = status === 'known' ? 'What do we know about it? (e.g. "belt slipping on 17/18, new belt before elims")'
+      : status === 'fixed' ? 'What fixed it? (e.g. "replaced belt, retensioned")' : ''
+    const note = status === 'new' ? '' : window.prompt(ask, issue?.note ?? '')
+    if (note === null) return // cancelled
+    onMark(finding, status, note.trim())
+  }
+  const date = (iso: string) => iso.slice(0, 10)
 </script>
 
-<li class={`finding ${finding.severity}`}>
+<li class={`finding ${finding.severity}`} class:known={issue?.status === 'known' || fixedLater}>
   <details bind:open>
     <summary>
       <span class="sev" title={LABEL[finding.severity]}><span aria-hidden="true">{ICON[finding.severity]}</span> {LABEL[finding.severity]}</span>
-      <span class="title">{finding.title}</span>
+      <span class="title">
+        {#if cameBack}<span class="badge back">Came back after a fix</span>{/if}
+        {#if issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
+        {#if fixedLater}<span class="badge known-badge">Fixed after this match</span>{/if}
+        {finding.title}
+      </span>
       <span class="rule">{finding.rule}</span>
     </summary>
     <div class="body">
+      {#if issue}
+        <p class="issue-note">
+          <strong>{issue.status === 'known' ? 'Known issue' : 'Marked fixed'}</strong> on {date(issue.when)}{issue.match ? ` (${issue.match})` : ''}{issue.note ? `: ${issue.note}` : ''}
+        </p>
+      {/if}
       <table class="evidence">
         <tbody>
           {#each Object.entries(finding.evidence) as [k, v] (k)}
@@ -36,8 +68,13 @@
       {#if rule}
         <p class="fix"><strong>What to do:</strong> {rule.fix}</p>
         <p class="incident"><strong>Why this rule exists:</strong> {rule.incident}</p>
-        <p class="incident"><strong>Who acts:</strong> {rule.audience.map((a) => ({ software: 'software team', pit: 'pit crew', drive: 'drive team' })[a]).join(', ')}</p>
+        <p class="incident"><strong>Who acts:</strong> {rule.who.map((a) => WHO[a]).join(', ')} · <strong>Tracked as:</strong> <code>{finding.key}</code></p>
       {/if}
+      <div class="actions">
+        {#if issue?.status !== 'known'}<button onclick={() => mark('known')}>Mark as known…</button>{/if}
+        {#if issue?.status !== 'fixed'}<button onclick={() => mark('fixed')}>Mark as fixed…</button>{/if}
+        {#if issue}<button onclick={() => mark('new')}>Treat as new</button>{/if}
+      </div>
     </div>
   </details>
 </li>
@@ -51,15 +88,22 @@
   .sev { font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
   .error .sev { color: var(--error); }
   .warning .sev { color: var(--warning); }
-  .info .sev { color: var(--muted); }
+  .info .sev, .known .sev { color: var(--muted); }
   .title { min-width: 0; overflow-wrap: anywhere; }
+  .badge { font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.4rem; border-radius: 4px; margin-right: 0.35rem; white-space: nowrap; }
+  .back { background: var(--error); color: var(--bg); }
+  .known-badge { border: 1px solid var(--muted); color: var(--muted); }
   .rule { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
   .body { padding: 0 0.25rem 0.9rem 7.25rem; }
+  .issue-note { font-size: 0.85rem; margin: 0 0 0.5rem; padding: 0.25rem 0.6rem; border-left: 3px solid var(--muted); }
   .evidence { border-collapse: collapse; font-size: 0.85rem; }
   .evidence th { text-align: left; font-weight: normal; color: var(--muted); padding: 0.1rem 1rem 0.1rem 0; vertical-align: top; }
   .evidence td { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .fix, .incident { font-size: 0.85rem; margin: 0.5rem 0 0; max-width: 70ch; }
   .incident { color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+  .actions button { padding: 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; font-size: 0.85rem; cursor: pointer; }
+  .actions button:hover { border-color: var(--muted); }
   @media (max-width: 640px) {
     summary { grid-template-columns: 1fr; gap: 0.15rem; }
     .body { padding-left: 0.25rem; }
