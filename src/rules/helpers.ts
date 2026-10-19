@@ -3,6 +3,7 @@
 import type { Match } from '../match/match.ts'
 import { phaseAt, matchTimeLeft } from '../match/match.ts'
 import type { Interval, NumberSeries } from '../match/series.ts'
+import type { Finding, NotChecked, PartlyChecked } from './types.ts'
 
 /** "532.8 s (teleop, 17.7 s left)" — the standard way to say when something happened. */
 export function when(match: Match, t: number): string {
@@ -15,11 +16,6 @@ export function when(match: Match, t: number): string {
 /** True when t is inside the match: from the first enable to the end of the last enabled period. */
 export function inMatch(match: Match, t: number): boolean {
   return match.matchStart !== null && match.matchEnd !== null && t >= match.matchStart && t <= match.matchEnd
-}
-
-/** True when the robot was enabled at time t. */
-export function isEnabled(match: Match, t: number): boolean {
-  return match.enabled.some((iv) => t >= iv.start && t < iv.end)
 }
 
 /**
@@ -61,6 +57,26 @@ export function peakIn(s: NumberSeries, from: number, to: number): { value: numb
     if (s.v[i] > best.value) best = { value: s.v[i], t: s.t[i] }
   }
   return best
+}
+
+/** Largest absolute value in [from, to] (records only), with its time. Currents can log negative. */
+export function peakAbsIn(s: NumberSeries, from: number, to: number): { value: number; t: number } {
+  let best = { value: -Infinity, t: NaN }
+  for (let i = 0; i < s.t.length; i++) {
+    if (s.t[i] < from || s.t[i] > to) continue
+    if (Math.abs(s.v[i]) > best.value) best = { value: Math.abs(s.v[i]), t: s.t[i] }
+  }
+  return best
+}
+
+/**
+ * What a rule returns when it checks several devices and some keys are missing from the log: every key missing →
+ * "not checked"; some missing → its findings plus "partly checked"; none missing → just the findings.
+ * Without this, a renamed subsystem would read as "looked and found nothing".
+ */
+export function withMissing(findings: Finding[], missing: string[], total: number): Finding[] | NotChecked | PartlyChecked {
+  if (total > 0 && missing.length === total) return { notChecked: `missing ${missing.join(', ')}` }
+  return missing.length ? { findings, missing } : findings
 }
 
 /** Smallest value in [from, to] (records only), with its time. */

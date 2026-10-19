@@ -9,9 +9,9 @@
  * and calibration.
  */
 import { has, values, type Match } from '../../match/match.ts'
-import { heldAt, percentile } from '../../match/series.ts'
+import { heldAt, maxOf, percentile } from '../../match/series.ts'
 import type { Pose2d } from '../../readers/wpilog.ts'
-import { inMatch } from '../helpers.ts'
+import { inMatch, withMissing } from '../helpers.ts'
 import type { Finding, Rule } from '../types.ts'
 
 const FAR_METERS = 0.5
@@ -20,14 +20,16 @@ const SHARE = 0.05
 export const visionOutliers: Rule = {
   id: 'vision/outliers',
   title: 'Vision poses far from odometry',
+  audience: ['software'],
   fix: 'Reject vision poses more than ~0.5 m from odometry (or weight them by ambiguity and tag distance); check camera mounts and calibration.',
   incident: 'CalGames 2026: 5–15 % of accepted vision poses > 0.5 m from odometry (P0 analysis, "Other issues")',
-  needs: (m: Match) => [m.profile.signals.odometryPose, ...m.profile.cameras.map((c) => c.acceptedPose)],
-  run(m: Match): Finding[] {
+  needs: (m: Match) => [m.profile.signals.odometryPose],
+  run(m: Match) {
     const odometry = values<Pose2d>(m, m.profile.signals.odometryPose)!
     const out: Finding[] = []
+    const missing: string[] = []
     for (const cam of m.profile.cameras) {
-      if (!has(m, cam.acceptedPose)) continue
+      if (!has(m, cam.acceptedPose)) { missing.push(cam.acceptedPose); continue }
       const poses = values<Pose2d>(m, cam.acceptedPose)!
       const distances: number[] = []
       for (let i = 0; i < poses.t.length; i++) {
@@ -47,10 +49,10 @@ export const visionOutliers: Rule = {
           'accepted poses in the match': distances.length,
           [`over ${FAR_METERS} m`]: far,
           'p90 distance (m)': +percentile(distances, 90).toFixed(2),
-          'max distance (m)': +Math.max(...distances).toFixed(2),
+          'max distance (m)': +maxOf(distances).toFixed(2),
         },
       })
     }
-    return out
+    return withMissing(out, missing, m.profile.cameras.length)
   },
 }

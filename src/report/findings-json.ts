@@ -9,14 +9,15 @@
  */
 
 import { has, num, type Match } from '../match/match.ts'
-import { percentile, slice, type NumberSeries } from '../match/series.ts'
+import { maxOf, minOf, percentile, slice, type NumberSeries } from '../match/series.ts'
 import { RULES, type Report } from '../rules/index.ts'
 import type { Finding, Plot } from '../rules/types.ts'
 import { powerReport } from '../power/power-report.ts'
 import { buildPowerGrid } from '../power/battery-model.ts'
 
 export const SCHEMA = 'hindsight.findings/1'
-export const TOOL_VERSION = '0.1.0'
+export { VERSION as TOOL_VERSION } from '../version.ts'
+import { VERSION } from '../version.ts'
 const EXCLUDED_PREFIXES = ['/RadioStatus/']
 const MAX_POINTS = 300
 
@@ -26,7 +27,7 @@ export function buildFindingsJson(match: Match, report: Report): object {
   const power = powerReport(match)
   return {
     schema: SCHEMA,
-    tool: { name: 'hindsight', version: TOOL_VERSION, rules: RULES.map((r) => r.id) },
+    tool: { name: 'hindsight', version: VERSION, rules: RULES.map((r) => r.id) },
     generatedAt: new Date().toISOString(),
     excluded: EXCLUDED_PREFIXES.map((p) => `${p}* (radio status carries a hashed Wi-Fi key)`),
     match: {
@@ -38,14 +39,16 @@ export function buildFindingsJson(match: Match, report: Report): object {
       profileConfigSha: match.profile.configSha,
       build: match.build,
       log: { start: match.logStart, end: match.logEnd, entries: match.log.entries.size, records: match.log.recordCount, warnings: match.log.warnings },
+      matchWindow: { start: match.matchStart, teleopStart: match.teleopStart, end: match.matchEnd },
       auto: match.auto,
       teleop: match.teleop,
       wallClockOffsetSeconds: match.epochOffset,
-      dslog: match.ds ? { file: match.ds.fileName, start: match.ds.startTime, end: match.ds.endTime } : null,
+      dslogs: match.ds.map((d) => ({ file: d.fileName, start: d.startTime, end: d.endTime })),
     },
     findings: report.findings.map((f) => ({
       ...f,
       plot: undefined,
+      audience: RULES.find((r) => r.id === f.rule)?.audience ?? [],
       fix: RULES.find((r) => r.id === f.rule)?.fix ?? null,
       incident: RULES.find((r) => r.id === f.rule)?.incident ?? null,
       window: f.plot ? windowFor(match, f.plot) : null,
@@ -101,7 +104,7 @@ function summary(match: Match): Record<string, unknown> {
     if (!has(match, key)) return
     const s = inMatch(num(match, key)!)
     if (s.v.length === 0) return
-    out[label] = { key, n: s.v.length, min: +Math.min(...s.v).toFixed(3), p5: +percentile(s.v, 5).toFixed(3), median: +percentile(s.v, 50).toFixed(3), p95: +percentile(s.v, 95).toFixed(3), max: +Math.max(...s.v).toFixed(3) }
+    out[label] = { key, n: s.v.length, min: +minOf(s.v).toFixed(3), p5: +percentile(s.v, 5).toFixed(3), median: +percentile(s.v, 50).toFixed(3), p95: +percentile(s.v, 95).toFixed(3), max: +maxOf(s.v).toFixed(3) }
   }
   stat('battery voltage (V)', match.profile.signals.batteryVoltage)
   stat('loop cycle (ms)', match.profile.signals.loopCycleMs)
@@ -109,7 +112,7 @@ function summary(match: Match): Record<string, unknown> {
   if (g) {
     for (const group of g.groups) {
       const xs = group.amps.filter((_, i) => g.enabled[i] === 1)
-      if (xs.length) out[`${group.name} supply current (A)`] = { median: +percentile(xs, 50).toFixed(1), p95: +percentile(xs, 95).toFixed(1), max: +Math.max(...xs).toFixed(1) }
+      if (xs.length) out[`${group.name} supply current (A)`] = { median: +percentile(xs, 50).toFixed(1), p95: +percentile(xs, 95).toFixed(1), max: +maxOf(xs).toFixed(1) }
     }
   }
   return out

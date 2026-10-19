@@ -12,12 +12,13 @@ import type { Finding, Rule } from '../types.ts'
 export const restVoltage: Rule = {
   id: 'power/rest-voltage',
   title: 'Battery rest voltage before auto',
+  audience: ['pit'],
   fix: 'Put a battery reading ≥ 12.5 V at rest on the robot. A charged battery that rests lower needs a load test.',
   incident: 'CalGames 2026 Q21: 12.44 V before auto (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 2)',
   needs: (m: Match) => [m.profile.signals.batteryVoltage],
   run(m: Match): Finding[] {
-    if (m.auto.length === 0) return []
-    const start = m.auto[0].start
+    if (m.matchStart === null) return []
+    const start = m.matchStart
     const volts = num(m, m.profile.signals.batteryVoltage)!
     const before: number[] = []
     for (let i = 0; i < volts.t.length; i++) if (volts.t[i] >= start - 2 && volts.t[i] < start) before.push(volts.v[i])

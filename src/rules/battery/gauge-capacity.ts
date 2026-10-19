@@ -16,6 +16,7 @@ const MIN_AH = 12
 export const gaugeCapacity: Rule = {
   id: 'battery/gauge-capacity',
   title: 'Battery capacity low (fuel gauge)',
+  audience: ['pit'],
   fix: 'Capacity-test this battery (AndyMark CBA, 10 A to 11 V). Under 12 Ah twice means practice only.',
   incident: 'CalGames 2026 P0 battery collapse; gauge snapshots (hindsight-proposal.md §3, battery-sources.md)',
   needs: () => [],

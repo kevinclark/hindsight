@@ -7,10 +7,12 @@ Script: `scripts/chrome-check.ts`. Each row is a fresh page in a fresh Chrome; t
 
 | Load | Read files | Index + match model | All rules | Drop to rendered (wall) | JS heap after | Renderer RSS added at peak |
 |---|---|---|---|---|---|---|
-| Q13 (52.6 MB) + its .dslog | 16–17 ms | 56 ms | 60–61 ms | 198–200 ms | 82–83 MB | +146–147 MB |
-| Q21 (54.1 MB) | 17–18 ms | 56–58 ms | 59–60 ms | 195–199 ms | 79–80 MB | +184 MB |
-| P0 (56.5 MB) | 18 ms | 63 ms | 68–69 ms | 243–244 ms | 86–87 MB | +189 MB |
-| All three + the .dslog | 21–22 ms | 48–56 ms each | 52–62 ms each | 400–402 ms | 244–246 MB | +323–324 MB |
+| Q13 (52.6 MB) + its .dslog | 16–17 ms | 55–56 ms | 59–62 ms | 197–199 ms | 83–84 MB | +144–145 MB |
+| Q21 (54.1 MB) | 17 ms | 56–57 ms | 58–59 ms | 196–198 ms | 80 MB | +181–182 MB |
+| P0 (56.5 MB) | 17–18 ms | 62–63 ms | 68 ms | 198–202 ms | 86 MB | +187–188 MB |
+| All three + the .dslog | 19–21 ms | 47–56 ms each | 49–62 ms each | 398–399 ms | 244 MB | +319–320 MB |
+
+(Re-measured after the review fixes, same method; the first pass was within 1–3 ms, except P0 wall ~245 ms.)
 
 - "All rules" includes decoding every signal the rules ask for (the reader decodes lazily) and the power model.
 - "Renderer RSS added at peak": the largest sum of resident memory over this Chrome's renderer processes, sampled every

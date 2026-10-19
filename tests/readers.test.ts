@@ -78,6 +78,18 @@ describe('dslog reader', () => {
     expect(ds.records[20].brownout).toBe(false)
     expect(ds.records[99].epochSeconds - ds.records[0].epochSeconds).toBeCloseTo(1.98)
   })
+  it('skips REV power-distribution data in each record', () => {
+    const plain = writeDslog({ name: 'x', startEpochSeconds: 0, count: 3, robotFrom: 0, noRobotFrom: 3 })
+    const withPd = new Uint8Array(20 + 3 * (14 + 33))
+    withPd.set(plain.subarray(0, 20))
+    for (let i = 0; i < 3; i++) {
+      withPd.set(plain.subarray(20 + i * 14, 20 + i * 14 + 14), 20 + i * 47)
+      withPd[20 + i * 47 + 13] = 33 // REV PDH
+    }
+    const ds = readDslog(withPd)
+    expect(ds.records).toHaveLength(3)
+    expect(ds.records[2].voltage).toBeCloseTo(12.5)
+  })
   it('rejects other versions', () => {
     const b = writeDslog({ name: 'x', startEpochSeconds: 0, count: 1, robotFrom: 0, noRobotFrom: 1 })
     b[3] = 3

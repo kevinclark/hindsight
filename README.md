@@ -56,19 +56,37 @@ Chrome 155, headless, page opened from `file://`, logs loaded through the page's
 
 | Log | Size | Index + match model | All rules | Drop to rendered | Renderer memory added at peak |
 |---|---|---|---|---|---|
-| Q13 + its .dslog | 52.6 MB | 56 ms | 60–61 ms | ~200 ms | +146 MB |
-| Q21 | 54.1 MB | 56–58 ms | 59–60 ms | ~200 ms | +184 MB |
-| P0 | 56.5 MB | 63 ms | 68–69 ms | ~245 ms | +189 MB |
-| all three + .dslog | 163 MB | | | ~400 ms | +324 MB |
+| Q13 + its .dslog | 52.6 MB | 55–56 ms | 59–62 ms | ~200 ms | +145 MB |
+| Q21 | 54.1 MB | 56–57 ms | 58–59 ms | ~200 ms | +182 MB |
+| P0 | 56.5 MB | 62–63 ms | 68 ms | ~200 ms | +188 MB |
+| all three + .dslog | 163 MB | | | ~400 ms | +320 MB |
 
 Details and how they were taken: [docs/measurements.md](docs/measurements.md).
+
+## Who it is for
+
+Each rule names who acts when it fires: the **software team** (code and config), the **pit crew** (mechanisms,
+wiring, batteries) or the **drive team**. The Match tab filters by that. The pit board, triage across matches and
+wear trends are designed in [docs/audiences-and-triage.md](docs/audiences-and-triage.md) and wait on decisions.
 
 ## Not verified
 
 - **Windows and Chromebook are not verified.** Only Chrome 155 and Safari on macOS were checked.
+- **Safari's file picker is not exercised.** Safari rendered both tabs for all three logs, but through a test copy of
+  the page with the log embedded (Safari's WebDriver is off on this Mac). Chrome was driven through the real file input.
+- Analysis runs on the page's main thread: 120–130 ms per log here, so a slower laptop freezes the page for a moment.
+  A Blob worker (design-detail §7) is the fix if that shows up.
 - Student laptops are slower than an M5 Max; the timings above are an upper bound on speed, not a promise.
 - Every threshold is an assumption until it is backtested over the 808-log archive (phase 2), apart from the
   CalGames fixtures each rule must fire on.
-- The "healthy battery" reference curve is two batteries from one weekend (Q13, Q21).
+- The "healthy battery" reference curve is two batteries from one weekend (Q13, Q21), so only P0 tests the 1.5 V
+  line. Charge past 6.25 Ah has no reference and is listed as "partly checked".
+- Power numbers don't fully reconcile with the earlier analysis docs. Charge drawn reads 5.79 / 6.52 / 6.38 Ah
+  (Q13 / Q21 / P0) against 5.47 / 6.18 / 6.01 Ah there; the motors alone are 5.65 / 6.39 / 6.25 Ah, so 0.18–0.24 Ah is
+  unexplained (the script behind the docs' figure isn't in the repo). The open-circuit estimate for Q21 at 5.75 Ah is
+  10.50 V here against 9.80 V at 5.6 Ah in REVIEW.md (a point estimate under load; this is a 0.5 Ah median). The
+  last bin of a curve reads high when it includes post-match rest.
+- DS logs with power-distribution data (REV PDH or CTRE PDP on CAN) are read by skipping that data, using
+  AdvantageScope's record sizes; no such DS log has been tried.
 - Battery rules (`battery/identity`, `battery/gauge-capacity`) are tested only on synthetic logs: no match log has
   the FRC8033BatteryTracker keys yet.

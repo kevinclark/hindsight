@@ -14,6 +14,7 @@ import type { Finding, Rule } from '../types.ts'
 export const brownout: Rule = {
   id: 'power/brownout',
   title: 'roboRIO brownout',
+  audience: ['software', 'pit'],
   fix: 'Find the loads on at each sag (Power tab). Usual causes: a weak or uncharged battery, a loose battery or main-breaker crimp, current limits left off. Load-test the battery used.',
   incident: 'CalGames 2026 P0: brownouts from 532.8 s, battery collapse after ~3.5 Ah (8033/robot/2026-10-17-calgames-q13-log-analysis.md, P0 section)',
   needs: (m: Match) => [m.profile.signals.brownedOut, m.profile.signals.batteryVoltage],

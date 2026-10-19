@@ -17,6 +17,7 @@ const LIMIT = 0 // <the threshold, with its unit in the name if you can>
 export const templateRule: Rule = {
   id: '<area>/<name>',
   title: '<short title>',
+  audience: ['software'],
   fix: '<what to do when it fires>',
   incident: '<match, date, link>',
   needs: (m: Match) => [m.profile.signals.batteryVoltage],

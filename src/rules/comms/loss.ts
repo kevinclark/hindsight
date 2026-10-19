@@ -14,6 +14,7 @@ import type { Finding, Rule } from '../types.ts'
 export const commsLoss: Rule = {
   id: 'comms/loss',
   title: 'Communications lost mid-match',
+  audience: ['drive'],
   fix: 'Get the DS log + .dsevents for this match and the FTA field log. Check the DS laptop (CPU, power settings, app crash) and the radio (reboot = 20–40 s gap).',
   incident: 'CalGames 2026 Q13: comms lost at 417.4 s (7.4 s dead) and 426.4 s (4.3 s) (2026-10-17-calgames-q13-log-analysis.md §2)',
   needs: (m: Match) => [m.profile.signals.commsDisableCount, m.profile.signals.dsAttached],

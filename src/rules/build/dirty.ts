@@ -11,6 +11,7 @@ import type { Finding, Rule } from '../types.ts'
 export const dirty: Rule = {
   id: 'build/dirty',
   title: 'Uncommitted code on the robot',
+  audience: ['software'],
   fix: 'Commit and push what was deployed, then redeploy from the commit. At events, deploy only from a clean tree.',
   incident: 'CalGames 2026 P0: GitDirty = "Uncommitted changes" (hindsight-proposal.md, conclusion 4)',
   needs: (m: Match) => [m.profile.signals.gitDirty],

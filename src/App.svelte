@@ -8,7 +8,10 @@
   import MatchTab from './ui/MatchTab.svelte'
   import PowerTab from './ui/PowerTab.svelte'
   import { downloadText } from './ui/download.ts'
+  import { VERSION } from './version.ts'
 
+  // Every file dropped so far, so a .dslog dropped after its .wpilog still finds its match. "Clear" empties it.
+  let inputs: InputFile[] = []
   let analyses = $state<Analysis[]>([])
   let problems = $state<string[]>([])
   let selected = $state(0)
@@ -26,13 +29,17 @@
     await new Promise((r) => setTimeout(r, 30)) // let "Reading…" paint
     try {
       const started = performance.now()
-      const inputs: InputFile[] = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
+      const added: InputFile[] = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
+      // The same file dropped twice replaces the first copy.
+      const sameFile = (a: InputFile, b: InputFile) => a.name === b.name && a.bytes.length === b.bytes.length
+      inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
       const read = performance.now()
       const result = analyzeFiles(inputs)
       const done = performance.now()
       analyses = result.analyses
       problems = result.problems
-      selected = 0
+      const newest = result.analyses.findIndex((a) => added.some((f) => f.name === a.match.fileName))
+      selected = Math.max(0, newest)
       const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
       lastLoad = { files: files.length, readMs: read - started, analyzeMs: done - read, heapMB: mem ? mem.usedJSHeapSize / 2 ** 20 : null }
     } catch (error) {
@@ -40,6 +47,13 @@
     } finally {
       busy = false
     }
+  }
+
+  function clearAll() {
+    inputs = []
+    analyses = []
+    problems = []
+    lastLoad = null
   }
 
   function onDrop(e: DragEvent) {
@@ -57,7 +71,7 @@
   // For automated checks (e.g. a test page that already has File objects): window.hindsight.load(files)
   ;(window as unknown as { hindsight: object }).hindsight = {
     load,
-    version: '0.1.0',
+    version: VERSION,
     get timings() {
       return { lastLoad, matches: analyses.map((a) => ({ file: a.match.fileName, ...a.timing, findings: a.report.findings.length })) }
     },
@@ -75,18 +89,19 @@
 
 <section class="drop" class:dragging aria-busy={busy}>
   <label class="button">
-    <input type="file" multiple accept=".wpilog,.dslog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files ?? [])} />
+    <input type="file" multiple accept=".wpilog,.dslog" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }} />
     Choose logs…
   </label>
   <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>) anywhere on the page.</span>
   {#if busy}<span class="busy">Reading…</span>{/if}
+  {#if analyses.length}<button class="link" onclick={clearAll}>Clear all</button>{/if}
 </section>
 
 {#each problems as p (p)}<p class="problem" role="alert">{p}</p>{/each}
 
 {#if analyses.length > 1}
   <nav class="matches" aria-label="Loaded matches">
-    {#each analyses as a, i (a.match.fileName)}
+    {#each analyses as a, i (i)}
       {@const errors = a.report.findings.filter((f) => f.severity === 'error').length}
       <button class:active={i === selected} onclick={() => (selected = i)}>
         <span>{a.match.matchLabel || a.match.fileName}</span>
@@ -101,7 +116,7 @@
     <div>
       <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
       <p class="meta">
-        <code>{current.match.fileName}</code>{#if current.match.ds}{' + '}<code>{current.match.ds.fileName}</code>{/if} ·
+        <code>{current.match.fileName}</code>{#each current.match.ds as d (d.fileName)}{' + '}<code>{d.fileName}</code>{/each} ·
         {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}
         {#if /uncommitted/i.test(current.match.build.dirty)}<strong class="dirty">(uncommitted changes)</strong>{/if}
       </p>
@@ -119,7 +134,7 @@
   </main>
 
   <footer>
-    Read {current.match.log.entries.size} signals, {current.match.log.recordCount.toLocaleString()} records ·
+    Hindsight {VERSION} · read {current.match.log.entries.size} signals, {current.match.log.recordCount.toLocaleString()} records ·
     index {current.timing.parseMs.toFixed(0)} ms, rules {current.timing.rulesMs.toFixed(0)} ms
     {#if lastLoad} · {lastLoad.files} file{lastLoad.files === 1 ? '' : 's'}: read {lastLoad.readMs.toFixed(0)} ms, analyse {lastLoad.analyzeMs.toFixed(0)} ms{#if lastLoad.heapMB !== null}, JS heap {lastLoad.heapMB.toFixed(0)} MB{/if}{/if}
     {#each current.match.log.warnings as w (w)}<br />Note: {w}{/each}
@@ -163,6 +178,7 @@
   .button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .button:focus-within, .button:focus-visible { outline: 2px solid var(--focus); }
   .busy { color: var(--muted); }
+  .link { margin-left: auto; border: none; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }
   .problem { color: var(--error); }
   .matches { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
   .matches button { display: flex; flex-direction: column; align-items: flex-start; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }

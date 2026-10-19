@@ -9,33 +9,42 @@
  * voltage → check the CAN connectors, terminator and wire on that branch.
  */
 import { has, num, type Match } from '../../match/match.ts'
-import { intervalsWhere, lowIn, when } from '../helpers.ts'
+import { intervalsWhere, lowIn, when, withMissing } from '../helpers.ts'
 import type { Finding, Rule } from '../types.ts'
 
 const LOW_VOLTS = 7
+const NEAR_VOLTS = 0.5 // within this of LOW_VOLTS, say "possibly"
 
 export const deviceDropout: Rule = {
   id: 'can/device-dropout',
   title: 'Device dropped off CAN',
+  audience: ['pit'],
   fix: 'At low voltage: check the device\'s power connector and wire run. At normal voltage: check CAN connectors, the terminator, and the wire on that branch.',
   incident: 'CalGames 2026 P0: flywheel follower 16 off CAN 7 times at 5.85–6.31 V (P0 analysis); #in-hindsight: ≥ 11 CAN dropout episodes',
   needs: (m: Match) => [m.profile.signals.enabled, m.profile.signals.batteryVoltage],
-  run(m: Match): Finding[] {
+  run(m: Match) {
     const volts = num(m, m.profile.signals.batteryVoltage)!
     const devices = [
       ...m.profile.motorGroups.flatMap((g) => g.motors.map((x) => ({ name: x.name, connected: x.connected }))),
       ...m.profile.otherDevices,
     ]
     const out: Finding[] = []
+    const missing: string[] = []
+    const wholeLog = [{ start: m.logStart, end: m.logEnd }]
     for (const d of devices) {
-      if (!d.connected || !has(m, d.connected)) continue
-      const drops = intervalsWhere(num(m, d.connected)!, (v) => v < 0.5, m.enabled, m.logEnd)
+      if (!d.connected) continue
+      if (!has(m, d.connected)) { missing.push(d.connected); continue }
+      // Whole-log intervals, kept when they overlap enabled time: a drop that spans the auto→teleop gap is one drop.
+      const drops = intervalsWhere(num(m, d.connected)!, (v) => v < 0.5, wholeLog, m.logEnd)
+        .filter((iv) => m.enabled.some((e) => iv.start < e.end && iv.end > e.start))
       if (drops.length === 0) continue
       // The flag goes false only after the device misses its status frames, so look at the 0.5 s before it.
       const atDrop = drops.map((iv) => lowIn(volts, iv.start - 0.5, iv.start).value)
       const lowCount = atDrop.filter((v) => v < LOW_VOLTS).length
-      const likely = lowCount === drops.length ? 'power path (every drop at low voltage)'
-        : lowCount === 0 ? 'CAN wiring or connector (voltage was normal)' : 'mixed: some drops at low voltage'
+      const borderline = atDrop.some((v) => Math.abs(v - LOW_VOLTS) < NEAR_VOLTS)
+      const likely = (lowCount === drops.length ? 'power path (every drop at low voltage)'
+        : lowCount === 0 ? 'CAN wiring or connector (voltage was normal)' : 'mixed: some drops at low voltage')
+      const likelyText = borderline ? `possibly ${likely}; a voltage is within ${NEAR_VOLTS} V of the ${LOW_VOLTS} V line` : likely
       out.push({
         rule: this.id,
         severity: 'error',
@@ -45,7 +54,7 @@ export const deviceDropout: Rule = {
           drops: drops.length,
           'total seconds missing': +drops.reduce((s, iv) => s + iv.end - iv.start, 0).toFixed(2),
           'lowest bus voltage in the 0.5 s before each drop (V)': atDrop.map((v) => v.toFixed(2)).join(', '),
-          'likely cause': likely,
+          'likely cause': likelyText,
         },
         plot: {
           from: drops[0].start - 3, to: drops[drops.length - 1].end + 2, unit: 'V',
@@ -55,6 +64,6 @@ export const deviceDropout: Rule = {
         },
       })
     }
-    return out
+    return withMissing(out, missing, devices.filter((d) => d.connected).length)
   },
 }

@@ -2,11 +2,37 @@
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import FindingRow from './FindingRow.svelte'
+  import { ruleById } from '../rules/index.ts'
+  import type { Audience } from '../rules/types.ts'
 
   let { analysis }: { analysis: Analysis } = $props()
-  const findings = $derived(analysis.report.findings.filter((f) => f.rule !== 'meta/not-checked'))
+  // Who is reading: the software team, the pit crew or the drive team see the findings they can act on.
+  const AUDIENCES: { id: Audience | 'all'; label: string }[] = [
+    { id: 'all', label: 'Everyone' }, { id: 'software', label: 'Software' }, { id: 'pit', label: 'Pit crew' }, { id: 'drive', label: 'Drive team' },
+  ]
+  let audience = $state<Audience | 'all'>(readSavedAudience())
+  const all = $derived(analysis.report.findings.filter((f) => f.rule !== 'meta/not-checked'))
+  const forAudience = (id: Audience | 'all') => all.filter((f) => id === 'all' || (ruleById(f.rule)?.audience ?? []).includes(id))
+  const findings = $derived(forAudience(audience))
   const count = (s: string) => findings.filter((f) => f.severity === s).length
+
+  function readSavedAudience(): Audience | 'all' {
+    try { return (localStorage.getItem('hindsight.audience') as Audience | 'all') || 'all' } catch { return 'all' }
+  }
+  function choose(id: Audience | 'all') {
+    audience = id
+    try { localStorage.setItem('hindsight.audience', id) } catch { /* private window: just don't remember */ }
+  }
 </script>
+
+<div class="audience" role="radiogroup" aria-label="Show findings for">
+  {#each AUDIENCES as a (a.id)}
+    {@const errors = forAudience(a.id).filter((f) => f.severity === 'error').length}
+    <button role="radio" aria-checked={audience === a.id} class:active={audience === a.id} onclick={() => choose(a.id)}>
+      {a.label} <span class="n">{forAudience(a.id).length}{#if errors}{' · '}<span class="e">{errors} red</span>{/if}</span>
+    </button>
+  {/each}
+</div>
 
 <p class="counts">
   <span class="e">{count('error')} errors</span> · <span class="w">{count('warning')} warnings</span> · {count('info')} info ·
@@ -21,7 +47,7 @@
 {/if}
 
 {#if findings.length === 0}
-  <p>No findings. Every rule below "Not checked" looked and found nothing.</p>
+  <p>No findings{audience === 'all' ? '' : ' for this group'}. Every rule not listed under "Not checked" looked and found nothing.</p>
 {:else}
   <ul class="findings">
     {#each findings as f, i (f.rule + i)}
@@ -48,6 +74,10 @@
 
 <style>
   .counts { color: var(--muted); margin: 0 0 0.5rem; }
+  .audience { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; }
+  .audience button { padding: 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg); font: inherit; font-size: 0.85rem; cursor: pointer; }
+  .audience button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
+  .audience .n { color: var(--muted); }
   .e { color: var(--error); font-weight: 600; }
   .w { color: var(--warning); font-weight: 600; }
   .findings { padding: 0; margin: 0; border-top: 1px solid var(--border); }

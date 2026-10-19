@@ -9,13 +9,16 @@
  * time server after boot.
  */
 import { values, type Match } from '../../match/match.ts'
+import { minOf } from '../../match/series.ts'
 import type { Finding, Rule } from '../types.ts'
 
-const PATTERNS = [/TimeSyncServer/i, /Coming from .*Future/i]
+/** Alert texts this rule owns; alerts/passthrough leaves them to this rule so they aren't listed twice. */
+export const TIME_SYNC_PATTERNS = [/TimeSyncServer/i, /Coming from .*Future/i]
 
 export const visionTimeSync: Rule = {
   id: 'vision/time-sync',
   title: 'Camera clocks not synced',
+  audience: ['software'],
   fix: 'Match PhotonVision versions between coprocessors and robot code; confirm time sync connects after boot (PhotonVision dashboard).',
   incident: 'CalGames 2026: TimeSyncServer warnings at every boot; "Vision Data Coming from The Future" 1–3× per match (Q13 analysis)',
   needs: (m: Match) => m.profile.signals.alertGroups.map((g) => `${g}/warnings`),
@@ -28,7 +31,7 @@ export const visionTimeSync: Rule = {
         for (let i = 0; i < a.t.length; i++) {
           const previous = new Set(i > 0 ? a.v[i - 1] : [])
           for (const text of a.v[i]) {
-            if (previous.has(text) || !PATTERNS.some((p) => p.test(text))) continue
+            if (previous.has(text) || !TIME_SYNC_PATTERNS.some((p) => p.test(text))) continue
             const key = text.replace(/It's been .*$/, '').trim()
             const c = counts.get(key) ?? { n: 0, first: a.t[i] }
             c.n++
@@ -38,7 +41,7 @@ export const visionTimeSync: Rule = {
       }
     }
     if (counts.size === 0) return []
-    const first = Math.min(...[...counts.values()].map((c) => c.first))
+    const first = minOf([...counts.values()].map((c) => c.first))
     return [{
       rule: this.id,
       severity: 'warning',

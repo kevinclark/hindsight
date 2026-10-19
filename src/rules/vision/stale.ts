@@ -11,7 +11,7 @@
  */
 import { has, num, type Match } from '../../match/match.ts'
 import { totalDuration } from '../../match/series.ts'
-import { intervalsWhere } from '../helpers.ts'
+import { intervalsWhere, withMissing } from '../helpers.ts'
 import type { Finding, Rule } from '../types.ts'
 
 const STALE_SHARE = 0.15
@@ -19,16 +19,18 @@ const STALE_SHARE = 0.15
 export const visionStale: Rule = {
   id: 'vision/stale',
   title: 'Camera stale or dropped out',
+  audience: ['software', 'pit'],
   fix: 'Check the coprocessor (CPU, temperature), the camera pipeline settings, and the camera\'s cable and power.',
   incident: 'CalGames 2026: Back_Right stale ~3× as often as Back_Left; dropped 6 s in Q21 (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 4)',
-  needs: (m: Match) => m.profile.cameras.map((c) => c.stale),
-  run(m: Match): Finding[] {
+  needs: () => [],
+  run(m: Match) {
     if (m.matchStart === null || m.matchEnd === null) return []
     const match = [{ start: m.matchStart, end: m.matchEnd }]
     const length = m.matchEnd - m.matchStart
     const out: Finding[] = []
+    const missing: string[] = []
     for (const cam of m.profile.cameras) {
-      if (!has(m, cam.stale)) continue
+      if (!has(m, cam.stale)) { missing.push(cam.stale); continue }
       const staleShare = totalDuration(intervalsWhere(num(m, cam.stale)!, (v) => v > 0.5, match, m.logEnd)) / length
       const drops = has(m, cam.connected) ? intervalsWhere(num(m, cam.connected)!, (v) => v < 0.5, match, m.logEnd) : []
       if (staleShare <= STALE_SHARE && drops.length === 0) continue
@@ -46,6 +48,6 @@ export const visionStale: Rule = {
         },
       })
     }
-    return out
+    return withMissing(out, missing, m.profile.cameras.length)
   },
 }

@@ -15,6 +15,7 @@ import type { Finding, Rule } from '../types.ts'
 export const margin: Rule = {
   id: 'power/margin',
   title: 'Voltage margin to brownout',
+  audience: ['software', 'pit'],
   fix: 'Keep at least 1 V of margin: enable supply limits on the high-draw groups, use only batteries that pass a load test, and shed load below ~7 V in code.',
   incident: 'CalGames 2026 Q13/Q21: minimum 6.28 V and 6.15 V against a 6.0 V setting (2026-10-17-calgames-q13-log-analysis.md §3)',
   needs: (m: Match) => [m.profile.signals.batteryVoltage, m.profile.signals.brownoutVoltage],
@@ -34,7 +35,7 @@ export const margin: Rule = {
     return [{
       rule: this.id,
       severity: 'warning',
-      title: `Battery fell to ${low.value.toFixed(2)} V at ${when(m, low.t)}, ${marginV.toFixed(2)} V above the ${setting} V brownout setting`,
+      title: `Battery fell to ${low.value.toFixed(2)} V at ${when(m, low.t)}, ${Math.abs(marginV).toFixed(2)} V ${marginV >= 0 ? 'above' : 'below'} the ${setting} V brownout setting`,
       time: low.t,
       evidence: {
         'lowest voltage while enabled (V)': +low.value.toFixed(2),

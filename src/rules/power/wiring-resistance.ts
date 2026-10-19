@@ -14,6 +14,7 @@ import type { Finding, NotChecked, Rule } from '../types.ts'
 export const wiringResistance: Rule = {
   id: 'power/wiring-resistance',
   title: 'Battery + wiring resistance',
+  audience: ['pit'],
   fix: 'Tug-test and re-crimp the battery leads and main breaker lugs; then load-test the battery. Good is under 20 mΩ.',
   incident: 'Baseline: CalGames 2026 measured 11.0–11.4 mΩ (P0 analysis); threshold from Chief Delphi (hindsight-research/battery-sources.md)',
   needs: (m: Match) => [m.profile.signals.batteryVoltage, m.profile.signals.enabled],

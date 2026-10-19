@@ -15,6 +15,7 @@ import type { Finding, NotChecked, Rule } from '../types.ts'
 export const identity: Rule = {
   id: 'battery/identity',
   title: 'Battery not identified',
+  audience: ['pit'],
   fix: 'Plug in the battery\'s fuel gauge (and give it a nickname with PWF\'s tool), or type its label in the BatteryId dashboard field after every swap.',
   incident: 'CalGames 2026 P0: the weak battery could not be identified after the match (hindsight-proposal.md §3); library: kevinclark/8033-battery-tracker',
   needs: () => [],

@@ -18,6 +18,7 @@ const LIMIT_G = 3
 export const impact: Rule = {
   id: 'collision/impact',
   title: 'Hard hit',
+  audience: ['pit', 'drive'],
   fix: 'Watch the video at this time. After the match, check connectors, the radio and the battery strap for anything knocked loose.',
   incident: '#in-hindsight: controller drops after touching field metal (≥ 8 episodes, hindsight-research/issue-catalog-slack.md)',
   needs: (m: Match) => [m.profile.signals.accelX, m.profile.signals.accelY],

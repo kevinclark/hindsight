@@ -8,7 +8,7 @@
  * When it fires: profile auto (Tracer/* entries show where the time goes): path generation, vision, logging.
  */
 import { num, type Match } from '../../match/match.ts'
-import { percentile, type Interval } from '../../match/series.ts'
+import { maxOf, percentile, type Interval } from '../../match/series.ts'
 import type { Finding, Rule } from '../types.ts'
 
 const PERIOD_MS = 20
@@ -17,6 +17,7 @@ const SHARE = 0.1
 export const overrun: Rule = {
   id: 'loop/overrun',
   title: 'Loop overruns',
+  audience: ['software'],
   fix: 'Use the Tracer/* entries to find the slow step in auto (vision updates, path following, logging) and move it off the main loop or cache it.',
   incident: 'CalGames 2026: auto overran 14–27 % of cycles, max 134 ms (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 3)',
   needs: (m: Match) => [m.profile.signals.loopCycleMs],
@@ -26,7 +27,7 @@ export const overrun: Rule = {
       const xs: number[] = []
       for (let i = 0; i < s.t.length; i++) if (ivs.some((iv) => s.t[i] >= iv.start && s.t[i] < iv.end)) xs.push(s.v[i])
       const over = xs.filter((x) => x > PERIOD_MS).length
-      return { n: xs.length, share: xs.length ? over / xs.length : 0, p99: percentile(xs, 99), max: xs.length ? Math.max(...xs) : NaN }
+      return { n: xs.length, share: xs.length ? over / xs.length : 0, p99: percentile(xs, 99), max: maxOf(xs) }
     }
     const auto = stats(m.auto)
     const teleop = stats(m.teleop)

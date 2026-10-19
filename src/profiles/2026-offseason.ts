@@ -115,7 +115,7 @@ export const offseason2026: RobotProfile = {
           connected: `/Drum/Flywheel/Follower ${i}/Connected`,
         })),
       ],
-      limits: { supplyA: 40, supplyEnabled: false, statorA: 75, statorEnabled: true, where: 'DrumSubsystem.java:307' },
+      limits: { supplyA: 40, supplyEnabled: false, statorA: 75, statorEnabled: true, where: 'DrumSubsystem.java:307-310' },
     },
     {
       name: 'Hood',
@@ -125,7 +125,7 @@ export const offseason2026: RobotProfile = {
         statorCurrent: '/Drum/Hood/StatorCurrentAmps',
         connected: '/Drum/Hood/Connected',
       }],
-      limits: { supplyA: 40, supplyEnabled: false, statorA: 30, statorEnabled: true, where: 'DrumSubsystem.java:334' },
+      limits: { supplyA: 40, supplyEnabled: false, statorA: 30, statorEnabled: true, where: 'DrumSubsystem.java:334-337' },
     },
     {
       name: 'Intake pivot',
@@ -181,6 +181,7 @@ export const offseason2026: RobotProfile = {
       // "Rezeroed hood" is the on-enable current zero (Q13/Q21 code); "Hood zeroed!" is the zero at boot (8ba92cb).
       doneMessage: /Rezeroed hood|Hood zeroed/,
       moveDegrees: 3,
+      zeroDirection: 'down', // the current zero drives the hood into its bottom hard stop
     },
   ],
 

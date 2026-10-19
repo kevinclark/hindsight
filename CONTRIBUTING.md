@@ -10,11 +10,13 @@ it without anyone having to remember.
    `comms`, `auto`, `mech`, `collision`, `loop`, `vision`, `build`, `alerts`, `battery`.
 2. **Write the doc comment first.** What it checks (with the threshold), why (the match and what happened, with a
    link to the write-up), and what a student should do when it fires. Fill in `fix` and `incident` with the same
-   words: the app shows them under every finding.
+   words: the app shows them under every finding. Set `audience` to who acts on it: `software` (code, config),
+   `pit` (mechanisms, wiring, batteries), `drive` (drive team, DS laptop); the Match tab filters by it.
 3. **Write the check.** Get signals with `num(m, key)` (numbers, booleans as 0/1) or `values(m, key)` (strings,
    arrays, poses). Take keys from the profile (`m.profile.signals...`, `m.profile.motorGroups`), never typed into
    the rule. List the keys you can't run without in `needs`, so a log without them shows the rule under "Not
-   checked" instead of silently passing. Values are logged only when they change: use `valueAt` / `resample` from
+   checked" instead of silently passing. A rule that loops over several motors or cameras returns
+   `withMissing(findings, missingKeys, total)` (in `helpers.ts`) so a missing device shows as "partly checked". Values are logged only when they change: use `valueAt` / `resample` from
    `src/match/series.ts`, which hold the last value. Never interpolate. Keep it under ~60 lines; if it grows, move a
    helper into `src/rules/helpers.ts`.
 4. **Add it to `RULES` in `src/rules/index.ts`** (the position sets the order within a severity: things that cost

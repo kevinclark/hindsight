@@ -18,9 +18,9 @@ describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
   it('reads all three and attaches the DS log to Q13 only', () => {
     expect(problems).toEqual([])
     expect(analyses).toHaveLength(3)
-    expect(q13().match.ds).not.toBeNull()
-    expect(q21().match.ds).toBeNull()
-    expect(p0().match.ds).toBeNull()
+    expect(q13().match.ds).toHaveLength(1)
+    expect(q21().match.ds).toHaveLength(0)
+    expect(p0().match.ds).toHaveLength(0)
   })
 
   it.each([
@@ -88,6 +88,20 @@ describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
       expect(text.length).toBeLessThan(2_000_000)
       expect(text).not.toMatch(/RadioStatus\/Status/)
       expect(JSON.parse(text).schema).toBe('hindsight.findings/1')
+    }
+  })
+})
+
+describe.skipIf(!haveCalGames)('fleet reference curve', () => {
+  it('equals the lower of Q13 and Q21 at each 0.5 Ah (guards against drift in the power model)', async () => {
+    const { FLEET_REFERENCE } = await import('../src/power/fleet-reference.ts')
+    const { buildPowerGrid, ocvCurve, resistanceFromSteps } = await import('../src/power/battery-model.ts')
+    const { analyses } = analyzeFiles([CALGAMES.q13, CALGAMES.q21].map(readInput))
+    const curves = analyses.map((a) => { const g = buildPowerGrid(a.match)!; return ocvCurve(g, resistanceFromSteps(g)!.ohms, 0.5) })
+    for (const p of FLEET_REFERENCE) {
+      // Q13's last bin (5.75 Ah) is post-match idle (rest recovery reads high); the lower value is what we keep.
+      const lower = Math.min(...curves.map((c) => c.find((x) => x.ah === p.ah)?.volts ?? Infinity))
+      expect(lower, `${p.ah} Ah`).toBeCloseTo(p.volts, 2)
     }
   })
 })

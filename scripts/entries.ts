@@ -1,3 +1,5 @@
+// List a log's entries (name | type | records), optionally filtered by a regex:
+//   node --experimental-strip-types scripts/entries.ts <log.wpilog> [regex]
 import { readFileSync } from 'node:fs'
 import { openWpilog } from '../src/readers/wpilog.ts'
 const log = openWpilog(new Uint8Array(readFileSync(process.argv[2])))

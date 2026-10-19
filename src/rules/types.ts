@@ -44,15 +44,26 @@ export interface NotChecked {
   notChecked: string
 }
 
+/** Findings from the parts a rule could check, plus what it couldn't (listed under "Not checked" as partly checked). */
+export interface PartlyChecked {
+  findings: Finding[]
+  missing: string[]
+}
+
+/** Who acts when a rule fires: the software team (code and config), the pit crew (mechanisms, wiring, batteries) or the drive team. */
+export type Audience = 'software' | 'pit' | 'drive'
+
 export interface Rule {
   /** "<area>/<name>", matching the file path. */
   id: string
   title: string
+  /** Who acts when it fires (docs/audiences-and-triage.md). The Match tab filters by this. */
+  audience: Audience[]
   /** What to do when it fires. Shown under every finding. */
   fix: string
   /** The incident that taught us this rule. */
   incident: string
   /** Log keys this rule cannot run without. If any is missing, the rule is listed as "not checked". */
   needs: (match: Match) => string[]
-  run: (match: Match) => Finding[] | NotChecked
+  run: (match: Match) => Finding[] | NotChecked | PartlyChecked
 }

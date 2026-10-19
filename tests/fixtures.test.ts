@@ -8,8 +8,8 @@ describe('Q13 fixture: auto collision, early disable, comms loss', () => {
   const rules = fired(a.report)
   it('lines up the DS log with the robot log', () => {
     expect(problems).toEqual([])
-    expect(a.match.ds).not.toBeNull()
-    expect(a.match.ds!.endTime).toBeCloseTo(420.46, 1)
+    expect(a.match.ds).toHaveLength(1)
+    expect(a.match.ds[0].endTime).toBeCloseTo(420.46, 1)
   })
   it.each(['mech/zero-not-completed', 'comms/loss', 'comms/ds-log-truncated', 'auto/early-disable', 'collision/tilt'])('fires %s', (rule) => {
     expect(rules).toContain(rule)

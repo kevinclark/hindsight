@@ -5,7 +5,7 @@
 
 import { openWpilog } from './readers/wpilog.ts'
 import { readDslog, type DslogFile } from './readers/dslog.ts'
-import { attachDslog, buildMatch, type Match } from './match/match.ts'
+import { attachDslog, buildMatch, dslogOverlap, type Match } from './match/match.ts'
 import { runRules, type Report } from './rules/index.ts'
 import { offseason2026 } from './profiles/2026-offseason.ts'
 import type { RobotProfile } from './profiles/types.ts'
@@ -34,7 +34,7 @@ export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseas
       if (kind === 'wpilog') {
         const started = performance.now()
         const match = buildMatch(f.name, openWpilog(f.bytes), profile)
-        analyses.push({ match, report: { findings: [], skipped: [], crashed: [], ruleMs: {} }, timing: { parseMs: performance.now() - started, rulesMs: 0 } })
+        analyses.push({ match, report: { findings: [], skipped: [], crashed: [] }, timing: { parseMs: performance.now() - started, rulesMs: 0 } })
       } else if (kind === 'dslog') {
         dslogs.push({ name: f.name, file: readDslog(f.bytes) })
       } else {
@@ -44,9 +44,13 @@ export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseas
       problems.push(`${f.name}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
+  // Each DS log goes to the match it covers most of. One that covers no match window is reported, not guessed.
   for (const ds of dslogs) {
-    const owner = analyses.find((a) => attachDslog(a.match, ds.file, ds.name))
-    if (!owner) problems.push(`${ds.name}: doesn't overlap any robot log loaded (it is from a different match)`)
+    const best = analyses
+      .map((a) => ({ a, seconds: dslogOverlap(a.match, ds.file) }))
+      .sort((x, y) => y.seconds - x.seconds)[0]
+    if (best && best.seconds > 0) attachDslog(best.a.match, ds.file, ds.name)
+    else problems.push(`${ds.name}: doesn't overlap any loaded match (it is from a different match, or the robot clock was never set)`)
   }
   for (const a of analyses) {
     const started = performance.now()

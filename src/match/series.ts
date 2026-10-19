@@ -66,19 +66,6 @@ export function resample(s: NumberSeries, grid: Float64Array, before = NaN): Flo
   return out
 }
 
-/** Intervals where a 0/1 (boolean) series is true. An interval still open at the end closes at `endTime`. */
-export function trueIntervals(s: NumberSeries, endTime: number): Interval[] {
-  const out: Interval[] = []
-  let start: number | null = null
-  for (let i = 0; i < s.t.length; i++) {
-    const on = s.v[i] > 0.5
-    if (on && start === null) start = s.t[i]
-    if (!on && start !== null) { out.push({ start, end: s.t[i] }); start = null }
-  }
-  if (start !== null) out.push({ start, end: Math.max(start, endTime) })
-  return out
-}
-
 /** Records within [from, to]. */
 export function slice(s: NumberSeries, from: number, to: number): NumberSeries {
   let a = indexAt(s.t, from)
@@ -87,16 +74,24 @@ export function slice(s: NumberSeries, from: number, to: number): NumberSeries {
   return { name: s.name, t: s.t.subarray(a, b), v: s.v.subarray(a, b) }
 }
 
-/** Overlap between a time and a list of intervals. */
-export function inIntervals(time: number, intervals: Interval[]): boolean {
-  return intervals.some((iv) => time >= iv.start && time < iv.end)
-}
-
 /** Sum the lengths of intervals, optionally clipped to [from, to]. */
 export function totalDuration(intervals: Interval[], from = -Infinity, to = Infinity): number {
   let sum = 0
   for (const iv of intervals) sum += Math.max(0, Math.min(iv.end, to) - Math.max(iv.start, from))
   return sum
+}
+
+/** Smallest and largest of a list (a loop: Math.min(...list) throws on very long lists). NaN when empty. */
+export function minOf(values: ArrayLike<number>): number {
+  let m = Infinity
+  for (let i = 0; i < values.length; i++) if (values[i] < m) m = values[i]
+  return values.length ? m : NaN
+}
+
+export function maxOf(values: ArrayLike<number>): number {
+  let m = -Infinity
+  for (let i = 0; i < values.length; i++) if (values[i] > m) m = values[i]
+  return values.length ? m : NaN
 }
 
 /** Percentile (0–100) of a list of numbers, ignoring NaN. NaN when empty. */

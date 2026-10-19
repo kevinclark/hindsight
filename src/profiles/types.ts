@@ -34,6 +34,11 @@ export interface ZeroingMechanism {
   doneMessage: RegExp
   /** Movement (degrees) that counts as "the mechanism moved". */
   moveDegrees: number
+  /**
+   * Which hard stop the zero drives into: 'down' (toward lower positions) or 'up'. Travel toward that stop is the
+   * zeroing itself; only travel the other way counts as moving before the zero completed.
+   */
+  zeroDirection: 'down' | 'up'
 }
 
 export interface Camera {

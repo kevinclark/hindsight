@@ -36,6 +36,7 @@
       {#if rule}
         <p class="fix"><strong>What to do:</strong> {rule.fix}</p>
         <p class="incident"><strong>Why this rule exists:</strong> {rule.incident}</p>
+        <p class="incident"><strong>Who acts:</strong> {rule.audience.map((a) => ({ software: 'software team', pit: 'pit crew', drive: 'drive team' })[a]).join(', ')}</p>
       {/if}
     </div>
   </details>

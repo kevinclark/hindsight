@@ -2,7 +2,8 @@
  * mech/zero-not-completed — did a mechanism move before its zero completed?
  *
  * Checks: for each mechanism in the profile's `zeroing` list, the first time it moved while enabled (more than
- * `moveDegrees` from where it was at enable) against the first console message saying the zero completed.
+ * `moveDegrees` from where it was at enable, AWAY from the stop the zero drives into: travel toward the stop is the
+ * zeroing itself) against the first console message saying the zero completed.
  * Moving first means every angle it was sent to was in the wrong frame. Also reports the position jump when the
  * zero finally lands (the frame correcting itself).
  * Why: CalGames 2026 Q13/Q21: the hood's on-enable zero was cancelled 0.2 s into auto, so "10°" was 8° above the
@@ -18,6 +19,7 @@ import type { Finding, Rule } from '../types.ts'
 export const zeroNotCompleted: Rule = {
   id: 'mech/zero-not-completed',
   title: 'Mechanism moved before its zero completed',
+  audience: ['software'],
   fix: 'Make the zero finish before any command can move the mechanism: zero at boot, or put the zero command ahead of the first auto command; set the zeroed flag when it completes.',
   incident: 'CalGames 2026 Q13/Q21: hood zero cancelled 0.2 s into auto; fixed by 8ba92cb (2026-10-17-calgames-q13-log-analysis.md §1)',
   needs: (m: Match) => [m.profile.signals.console, ...m.profile.zeroing.map((z) => z.position)],
@@ -34,7 +36,8 @@ export const zeroNotCompleted: Rule = {
         const startDeg = valueAt(pos, iv.start) * z.positionToDegrees
         for (let i = 0; i < pos.t.length && movedAt === null; i++) {
           if (pos.t[i] < iv.start || pos.t[i] >= iv.end) continue
-          if (Math.abs(pos.v[i] * z.positionToDegrees - startDeg) > z.moveDegrees) movedAt = pos.t[i]
+          const away = (pos.v[i] * z.positionToDegrees - startDeg) * (z.zeroDirection === 'down' ? 1 : -1)
+          if (away > z.moveDegrees) movedAt = pos.t[i]
         }
         if (movedAt !== null) break
       }
