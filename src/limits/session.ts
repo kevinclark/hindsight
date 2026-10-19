@@ -9,6 +9,7 @@
 import type { Match } from '../match/match.ts'
 import type { MotorGroup, RobotProfile } from '../profiles/types.ts'
 import { median } from '../match/series.ts'
+import { checkPair, type PairCheck } from './pair.ts'
 import { confirmed, findSpinUps, recommend, runsComparable, settingTookEffect, shotRecoveries, summarize, type Comparable, type SpinUp, type SweepPoint, type TookEffect } from './sweep.ts'
 import { robotBudget, type Budget } from './budget.ts'
 
@@ -80,6 +81,8 @@ export interface SweepResult {
   budget: Budget | null
   /** The line(s) to change, in words the student types. */
   codeChange: string
+  /** The recommended limit as a burst / sustained pair, checked against the battery and the main breaker. */
+  pair: PairCheck | null
 }
 
 export function sweepResult(session: LimitsSession, profile: RobotProfile, matches: Match[]): SweepResult {
@@ -99,7 +102,9 @@ export function sweepResult(session: LimitsSession, profile: RobotProfile, match
     ? `${where}: SupplyCurrentLimit = ${recommended.limitA} and SupplyCurrentLimitEnable = true${lower}`
     : 'No recommendation yet: run and check the no-limit step and at least one limit.'
   const leftOut = session.steps.filter((s) => s.runs.length > 0 && !confirmed(s.took)).map((s) => s.limitA)
-  return { points, leftOut, recommended, recovery: { median: median(recoveries), shots: recoveries.length, matches: matches.length }, budget, codeChange }
+  const running = budget ? budget.rows.filter((r) => r.active).map((r) => r.group) : undefined
+  const pair = recommended ? checkPair(profile, group, recommended.limitA, session.lowerLimitA, session.lowerSeconds, running) : null
+  return { points, leftOut, recommended, recovery: { median: median(recoveries), shots: recoveries.length, matches: matches.length }, budget, codeChange, pair }
 }
 
 export function serializeSession(session: LimitsSession): string {

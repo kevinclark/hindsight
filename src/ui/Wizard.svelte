@@ -13,11 +13,12 @@
   import Scatter from './Scatter.svelte'
 
   let { matches }: { matches: Analysis[] } = $props()
-  const profile = offseason2026
-  const sweepable = profile.motorGroups.filter((g) => g.spinUp)
+  // The robot of the loaded match logs (its pinned code), so group names and limits match those logs.
+  const profile = $derived(matches[0]?.match.profile ?? offseason2026)
+  const sweepable = $derived(profile.motorGroups.filter((g) => g.spinUp))
 
   let session = $state<LimitsSession | null>(null)
-  let groupName = $state(sweepable[0]?.name ?? '')
+  let groupName = $state(offseason2026.motorGroups.find((g) => g.spinUp)?.name ?? '')
   let sweepText = $state('none, 60, 50, 40, 30')
   let problem = $state('')
   let busy = $state(-1)
@@ -170,6 +171,25 @@
       <p class="note">In the match logs loaded in Match review ({result.recovery.matches}): the wheel recovered from {result.recovery.shots} shot{result.recovery.shots === 1 ? '' : 's'} in {f2(result.recovery.median)} s (median). That's the match version of spin-up time.</p>
       {#if result.budget}
         <p class="note">Robot budget with {result.recommended?.limitA} A on the {session.group.toLowerCase()} (weakest fleet battery, worst moment of the first loaded match): {result.budget.scenarios.map((s) => `${s.name}: ${f2(s.volts)} V`).join(' · ')}. Goal: {result.budget.floor} V or more.</p>
+      {/if}
+      {#if result.pair}
+        {@const pr = result.pair}
+        <div class="sub">
+          <h4>As a burst / sustained pair</h4>
+          <p><strong>Burst:</strong> SupplyCurrentLimit {pr.burstA} A, for spin-ups and short pushes. The battery sets it: the budget above says what the bus voltage does when everything draws at once.</p>
+          <p><strong>Sustained:</strong> {pr.lowerA} A after {pr.lowerSeconds} s at the burst limit{pr.lowerIsDefault ? " (Phoenix's default; choose your own below)" : ''}. The 120 A main breaker sets it: it trips on heat over tens of seconds.</p>
+          {#if pr.raisesBurst}
+            <p class="warn"><strong>Don't raise the burst cap yet.</strong> {pr.burstA} A is above today's {pr.todaySupplyA} A. Raise burst caps only after the robot code sheds load as the battery voltage falls (a voltage-aware current budget); raising them first causes more brownouts, not fewer. Until then keep {pr.todaySupplyA} A, or make sure this spin-up never overlaps the drive accelerating.</p>
+          {/if}
+          {#if pr.todaySupplyA === null}
+            <p class="note">The {session.group.toLowerCase()} has no supply limit today (switched off), so {pr.burstA} A lowers it. Still, don't raise any other group's burst cap until the robot code sheds load as the battery voltage falls.</p>
+          {/if}
+          <p class:warn={!pr.sustained.ok}><strong>Main breaker, a slipping push or long run</strong> (motors held at their limit, spinning): the sustained caps of the groups {result.budget ? 'that were running together at the worst moment of the loaded match' : 'on the robot (load a match log to count only those that run together)'}: {pr.sustained.rows.map((r) => `${r.group} ${Number.isFinite(r.perMotorA) ? `${r.motors} × ${r.perMotorA} A` : 'no limit'}`).join(' + ')}{Number.isFinite(pr.sustained.totalA) ? ` = ${Math.round(pr.sustained.totalA)} A, ${pr.sustained.ok ? 'at or under' : 'over'} 120 A.` : '.'}{pr.unlimited.length ? ` ${pr.unlimited.join(', ')} ${pr.unlimited.length === 1 ? 'has' : 'have'} no supply limit, so nothing caps ${pr.unlimited.length === 1 ? 'it' : 'them'}: give ${pr.unlimited.length === 1 ? 'it' : 'each'} a supply limit first.` : ''}{!pr.sustained.ok && Number.isFinite(pr.sustained.totalA) ? ' Lower the sustained caps of the groups that run at the same time (the drive most of all), or make sure they never all run hard together.' : ''}</p>
+          {#if pr.pinnedDrive}
+            {@const pd = pr.pinnedDrive}
+            <p class:warn={!pd.ok}><strong>Main breaker, a pinned push</strong> (wheels stalled against a robot): a stalled {pd.group.toLowerCase()} motor at its stator limit draws about {pd.perMotorA[0].toFixed(0)}–{pd.perMotorA[1].toFixed(0)} A of supply (stator² × motor resistance ÷ 12 V, Kraken X60 figures; more on a sagging battery), so {pd.motors} of them draw {pd.totalA[0].toFixed(0)}–{pd.totalA[1].toFixed(0)} A, {pd.ok ? 'at or under' : 'up to'} {pd.ok ? '120 A' : `${Math.round((100 * pd.totalA[1]) / 120)} % of the 120 A main`}. {pd.perMotorA[1] < pr.lowerA ? 'That is under the sustained cap, so the supply limits never engage: only the drive\'s stator limit governs a pinned push.' : 'That reaches the sustained cap, so the supply lower limit can help here.'}{pd.ok ? '' : ' Lower the drive stator limit (and measure the push before and after) to bring it under 120 A.'}</p>
+          {/if}
+        </div>
       {/if}
       <div class="sub">
         <h4>The code change you write</h4>

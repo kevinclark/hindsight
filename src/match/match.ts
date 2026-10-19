@@ -113,6 +113,12 @@ export function buildMatch(fileName: string, log: WpilogFile, profile: RobotProf
   }
   const fms = num(match, s.fmsAttached)
   match.fms = !!fms && Array.from(fms.v).some((v) => v > 0.5)
+  if (profileChoice.misfit) {
+    // The profile is for another robot or game: find the match with generous lengths, then measure the real ones.
+    match.profile = { ...profile, game: { name: 'measured from this log', autoSeconds: 20, teleopSeconds: 150 } }
+    findMatchWindow(match, fms)
+    match.profile = { ...profile, game: measuredGame(match) }
+  }
   findMatchWindow(match, fms)
 
   const lastString = (key: string) => {
@@ -149,6 +155,23 @@ function findMatchWindow(match: Match, fms: NumberSeries | null): void {
   const latestStart = start + game.autoSeconds + game.teleopSeconds + 15
   const inMatch = match.enabled.filter((iv) => iv.start >= start && iv.start <= latestStart)
   match.matchEnd = inMatch.at(-1)?.end ?? null
+}
+
+/** On the field, teleop starts this long after auto ends (3.0 s in all 12 FMS matches measured, 2025 and 2026 games). */
+const FIELD_AUTO_TO_TELEOP_SECONDS = 3
+
+/**
+ * Auto and teleop lengths from the log itself, for a log no profile fits, rounded to whole seconds. On the field, auto
+ * is the time from auto start to teleop start less the 3 s pause (a robot disabled early in auto doesn't shorten it);
+ * off the field, the first auto period. Teleop runs from the teleop enable to the end of the match.
+ */
+function measuredGame(match: Match): RobotProfile['game'] {
+  const auto = match.auto.find((iv) => match.matchStart !== null && iv.start >= match.matchStart)
+  const autoSeconds = match.fms && match.matchStart !== null && match.teleopStart !== null && match.teleopStart > match.matchStart
+    ? Math.round(match.teleopStart - match.matchStart - FIELD_AUTO_TO_TELEOP_SECONDS)
+    : auto ? Math.round(auto.end - auto.start) : 15
+  const teleopSeconds = match.teleopStart !== null && match.matchEnd !== null ? Math.round(match.matchEnd - match.teleopStart) : 135
+  return { name: 'measured from this log', autoSeconds, teleopSeconds }
 }
 
 /** Median of (wall clock − log time) over records logged after the roboRIO clock was set. */

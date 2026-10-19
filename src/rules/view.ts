@@ -337,6 +337,14 @@ export class MatchView {
     return new PoseSignal(key, values<Pose2d>(this.raw, key)!)
   }
 
+  /** A signal that logs a list of numbers each time, e.g. a power distribution board's channel currents. */
+  lists(name: string): { key: string; t: Float64Array; v: number[][] } {
+    const key = this.keyFor(name)
+    if (!has(this.raw, key)) throw new MissingSignal(key)
+    const s = values<number[]>(this.raw, key)!
+    return { key, t: s.t, v: s.v }
+  }
+
   /** True when the log has this signal (for the rare rule that works either way). */
   has(name: string): boolean {
     return has(this.raw, this.keyFor(name))
@@ -457,6 +465,11 @@ export class MatchView {
 
   get build() {
     return this.raw.build
+  }
+
+  /** False when the robot profile doesn't fit this log (another robot): its robot-specific facts can't be trusted. */
+  get profileFits(): boolean {
+    return !this.raw.profileChoice.misfit
   }
 
   get dsLogs() {

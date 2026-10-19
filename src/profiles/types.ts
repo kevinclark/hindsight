@@ -131,6 +131,11 @@ export interface RobotProfile {
   motorGroups: MotorGroup[]
   otherDevices: { name: string; connected: string }[]
   whatIfGroup: string
+  /**
+   * The power distribution board on the robot, if known: a REV PDH and a CTRE PDP (v1) report each channel's current
+   * over CAN; a CTRE PDP 2.0 has no current telemetry at all.
+   */
+  powerDistribution?: 'rev-pdh' | 'ctre-pdp' | 'ctre-pdp-2'
   zeroing: ZeroingMechanism[]
   cameras: Camera[]
 }

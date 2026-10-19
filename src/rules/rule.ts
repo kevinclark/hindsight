@@ -100,6 +100,12 @@ interface About {
   nextStep: string
   /** Why the rule exists: the failure it catches, and where it was seen or documented. */
   incident: string
+  /**
+   * The rule only makes sense when the robot profile fits the log (it needs the robot's motors, limits or the game's
+   * lengths). Rules with forEach motor, motorGroup, device, camera or mechanism count as this already; set it for a
+   * match rule that leans on the profile (e.g. its motor names). When no profile fits a log, these rules are listed as not checked.
+   */
+  needsProfile?: boolean
 }
 
 /** One possible cause: what it is, and what to look for and where to confirm or rule it out. */

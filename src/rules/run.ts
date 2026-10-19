@@ -18,13 +18,20 @@ export interface Report {
 }
 
 const ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
+/** Things only a fitting robot profile can name: rules over them don't run on a log the profile doesn't fit. */
+const ROBOT_ITEMS = ['motor', 'motorGroup', 'device', 'camera', 'mechanism']
 
 export function runRules(match: Match, rules: Rule[]): Report {
   const view = new MatchView(match)
   const findings: Finding[] = []
   const skipped: SkippedRule[] = []
   const crashed: SkippedRule[] = []
+  const misfit = match.profileChoice.misfit ? match.profileChoice.fit : null
   for (const rule of rules) {
+    if (misfit && (rule.needsProfile ?? ROBOT_ITEMS.includes(rule.forEach ?? 'match'))) {
+      skipped.push({ rule: rule.id, reason: `the robot profile doesn't fit this log (${misfit.present} of ${misfit.total} of its signals are in it)` })
+      continue
+    }
     try {
       const result = runOne(rule, view)
       findings.push(...result.findings)
@@ -40,7 +47,7 @@ export function runRules(match: Match, rules: Rule[]): Report {
   if (skipped.length) {
     findings.push({
       rule: 'meta/not-checked', severity: 'info', time: null, matchTime: null, when: null, about: null, key: 'meta/not-checked',
-      title: `${skipped.length} rule${skipped.length === 1 ? '' : 's'} not checked or partly checked: signals missing`,
+      title: `${skipped.length} rule${skipped.length === 1 ? '' : 's'} not checked or partly checked${skipped.every((x) => x.reason.includes('missing')) ? ': signals missing' : ''}`,
       meaning: 'These rules could not look at this log, so their silence says nothing about this match.',
       causes: [
         { id: 'not-logged', cause: 'The robot code does not log the signal', look: 'the evidence below names each missing key; search the robot code for it' },

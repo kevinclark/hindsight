@@ -177,6 +177,9 @@ export const offseason2026: RobotProfile = {
 
   // The what-if sliders cap this group's supply current per motor.
   whatIfGroup: 'Flywheel',
+  // A CTRE PDP 2.0, from the 2025-26 purchase record and the team's word (not inspected on the robot): it has no
+  // current telemetry, so per-channel current isn't logged.
+  powerDistribution: 'ctre-pdp-2',
 
   zeroing: [
     {

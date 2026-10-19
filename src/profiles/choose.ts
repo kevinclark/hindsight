@@ -14,6 +14,11 @@ export interface ProfileChoice {
   note: string | null
   /** How many of the profile's signals are in the log. */
   fit: { present: number; total: number } | null
+  /**
+   * The profile doesn't fit this log (under 60 % of its signals): the rules about specific motors, devices, cameras
+   * and mechanisms aren't run, and the match's auto and teleop lengths are measured from the log.
+   */
+  misfit?: boolean
 }
 
 /** Below this share of the profile's signals, the log is probably from another robot or another year's code. */
@@ -35,6 +40,8 @@ export function profileFit(log: WpilogFile, profile: RobotProfile): { present: n
   return { present: keys.filter((k) => hasEntry(log, k)).length, total: keys.length }
 }
 
+const MISFIT_TEXT = 'So the rules about specific motors, devices, cameras and mechanisms were not run, and the auto and teleop lengths were measured from this log.'
+
 const first = (log: WpilogFile, key: string) => readValues<string>(log, key)?.v[0] ?? ''
 
 export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?: RobotProfile): { profile: RobotProfile; choice: ProfileChoice } {
@@ -42,7 +49,7 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
   const low = (f: { present: number; total: number }) => f.present < PROFILE_FIT_MIN * f.total
   if (chosen) {
     const fit = profileFit(log, chosen)
-    return { profile: chosen, choice: { how: 'chosen by you', fit, note: low(fit) ? `You chose "${chosen.name}", but only ${fitText(fit)}.` : null } }
+    return { profile: chosen, choice: { how: 'chosen by you', fit, misfit: low(fit), note: low(fit) ? `You chose "${chosen.name}", but only ${fitText(fit)}. ${MISFIT_TEXT}` : null } }
   }
   const codebase = first(log, '/RealMetadata/Codebase')
   const branch = first(log, '/RealMetadata/GitBranch')
@@ -50,14 +57,14 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
   const pinned = sameRobot.find((p) => p.code.branch === branch)
   if (pinned) {
     const fit = profileFit(log, pinned)
-    return { profile: pinned, choice: { how: 'codebase and branch', fit, note: low(fit) ? `This log names "${pinned.name}" on ${branch}, but only ${fitText(fit)}: the profile may need updating.` : null } }
+    return { profile: pinned, choice: { how: 'codebase and branch', fit, misfit: low(fit), note: low(fit) ? `This log names "${pinned.name}" on ${branch}, but only ${fitText(fit)}: the profile may need updating. ${MISFIT_TEXT}` : null } }
   }
   if (sameRobot.length) {
     const p = sameRobot.find((x) => x.code.branch === 'main') ?? sameRobot[0]
     return {
       profile: p,
       choice: {
-        how: 'codebase', fit: profileFit(log, p),
+        how: 'codebase', fit: profileFit(log, p), misfit: low(profileFit(log, p)),
         note: `No profile is pinned to the branch this log ran (${branch || 'unknown'}); using "${p.name}" as of ${p.code.branch} ${p.code.sha}. Current limits may differ from what ran.`,
       },
     }
@@ -68,8 +75,8 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
   return {
     profile: best.p,
     choice: {
-      how: 'signals', fit: best.fit,
-      note: `${named}; using "${best.p.name}", which fits best: ${fitText(best.fit)}.${low(best.fit) ? ' Findings about specific motors and mechanisms, and match times, may be wrong. Add a profile for this robot, or choose one.' : ''}`,
+      how: 'signals', fit: best.fit, misfit: low(best.fit),
+      note: `${named}; using "${best.p.name}", which fits best: ${fitText(best.fit)}.${low(best.fit) ? ` ${MISFIT_TEXT} Add a profile for this robot, or choose one.` : ''}`,
     },
   }
 }

@@ -27,10 +27,12 @@ import dirty from './build/dirty.ts'
 import identity from './battery/identity.ts'
 import gaugeCapacity from './battery/gauge-capacity.ts'
 import passthrough from './alerts/passthrough.ts'
+import pdNotReporting from './power/pd-not-reporting.ts'
+import mainBreakerMargin from './power/main-breaker-margin.ts'
 
 export const RULES: Rule[] = [
   brownout, batteryCollapse, commsLoss, earlyDisable, tilt, zeroNotCompleted, deviceDropout, dsLogTruncated,
-  limitNotApplied, margin, restVoltage, wiringResistance, followerMismatch, impact, overrun,
+  limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, impact, overrun,
   visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough,
 ]
 

@@ -1,0 +1,80 @@
+/**
+ * Is the power distribution board reporting its channel currents to the robot code?
+ *
+ * Checks: AdvantageKit's /PowerDistribution entries, against the board the robot profile says is on the robot. A REV
+ * PDH and a CTRE PDP (v1) report each channel's current over CAN; a CTRE PDP 2.0 has no current telemetry at all.
+ * Fires when the motors drew current but the board's channel currents were logged only once or twice, or were all
+ * zero, or its voltage read 1 V or less: a warning when the board could report, context (grey) when it can't or the
+ * profile doesn't say which board it is.
+ * Why: per-channel current is the only way to see each breaker's real load, including loads that aren't motor
+ * controllers. Without it, Hindsight adds up the motor controllers' own supply currents instead.
+ */
+import { maxOf } from '../../match/series.ts'
+import { rule, round } from '../rule.ts'
+
+const PD = '/PowerDistribution'
+const MOTORS_DRAWING_AMPS = 20 // total motor current that the board's channels must show if it is reporting
+// The channel count the log claims tells which type of board the code's reader was set up for.
+const CLAIMED: Record<number, string> = { 24: 'a REV Power Distribution Hub (24 channels)', 16: 'a CTRE Power Distribution Panel (16 channels)' }
+const BOARD: Record<string, string> = { 'rev-pdh': 'a REV PDH', 'ctre-pdp': 'a CTRE PDP', 'ctre-pdp-2': 'a CTRE PDP 2.0' }
+
+export default rule({
+  id: 'power/pd-not-reporting',
+  title: 'Power distribution board not reporting',
+  severity: 'warning',
+  who: ['software', 'pit'],
+  meaning: 'The robot code got no channel currents from the power distribution board, so nobody can see how hard each breaker is working, including the loads that aren\'t motor controllers. Hindsight adds up the motor controllers\' supply currents instead.',
+  causes: [
+    { id: 'cannot-report', cause: 'The board can\'t report: a CTRE PDP 2.0 has no current telemetry', look: 'the board on the robot: if it is a PDP 2.0 there is nothing to fix; each breaker\'s load is only what its motor controller reports' },
+    { id: 'wrong-type', cause: 'The code reads the wrong type of board (a REV PDH when the robot has a CTRE PDP, or the other way round)', look: 'the board on the robot against the code that creates the power distribution logger (its module type: kRev or kCTRE); the channel count in this finding says which type the code read' },
+    { id: 'wrong-id', cause: 'The code asks for a different CAN ID than the board has', look: 'the board\'s CAN ID in Phoenix Tuner X or the REV Hardware Client (a PDP defaults to 0, a PDH to 1) against the ID in the code' },
+    { id: 'can', cause: 'The board isn\'t on the CAN bus (loose CAN wires at the board, or the bus ends before it)', look: 'the CAN wires at the board, and whether the board shows in Phoenix Tuner X or the REV Hardware Client' },
+  ],
+  nextStep: 'First check which board the robot has: a CTRE PDP 2.0 can\'t report. For a REV PDH or a CTRE PDP, check the code asks for that type and the board\'s CAN ID.',
+  incident: 'Two robots\' logs had two records of 24 channels, all 0 A, while the robot drew hundreds of amps.',
+
+  check(match) {
+    if (!match.has(`${PD}/ChannelCurrent`)) return match.couldNotCheck('the log has no /PowerDistribution entries (the robot code doesn\'t log the board)')
+    const power = match.powerIfLogged()
+    const motorPeak = power ? maxOf(power.grid.amps) : NaN
+    if (!(motorPeak > MOTORS_DRAWING_AMPS)) return match.couldNotCheck('no motor current to compare with')
+    const channels = match.lists(`${PD}/ChannelCurrent`)
+    let highestChannel = 0
+    for (const record of channels.v) highestChannel = Math.max(highestChannel, maxOf(record.filter(Number.isFinite)) || 0)
+    const volts = match.has(`${PD}/Voltage`) ? match.signal(`${PD}/Voltage`).highest().value : NaN
+    const count = match.has(`${PD}/ChannelCount`) ? match.signal(`${PD}/ChannelCount`).last() : (channels.v[0]?.length ?? 0)
+    const silent = channels.t.length <= 2 || highestChannel < 0.5 || (Number.isFinite(volts) && volts <= 1)
+    if (!silent) return
+    const claimed = CLAIMED[count] ?? `a board with ${count} channels`
+    // A profile that doesn't fit this log may name another robot's board: then the board is unknown. A log claiming
+    // 16 channels means the code built a CTRE PDP (v1) reader, a board that reports; 24 is also what automatic
+    // detection falls back to, so it says nothing about the board.
+    const board = !match.profileFits ? undefined : match.profile.powerDistribution ?? (count === 16 ? 'ctre-pdp' : undefined)
+    const canReport = board === 'rev-pdh' || board === 'ctre-pdp'
+    const evidence = {
+      'board on the robot': board ? `${BOARD[board]}${match.profile.powerDistribution ? ' (robot profile)' : ' (the log claims 16 channels)'}` : 'unknown',
+      'the log claims': claimed,
+      'channel-current records': channels.t.length,
+      'highest channel current (A)': round(highestChannel, 1),
+      'board voltage, highest (V)': Number.isFinite(volts) ? round(volts, 1) : 'not logged',
+      'motors drew, total, peak (A)': round(motorPeak, 0),
+    }
+    if (board === 'ctre-pdp-2') {
+      return {
+        message: `The power board (a CTRE PDP 2.0) doesn't report per-channel current; Hindsight adds up the motor controllers' supply currents instead (plus an assumed ${match.profile.power.otherLoadsAmps} A for everything else)`,
+        severity: 'info', evidence, likely: ['cannot-report'],
+        nextStep: 'Nothing to fix on the board. To see a non-motor load, log its current another way, or move to a board that reports (a REV PDH).',
+      }
+    }
+    return {
+      message: `The power distribution board reported nothing while the motors drew up to ${round(motorPeak, 0)} A (the log claims ${claimed})`,
+      // Context when the profile doesn't say which board it is: it may be one that can't report.
+      severity: canReport ? undefined : 'info',
+      evidence,
+      ruledOut: canReport ? { 'cannot-report': `the robot has ${BOARD[board!]}, which reports over CAN` } : undefined,
+      nextStep: canReport
+        ? `The robot has ${BOARD[board!]} and the log claims ${claimed}: check the code asks for that type (not automatic detection) and that the board's CAN ID matches the code.`
+        : `First check which board the robot has (then name it in the robot profile): a CTRE PDP 2.0 can't report. For a REV PDH or a CTRE PDP, the log claims ${claimed}: check the code asks for that type and the board's CAN ID.`,
+    }
+  },
+})

@@ -19,6 +19,13 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   what the DS log shows rather than asking for it. "Not checked" lists rules that couldn't run on this log.
 - **Times** read in match time first, robot time in parentheses ("1:47 into the match (teleop; robot time
   532.8 s)"), and plots are labelled in match time; robot time is what AdvantageScope shows.
+- **Power rules** besides brownouts and battery health: `power/main-breaker-margin` (the 120 A main breaker heats
+  with current²; its load is the root of an exponential average of total current², τ = 90 s, against the 100–130 %
+  band where it trips, with the 30 s and 180 s figures alongside, since the datasheet curve is only read by eye) and
+  `power/pd-not-reporting` (the power distribution board logged no channel currents while the motors drew current;
+  it says which board type the log claims from the channel count: 24 = REV PDH, 16 = CTRE PDP). The robot profile
+  names the board (`powerDistribution`): a warning when it is one that can report (REV PDH, CTRE PDP), context when it
+  is a CTRE PDP 2.0, which has no current telemetry, or when the board is unknown.
 - **Power** tab: lowest voltage and margin to the brownout setting, the loads at the deepest sags, the battery's
   estimated open-circuit voltage against charge drawn, and flywheel current-cap what-ifs with the model's error.
 - **Download for Claude** saves `<log>.findings.json` (schema `hindsight.findings/2`: each finding has robot time,
@@ -37,7 +44,11 @@ Each log is matched to a profile by what it says about itself (AdvantageKit meta
 
 1. the code's name for itself (`/RealMetadata/Codebase`) and the branch it ran (`/RealMetadata/GitBranch`);
 2. the same robot pinned to another branch, with a note that limits may differ;
-3. otherwise the profile with the most of its signals in the log, with a warning when under 60 % are there.
+3. otherwise the profile with the most of its signals in the log.
+
+When the chosen profile has under 60 % of its signals in the log, it doesn't fit (another robot, or another year's
+code): the rules about specific motors, devices, cameras and mechanisms are listed as not checked, and auto and
+teleop lengths are measured from the log.
 
 The page shows which profile each log used and why, and **use…** (Match review) or **Robot for this session**
 (Session view) picks another; the choice is kept in this browser. Findings that compare against the code say which
@@ -56,9 +67,10 @@ M5 Max (147 ms per log); the page never stopped responding for more than about 0
 - **Sessions**: matches on the field with the same event name within 4 days are one event (when the Driver Station
   logged no event name, on-field matches within 4 days of each other are); other logs are grouped by the day they
   were played. One match recorded in several logs (the robot program restarted during it: same match label, starting
-  within 30 minutes) counts once, with a note. The session says which robot profile its logs used; when it doesn't fit
-  them (under 60 % of its signals present), a warning says findings about specific mechanisms and match times may
-  be wrong. The date comes from the robot's clock, or, when the clock wasn't set (a roboRIO 2
+  within 30 minutes) counts once, with a note. The session says which robot profile its logs used; when none fits a log
+  (under 60 % of its signals present), the rules about specific motors, devices, cameras and mechanisms are listed as
+  not checked, and the match's auto and teleop lengths are measured from the log (on the field, auto is the time from
+  auto start to teleop start less the field's 3 s pause). The date comes from the robot's clock, or, when the clock wasn't set (a roboRIO 2
   that was never set reads 2024-12-18), from the AdvantageKit file name, with a note; logs with neither go to "Logs with no date". Move a log to
   another session or rename a session from the page.
 - **Findings across the session**, merged by issue: how many of the matches it could be checked in it fired in, a
@@ -89,6 +101,12 @@ settings**: it tells students what to set and which line to change, and they do 
   for each limit: set it in Phoenix Tuner X, run 3 spin-ups from standstill, drop the log in. It measures each run,
   checks the limit took effect on every motor, flags runs that can't be compared, and recommends the limit at the knee,
   with the code line to change and a final read-back check. Progress saves to `limits-session.json`.
+  The recommendation comes as a **burst / sustained pair** (Phoenix 6 `SupplyCurrentLimit`, then
+  `SupplyCurrentLowerLimit` after `SupplyCurrentLowerTime`): the burst cap is checked against the battery budget, and
+  the sustained caps of the groups that run together (from the loaded match) are added up against the 120 A main
+  breaker (a slipping push), and so is a pinned push (stalled drive motors draw about stator² × R ÷ 12 V each, which
+  only the stator limit governs when it stays under the sustained cap). It says plainly not to raise a burst cap above today's until the robot code sheds load as the battery
+  voltage falls.
   The drive wheel-slip test is shown but locked until Kevin agrees the procedure.
 - `scripts/limits-reference.ts` recomputes the Part A numbers a second way: the method of
   `8033/robot/hindsight-research/whatif/current_limit_check.py` (5 ms hold-last grid, more than 5 A over the limit),

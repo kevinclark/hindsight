@@ -59,7 +59,8 @@ const UNSET_CLOCK_DAY = Date.UTC(2024, 11, 18)
 
 /** Analyse one log and keep only the summary. `profile`: the robot the student chose for it, if any. */
 export function summarizeLog(file: InputFile, profile?: RobotProfile): MatchSummary | null {
-  const { analyses, problems } = analyzeFiles([file], profile)
+  // As the student's choice (checked for fit), not as a pinned profile.
+  const { analyses, problems } = analyzeFiles([file], profile ? () => profile : undefined)
   const a = analyses[0]
   if (!a) return null
   const s = summarizeMatch(a.match, a.report, file.bytes.length, a.timing)

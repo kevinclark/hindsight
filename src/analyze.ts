@@ -29,8 +29,8 @@ export interface AnalyzeResult {
 }
 
 /**
- * `profile`: the profile to use (a test pins one), or, per file name, the one the student chose. Logs without one get
- * the profile that fits them (profiles/choose.ts).
+ * `profile`: the profile to use as is (a test or script pins one), or, per file name, the one the student chose
+ * (checked for fit). Logs without one get the profile that fits them (profiles/choose.ts).
  */
 export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((fileName: string) => RobotProfile | undefined)): AnalyzeResult {
   const problems: string[] = []
@@ -43,7 +43,8 @@ export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((file
       if (kind === 'wpilog') {
         const started = performance.now()
         const log = openWpilog(f.bytes)
-        const picked = chooseProfile(log, PROFILES, typeof profile === 'function' ? profile(f.name) : profile)
+        // A profile passed in directly (a test or script pins it) is used as is; the student's choice is checked for fit.
+        const picked = typeof profile === 'object' ? { profile, choice: { how: 'given' as const, note: null, fit: null } } : chooseProfile(log, PROFILES, profile?.(f.name))
         const match = buildMatch(f.name, log, picked.profile, picked.choice)
         analyses.push({ match, report: { findings: [], skipped: [], crashed: [] }, timing: { parseMs: performance.now() - started, rulesMs: 0 } })
       } else if (kind === 'dslog') {

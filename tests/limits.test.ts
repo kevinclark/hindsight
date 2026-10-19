@@ -1,6 +1,7 @@
 // Phase 2: the Limits tab (Part A) against the reference script, and the limits wizard (Part B) on bench logs built
 // from real CalGames spin-ups: the student path, "the setting didn't take", and "runs not comparable".
 import { describe, expect, it } from 'vitest'
+import { checkPair } from '../src/limits/pair.ts'
 import { readFileSync } from 'node:fs'
 import { analyzeFiles } from '../src/analyze.ts'
 import { limitsReport } from '../src/limits/limits-report.ts'
@@ -129,5 +130,24 @@ describe.skipIf(!haveCalGames)('Limits tab on the CalGames logs (Part A)', () =>
       }
       for (const d of groups.find((g) => g.group === 'Drive')!.supply.motors) expect(d.longestOver).toBeLessThanOrEqual(0.215)
     }
+  })
+})
+
+describe('burst / sustained pair', () => {
+  const flywheel = offseason2026.motorGroups.find((g) => g.name === 'Flywheel')!
+  const drive = offseason2026.motorGroups.find((g) => g.name === 'Drive')!
+  it('uses Phoenix\'s 40 A after 1 s as the sustained cap until the student chooses one', () => {
+    const p = checkPair(offseason2026, flywheel, 60, null, null, ['Drive'])
+    expect(p).toMatchObject({ lowerA: 40, lowerSeconds: 1, lowerIsDefault: true })
+  })
+  it('adds up the sustained caps of the groups that run together against the 120 A main', () => {
+    // Drive 4 × 40 A (its supply limit) + flywheel 4 × 25 A = 260 A: over the main breaker.
+    const p = checkPair(offseason2026, flywheel, 60, 25, 1, ['Drive'])
+    expect(p.sustained.totalA).toBe(260)
+    expect(p.sustained.ok).toBe(false)
+  })
+  it('warns not to raise a burst cap above today\'s', () => {
+    expect(checkPair(offseason2026, drive, 70, 30, 1).raisesBurst).toBe(true)
+    expect(checkPair(offseason2026, drive, 40, 30, 1).raisesBurst).toBe(false)
   })
 })
