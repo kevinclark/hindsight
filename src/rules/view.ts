@@ -177,7 +177,11 @@ export class Signal {
     let peak = 0, lowest = Infinity, highest = -Infinity
     const visit = (v: number) => { peak = Math.max(peak, Math.abs(v)); lowest = Math.min(lowest, v); highest = Math.max(highest, v) }
     visit(this.at(iv.start)) // the value held from before the episode counts too
-    for (let i = 0; i < this.series.t.length; i++) if (this.series.t[i] >= iv.start && this.series.t[i] < iv.end) visit(this.series.v[i])
+    // Start at the episode (binary search), not at the top of the log: a signal that flickers thousands of times
+    // made this quadratic (0.6 s on one log).
+    for (let i = Math.max(0, indexAt(this.series.t, iv.start)); i < this.series.t.length && this.series.t[i] < iv.end; i++) {
+      if (this.series.t[i] >= iv.start) visit(this.series.v[i])
+    }
     return { start: iv.start, end: iv.end, seconds: iv.end - iv.start, peak, lowest, highest }
   }
 }

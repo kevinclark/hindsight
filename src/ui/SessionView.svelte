@@ -4,7 +4,10 @@
   summary of each is kept, so a whole event's folder fits in memory.
 -->
 <script lang="ts">
-  import { PROFILE_FIT_MIN, summarizeLog, type MatchSummary } from '../session/summary.ts'
+  import { summarizeLog, type MatchSummary } from '../session/summary.ts'
+  import { PROFILE_FIT_MIN } from '../profiles/choose.ts'
+  import { PROFILES, profileId } from '../profiles/index.ts'
+  import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
   import type { IssueEvent } from '../triage/history.ts'
@@ -32,8 +35,17 @@
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
   const grid = $derived(session ? ruleGrid(session) : [])
   const merged = $derived(session ? mergeFindings(session) : [])
+  // The robots (profiles) this session's logs were read with, and how many matches each.
+  const robots = $derived.by(() => {
+    const by = new Map<string, MatchSummary[]>()
+    for (const m of session?.matches ?? []) by.set(m.robot.profileId, [...(by.get(m.robot.profileId) ?? []), m])
+    return [...by.values()].map((ms) => ({ robot: ms[0].robot, matches: ms }))
+  })
   // Logs the robot profile doesn't fit (another robot, or another year's code): their mechanism and timing findings are suspect.
-  const misfits = $derived(session ? session.matches.filter((m) => m.profileFit.present < PROFILE_FIT_MIN * m.profileFit.total) : [])
+  const misfits = $derived(session ? session.matches.filter((m) => m.robot.present < PROFILE_FIT_MIN * m.robot.total) : [])
+  // The robot the student chose for this whole session, if every match has the same choice.
+  const chosenId = $derived(session && session.matches.every((m) => m.robot.how === 'chosen by you') && robots.length === 1 ? robots[0].robot.profileId : null)
+  const notes = $derived([...new Set(session ? session.matches.map((m) => m.robot.note).filter((n): n is string => !!n) : [])])
 
   function readStore(key: string): Record<string, string> {
     try { return JSON.parse(localStorage.getItem(key) ?? '{}') } catch { return {} }
@@ -55,7 +67,7 @@
       progress = { ...progress, current: file.name }
       await new Promise((r) => setTimeout(r, 0)) // let the page paint between logs
       try {
-        const summary = summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })
+        const summary = summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, chosenRobot(file.name))
         if (summary) {
           const old = collected.findIndex((s) => s.fileName === summary.fileName)
           if (old >= 0) collected.splice(old, 1)
@@ -71,6 +83,13 @@
       if (mem) heapMB = Math.max(heapMB ?? 0, mem.usedJSHeapSize / 2 ** 20)
     }
     publish()
+  }
+
+  // The student picked the robot for every log in this session: read them again with that profile.
+  async function setRobot(s: Session, id: string) {
+    const names = s.matches.flatMap((m) => m.pieces ?? [m.fileName])
+    chooseRobot(names, id === 'auto' ? null : id)
+    await load(names.map((n) => files.get(n)).filter((f): f is File => !!f))
   }
 
   function moveMatch(fileName: string, label: string) {
@@ -141,10 +160,16 @@
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
     <button class="button" onclick={download}>Download for Claude</button>
   </section>
+  {#each robots as r (r.robot.profileId)}
+    <p class="note">Robot: <strong>{r.robot.name}</strong>, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
+  {/each}
+  <p class="note"><label>Robot for this session: <select onchange={(e) => setRobot(session, (e.currentTarget as HTMLSelectElement).value)}>
+    <option value="auto" selected={!chosenId}>automatic (from each log)</option>
+    {#each PROFILES as p (profileId(p))}<option value={profileId(p)} selected={profileId(p) === chosenId}>{profileId(p)}</option>{/each}
+  </select></label></p>
+  {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
   {#if misfits.length}
-    {@const f = misfits[0].profileFit}
-    {@const codebases = [...new Set(misfits.map((m) => m.profileFit.codebase).filter(Boolean))]}
-    <p class="note warn"><strong>{misfits.length} of {session.matches.length} matches don't fit the robot profile "{f.profile}"</strong>: as few as {Math.min(...misfits.map((m) => m.profileFit.present))} of its {f.total} signals are in them{codebases.length ? ` (the code in them calls itself ${codebases.map((c) => `"${c}"`).join(', ')})` : ''}. Findings about specific motors and mechanisms, and match times (how long auto and teleop are), come from that profile and may be wrong for these logs.</p>
+    <p class="note warn"><strong>{misfits.length} of {session.matches.length} matches don't fit their robot profile</strong>: as few as {Math.min(...misfits.map((m) => m.robot.present))} of its {misfits[0].robot.total} signals are in them. Findings about specific motors and mechanisms, and match times (how long auto and teleop are), may be wrong for these logs.</p>
   {/if}
   {#each session.matches.filter((m) => m.pieces) as m (m.fileName)}
     <p class="note warn">{m.matchLabel} is in {m.pieces!.length} logs ({m.pieces!.join(', ')}): the robot program restarted during the match. They count as one match here.</p>

@@ -62,10 +62,24 @@ export interface Camera {
   connected: string
 }
 
-export interface RobotProfile {
-  name: string
+/** The robot code a profile was read from: the branch the robot ran (often an event branch) and the commit on it. */
+export interface CodePin {
   repo: string
-  configSha: string
+  /** e.g. "main", or the branch the robot ran at an event. */
+  branch: string
+  /** The commit the motor groups, keys and current limits were copied from (7+ characters). */
+  sha: string
+}
+
+export interface RobotProfile {
+  /** The robot, as people call it: "2026 offseason robot". */
+  name: string
+  /**
+   * How a log says it came from this robot: the code's /RealMetadata/Codebase value (an AdvantageKit metadata entry
+   * the robot code sets). Several profiles may share one codebase, each pinned to a different branch.
+   */
+  codebase: string
+  code: CodePin
   game: { name: string; autoSeconds: number; teleopSeconds: number }
   signals: {
     enabled: string

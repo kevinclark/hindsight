@@ -49,9 +49,9 @@ describe('dates and grouping', () => {
   })
   it('on-field matches with no event name still make one event; a match split across logs counts once', () => {
     const metrics = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSpeedPct: null, loopOverrunPct: 5, visionOutlierPct: null }
-    const fit = { profile: 'p', present: 40, total: 90, codebase: 'old' }
+    const fit = { profileId: 'p @ main', name: 'p', code: { repo: 'r', branch: 'main', sha: 'abc1234' }, how: 'signals', note: null, present: 40, total: 90 }
     const m = (fileName: string, playedAt: number, matchLabel: string, fired: boolean) => ({
-      fileName, fileSize: 1, playedAt, onField: true, event: '', matchLabel, batteryId: null, clockNote: null, problems: [], profileFit: fit,
+      fileName, fileSize: 1, playedAt, onField: true, event: '', matchLabel, batteryId: null, clockNote: null, problems: [], robot: fit,
       timing: { parseMs: 1, rulesMs: 1 }, metrics: { ...metrics, minVolts: fired ? 6 : 8 },
       rules: { 'comms/loss': { status: fired ? 'fired' : 'quiet', findings: fired ? [{ key: 'comms/loss', rule: 'comms/loss', severity: 'warning', title: matchLabel }] : [] }, 'loop/overrun': { status: 'fired', findings: [{ key: 'loop/overrun', rule: 'loop/overrun', severity: 'warning', title: fileName }] } },
     } as unknown as MatchSummary)

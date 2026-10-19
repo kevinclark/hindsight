@@ -8,7 +8,8 @@ import { readDslog, type DslogFile } from './readers/dslog.ts'
 import { parseHistory, type IssueEvent } from './triage/history.ts'
 import { attachDslog, buildMatch, dslogOverlap, type Match } from './match/match.ts'
 import { runRules, type Report } from './rules/index.ts'
-import { offseason2026 } from './profiles/2026-offseason.ts'
+import { PROFILES } from './profiles/index.ts'
+import { chooseProfile } from './profiles/choose.ts'
 import type { RobotProfile } from './profiles/types.ts'
 
 export interface InputFile { name: string; bytes: Uint8Array }
@@ -27,7 +28,11 @@ export interface AnalyzeResult {
   history: IssueEvent[]
 }
 
-export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseason2026): AnalyzeResult {
+/**
+ * `profile`: the profile to use (a test pins one), or, per file name, the one the student chose. Logs without one get
+ * the profile that fits them (profiles/choose.ts).
+ */
+export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((fileName: string) => RobotProfile | undefined)): AnalyzeResult {
   const problems: string[] = []
   const analyses: Analysis[] = []
   const dslogs: { name: string; file: DslogFile }[] = []
@@ -37,7 +42,9 @@ export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseas
     try {
       if (kind === 'wpilog') {
         const started = performance.now()
-        const match = buildMatch(f.name, openWpilog(f.bytes), profile)
+        const log = openWpilog(f.bytes)
+        const picked = chooseProfile(log, PROFILES, typeof profile === 'function' ? profile(f.name) : profile)
+        const match = buildMatch(f.name, log, picked.profile, picked.choice)
         analyses.push({ match, report: { findings: [], skipped: [], crashed: [] }, timing: { parseMs: performance.now() - started, rulesMs: 0 } })
       } else if (kind === 'dslog') {
         dslogs.push({ name: f.name, file: readDslog(f.bytes) })
@@ -72,7 +79,7 @@ export function analyzeFiles(files: InputFile[], profile: RobotProfile = offseas
 }
 
 /** Shorthand for scripts and tests: the analyses only. */
-export function analyze(files: InputFile[], profile: RobotProfile = offseason2026): Analysis[] {
+export function analyze(files: InputFile[], profile?: Parameters<typeof analyzeFiles>[1]): Analysis[] {
   return analyzeFiles(files, profile).analyses
 }
 

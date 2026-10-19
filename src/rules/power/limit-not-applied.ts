@@ -40,8 +40,9 @@ export default rule({
       }
       if (worst.motor === '') continue
       // The profile copies the limits from one commit of the robot code; say so when this log ran other code.
-      const sameCode = match.build.sha.startsWith(match.profile.configSha)
-      const asOf = sameCode ? '' : ` (as of ${match.profile.configSha}; this log ran ${match.build.sha.slice(0, 7) || 'unknown code'})`
+      const pin = match.profile.code
+      const sameCode = match.build.sha.startsWith(pin.sha)
+      const asOf = sameCode ? '' : ` (as of ${pin.branch} ${pin.sha}; this log ran ${match.build.sha.slice(0, 7) || 'unknown code'})`
       problems.push({
         message: `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${isOn ? '' : ' that is switched off in code'}${asOf}`,
         at: worst.start,

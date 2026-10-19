@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs'
+import { offseason2026 } from '../../src/profiles/2026-offseason.ts'
 import { homedir } from 'node:os'
 import { analyzeFiles, type InputFile } from '../../src/analyze.ts'
 import { writeDslog, writeWpilog, type Fixture } from './fixture-format.ts'
@@ -11,7 +12,7 @@ export function loadFixture(name: string): InputFile[] {
 }
 
 export function analyzeFixture(name: string) {
-  return analyzeFiles(loadFixture(name))
+  return analyzeFiles(loadFixture(name), offseason2026)
 }
 
 /** The real CalGames logs, read-only from ~/Downloads. Never copied into the repo. */

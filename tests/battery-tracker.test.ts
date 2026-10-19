@@ -1,5 +1,6 @@
 // Battery rules need FRC8033BatteryTracker keys, which the CalGames logs don't have. Synthetic logs here.
 import { describe, expect, it } from 'vitest'
+import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { analyzeFiles } from '../src/analyze.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 import { fired } from './helpers/load.ts'
@@ -11,7 +12,7 @@ const base: FixtureEntry[] = [
 ]
 
 function run(extra: FixtureEntry[]) {
-  return analyzeFiles([{ name: 'synthetic.wpilog', bytes: writeWpilog([...base, ...extra]) }]).analyses[0].report
+  return analyzeFiles([{ name: 'synthetic.wpilog', bytes: writeWpilog([...base, ...extra]) }], offseason2026).analyses[0].report
 }
 
 describe('battery rules', () => {

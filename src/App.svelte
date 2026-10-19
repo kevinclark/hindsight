@@ -14,6 +14,8 @@
   import { VERSION } from './version.ts'
   import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type IssueEvent, type IssueStatus } from './triage/history.ts'
   import type { Finding } from './rules/types.ts'
+  import { PROFILES, profileId } from './profiles/index.ts'
+  import { chooseRobot, chosenRobot, HOW_WORDS } from './ui/robot-choice.ts'
 
   // Every file dropped so far, so a .dslog dropped after its .wpilog still finds its match. "Clear" empties it.
   let inputs: InputFile[] = []
@@ -71,7 +73,7 @@
       const sameFile = (a: InputFile, b: InputFile) => a.name === b.name && a.bytes.length === b.bytes.length
       inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
       const read = performance.now()
-      const result = analyzeFiles(inputs)
+      const result = analyzeFiles(inputs, chosenRobot)
       const done = performance.now()
       analyses = result.analyses
       problems = result.problems
@@ -85,6 +87,16 @@
     } finally {
       busy = false
     }
+  }
+
+  // The student picked another robot for this log: run it again with that profile.
+  function setRobot(id: string) {
+    if (!current) return
+    chooseRobot([current.match.fileName], id === 'auto' ? null : id)
+    const file = current.match.fileName
+    const result = analyzeFiles(inputs, chosenRobot)
+    analyses = result.analyses
+    selected = Math.max(0, analyses.findIndex((a) => a.match.fileName === file))
   }
 
   function clearAll() {
@@ -178,6 +190,15 @@
         {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}
         {#if /uncommitted/i.test(current.match.build.dirty)}<strong class="dirty">(uncommitted changes)</strong>{/if}
       </p>
+      <p class="meta">
+        Robot: <strong>{current.match.profile.name}</strong>, code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>
+        ({HOW_WORDS[current.match.profileChoice.how]}) ·
+        <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
+          <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>
+          {#each PROFILES as p (profileId(p))}<option value={profileId(p)} selected={current.match.profileChoice.how === 'chosen by you' && profileId(p) === profileId(current.match.profile)}>{profileId(p)}</option>{/each}
+        </select></label>
+      </p>
+      {#if current.match.profileChoice.note}<p class="meta dirty">{current.match.profileChoice.note}</p>{/if}
     </div>
     <button class="button" onclick={downloadForClaude} title="Saves findings.json: findings, evidence and short data windows, for analysis with Claude">Download for Claude</button>
   </section>
@@ -250,6 +271,7 @@
   .match-head h2 { margin: 0; font-size: 1.25rem; }
   .meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
   .dirty { color: var(--warning); }
+  .meta select { width: auto; max-width: 100%; font: inherit; font-size: 0.8rem; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }
   .modes { display: flex; gap: 0.25rem; margin: 0 0 0.75rem; }
   .modes button { padding: 0.3rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .modes button.active { color: var(--fg); border-color: var(--focus); font-weight: 600; }

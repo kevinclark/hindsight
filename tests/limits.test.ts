@@ -13,7 +13,7 @@ import { CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
 import { openWpilog } from '../src/readers/wpilog.ts'
 import { overThreshold, REFERENCE_KEYS } from '../scripts/limits-reference.ts'
 
-const bench = (opts: BenchOptions) => analyzeFiles([{ name: `bench-${opts.limitA ?? 'none'}.wpilog`, bytes: benchLog(opts) }]).analyses[0].match
+const bench = (opts: BenchOptions) => analyzeFiles([{ name: `bench-${opts.limitA ?? 'none'}.wpilog`, bytes: benchLog(opts) }], offseason2026).analyses[0].match
 
 describe('"setting took" check', () => {
   it('passes the Q13 front-left drive at its real 40 A supply limit (mode 38–40 A)', () => {

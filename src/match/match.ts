@@ -10,12 +10,15 @@
 import { hasEntry, readNumbers, readValues, type WpilogFile } from '../readers/wpilog.ts'
 import { dslogEndEpoch, type DslogFile } from '../readers/dslog.ts'
 import type { RobotProfile } from '../profiles/types.ts'
+import type { ProfileChoice } from '../profiles/choose.ts'
 import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } from './series.ts'
 
 export interface Match {
   fileName: string
   log: WpilogFile
   profile: RobotProfile
+  /** How the profile was picked for this log, and anything the student should know about it. */
+  profileChoice: ProfileChoice
   /** First and last record time in the log, seconds. */
   logStart: number
   logEnd: number
@@ -69,7 +72,7 @@ export function firstPresent(match: Match, keys: string[]): string | null {
 
 const MATCH_TYPES = ['', 'Practice', 'Qualification', 'Elimination']
 
-export function buildMatch(fileName: string, log: WpilogFile, profile: RobotProfile): Match {
+export function buildMatch(fileName: string, log: WpilogFile, profile: RobotProfile, profileChoice: ProfileChoice = { how: 'given', note: null, fit: null }): Match {
   const s = profile.signals
   let logStart = Infinity
   let logEnd = -Infinity
@@ -79,7 +82,7 @@ export function buildMatch(fileName: string, log: WpilogFile, profile: RobotProf
   if (!Number.isFinite(logStart)) { logStart = 0; logEnd = 0 }
 
   const match: Match = {
-    fileName, log, profile, logStart, logEnd,
+    fileName, log, profile, profileChoice, logStart, logEnd,
     enabled: [], auto: [], teleop: [], matchStart: null, teleopStart: null, matchEnd: null,
     fms: false, event: '', matchLabel: '', build: { sha: '', branch: '', date: '', dirty: '' },
     epochOffset: null, ds: [], cache: new Map(),

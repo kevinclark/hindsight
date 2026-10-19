@@ -21,6 +21,26 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
   hashed Wi-Fi key.
 
+## Which robot a log is from
+
+Rules never name a log key or a current limit; they ask the log's **robot profile** (`src/profiles/`). A profile is
+one robot's code at one point: the log keys, motor groups and current limits as written on a branch, at a commit
+(`code: { repo, branch, sha }`). One robot can have several, e.g. one pinned to `main` and one to the branch it ran
+at an event, because limits change during an event.
+
+Each log is matched to a profile by what it says about itself (AdvantageKit metadata):
+
+1. the code's name for itself (`/RealMetadata/Codebase`) and the branch it ran (`/RealMetadata/GitBranch`);
+2. the same robot pinned to another branch, with a note that limits may differ;
+3. otherwise the profile with the most of its signals in the log, with a warning when under 60 % are there.
+
+The page shows which profile each log used and why, and **use…** (Match review) or **Robot for this session**
+(Session view) picks another; the choice is kept in this browser. Findings that compare against the code say which
+commit they read ("as of event-x d339f29; this log ran 45e3eba"): a log run before the branch's last commit may have
+had different limits.
+
+To add a robot: copy a profile file, change the keys, limits and `code` pin, and add it to `src/profiles/index.ts`.
+
 ## Session view: many matches at once
 
 **Session** (top of the page) takes a whole folder of logs (an event, a practice day). Each log is read and boiled
@@ -31,9 +51,9 @@ M5 Max (147 ms per log); the page never stopped responding for more than about 0
 - **Sessions**: matches on the field with the same event name within 4 days are one event (when the Driver Station
   logged no event name, on-field matches within 4 days of each other are); other logs are grouped by the day they
   were played. One match recorded in several logs (the robot program restarted during it: same match label, starting
-  within 30 minutes) counts once, with a note. When the robot profile doesn't fit the logs (under 60 % of its
-  signals present, e.g. another robot or another year's code), a warning says findings about specific mechanisms and
-  match times may be wrong. The date comes from the robot's clock, or, when the clock wasn't set (a roboRIO 2
+  within 30 minutes) counts once, with a note. The session says which robot profile its logs used; when it doesn't fit
+  them (under 60 % of its signals present), a warning says findings about specific mechanisms and match times may
+  be wrong. The date comes from the robot's clock, or, when the clock wasn't set (a roboRIO 2
   that was never set reads 2024-12-18), from the AdvantageKit file name, with a note; logs with neither go to "Logs with no date". Move a log to
   another session or rename a session from the page.
 - **Findings across the session**, merged by issue: how many of the matches it could be checked in it fired in, a
@@ -125,7 +145,7 @@ skips with a message when they aren't there; `fixtures/*.json` are small cuts th
 |---|---|
 | `src/readers/` | `wpilog.ts` (indexes the file once, decodes only the signals asked for), `dslog.ts` |
 | `src/match/` | `match.ts` (phases, event, build, wall clock), `series.ts` (hold-last helpers) |
-| `src/profiles/` | `2026-offseason.ts`: log keys, motor groups and current limits for this robot |
+| `src/profiles/` | one file per robot (log keys, motor groups, current limits, the code they were read from); `index.ts` lists them, `choose.ts` picks one per log |
 | `src/rules/<area>/` | one rule per file, 25–55 lines; the list is `src/rules/index.ts` |
 | `src/rules/rule.ts`, `view.ts`, `run.ts` | how a rule is written, what it can ask about a match, and the runner |
 | `src/triage/` | known issues and the history file |

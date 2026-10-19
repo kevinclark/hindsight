@@ -8,14 +8,14 @@
  * limit is configured in code but switched off, which is itself a finding (power/limit-not-applied).
  */
 
-import type { RobotProfile } from './types.ts'
+import type { MotorGroup, RobotProfile } from './types.ts'
 
 const swerveModules = ['Front Left', 'Front Right', 'Back Left', 'Back Right']
 
 export const offseason2026: RobotProfile = {
   name: '2026 offseason robot',
-  repo: 'HighlanderRobotics/2026-Offseason-Robot',
-  configSha: 'cb68b20',
+  codebase: '2026 Offseason',
+  code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'main', sha: 'cb68b20' },
 
   game: { name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 140 },
 
@@ -210,4 +210,57 @@ export const offseason2026: RobotProfile = {
       connected: '/Apriltag VisionBack_Right/Connected',
     },
   ],
+}
+
+/**
+ * The same robot, running the code from the October 2026 event (CalGames): branch `event-calgames`, head
+ * d339f29 (2026-10-18 10:21 PDT, "reduce supply current indexer"). The event logs came from 45e3eba, fb5f9b7 and
+ * 123eec6, all ancestors of this head; later commits are 96479a0 and d339f29. Compared with main cb68b20:
+ *  - The kickers' supply limit is 30 A, not 40 A (IndexerIO.java:198, commit d339f29). The indexer feed motor
+ *    stays at 40 A, so the old "Indexer" group is split in two.
+ *  - Every other current limit, CAN ID and logged motor/camera key is the same as main.
+ *  - Limits that moved to new lines because code was added above them: DrumSubsystem.java (+8 lines) and
+ *    SlapdownSubsystem.java (+20 lines).
+ *  - Hood zeroing: the event code also zeroes the hood once at boot (Robot.robotInit) and has a "Zero hood to
+ *    bottom" dashboard button, both of which print "Hood zeroed! - Hood IO". The existing doneMessage matches it.
+ *  - The Pigeon acceleration keys (accelX / accelY) are only logged by the event code, not by main cb68b20.
+ * Flywheel supply limit: still 40 A with the enable flag false at this head (DrumSubsystem.java:317-318).
+ */
+function eventGroup(name: string): MotorGroup {
+  const group = offseason2026.motorGroups.find((g) => g.name === name)
+  if (!group) throw new Error(`offseason2026 has no motor group "${name}"`)
+  return group
+}
+
+const mainIndexerMotors = eventGroup('Indexer').motors
+
+export const offseason2026Event: RobotProfile = {
+  ...offseason2026,
+  code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'event-calgames', sha: 'd339f29' },
+
+  motorGroups: offseason2026.motorGroups.flatMap((group): MotorGroup[] => {
+    switch (group.name) {
+      case 'Flywheel':
+        return [{ ...group, limits: { ...group.limits, where: 'DrumSubsystem.java:315-318', supplyLines: 'DrumSubsystem.java:317-318' } }]
+      case 'Hood':
+        return [{ ...group, limits: { ...group.limits, where: 'DrumSubsystem.java:342-345' } }]
+      case 'Intake pivot':
+        return [{ ...group, limits: { ...group.limits, where: 'SlapdownSubsystem.java:286' } }]
+      case 'Intake rollers':
+        return [{ ...group, limits: { ...group.limits, where: 'SlapdownSubsystem.java:314' } }]
+      case 'Indexer':
+        // Two configs in IndexerIO.java: the indexer feed motor (line 170) and the two kickers (line 196).
+        return [
+          { name: 'Indexer', motors: mainIndexerMotors.filter((m) => !m.name.startsWith('Kicker')), limits: { ...group.limits, where: 'IndexerIO.java:170-173' } },
+          { name: 'Kicker', motors: mainIndexerMotors.filter((m) => m.name.startsWith('Kicker')), limits: { ...group.limits, supplyA: 30, where: 'IndexerIO.java:196-199' } },
+        ]
+      default:
+        return [group]
+    }
+  }),
+
+  zeroing: offseason2026.zeroing.map((z) =>
+    z.zeroCurrent
+      ? { ...z, zeroCurrent: { ...z.zeroCurrent, where: 'DrumSubsystem.java:53 (HOOD_CURRENT_ZEROING_THRESHOLD_AMPS), stator limit DrumSubsystem.java:342' } }
+      : z),
 }

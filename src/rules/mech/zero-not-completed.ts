@@ -3,7 +3,9 @@
  *
  * Checks: for each mechanism in the profile's `zeroing` list, the first time it moved while enabled (more than a
  * few degrees AWAY from the stop the zero drives into; travel toward the stop is the zeroing itself), against the
- * first console message saying the zero completed. Moving first means every angle it was sent to was wrong.
+ * first console message saying the zero completed. Moving first means every angle it was sent to was wrong, unless the
+ * zero barely changed the position when it landed (less than moveDegrees): then the angles were already right, e.g.
+ * the mechanism was seeded from an absolute encoder and this zero was a re-check.
  * Why: CalGames 2026 Q13/Q21: the hood's zero was cancelled 0.2 s into auto, so "10°" was 8° above the hard stop
  * all auto, and the hood hit the trench in Q13. Fixed in 8ba92cb (zero at boot); P0 must stay quiet.
  */
@@ -31,6 +33,8 @@ export default rule({
     }
     if (movedAt === null || movedAt >= doneAt) return
     const zeroed = Number.isFinite(doneAt)
+    const jump = zeroed ? position.at(doneAt + 0.1) - position.at(doneAt - 0.1) : NaN
+    if (zeroed && Math.abs(jump) < mechanism.moveDegrees) return
     return {
       message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed${zeroed ? ` (at ${doneAt.toFixed(1)} s)` : ' (it never did)'}`,
       at: movedAt,
@@ -38,7 +42,7 @@ export default rule({
         'first move while enabled (s)': round(movedAt),
         'zero completed (s)': zeroed ? round(doneAt) : 'never',
         'seconds moving in the wrong frame': zeroed ? round(doneAt - movedAt, 1) : 'whole match',
-        'position jump when the zero landed (°)': zeroed ? round(position.at(doneAt + 0.1) - position.at(doneAt - 0.1), 1) : 'n/a',
+        'position jump when the zero landed (°)': zeroed ? round(jump, 1) : 'n/a',
       },
       plot: [position], plotUnit: '°', plotFrom: movedAt - 2, plotTo: movedAt + 6, plotMarks: [movedAt],
     }

@@ -1,5 +1,6 @@
 // The rule format promised in CONTRIBUTING.md: the example and the template work as written.
 import { describe, expect, it } from 'vitest'
+import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { analyzeFiles } from '../src/analyze.ts'
 import { runRules } from '../src/rules/index.ts'
 import template from '../src/rules/_template/new-rule.ts'
@@ -13,7 +14,7 @@ const log = writeWpilog([
 ])
 
 describe('the rule format', () => {
-  const a = analyzeFiles([{ name: 'test.wpilog', bytes: log }]).analyses[0]
+  const a = analyzeFiles([{ name: 'test.wpilog', bytes: log }], offseason2026).analyses[0]
   it('the CONTRIBUTING example (power/rest-voltage) fires on a 12.3 V start', () => {
     expect(fired(a.report)).toContain('power/rest-voltage')
   })
@@ -29,7 +30,7 @@ describe('the rule format', () => {
 })
 
 describe('runner edge cases (review 2026-10-19)', () => {
-  const run = (entries: Parameters<typeof writeWpilog>[0]) => analyzeFiles([{ name: 'edge.wpilog', bytes: writeWpilog(entries) }]).analyses[0].report
+  const run = (entries: Parameters<typeof writeWpilog>[0]) => analyzeFiles([{ name: 'edge.wpilog', bytes: writeWpilog(entries) }], offseason2026).analyses[0].report
   const enabled = [
     { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [35, false]] },
     { name: '/DriverStation/Autonomous', type: 'boolean', records: [[10, true], [35, false]] },

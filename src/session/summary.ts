@@ -10,7 +10,9 @@ import { powerReport } from '../power/power-report.ts'
 import { RULES, type Report } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
-import type { RobotProfile } from '../profiles/types.ts'
+import type { CodePin, RobotProfile } from '../profiles/types.ts'
+import { profileFit, type ProfileChoice } from '../profiles/choose.ts'
+import { profileId } from '../profiles/index.ts'
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
@@ -31,14 +33,11 @@ export interface MatchSummary {
   metrics: MatchMetrics
   timing: { parseMs: number; rulesMs: number }
   problems: string[]
-  /** How well the robot profile fits this log: how many of its signals are in it, and the code's own name for itself. */
-  profileFit: { profile: string; present: number; total: number; codebase: string | null }
+  /** The robot profile used for this log, how it was picked, and how many of its signals are in the log. */
+  robot: { profileId: string; name: string; code: CodePin; how: ProfileChoice['how']; note: string | null; present: number; total: number }
   /** When one match was recorded in several logs (the robot program restarted mid-match): every log's file name. */
   pieces?: string[]
 }
-
-/** Below this share of the profile's signals, the log is probably from another robot or another year's code. */
-export const PROFILE_FIT_MIN = 0.6
 
 export interface MatchMetrics {
   minVolts: number | null
@@ -58,9 +57,9 @@ const EARLIEST_PLAUSIBLE = Date.UTC(2023, 0, 1)
 /** A roboRIO 2 whose clock was never set reads its image date, 2024-12-18: treat that day (± 1) as unset. */
 const UNSET_CLOCK_DAY = Date.UTC(2024, 11, 18)
 
-/** Analyse one log and keep only the summary. */
-export function summarizeLog(file: InputFile): MatchSummary | null {
-  const { analyses, problems } = analyzeFiles([file])
+/** Analyse one log and keep only the summary. `profile`: the robot the student chose for it, if any. */
+export function summarizeLog(file: InputFile, profile?: RobotProfile): MatchSummary | null {
+  const { analyses, problems } = analyzeFiles([file], profile)
   const a = analyses[0]
   if (!a) return null
   const s = summarizeMatch(a.match, a.report, file.bytes.length, a.timing)
@@ -92,24 +91,16 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
     event: match.event, matchLabel: match.matchLabel, onField: match.fms,
     batteryId: atStart || null,
     rules, metrics: metrics(match), timing, problems: [],
-    profileFit: profileFit(match),
+    robot: robotOf(match),
   }
 }
 
-/** Every signal the profile names. */
-export function profileKeys(profile: RobotProfile): string[] {
-  const keys = [
-    ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected])),
-    ...profile.cameras.flatMap((c) => [c.acceptedPose, c.connected]),
-    ...Object.values(profile.signals),
-  ]
-  return [...new Set(keys.filter((k): k is string => typeof k === 'string'))]
-}
-
-function profileFit(match: Match): MatchSummary['profileFit'] {
-  const keys = profileKeys(match.profile)
-  const codebase = has(match, '/RealMetadata/Codebase') ? values<string>(match, '/RealMetadata/Codebase')!.v[0] ?? null : null
-  return { profile: match.profile.name, present: keys.filter((k) => has(match, k)).length, total: keys.length, codebase }
+function robotOf(match: Match): MatchSummary['robot'] {
+  const fit = match.profileChoice.fit ?? profileFit(match.log, match.profile)
+  return {
+    profileId: profileId(match.profile), name: match.profile.name, code: match.profile.code,
+    how: match.profileChoice.how, note: match.profileChoice.note, ...fit,
+  }
 }
 
 /**
@@ -154,7 +145,7 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
     },
     timing: { parseMs: sum(pieces.map((p) => p.timing.parseMs)), rulesMs: sum(pieces.map((p) => p.timing.rulesMs)) },
     problems: pieces.flatMap((p) => p.problems),
-    profileFit: pieces.reduce((a, b) => (b.profileFit.present / b.profileFit.total < a.profileFit.present / a.profileFit.total ? b : a)).profileFit,
+    robot: pieces.reduce((a, b) => (b.robot.present / b.robot.total < a.robot.present / a.robot.total ? b : a)).robot,
     pieces: pieces.map((p) => p.fileName),
   }
 }
