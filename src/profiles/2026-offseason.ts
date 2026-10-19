@@ -6,11 +6,23 @@
  *
  * Current limits are copied from the robot code at `main` cb68b20 (2026-10-19). `...Enabled: false` means the
  * limit is configured in code but switched off, which is itself a finding (power/limit-not-applied).
+ *
+ * CAN IDs are from the same commit. Every device is on one bus: Robot.java:61 builds `new CANBus("*")` (the first
+ * CANivore found) and passes it to every subsystem, so no ID needs a bus to tell it apart.
  */
 
 import type { MotorGroup, RobotProfile } from './types.ts'
 
 const swerveModules = ['Front Left', 'Front Right', 'Back Left', 'Back Right']
+
+// Drive and turn Talon FX IDs per module: DumperSwerveConstants.java:127, 132, 138, 144 (SwerveSubsystem.java:75 picks
+// DumperSwerveConstants), as ModuleConstants(id, prefix, driveID, turnID, cancoderID, offset).
+const swerveCanIds: Record<string, { drive: number; steer: number }> = {
+  'Front Left': { drive: 0, steer: 1 },
+  'Front Right': { drive: 2, steer: 3 },
+  'Back Left': { drive: 4, steer: 5 },
+  'Back Right': { drive: 6, steer: 7 },
+}
 
 export const offseason2026: RobotProfile = {
   name: '2026 offseason robot',
@@ -80,21 +92,23 @@ export const offseason2026: RobotProfile = {
       name: 'Drive',
       motors: swerveModules.map((m) => ({
         name: `${m} drive`,
+        canId: swerveCanIds[m].drive,
         supplyCurrent: `/Swerve/${m} Module/DriveSupplyCurrentAmps`,
         statorCurrent: `/Swerve/${m} Module/DriveStatorCurrentAmps`,
         connected: `/Swerve/${m} Module/DriveConnected`,
       })),
-      limits: { supplyA: 40, supplyEnabled: true, statorA: 120, statorEnabled: true, where: 'AlphaSwerveConstants.java:144' },
+      limits: { supplyA: 40, supplyEnabled: true, statorA: 120, statorEnabled: true, where: 'DumperSwerveConstants.java:175-178' },
     },
     {
       name: 'Steer',
       motors: swerveModules.map((m) => ({
         name: `${m} steer`,
+        canId: swerveCanIds[m].steer,
         supplyCurrent: `/Swerve/${m} Module/TurnSupplyCurrentAmps`,
         statorCurrent: `/Swerve/${m} Module/TurnStatorCurrentAmps`,
         connected: `/Swerve/${m} Module/TurnConnected`,
       })),
-      limits: { supplyA: 20, supplyEnabled: true, where: 'AlphaSwerveConstants.java:176' },
+      limits: { supplyA: 20, supplyEnabled: true, where: 'DumperSwerveConstants.java:207-208' },
     },
     {
       name: 'Flywheel',
@@ -102,12 +116,13 @@ export const offseason2026: RobotProfile = {
       motors: [
         {
           name: 'Flywheel leader',
-          canId: 15,
+          canId: 15, // DrumSubsystem.java:45 (FLYWHEEL_LEADER_ID)
           supplyCurrent: '/Drum/Flywheel/Leader/SupplyCurrentAmps',
           statorCurrent: '/Drum/Flywheel/Leader/StatorCurrentAmps',
           velocity: '/Drum/Flywheel/Leader/VelocityRotPerSec',
           connected: '/Drum/Flywheel/Leader/Connected',
         },
+        // Followers 16, 17, 18: DrumSubsystem.java:109, 112, 115.
         ...[0, 1, 2].map((i) => ({
           name: `Flywheel follower ${16 + i}`,
           canId: 16 + i,
@@ -126,6 +141,7 @@ export const offseason2026: RobotProfile = {
       name: 'Hood',
       motors: [{
         name: 'Hood',
+        canId: 14, // HoodIO.java:51
         supplyCurrent: '/Drum/Hood/SupplyCurrentAmps',
         statorCurrent: '/Drum/Hood/StatorCurrentAmps',
         connected: '/Drum/Hood/Connected',
@@ -136,6 +152,7 @@ export const offseason2026: RobotProfile = {
       name: 'Intake pivot',
       motors: [{
         name: 'Intake pivot',
+        canId: 8, // Robot.java:74
         supplyCurrent: '/Intake/Pivot/SupplyCurrentAmps',
         statorCurrent: '/Intake/Pivot/StatorCurrentAmps',
         connected: '/Intake/Pivot/Connected',
@@ -144,8 +161,10 @@ export const offseason2026: RobotProfile = {
     },
     {
       name: 'Intake rollers',
-      motors: ['Leader', 'Follower'].map((m) => ({
+      // Leader 9 (Robot.java:76), follower 10 (SlapdownSubsystem.java:86).
+      motors: [{ m: 'Leader', canId: 9 }, { m: 'Follower', canId: 10 }].map(({ m, canId }) => ({
         name: `Intake roller ${m.toLowerCase()}`,
+        canId,
         supplyCurrent: `/Intake/Roller ${m}/SupplyCurrentAmps`,
         statorCurrent: `/Intake/Roller ${m}/StatorCurrentAmps`,
         connected: `/Intake/Roller ${m}/Connected`,
@@ -155,11 +174,13 @@ export const offseason2026: RobotProfile = {
     {
       name: 'Indexer',
       motors: [
-        { name: 'Indexer', prefix: '/Indexer/Indexer' },
-        { name: 'Kicker leader', prefix: '/Indexer/KickerLeader' },
-        { name: 'Kicker follower', prefix: '/Indexer/KickerFollower' },
+        // IndexerIO.java:86, 89, 92.
+        { name: 'Indexer', prefix: '/Indexer/Indexer', canId: 11 },
+        { name: 'Kicker leader', prefix: '/Indexer/KickerLeader', canId: 12 },
+        { name: 'Kicker follower', prefix: '/Indexer/KickerFollower', canId: 13 },
       ].map((m) => ({
         name: m.name,
+        canId: m.canId,
         supplyCurrent: `${m.prefix}SupplyCurrentAmp`,
         statorCurrent: `${m.prefix}StatorCurrentAmp`,
         connected: `${m.prefix}Connected`,
@@ -240,7 +261,9 @@ export const offseason2026: RobotProfile = {
  * 123eec6, all ancestors of this head; later commits are 96479a0 and d339f29. Compared with main cb68b20:
  *  - The kickers' supply limit is 30 A, not 40 A (IndexerIO.java:198, commit d339f29). The indexer feed motor
  *    stays at 40 A, so the old "Indexer" group is split in two.
- *  - Every other current limit, CAN ID and logged motor/camera key is the same as main.
+ *  - Every other current limit, CAN ID and logged motor/camera key is the same as main. The CAN IDs were checked at
+ *    d339f29: the same values, with three moved lines (Robot.java:75 pivot, Robot.java:77 roller leader,
+ *    SlapdownSubsystem.java:95 roller follower); the bus is still `new CANBus("*")` (Robot.java:62).
  *  - Limits that moved to new lines because code was added above them: DrumSubsystem.java (+8 lines) and
  *    SlapdownSubsystem.java (+20 lines).
  *  - Hood zeroing: the event code also zeroes the hood once at boot (Robot.robotInit) and has a "Zero hood to
