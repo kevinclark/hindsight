@@ -1,0 +1,68 @@
+/**
+ * Does each mechanism's motor position agree with its absolute encoder?
+ *
+ * Checks (Foresight, the live pit check, only): for each mechanism the robot profile pairs with an absolute encoder,
+ * the motor's position (median of the last 2 s) against the encoder's, converted to mechanism degrees. Fires above 2°.
+ * Mechanisms with no absolute encoder are listed as not checked.
+ * Measured: at rest on the field the CalGames intake pivot agreed with its CANcoder within 0.24° (median 0.04–0.08°);
+ * while moving, up to 6.7° (the two signals are sampled at different moments). The 2° line is assumed.
+ * Why: a zero seeded wrongly at boot (e.g. the motor set to the encoder's rotations rather than the mechanism's)
+ * puts the mechanism 100° off; the robot then drives it into a hard stop.
+ */
+import { rule, round } from '../rule.ts'
+import type { Problem } from '../rule.ts'
+
+const MAX_OFF_DEGREES = 2
+const AVERAGE_SECONDS = 2
+/** More travel than this in the last 2 s (mechanism degrees) means it is being moved. Assumed. */
+const MOVING_DEGREES = 1
+
+export default rule({
+  id: 'foresight/zero-sanity',
+  title: 'Mechanism zero disagrees with its absolute encoder',
+  severity: 'warning',
+  who: ['software', 'pit'],
+  meaning: 'The motor thinks the mechanism is somewhere other than where its absolute encoder says it is, so position commands will drive it to the wrong place.',
+  causes: [
+    { id: 'seed', cause: 'The motor\'s position was set wrongly at start-up or by a zero command (e.g. in encoder rotations, not mechanism rotations)', look: 'the robot code\'s init and zero commands for this mechanism (resetEncoder / setPosition)' },
+    { id: 'config', cause: 'The motor is not using the absolute encoder as its feedback, or the ratio between them is wrong', look: 'the motor\'s Feedback config in the code (RemoteCANcoder, SensorToMechanismRatio) and in Phoenix Tuner X' },
+    { id: 'encoder', cause: 'The absolute encoder slipped or its magnet offset changed', look: 'the encoder\'s mounting and magnet; its MagnetOffset in Phoenix Tuner X' },
+  ],
+  nextStep: 'Power-cycle the robot so the motor re-seeds from the encoder, and check again; if it is still off, check the encoder\'s magnet offset in Phoenix Tuner X.',
+  incident: 'Foresight proposal §5 (zero sanity); the intake pivot is seeded from its CANcoder at start-up (SlapdownSubsystem.slapdownInit)',
+
+  check(match) {
+    const stretch = match.beforeEnable.at(-1)
+    if (!stretch) return // a match log: this is a pit check
+    const fp = match.profile.foresight
+    if (!fp) return match.couldNotCheck('the robot profile names no mechanisms with absolute encoders')
+    const recent = match.before(stretch.end, AVERAGE_SECONDS)
+    const problems: Problem[] = []
+    for (const z of fp.zeroChecks) {
+      if ('notCheckable' in z) { match.checkedOnlyPart(`${z.mechanism} not checked: ${z.notCheckable}`); continue }
+      const encoderRot = match.signal(z.absolute).median(recent) / (z.absoluteUnit === 'radians' ? 2 * Math.PI : 1)
+      const motor = match.signal(z.motor)
+      const motorRot = motor.median(recent)
+      // Being moved by hand: the two signals are sampled at different moments, so skip until it is still.
+      const travel = (motor.highest(recent).value - motor.lowest(recent).value) * 360
+      if (travel > MOVING_DEGREES) { match.checkedOnlyPart(`${z.mechanism} not checked: it is moving (${travel.toFixed(1)}° in ${AVERAGE_SECONDS} s)`); continue }
+      let off = encoderRot - motorRot * z.sensorToMechanism
+      off -= Math.round(off) // the absolute encoder wraps once per rotation
+      const degrees = (Math.abs(off) / z.sensorToMechanism) * 360
+      if (degrees <= MAX_OFF_DEGREES) continue
+      problems.push({
+        about: z.mechanism,
+        message: `${z.mechanism}: the motor's position is ${degrees.toFixed(1)}° off its absolute encoder (more than ${MAX_OFF_DEGREES}°)`,
+        at: stretch.end,
+        measured: [{ label: 'motor vs absolute encoder', value: round(degrees, 1), unit: '°', threshold: MAX_OFF_DEGREES }],
+        evidence: {
+          'absolute encoder (rotations)': round(encoderRot, 4),
+          'motor (mechanism rotations)': round(motorRot, 4),
+          'encoder rotations per mechanism rotation': z.sensorToMechanism,
+          'set in': z.where,
+        },
+      })
+    }
+    return problems
+  },
+})

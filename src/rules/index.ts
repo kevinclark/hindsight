@@ -29,11 +29,25 @@ import gaugeCapacity from './battery/gauge-capacity.ts'
 import passthrough from './alerts/passthrough.ts'
 import pdNotReporting from './power/pd-not-reporting.ts'
 import mainBreakerMargin from './power/main-breaker-margin.ts'
+import controllers from './foresight/controllers.ts'
+import gyroStillDrift from './foresight/gyro-still-drift.ts'
+import zeroSanity from './foresight/zero-sanity.ts'
+import commitMatches from './foresight/commit-matches.ts'
 
 export const RULES: Rule[] = [
   brownout, batteryCollapse, commsLoss, earlyDisable, tilt, zeroNotCompleted, deviceDropout, dsLogTruncated,
   limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, impact, overrun,
   visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough,
+]
+
+/**
+ * Foresight, the live pit check (src/foresight/): the rules that can judge a robot sitting disabled, worst first.
+ * Existing rules judge the disabled stretch since start-up settled (MatchView.beforeEnable); the foresight/* rules
+ * only run here. Auto choice and alliance are left out: the chooser resets when the robot is power-cycled on the field.
+ */
+export const FORESIGHT_RULES: Rule[] = [
+  restVoltage, deviceDropout, controllers, zeroSanity, dirty, visionStale, visionTimeSync, identity, gaugeCapacity,
+  commitMatches, passthrough, gyroStillDrift,
 ]
 
 export type { Report, SkippedRule } from './run.ts'
@@ -43,5 +57,5 @@ export function runRules(match: Match, rules: Rule[] = RULES): Report {
 }
 
 export function ruleById(id: string): Rule | undefined {
-  return RULES.find((r) => r.id === id)
+  return RULES.find((r) => r.id === id) ?? FORESIGHT_RULES.find((r) => r.id === id)
 }

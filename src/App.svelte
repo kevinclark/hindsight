@@ -11,9 +11,10 @@
   import Wizard from './ui/Wizard.svelte'
   import SessionView from './ui/SessionView.svelte'
   import SnapshotView from './ui/SnapshotView.svelte'
+  import ForesightView from './ui/ForesightView.svelte'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
-  import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type IssueEvent, type IssueStatus } from './triage/history.ts'
+  import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
   import type { Finding } from './rules/types.ts'
   import { PROFILES, profileId } from './profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './ui/robot-choice.ts'
@@ -25,7 +26,7 @@
   let selected = $state(0)
   let tab = $state<'match' | 'power' | 'limits'>('match')
   // Review match logs, a whole session of them, the limits wizard, or a robot snapshot (device settings and faults).
-  let mode = $state<'review' | 'session' | 'wizard' | 'snapshot'>('review')
+  let mode = $state<'review' | 'session' | 'wizard' | 'snapshot' | 'foresight'>('review')
 
   // From the Session view: open one match's log (every piece, if the robot program restarted during it) in Match review.
   async function openFromSession(files: File[]) {
@@ -41,14 +42,14 @@
 
   // Known issues: kept in this browser between visits, and saved to / loaded from hindsight-history.jsonl.
   const STORE = 'hindsight.history'
-  let history = $state<IssueEvent[]>(readStoredHistory())
+  let history = $state<HistoryEvent[]>(readStoredHistory())
   let unsaved = $state(false)
   const issues = $derived(currentStatus(history))
 
-  function readStoredHistory(): IssueEvent[] {
+  function readStoredHistory(): HistoryEvent[] {
     try { return parseHistory(localStorage.getItem(STORE) ?? '').events } catch { return [] }
   }
-  function keep(events: IssueEvent[], changed: boolean) {
+  function keep(events: HistoryEvent[], changed: boolean) {
     history = events
     if (changed) unsaved = true
     try { localStorage.setItem(STORE, serializeHistory(events)) } catch { /* private window: the file is the only copy */ }
@@ -145,12 +146,17 @@
   <button class:active={mode === 'session'} onclick={() => (mode = 'session')}>Session</button>
   <button class:active={mode === 'wizard'} onclick={() => (mode = 'wizard')}>Limits wizard</button>
   <button class:active={mode === 'snapshot'} onclick={() => (mode = 'snapshot')}>Robot snapshot</button>
+  <button class:active={mode === 'foresight'} onclick={() => (mode = 'foresight')}>Foresight</button>
 </nav>
 
 <!-- All the views stay mounted and only the active one shows, so switching never loses a loaded session,
      the matches in review, the wizard's progress, or a snapshot. -->
 <div hidden={mode !== 'wizard'}><Wizard matches={analyses} /></div>
 <div hidden={mode !== 'snapshot'}><SnapshotView /></div>
+<div hidden={mode !== 'foresight'}>
+  <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
+  {#if unsaved}<p class="history">A pit check was added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
+</div>
 <div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} /></div>
 <div hidden={mode !== 'review'}>
 <section class="drop" class:dragging aria-busy={busy}>

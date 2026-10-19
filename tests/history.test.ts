@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentStatus, mergeHistory, parseHistory, serializeHistory, type IssueEvent } from '../src/triage/history.ts'
+import { currentStatus, lastPassingSha, mergeHistory, parseHistory, serializeHistory, type IssueEvent, type PitCheckEvent } from '../src/triage/history.ts'
 
 const known: IssueEvent = { type: 'issue', key: 'mech/follower-mismatch · Flywheel', status: 'known', note: 'belt slip on 17/18', when: '2026-10-17T21:30:00Z', match: 'Q21' }
 const fixed: IssueEvent = { ...known, status: 'fixed', note: 'new belt before elims', when: '2026-10-18T15:00:00Z' }
@@ -21,5 +21,14 @@ describe('known-issue history file', () => {
   })
   it('merging two laptops\' files keeps one copy of shared lines', () => {
     expect(mergeHistory([known], [known, fixed])).toEqual([known, fixed])
+  })
+  it('carries Foresight pit checks; the last GO one gives the code to compare against', () => {
+    const go: PitCheckEvent = { type: 'pit-check', verdict: 'GO', sha: 'aaa111', dirty: false, robot: '2026 offseason robot @ main', when: '2026-10-18T15:00:00Z' }
+    const nogo: PitCheckEvent = { ...go, verdict: 'NO-GO', sha: 'bbb222', when: '2026-10-18T16:00:00Z' }
+    const read = parseHistory(serializeHistory([known, go, nogo]))
+    expect(read).toEqual({ events: [known, go, nogo], skipped: 0 })
+    expect(lastPassingSha(read.events)).toBe('aaa111')
+    expect(currentStatus(read.events).size).toBe(1)
+    expect(lastPassingSha([known])).toBeNull()
   })
 })

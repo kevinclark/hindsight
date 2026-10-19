@@ -213,6 +213,25 @@ export const offseason2026: RobotProfile = {
       connected: '/Apriltag VisionBack_Right/Connected',
     },
   ],
+
+  foresight: {
+    // Two Xbox controllers, on ports 0 and 1, in all three CalGames match logs.
+    controllers: 2,
+    gyroYaw: '/Swerve/Gyro/Yaw',
+    zeroChecks: [
+      {
+        mechanism: 'Intake pivot',
+        absolute: '/Intake/CANcoder/CancoderPositionRotations', // a Rotation2d, so radians despite the name
+        absoluteUnit: 'radians',
+        motor: '/Intake/Pivot/PositionRotations',
+        // CANCODER_TO_PIVOT = 1.77777778 (event-calgames). Measured in the CalGames logs at rest: CANcoder 0.6536 rot,
+        // pivot 0.3677 rot (0.6536 / 1.7778 = 0.3677).
+        sensorToMechanism: 1.77777778,
+        where: 'SlapdownSubsystem.java: CANCODER_TO_PIVOT, and getPivotConfig() (RemoteCANcoder ID 4, SensorToMechanismRatio)',
+      },
+      { mechanism: 'Hood', notCheckable: 'the hood has no absolute encoder in the log, so its zero can only be checked once the robot code logs a "zeroed" flag' },
+    ],
+  },
 }
 
 /**

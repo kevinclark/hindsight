@@ -1,7 +1,8 @@
 /**
  * Did a motor controller or sensor drop off CAN while enabled?
  *
- * Checks: each device's Connected flag going false while the robot was enabled, and the lowest battery voltage in
+ * Checks: each device's Connected flag going false while the robot was enabled (in Foresight, the live pit check:
+ * while disabled since start-up settled), and the lowest battery voltage in
  * the 0.5 s before. A drop at low voltage points at the power path (the device browned out); a drop at normal
  * voltage points at CAN wiring or a connector.
  * Why: CalGames 2026 P0: flywheel follower 16 alone dropped off CAN 7 times, each at 5.85–6.31 V.
@@ -19,7 +20,12 @@ function otherDevices(match: MatchView, except: string) {
   ]
   return all
     .filter((d) => d.name !== except && match.has(d.key))
-    .map((d) => ({ name: d.name, drops: match.signal(d.key).episodes(isFalse, { touching: match.enabled }).map((e) => e.start) }))
+    .map((d) => ({ name: d.name, drops: match.signal(d.key).episodes(isFalse, { touching: watched(match) }).map((e) => e.start) }))
+}
+
+/** While enabled, plus (Foresight) the disabled stretch being checked. */
+function watched(match: MatchView) {
+  return [...match.enabled, ...match.beforeEnable]
 }
 
 export default rule({
@@ -42,13 +48,15 @@ export default rule({
 
   check(device, match) {
     // `touching` keeps a drop that spans the auto→teleop gap as one drop.
-    const drops = device.connected().episodes(isFalse, { touching: match.enabled })
+    const drops = device.connected().episodes(isFalse, { touching: watched(match) })
     if (drops.length === 0) return
     const battery = match.signal('batteryVoltage')
     // The flag goes false only after the device misses its status frames, so look at the 0.5 s before it.
     const voltages = drops.map((d) => battery.lowest(match.before(d.start, 0.5)).value)
     const lowOnes = voltages.filter((v) => v < LOW_VOLTS).length
     const closeCall = voltages.some((v) => Math.abs(v - LOW_VOLTS) < 0.5)
+    // No battery voltage logged just before a drop (e.g. Foresight: a device already off at the start of the stretch).
+    const unknownVolts = voltages.some((v) => Number.isNaN(v))
     // Other devices that dropped within 1 s of any of this one's drops: a shared cause (power or the CAN trunk).
     const others = otherDevices(match, device.name)
     const together = others.filter((o) => o.drops.some((d) => drops.some((own) => Math.abs(d - own.start) < 1))).map((o) => o.name)
@@ -56,7 +64,7 @@ export default rule({
     const likely: string[] = []
     const ruledOut: Record<string, string> = {}
     if (allLow) likely.push('battery-sag')
-    else if (lowOnes === 0 && !closeCall) ruledOut['battery-sag'] = 'the battery stayed above 7 V at every drop'
+    else if (lowOnes === 0 && !closeCall && !unknownVolts) ruledOut['battery-sag'] = 'the battery stayed above 7 V at every drop'
     if (together.length) {
       likely.push('shared-wiring')
       ruledOut['device-fault'] = `${together.length} other device${together.length === 1 ? '' : 's'} dropped at the same moment`
@@ -68,6 +76,7 @@ export default rule({
       : together.length ? `${together.join(', ')} dropped at the same moment: check what they share (the same CAN branch or splice, the same power channel).`
       : undefined
     const cause = lowOnes === drops.length ? 'power path (every drop at low voltage)'
+      : unknownVolts ? 'not known (no battery voltage logged just before a drop)'
       : lowOnes === 0 ? 'CAN wiring or connector (voltage was normal)'
       : 'mixed: some drops at low voltage'
     return {

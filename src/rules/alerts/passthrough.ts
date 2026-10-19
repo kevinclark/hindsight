@@ -2,7 +2,8 @@
  * Show every Alert the robot code raised, so none is silent.
  *
  * Checks: each alert text the robot code raised. During the match it keeps the programmers' type (error → red,
- * warning → amber, info → grey), counted inside the match only; before or after the match it is grey.
+ * warning → amber, info → grey), counted inside the match only; before or after the match it is grey. In Foresight
+ * (the live pit check) "the match" is the disabled stretch since start-up settled.
  * Camera time-sync alerts are left to vision/time-sync.
  * Why: CalGames 2026 P0 raised "Flywheel Follower Disconnected" 7 times and nobody saw it until the log review.
  */
@@ -28,14 +29,14 @@ export default rule({
     if (TIME_SYNC_ALERTS.some((pattern) => pattern.test(alert.text))) return
     const during = alert.onsetsInMatch.length
     return {
-      message: during ? `Alert "${alert.text}" ${during}× during the match` : `Alert "${alert.text}" only before or after the match (${alert.onsetsOutsideMatch}×)`,
+      message: during ? `Alert "${alert.text}" ${during}× ${match.windowWords}` : `Alert "${alert.text}" only before or after the match (${alert.onsetsOutsideMatch}×)`,
       at: alert.onsetsInMatch[0] ?? null,
       severity: during ? alert.kind : 'info',
       evidence: {
         group: alert.group,
-        'times during the match': during,
-        'first times during the match': alert.onsetsInMatch.slice(0, 6).map((t) => match.when(t)).join('; ') || '—',
-        'seconds on during the match': round(alert.secondsInMatch, 1),
+        [`times ${match.windowWords}`]: during,
+        [`first times ${match.windowWords}`]: alert.onsetsInMatch.slice(0, 6).map((t) => match.when(t)).join('; ') || '—',
+        [`seconds on ${match.windowWords}`]: round(alert.secondsInMatch, 1),
         'times before or after the match': alert.onsetsOutsideMatch,
       },
     }

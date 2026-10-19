@@ -45,6 +45,16 @@ export interface Match {
   ds: DsAttachment[]
   /** Decoded signals, so two rules asking for the same key decode it once. */
   cache: Map<string, NumberSeries | ValueSeries<unknown> | null>
+  /** Set only by Foresight (the live pit check): the disabled stretch being checked. See src/foresight/engine.ts. */
+  foresight?: ForesightWindow
+}
+
+/** The disabled stretch Foresight checks: from start-up settling (or the last disable) to now, in robot time. */
+export interface ForesightWindow {
+  start: number
+  end: number
+  /** The code (GitSHA) of the last pit check that came out GO before this one, if any. */
+  lastPassingSha: string | null
 }
 
 export interface DsAttachment { file: DslogFile; fileName: string; startTime: number; endTime: number }

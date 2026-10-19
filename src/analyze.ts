@@ -5,7 +5,7 @@
 
 import { openWpilog } from './readers/wpilog.ts'
 import { readDslog, type DslogFile } from './readers/dslog.ts'
-import { parseHistory, type IssueEvent } from './triage/history.ts'
+import { parseHistory, type HistoryEvent } from './triage/history.ts'
 import { attachDslog, buildMatch, dslogOverlap, type Match } from './match/match.ts'
 import { runRules, type Report } from './rules/index.ts'
 import { PROFILES } from './profiles/index.ts'
@@ -24,8 +24,8 @@ export interface AnalyzeResult {
   analyses: Analysis[]
   /** Files that couldn't be read, or DS logs that matched no robot log. */
   problems: string[]
-  /** Known-issue events from any hindsight-history.jsonl files dropped in. */
-  history: IssueEvent[]
+  /** Known-issue and pit-check events from any hindsight-history.jsonl files dropped in. */
+  history: HistoryEvent[]
 }
 
 /**
@@ -36,7 +36,7 @@ export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((file
   const problems: string[] = []
   const analyses: Analysis[] = []
   const dslogs: { name: string; file: DslogFile }[] = []
-  const history: IssueEvent[] = []
+  const history: HistoryEvent[] = []
   for (const f of files) {
     const kind = fileKind(f)
     try {

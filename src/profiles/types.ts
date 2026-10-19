@@ -142,4 +142,30 @@ export interface RobotProfile {
   powerDistribution?: 'rev-pdh' | 'ctre-pdp' | 'ctre-pdp-2'
   zeroing: ZeroingMechanism[]
   cameras: Camera[]
+  /** What Foresight's pre-match checks need beyond the rest of the profile (src/foresight/). */
+  foresight?: ForesightProfile
 }
+
+/** Foresight (the live pit check): the robot's controllers, gyro and the zeros it can check against an absolute sensor. */
+export interface ForesightProfile {
+  /** How many controllers the drive team uses: DS ports 0..count-1 must each have one plugged in. */
+  controllers: number
+  /** The gyro's yaw (struct:Rotation2d, radians). */
+  gyroYaw: string
+  /** Mechanisms whose motor position can be checked against an absolute encoder, and those that can't (and why). */
+  zeroChecks: ZeroCheck[]
+}
+
+export type ZeroCheck =
+  | {
+    mechanism: string
+    /** The absolute encoder's position, and its unit in the log ('radians' for a Rotation2d). */
+    absolute: string
+    absoluteUnit: 'radians' | 'rotations'
+    /** The motor's position (mechanism rotations). */
+    motor: string
+    /** Absolute-encoder rotations per mechanism rotation (Phoenix SensorToMechanismRatio), and where it is set. */
+    sensorToMechanism: number
+    where: string
+  }
+  | { mechanism: string; notCheckable: string }

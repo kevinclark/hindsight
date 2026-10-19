@@ -440,6 +440,19 @@ export function readValues<T = unknown>(log: WpilogFile, name: string): ValueSer
   return sortedByTime({ name, t: Float64Array.from(t), v })
 }
 
+/**
+ * One entry's records as raw payload bytes (copies), in file order: for replaying a log record by record (Foresight's
+ * backtest and its test NT4 server). Null when the log has no such entry.
+ */
+export function readRaw(log: WpilogFile, name: string): { entry: WpilogEntry; t: number[]; payload: Uint8Array[] } | null {
+  const entry = log.entries.get(name)
+  if (!entry) return null
+  const t: number[] = []
+  const payload: Uint8Array[] = []
+  forEachRecord(log, entry, (time, pos, size) => { t.push(time); payload.push(log.bytes.slice(pos, pos + size)) })
+  return { entry, t, payload }
+}
+
 /** Fixed-size structs we know how to read. Field order follows WPILib's struct schemas. */
 const STRUCTS: Record<string, { size: number; read: (view: DataView, pos: number) => unknown }> = {
   Rotation2d: { size: 8, read: (d, p) => d.getFloat64(p, true) },

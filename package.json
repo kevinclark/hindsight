@@ -14,14 +14,17 @@
     "bench": "node --experimental-strip-types scripts/bench.ts"
   },
   "devDependencies": {
+    "@msgpack/msgpack": "3.1.2",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tsconfig/svelte": "5.0.8",
     "@types/node": "24.19.2",
+    "@types/ws": "8.18.1",
     "svelte": "5.57.1",
     "svelte-check": "4.7.6",
     "typescript": "6.0.3",
     "vite": "8.3.2",
     "vite-plugin-singlefile": "2.3.3",
-    "vitest": "5.0.3"
+    "vitest": "5.0.3",
+    "ws": "8.21.3"
   }
 }

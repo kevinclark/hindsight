@@ -180,6 +180,32 @@ snapshot shows exactly what changed. The collector only reads (five allowlisted 
 also list, copy and convert Phoenix `.hoot` logs with the owlet AdvantageScope already cached. Student guide:
 `docs/robot-snapshot.md`.
 
+## Foresight: the pre-match go/no-go, live (phase 1)
+
+Built to `8033/robot/foresight-phase1-brief.md`. **Foresight** (top of the page) connects to the robot over a tether
+in the pit or the queue and runs the same rules and robot profile on the robot's live NetworkTables, before the match
+instead of after it. One verdict, readable at arm's length: **GO**, **NO-GO** or **NOT CHECKED**, then the findings
+worst first, each red with the one thing to do before the robot goes on the field (swap the battery, redeploy from a
+commit, reseat a controller).
+
+- **Read-only.** It only subscribes (`src/foresight/nt4-client.ts` refuses anything else, tested), to the ~66 signals
+  its checks read for this robot, never the whole tree.
+- **Never on the field.** The moment `/DriverStation/FMSAttached` (or WPILib's `/FMSInfo/FMSControlData`) says the
+  field is attached it disconnects, shows "On the field: close Foresight.", and won't connect again until the page is
+  reloaded. If the robot publishes neither, it disconnects: it can't tell where it is.
+- **Settle:** nothing is judged until 30 s after the robot code started (start-up camera and time-sync alerts clear in
+  12.5–18.9 s in the CalGames logs). A robot already on for 30 s gets a verdict at once.
+- **Checks:** `power/rest-voltage`, `can/device-dropout`, `foresight/controllers`, `foresight/zero-sanity`,
+  `build/dirty`, `vision/stale` (drop-outs only, while disabled), `vision/time-sync`, the battery tracker's two,
+  `foresight/commit-matches` (code changed since the last GO, kept in `hindsight-history.jsonl`), `alerts/passthrough`,
+  and `foresight/gyro-still-drift` as context. Not here: the auto choice and alliance (they reset on the field).
+- **Red is earned:** every check is amber until `scripts/foresight-backtest.ts` finds no false reds on field logs;
+  the screen says how many logs each red was proven on (`src/foresight/proven.ts`, `docs/measurements.md`).
+- **Download for Claude** (under Readings) saves the counts, clock, verdict and which signals never came.
+
+First time on a robot: [docs/foresight-first-robot.md](docs/foresight-first-robot.md). Not yet run on a roboRIO; tested
+against the CalGames logs replayed as NT4 and against desktop ntcore (pyntcore 2025.3.2) in Chrome from `file://`.
+
 ## Build and test
 
 ```
@@ -190,6 +216,8 @@ npm run check     # type-check
 python3 -m unittest discover -s tests -p 'test_*.py'   # robot-snapshot collector (stub server, no robot)
 node --experimental-strip-types scripts/check.ts <log.wpilog> [<log.dslog>]   # report in the terminal
 node --experimental-strip-types scripts/chrome-check.ts <out-dir> <logs…>      # file:// timing in headless Chrome
+node --experimental-strip-types scripts/foresight-backtest.ts <logs or folders>  # Foresight's checks on field logs
+node --experimental-strip-types scripts/chrome-foresight-check.ts <out-dir>      # Foresight in Chrome against replays
 ```
 
 The CalGames logs are never committed. `tests/calgames-logs.test.ts` reads them read-only from `~/Downloads` and
@@ -207,6 +235,7 @@ skips with a message when they aren't there; `fixtures/*.json` are small cuts th
 | `src/triage/` | known issues and the history file |
 | `src/power/` | battery model, resistance from current steps, open-circuit curve, what-ifs, fleet reference |
 | `src/report/` | `findings.json` |
+| `src/foresight/` | the live pit check: read-only NT4 client and field guard, record store, engine, verdict, earned reds |
 | `src/ui/`, `src/App.svelte` | the page |
 
 Adding a rule: [CONTRIBUTING.md](CONTRIBUTING.md).

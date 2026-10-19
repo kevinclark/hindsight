@@ -6,9 +6,12 @@
  * Why: CalGames 2026: Back_Right was stale 18–23 % of the match against 5–8 % for Back_Left, and in Q21 it dropped
  * out for 6 s while its network connection stayed up (the coprocessor pipeline stalled).
  * Threshold: assumed from three logs.
+ * Foresight (the live pit check, robot disabled): drop-outs only. A disabled robot sees whatever tags happen to be in
+ * view, so its stale share says nothing: Back_Right was stale 37–40 % of the disabled field stretch in all three
+ * CalGames logs, a working camera facing no tags.
  */
 import { lengthOf } from '../view.ts'
-import { isFalse, isTrue, pct, rule, round } from '../rule.ts'
+import { isFalse, isTrue, pct, rule, round, type Answer } from '../rule.ts'
 
 export default rule({
   id: 'vision/stale',
@@ -25,8 +28,19 @@ export default rule({
   incident: 'CalGames 2026: Back_Right stale ~3× as often as Back_Left; dropped 6 s in Q21 (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 4)',
   forEach: 'camera',
 
-  check(camera, match) {
-    if (match.wholeMatch.length === 0) return // never enabled: no match to measure
+  check(camera, match): Answer {
+    if (match.wholeMatch.length === 0) {
+      if (match.beforeEnable.length === 0) return // never enabled: no match to measure
+      const drops = camera.connected().episodes(isFalse, { during: match.beforeEnable })
+      if (drops.length === 0) return
+      return {
+        likely: ['connection', 'coprocessor'],
+        message: `${camera.name} dropped out ${drops.length} time${drops.length === 1 ? '' : 's'} ${match.windowWords} (first at ${match.when(drops[0].start)} for ${drops[0].seconds.toFixed(1)} s)`,
+        at: drops[0].start,
+        measured: [{ label: 'dropouts before enable', value: drops.length, unit: '' }],
+        evidence: { 'dropouts before enable': drops.length, 'seconds disconnected': round(drops.reduce((s, d) => s + d.seconds, 0), 1) },
+      }
+    }
     const staleSeconds = camera.stale().episodes(isTrue, { during: match.wholeMatch }).reduce((s, e) => s + e.seconds, 0)
     const staleShare = staleSeconds / lengthOf(match.wholeMatch)
     const drops = camera.connected().episodes(isFalse, { during: match.wholeMatch })

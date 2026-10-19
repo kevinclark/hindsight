@@ -304,6 +304,14 @@ export class MatchView {
   readonly profile: RobotProfile
   /** The underlying match model (src/match/match.ts), for the power model and the runner. */
   readonly raw: Match
+  /**
+   * Foresight only (the live pit check, src/foresight/): the disabled stretch since start-up settled, up to now.
+   * Empty for a match log. Rules that judge a match (rest voltage before auto, drops while enabled) judge this
+   * stretch instead when the robot hasn't been enabled.
+   */
+  readonly beforeEnable: Window
+  /** The stretch alerts and dropouts are counted in, in words: "during the match" or "since start-up settled". */
+  readonly windowWords: string
 
   constructor(raw: Match) {
     this.raw = raw
@@ -316,6 +324,18 @@ export class MatchView {
     this.matchEnd = raw.matchEnd
     this.wholeMatch = raw.matchStart !== null && raw.matchEnd !== null ? [{ start: raw.matchStart, end: raw.matchEnd }] : []
     this.onField = raw.fms
+    this.beforeEnable = raw.foresight ? [{ start: raw.foresight.start, end: raw.foresight.end }] : []
+    this.windowWords = this.wholeMatch.length || !raw.foresight ? 'during the match' : 'since start-up settled'
+  }
+
+  /** The stretch a rule counts alerts and dropouts in: the match, or (Foresight) the disabled stretch. */
+  get checkWindow(): Window {
+    return this.wholeMatch.length ? this.wholeMatch : this.beforeEnable
+  }
+
+  /** Foresight only: the code of the last pit check that came out GO (null if none is on record). */
+  get lastPassingSha(): string | null {
+    return this.raw.foresight?.lastPassingSha ?? null
   }
 
   /** A numeric signal by its profile name (e.g. 'batteryVoltage') or its log key (e.g. '/Drum/Hood/Voltage'). */
@@ -426,7 +446,10 @@ export class MatchView {
       const first = this.profile.signals.alertGroups[0]
       throw new MissingSignal(first ? `${first}/errors` : 'alerts (the robot profile names no alert groups and the log has none)')
     }
-    const [start, end] = [this.autoStart ?? Infinity, this.matchEnd ?? -Infinity]
+    // Counted inside the match, or for Foresight inside the disabled stretch it checks.
+    const window = this.checkWindow
+    const [start, end] = [window[0]?.start ?? Infinity, window.at(-1)?.end ?? -Infinity]
+    const inWindow = (t: number) => window.some((iv) => t >= iv.start && t <= iv.end)
     for (const group of present) {
       for (const [k, kind] of KINDS) {
         const a = values<string[]>(this.raw, `${group}/${k}`)
@@ -439,7 +462,7 @@ export class MatchView {
           for (const text of a.v[i]) {
             const name = strip(text)
             const alert = seen.get(name) ?? { name, text: name, kind, group: group.split('/').pop()!, onsetsInMatch: [], onsetsOutsideMatch: 0, secondsInMatch: 0 }
-            if (!before.has(name)) { if (this.inMatch(a.t[i])) alert.onsetsInMatch.push(a.t[i]); else alert.onsetsOutsideMatch++ }
+            if (!before.has(name)) { if (inWindow(a.t[i])) alert.onsetsInMatch.push(a.t[i]); else alert.onsetsOutsideMatch++ }
             alert.secondsInMatch += Math.max(0, Math.min(until, end) - Math.max(a.t[i], start))
             seen.set(name, alert)
           }
