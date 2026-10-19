@@ -15,6 +15,7 @@
 import { maxOf } from '../../match/series.ts'
 import { rule, round } from '../rule.ts'
 import { DT } from '../../power/battery-model.ts'
+import type { MatchView, Signal } from '../view.ts'
 
 const MAIN_BREAKER_A = 120 // FRC rule R609: one 120 A main breaker
 const TRIP_BAND = [1.0, 1.3] // long-run trip, as a share of 120 A, at 25 °C (CB185-120 datasheet, read by eye)
@@ -52,7 +53,8 @@ export default rule({
 
   check(match) {
     if (match.wholeMatch.length === 0) return
-    const { grid } = match.power()
+    // Heating needs current only, so this runs on a log with motor currents and no battery voltage too.
+    const grid = match.currents()
     const load = heating(grid.amps, TAU_SECONDS)
     let peakAt = 0
     for (let i = 1; i < load.length; i++) if (load[i] > load[peakAt]) peakAt = i
@@ -87,7 +89,16 @@ export default rule({
       },
       measured: [{ label: `main breaker load (~${TAU_SECONDS} s)`, value: Math.round(100 * share), unit: '%', threshold: 100 * TRIP_BAND[0] }],
       nextStep: top && total > 0 ? `${top.name} carried ${Math.round((100 * top.e) / total)} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the sum of the sustained limits at or under about 120 A.` : undefined,
-      plot: [match.signal('batteryVoltage')], plotUnit: 'V', plotFrom: t - 60, plotTo: t + 10, plotMarks: [t],
+      // Battery voltage if logged; otherwise the supply current of the group that carried most of it.
+      ...(match.has('batteryVoltage')
+        ? { plot: [match.signal('batteryVoltage')], plotUnit: 'V' }
+        : { plot: topGroupSupply(match, top?.name), plotUnit: 'A' }),
+      plotFrom: t - 60, plotTo: t + 10, plotMarks: [t],
     }
   },
 })
+
+function topGroupSupply(match: MatchView, group: string | undefined): Signal[] {
+  const motors = match.profile.motorGroups.find((g) => g.name === group)?.motors ?? []
+  return motors.filter((m) => m.supplyCurrent && match.has(m.supplyCurrent)).map((m) => match.signal(m.supplyCurrent!, `${m.name} supply`))
+}

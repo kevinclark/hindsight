@@ -3,11 +3,14 @@
  * real readers and rules run on them. Fixtures live in fixtures/*.json (made by scripts/extract-fixtures.ts).
  */
 
-export type FixtureValue = number | boolean | string | string[] | { x: number; y: number; rot: number }
+/** A Uint8Array is written as is: the payload of a struct record (see packStruct). */
+export type FixtureValue = number | boolean | string | string[] | { x: number; y: number; rot: number } | Uint8Array
 
 export interface FixtureEntry {
   name: string
   type: string
+  /** The entry's metadata string (DataLogManager's NT capture puts NT properties here). */
+  metadata?: string
   /** [time in seconds, value] */
   records: [number, FixtureValue][]
 }
@@ -51,6 +54,7 @@ function concat(parts: Uint8Array[]): Uint8Array {
 }
 
 function encodeValue(type: string, v: FixtureValue): Uint8Array {
+  if (v instanceof Uint8Array) return v
   const b = new ArrayBuffer(24)
   const d = new DataView(b)
   switch (type) {
@@ -58,7 +62,7 @@ function encodeValue(type: string, v: FixtureValue): Uint8Array {
     case 'float': d.setFloat32(0, v as number, true); return new Uint8Array(b, 0, 4)
     case 'int64': d.setBigInt64(0, BigInt(Math.round(v as number)), true); return new Uint8Array(b, 0, 8)
     case 'boolean': return new Uint8Array([v ? 1 : 0])
-    case 'string': case 'json': return enc.encode(v as string)
+    case 'string': case 'json': case 'structschema': return enc.encode(v as string)
     case 'string[]': return concat([u32((v as string[]).length), ...(v as string[]).map(lenString)])
     case 'double[]': {
       const arr = v as unknown as number[]
@@ -76,22 +80,29 @@ function encodeValue(type: string, v: FixtureValue): Uint8Array {
   throw new Error(`fixture writer: unsupported type ${type}`)
 }
 
+/** A struct record's payload: doubles, little-endian, in schema order. */
+export function packDoubles(values: number[]): Uint8Array {
+  const d = new DataView(new ArrayBuffer(values.length * 8))
+  values.forEach((x, i) => d.setFloat64(i * 8, x, true))
+  return new Uint8Array(d.buffer)
+}
+
 /** One record with 4-byte id, 4-byte size and 8-byte timestamp fields. */
 function record(id: number, timeSeconds: number, payload: Uint8Array): Uint8Array {
   const h = new DataView(new ArrayBuffer(17))
   h.setUint8(0, 0x3 | (0x3 << 2) | (0x7 << 4))
   h.setUint32(1, id, true)
   h.setUint32(5, payload.length, true)
-  h.setBigUint64(9, BigInt(Math.round(timeSeconds * 1e6)), true)
+  h.setBigInt64(9, BigInt(Math.round(timeSeconds * 1e6)), true) // signed: a negative time is a pre-sync NT record
   return concat([new Uint8Array(h.buffer), payload])
 }
 
 export function writeWpilog(entries: FixtureEntry[]): Uint8Array {
   const header = concat([enc.encode('WPILOG'), new Uint8Array([0x00, 0x01]), u32(0)])
   const parts: Uint8Array[] = [header]
-  const t0 = Math.min(...entries.flatMap((e) => e.records.map((r) => r[0])))
+  const t0 = Math.max(0, Math.min(...entries.flatMap((e) => e.records.map((r) => r[0]))))
   entries.forEach((e, i) => {
-    const start = concat([new Uint8Array([0]), u32(i + 1), lenString(e.name), lenString(e.type), lenString('')])
+    const start = concat([new Uint8Array([0]), u32(i + 1), lenString(e.name), lenString(e.type), lenString(e.metadata ?? '')])
     parts.push(record(0, t0, start))
   })
   const all = entries.flatMap((e, i) => e.records.map((r) => ({ id: i + 1, t: r[0], payload: encodeValue(e.type, r[1]) })))

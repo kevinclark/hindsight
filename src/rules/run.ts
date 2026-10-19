@@ -82,10 +82,14 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
   let itemsSkipped = 0
   for (const item of items) {
     view.notes = []
+    view.sampled.clear()
     try {
       const answer: Answer = item.check()
       const problems = answer === undefined ? [] : Array.isArray(answer) ? answer : [answer]
-      findings.push(...problems.map((p) => toFinding(rule, p, item.name, view)))
+      // A signal logged slowly can hide a short dip or spike: say so on each finding, and as "partly checked".
+      const slow = view.slowSignals()
+      findings.push(...problems.map((p) => withSampling(toFinding(rule, p, item.name, view), slow)))
+      if (problems.length === 0) for (const s of slow) view.checkedOnlyPart(s.note)
       notChecked.push(...view.notes.map((n) => (item.name ? `${item.name}: ${n.reason}` : n.reason)))
       if (view.notes.some((n) => n.whole) && problems.length === 0) itemsSkipped++
     } catch (error) {
@@ -106,6 +110,7 @@ function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: ()
     stator: () => view.signal(need(m.statorCurrent, `${m.name} stator current`), `${m.name} stator`),
     velocity: () => view.signal(need(m.velocity, `${m.name} velocity`), m.name),
     connected: () => view.signal(need(m.connected, `${m.name} Connected flag`), `${m.name} connected`),
+    temperature: () => view.signal(need(m.temperature, `${m.name} temperature`), `${m.name} temperature`),
   })
   switch (rule.forEach) {
     case undefined:
@@ -187,6 +192,11 @@ function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchV
     measured: p.measured,
     plot: toPlot(p, view),
   }
+}
+
+function withSampling(f: Finding, slow: { label: string; note: string }[]): Finding {
+  if (slow.length === 0) return f
+  return { ...f, evidence: { ...f.evidence, 'logged slowly (short dips or spikes can be missed)': slow.map((s) => s.note).join('; ') } }
 }
 
 function toPlot(p: Problem, view: MatchView): Plot | undefined {

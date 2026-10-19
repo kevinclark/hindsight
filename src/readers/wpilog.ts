@@ -12,6 +12,12 @@
  *
  * Values are logged only when they change. To get a value at a time, hold the last value (see match/series.ts);
  * never interpolate between records.
+ *
+ * Two kinds of key name a log doesn't list as entries, so profiles can point at them like any other signal:
+ *   - a field of a struct entry: the entry name, "/", then the field ("NT:/Telemetry/hood/motor/" + "supplyCurrent";
+ *     nested fields join with "/"). The layout comes from the log's own /.schema/struct:<Type> entry, so any team's
+ *     struct (a TalonFX status struct, a gyro struct) decodes without code here. This is how AdvantageScope names them.
+ *   - one bit of an integer entry: the entry name, ":bit", then the bit number ("NT:/FMSInfo/FMSControlData:bit4").
  */
 
 import type { NumberSeries, ValueSeries } from '../match/series.ts'
@@ -35,7 +41,41 @@ export interface WpilogFile {
   recordPos: Uint32Array
   /** Problems found while reading (a truncated last record, a reused entry id). Shown in the report. */
   warnings: string[]
+  /** First and last data record time, seconds (0 and 0 for a log with no records). */
+  firstTime: number
+  lastTime: number
+  /** Key names resolved to an entry (and a struct field or bit), filled as keys are asked for. */
+  resolved: Map<string, Resolved | null>
+  /** Struct layouts by type name, from the log's /.schema/struct:* entries (read on first use). */
+  structs: Map<string, StructLayout | null> | null
 }
+
+/** A key resolved to the entry that holds it, and the part of each record to read. */
+interface Resolved {
+  entry: WpilogEntry
+  /** A numeric field inside a struct record. */
+  field?: { offset: number; field: StructField; recordSize: number }
+  /** One bit of an integer entry. */
+  bit?: number
+}
+
+/** One field of a struct, laid out as WPILib packs it: no padding, bit-fields packed into their integer type. */
+export interface StructField {
+  name: string
+  /** bool, char, int8..int64, uint8..uint64, float, double, or another struct's name. */
+  type: string
+  offset: number
+  size: number
+  /** For a nested struct field. */
+  struct?: StructLayout
+  /** For an array field ("double x[4]"). */
+  arrayLength?: number
+  /** For a bit-field ("bool flag:1"): where its bits sit in the integer at `offset`. */
+  bitShift?: number
+  bitWidth?: number
+}
+
+export interface StructLayout { name: string; size: number; fields: StructField[] }
 
 export interface Pose2d { x: number; y: number; rot: number }
 export interface ChassisSpeeds { vx: number; vy: number; omega: number }
@@ -55,7 +95,12 @@ function readHeader(bytes: Uint8Array, pos: number): RecordHeader | null {
   if (p + idLen + sizeLen + tsLen > bytes.length) return null
   const entryId = readUintLE(bytes, p, idLen); p += idLen
   const size = readUintLE(bytes, p, sizeLen); p += sizeLen
-  const timestampUs = readUintLE(bytes, p, tsLen); p += tsLen
+  // Timestamps are signed: a NetworkTables client whose clock wasn't synced yet can log a time before the log
+  // started, which reads as a huge unsigned number.
+  const timestampUs = tsLen === 8 && bytes[p + 7] & 0x80
+    ? Number(new DataView(bytes.buffer, bytes.byteOffset + p, 8).getBigInt64(0, true))
+    : readUintLE(bytes, p, tsLen)
+  p += tsLen
   if (p + size > bytes.length) return null
   return { entryId, size, timestampUs, payloadPos: p }
 }
@@ -88,6 +133,8 @@ export function openWpilog(bytes: Uint8Array): WpilogFile {
   let counts = new Uint32Array(1024)
   let maxId = 0
   let recordCount = 0
+  let firstUs = Infinity
+  let lastUs = -Infinity
   let pos = firstRecord
   while (pos < bytes.length) {
     const h = readHeader(bytes, pos)
@@ -95,6 +142,8 @@ export function openWpilog(bytes: Uint8Array): WpilogFile {
     if (h.entryId === 0) {
       readControlRecord(bytes, view, h, entries, nameById, warnings)
     } else {
+      if (h.timestampUs >= 0 && h.timestampUs < firstUs) firstUs = h.timestampUs
+      if (h.timestampUs > lastUs) lastUs = h.timestampUs
       if (h.entryId >= counts.length) {
         const bigger = new Uint32Array(Math.max(h.entryId + 1, counts.length * 2))
         bigger.set(counts)
@@ -120,7 +169,8 @@ export function openWpilog(bytes: Uint8Array): WpilogFile {
     pos = h.payloadPos + h.size
   }
 
-  return { bytes, view, entries, recordCount, entryStart, recordPos, warnings }
+  const [firstTime, lastTime] = Number.isFinite(firstUs) ? [firstUs / 1e6, lastUs / 1e6] : [0, 0]
+  return { bytes, view, entries, recordCount, entryStart, recordPos, warnings, firstTime, lastTime, resolved: new Map(), structs: null }
 }
 
 function readControlRecord(
@@ -149,10 +199,152 @@ function readControlRecord(
   if (!entries.has(name)) entries.set(name, { id, name, type, metadata })
 }
 
-/** True when the log has this entry with at least one record. */
+/** True when the log has this key (an entry, a struct field or a bit of one) with at least one record. */
 export function hasEntry(log: WpilogFile, name: string): boolean {
-  const e = log.entries.get(name)
+  const e = resolveKey(log, name)?.entry
   return !!e && log.entryStart[e.id + 1] > log.entryStart[e.id]
+}
+
+/**
+ * Find the entry behind a key: the entry itself, a field of a struct entry ("<entry>/<field>"), or a bit of an
+ * integer entry ("<entry>:bit<n>"). Null when the log has none of these.
+ */
+function resolveKey(log: WpilogFile, name: string): Resolved | null {
+  if (log.resolved.has(name)) return log.resolved.get(name)!
+  let found: Resolved | null = null
+  const entry = log.entries.get(name)
+  if (entry) found = { entry }
+  const bit = /^(.*):bit(\d+)$/.exec(name)
+  if (!found && bit && log.entries.get(bit[1])?.type === 'int64') found = { entry: log.entries.get(bit[1])!, bit: Number(bit[2]) }
+  // A struct field: try each "/" from the right as the end of the entry name (with and without the slash, since
+  // some loggers name struct entries with a trailing "/").
+  for (let i = name.lastIndexOf('/'); !found && i > 0; i = name.lastIndexOf('/', i - 1)) {
+    for (const entryName of [name.slice(0, i + 1), name.slice(0, i)]) {
+      const e = log.entries.get(entryName)
+      const type = e && /^struct:(\w+)$/.exec(e.type)?.[1]
+      const layout = type ? structLayout(log, type) : null
+      const field = layout ? fieldAt(layout, name.slice(i + 1).split('/')) : null
+      if (e && layout && field) { found = { entry: e, field: { ...field, recordSize: layout.size } }; break }
+    }
+  }
+  log.resolved.set(name, found)
+  return found
+}
+
+/** A numeric field by path ("translation/x"), with its offset from the start of the record. */
+function fieldAt(layout: StructLayout, path: string[]): { offset: number; field: StructField } | null {
+  let offset = 0
+  let current: StructLayout = layout
+  for (let k = 0; k < path.length; k++) {
+    const f = current.fields.find((x) => x.name === path[k])
+    if (!f || f.arrayLength !== undefined) return null
+    offset += f.offset
+    if (k === path.length - 1) return f.struct ? null : { offset, field: f }
+    if (!f.struct) return null
+    current = f.struct
+  }
+  return null
+}
+
+const SCALAR_SIZES: Record<string, number> = {
+  bool: 1, char: 1, int8: 1, uint8: 1, int16: 2, uint16: 2, int32: 4, uint32: 4, int64: 8, uint64: 8,
+  float: 4, float32: 4, double: 8, float64: 8,
+}
+
+/** The layout of a struct type, parsed from the log's schema entry (null if the log has no schema for it). */
+export function structLayout(log: WpilogFile, type: string): StructLayout | null {
+  if (!log.structs) {
+    // The schema's last record wins (a schema is normally published once).
+    const texts = new Map<string, string>()
+    for (const e of log.entries.values()) {
+      const m = /\.schema\/struct:(\w+)$/.exec(e.name)
+      const from = log.entryStart[e.id], to = log.entryStart[e.id + 1]
+      if (e.type !== 'structschema' || !m || to <= from) continue
+      const h = readHeader(log.bytes, log.recordPos[to - 1])!
+      texts.set(m[1], utf8.decode(log.bytes.subarray(h.payloadPos, h.payloadPos + h.size)))
+    }
+    log.structs = new Map([...texts.keys()].map((name) => [name, parseStruct(name, texts, new Set())]))
+  }
+  return log.structs.get(type) ?? null
+}
+
+/**
+ * Parse a WPILib struct schema ("double x; double y; Rotation2d rotation; bool flag:1; enum {a=1} int8 mode") into
+ * a layout. Null when it names a struct the log has no schema for, or can't be read.
+ */
+export function parseStruct(name: string, texts: Map<string, string>, parents: Set<string>): StructLayout | null {
+  const text = texts.get(name)
+  if (text === undefined || parents.has(name)) return null
+  const fields: StructField[] = []
+  let offset = 0
+  // The integer a run of bit-fields is being packed into: its offset, size in bytes and the next free bit.
+  let bits: { offset: number; size: number; used: number } | null = null
+  for (const raw of text.split(';')) {
+    const decl = raw.replace(/^\s*enum\s*\{[^}]*\}\s*/, '').trim()
+    if (!decl) continue
+    const m = /^(\w+)\s+(\w+)\s*(?:\[\s*(\d+)\s*\])?\s*(?::\s*(\d+))?$/.exec(decl)
+    if (!m) return null
+    const [, type, fieldName, arrayLen, bitWidth] = m
+    if (bitWidth !== undefined) {
+      const size = type === 'bool' ? 1 : SCALAR_SIZES[type]
+      if (!size || type.startsWith('float') || type === 'double') return null
+      const width = Number(bitWidth)
+      // A bool bit-field packs into the run before it whatever that run's integer type, if it fits (WPILib struct
+      // spec, "Bit-Field Data Layout"); other bit-fields start a new run when the integer size changes.
+      const joins = bits && bits.used + width <= bits.size * 8 && (type === 'bool' || bits.size === size)
+      if (!joins) {
+        bits = { offset, size, used: 0 }
+        offset += size
+      }
+      fields.push({ name: fieldName, type, offset: bits!.offset, size: bits!.size, bitShift: bits!.used, bitWidth: width })
+      bits!.used += width
+      continue
+    }
+    bits = null
+    const count = arrayLen === undefined ? 1 : Number(arrayLen)
+    let size = SCALAR_SIZES[type]
+    let struct: StructLayout | undefined
+    if (size === undefined) {
+      const inner = parseStruct(type, texts, new Set([...parents, name]))
+      if (!inner) return null
+      struct = inner
+      size = inner.size
+    }
+    fields.push({ name: fieldName, type, offset, size, ...(struct ? { struct } : {}), ...(arrayLen !== undefined ? { arrayLength: count } : {}) })
+    offset += size * count
+  }
+  return { name, size: offset, fields }
+}
+
+/** Read one scalar struct field (bit-fields included) as a number. */
+function readField(view: DataView, pos: number, f: StructField): number {
+  let v: number
+  switch (f.type) {
+    case 'bool': case 'uint8': case 'char': v = view.getUint8(pos); break
+    case 'int8': v = view.getInt8(pos); break
+    case 'int16': v = view.getInt16(pos, true); break
+    case 'uint16': v = view.getUint16(pos, true); break
+    case 'int32': v = view.getInt32(pos, true); break
+    case 'uint32': v = view.getUint32(pos, true); break
+    case 'int64': v = Number(view.getBigInt64(pos, true)); break
+    case 'uint64': v = Number(view.getBigUint64(pos, true)); break
+    case 'float': case 'float32': return view.getFloat32(pos, true)
+    case 'double': case 'float64': return view.getFloat64(pos, true)
+    default: return NaN
+  }
+  if (f.bitWidth === undefined) return f.type === 'bool' ? (v !== 0 ? 1 : 0) : v
+  const unsigned = f.size === 8 ? Number(view.getBigUint64(pos, true)) : f.size === 4 ? view.getUint32(pos, true) : f.size === 2 ? view.getUint16(pos, true) : view.getUint8(pos)
+  return Math.floor(unsigned / 2 ** f.bitShift!) % 2 ** f.bitWidth
+}
+
+/** A whole struct record as a plain object, by its schema (arrays of fields become arrays). */
+function readStruct(view: DataView, pos: number, layout: StructLayout): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const f of layout.fields) {
+    const one = (p: number) => (f.struct ? readStruct(view, p, f.struct) : f.type === 'bool' && f.bitWidth === undefined ? view.getUint8(p) !== 0 : readField(view, p, f))
+    out[f.name] = f.arrayLength === undefined ? one(pos + f.offset) : Array.from({ length: f.arrayLength }, (_, i) => one(pos + f.offset + i * f.size))
+  }
+  return out
 }
 
 /** Visit each record of one entry: timestamp in seconds, payload position and size. */
@@ -170,9 +362,10 @@ function forEachRecord(log: WpilogFile, entry: WpilogEntry, visit: (t: number, p
  * Returns null when the entry is missing, so a rule can report "not checked" instead of failing.
  */
 export function readNumbers(log: WpilogFile, name: string): NumberSeries | null {
-  const entry = log.entries.get(name)
-  if (!entry) return null
-  const decode = numberDecoder(log, entry.type)
+  const found = resolveKey(log, name)
+  if (!found) return null
+  const entry = found.entry
+  const decode = found.field ? fieldDecoder(log, found.field) : found.bit !== undefined ? bitDecoder(log, found.bit) : numberDecoder(log, entry.type)
   if (!decode) throw new Error(`${name} has type ${entry.type}, which is not a single number`)
   const n = (log.entryStart[entry.id + 1] ?? 0) - (log.entryStart[entry.id] ?? 0)
   const t = new Float64Array(n)
@@ -185,7 +378,29 @@ export function readNumbers(log: WpilogFile, name: string): NumberSeries | null 
     v[i] = value
     i++
   })
-  return { name, t: t.subarray(0, i), v: v.subarray(0, i) }
+  return sortedByTime({ name, t: t.subarray(0, i), v: v.subarray(0, i) })
+}
+
+/**
+ * Records are in file order, which is time order except for the odd record a NetworkTables client stamped before
+ * its clock synced. Hold-last lookups need time order, so sort when that happens.
+ */
+function sortedByTime<S extends { name: string; t: Float64Array; v: Float64Array | unknown[] }>(s: S): S {
+  let sorted = true
+  for (let k = 1; k < s.t.length && sorted; k++) if (s.t[k] < s.t[k - 1]) sorted = false
+  if (sorted) return s
+  const order = Array.from(s.t.keys()).sort((a, b) => s.t[a] - s.t[b] || a - b)
+  const t = Float64Array.from(order, (k) => s.t[k])
+  const v = s.v instanceof Float64Array ? Float64Array.from(order, (k) => (s.v as Float64Array)[k]) : order.map((k) => (s.v as unknown[])[k])
+  return { ...s, t, v }
+}
+
+function fieldDecoder(log: WpilogFile, f: NonNullable<Resolved['field']>): (pos: number, size: number) => number | null {
+  return (pos, size) => (size === f.recordSize ? readField(log.view, pos + f.offset, f.field) : null)
+}
+
+function bitDecoder(log: WpilogFile, bit: number): (pos: number, size: number) => number | null {
+  return (pos, size) => (size === 8 ? Number((log.view.getBigUint64(pos, true) >> BigInt(bit)) & 1n) : null)
 }
 
 function numberDecoder(log: WpilogFile, type: string): ((pos: number, size: number) => number | null) | null {
@@ -207,8 +422,13 @@ function numberDecoder(log: WpilogFile, type: string): ((pos: number, size: numb
 
 /** Read any supported signal as plain JS values (strings, arrays, structs). Null when missing. */
 export function readValues<T = unknown>(log: WpilogFile, name: string): ValueSeries<T> | null {
-  const entry = log.entries.get(name)
-  if (!entry) return null
+  const found = resolveKey(log, name)
+  if (!found) return null
+  if (found.field || found.bit !== undefined) {
+    const n = readNumbers(log, name)!
+    return { name, t: n.t, v: Array.from(n.v) as T[] }
+  }
+  const entry = found.entry
   const t: number[] = []
   const v: T[] = []
   forEachRecord(log, entry, (time, pos, size) => {
@@ -217,7 +437,7 @@ export function readValues<T = unknown>(log: WpilogFile, name: string): ValueSer
     t.push(time)
     v.push(value as T)
   })
-  return { name, t: Float64Array.from(t), v }
+  return sortedByTime({ name, t: Float64Array.from(t), v })
 }
 
 /** Fixed-size structs we know how to read. Field order follows WPILib's struct schemas. */
@@ -253,6 +473,7 @@ function decodeValue(log: WpilogFile, type: string, pos: number, size: number): 
     case 'boolean': return size >= 1 ? bytes[pos] !== 0 : undefined
     case 'string':
     case 'json':
+    case 'structschema':
       return utf8.decode(bytes.subarray(pos, pos + size))
     case 'double[]': return Array.from({ length: size >> 3 }, (_, i) => view.getFloat64(pos + i * 8, true))
     case 'float[]': return Array.from({ length: size >> 2 }, (_, i) => view.getFloat32(pos + i * 4, true))
@@ -267,7 +488,14 @@ function decodeValue(log: WpilogFile, type: string, pos: number, size: number): 
     if (size % s.size !== 0) return undefined
     return Array.from({ length: size / s.size }, (_, i) => s.read(view, pos + i * s.size))
   }
-  return bytes.slice(pos, pos + size) // raw, proto and unknown structs: the bytes, undecoded
+  // Any other struct the log carries a schema for: a plain object of its fields.
+  const layout = struct ? structLayout(log, struct[1]) : null
+  if (struct && layout && layout.size > 0) {
+    if (!struct[2]) return size === layout.size ? readStruct(view, pos, layout) : undefined
+    if (size % layout.size !== 0) return undefined
+    return Array.from({ length: size / layout.size }, (_, i) => readStruct(view, pos + i * layout.size, layout))
+  }
+  return bytes.slice(pos, pos + size) // raw, proto and structs with no schema: the bytes, undecoded
 }
 
 function decodeStringArray(view: DataView, bytes: Uint8Array, pos: number, size: number): string[] | undefined {

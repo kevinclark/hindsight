@@ -7,6 +7,7 @@
  */
 import { hasEntry, readValues, type WpilogFile } from '../readers/wpilog.ts'
 import type { RobotProfile } from './types.ts'
+import { DATALOGMANAGER_SIGNALS } from './datalogmanager.ts'
 
 export interface ProfileChoice {
   how: 'chosen by you' | 'codebase and branch' | 'codebase' | 'signals' | 'given'
@@ -24,15 +25,21 @@ export interface ProfileChoice {
 /** Below this share of the profile's signals, the log is probably from another robot or another year's code. */
 export const PROFILE_FIT_MIN = 0.6
 
-/** Every signal the profile names (alert groups are folders of signals, not signals, so they don't count). */
+/** Keys every plain WPILib log has (DS:, NT:/FMSInfo, systemTime, console): they say nothing about which robot it is. */
+const GENERIC = new Set(Object.values(DATALOGMANAGER_SIGNALS).filter((k): k is string => typeof k === 'string'))
+
+/**
+ * Every signal the profile names (alert groups are folders of signals, not signals, so they don't count), less the
+ * keys any plain WPILib log has: otherwise a profile made mostly of those would fit every such log.
+ */
 export function profileKeys(profile: RobotProfile): string[] {
   const { alertGroups: _, ...signals } = profile.signals
   const keys = [
-    ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected])),
+    ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected, m.temperature])),
     ...profile.cameras.flatMap((c) => [c.acceptedPose, c.connected]),
     ...Object.values(signals),
   ]
-  return [...new Set(keys.filter((k): k is string => typeof k === 'string'))]
+  return [...new Set(keys.filter((k): k is string => typeof k === 'string' && k !== '' && !GENERIC.has(k)))]
 }
 
 export function profileFit(log: WpilogFile, profile: RobotProfile): { present: number; total: number } {
@@ -69,7 +76,8 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
       },
     }
   }
-  const ranked = profiles.map((p) => ({ p, fit: profileFit(log, p) })).sort((a, b) => b.fit.present / b.fit.total - a.fit.present / a.fit.total)
+  const share = (f: { present: number; total: number }) => (f.total ? f.present / f.total : 0)
+  const ranked = profiles.map((p) => ({ p, fit: profileFit(log, p) })).sort((a, b) => share(b.fit) - share(a.fit))
   const best = ranked[0]
   const named = codebase ? `The code in this log calls itself "${codebase}", and no profile is for that robot` : 'This log does not say which robot it is from (no Codebase entry)'
   return {

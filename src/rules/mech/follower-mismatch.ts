@@ -4,11 +4,15 @@
  * Checks: for each motor group marked `sameLoop` (a leader and its followers), at steady speed (leader above
  * 20 rot/s and within 3 % of its speed 0.5 s earlier), how long each motor ran more than 15 % off the leader.
  * Fires when one did for 1 s or more.
+ * A motor logged slower than 30 times a second (throttled telemetry) is compared only at its own records, each
+ * counting for its typical gap: between records its held value is stale, and a spinning-up leader would make a stale
+ * follower look slow.
  * Why: CalGames 2026 Q21: flywheel followers 17 and 18 dropped 25 % below the leader while shooting. It was a belt
  * slipping, fixed just before elims. The velocity loop only sees the leader, so nothing corrected it.
  */
-import { median } from '../../match/series.ts'
+import { indexAt, median } from '../../match/series.ts'
 import { rule, round } from '../rule.ts'
+import { SLOW_HZ, sampleRate } from '../view.ts'
 
 const DT = 0.02 // compare every 20 ms
 
@@ -34,14 +38,22 @@ export default rule({
     const leader = group.motors[0].velocity().onGrid(grid)
     const halfSecondAgo = Math.round(0.5 / DT)
 
-    // For each motor: its speed as a fraction of the leader's, at every steady moment.
-    const motors = group.motors.map((m) => ({ name: m.name, speed: m.velocity().onGrid(grid), ratios: [] as number[], times: [] as number[] }))
+    // For each motor: its speed as a fraction of the leader's, at every steady moment (a slowly logged motor: only
+    // just after its own records, each standing for its typical gap).
+    const motors = group.motors.map((m) => {
+      const velocity = m.velocity()
+      const rate = sampleRate(velocity.series, match.enabled)
+      const slow = !!rate && rate.fastHz < SLOW_HZ
+      return { name: m.name, speed: velocity.onGrid(grid), recordTimes: velocity.series.t, slow, weight: slow ? 1 / rate!.typicalHz : DT, ratios: [] as number[], times: [] as number[] }
+    })
+    const fresh = (m: (typeof motors)[0], t: number) => !m.slow || t - m.recordTimes[indexAt(m.recordTimes, t)] < DT
     for (let i = halfSecondAgo; i < grid.length; i++) {
       const now = Math.abs(leader[i])
       const before = Math.abs(leader[i - halfSecondAgo])
       const steady = now > 20 && Math.abs(now - before) <= 0.03 * now
       if (!steady) continue
       for (const m of motors) {
+        if (!fresh(m, grid[i])) continue
         m.ratios.push(Math.abs(m.speed[i]) / now)
         m.times.push(grid[i])
       }
@@ -50,18 +62,18 @@ export default rule({
     // The motor that spent longest more than 15 % off the leader, and its furthest moment.
     let worst = { name: '', secondsOff: 0, steadyShare: 0, median: 1, furthest: 1, at: 0 }
     for (const m of motors) {
-      const secondsOff = m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * DT
+      const secondsOff = m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * m.weight
       if (secondsOff <= worst.secondsOff) continue
       let furthest = 0
       for (let k = 1; k < m.ratios.length; k++) if (Math.abs(1 - m.ratios[k]) > Math.abs(1 - m.ratios[furthest])) furthest = k
-      worst = { name: m.name, secondsOff, steadyShare: secondsOff / (m.ratios.length * DT), median: median(m.ratios), furthest: m.ratios[furthest], at: m.times[furthest] }
+      worst = { name: m.name, secondsOff, steadyShare: secondsOff / (m.ratios.length * m.weight), median: median(m.ratios), furthest: m.ratios[furthest], at: m.times[furthest] }
     }
     if (worst.secondsOff < 1) return
 
-    const evidence: Record<string, number> = { 'steady seconds compared': round(motors[0].ratios.length * DT, 1) }
+    const evidence: Record<string, number> = { 'steady seconds compared': round(motors[0].ratios.length * motors[0].weight, 1) }
     for (const m of motors) {
       evidence[`${m.name}: median speed vs leader (%)`] = round(100 * median(m.ratios), 0)
-      evidence[`${m.name}: seconds > 15 % off`] = round(m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * DT, 1)
+      evidence[`${m.name}: seconds > 15 % off`] = round(m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * m.weight, 1)
     }
     evidence[`${worst.name}: share of steady time > 15 % off (%)`] = round(100 * worst.steadyShare, 0)
     evidence[`${worst.name} at its furthest (% of leader)`] = round(100 * worst.furthest, 0)

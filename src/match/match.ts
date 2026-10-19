@@ -1,8 +1,9 @@
 /**
  * The match model: one robot log plus everything rules need to know about the match it holds.
  *
- * - phases: when the robot was enabled, and whether in auto or teleop (from /DriverStation/Enabled + /Autonomous)
- * - event and match number (from /DriverStation/*)
+ * - phases: when the robot was enabled, and whether in auto or teleop (from /DriverStation/Enabled + /Autonomous,
+ *   or DS:enabled + DS:autonomous in a plain WPILib log)
+ * - event and match number (from /DriverStation/*, or NT:/FMSInfo/*; see profiles/datalogmanager.ts)
  * - the code build (from /RealMetadata/*)
  * - the wall clock, so a Driver Station log can be lined up with the robot log
  */
@@ -11,6 +12,7 @@ import { hasEntry, readNumbers, readValues, type WpilogFile } from '../readers/w
 import { dslogEndEpoch, type DslogFile } from '../readers/dslog.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import type { ProfileChoice } from '../profiles/choose.ts'
+import { withDataLogManagerKeys } from '../profiles/datalogmanager.ts'
 import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } from './series.ts'
 
 export interface Match {
@@ -72,14 +74,17 @@ export function firstPresent(match: Match, keys: string[]): string | null {
 
 const MATCH_TYPES = ['', 'Practice', 'Qualification', 'Elimination']
 
-export function buildMatch(fileName: string, log: WpilogFile, profile: RobotProfile, profileChoice: ProfileChoice = { how: 'given', note: null, fit: null }): Match {
+export function buildMatch(fileName: string, log: WpilogFile, givenProfile: RobotProfile, profileChoice: ProfileChoice = { how: 'given', note: null, fit: null }): Match {
+  // A plain WPILib log has the match identity under DS: and NT:/FMSInfo, whatever the profile says.
+  const profile = withDataLogManagerKeys(log, givenProfile)
   const s = profile.signals
   let logStart = Infinity
   let logEnd = -Infinity
-  // AdvantageKit logs /Timestamp every cycle, so its first and last records give the log's extent.
+  // AdvantageKit logs /Timestamp every cycle, so its first and last records give the log's extent; otherwise the
+  // first and last record of any kind.
   const clock = readNumbers(log, '/Timestamp') ?? readNumbers(log, s.batteryVoltage)
   if (clock && clock.t.length) { logStart = clock.t[0]; logEnd = clock.t[clock.t.length - 1] }
-  if (!Number.isFinite(logStart)) { logStart = 0; logEnd = 0 }
+  if (!Number.isFinite(logStart)) { logStart = log.firstTime; logEnd = log.lastTime }
 
   const match: Match = {
     fileName, log, profile, profileChoice, logStart, logEnd,
@@ -157,17 +162,23 @@ function findMatchWindow(match: Match, fms: NumberSeries | null): void {
   match.matchEnd = inMatch.at(-1)?.end ?? null
 }
 
-/** On the field, teleop starts this long after auto ends (3.0 s in all 12 FMS matches measured, 2025 and 2026 games). */
+/**
+ * On the field, teleop starts this long after auto ends: 3.0 s in 8033's 12 FMS matches (2025 game, 2026 offseason),
+ * 4.0 s in three official 2026 event logs (teams 340 and 3602).
+ */
 const FIELD_AUTO_TO_TELEOP_SECONDS = 3
+const FIELD_AUTO_TO_TELEOP_MAX_SECONDS = 4.5
 
 /**
- * Auto and teleop lengths from the log itself, for a log no profile fits, rounded to whole seconds. On the field, auto
- * is the time from auto start to teleop start less the 3 s pause (a robot disabled early in auto doesn't shorten it);
- * off the field, the first auto period. Teleop runs from the teleop enable to the end of the match.
+ * Auto and teleop lengths from the log itself, for a log no profile fits, rounded to whole seconds. On the field, an
+ * auto period that ran until the pause before teleop is the auto length; a robot disabled earlier doesn't shorten it,
+ * so then auto is the time from auto start to teleop start less the 3 s pause. Off the field, the first auto period.
+ * Teleop runs from the teleop enable to the end of the match.
  */
 function measuredGame(match: Match): RobotProfile['game'] {
   const auto = match.auto.find((iv) => match.matchStart !== null && iv.start >= match.matchStart)
-  const autoSeconds = match.fms && match.matchStart !== null && match.teleopStart !== null && match.teleopStart > match.matchStart
+  const ranToTheEnd = auto && match.teleopStart !== null && match.teleopStart - auto.end <= FIELD_AUTO_TO_TELEOP_MAX_SECONDS
+  const autoSeconds = match.fms && !ranToTheEnd && match.matchStart !== null && match.teleopStart !== null && match.teleopStart > match.matchStart
     ? Math.round(match.teleopStart - match.matchStart - FIELD_AUTO_TO_TELEOP_SECONDS)
     : auto ? Math.round(auto.end - auto.start) : 15
   // Teleop: the enable that starts it, plus re-enables within 15 s (a comms loss), so a practice enable long after the
@@ -183,6 +194,8 @@ function measuredGame(match: Match): RobotProfile['game'] {
   return { name: 'measured from this log', autoSeconds, teleopSeconds }
 }
 
+const EPOCH_2001_US = 978307200e6
+
 /** Median of (wall clock − log time) over records logged after the roboRIO clock was set. */
 function computeEpochOffset(match: Match): number | null {
   const s = match.profile.signals
@@ -192,7 +205,8 @@ function computeEpochOffset(match: Match): number | null {
   const validFrom = valid ? (Array.from(valid.t).find((_, i) => valid.v[i] > 0.5) ?? Infinity) : -Infinity
   const offsets: number[] = []
   for (let i = 0; i < epoch.t.length; i++) {
-    if (epoch.t[i] >= validFrom) offsets.push(epoch.v[i] / 1e6 - epoch.t[i])
+    // Before 2001 is a clock that was never set (a log with no SystemTimeValid flag to say so).
+    if (epoch.t[i] >= validFrom && epoch.v[i] > EPOCH_2001_US) offsets.push(epoch.v[i] / 1e6 - epoch.t[i])
   }
   return offsets.length ? median(offsets) : null
 }
