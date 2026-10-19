@@ -30,6 +30,7 @@
   function start() {
     const sweep = sweepText.split(',').map((s) => s.trim()).map((s) => (/^(none|no|off)/i.test(s) ? null : Number(s)))
     if (sweep.some((s) => s !== null && !(s > 0))) { problem = 'Sweep: numbers in amps, comma-separated, "none" for no limit.'; return }
+    if (new Set(sweep).size !== sweep.length) { problem = 'Sweep: each value once.'; return }
     session = newSession(profile, groupName, sweep)
     batteryIds = session.steps.map(() => '')
     problem = ''
@@ -59,8 +60,10 @@
     busy = -1
   }
 
+  // The battery label is saved as it was when the step was checked (it's part of what was measured). To change it,
+  // re-check the step.
   function save() {
-    if (session) downloadText(SESSION_FILE_NAME, serializeSession({ ...session, steps: session.steps.map((s, i) => ({ ...s, batteryId: batteryIds[i] ?? s.batteryId })) }))
+    if (session) downloadText(SESSION_FILE_NAME, serializeSession(session))
   }
 
   const label = (limitA: number | null) => (limitA === null ? 'no limit' : `${limitA} A`)
@@ -132,14 +135,16 @@
             </table>
           {/if}
           {#if step.took}
-            {#if step.took.ok}
-              <p class="ok">{step.took.motors.some((m) => m.verdict === 'held at the limit') ? 'The limit took effect' : 'Nothing went over the limit (the motors never needed this much, so this run can\'t show it holding)'}: {step.took.motors.map((m) => `${m.motor} ${m.verdict}`).join('; ')}.</p>
+            <p class="note">Per motor: {step.took.motors.map((m) => `${m.motor}: ${m.verdict} (peak ${m.peakA.toFixed(0)} A)`).join('; ')}.</p>
+            {#if step.took.problems.length === 0}
+              <p class="ok">The limit took effect on every motor{step.took.motors.every((m) => m.verdict === 'never had to hold') ? ' (none of them needed this much, so nothing went over it)' : ''}.</p>
             {:else}
               {#each step.took.problems as p (p)}<p class="warn" role="alert">{p}</p>{/each}
             {/if}
+            {#if batteryIds[i] !== step.batteryId}<p class="note">You changed the battery label after checking: check the step again to use it.</p>{/if}
           {/if}
         {/if}
-        <details class="quiz"><summary>Check your understanding: why not judge the peak current?</summary><p>The limiter needs a few hundredths of a second to catch up, so the peak always overshoots. A limit that works holds the current at the limit; one that didn't save stays far over it for longer than 0.2 s.</p></details>
+        <details class="quiz"><summary>Check your understanding: why not judge the peak current?</summary><p>The limiter needs a few hundredths of a second to catch up, so the peak always overshoots. A limit that works holds the current near the limit after a short overshoot. Whether a run can show that depends on the motor needing more than the limit, so compare with the no-limit step: a limit that took brings the peak current and the voltage dip down.</p></details>
       </div>
     </section>
   {/each}
@@ -151,12 +156,13 @@
         <div class="plots">
           <Scatter xLabel="peak group current (A)" yLabel="spin-up (s)" points={result.points.map((p) => ({ x: p.peakGroupA, y: p.timeToSetpoint, label: label(p.limitA), highlight: p.limitA === result.recommended?.limitA }))} />
           <Scatter xLabel="peak group current (A)" yLabel="dip (V)" points={result.points.map((p) => ({ x: p.peakGroupA, y: p.dipVolts, label: label(p.limitA), highlight: p.limitA === result.recommended?.limitA }))} />
+          <p class="note">Plotted: steps whose limit took (or no limit). Left out: {result.leftOut.length ? result.leftOut.map(label).join(', ') : 'none'}.</p>
         </div>
         <label>Slowest acceptable spin-up: <input type="number" min="0" max="200" step="5" bind:value={session.slowerByPct} /> % slower than no limit</label>
       {/if}
-      {#if result.leftOut.length}<p class="warn">Left out until re-run (the limit didn't take): {result.leftOut.map(label).join(', ')}.</p>{/if}
+      {#if result.leftOut.length}<p class="warn">Left out of the recommendation until re-run or confirmed (the limit didn't take, or these runs can't show it took): {result.leftOut.map(label).join(', ')}.</p>{/if}
       {#if result.recommended}
-        <p><strong>Recommended: {result.recommended.limitA} A</strong> — the lowest limit whose spin-up is within {session.slowerByPct} % of the {f2(result.recommended.baseline)} s with no limit.</p>
+        <p><strong>Recommended: {result.recommended.limitA} A</strong> — going down from the highest limit, the last one whose spin-up stayed within {session.slowerByPct} % of the {f2(result.recommended.baseline)} s with no limit.</p>
       {:else}
         <p class="note">No recommendation yet: check the no-limit step and at least one limit.</p>
       {/if}
@@ -183,8 +189,11 @@
   <h3>Stator-limit tests</h3>
   <div class="sub locked">
     <h4>Drive wheel slip <span class="chip">waiting for Kevin to agree the procedure</span></h4>
-    <p>The robot drives into a fixed wall on carpet while drive voltage ramps up (<code>VoltageOut</code>). Slip is where wheel velocity becomes non-zero and stator current drops (CTRE's criterion; odometry is wheel-based and can't see slip). Set the stator limit 10–15 % below the slip current.</p>
-    <p>Safety: bumpers on, hold-to-run button, automatic stop at slip, ≤ 3 s per ramp, nobody within 2 m, motors cool between ramps, a mentor present. Our drive limits (120 A stator, 40 A supply) sit below CTRE's ~130 A slip example, so both are raised in Tuner X for the test only. The ramp command is yours to write.</p>
+    <p class="stop"><strong>Do not run this test yet: Kevin has not agreed the procedure.</strong></p>
+    <p>What it will measure: slip is where wheel velocity becomes non-zero and stator current drops (CTRE's criterion; odometry is wheel-based and can't see slip). The stator limit goes 10–15 % below the slip current.</p>
+    <details><summary>The proposed procedure (for discussing with Kevin, not for running)</summary>
+      <p>The robot drives into a fixed wall on carpet while drive voltage ramps up (<code>VoltageOut</code>). Safety: bumpers on, hold-to-run button, automatic stop at slip, ≤ 3 s per ramp, nobody within 2 m, motors cool between ramps, a mentor present. Our drive limits (120 A stator, 40 A supply) sit below CTRE's ~130 A slip example, so the test would need both raised in Tuner X for the test only. The ramp command is the team's to write.</p>
+    </details>
   </div>
   <div class="sub">
     <h4>Hard-stop zeroing (from match logs, no robot run)</h4>
@@ -210,7 +219,8 @@
   .sub { border-top: 1px dashed var(--border); padding: 0.5rem 0; }
   .sub:first-of-type { border-top: none; }
   .unverified { font-size: 0.8rem; color: var(--warning); }
-  .locked { opacity: 0.75; }
+  .locked { opacity: 0.85; }
+  .stop { color: var(--error); }
   .chip { font-size: 0.75rem; font-weight: normal; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--warning); color: var(--warning); }
   .quiz { font-size: 0.85rem; margin-top: 0.4rem; }
   .quiz summary { cursor: pointer; color: var(--focus); }

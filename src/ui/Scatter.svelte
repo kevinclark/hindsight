@@ -25,7 +25,7 @@
   <text class="tick" x={P.l - 6} y={P.t + 8} text-anchor="end">{y1.toFixed(2)}</text>
   <text class="tick" x={P.l - 6} y={H - P.b} text-anchor="end">{y0.toFixed(2)}</text>
   <text class="tick" x={4} y={(H - P.b + P.t) / 2}>{yLabel}</text>
-  {#each ok as p (p.label)}
+  {#each ok as p, i (i)}
     <circle cx={x(p.x)} cy={y(p.y)} r={p.highlight ? 6 : 4} class:hl={p.highlight} />
     <text class="label" x={x(p.x) + 8} y={y(p.y) + 4}>{p.label}</text>
   {/each}

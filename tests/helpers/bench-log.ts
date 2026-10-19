@@ -21,6 +21,8 @@ export interface BenchOptions {
   notSavedOn?: string
   /** Shift each run's battery voltage (V), e.g. [0, 0, -0.4] for a third run on a tired battery. */
   voltsOffset?: number[]
+  /** Log a battery ID per run (as the battery tracker will), e.g. ['B07', 'B07', 'B03']. */
+  batteryIds?: string[]
 }
 
 export function benchLog(opts: BenchOptions): Uint8Array {
@@ -66,7 +68,11 @@ export function benchLog(opts: BenchOptions): Uint8Array {
       }
     }
   })
+  const ids: FixtureEntry[] = opts.batteryIds
+    ? [{ name: '/RealOutputs/Battery/Id', type: 'string', records: opts.batteryIds.map((id, run) => [10 + run * 10 - 1, id]) }]
+    : []
   const entries: FixtureEntry[] = [
+    ...ids,
     { name: '/DriverStation/Enabled', type: 'boolean', records: [[5, true]] },
     { name: '/DriverStation/Autonomous', type: 'boolean', records: [[5, false]] },
     ...[...out.values()].map((e) => ({ ...e, records: e.records.sort((a, b) => (a[0] as number) - (b[0] as number)) })),

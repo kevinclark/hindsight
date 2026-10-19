@@ -9,7 +9,7 @@
 import type { Match } from '../match/match.ts'
 import type { MotorGroup, RobotProfile } from '../profiles/types.ts'
 import { median } from '../match/series.ts'
-import { findSpinUps, recommend, runsComparable, settingTookEffect, shotRecoveries, summarize, type Comparable, type SpinUp, type SweepPoint, type TookEffect } from './sweep.ts'
+import { confirmed, findSpinUps, recommend, runsComparable, settingTookEffect, shotRecoveries, summarize, type Comparable, type SpinUp, type SweepPoint, type TookEffect } from './sweep.ts'
 import { robotBudget, type Budget } from './budget.ts'
 
 export const SESSION_SCHEMA = 'hindsight.limits-session/1'
@@ -71,7 +71,7 @@ export function comparability(session: LimitsSession): Comparable {
 
 export interface SweepResult {
   points: SweepPoint[]
-  /** Steps left out because their limit didn't take (re-run them). */
+  /** Steps left out because their limit didn't take, or the runs can't show it took (re-run or check them). */
   leftOut: (number | null)[]
   recommended: { limitA: number; baseline: number } | null
   /** Shot recovery in the loaded match logs (median, count), the match version of spin-up time. */
@@ -83,21 +83,22 @@ export interface SweepResult {
 }
 
 export function sweepResult(session: LimitsSession, profile: RobotProfile, matches: Match[]): SweepResult {
-  // A step whose limit didn't take measured something else: leave it out until it is re-run.
-  const usable = session.steps.filter((s) => s.runs.length > 0 && (s.took === null || s.took.ok))
+  // A step whose limit didn't take (or can't be shown to have taken) may have measured something else: it is plotted
+  // but left out of the recommendation until it is re-run or confirmed.
+  const usable = session.steps.filter((s) => s.runs.length > 0 && confirmed(s.took))
   const points = usable.map((s) => summarize(s.limitA, s.runs.filter((r) => Number.isFinite(r.timeToSetpoint))))
   const recommended = recommend(points, session.slowerByPct / 100)
   const group = groupOf(profile, session)
   const recoveries = matches.flatMap((m) => shotRecoveries(m, group))
   const budget = recommended && matches[0] ? robotBudget(matches[0], { [group.name]: recommended.limitA }) : null
   const where = group.limits.supplyLines ?? group.limits.where
-  const lower = session.lowerLimitA !== null && session.lowerSeconds !== null
+  const lower = Number.isFinite(session.lowerLimitA) && Number.isFinite(session.lowerSeconds)
     ? `, SupplyCurrentLowerLimit = ${session.lowerLimitA} and SupplyCurrentLowerTime = ${session.lowerSeconds}`
     : ' (and choose SupplyCurrentLowerLimit / SupplyCurrentLowerTime: if you leave them out, Phoenix drops the cap to 40 A after 1 s at the limit)'
   const codeChange = recommended
     ? `${where}: SupplyCurrentLimit = ${recommended.limitA} and SupplyCurrentLimitEnable = true${lower}`
     : 'No recommendation yet: run and check the no-limit step and at least one limit.'
-  const leftOut = session.steps.filter((s) => s.took !== null && !s.took.ok).map((s) => s.limitA)
+  const leftOut = session.steps.filter((s) => s.runs.length > 0 && !confirmed(s.took)).map((s) => s.limitA)
   return { points, leftOut, recommended, recovery: { median: median(recoveries), shots: recoveries.length, matches: matches.length }, budget, codeChange }
 }
 

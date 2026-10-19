@@ -89,6 +89,8 @@
   function onDrop(e: DragEvent) {
     e.preventDefault()
     dragging = false
+    // In the wizard, logs go to a step's own "Check it" box, not to Match review.
+    if (mode === 'wizard') return
     if (e.dataTransfer?.files) load(e.dataTransfer.files)
   }
 
@@ -110,7 +112,7 @@
   const fmtDuration = (a: Analysis) => (a.match.matchStart !== null && a.match.matchEnd !== null ? `${(a.match.matchEnd - a.match.matchStart).toFixed(0)} s match` : 'never enabled')
 </script>
 
-<svelte:window ondragover={(e) => { e.preventDefault(); dragging = true }} ondragleave={(e) => { if (e.relatedTarget === null) dragging = false }} ondrop={onDrop} />
+<svelte:window ondragover={(e) => { e.preventDefault(); dragging = mode === 'review' }} ondragleave={(e) => { if (e.relatedTarget === null) dragging = false }} ondrop={onDrop} />
 
 <header>
   <h1>Hindsight</h1>

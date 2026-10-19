@@ -43,7 +43,9 @@ export function robotBudget(match: Match, caps: Record<string, number> = {}): Bu
     const l = limits.find((x) => x.group === g.name)!
     const capPerMotorA = caps[g.name] ?? l.capPerMotorA
     const observedA = g.amps[worst]
-    return { group: g.name, motors: l.motorCount, observedA, capPerMotorA, capTotalA: capPerMotorA * l.motorCount, active: observedA > 5 }
+    // No limit at all (both switched off): there is no cap to add up, so count what it drew then.
+    const capTotalA = Number.isFinite(capPerMotorA) ? capPerMotorA * l.motorCount : observedA
+    return { group: g.name, motors: l.motorCount, observedA, capPerMotorA, capTotalA, active: observedA > 5 }
   })
   const other = match.profile.power.otherLoadsAmps
   const weakestOcv = Math.min(...FLEET_REFERENCE.map((p) => p.volts))
@@ -56,11 +58,12 @@ export function robotBudget(match: Match, caps: Record<string, number> = {}): Bu
   return {
     at: grid.t[worst], weakestOcv, resistanceOhms: R, otherLoadsA: other, rows,
     scenarios: [
-      { name: 'as logged at that moment', amps: asLogged, volts: volts(asLogged) },
+      { name: "that moment's current, on the weakest fleet battery", amps: asLogged, volts: volts(asLogged) },
       { name: 'that moment, with the limits applied', amps: capped, volts: volts(capped) },
       { name: 'every group that was running, at its full limit', amps: allAtCap, volts: volts(allAtCap) },
     ],
-    floor: (setting ? valueAt(setting, Infinity) : 6) + 1,
+    // The roboRIO 2's default brownout setting is 6.75 V, if the log doesn't say.
+    floor: (setting ? valueAt(setting, Infinity) : 6.75) + 1,
   }
 }
 

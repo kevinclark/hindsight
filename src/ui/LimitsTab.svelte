@@ -45,7 +45,7 @@
     <dl class="config">
       <div><dt>Supply limit</dt><dd class:off={g.supply.limitA !== null && !g.supply.on}>{limitText(g.supply)}</dd><dd class="note">{g.supply.note}</dd></div>
       <div><dt>Stator limit</dt><dd class:off={g.stator.limitA !== null && !g.stator.on}>{limitText(g.stator)}</dd><dd class="note">{g.stator.note}</dd></div>
-      <div><dt>Battery draw capped at</dt><dd>{g.capPerMotorA} A per motor</dd><dd class="note">{g.motorCount} motors · at the limit {(100 * g.shareAtLimit).toFixed(1)} % of enabled time</dd></div>
+      <div><dt>Battery draw capped at</dt><dd class:off={!Number.isFinite(g.capPerMotorA)}>{Number.isFinite(g.capPerMotorA) ? `${g.capPerMotorA} A per motor` : 'nothing: both limits switched off'}</dd><dd class="note">{g.motorCount} motors · at the limit {(100 * g.shareAtLimit).toFixed(1)} % of enabled time</dd></div>
       <div><dt>Set in</dt><dd><code>{g.where}</code></dd></div>
     </dl>
     {#each [g.supply, g.stator] as l (l.kind)}

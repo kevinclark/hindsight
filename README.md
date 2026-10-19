@@ -37,16 +37,26 @@ settings**: it tells students what to set and which line to change, and they do 
   checks the limit took effect on every motor, flags runs that can't be compared, and recommends the limit at the knee,
   with the code line to change and a final read-back check. Progress saves to `limits-session.json`.
   The drive wheel-slip test is shown but locked until Kevin agrees the procedure.
-- `scripts/limits-reference.ts` recomputes the Part A numbers a second way (a port of
-  `8033/robot/hindsight-research/whatif/current_limit_check.py` reading the .wpilog directly).
+- `scripts/limits-reference.ts` recomputes the Part A numbers a second way: the method of
+  `8033/robot/hindsight-research/whatif/current_limit_check.py` (5 ms hold-last grid, more than 5 A over the limit),
+  applied to supply current. It shares the app's .wpilog reader, so it checks the interval maths, not the decoding;
+  the comparison with the brief's Python-derived numbers covers decoding. Flywheel leader over 45 A: app 6.09 / 6.83 /
+  6.75 s, reference 6.11 / 6.85 / 6.76 s, brief 6.06 / 6.80 / 6.72 s (Q13 / Q21 / P0); the 0.03–0.05 s differences are
+  the grid and the enabled-time window.
 
 ### Where this differs from the brief (and why)
 
 - **"Did the limit take?"** The brief judges the most common 2 A bin of samples ≥ 30 A against ±10 % of the limit. On
   real CalGames spin-ups that check fails both ways: at 60 A the mode is 33–39 A (the motor rarely needs 60 A), and
-  a follower whose 40 A limit wasn't saved has a mode of 35 A while peaking at 73 A. The wizard says a limit **didn't
-  take** when a motor stays above 110 % of it for more than 0.2 s; it **held** when the mode is within ±10 %; otherwise
-  it **never had to hold**. The drive's real 40 A plateau (mode 38–40 A) passes.
+  a follower whose 40 A limit wasn't saved has a mode of 35 A while peaking at 73 A. Per motor the wizard says:
+  **didn't take** (more than 0.3 s above 110 % of the limit; a working CalGames limiter stayed above for up to 0.21 s),
+  **held at the limit** (mode within ±10 %, the brief's check; the drive's real 40 A plateau, mode 38–40 A, passes),
+  **never had to hold** (never above 110 %), or **can't tell** (above it only briefly, which a working limiter also
+  does). On the CalGames spin-ups, 60 A and 50 A steps are "can't tell" whether or not the limit was saved, so those
+  steps are plotted but left out of the recommendation until a run confirms them; the comparison with the no-limit
+  step (lower peak, smaller dip) is what shows them working.
+- **The recommendation** walks down from the highest limit and stops at the first one that is too slow, so a noisy
+  low step can't win.
 - **Runs 5 s apart** won't start from a standstill: the CalGames flywheel took more than 5 s to coast down (45 → 7 rot/s
   in 5 s). The run card says to wait until the wheel stops (about 10 s).
 - **Spin-up time** is to within 10 % of the target speed: holding speed, the flywheel ripples ±5 % around its setpoint.
@@ -57,6 +67,8 @@ settings**: it tells students what to set and which line to change, and they do 
 
 ### To verify on the robot (unverified until a run confirms each)
 
+- The took-effect check is only decisive where the no-limit run goes over 110 % of the limit for more than 0.3 s
+  (on the CalGames spin-ups: 40 A and below). The first real sweep must confirm it at 60 and 50 A.
 - A limit set in Phoenix Tuner X holds while the robot code runs, until the next boot.
 - It applies the same way to the followers (CAN IDs 16–18) as to the leader (15).
 - `SupplyCurrentLowerTime = 0` disables the step-down to the lower limit during the sweep.

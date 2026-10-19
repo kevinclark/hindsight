@@ -95,11 +95,15 @@ function measure(match: Match, group: MotorGroup, v: NumberSeries, setpoint: Num
   }
   let startVolts = NaN, low = NaN
   if (battery) {
-    startVolts = median(battery.v.filter((_, i) => battery.t[i] >= start - 0.5 && battery.t[i] < start))
+    const before = battery.v.filter((_, i) => battery.t[i] >= start - 0.5 && battery.t[i] < start)
+    startVolts = before.length ? median(before) : valueAt(battery, start)
     for (let i = Math.max(0, indexAt(battery.t, start)); i < battery.t.length && battery.t[i] <= end; i++) if (!(battery.v[i] >= low)) low = battery.v[i]
   }
   const idKey = match.profile.battery.id.find((k) => has(match, k))
-  const batteryId = idKey ? (values<string>(match, idKey)!.v.filter((x) => x).at(-1) ?? null) : null
+  // The battery in the robot at this run (held value at the start), so a swap between runs shows.
+  const ids = idKey ? values<string>(match, idKey)! : null
+  const idAtStart = ids ? ids.v[indexAt(ids.t, start)] : undefined
+  const batteryId = idAtStart ? idAtStart : null
   return { start, timeToSetpoint: Number.isFinite(reachedAt) ? reachedAt - start : NaN, target, peakSupply, plateau, supply, startVolts, dipVolts: startVolts - low, batteryId }
 }
 
@@ -113,24 +117,29 @@ export function modalBin(amps: number[], binA: number): number | null {
   return (best + 0.5) * binA
 }
 
+export type TookVerdict = 'held at the limit' | 'never had to hold' | 'cannot tell' | 'did not take'
+
 export interface TookEffect {
+  /** False when any motor didn't take. "Cannot tell" isn't a failure, but those steps aren't used for the recommendation. */
   ok: boolean
-  /** One line per motor that didn't hold the limit, in plain words. */
+  /** One line per motor that didn't hold the limit, or that this run can't judge, in plain words. */
   problems: string[]
-  /** Per motor: held at the limit, never needed to hold, or didn't take. */
-  motors: { motor: string; verdict: 'held at the limit' | 'never had to hold' | 'did not take'; modeA: number | null; secondsOver: number }[]
+  motors: { motor: string; verdict: TookVerdict; modeA: number | null; peakA: number; secondsOver: number }[]
 }
 
+/** Longer than this above 110 % of the limit is a limit that didn't take. A working CalGames limiter stayed above for
+ * up to 0.21 s (Q13 front-left drive at 40 A: 0.208 s), so the cut sits at 0.3 s. */
+export const DID_NOT_TAKE_SECONDS = 0.3
+
 /**
- * Did the supply limit the student set take effect on every motor?
- *
- * Didn't take: the motor spent more than 0.2 s (in one run) above 110 % of the limit. A limiter that is working only
- * overshoots briefly (≤ 0.21 s at CalGames).
- * Held at the limit: the most common 2 A bin of samples ≥ 30 A is within ±10 % of the limit (the brief's check;
- * Q13 drive at 40 A: mode 38–40 A while p99 is 46–53 A, so peaks and p99 aren't judged).
- * Never had to hold: neither. The motor drew less than the limit most of the time, so the run can't show the limit
- * holding, but nothing went over it either. (The brief's modal check alone calls these failures: on the CalGames
- * spin-ups at 60 A the mode is 33–39 A.)
+ * Did the supply limit the student set take effect on every motor? Per motor, over the step's runs:
+ *  - did not take: more than 0.3 s above 110 % of the limit in one run;
+ *  - held at the limit: the most common 2 A bin of samples ≥ 30 A is within ±10 % of the limit (the brief's check;
+ *    Q13 drive at 40 A: mode 38–40 A while p99 is 46–53 A, so peaks aren't judged);
+ *  - never had to hold: the current never went above 110 % of the limit at all;
+ *  - cannot tell: it went over, but only briefly, and a working limiter overshoots that long too. On the CalGames
+ *    spin-ups this is what a 60 A or 50 A step looks like whether or not the limit was saved, so only the
+ *    comparison with the no-limit step (lower peak, slower spin-up) can show it took.
  */
 export function settingTookEffect(runs: SpinUp[], limitA: number): TookEffect {
   const problems: string[] = []
@@ -140,16 +149,27 @@ export function settingTookEffect(runs: SpinUp[], limitA: number): TookEffect {
     const modes = runs.map((r) => r.plateau.find((p) => p.motor === motor)?.amps).filter((a): a is number => a !== null && a !== undefined)
     const modeA = modes.length ? median(modes) : null
     const secondsOver = Math.max(0, ...runs.map((r) => longestAbove(r.supply.find((s) => s.motor === motor)?.samples ?? [], 1.1 * limitA)))
-    const peak = Math.max(0, ...runs.map((r) => r.peakSupply.find((p) => p.motor === motor)?.amps ?? 0))
-    if (secondsOver > 0.2) {
-      verdicts.push({ motor, verdict: 'did not take', modeA, secondsOver })
-      problems.push(`${motor} still at ${peak.toFixed(0)} A (over ${(1.1 * limitA).toFixed(0)} A for ${secondsOver.toFixed(2)} s), not held at ${limitA} A: was the limit saved on every motor?`)
+    const peakA = Math.max(0, ...runs.map((r) => r.peakSupply.find((p) => p.motor === motor)?.amps ?? 0))
+    let verdict: TookVerdict
+    if (secondsOver > DID_NOT_TAKE_SECONDS) {
+      verdict = 'did not take'
+      problems.push(`${motor} still at ${peakA.toFixed(0)} A (over ${(1.1 * limitA).toFixed(0)} A for ${secondsOver.toFixed(2)} s), not held at ${limitA} A: was the limit saved on every motor?`)
+    } else if (modeA !== null && Math.abs(modeA - limitA) <= 0.1 * limitA) {
+      verdict = 'held at the limit'
+    } else if (peakA <= 1.1 * limitA) {
+      verdict = 'never had to hold'
     } else {
-      const held = modeA !== null && Math.abs(modeA - limitA) <= 0.1 * limitA
-      verdicts.push({ motor, verdict: held ? 'held at the limit' : 'never had to hold', modeA, secondsOver })
+      verdict = 'cannot tell'
+      problems.push(`Can't tell from these runs whether the limit took on ${motor}: it peaked at ${peakA.toFixed(0)} A (limit ${limitA} A) but only for ${secondsOver.toFixed(2)} s, and a working limiter overshoots that long too. Compare with the no-limit step: a limit that took brings the peak and the dip down.`)
     }
+    verdicts.push({ motor, verdict, modeA, peakA, secondsOver })
   }
-  return { ok: problems.length === 0, problems, motors: verdicts }
+  return { ok: !verdicts.some((v) => v.verdict === 'did not take'), problems, motors: verdicts }
+}
+
+/** True when every motor either held the limit or never needed to: the step can be trusted for the recommendation. */
+export function confirmed(took: TookEffect | null): boolean {
+  return took === null || took.motors.every((m) => m.verdict === 'held at the limit' || m.verdict === 'never had to hold')
 }
 
 /** Longest stretch (hold-last) a list of [time, amps] samples stayed above `amps`. */
@@ -195,15 +215,20 @@ export function summarize(limitA: number | null, runs: SpinUp[]): SweepPoint {
 }
 
 /**
- * The recommended limit: the lowest one whose spin-up time is within `slowerBy` (default 20 %) of the no-limit run.
- * Null when there is no no-limit baseline yet.
+ * The recommended limit: going down from the highest, the last one whose spin-up time is within `slowerBy` (default
+ * 20 %) of the no-limit run (every limit above it must pass too). Null when there is no no-limit baseline yet.
  */
 export function recommend(points: SweepPoint[], slowerBy = 0.2): { limitA: number; baseline: number } | null {
   const base = points.find((p) => p.limitA === null)
   if (!base || !Number.isFinite(base.timeToSetpoint)) return null
-  const ok = points.filter((p) => p.limitA !== null && p.timeToSetpoint <= base.timeToSetpoint * (1 + slowerBy))
-  if (ok.length === 0) return null
-  return { limitA: Math.min(...ok.map((p) => p.limitA!)), baseline: base.timeToSetpoint }
+  // Walk down from the highest limit; stop at the first one that is too slow, so a noisy low step can't win.
+  const limits = points.filter((p) => p.limitA !== null).sort((a, b) => b.limitA! - a.limitA!)
+  let best: number | null = null
+  for (const p of limits) {
+    if (!(p.timeToSetpoint <= base.timeToSetpoint * (1 + slowerBy))) break
+    best = p.limitA
+  }
+  return best === null ? null : { limitA: best, baseline: base.timeToSetpoint }
 }
 
 /**

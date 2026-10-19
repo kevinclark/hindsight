@@ -87,8 +87,11 @@ function groupLimits(match: Match, g: MotorGroup): GroupLimits {
     note: statorOn ? `capped at ${statorLimit} A` : statorLimit !== null ? `switched off in code: this removes Phoenix's default ${PHOENIX_DEFAULTS.statorA} A stator limit` : `not set: Phoenix's default ${PHOENIX_DEFAULTS.statorA} A applies`,
     motors: g.motors.flatMap((m) => (m.statorCurrent && has(match, m.statorCurrent) ? [stats(match, m.name, num(match, m.statorCurrent)!, statorLimit ?? PHOENIX_DEFAULTS.statorA)] : [])),
   }
-  // Supply can't exceed stator, so with the supply limit off the stator limit is the effective cap on battery draw.
-  const capPerMotorA = supplyOn ? supplyLimit! : statorOn ? statorLimit! : supplyLimit === null ? PHOENIX_DEFAULTS.supplyA : PHOENIX_DEFAULTS.statorA
+  // What actually caps battery draw: each limit that exists (configured and on, or not set so Phoenix's default
+  // applies; a limit switched off in code is gone). Supply can't exceed stator, so the stator limit caps it too.
+  const supplyCap = supplyOn ? supplyLimit! : supplyLimit === null ? PHOENIX_DEFAULTS.supplyA : Infinity
+  const statorCap = statorOn ? statorLimit! : statorLimit === null ? PHOENIX_DEFAULTS.statorA : Infinity
+  const capPerMotorA = Math.min(supplyCap, statorCap)
   const limiting = supplyOn ? supply : statorOn ? stator : supply
   const enabledSeconds = match.enabled.reduce((s, iv) => s + iv.end - iv.start, 0)
   const atLimit = limiting.motors.length ? Math.max(...limiting.motors.map((m) => m.secondsAtLimit)) : 0
