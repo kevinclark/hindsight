@@ -16,6 +16,7 @@
     { key: 'loopOverrunPct', label: 'Auto loops over 20 ms', unit: '%', digits: 1, line: 10 },
     { key: 'visionOutlierPct', label: 'Vision poses > 0.5 m off', unit: '%', digits: 1, line: 5 },
   ]
+  // Five colours; batteries beyond five also get a letter on the point so none can be confused.
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
   const battery = (m: MatchSummary) => m.batteryId ?? typedBatteries[m.fileName] ?? ''
   const batteries = $derived([...new Set(matches.map(battery).filter(Boolean))])
@@ -45,6 +46,7 @@
           {#each matches as m, i (m.fileName)}
             {@const v = p.vals[i]}
             {#if v !== null && Number.isFinite(v)}
+              {#if batteries.length > COLORS.length && battery(m)}<text class="tag" x={p.x(i) + 4} y={p.y(v) - 4}>{batteries.indexOf(battery(m)) + 1}</text>{/if}
               <circle cx={p.x(i)} cy={p.y(v)} r="3.5" fill={colour(m)}><title>{m.matchLabel || m.fileName}: {v.toFixed(metric.digits)} {metric.unit}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
             {/if}
           {/each}
@@ -57,7 +59,7 @@
   {/each}
 </div>
 {#if batteries.length}
-  <p class="key">{#each batteries as b, i (b)}<span><span class="dot" style={`background:${COLORS[i % COLORS.length]}`}></span>{b}</span>{/each}<span><span class="dot" style="background:var(--muted)"></span>no battery ID</span></p>
+  <p class="key">{#each batteries as b, i (b)}<span><span class="dot" style={`background:${COLORS[i % COLORS.length]}`}></span>{batteries.length > COLORS.length ? `${i + 1} ` : ''}{b}</span>{/each}<span><span class="dot" style="background:var(--muted)"></span>no battery ID</span></p>
 {:else}
   <p class="key">No battery IDs yet: type them in the list below to colour the points by battery.</p>
 {/if}
@@ -68,6 +70,7 @@
   figcaption { font-size: 0.8rem; }
   figcaption span, .range, .none, .key { color: var(--muted); font-size: 0.75rem; }
   svg { width: 100%; height: auto; display: block; border-bottom: 1px solid var(--border); }
+  .tag { font-size: 8px; fill: var(--muted); }
   .ref { stroke: var(--error); stroke-dasharray: 3 3; stroke-width: 1; opacity: 0.6; }
   .key { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }

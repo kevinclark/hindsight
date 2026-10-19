@@ -27,7 +27,10 @@ export interface Session {
 
 const DAY = 86400e3
 
-/** Group summaries into sessions. `overrides` maps a file name to a session label the student chose. */
+/**
+ * Group summaries into sessions. `overrides` maps a file name to the label of the session the student moved it to:
+ * an existing session with that label if there is one, else a new one. `renames` maps a session id to a new label.
+ */
 export function groupSessions(summaries: MatchSummary[], overrides: Record<string, string> = {}, renames: Record<string, string> = {}): Session[] {
   const sorted = [...summaries].sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity) || a.fileName.localeCompare(b.fileName))
   const sessions: Session[] = []
@@ -37,19 +40,30 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
     if (!s) { s = { id, label: renames[id] ?? label, kind, matches: [] }; byId.set(id, s); sessions.push(s) }
     s.matches.push(m)
   }
+  // Automatic grouping first, for every log the student hasn't moved.
   for (const m of sorted) {
-    const manual = overrides[m.fileName]
-    if (manual) { add(`manual:${manual}`, manual, 'practice', m); continue }
+    if (overrides[m.fileName]) continue
     if (m.playedAt === null) { add('undated', 'Logs with no date', 'undated', m); continue }
     if (m.onField && m.event) {
-      // Same event name within 4 days of the event's last match: the same event.
+      // Same event name within 4 days of the event's last match: the same event. The id is the event name and its
+      // first day, so a rename survives adding more logs from that day.
       const open = sessions.find((s) => s.kind === 'event' && s.id.startsWith(`event:${m.event}:`) && m.playedAt! - (s.matches.at(-1)!.playedAt ?? 0) < 4 * DAY)
       if (open) { open.matches.push(m); continue }
-      add(`event:${m.event}:${m.playedAt}`, `Event ${m.event} (${dateText(m.playedAt)})`, 'event', m)
+      add(`event:${m.event}:${dateText(m.playedAt)}`, `Event ${m.event} (${dateText(m.playedAt)})`, 'event', m)
       continue
     }
     const day = dateText(m.playedAt)
     add(`practice:${day}`, `Practice ${day}`, 'practice', m)
+  }
+  // Then the logs the student moved: into the session with that label if it exists, else a new one.
+  for (const m of sorted) {
+    const label = overrides[m.fileName]
+    if (!label) continue
+    const target = sessions.find((s) => s.label === label)
+    if (target) {
+      target.matches.push(m)
+      target.matches.sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity))
+    } else add(`manual:${label}`, label, 'practice', m)
   }
   return sessions
 }
@@ -85,7 +99,7 @@ export function wilson(k: number, n: number, z = 1.96): [number, number] {
 }
 
 export function confidence(fired: number, checkable: number): Confidence {
-  if (checkable < 2) return fired > 0 ? 'not enough data' : 'not enough data'
+  if (checkable < 2) return 'not enough data'
   if (fired === 0) return 'quiet'
   if (fired === 1) return 'once'
   if (checkable >= 3 && fired / checkable > 0.5) return 'consistent'

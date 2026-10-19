@@ -36,6 +36,7 @@ export default rule({
         'seconds with outputs off after each': deadSeconds.map((d) => (Number.isFinite(d) ? d.toFixed(1) : '?')).join(', '),
         'lowest battery voltage in the 0.5 s before each (V)': battery ? losses.map((t) => battery.lowest(match.before(t, 0.5)).value.toFixed(2)).join(', ') : 'not logged',
       },
+      measured: [{ label: 'comms losses', value: losses.length, unit: '' }],
       plot: [match.signal('dsAttached', 'DS attached'), ...(match.has('systemActive') ? [match.signal('systemActive', 'Outputs enabled')] : [])],
       plotFrom: losses[0] - 5, plotTo: losses[losses.length - 1] + 10, plotMarks: losses,
     }

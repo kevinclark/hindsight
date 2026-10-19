@@ -26,7 +26,8 @@ export default rule({
     return early.map((a) => ({
       message: `Disabled in auto at ${a.end.toFixed(1)} s with ${match.timeLeft(a.end).toFixed(1)} s of auto left`,
       at: a.end,
-      measured: [{ label: 'auto time left', value: round(match.timeLeft(a.end), 1), unit: 's', threshold: 1 }],
+      // Context only: how much auto was left when it was disabled ("× the line" would read as how bad it was).
+      measured: [{ label: 'left in auto when disabled', value: round(match.timeLeft(a.end), 1), unit: 's' }],
       evidence: { 'auto enabled (s)': round(match.autoStart!), 'disabled (s)': round(a.end), 'auto time left (s)': round(match.timeLeft(a.end), 1), 'DS still attached': 'yes' },
       plot: gyro,
       plotUnit: '°', plotFrom: match.autoStart! - 1, plotTo: a.end + 4, plotMarks: [a.end],

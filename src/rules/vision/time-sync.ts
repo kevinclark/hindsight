@@ -25,6 +25,7 @@ export default rule({
     const times = (a: (typeof syncAlerts)[0]) => a.onsetsInMatch.length + a.onsetsOutsideMatch
     return {
       message: `Camera time-sync problems: ${syncAlerts.reduce((n, a) => n + times(a), 0)} alerts`,
+      measured: [{ label: 'time-sync alerts', value: syncAlerts.reduce((n, a) => n + times(a), 0), unit: '' }],
       evidence: Object.fromEntries(syncAlerts.map((a) => [a.text, `${times(a)}× (${a.onsetsInMatch.length} during the match)`])),
     }
   },

@@ -5,12 +5,11 @@
 
 import { analyzeFiles, type InputFile } from '../analyze.ts'
 import { has, num, values, type Match } from '../match/match.ts'
-import { makeGrid, median, resample } from '../match/series.ts'
+import { heldAt, makeGrid, median, resample } from '../match/series.ts'
 import { powerReport } from '../power/power-report.ts'
 import { RULES, type Report } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
-import { heldAt } from '../match/series.ts'
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
@@ -46,8 +45,10 @@ export interface MatchMetrics {
   visionOutlierPct: number | null
 }
 
-/** A roboRIO with an unset clock reads late 2024; anything before this is treated as not set. */
-const EARLIEST_PLAUSIBLE = Date.UTC(2025, 0, 1)
+/** Before FRC robots logged with AdvantageKit's dated names, a clock this early is certainly unset. */
+const EARLIEST_PLAUSIBLE = Date.UTC(2023, 0, 1)
+/** A roboRIO 2 whose clock was never set reads its image date, 2024-12-18: treat that day (± 1) as unset. */
+const UNSET_CLOCK_DAY = Date.UTC(2024, 11, 18)
 
 /** Analyse one log and keep only the summary. */
 export function summarizeLog(file: InputFile): MatchSummary | null {
@@ -91,7 +92,7 @@ export function playedAt(match: Match): Pick<MatchSummary, 'playedAt' | 'playedA
   const fromName = dateFromFileName(match.fileName)
   const start = match.matchStart ?? match.logStart
   const fromClock = match.epochOffset !== null ? (match.epochOffset + start) * 1000 : null
-  const clockOk = fromClock !== null && fromClock >= EARLIEST_PLAUSIBLE
+  const clockOk = fromClock !== null && fromClock >= EARLIEST_PLAUSIBLE && Math.abs(fromClock - UNSET_CLOCK_DAY) > 86400e3
   if (clockOk && (fromName === null || Math.abs(fromClock - fromName) < 2 * 86400e3)) {
     return { playedAt: fromClock, playedAtSource: 'robot clock', clockNote: null }
   }

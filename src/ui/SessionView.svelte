@@ -18,14 +18,17 @@
   const files = new Map<string, File>()
   let progress = $state<{ done: number; total: number; ms: number; current: string } | null>(null)
   let problems = $state<string[]>([])
-  let selected = $state(0)
+  let selectedId = $state<string | null>(null)
+  // Summaries collected so far, shared by every load so two loads at once can't overwrite each other.
+  const collected: MatchSummary[] = []
   let overrides = $state<Record<string, string>>(readStore('hindsight.sessionOverrides'))
   let renames = $state<Record<string, string>>(readStore('hindsight.sessionRenames'))
   let typedBatteries = $state<Record<string, string>>(readStore('hindsight.typedBatteries'))
   let heapMB = $state<number | null>(null)
 
   const sessions = $derived(groupSessions(summaries, overrides, renames))
-  const session = $derived(sessions[Math.min(selected, sessions.length - 1)] as Session | undefined)
+  // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
+  const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions[0]) as Session | undefined)
   const grid = $derived(session ? ruleGrid(session) : [])
   const merged = $derived(session ? mergeFindings(session) : [])
 
@@ -38,13 +41,12 @@
 
   async function load(list: FileList | File[] | null) {
     const chosen = Array.from(list ?? []).filter((f) => /\.wpilog$/i.test(f.name))
-    if (chosen.length === 0) { problems = ['No .wpilog files in what you chose.']; return }
+    if (chosen.length === 0) { problems = ['No .wpilog files in what you chose. To load a folder, use "Choose a folder…" (dragging a folder in only works for the files themselves).']; return }
     problems = []
     const started = performance.now()
     progress = { done: 0, total: chosen.length, ms: 0, current: '' }
     // Collect summaries in a plain list and show them every 10 logs: redrawing the whole session after every log
     // made a 160-log folder take minutes.
-    const collected = [...summaries]
     const publish = () => { summaries = [...collected] }
     for (const file of chosen) {
       progress = { ...progress, current: file.name }
@@ -105,12 +107,13 @@
   // How far past the line, in words: "12 % past it", or "7× the line" when it is far past.
   const past = (margin: number) => (margin < 1 ? `${pct(margin)} past it` : `${(1 + margin).toFixed(1)}× the line`)
   const CELL = { fired: '●', quiet: '·', 'not checked': '–' } as const
-  const fmt = (x: number) => (Number.isInteger(x) || Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(Math.abs(x) >= 10 ? 1 : 2))
+  // At most 2 decimals, without trailing zeros: 7.4, 1.2–2.1, 53.
+  const fmt = (x: number) => String(+x.toFixed(Math.abs(x) >= 100 ? 0 : 2))
 </script>
 
-<p class="intro">Drop a whole folder of match logs (an event, a practice day). Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
+<p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
 
-<section class="drop" role="region" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
+<section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
   <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   {#if progress}
@@ -124,8 +127,8 @@
 
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
-    {#each sessions as s, i (s.id)}
-      <button class:active={session?.id === s.id} onclick={() => (selected = i)}>{s.label} <small>{s.matches.length} log{s.matches.length === 1 ? '' : 's'}</small></button>
+    {#each sessions as s (s.id)}
+      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{s.matches.length} log{s.matches.length === 1 ? '' : 's'}</small></button>
     {/each}
   </nav>
 {/if}
@@ -140,7 +143,7 @@
   {/each}
 
   <h3>Findings across the session</h3>
-  <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some. Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
+  <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some, or in every match of only 2 checked (too few to call consistent). Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
   <ul class="merged">
     {#each merged as f (f.key)}
       {@const back = cameBack(f.key, f.matches)}
@@ -148,7 +151,7 @@
         <span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span>
         <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
         {#if f.measured.length}
-          <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''} ${m.unit}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
+          <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
         {/if}
         <span class="latest">Latest: {f.title}</span>
       </li>
@@ -226,6 +229,7 @@
   .chip { justify-self: start; font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); height: fit-content; }
   .chip.consistent { border-color: var(--error); color: var(--error); }
   .chip.intermittent { border-color: var(--warning); color: var(--warning); }
+  .chip.once { border-style: dashed; }
   .grid-wrap { overflow-x: auto; }
   table { border-collapse: collapse; font-size: 0.8rem; }
   .grid th, .grid td { padding: 0.1rem 0.5rem; text-align: center; white-space: nowrap; }

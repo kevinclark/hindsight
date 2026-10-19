@@ -40,6 +40,7 @@ export default rule({
         'lowest battery voltage in the 0.5 s before each drop (V)': voltages.map((v) => v.toFixed(2)).join(', '),
         'likely cause': closeCall ? `possibly ${cause}; a voltage is within 0.5 V of the ${LOW_VOLTS} V line` : cause,
       },
+      measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
       plot: [battery], plotUnit: 'V', plotFrom: drops[0].start - 3, plotTo: drops[drops.length - 1].end + 2,
       plotMarks: drops.map((d) => d.start), plotLine: { value: LOW_VOLTS, label: `${LOW_VOLTS} V` },
     }

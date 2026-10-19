@@ -36,7 +36,7 @@ export default rule({
       measured: [
         // Context only: a brownout happens at the setting by definition, so "how far past it" says nothing.
         { label: 'brownouts', value: onsets.length, unit: '' },
-        { label: 'lowest voltage around the first', value: round(battery.lowest(match.between(first - 1, first + 1)).value), unit: 'V' },
+        { label: 'lowest voltage at the first brownout', value: round(battery.lowest(match.between(first - 1, first + 1)).value), unit: 'V' },
       ],
       plot: [battery], plotUnit: 'V', plotFrom: first - 8, plotTo: Math.min(first + 12, last + 2),
       plotLine: Number.isNaN(setting) ? undefined : { value: setting, label: 'brownout setting' }, plotMarks: onsets,
