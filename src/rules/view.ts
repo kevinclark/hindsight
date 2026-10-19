@@ -16,7 +16,7 @@ import { has, matchSeconds, matchTimeLeft, matchWhen, num, phaseAt, values, type
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
 import type { CurrentLimits, RobotProfile } from '../profiles/types.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
-import { buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
+import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
 
 /** A stretch of time made of one or more intervals, e.g. "while enabled" or "during auto". */
@@ -238,6 +238,7 @@ export interface MotorView {
   stator(): Signal
   velocity(): Signal
   connected(): Signal
+  temperature(): Signal
 }
 
 /** A motor group from the robot profile (e.g. the four flywheel motors), with its configured current limits. */
@@ -320,27 +321,58 @@ export class MatchView {
   /** A numeric signal by its profile name (e.g. 'batteryVoltage') or its log key (e.g. '/Drum/Hood/Voltage'). */
   signal(name: string, label = words(name)): Signal {
     const key = this.keyFor(name)
-    if (!has(this.raw, key)) throw new MissingSignal(key)
+    if (!has(this.raw, key)) throw missing(name, key)
+    if (this.isMeasured(key)) this.sampled.set(key, label)
     return new Signal(label, key, num(this.raw, key)!, this.raw.logEnd)
+  }
+
+  /** Measured signals (battery voltage, motor currents and speeds) the current rule item read, by key, with labels. */
+  readonly sampled = new Map<string, string>()
+
+  /** Battery voltage and the motors' current, speed and temperature: things that change fast and can be under-sampled. */
+  private isMeasured(key: string): boolean {
+    if (key === this.profile.signals.batteryVoltage) return true
+    return this.profile.motorGroups.some((g) => g.motors.some((m) => [m.supplyCurrent, m.statorCurrent, m.velocity].includes(key)))
+  }
+
+  /**
+   * The measured signals this rule item read that are logged slower than SLOW_HZ while enabled, each with a note
+   * for the student. A robot loop logs at 50 Hz; a dashboard or throttled telemetry often logs at 4–20 Hz, and a
+   * brownout-sized dip (tens of milliseconds) can then fall between two samples.
+   */
+  slowSignals(): { label: string; note: string }[] {
+    // Signals at the same rate share one note ("A, B and C are logged about 4 times a second ...").
+    const byRate = new Map<number, string[]>()
+    for (const [key, label] of this.sampled) {
+      const rate = sampleRate(num(this.raw, key)!, this.enabled)
+      if (!rate || rate.fastHz >= SLOW_HZ) continue
+      const hz = Math.max(1, Math.round(rate.typicalHz))
+      byRate.set(hz, [...(byRate.get(hz) ?? []), label])
+    }
+    return [...byRate].map(([hz, labels]) => {
+      const ms = Math.round(1000 / hz)
+      const names = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`
+      return { label: names, note: `${names} ${labels.length === 1 ? 'is' : 'are'} logged about ${hz} times a second while enabled (every ~${ms} ms), so a dip or spike shorter than ~${2 * ms} ms can fall between samples` }
+    })
   }
 
   /** A text signal by profile name or log key. */
   text(name: string): TextSignal {
     const key = this.keyFor(name)
-    if (!has(this.raw, key)) throw new MissingSignal(key)
+    if (!has(this.raw, key)) throw missing(name, key)
     return new TextSignal(key, values<string>(this.raw, key)!)
   }
 
   pose(name: string): PoseSignal {
     const key = this.keyFor(name)
-    if (!has(this.raw, key)) throw new MissingSignal(key)
+    if (!has(this.raw, key)) throw missing(name, key)
     return new PoseSignal(key, values<Pose2d>(this.raw, key)!)
   }
 
   /** A signal that logs a list of numbers each time, e.g. a power distribution board's channel currents. */
   lists(name: string): { key: string; t: Float64Array; v: number[][] } {
     const key = this.keyFor(name)
-    if (!has(this.raw, key)) throw new MissingSignal(key)
+    if (!has(this.raw, key)) throw missing(name, key)
     const s = values<number[]>(this.raw, key)!
     return { key, t: s.t, v: s.v }
   }
@@ -353,7 +385,7 @@ export class MatchView {
   /** The first of several possible keys that the log has (the battery tracker's keys moved between versions). */
   firstOf(keys: string[]): string {
     const key = keys.find((k) => has(this.raw, k))
-    if (!key) throw new MissingSignal(keys[0])
+    if (!key) throw new MissingSignal(keys[0] ?? 'a battery tracker key (the robot profile has none)')
     return key
   }
 
@@ -390,7 +422,10 @@ export class MatchView {
     const seen = new Map<string, AlertView>()
     const KINDS = [['errors', 'error'], ['warnings', 'warning'], ['infos', 'info']] as const
     const present = this.profile.signals.alertGroups.filter((g) => KINDS.some(([k]) => has(this.raw, `${g}/${k}`)))
-    if (present.length === 0) throw new MissingSignal(`${this.profile.signals.alertGroups[0]}/errors`)
+    if (present.length === 0) {
+      const first = this.profile.signals.alertGroups[0]
+      throw new MissingSignal(first ? `${first}/errors` : 'alerts (the robot profile names no alert groups and the log has none)')
+    }
     const [start, end] = [this.autoStart ?? Infinity, this.matchEnd ?? -Infinity]
     for (const group of present) {
       for (const [k, kind] of KINDS) {
@@ -448,12 +483,34 @@ export class MatchView {
     return phaseAt(this.raw, t)
   }
 
-  /** The battery model and current totals (see src/power/). Missing motor currents stop the rule. */
+  /** The battery model and current totals (see src/power/). Missing battery voltage or motor currents stop the rule. */
   power(): { report: PowerReport; grid: PowerGrid } {
+    this.markPowerSignals()
     const grid = buildPowerGrid(this.raw)
     const report = powerReport(this.raw)
-    if (!grid || !report) throw new MissingSignal('motor supply currents')
+    if (!grid || !report) throw new MissingSignal(this.has('batteryVoltage') ? 'motor supply currents' : (this.profile.signals.batteryVoltage || 'battery voltage (the robot profile has no key for it)'))
     return { report, grid }
+  }
+
+  /**
+   * Total and per-group motor supply current on the 50 Hz power grid, with or without battery voltage (`volts` is
+   * NaN when the log has none). For rules about current alone, like the main breaker's heating. Missing motor
+   * currents stop the rule.
+   */
+  currents(): PowerGrid {
+    this.markPowerSignals()
+    const grid = buildCurrentGrid(this.raw)
+    if (!grid) throw new MissingSignal('motor supply currents')
+    return grid
+  }
+
+  /** The power model reads battery voltage and every supply current: count them as read, for slowSignals(). */
+  private markPowerSignals(): void {
+    const s = this.profile.signals
+    if (s.batteryVoltage && has(this.raw, s.batteryVoltage)) this.sampled.set(s.batteryVoltage, 'battery voltage')
+    for (const g of this.profile.motorGroups) {
+      for (const m of g.motors) if (m.supplyCurrent && has(this.raw, m.supplyCurrent)) this.sampled.set(m.supplyCurrent, `${m.name} supply`)
+    }
   }
 
   /** Like power(), but null instead of "not checked" when the log has no motor currents: for extra evidence. */
@@ -480,8 +537,9 @@ export class MatchView {
     return this.raw.epochOffset
   }
 
+  /** A profile signal name ('batteryVoltage') to its log key; a log key stays as it is. '' when the profile has none. */
   private keyFor(name: string): string {
-    if (name.startsWith('/')) return name
+    if (isLogKey(name)) return name
     const key = (this.profile.signals as unknown as Record<string, string>)[name]
     if (typeof key !== 'string') throw new Error(`"${name}" is not a signal name in the robot profile (src/profiles/)`)
     return key
@@ -490,7 +548,40 @@ export class MatchView {
 
 /** 'batteryVoltage' → 'battery voltage' (for plot legends); a log key stays as it is. */
 export function words(name: string): string {
-  return name.startsWith('/') ? name : name.replace(/([A-Z])/g, ' $1').toLowerCase()
+  return isLogKey(name) ? name : name.replace(/([A-Z])/g, ' $1').toLowerCase()
+}
+
+/**
+ * A log key ("/SystemStats/BatteryVoltage", "NT:/FMSInfo/EventName", "DS:enabled", "console"), not a profile signal
+ * name ("batteryVoltage"): profile names are single camelCase words with no "/" or ":".
+ */
+function isLogKey(name: string): boolean {
+  return /[/:]/.test(name)
+}
+
+/** The "not checked" reason for a missing signal: its key, or that the robot profile names no key for it. */
+function missing(name: string, key: string): MissingSignal {
+  return new MissingSignal(key || `${words(name)} (the robot profile has no key for it)`)
+}
+
+/** Below this rate (records per second while enabled), a measured signal gets a sampling note on its findings. */
+export const SLOW_HZ = 30
+
+/**
+ * How often a signal is logged while enabled: `fastHz` from the 10th-percentile gap between records (the rate it
+ * logs at when it is logging; a value that holds still isn't re-logged, so slower gaps don't mean a slow logger) and
+ * `typicalHz` from the median gap. Null with fewer than 20 records while enabled.
+ */
+export function sampleRate(series: NumberSeries, during: Window): { fastHz: number; typicalHz: number } | null {
+  const gaps: number[] = []
+  for (let i = 1; i < series.t.length; i++) {
+    if (inside(during, series.t[i]) && inside(during, series.t[i - 1])) gaps.push(series.t[i] - series.t[i - 1])
+  }
+  if (gaps.length < 20) return null
+  gaps.sort((a, b) => a - b)
+  const p10 = gaps[Math.floor(0.1 * (gaps.length - 1))]
+  const p50 = gaps[Math.floor(0.5 * (gaps.length - 1))]
+  return p10 > 0 && p50 > 0 ? { fastHz: 1 / p10, typicalHz: 1 / p50 } : null
 }
 
 /** Is time t inside any interval of the window? */

@@ -43,10 +43,31 @@ export function buildPowerGrid(match: Match): PowerGrid | null {
 function computePowerGrid(match: Match): PowerGrid | null {
   const p = match.profile
   const voltage = num(match, p.signals.batteryVoltage)
-  const enabled = num(match, p.signals.enabled)
-  if (!voltage || !enabled || voltage.t.length < 2) return null
+  if (!voltage || voltage.t.length < 2) return null
   const t = makeGrid(voltage.t[0], voltage.t[voltage.t.length - 1], DT)
-  const volts = resample(voltage, t)
+  return gridWithCurrents(match, t, resample(voltage, t))
+}
+
+/**
+ * Like buildPowerGrid, but for a log with motor currents and no battery voltage: the grid spans the whole log and
+ * `volts` is NaN. With battery voltage it is the power grid itself. Null without motor currents.
+ */
+export function buildCurrentGrid(match: Match): PowerGrid | null {
+  const withVolts = buildPowerGrid(match)
+  if (withVolts || has(match, match.profile.signals.batteryVoltage)) return withVolts
+  const cached = match.cache.get('power:currents') as PowerGrid | null | undefined
+  if (cached !== undefined) return cached
+  const t = match.logEnd > match.logStart ? makeGrid(match.logStart, match.logEnd, DT) : new Float64Array(0)
+  const grid = t.length < 2 ? null : gridWithCurrents(match, t, new Float64Array(t.length).fill(NaN))
+  match.cache.set('power:currents', grid as never)
+  return grid
+}
+
+/** Every motor's supply current on the grid, summed by group and in total. Null without enabled or any current. */
+function gridWithCurrents(match: Match, t: Float64Array, volts: Float64Array): PowerGrid | null {
+  const p = match.profile
+  const enabled = num(match, p.signals.enabled)
+  if (!enabled) return null
   const en = resample(enabled, t, 0)
   const enabledMask = Uint8Array.from(en, (x) => (x > 0.5 ? 1 : 0))
 

@@ -27,6 +27,9 @@ export default rule({
 
   check(group, match) {
     const problems: Problem[] = []
+    if (group.limits.supplyA === undefined && group.limits.statorA === undefined) {
+      return match.couldNotCheck(`the robot profile has no current limits for ${group.name} (${group.limits.where})`)
+    }
     const kinds = [
       { kind: 'supply', limit: group.limits.supplyA, isOn: group.limits.supplyEnabled },
       { kind: 'stator', limit: group.limits.statorA, isOn: group.limits.statorEnabled },

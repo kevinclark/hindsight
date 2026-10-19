@@ -1,8 +1,9 @@
 /**
  * The match model: one robot log plus everything rules need to know about the match it holds.
  *
- * - phases: when the robot was enabled, and whether in auto or teleop (from /DriverStation/Enabled + /Autonomous)
- * - event and match number (from /DriverStation/*)
+ * - phases: when the robot was enabled, and whether in auto or teleop (from /DriverStation/Enabled + /Autonomous,
+ *   or DS:enabled + DS:autonomous in a plain WPILib log)
+ * - event and match number (from /DriverStation/*, or NT:/FMSInfo/*; see profiles/datalogmanager.ts)
  * - the code build (from /RealMetadata/*)
  * - the wall clock, so a Driver Station log can be lined up with the robot log
  */
@@ -11,6 +12,7 @@ import { hasEntry, readNumbers, readValues, type WpilogFile } from '../readers/w
 import { dslogEndEpoch, type DslogFile } from '../readers/dslog.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import type { ProfileChoice } from '../profiles/choose.ts'
+import { withDataLogManagerKeys } from '../profiles/datalogmanager.ts'
 import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } from './series.ts'
 
 export interface Match {
@@ -72,14 +74,17 @@ export function firstPresent(match: Match, keys: string[]): string | null {
 
 const MATCH_TYPES = ['', 'Practice', 'Qualification', 'Elimination']
 
-export function buildMatch(fileName: string, log: WpilogFile, profile: RobotProfile, profileChoice: ProfileChoice = { how: 'given', note: null, fit: null }): Match {
+export function buildMatch(fileName: string, log: WpilogFile, givenProfile: RobotProfile, profileChoice: ProfileChoice = { how: 'given', note: null, fit: null }): Match {
+  // A plain WPILib log has the match identity under DS: and NT:/FMSInfo, whatever the profile says.
+  const profile = withDataLogManagerKeys(log, givenProfile)
   const s = profile.signals
   let logStart = Infinity
   let logEnd = -Infinity
-  // AdvantageKit logs /Timestamp every cycle, so its first and last records give the log's extent.
+  // AdvantageKit logs /Timestamp every cycle, so its first and last records give the log's extent; otherwise the
+  // first and last record of any kind.
   const clock = readNumbers(log, '/Timestamp') ?? readNumbers(log, s.batteryVoltage)
   if (clock && clock.t.length) { logStart = clock.t[0]; logEnd = clock.t[clock.t.length - 1] }
-  if (!Number.isFinite(logStart)) { logStart = 0; logEnd = 0 }
+  if (!Number.isFinite(logStart)) { logStart = log.firstTime; logEnd = log.lastTime }
 
   const match: Match = {
     fileName, log, profile, profileChoice, logStart, logEnd,
@@ -174,6 +179,8 @@ function measuredGame(match: Match): RobotProfile['game'] {
   return { name: 'measured from this log', autoSeconds, teleopSeconds }
 }
 
+const EPOCH_2001_US = 978307200e6
+
 /** Median of (wall clock − log time) over records logged after the roboRIO clock was set. */
 function computeEpochOffset(match: Match): number | null {
   const s = match.profile.signals
@@ -183,7 +190,8 @@ function computeEpochOffset(match: Match): number | null {
   const validFrom = valid ? (Array.from(valid.t).find((_, i) => valid.v[i] > 0.5) ?? Infinity) : -Infinity
   const offsets: number[] = []
   for (let i = 0; i < epoch.t.length; i++) {
-    if (epoch.t[i] >= validFrom) offsets.push(epoch.v[i] / 1e6 - epoch.t[i])
+    // Before 2001 is a clock that was never set (a log with no SystemTimeValid flag to say so).
+    if (epoch.t[i] >= validFrom && epoch.v[i] > EPOCH_2001_US) offsets.push(epoch.v[i] / 1e6 - epoch.t[i])
   }
   return offsets.length ? median(offsets) : null
 }

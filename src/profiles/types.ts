@@ -8,6 +8,8 @@ export interface Motor {
   statorCurrent?: string
   velocity?: string
   connected?: string
+  /** The controller's temperature (°C), e.g. a TalonFX's DeviceTemp. */
+  temperature?: string
 }
 
 export interface CurrentLimits {

@@ -57,6 +57,24 @@ had different limits.
 
 To add a robot: copy a profile file, change the keys, limits and `code` pin, and add it to `src/profiles/index.ts`.
 
+### Robots without AdvantageKit
+
+A plain WPILib log (DataLogManager) works too. The match comes from `DS:enabled` / `DS:autonomous` and
+`NT:/FMSInfo/*` (event, match type and number, and the FMS- and DS-attached bits of `FMSControlData`), whatever the
+profile; `src/profiles/datalogmanager.ts` lists every key such a log can supply, and a profile starts from it. Two
+kinds of key reach inside an entry:
+
+- a **struct field**: the struct entry's name, `/`, then the field, e.g. `NT:/Telemetry/hood/motor/` + `supplyCurrent`.
+  The layout comes from the log's own `/.schema/struct:<Type>` entry, so any team's struct decodes (nested structs and
+  bit-fields included);
+- a **bit** of an integer entry: `NT:/FMSInfo/FMSControlData:bit4`.
+
+A profile leaves a key it can't fill as `''`, and rules that need it say so under "Not checked". A measured signal
+(battery voltage, motor current or speed) logged slower than 30 times a second while enabled gets a note on each
+finding that read it, since a short dip can fall between samples. The worked examples are two other teams' 2026
+robots, read from their public logs: `frc340-2026.ts` (a TalonFX status struct per motor, no battery voltage) and
+`frc3602-2026.ts` (dashboard battery voltage at ~17 Hz, no motor currents).
+
 ## Session view: many matches at once
 
 **Session** (top of the page) takes a whole folder of logs (an event, a practice day). Each log is read and boiled

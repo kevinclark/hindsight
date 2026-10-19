@@ -28,11 +28,11 @@ export const PROFILE_FIT_MIN = 0.6
 export function profileKeys(profile: RobotProfile): string[] {
   const { alertGroups: _, ...signals } = profile.signals
   const keys = [
-    ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected])),
+    ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected, m.temperature])),
     ...profile.cameras.flatMap((c) => [c.acceptedPose, c.connected]),
     ...Object.values(signals),
   ]
-  return [...new Set(keys.filter((k): k is string => typeof k === 'string'))]
+  return [...new Set(keys.filter((k): k is string => typeof k === 'string' && k !== ''))]
 }
 
 export function profileFit(log: WpilogFile, profile: RobotProfile): { present: number; total: number } {
