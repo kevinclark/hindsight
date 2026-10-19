@@ -1,0 +1,9 @@
+node_modules/
+dist/
+hindsight.html
+*.wpilog
+*.dslog
+*.dsevents
+*.hoot
+.DS_Store
+.claude/settings.local.json
