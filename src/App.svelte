@@ -6,6 +6,7 @@
   import { analyzeFilesWithCode, type Analysis, type InputFile } from './analyze.ts'
   import { buildFindingsJson, findingsFileName } from './report/findings-json.ts'
   import MatchTab from './ui/MatchTab.svelte'
+  import Menu from './ui/Menu.svelte'
   import PowerTab from './ui/PowerTab.svelte'
   import LimitsTab from './ui/LimitsTab.svelte'
   import LoggingTab from './ui/LoggingTab.svelte'
@@ -47,6 +48,12 @@
     tab = 'match'
     await load(files)
   }
+  const MODES = [
+    { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'wizard', label: 'Limits wizard' },
+    { id: 'snapshot', label: 'Robot snapshot' }, { id: 'profile', label: 'Robot profile' }, { id: 'foresight', label: 'Foresight' },
+  ] as const
+  // With a log loaded the dashed drop row is gone (dropping anywhere still works): Choose logs… stays beside the File menu.
+  function chosen(e: Event) { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }
   let busy = $state(false)
   let dragging = $state(false)
   let lastLoad = $state<{ files: number; readMs: number; analyzeMs: number; heapMB: number | null } | null>(null)
@@ -245,12 +252,7 @@
 </header>
 
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
-  <button class:active={mode === 'review'} onclick={() => (mode = 'review')}>Match review</button>
-  <button class:active={mode === 'session'} onclick={() => (mode = 'session')}>Session</button>
-  <button class:active={mode === 'wizard'} onclick={() => (mode = 'wizard')}>Limits wizard</button>
-  <button class:active={mode === 'snapshot'} onclick={() => (mode = 'snapshot')}>Robot snapshot</button>
-  <button class:active={mode === 'profile'} onclick={() => (mode = 'profile')}>Robot profile</button>
-  <button class:active={mode === 'foresight'} onclick={() => (mode = 'foresight')}>Foresight</button>
+  {#each MODES as m (m.id)}<button class:active={mode === m.id} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
 </nav>
 </div>
 
@@ -265,9 +267,10 @@
 </div>
 <div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
+{#if !current || dragging}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
   <label class="button">
-    <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }} />
+    <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={chosen} />
     Choose logs…
   </label>
   {#if current}
@@ -279,6 +282,7 @@
   {#if busy}<span class="busy">Reading…</span>{/if}
   {#if analyses.length}<button class="link" onclick={clearAll}>Clear all</button>{/if}
 </section>
+{/if}
 
 {#each problems as p (p)}<p class="problem" role="alert">{p}</p>{/each}
 
@@ -305,8 +309,16 @@
   <section class="match-head">
     <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
     <span class="actions">
-      <button class="button" onclick={downloadForClaude} title="Saves findings.json: findings, evidence and short data windows, for analysis with Claude">Download for Claude</button>
-      <button class="button" onclick={saveForSlackReview} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
+      {#if busy}<span class="busy">Reading…</span>{/if}
+      <label class="button choose">
+        <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={chosen} />
+        Choose logs…
+      </label>
+      <Menu label="File" align="right" items={[
+        { id: 'claude', label: 'Download for Claude', hint: 'findings.json: findings, evidence and short data windows', onselect: downloadForClaude },
+        { id: 'slack', label: 'Save for Slack', hint: 'print dialog (choose Save as PDF) and a phone-sized card (PNG)', onselect: saveForSlackReview },
+        { id: 'clear', label: 'Clear all', hint: 'forget the loaded logs', onselect: clearAll },
+      ]} />
     </span>
     <div class="rest">
       <p class="meta">
@@ -423,7 +435,8 @@
   .more[open] { flex-basis: 100%; }
   .match-head .problem { margin: 0; }
   .match-head h2 { margin: 0; font-size: 1.25rem; }
-  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .choose { min-height: 28px; padding: 0.15rem 0.7rem; box-sizing: border-box; }
   .meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
   .dirty { color: var(--warning); }
   .more > summary { cursor: pointer; color: var(--muted); min-height: 24px; }
