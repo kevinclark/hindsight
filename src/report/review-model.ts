@@ -13,19 +13,26 @@ import type { CardModel, Tone } from './card.ts'
 import { descendants, nest, partitionStanding, severityWords, withParents, type FindingNode } from './finding-tree.ts'
 import { cardTitle, shortTitle } from './titles.ts'
 import { stripRepoPaths } from './repo-paths.ts'
+import { playedAt as summaryPlayedAt } from '../session/summary.ts'
 
 export { cardTitle, shortTitle } from './titles.ts'
 export { stripRepoPaths } from './repo-paths.ts'
 
-export type FindingStatus = 'known' | 'came back' | 'fixed later'
+/** `wrong`: marked "not a real problem" on this match; it is listed with the known issues. */
+export type FindingStatus = 'known' | 'came back' | 'fixed later' | 'wrong'
 
-/** When this match was played (wall clock, ms), so a fix recorded after it doesn't make it "came back". */
+/**
+ * When this match was played (wall clock, ms), so a fix recorded after it doesn't make it "came back" and a wrong mark
+ * finds the other matches of its event. The Session view's definition (session/summary.ts), so the two views agree:
+ * the robot clock, else the file name's date.
+ */
 export function playedAt(analysis: Analysis): number | null {
-  const m = analysis.match
-  return m.epochOffset !== null && m.matchStart !== null ? (m.epochOffset + m.matchStart) * 1000 : null
+  return summaryPlayedAt(analysis.match).playedAt
 }
 
-export function findingStatus(f: Finding, issues: Map<string, IssueEvent>, played: number | null): FindingStatus | undefined {
+/** `wrong`: this match's wrong marks, by issue key (track-record.ts wrongHere). */
+export function findingStatus(f: Pick<Finding, 'key'>, issues: Map<string, IssueEvent>, played: number | null, wrong: Map<string, IssueEvent> = new Map()): FindingStatus | undefined {
+  if (wrong.has(f.key)) return 'wrong'
   const issue = issues.get(f.key)
   if (!issue) return undefined
   if (issue.status === 'known') return 'known'
@@ -85,27 +92,30 @@ export function buildLine(b: { sha: string; branch: string; dirty: string }): Bu
 
 /** "2026-10-18", from the robot's clock when it was set; empty when it never was. */
 export function matchDate(analysis: Analysis): string {
-  const t = playedAt(analysis)
+  const m = analysis.match
+  const t = m.epochOffset !== null && m.matchStart !== null ? (m.epochOffset + m.matchStart) * 1000 : null
   if (t === null) return ''
   const d = new Date(t)
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>, standingKeys: Set<string> = new Set()): ReviewModel {
+/** Pass the analysis as the team's marks show it (track-record.ts withMarks) and this match's wrong marks. */
+export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>, standingKeys: Set<string> = new Set(), wrong: Map<string, IssueEvent> = new Map()): ReviewModel {
   // Always the "Everyone" list: a report must not depend on which audience the viewer last picked.
   const all = analysis.report.findings.filter((f) => f.rule !== 'meta/not-checked')
   // Parents name a group of findings (src/rules/parents.ts): listed with them, never counted.
   const parents = analysis.report.parents ?? []
   const withGroups = [...all, ...parents]
   const played = playedAt(analysis)
-  const isActive = (f: Finding) => { const s = findingStatus(f, issues, played); return !s || s === 'came back' }
-  const isKnown = (f: Finding) => { const s = findingStatus(f, issues, played); return s === 'known' || s === 'fixed later' }
+  const status = (f: Finding) => findingStatus(f, issues, played, wrong)
+  const isActive = (f: Finding) => { const s = status(f); return !s || s === 'came back' }
+  const isKnown = (f: Finding) => { const s = status(f); return s === 'known' || s === 'fixed later' || s === 'wrong' }
   const active = all.filter(isActive)
   const known = all.filter(isKnown)
   const bySeverity = (s: string) => active.filter((f) => f.severity === s)
   const m = analysis.match
-  const cameBackList = active.filter((f) => findingStatus(f, issues, played) === 'came back')
+  const cameBackList = active.filter((f) => status(f) === 'came back')
   // A parent heads its group wherever the group is: marked known, it still heads new members (MatchTab does the same).
   const fullHeadlines = nest(withParents(active, parents), withGroups, withGroups.filter(isKnown), cameBackList)
   const partition = partitionStanding(fullHeadlines, standingKeys, cameBackList, parents)
@@ -116,7 +126,7 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>,
     errors: bySeverity('error'), warnings: bySeverity('warning'), infos: bySeverity('info'),
     notChecked: analysis.report.skipped.map((s) => ({ rule: s.rule, reason: s.reason })),
     crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
-    cameBack: new Set(active.filter((f) => findingStatus(f, issues, played) === 'came back').map((f) => f.key)),
+    cameBack: new Set(active.filter((f) => status(f) === 'came back').map((f) => f.key)),
     header: {
       robot: m.profile.name, event: m.event, matchLabel: m.matchLabel, date: matchDate(analysis), logFile: m.fileName,
       dsFiles: m.ds.map((d) => d.fileName), build: buildLine(m.build), version: VERSION,

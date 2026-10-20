@@ -10,7 +10,8 @@
  */
 import type { Match } from '../match/match.ts'
 import type { MotorGroup } from '../profiles/types.ts'
-import { GitRepo, GitUnreadable } from './git.ts'
+import { CommitMissing, GitUnreadable } from './git.ts'
+import { filesNamed, type CodeSource, type Kept } from './source.ts'
 
 export type LimitLines =
   /** Same CurrentLimit lines in every limit file of the group. */
@@ -21,14 +22,11 @@ export type LimitLines =
   | { verdict: 'unknown'; why: string }
 
 /** Kept answers, by `limitLinesKey`. */
-export interface LimitLinesCache {
-  get(key: string): LimitLines | undefined
-  set(key: string, answer: LimitLines): void
-}
+export type LimitLinesCache = Kept<LimitLines>
 
-/** A robot-code folder's .git to compare against, and the answers kept from earlier comparisons. */
+/** The robot code to compare against (a folder's .git, or GitHub), and the answers kept from earlier comparisons. */
 export interface CodeFolder {
-  repo: GitRepo
+  repo: CodeSource
   cache: LimitLinesCache
 }
 
@@ -75,12 +73,12 @@ export async function compareMatchLimits(match: Match, code: CodeFolder): Promis
 }
 
 /** The CurrentLimit lines of some files at two commits: the same, different (and which lines), or why it can't tell. */
-export async function compareLimitLines(repo: GitRepo, pin: string, logSha: string, files: string[], repoName = 'the profile\'s repo'): Promise<LimitLines> {
+export async function compareLimitLines(repo: CodeSource, pin: string, logSha: string, files: string[], repoName = 'the profile\'s repo'): Promise<LimitLines> {
   if (!logSha) return { verdict: 'unknown', why: 'this log has no /RealMetadata/GitSHA' }
   try {
     // The profile's own commit missing usually means another repo's folder was chosen.
     const pinned = await repo.resolve(pin).catch((error) => {
-      throw error instanceof GitUnreadable ? new GitUnreadable(`the profile's commit ${pin} isn't in this code folder: is it a clone of ${repoName}?`) : error
+      throw error instanceof CommitMissing ? new GitUnreadable(`the profile's commit ${pin} isn't in ${repo.where}: is it a clone of ${repoName}?`) : error
     })
     const ran = await repo.resolve(logSha)
     const lines: string[] = []
@@ -93,7 +91,7 @@ export async function compareLimitLines(repo: GitRepo, pin: string, logSha: stri
 }
 
 /** One file's CurrentLimit lines that differ between the two commits ("- " pinned only, "+ " log's only). */
-async function differingLines(repo: GitRepo, pinned: string, ran: string, name: string): Promise<string[]> {
+async function differingLines(repo: CodeSource, pinned: string, ran: string, name: string): Promise<string[]> {
   const before = await onlyFileNamed(repo, pinned, name)
   if (!before) throw new GitUnreadable(`${name} isn't in commit ${pinned.slice(0, 7)} (the profile's commit)`)
   const after = await onlyFileNamed(repo, ran, name)
@@ -108,8 +106,8 @@ async function differingLines(repo: GitRepo, pinned: string, ran: string, name: 
 }
 
 /** The one file with this name in a commit, or null if there is none. Two or more: it can't tell which. */
-async function onlyFileNamed(repo: GitRepo, commit: string, name: string) {
-  const found = await repo.filesNamed(commit, name)
+async function onlyFileNamed(repo: CodeSource, commit: string, name: string) {
+  const found = await filesNamed(repo, commit, name)
   if (found.length > 1) throw new GitUnreadable(`commit ${commit.slice(0, 7)} has ${found.length} files named ${name}`)
   return found[0] ?? null
 }

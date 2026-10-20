@@ -23,7 +23,7 @@ import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import type { CodeFinding } from '../src/code/check/rule.ts'
 import { Project } from '../src/code/check/project.ts'
 import { lineOf, typeNamed } from '../src/code/check/java.ts'
-import { codeHints } from '../src/builder/code-hints.ts'
+import { codeHead, codeHints } from '../src/builder/code-hints.ts'
 
 /** How far (lines) a finding may sit from the line the history names: fixes move code a little. */
 const NEAR_LINES = 2
@@ -66,7 +66,7 @@ for (const [name, commit] of Object.entries(cases.heads)) {
   const project = new Project(files)
   const parsed = new Set(project.nodes('object_creation_expression').filter((n) => typeNamed(n) === 'TalonFX').map((n) => `${project.fileOf(n).path}:${lineOf(n)}`))
   project.close()
-  const hinted = codeHints(files).sites
+  const hinted = codeHints(files, await codeHead(repo)).sites
   const missed = hinted.filter((s) => !parsed.has(`${s.file}:${s.line}`))
   for (const s of missed) failures.push(`${name}: code-hints sees TalonFX at ${s.file}:${s.line}, the parser doesn't`)
   console.log(`  ${name}: ${hinted.length} by code-hints, ${parsed.size} by the parser, ${missed.length} only by code-hints`)

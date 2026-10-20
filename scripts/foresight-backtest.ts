@@ -27,7 +27,7 @@ import { RecordStore } from '../src/foresight/records.ts'
 import { evaluateForesight, SETTLE_SECONDS } from '../src/foresight/engine.ts'
 import { allItems } from '../src/foresight/verdict.ts'
 import { FORESIGHT_RULES, runRules } from '../src/rules/index.ts'
-import { foresightKeys } from '../src/foresight/keys.ts'
+import { foresightKeysIn } from '../src/foresight/keys.ts'
 import { DATALOGMANAGER_SIGNALS } from '../src/profiles/datalogmanager.ts'
 
 const STEP_SECONDS = 10
@@ -71,7 +71,7 @@ for (const file of files) {
   if (enable === undefined) { result.excluded = 'never enabled after the field attached'; continue }
   if (valueAt(fms!, enable - 0.05) < 0.5) { result.excluded = 'the field detached before the first enable'; continue }
   if (enable - 0.1 <= from) { result.excluded = `enabled ${(enable - match.logStart).toFixed(0)} s after code start, before the 30 s settle ended`; continue }
-  const keys = [...foresightKeys(profile), ...Object.values(DATALOGMANAGER_SIGNALS).flat()]
+  const keys = [...foresightKeysIn(log, profile), ...Object.values(DATALOGMANAGER_SIGNALS).flat()]
   const store = RecordStore.fromWpilog(log, wholeLog ? null : keys)
   const times: number[] = []
   for (let t = from + STEP_SECONDS; t < enable - 0.1; t += STEP_SECONDS) times.push(t)

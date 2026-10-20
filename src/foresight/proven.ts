@@ -10,7 +10,8 @@
  * Not here: foresight/camera-sees-tag (a step for a person, grey, never a verdict),
  * alerts/passthrough (one false red: another team's always-on "limelight name is invalid" alert),
  * the battery tracker checks, commit-matches and log-usb-stick (no log to judge them on yet: no log of ours has the
- * companion library's log-drive reading), gyro-still-drift (context, no line),
+ * companion library's log-drive reading), can/device-rebooted, sticky-faults and firmware-mismatch (likewise: no log of
+ * ours has the companion's device readings), gyro-still-drift (context, no line),
  * and the snapshot/* checks (snapshot-checks.ts: no snapshot of our robot yet; the engine holds them amber regardless).
  */
 export interface Proof {

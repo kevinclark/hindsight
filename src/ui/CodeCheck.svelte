@@ -8,6 +8,8 @@
   import { codeFolder } from './code-folder.svelte.ts'
   import { CODE_RULES, checkFolder, type FolderCheck } from '../code/check/index.ts'
   import { loadJavaInPage } from '../code/check/browser-java.ts'
+  import { codeHead } from '../builder/code-hints.ts'
+  import { GitRepo } from '../code/git.ts'
 
   let { robotSha, robotDirty }: { robotSha: string | null; robotDirty: boolean } = $props()
 
@@ -28,7 +30,7 @@
     const run = ++latest
     running = true
     loadJavaInPage()
-      .then(() => checkFolder(code.repo, sha))
+      .then(async () => checkFolder(code.repo, sha, await codeHead(code.repo instanceof GitRepo ? code.repo : null)))
       .then((r) => { if (run === latest) { result = r; problem = null } }, (error) => { if (run === latest) { result = null; problem = error instanceof Error ? error.message : String(error) } })
       .finally(() => { if (run === latest) running = false })
   })

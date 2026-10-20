@@ -10,6 +10,7 @@
   import type { IssueEvent } from '../triage/history.ts'
   import { buildText, sessionModel } from '../report/session-model.ts'
 
+  // `session` as the team's marks show it (triage/track-record.ts sessionWithMarks).
   let { session, issues, typedBatteries }: { session: Session; issues: Map<string, IssueEvent>; typedBatteries: Record<string, string> } = $props()
   const m = $derived(sessionModel(session, issues, typedBatteries))
   const t = $derived(m.trends)
@@ -32,7 +33,7 @@
   <section>
     <h2>Findings across the session ({m.findings.length}{m.onceFold ? `: ${m.rows.length} repeated, ${m.onceFold.count} seen once` : ''})</h2>
     {#if m.findings.length === 0}
-      <p class="small">No errors or warnings in any match.</p>
+      <p class="small">No {m.filed.length ? 'other ' : ''}errors or warnings in any match.</p>
     {:else}
       <ul class="finds">
         {#each m.rows as f (f.key)}
@@ -40,12 +41,13 @@
             <span class={`sev ${f.severity}`}>{f.sevWord}</span>
             <span class={`conf ${f.confidence.replace(/ /g, '-')}`}>{f.confidenceWord}</span>
             <span class="t">{#if f.cameBack.length}<span class="badge">Came back after a fix ({f.cameBack.join(', ')})</span> {/if}<strong class="ttl">{f.title}</strong>
-              <span class="small">{f.rateText}{f.measured ? ` · ${f.measured}` : ''} · <code>{f.key}</code></span></span>
+              <span class="small">{f.rateText}{f.measured ? ` · ${f.measured}` : ''}{f.marks ? ` · ${f.marks}` : ''} · <code>{f.key}</code></span></span>
           </li>
         {/each}
       </ul>
       {#if m.onceFold}<p class="once"><strong>Once ({m.onceFold.count} in {m.onceFold.rules} {m.onceFold.rules === 1 ? 'rule' : 'rules'}):</strong> {m.onceFold.text}. Each one is a row in <code>{m.jsonFile}</code> and a cell in the grid on the next page.</p>{/if}
     {/if}
+    {#if m.filed.length}<p class="once"><strong>Marked not a real problem in every match {m.filed.length === 1 ? 'it' : 'they'} fired in ({m.filed.length}):</strong> {m.filed.map((f) => `${f.ruleTitle} (${f.marks})`).join('; ')}.</p>{/if}
   </section>
 
   <section class="trends">
@@ -81,7 +83,7 @@
 
   <section class="gridpage">
     <h1 class="h1b">Rule × match</h1>
-    <p class="small">● fired · quiet – not checked (signals missing, no robot profile fits the log, or the rule crashed). Rules that fired in any match come first.</p>
+    <p class="small">● fired · × fired, marked not a real problem there · quiet – not checked (signals missing, no robot profile fits the log, or the rule crashed). Rules that fired in any match come first.</p>
     <table class="grid">
       <thead>
         <tr><th class="r">rule</th>{#each m.grid.columns as c (c.id)}<th class="c"><span class:turn={turned}>{c.label}</span></th>{/each}<th class="r">across the session</th></tr>
@@ -90,7 +92,7 @@
         {#each m.grid.rows as r (r.rule)}
           <tr class:any={r.firedAnywhere}>
             <th scope="row" class="r"><code>{r.rule}</code></th>
-            {#each r.cells as c, i (i)}<td class={`cell ${c.replace(/ /g, '-')}`} aria-label={WORD[c]}>{SYMBOL[c]}</td>{/each}
+            {#each r.cells as c, i (i)}{#if r.marked[i]}<td class="cell marked" aria-label="fired, marked not a real problem">×</td>{:else}<td class={`cell ${c.replace(/ /g, '-')}`} aria-label={WORD[c]}>{SYMBOL[c]}</td>{/if}{/each}
             <td class="rate">{r.rate}</td>
           </tr>
         {/each}
@@ -148,6 +150,6 @@
   .grid th.c { max-width: 6rem; white-space: normal; }
   .turn { writing-mode: vertical-rl; transform: rotate(180deg); display: inline-block; max-height: 7rem; overflow: hidden; }
   .cell.fired { font-weight: 700; background: var(--grid); }
-  .cell.not-checked { color: var(--muted); }
+  .cell.not-checked, .cell.marked { color: var(--muted); }
   .rate { text-align: left !important; color: var(--muted); }
 </style>

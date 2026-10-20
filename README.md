@@ -302,7 +302,9 @@ Each rule names who acts when it fires: the **software team** (code and config),
 wiring, batteries) or the **drive team**. The Match tab filters by that.
 
 **Known issues:** mark a finding *known* (we're on it) or *fixed* (with a note). Known issues leave the red list; a
-fixed one that fires again in a later match comes back at the top. The record is `hindsight-history.jsonl`: save it
+fixed one that fires again in a later match comes back at the top. *Not a real problem…* (with a reason) files one
+match's finding as a false alarm and turns the same check's reds amber on the event's other matches; each finding then
+says how sure its check is from the team's marks. The record is `hindsight-history.jsonl`: save it
 from the page and drop it in with the logs next time. Design and what's next (the pit board, wear trends):
 [docs/audiences-and-triage.md](docs/audiences-and-triage.md).
 

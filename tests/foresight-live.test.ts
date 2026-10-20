@@ -9,6 +9,7 @@ import { CALGAMES, haveCalGames } from './helpers/load.ts'
 import { ForesightLive, type LiveStatus } from '../src/foresight/live.ts'
 import { FIELD_MESSAGE, isFieldLocked, resetFieldLockForTests, type SocketLike } from '../src/foresight/nt4-client.ts'
 import { SETTLE_SECONDS } from '../src/foresight/engine.ts'
+import { FORESIGHT_PREFIXES, topicFor } from '../src/foresight/keys.ts'
 
 const nodeSocket = (url: string, protocols: string[]) => new WebSocket(url, protocols) as unknown as SocketLike
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -70,11 +71,15 @@ describe.skipIf(!haveCalGames)('Foresight live, replaying CalGames logs in pit m
     expect(server.received.filter((f) => f.kind === 'binary')).toEqual([])
     const methods = server.received.flatMap((f) => (f.data as { method: string }[]).map((m) => m.method))
     expect(new Set(methods)).toEqual(new Set(['subscribe']))
-    // Only the guard, the metadata and the profile's keys: never the whole tree, never a prefix subscription.
-    const topics = server.received.flatMap((f) => (f.data as { params: { topics: string[]; options: { prefix?: boolean } } }[]).flatMap((m) => m.params.topics))
+    // Only the guard, the metadata, the profile's keys and the companion's /Hindsight keys: never the whole tree.
+    const subscribes = server.received.flatMap((f) => f.data as { params: { topics: string[]; options: { prefix?: boolean } } }[])
+    const topics = subscribes.flatMap((m) => m.params.topics)
     // 107 for the 2026 robot (of ~455 it publishes): 66 before motor temperatures, readings and camera results.
     expect(topics.length).toBeLessThan(120)
-    expect(server.received.every((f) => (f.data as { params: { options: { prefix?: boolean } } }[]).every((m) => !m.params.options.prefix))).toBe(true)
+    // The one prefix subscription is the Hindsight companion's own keys (its device keys name each device).
+    const prefixed = subscribes.filter((m) => m.params.options.prefix).flatMap((m) => m.params.topics)
+    expect(prefixed).toEqual(FORESIGHT_PREFIXES.map(topicFor))
+    expect(prefixed).toEqual(['/AdvantageKit/Hindsight/'])
   })
 })
 
