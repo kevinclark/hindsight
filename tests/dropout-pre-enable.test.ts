@@ -74,15 +74,25 @@ describe('can/bus-dropout', () => {
     expect(JSON.stringify(f)).not.toContain('NaN')
   })
 
-  it('says plainly which devices never came back, and which came back, when some stay off to the end of the log', () => {
+  it('some devices kept reporting: says the break is in the CAN wiring between them and the rest', () => {
     // Everything stops at 50 s. The gyro and two modules are back after a second; two modules stay off to the end.
     const entries = bus([[5, true], [50, false], [51, true]], [[5, 'OK'], [50, 'CanMessageStale'], [51, 'OK']])
       .map((e) => (e.name.includes('ModuleBack') ? { ...e, records: [[5, 'OK'], [50, 'CanMessageStale']] } : e)) as FixtureEntry[]
     const [f] = findings(entries, 'can/bus-dropout')
-    expect(f.title).toMatch(/\(5\) stopped reporting at once at .*, 2 of them never came back \(still off at the end of the log, 30 s of the enabled match without them\)$/)
-    expect(f.evidence['never came back at the first drop']).toBe('Back Left module, Back Right module')
-    expect(f.evidence['came back at the first drop, after (s)']).toBe('Gyro (Pigeon) 1.0, Front Left module 1.0, Front Right module 1.0')
+    expect(f.title).toMatch(/\(5\) stopped reporting at once at .*, 2 of them never came back \(still off at the end of the log, 30 s of the enabled match without them\); 3 devices on the same bus came back and kept reporting: the break is in the CAN wiring between them and the rest$/)
+    expect(f.evidence['still off at the end of the log']).toBe('Back Left module, Back Right module')
+    expect(f.evidence['back after (s)']).toBe('Gyro (Pigeon) 1.0, Front Left module 1.0, Front Right module 1.0')
     expect(f.evidence['seconds until every device was back']).toBe('never')
+    expect(f.nextStep).toMatch(/^Check the CAN chain between the last device that kept reporting \(Gyro \(Pigeon\)/)
+    expect(f.causes.find((c) => c.id === 'can-chain')?.likely).toBe(true)
+    expect(f.causes.find((c) => c.id === 'bus')?.likely).toBeUndefined()
+  })
+
+  it('every device off to the end of the log keeps the CANivore-level wording', () => {
+    const [f] = findings(bus([[5, true], [50, false]], [[5, 'OK'], [50, 'CanMessageStale']]), 'can/bus-dropout')
+    expect(f.title).toMatch(/5 of them never came back \(still off at the end of the log, 30 s of the enabled match without them\)$/)
+    expect(f.nextStep).toMatch(/^Check the CANivore itself/)
+    expect(f.causes.find((c) => c.id === 'bus')?.likely).toBe(true)
   })
 
   it('formats two decimals, "not logged" where there is no reading', () => {

@@ -128,3 +128,24 @@ describe('power/limit-not-applied: an enabled limit that is often exceeded', () 
     expect(found(bursts(50, 0.15))).toBeUndefined()
   })
 })
+
+describe('power/limit-not-applied: a current held after the motor dropped off CAN', () => {
+  it('is not the motor drawing it', () => {
+    // Three drives at 60 A and the front left at 70 A (above 120 % of 40 A) from 10 s. The front left's controller drops off CAN at 20 s and logs no more.
+    const entries = [
+      { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [410, false]] },
+      { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
+      { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 12.5], [420, 12.3]] },
+      ...modules.flatMap((m) => [
+        { name: `/Swerve/${m} Module/DriveSupplyCurrentAmps`, type: 'double', records: [[0, 0], [10, m === 'Front Left' ? 70 : 60], ...(m === 'Front Left' ? [] : [[30, 0]])] },
+        { name: `/Swerve/${m} Module/DriveStatorCurrentAmps`, type: 'double', records: [[0, 5]] },
+      ]),
+      { name: '/Swerve/Front Left Module/DriveConnected', type: 'boolean', records: [[0, true], [20, false]] },
+    ] as Entries
+    const f = run(entries).findings.find((x) => x.rule === 'power/limit-not-applied' && x.about === 'Drive supply')
+    // The front left has the highest peak (70 A) but was on CAN for 10 s of it; its held 70 A after 20 s must not count.
+    expect(f?.evidence['worst motor']).toBe('Front Left drive')
+    expect(f?.evidence['seconds over 120 % of the limit (worst motor)']).toBe(10)
+    expect(f?.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(5) // the other three: 20 s of 400
+  })
+})

@@ -61,6 +61,11 @@ export function secondsWatched(match: MatchView, drop: Episode): number {
   return watched(match).reduce((sum, w) => sum + Math.max(0, Math.min(drop.end, w.end) - Math.max(drop.start, w.start)), 0)
 }
 
+/** What the watched window began with, for "already off when ...": the robot enabling, or (Foresight) the check starting. */
+export function windowStart(match: MatchView): string {
+  return match.beforeEnable.length > 0 ? 'the check started' : 'the robot enabled'
+}
+
 /** The battery before each drop, with a drop already under way timed from the start of the watched window. */
 export interface DropReadings {
   /** The drops, each starting where it is timed from (the window start for a drop already under way). */

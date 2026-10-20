@@ -320,7 +320,7 @@ function eventGroup(name: string): MotorGroup {
 const mainIndexerMotors = eventGroup('Indexer').motors
 
 export const offseason2026Event: RobotProfile = {
-  ...offseason2026,
+  ...offseason2026, // incl. canBuses: this profile reuses the base motor objects, so the bus members stay in step; if a motor is renamed here, rebuild the bus
   // event-calgames-new-autos was merged into event-calgames (at 123eec6), so its logs ran this code too.
   code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'event-calgames', sha: 'd339f29', alsoBranches: ['event-calgames-new-autos'] },
 

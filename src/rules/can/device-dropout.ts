@@ -11,7 +11,7 @@
  */
 import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
 import type { DeviceView, Episode, MatchView } from '../view.ts'
-import { busOf, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, watched } from './bus.ts'
+import { busOf, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, watched, windowStart } from './bus.ts'
 
 
 export default rule({
@@ -50,9 +50,8 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   // A drop already under way when the watched window began is timed from that start. It says nothing about sag.
   const { timed, alreadyOff, voltages, text: voltageText, everyDrop } = readDrops(match, battery, drops)
   const first = timed[0]
-  const pit = match.beforeEnable.length > 0
   const firstWhen = alreadyOff[0]
-    ? `already off when ${pit ? 'the check started' : 'the robot enabled'} ${match.whenAt(first.start)}`
+    ? `already off when ${windowStart(match)} ${match.whenAt(first.start)}`
     : match.whenAt(first.start)
   const secondsMissing = drops.reduce((sum, d) => sum + secondsWatched(match, d), 0)
   const lowOnes = voltages.filter((v) => v < LOW_VOLTS).length

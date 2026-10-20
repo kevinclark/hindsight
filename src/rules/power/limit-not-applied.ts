@@ -9,8 +9,8 @@
  * Why: CalGames 2026: the flywheel's 40 A supply limit is configured but switched off (DrumSubsystem.java:310), so
  * four motors pulled 78–94 A each during spin-up.
  */
-import { amps, beyond, rule, round, totalSeconds, type Problem } from '../rule.ts'
-import { lengthOf, type GroupView, type MatchView, type MotorView } from '../view.ts'
+import { amps, beyond, isFalse, rule, round, totalSeconds, type Problem } from '../rule.ts'
+import { lengthOf, MissingSignal, type GroupView, type MatchView, type MotorView, type Window } from '../view.ts'
 
 // The share of enabled time (%) over 110 % of an enabled limit that tells a limit that holds from one that doesn't.
 // Assumed, from 8 CalGames 2026 logs of one robot (8 qualification, practice and test logs, 150–160 s enabled each),
@@ -106,6 +106,31 @@ export default rule({
   },
 })
 
+/**
+ * The time while enabled that the motor was on CAN. A controller that dropped off CAN logs no more currents, so the
+ * last one stays "held" for the rest of the log; that is not the motor drawing it. (No Connected flag logged: all of
+ * the enabled time.)
+ */
+function enabledAndConnected(motor: MotorView, match: MatchView): Window {
+  let offCan
+  try {
+    offCan = motor.connected().episodes(isFalse)
+  } catch (error) {
+    if (error instanceof MissingSignal) return match.enabled
+    throw error
+  }
+  return match.enabled.flatMap((enabled) => {
+    let pieces = [{ start: enabled.start, end: enabled.end }]
+    for (const off of offCan) {
+      pieces = pieces.flatMap((p) => [
+        { start: p.start, end: Math.min(p.end, off.start) },
+        { start: Math.max(p.start, off.end), end: p.end },
+      ]).filter((p) => p.end > p.start)
+    }
+    return pieces
+  })
+}
+
 /** The supply or stator current of a motor. */
 function currentOf(motor: MotorView, kind: 'supply' | 'stator') {
   return kind === 'supply' ? motor.supply() : motor.stator()
@@ -116,7 +141,7 @@ function shareOverLimit(group: GroupView, kind: 'supply' | 'stator', limit: numb
   const enabledSeconds = lengthOf(match.enabled)
   let worst = { motor: '', percent: 0, peak: 0, start: 0 }
   for (const motor of group.motors) {
-    const over = currentOf(motor, kind).episodes(beyond(limit * 1.1), { during: match.enabled })
+    const over = currentOf(motor, kind).episodes(beyond(limit * 1.1), { during: enabledAndConnected(motor, match) })
     const percent = (100 * totalSeconds(over)) / enabledSeconds
     if (over.length === 0 || percent <= worst.percent) continue
     const highest = over.reduce((a, b) => (b.peak > a.peak ? b : a))
@@ -129,7 +154,7 @@ function shareOverLimit(group: GroupView, kind: 'supply' | 'stator', limit: numb
 function worstOverLimit(group: GroupView, kind: 'supply' | 'stator', limit: number, match: MatchView) {
   let worst = { motor: '', peak: 0, start: 0, secondsOver: 0 }
   for (const motor of group.motors) {
-    const over = currentOf(motor, kind).episodes(beyond(limit * 1.2), { during: match.enabled, longerThan: 0.2 })
+    const over = currentOf(motor, kind).episodes(beyond(limit * 1.2), { during: enabledAndConnected(motor, match), longerThan: 0.2 })
     for (const e of over) {
       if (e.peak <= worst.peak) continue
       worst = { motor: motor.name, peak: e.peak, start: e.start, secondsOver: totalSeconds(over) }

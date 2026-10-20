@@ -108,7 +108,14 @@ function gridWithCurrents(match: Match, t: Float64Array, volts: Float64Array): P
 function offCanMask(match: Match, connectedKey: string | undefined, t: Float64Array): Uint8Array {
   const mask = new Uint8Array(t.length)
   if (!connectedKey || !has(match, connectedKey)) return mask
-  const flag = resample(num(match, connectedKey)!, t)
+  let series
+  try {
+    series = num(match, connectedKey)
+  } catch {
+    return mask // not a number or a boolean: no way to read it, so leave the current as logged
+  }
+  if (!series) return mask
+  const flag = resample(series, t)
   for (let i = 0; i < t.length; i++) mask[i] = flag[i] === 0 ? 1 : 0
   return mask
 }
