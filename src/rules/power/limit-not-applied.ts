@@ -2,23 +2,15 @@
  * Is each motor's current staying under its configured limit?
  *
  * Checks: for each motor group with limits in the robot profile, supply and stator current above 120 % of the limit
- * for more than 0.2 s while enabled. (Shorter bursts are the limiter catching up: ≤ 0.21 s at CalGames.) For a limit
- * that is switched on, also: the worst motor over 110 % of the limit for more than SHARE_OVER_LIMIT of the enabled
- * time, even with no single run that long: a limit that holds is not exceeded again and again. Says when the limit is
- * switched off in code.
+ * for more than 0.2 s while enabled. (Shorter bursts are the limiter catching up: ≤ 0.21 s at CalGames.) Says when the limit is
+ * switched off in code. The share of enabled time over 110 % of the limit is evidence only: at CalGames it is made of
+ * 154–233 bursts per motor per match with a median of 0.02 s (one 50 Hz sample) and a longest of 0.26 s, the limiter
+ * catching up at each acceleration, so on its own it does not mean the limit is failing.
  * Why: CalGames 2026: the flywheel's 40 A supply limit is configured but switched off (DrumSubsystem.java:310), so
  * four motors pulled 78–94 A each during spin-up.
  */
 import { amps, beyond, isFalse, rule, round, totalSeconds, type Problem } from '../rule.ts'
 import { lengthOf, MissingSignal, type GroupView, type MatchView, type MotorView, type Window } from '../view.ts'
-
-// The share of enabled time (%) over 110 % of an enabled limit that tells a limit that holds from one that doesn't.
-// Assumed, from 8 CalGames 2026 logs of one robot (8 qualification, practice and test logs, 150–160 s enabled each),
-// the worst motor of each group with a limit switched on: groups that hold sit at 0–0.9 % (drive stator, steer,
-// indexer, kicker, hood, flywheel stator, intake pivot stator); groups that don't sit at 2.5–8.5 % (drive supply
-// 2.5–3.8 %, peaks 61–67 A on a 40 A limit; intake roller stator 2.6–8.5 %). Nothing was measured between 0.9 and
-// 2.5 %; 1.5 % is the middle of that gap (geometric mean). Other robots are untested.
-const SHARE_OVER_LIMIT = 1.5
 
 export default rule({
   id: 'power/limit-not-applied',
@@ -53,12 +45,9 @@ export default rule({
     const problems: Problem[] = []
     for (const { kind, limit, isOn } of kinds) {
       if (limit === undefined) continue
-      const run = worstOverLimit(group, kind, limit, match)
-      const share = shareOverLimit(group, kind, limit, match)
-      // A switched-off limit is explained by the run over 120 %; a switched-on one also fails by being over, often.
-      const oftenOver = isOn && share !== null && share.percent > SHARE_OVER_LIMIT
-      const worst = run ?? (oftenOver ? share : null)
+      const worst = worstOverLimit(group, kind, limit, match)
       if (worst === null) continue
+      const share = shareOverLimit(group, kind, limit, match)
 
       // Switched off in code: that is the cause. Switched on (in the code the profile came from): the config likely
       // didn't reach the motor.
@@ -81,15 +70,13 @@ export default rule({
         likely,
         ruledOut,
         nextStep,
-        message: run
-          ? `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${switchedOff}${asOf}`
-          : `${group.name} ${kind} current was over 110 % of its ${limit} A limit for ${round(share?.percent ?? 0, 1)} % of the enabled time (peak ${amps(worst.peak)})${asOf}`,
+        message: `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${switchedOff}${asOf}`,
         at: worst.start,
         about: `${group.name} ${kind}`,
         evidence: {
           'worst motor': worst.motor,
           [`peak ${kind} current (A)`]: round(worst.peak, 1),
-          'seconds over 120 % of the limit (worst motor)': run ? round(run.secondsOver, 1) : undefined,
+          'seconds over 120 % of the limit (worst motor)': round(worst.secondsOver, 1),
           'share of enabled time over 110 % of the limit (worst motor) (%)': share ? round(share.percent, 1) : undefined,
           'configured limit (A)': limit,
           'limit switched on in code': `${isOn ? 'yes' : 'no'}${asOf}`,

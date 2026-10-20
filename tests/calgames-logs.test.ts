@@ -92,16 +92,16 @@ describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
     expect(b.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('5.86, 6.20, 6.31, 5.85, 6.10, 6.02, 5.96')
   })
 
-  it('links: Q13 and P0 read as one story each, Q21\'s camera alerts sit under the camera, red headlines 8 → 5, 7 → 4, 6 → 6', () => {
+  it('links: Q13 and P0 read as one story each, Q21\'s camera alerts sit under the camera, red headlines 6 → 3, 5 → 2, 4 → 4', () => {
     const links = (name: string) => byName(name).report.findings.filter((f) => f.explainedBy).map((f) => `${f.rule}${f.about ? ` ${f.about}` : ''} ← ${f.explainedBy!.rule}`)
     expect(links('q13')).toEqual(['auto/early-disable ← collision/tilt', 'collision/tilt Pitch ← mech/zero-not-completed', 'comms/ds-log-truncated ← comms/loss'])
     expect(links('p0')).toEqual(['power/brownout ← power/battery-collapse', 'can/device-dropout Flywheel follower 16 ← power/brownout', 'alerts/passthrough Flywheel Follower Disconnected ← can/device-dropout', 'power/margin ← power/brownout'])
     expect(links('q21')).toEqual(['alerts/passthrough Back_Right Camera Disconnected! ← vision/stale', "alerts/passthrough PhotonCamera 'Back_Right' is disconnected. ← vision/stale"])
     // Headlines as the Match tab lists them: Q21's red alert stays one, since its camera finding is only amber.
     const redHeadlines = (name: string) => { const m = reviewModel(byName(name), new Map()); return [m.errors.length, m.headlines.filter((n) => n.finding.severity === 'error').length] }
-    expect([redHeadlines('q13'), redHeadlines('p0'), redHeadlines('q21')]).toEqual([[8, 5], [7, 4], [6, 6]]) // incl. two limit-not-applied: drive supply, intake roller stator
+    expect([redHeadlines('q13'), redHeadlines('p0'), redHeadlines('q21')]).toEqual([[6, 3], [5, 2], [4, 4]])
     const p0Model = reviewModel(p0(), new Map())
-    expect(p0Model.bottomLine).toMatch(/^7 errors, .*Worst: Battery fell 2\.4 V below a healthy battery/)
+    expect(p0Model.bottomLine).toMatch(/^5 errors, .*Worst: Battery fell 2\.4 V below a healthy battery/)
     // The printed report's section counts: P0's margin warning is listed under the collapse, in the Errors section.
     expect([listedAbove(p0Model, 'warning'), listedAbove(p0Model, 'info')]).toEqual([1, 0])
     expect(reviewCard(p0Model).items[0].number).toMatch(/explains 3 errors, 1 warning$/)
