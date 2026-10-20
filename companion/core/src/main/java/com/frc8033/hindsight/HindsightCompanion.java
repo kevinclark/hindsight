@@ -20,7 +20,9 @@ import org.littletonrobotics.junction.inputs.LoggableInputs;
  *
  * <p>Call {@link #periodic()} once per loop from robotPeriodic. The hardware is read once a second
  * (every 50 loops), and only on a real robot. It raises Alerts (shown in Elastic) when a CANivore
- * is busy or has errors, and when the log drive is low or isn't the USB stick.
+ * is busy or has errors, when the log drive is low or isn't the USB stick, and when a device given
+ * to {@link HindsightDevices#watch} isn't answering, rebooted, has a sticky fault, or runs different
+ * firmware from others of its model. It also logs whether Phoenix's hoot recording is on.
  */
 public class HindsightCompanion {
   /** Read once a second: getStatus() can block for up to 1 ms, and these values change slowly. */
@@ -51,9 +53,15 @@ public class HindsightCompanion {
   private final SystemIOInputsAutoLogged systemInputs = new SystemIOInputsAutoLogged();
   private final LogDriveIO logDriveIO;
   private final LogDriveIOInputsAutoLogged logDriveInputs = new LogDriveIOInputsAutoLogged();
+  private final HootIO hootIO;
+  private final HootIOInputsAutoLogged hootInputs = new HootIOInputsAutoLogged();
   private final List<Canivore> canivores = new ArrayList<>();
   private final AlertOut logDriveLow;
   private final AlertOut logDriveNotUsb;
+  private final AlertOut devicesNotAnswering;
+  private final AlertOut devicesRebooted;
+  private final AlertOut devicesWithStickyFaults;
+  private final AlertOut firmwareMismatch;
   private int loopCount = 0;
 
   /**
@@ -74,6 +82,7 @@ public class HindsightCompanion {
         RobotBase.isReal(),
         new SystemIOReal(),
         new LogDriveIOReal(logDirectory),
+        new HootIOReal(),
         realCanivores(canivores),
         type -> {
           Alert alert = new Alert("", type);
@@ -88,14 +97,20 @@ public class HindsightCompanion {
       boolean real,
       SystemIO systemIO,
       LogDriveIO logDriveIO,
+      HootIO hootIO,
       Map<String, CanivoreIO> canivoreIOs,
       AlertMaker alerts) {
     this.real = real;
     this.systemIO = systemIO;
     this.logDriveIO = logDriveIO;
+    this.hootIO = hootIO;
     canivoreIOs.forEach((label, io) -> canivores.add(new Canivore(label, io, alerts)));
     logDriveLow = alerts.make(AlertType.kWarning);
     logDriveNotUsb = alerts.make(AlertType.kError);
+    devicesNotAnswering = alerts.make(AlertType.kError);
+    devicesRebooted = alerts.make(AlertType.kWarning);
+    devicesWithStickyFaults = alerts.make(AlertType.kWarning);
+    firmwareMismatch = alerts.make(AlertType.kWarning);
   }
 
   private static Map<String, CanivoreIO> realCanivores(CANBus... buses) {
@@ -135,6 +150,10 @@ public class HindsightCompanion {
     for (Canivore canivore : canivores) {
       readSafely(() -> canivore.io.updateInputs(canivore.inputs), why -> canivore.inputs.status = why);
     }
+    readSafely(() -> hootIO.updateInputs(hootInputs), why -> hootInputs.status = why);
+    for (HindsightDevices.Watched device : HindsightDevices.all()) {
+      readSafely(() -> device.io().updateInputs(device.inputs()), why -> device.inputs().status = why);
+    }
   }
 
   /** A monitoring library must never stop the robot code, so a failed read is logged instead. */
@@ -153,6 +172,10 @@ public class HindsightCompanion {
     for (Canivore canivore : canivores) {
       log.accept("Hindsight/CANivore/" + canivore.label, canivore.inputs);
     }
+    log.accept("Hindsight/Hoot", hootInputs);
+    for (HindsightDevices.Watched device : HindsightDevices.all()) {
+      log.accept("Hindsight/Devices/" + device.key(), device.inputs());
+    }
   }
 
   private void updateAlerts() {
@@ -168,6 +191,46 @@ public class HindsightCompanion {
     for (Canivore canivore : canivores) {
       canivore.updateAlerts();
     }
+    updateDeviceAlerts(HindsightDevices.all());
+  }
+
+  /** One alert per kind, naming every device it applies to. Only devices read at least once count. */
+  private void updateDeviceAlerts(List<HindsightDevices.Watched> devices) {
+    List<String> notAnswering = new ArrayList<>();
+    List<String> rebooted = new ArrayList<>();
+    List<String> stickyFaults = new ArrayList<>();
+    Map<String, Integer> firmwareByModel = new LinkedHashMap<>();
+    List<String> mismatchedModels = new ArrayList<>();
+    for (HindsightDevices.Watched device : devices) {
+      DeviceIOInputsAutoLogged in = device.inputs();
+      if (in.status.equals("not read")) {
+        continue;
+      }
+      if (!in.connected) {
+        notAnswering.add(device.name());
+        continue;
+      }
+      if (in.resets > 0) {
+        rebooted.add(device.name() + " (" + in.resets + "x)");
+      }
+      if (in.stickyFaultField != 0) {
+        stickyFaults.add(device.name());
+      }
+      String model = device.key().split("/")[1];
+      Integer firstVersion = firmwareByModel.putIfAbsent(model, in.version);
+      if (firstVersion != null && firstVersion != in.version && !mismatchedModels.contains(model)) {
+        mismatchedModels.add(model);
+      }
+    }
+    show(devicesNotAnswering, notAnswering,
+        "Not answering (or its status signals are turned off): ");
+    show(devicesRebooted, rebooted, "Rebooted while the code ran: ");
+    show(devicesWithStickyFaults, stickyFaults, "Sticky faults set (see Tuner X, clear after the log is pulled): ");
+    show(firmwareMismatch, mismatchedModels, "Different firmware on devices of one model: ");
+  }
+
+  private static void show(AlertOut alert, List<String> names, String text) {
+    alert.set(!names.isEmpty(), names.isEmpty() ? "" : text + String.join(", ", names));
   }
 
   /** One CANivore: its inputs, its alerts, and what the alerts compare against. */
