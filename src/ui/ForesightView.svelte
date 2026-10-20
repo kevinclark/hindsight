@@ -18,6 +18,7 @@
   import { SNAPSHOT_RULES } from '../foresight/snapshot-checks.ts'
   import { parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import type { VerdictItem } from '../foresight/verdict.ts'
+  import { didNotRun } from '../report/foresight-model.ts'
   import ForesightReport from './ForesightReport.svelte'
 
   let { history, onPitCheck }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void } = $props()
@@ -112,7 +113,11 @@
   const onchecks = $derived(markOnchecks(checked))
   // Only red and amber items decide GO/NO-GO; grey ones (context, or a step for a person) sit in their own short list.
   const decisive = $derived(checked ? checked.verdict.items.filter((i) => i.level !== 'grey') : [])
-  const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey') : [])
+  // Grey items that ask a person to do something (hold a tag up to a camera) are steps; the other greys are context.
+  const stepItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule)) : [])
+  const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
+  const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
+  const unrun = $derived(checked ? didNotRun(checked.verdict.notChecked.length + checked.verdict.crashed.length, totalChecks) : null)
   // Lines the tool can never judge (a person's, or not built yet) fold away; the rest are live, in the team's order.
   const inert = (l: { state: string }) => l.state === 'by eye' || l.state === 'not yet'
   const liveLines = $derived(onchecks.filter((l) => !inert(l)))
@@ -120,7 +125,7 @@
   const snapshotWhy = $derived(checked && !checked.snapshotUsed ? checked.report.skipped.find((s) => s.rule === SNAPSHOT_RULES[0])?.reason ?? null : null)
   let reportView = $state<{ save: () => Promise<string | null> }>()
   let saveProblem = $state<string | null>(null)
-  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
+  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': '– Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
 
@@ -175,6 +180,7 @@
   <section class={`verdict v-${verdict.replace(' ', '-').toLowerCase()}`} aria-live="polite">
     <p class="big">{verdict}</p>
     <p>{why}</p>
+    {#if unrun}<p class="unrun">{unrun}</p>{/if}
     {#if result?.state === 'settling'}<p class="small">Nothing is judged until {SETTLE_SECONDS} s after the robot code starts: start-up camera and time-sync alerts clear in that time.</p>{/if}
   </section>
 
@@ -184,6 +190,11 @@
         {#each decisive as item (item.finding.key + item.finding.title)}{@render itemRow(item)}{/each}
       </ol>
     {/if}
+    {#if stepItems.length}
+      <ol class="items context-items" aria-label="Steps for a person: never changes the verdict">
+        {#each stepItems as item (item.finding.key + item.finding.title)}{@render itemRow(item)}{/each}
+      </ol>
+    {/if}
     {#if contextItems.length}
       <ol class="items context-items" aria-label="Context: never changes the verdict">
         {#each contextItems as item (item.finding.key + item.finding.title)}{@render itemRow(item)}{/each}
@@ -191,7 +202,7 @@
     {/if}
     {#if checked.verdict.notChecked.length || checked.verdict.crashed.length}
       <details class="notchecked">
-        <summary>Not checked or partly checked: {checked.verdict.notChecked.length + checked.verdict.crashed.length} of {FORESIGHT_RULES.length + SNAPSHOT_RULES.length} checks</summary>
+        <summary>Not checked or partly checked: {checked.verdict.notChecked.length + checked.verdict.crashed.length} of {totalChecks} checks</summary>
         <ul>
           {#each checked.verdict.notChecked as s (s.rule)}<li><code>{s.rule}</code>: {s.reason}</li>{/each}
           {#each checked.verdict.crashed as s (s.rule)}<li><code>{s.rule}</code> crashed: {s.reason}</li>{/each}
@@ -239,7 +250,7 @@
   {/if}
 {/if}
 </div>
-<ForesightReport bind:this={reportView} {status} {checked} {verdict} {why} {onchecks} {battery} {controllers} />
+<ForesightReport bind:this={reportView} {totalChecks} {status} {checked} {verdict} {why} {onchecks} {battery} {controllers} />
 
 <style>
   .connect + .connect { margin-top: 0.5rem; }
@@ -251,6 +262,8 @@
   .big { font-size: clamp(2rem, 9vw, 4rem); font-weight: 800; margin: 0; letter-spacing: 0.02em; }
   .verdict p { margin: 0.25rem 0; }
   .small { font-size: 0.8rem; color: var(--muted); }
+  .verdict .unrun { font-size: 1rem; }
+  details > summary { min-height: 24px; box-sizing: border-box; }
   .v-go { border-color: var(--go, #188038); color: var(--go, #188038); }
   .v-no-go { border-color: var(--error); color: var(--error); }
   .v-not-checked { color: var(--muted); }
@@ -276,7 +289,8 @@
   .onchecks ul { list-style: none; margin: 0; padding: 0; }
   .oc { display: grid; grid-template-columns: 6.5rem minmax(10rem, 1fr) 2fr; gap: 0.15rem 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
   .oc .mark { font-weight: 700; font-size: 0.8rem; }
-  .oc.ok .mark { color: var(--muted); }
+  .oc.ok .mark { color: var(--muted); font-weight: 400; }
+  .oc.not-checked .mark { color: var(--fg); }
   .inert { margin-top: 0.4rem; }
   .inert summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; padding: 0.25rem 0; }
   .inert ul { list-style: none; margin: 0; padding: 0; }
@@ -284,7 +298,7 @@
   .oc.red .mark { color: var(--error); }
   .oc.amber .mark { color: var(--warning); }
   .oc.to-do .mark { color: var(--fg); }
-  .oc.not-checked .mark, .oc.not-yet .mark, .oc.context .mark, .oc.by-eye .mark { color: var(--muted); }
+  .oc.not-yet .mark, .oc.context .mark, .oc.by-eye .mark { color: var(--muted); }
   .oc .detail-text { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
   @media (max-width: 600px) { .oc { grid-template-columns: 5.5rem 1fr; } .oc .detail-text { grid-column: 2; } }
   .field { margin: 2rem 0; padding: 2rem 1rem; text-align: center; border: 3px solid var(--error); border-radius: 10px; color: var(--error); }

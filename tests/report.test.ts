@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE, CARD_WIDTH, wrap, type CardModel } from '../src/report/card.ts'
 import { bottomLine, cardTitle, keyNumber, reviewCard, reviewModel, shortTitle, stripRepoPaths, titleHasValue } from '../src/report/review-model.ts'
-import { foresightCard, type ForesightReportInput } from '../src/report/foresight-model.ts'
+import { didNotRun, foresightCard, shortShas, type ForesightReportInput } from '../src/report/foresight-model.ts'
 import { RULES } from '../src/rules/index.ts'
 import type { Finding } from '../src/rules/types.ts'
 import { analyzeFixture } from './helpers/load.ts'
@@ -213,6 +213,12 @@ describe('Foresight card', () => {
     const text = JSON.stringify(foresightCard({ ...base, items: [item] }).items)
     expect(text).not.toContain(sha)
   })
+  it('shortens shas with one helper and counts the checks that did not run only when there are some', () => {
+    const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
+    expect(shortShas(`${sha} and ${sha.slice(0, 7)}`)).toBe('123eec6 and 123eec6')
+    expect(didNotRun(11, 21)).toBe('11 of 21 checks did not run')
+    expect(didNotRun(0, 21)).toBeNull()
+  })
   it('a withdrawn verdict prints as NOT CHECKED, never GO', () => {
     const c = foresightCard({ ...base, verdict: 'NOT CHECKED', why: 'not connected', build: null })
     expect(c.heading).toBe('NOT CHECKED')
@@ -234,6 +240,24 @@ describe('printed report component', () => {
     expect(html).not.toContain('every rule ran')
     const clean = render(ReviewReport, { props: { analysis: { ...a, report: { ...a.report, skipped: [], crashed: [] } }, issues: new Map() } }).body
     expect(clean).toContain('every rule ran')
+  })
+})
+
+describe('Foresight printed report component', () => {
+  it('prints the did-not-run sub-line, a "–" before Not checked, and no ws URL', async () => {
+    const { render } = await import('svelte/server')
+    const { default: ForesightReport } = await import('../src/ui/ForesightReport.svelte')
+    const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
+    const finding = { rule: 'build/dirty', key: 'k', title: 'Robot ran uncommitted changes', evidence: { 'git sha': sha } }
+    const checked = { verdict: { verdict: 'NO-GO', items: [{ finding, level: 'red', proof: '', action: 'x' }], notChecked: [{ rule: 'a/b', reason: 'r' }], crashed: [] }, match: { build: { sha, branch: 'b', dirty: 'clean' } } }
+    const onchecks = [{ line: 'Line A', state: 'ok', detail: '' }, { line: 'Line B', state: 'not checked', detail: '' }]
+    const props = { status: { state: 'connected', message: 'Connected', url: 'ws://secret-host:5810/nt' }, checked, verdict: 'NO-GO', why: 'x', onchecks, battery: 12.6, controllers: [], totalChecks: 21 }
+    const html = render(ForesightReport, { props: props as never }).body
+    expect(html).toContain('1 of 21 checks did not run')
+    expect(html).toContain('– Not checked')
+    expect(html).not.toContain('secret-host')
+    expect(html).not.toContain(sha)
+    expect(render(ForesightReport, { props: { ...props, checked: { ...checked, verdict: { ...checked.verdict, notChecked: [] } } } as never }).body).not.toContain('did not run')
   })
 })
 
