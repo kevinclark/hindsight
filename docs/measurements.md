@@ -53,6 +53,13 @@ over 138–345 s of disabled robot on the field. 91 s for all 11 on the M5 Max.
 | `battery/identity`, `battery/gauge-capacity` | 0 | no log has the battery tracker's keys yet | — | amber |
 | `foresight/commit-matches` | 0 | needs a passing pit check on record | — | amber |
 | `foresight/gyro-still-drift` | 3 | context only (grey): no line | — | grey |
+| `foresight/motor-temperature` (2026-10-19) | 5 (CalGames, 340 ×2) | none: the hottest motor before any enable was 31 °C (line 60 °C) | — | amber: no real fire on our logs yet |
+| `foresight/values-updating` (2026-10-19) | 3 | none: all 16 readings changed in every 5 s window | — | amber: no real fire on our logs yet |
+| `foresight/camera-sees-tag` (2026-10-19) | 3 | context only (grey): "Hold an AprilTag up to Back_Left / Back_Right" all along; no camera saw a tag before any match (0 of 62,681 results) | — | grey: a step, never a verdict |
+
+Rerun 2026-10-19 (evening, PT) with the three new checks (59 s for all 11): every earlier row unchanged. The backtest now gives the
+checks only the signals Foresight subscribes to (plus the DataLogManager keys and the log's struct schemas);
+`--whole-log` gives the same report line for line.
 
 "Could judge" means the check read its signals there; on other teams' logs the 8033 profile doesn't fit, so the
 checks about our motors, devices, cameras and controllers skip them. The verdict colours are `src/foresight/proven.ts`;
@@ -87,9 +94,31 @@ Measured along the way (CalGames, disabled on the field after the 30 s settle):
   stayed above 0.25° for ~100 s). No line is set.
 - Intake pivot against its CANcoder (× 1.7778): within 0.24° at rest (median 0.04–0.08°), up to 6.7° while moving.
 
+Measured for the three new checks (2026-10-19, CalGames Q13, Q21, P0; "before" = code start + 30 s to the first
+enable, "after" = 10 s after the last disable to the end of the log):
+
+- **Motor temperatures** (19 Talon FX, `DeviceTemp`, the controller's own reading): 22–31 °C before, 60 °C the
+  highest during a match (Back Right drive, Q21; swerve drives 51–60 °C, steer 43–49 °C, everything else 27–40 °C), 26–54 °C
+  after. Line: above 60 °C, hotter than any motor ended a match. Measured; where the Talon FX derates is not.
+- **Readings that change at rest.** Stator current changed 41–49 times a second on 15 motors and never sat still longer
+  than 0.16 s, before or after; the gyro's yaw rate 46–49 a second, still at most 0.12 s. Position and velocity are no
+  use: some still motors' (the swerve drives, flywheels, indexer) sat unchanged for the whole stretch before the match
+  (228–345 s), the intake pivot's (fused with its CANcoder) changed every 0.1–0.9 s, and the swerve turn positions sat
+  still for anywhere from 2 s to 184 s; the four flywheel
+  motors' every signal sat still too, and a still CANcoder's position up to 110 s (Front Left, Q13). So `values-updating` watches stator
+  current and yaw rate over 5 s (30× the longest still) and lists the CANcoders and flywheels as not checked.
+- **Camera results and accepted poses.** 134,401 PhotonVision results from two cameras all parsed (`src/readers/photon.ts`).
+  The accepted pose `/RealOutputs/Vision/<camera>/Pose2d` was logged in the same loop as a result with two or more tags
+  every time (20,873 of 20,873), never for a one-tag result (0 of 19,095) and never without a tag: the code logs a pose
+  only from the coprocessor's multi-tag result (`Camera.updateCamera`, `estimateCoprocMultiTagPose`). So
+  `camera-sees-tag` passes a camera on its raw result showing one tag (or on a pose), not on the pose alone. Before
+  any match no camera saw a tag: 0 of 62,681 results across the three field stretches.
+
 ## Foresight live (2026-10-19)
 
-- **Engine:** 1–26 ms per check in Node on the M5 Max (66 signals, the stretch growing to 345 s).
+- **Engine:** 1–26 ms per check in Node on the M5 Max (66 signals, the stretch growing to 345 s). With the 105 signals
+  of 2026-10-19 (evening), P0 at 345 s: 33 ms before the new signals, 207–276 ms with them (the 15 stator currents were 4/5 of the
+  records), 67–74 ms once the "updating" readings are kept and written for their last 30 s only (`recentKeys`).
 - **Replay, Node:** `tests/foresight-live.test.ts` replays the CalGames logs as NT4 (`tests/helpers/nt4-replay-server.ts`)
   into the real client: P0 → `build/dirty`, Q21 → `power/rest-voltage` 12.45–12.48 V, Q13 → nothing flagged from settle
   to the first enable; with FMSAttached as logged, the socket closes at the attach (27.3–28.5 s robot time) and a new

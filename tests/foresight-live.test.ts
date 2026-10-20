@@ -72,7 +72,8 @@ describe.skipIf(!haveCalGames)('Foresight live, replaying CalGames logs in pit m
     expect(new Set(methods)).toEqual(new Set(['subscribe']))
     // Only the guard, the metadata and the profile's keys: never the whole tree, never a prefix subscription.
     const topics = server.received.flatMap((f) => (f.data as { params: { topics: string[]; options: { prefix?: boolean } } }[]).flatMap((m) => m.params.topics))
-    expect(topics.length).toBeLessThan(80)
+    // 107 for the 2026 robot (of ~455 it publishes): 66 before motor temperatures, readings and camera results.
+    expect(topics.length).toBeLessThan(120)
     expect(server.received.every((f) => (f.data as { params: { options: { prefix?: boolean } } }[]).every((m) => !m.params.options.prefix))).toBe(true)
   })
 })

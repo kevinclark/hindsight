@@ -13,9 +13,9 @@ import { FORESIGHT_RULES, runRules, type Report } from '../rules/index.ts'
 import type { Rule } from '../rules/rule.ts'
 import { PROFILES } from '../profiles/index.ts'
 import { chooseProfile, PROFILE_FIT_MIN, profileKeys, type ProfileChoice } from '../profiles/choose.ts'
-import { foresightKeys } from './keys.ts'
+import { foresightKeys, RECENT_SECONDS, recentKeys } from './keys.ts'
 import type { RobotProfile } from '../profiles/types.ts'
-import type { RecordStore } from './records.ts'
+import { KEEP_SECONDS, type RecordStore } from './records.ts'
 import { verdictFor, type Verdict } from './verdict.ts'
 import { PROVEN } from './proven.ts'
 
@@ -60,15 +60,20 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   const probeLog = openWpilog(store.windowLog(input.codeStart, now))
   const picked = input.profile ? { profile: input.profile, choice: { how: 'given' as const, note: null, fit: null } } : chooseProfile(probeLog, PROFILES)
   picked.choice = fitOnSubscribed(probeLog, picked.profile, picked.choice)
+  for (const key of recentKeys(picked.profile)) store.recent.set(key, RECENT_SECONDS)
   // Enabled now? Then nothing; enabled earlier? Then check from a while after the last disable.
   const probe = buildMatch('foresight', probeLog, picked.profile, picked.choice)
   const enabled = num(probe, probe.profile.signals.enabled)
   if (enabled && enabled.v.length && enabled.v[enabled.v.length - 1] > 0.5) return { state: 'enabled', reason: 'the robot is enabled: disable it to check' }
   const lastEnable = probe.enabled.at(-1)
-  const start = lastEnable ? Math.max(settleAt, lastEnable.end + AFTER_DISABLE_SECONDS) : settleAt
-  if (now < start) return { state: 'settling', secondsLeft: start - now, reason: 'just disabled: letting the battery recover' }
+  const wanted = lastEnable ? Math.max(settleAt, lastEnable.end + AFTER_DISABLE_SECONDS) : settleAt
+  if (now < wanted) return { state: 'settling', secondsLeft: wanted - now, reason: 'just disabled: letting the battery recover' }
+  // After KEEP_SECONDS the oldest records are gone: check only what is still known, and say so.
+  const pruned = store.prunedTo > wanted
+  const start = pruned ? store.prunedTo : wanted
+  const words = pruned ? `in the last ${Math.round(KEEP_SECONDS / 60)} min` : lastEnable ? 'since the robot was last driven' : 'since start-up settled'
   const match = buildMatch('foresight', openWpilog(store.windowLog(start, now)), picked.profile, picked.choice)
-  match.foresight = { start, end: now, lastPassingSha: input.lastPassingSha }
+  match.foresight = { start, end: now, lastPassingSha: input.lastPassingSha, words }
   const report = runRules(match, input.rules ?? FORESIGHT_RULES)
   // The backtest only proved checks on stretches before any enable. After a drive the battery is still recovering
   // (CalGames: 11.7–12.1 V 10 s after the match, 12.3 V after 160 s), so rest voltage stays amber then.

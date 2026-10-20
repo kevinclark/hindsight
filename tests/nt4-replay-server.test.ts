@@ -64,7 +64,8 @@ const ENTRIES: FixtureEntry[] = [
   { name: '/Test/Hood', type: 'double[]', records: [[0, [1, 2.5] as never]] },
   { name: '/Test/Pose', type: 'struct:Pose2d', records: [[0, { x: 1, y: 2, rot: 3 }]] },
   { name: '/Test/Message', type: 'string', records: [[0, 'hello']] },
-  { name: '/Test/Odd', type: 'proto:Thing', records: [[0, new Uint8Array([1])]] },
+  { name: '/Test/Photon', type: 'proto:photonvision.proto.ProtobufPhotonPipelineResult', records: [[0, new Uint8Array([0x20, 0x01])]] },
+  { name: '/Test/Odd', type: 'thing', records: [[0, new Uint8Array([1])]] },
 ]
 
 let server: ReplayServer | null = null
@@ -99,7 +100,7 @@ describe('NT4 replay server', () => {
     expect(types).toEqual({
       [`${P}/SystemStats/BatteryVoltage`]: 'double', [`${P}/Test/Count`]: 'int', [`${P}/Test/Gain`]: 'float',
       [`${P}/Test/Names`]: 'string[]', [`${P}/Test/Hood`]: 'double[]', [`${P}/Test/Pose`]: 'struct:Pose2d',
-      [`${P}/Test/Message`]: 'string',
+      [`${P}/Test/Message`]: 'string', [`${P}/Test/Photon`]: 'proto:photonvision.proto.ProtobufPhotonPipelineResult',
     })
     expect(new Set(c.announces.map((a) => a.id)).size).toBe(c.announces.length)
     expect(c.announces.every((a) => Object.keys(a.properties).length === 0)).toBe(true)
@@ -114,11 +115,13 @@ describe('NT4 replay server', () => {
     expect(pose[2]).toBe(5)
     expect(pose[3]).toBeInstanceOf(Uint8Array)
     expect((pose[3] as Uint8Array).length).toBe(24)
+    // Protobuf (a PhotonVision result) goes as raw bytes, as AdvantageKit publishes it.
+    expect(first('Test/Photon').slice(2)).toEqual([5, new Uint8Array([0x20, 0x01])])
   })
 
   it('skips types NT4 has no equivalent for, and says so', async () => {
     const s = await start()
-    expect(s.skipped).toEqual(['/Test/Odd (proto:Thing)'])
+    expect(s.skipped).toEqual(['/Test/Odd (thing)'])
   })
 
   it('sends later values in order with the log timestamps, doubles always as float64', async () => {

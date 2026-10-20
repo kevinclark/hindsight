@@ -36,6 +36,9 @@ import controllers from './foresight/controllers.ts'
 import gyroStillDrift from './foresight/gyro-still-drift.ts'
 import zeroSanity from './foresight/zero-sanity.ts'
 import commitMatches from './foresight/commit-matches.ts'
+import motorTemperature from './foresight/motor-temperature.ts'
+import valuesUpdating from './foresight/values-updating.ts'
+import cameraSeesTag from './foresight/camera-sees-tag.ts'
 
 export const RULES: Rule[] = [
   brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, stuckState, tilt, zeroNotCompleted, deviceDropout, dsLogTruncated,
@@ -49,8 +52,8 @@ export const RULES: Rule[] = [
  * only run here. Auto choice and alliance are left out: the chooser resets when the robot is power-cycled on the field.
  */
 export const FORESIGHT_RULES: Rule[] = [
-  restVoltage, deviceDropout, controllers, zeroSanity, dirty, visionStale, visionTimeSync, identity, gaugeCapacity,
-  commitMatches, passthrough, gyroStillDrift,
+  restVoltage, deviceDropout, valuesUpdating, controllers, zeroSanity, motorTemperature, dirty, visionStale, visionTimeSync,
+  identity, gaugeCapacity, commitMatches, passthrough, cameraSeesTag, gyroStillDrift,
 ]
 
 export type { Report, SkippedRule } from './run.ts'

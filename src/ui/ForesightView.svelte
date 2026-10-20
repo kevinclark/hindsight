@@ -14,7 +14,7 @@
   import { profileId } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
-  import { markOnchecks } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, markOnchecks } from '../foresight/onchecks.ts'
 
   let { history, onPitCheck }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void } = $props()
 
@@ -71,7 +71,7 @@
   const lastNumber = (key: string) => { const s = checked ? num(checked.match, key) : null; return s && s.v.length ? s.v[s.v.length - 1] : null }
   const lastText = (key: string) => { const s = checked ? values<string>(checked.match, key) : null; return s && s.v.length ? s.v[s.v.length - 1] : null }
   const battery = $derived(checked ? lastNumber(checked.match.profile.signals.batteryVoltage) : null)
-  const controllers = $derived(checked ? Array.from({ length: checked.match.profile.foresight?.controllers ?? 0 }, (_, i) => lastText(`/DriverStation/Joystick${i}/Name`) || '(nothing)') : [])
+  const controllers = $derived(checked ? (checked.match.profile.foresight?.controllerNames ?? []).map((key) => lastText(key) || '(nothing)') : [])
 
   // Everything on this screen plus what the robot never sent, as a file for Claude (the first-robot checklist asks for it).
   function downloadReadings() {
@@ -88,7 +88,7 @@
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
   }
   const onchecks = $derived(markOnchecks(checked))
-  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
+  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
 
@@ -117,10 +117,10 @@
         {#each checked.verdict.items as item (item.finding.key + item.finding.title)}
           <li class={`item ${item.level}`}>
             <button class="row" onclick={() => (open = { ...open, [item.finding.key]: !open[item.finding.key] })} aria-expanded={!!open[item.finding.key]}>
-              <span class="chip">{LEVEL_WORD[item.level]}</span>
+              <span class="chip">{ASSISTED_RULES.has(item.finding.rule) && item.level === 'grey' ? 'Do' : LEVEL_WORD[item.level]}</span>
               <span class="title">{item.finding.title}</span>
             </button>
-            {#if item.level !== 'grey'}<p class="action"><strong>Do:</strong> {item.action}</p>{/if}
+            {#if item.level !== 'grey' || ASSISTED_RULES.has(item.finding.rule)}<p class="action"><strong>Do:</strong> {item.action}</p>{/if}
             <p class="proof">{item.finding.rule} · {item.proof}</p>
             {#if open[item.finding.key]}
               <div class="detail">
@@ -214,6 +214,7 @@
   .oc.ok .mark { color: var(--go, #188038); }
   .oc.red .mark { color: var(--error); }
   .oc.amber .mark { color: var(--warning); }
+  .oc.to-do .mark { color: var(--fg); }
   .oc.not-checked .mark, .oc.not-yet .mark, .oc.context .mark, .oc.by-eye .mark { color: var(--muted); }
   .oc .detail-text { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
   @media (max-width: 600px) { .oc { grid-template-columns: 5.5rem 1fr; } .oc .detail-text { grid-column: 2; } }

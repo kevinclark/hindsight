@@ -100,6 +100,7 @@ const SCALAR_TYPES: Record<string, [string, number]> = {
 /** wpilog type -> [NT4 type string, NT4 type index], or null when NT4 has nothing for it. */
 function mapType(t: string): [string, number] | null {
   if (t.startsWith('struct:')) return [t, 5]
+  if (t.startsWith('proto:')) return [t, 5] // AdvantageKit publishes protobuf values (PhotonVision results) as bytes
   return SCALAR_TYPES[t] ?? ARRAY_TYPES[t] ?? null
 }
 

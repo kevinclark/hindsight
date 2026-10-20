@@ -209,6 +209,11 @@ export function hasEntry(log: WpilogFile, name: string): boolean {
  * Find the entry behind a key: the entry itself, a field of a struct entry ("<entry>/<field>"), or a bit of an
  * integer entry ("<entry>:bit<n>"). Null when the log has none of these.
  */
+/** The entry a key reads from: itself, or the entry behind a bit ("<entry>:bit4") or a struct field ("<entry>/x"). */
+export function entryNameFor(log: WpilogFile, name: string): string | null {
+  return resolveKey(log, name)?.entry.name ?? null
+}
+
 function resolveKey(log: WpilogFile, name: string): Resolved | null {
   if (log.resolved.has(name)) return log.resolved.get(name)!
   let found: Resolved | null = null

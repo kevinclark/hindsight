@@ -40,17 +40,29 @@ export function foresightKeys(profile: RobotProfile): string[] {
     s.batteryVoltage,
     ...s.alertGroups.flatMap((g) => [`${g}/errors`, `${g}/warnings`, `${g}/infos`]),
     ...Object.values(profile.battery).flat(),
-    ...profile.motorGroups.flatMap((g) => g.motors.map((m) => m.connected)),
-    ...profile.otherDevices.map((d) => d.connected),
-    ...profile.cameras.flatMap((c) => [c.connected, c.stale]),
+    ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.connected, m.temperature, m.updating])),
+    ...profile.otherDevices.flatMap((d) => [d.connected, d.updating]),
+    ...profile.cameras.flatMap((c) => [c.connected, c.stale, c.acceptedPose, c.result]),
   ]
   const fp = profile.foresight
   if (fp) {
     keys.push(fp.gyroYaw)
-    for (let port = 0; port < fp.controllers; port++) keys.push(`/DriverStation/Joystick${port}/Name`)
+    keys.push(...fp.controllerNames)
     for (const z of fp.zeroChecks) if (!('notCheckable' in z)) keys.push(z.absolute, z.motor)
   }
   return [...new Set(keys.filter((k): k is string => typeof k === 'string' && k !== ''))]
+}
+
+/** How long the fast "updating" readings are kept: foresight/values-updating needs 5 s, its plot 10 s. */
+export const RECENT_SECONDS = 30
+
+/**
+ * Signals only the last RECENT_SECONDS of matter for: each device's "updating" reading (a motor's stator current
+ * changes ~45 times a second at rest; 15 of them were 4/5 of the records a check wrote, 33 → ~240 ms per check).
+ */
+export function recentKeys(profile: RobotProfile): string[] {
+  const keys = [...profile.motorGroups.flatMap((g) => g.motors.map((m) => m.updating)), ...profile.otherDevices.map((d) => d.updating)]
+  return [...new Set(keys.filter((k): k is string => !!k))]
 }
 
 /** NetworkTables type → .wpilog type (null for a type Foresight doesn't read). */
@@ -62,5 +74,6 @@ export function wpilogType(ntType: string): string | null {
     case 'int': return 'int64'
     case 'int[]': return 'int64[]'
   }
-  return ntType.startsWith('struct:') ? ntType : null
+  // proto: (e.g. PhotonVision's pipeline result) arrives as bytes and is kept as is, like a struct.
+  return ntType.startsWith('struct:') || ntType.startsWith('proto:') ? ntType : null
 }

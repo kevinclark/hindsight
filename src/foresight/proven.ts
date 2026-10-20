@@ -7,7 +7,8 @@
  *
  * Edit this table only from a backtest run, and record the run in docs/measurements.md ("Foresight backtest").
  * The proof covers a robot sitting disabled before any enable; after a drive, rest voltage stays amber (engine.ts).
- * Not here: alerts/passthrough (one false red: another team's always-on "limelight name is invalid" alert),
+ * Not here: foresight/camera-sees-tag (a step for a person, grey, never a verdict),
+ * alerts/passthrough (one false red: another team's always-on "limelight name is invalid" alert),
  * the battery tracker checks and commit-matches (no log to judge them on yet), gyro-still-drift (context, no line).
  */
 export interface Proof {
@@ -37,6 +38,9 @@ export const PROVEN: Record<string, Proof> = {
   'foresight/zero-sanity': { logs: 3, fires: 0, ourFires: 0, base: OURS, date: RUN },
   'vision/stale': { logs: 3, fires: 0, ourFires: 0, base: OURS, date: RUN },
   'vision/time-sync': { logs: 8, fires: 0, ourFires: 0, base: `${OURS} + 5 logs of 4 other teams with robot alerts`, date: RUN },
+  // Added with the checks themselves (backtest of 2026-10-19 evening): no false reds, never fired, so amber.
+  'foresight/motor-temperature': { logs: 5, fires: 0, ourFires: 0, base: `${OURS} + 2 logs of team 340`, date: RUN },
+  'foresight/values-updating': { logs: 3, fires: 0, ourFires: 0, base: OURS, date: RUN },
 }
 
 /** Red needs a clean backtest and at least one real fire on our own logs. */

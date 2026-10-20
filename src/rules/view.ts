@@ -18,6 +18,7 @@ import type { CurrentLimits, RobotProfile } from '../profiles/types.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
+import { photonTargetCount } from '../readers/photon.ts'
 
 /** A stretch of time made of one or more intervals, e.g. "while enabled" or "during auto". */
 export type Window = Interval[]
@@ -259,6 +260,12 @@ export interface DeviceView {
 export interface CameraView {
   name: string
   acceptedPose(): PoseSignal
+  /** The accepted pose's log key: live, it is only published once the code first made a pose, so ask `match.has`. */
+  acceptedPoseKey: string
+  /** The raw PhotonVision result's log key, if the profile names one (ask `match.has` before `tagsSeen`). */
+  resultKey: string | null
+  /** How many AprilTags each of the camera's results saw (from its raw PhotonVision result). */
+  tagsSeen(): Signal
   stale(): Signal
   connected(): Signal
 }
@@ -325,7 +332,7 @@ export class MatchView {
     this.wholeMatch = raw.matchStart !== null && raw.matchEnd !== null ? [{ start: raw.matchStart, end: raw.matchEnd }] : []
     this.onField = raw.fms
     this.beforeEnable = raw.foresight ? [{ start: raw.foresight.start, end: raw.foresight.end }] : []
-    this.windowWords = this.wholeMatch.length || !raw.foresight ? 'during the match' : 'since start-up settled'
+    this.windowWords = this.wholeMatch.length || !raw.foresight ? 'during the match' : raw.foresight.words ?? 'since start-up settled'
   }
 
   /** The stretch a rule counts alerts and dropouts in: the match, or (Foresight) the disabled stretch. */
@@ -381,6 +388,15 @@ export class MatchView {
     const key = this.keyFor(name)
     if (!has(this.raw, key)) throw missing(name, key)
     return new TextSignal(key, values<string>(this.raw, key)!)
+  }
+
+  /** A camera's raw PhotonVision results as a signal: how many targets each one saw (NaN for one that doesn't parse). */
+  photonTargets(name: string, label = words(name)): Signal {
+    const key = this.keyFor(name)
+    if (!has(this.raw, key)) throw missing(name, key)
+    const s = values<Uint8Array>(this.raw, key)!
+    const v = Float64Array.from(s.v, (b) => (b instanceof Uint8Array ? photonTargetCount(b) ?? NaN : NaN))
+    return new Signal(label, key, { name: key, t: s.t, v }, this.raw.logEnd)
   }
 
   pose(name: string): PoseSignal {

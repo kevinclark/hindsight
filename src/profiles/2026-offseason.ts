@@ -102,6 +102,8 @@ export const offseason2026: RobotProfile = {
         supplyCurrent: `/Swerve/${m} Module/DriveSupplyCurrentAmps`,
         statorCurrent: `/Swerve/${m} Module/DriveStatorCurrentAmps`,
         connected: `/Swerve/${m} Module/DriveConnected`,
+        temperature: `/Swerve/${m} Module/DriveTempC`,
+        updating: `/Swerve/${m} Module/DriveStatorCurrentAmps`,
       })),
       limits: { supplyA: 40, supplyEnabled: true, statorA: 120, statorEnabled: true, where: 'DumperSwerveConstants.java:175-178' },
     },
@@ -113,6 +115,8 @@ export const offseason2026: RobotProfile = {
         supplyCurrent: `/Swerve/${m} Module/TurnSupplyCurrentAmps`,
         statorCurrent: `/Swerve/${m} Module/TurnStatorCurrentAmps`,
         connected: `/Swerve/${m} Module/TurnConnected`,
+        temperature: `/Swerve/${m} Module/TurnTempC`,
+        updating: `/Swerve/${m} Module/TurnStatorCurrentAmps`,
       })),
       limits: { supplyA: 20, supplyEnabled: true, where: 'DumperSwerveConstants.java:207-208' },
     },
@@ -127,6 +131,8 @@ export const offseason2026: RobotProfile = {
           statorCurrent: '/Drum/Flywheel/Leader/StatorCurrentAmps',
           velocity: '/Drum/Flywheel/Leader/VelocityRotPerSec',
           connected: '/Drum/Flywheel/Leader/Connected',
+          temperature: '/Drum/Flywheel/Leader/TempC',
+          // No `updating`: at rest every flywheel signal sits unchanged for minutes (stator current too).
         },
         // Followers 16, 17, 18: DrumSubsystem.java:109, 112, 115.
         ...[0, 1, 2].map((i) => ({
@@ -136,6 +142,7 @@ export const offseason2026: RobotProfile = {
           statorCurrent: `/Drum/Flywheel/Follower ${i}/StatorCurrentAmps`,
           velocity: `/Drum/Flywheel/Follower ${i}/VelocityRotPerSec`,
           connected: `/Drum/Flywheel/Follower ${i}/Connected`,
+          temperature: `/Drum/Flywheel/Follower ${i}/TempC`,
         })),
       ],
       limits: { supplyA: 40, supplyEnabled: false, statorA: 75, statorEnabled: true, where: 'DrumSubsystem.java:307-310', supplyLines: 'DrumSubsystem.java:309-310' },
@@ -151,6 +158,8 @@ export const offseason2026: RobotProfile = {
         supplyCurrent: '/Drum/Hood/SupplyCurrentAmps',
         statorCurrent: '/Drum/Hood/StatorCurrentAmps',
         connected: '/Drum/Hood/Connected',
+        temperature: '/Drum/Hood/TempC',
+        updating: '/Drum/Hood/StatorCurrentAmps',
       }],
       limits: { supplyA: 40, supplyEnabled: false, statorA: 30, statorEnabled: true, where: 'DrumSubsystem.java:334-337' },
     },
@@ -162,18 +171,23 @@ export const offseason2026: RobotProfile = {
         supplyCurrent: '/Intake/Pivot/SupplyCurrentAmps',
         statorCurrent: '/Intake/Pivot/StatorCurrentAmps',
         connected: '/Intake/Pivot/Connected',
+        temperature: '/Intake/Pivot/TempC',
+        updating: '/Intake/Pivot/StatorCurrentAmps',
       }],
       limits: { supplyA: 40, supplyEnabled: false, statorA: 50, statorEnabled: true, where: 'SlapdownSubsystem.java:266' },
     },
     {
       name: 'Intake rollers',
       // Leader 9 (Robot.java:76), follower 10 (SlapdownSubsystem.java:86).
-      motors: [{ m: 'Leader', canId: 9 }, { m: 'Follower', canId: 10 }].map(({ m, canId }) => ({
+      // The two rollers name their temperature differently in the log.
+      motors: [{ m: 'Leader', canId: 9, temp: 'TemperatureCelsius' }, { m: 'Follower', canId: 10, temp: 'TempC' }].map(({ m, canId, temp }) => ({
         name: `Intake roller ${m.toLowerCase()}`,
         canId,
         supplyCurrent: `/Intake/Roller ${m}/SupplyCurrentAmps`,
         statorCurrent: `/Intake/Roller ${m}/StatorCurrentAmps`,
         connected: `/Intake/Roller ${m}/Connected`,
+        temperature: `/Intake/Roller ${m}/${temp}`,
+        updating: `/Intake/Roller ${m}/StatorCurrentAmps`,
       })),
       limits: { supplyA: 40, supplyEnabled: false, statorA: 20, statorEnabled: true, where: 'SlapdownSubsystem.java:294' },
     },
@@ -190,16 +204,20 @@ export const offseason2026: RobotProfile = {
         supplyCurrent: `${m.prefix}SupplyCurrentAmp`,
         statorCurrent: `${m.prefix}StatorCurrentAmp`,
         connected: `${m.prefix}Connected`,
+        temperature: `${m.prefix}TempC`,
+        updating: `${m.prefix}StatorCurrentAmp`,
       })),
       limits: { supplyA: 40, supplyEnabled: true, statorA: 60, statorEnabled: true, where: 'IndexerIO.java:170' },
     },
   ],
 
   // Other devices whose */Connected flag matters (encoders, gyro). Motors' flags come from motorGroups.
+  // `updating` (foresight/values-updating): the gyro's yaw rate changes every loop at rest; the CANcoders have nothing
+  // that does (a still CANcoder's position sat unchanged for up to 110 s in the CalGames logs).
   otherDevices: [
     ...swerveModules.map((m) => ({ name: `${m} CANcoder`, connected: `/Swerve/${m} Module/CancoderConnected` })),
     { name: 'Intake CANcoder', connected: '/Intake/CANcoder/Connected' },
-    { name: 'Gyro (Pigeon)', connected: '/Swerve/Gyro/IsConnected' },
+    { name: 'Gyro (Pigeon)', connected: '/Swerve/Gyro/IsConnected', updating: '/Swerve/Gyro/YawVelocityRadPerSec' },
   ],
 
   // The what-if sliders cap this group's supply current per motor.
@@ -226,16 +244,21 @@ export const offseason2026: RobotProfile = {
     },
   ],
 
+  // `acceptedPose` is logged only when the code made a pose from the coprocessor's multi-tag result
+  // (Camera.updateCamera, estimateCoprocMultiTagPose), i.e. two or more tags in view: in the CalGames logs 0 of 19,095
+  // one-tag results logged a pose, and all 20,873 with two or more did. `result` says what the camera saw.
   cameras: [
     {
       name: 'Back_Left',
       acceptedPose: '/RealOutputs/Vision/Back_Left/Pose2d',
+      result: '/Apriltag VisionBack_Left/Result',
       stale: '/Apriltag VisionBack_Left/Stale',
       connected: '/Apriltag VisionBack_Left/Connected',
     },
     {
       name: 'Back_Right',
       acceptedPose: '/RealOutputs/Vision/Back_Right/Pose2d',
+      result: '/Apriltag VisionBack_Right/Result',
       stale: '/Apriltag VisionBack_Right/Stale',
       connected: '/Apriltag VisionBack_Right/Connected',
     },
@@ -243,7 +266,7 @@ export const offseason2026: RobotProfile = {
 
   foresight: {
     // Two Xbox controllers, on ports 0 and 1, in all three CalGames match logs.
-    controllers: 2,
+    controllerNames: [0, 1].map((port) => `/DriverStation/Joystick${port}/Name`),
     gyroYaw: '/Swerve/Gyro/Yaw',
     zeroChecks: [
       {

@@ -1,3 +1,5 @@
+import { writeRecords } from '../../src/readers/wpilog-writer.ts'
+
 /**
  * Small text fixtures cut from real logs, and a writer that turns them back into .wpilog / .dslog bytes, so the
  * real readers and rules run on them. Fixtures live in fixtures/*.json (made by scripts/extract-fixtures.ts).
@@ -87,28 +89,15 @@ export function packDoubles(values: number[]): Uint8Array {
   return new Uint8Array(d.buffer)
 }
 
-/** One record with 4-byte id, 4-byte size and 8-byte timestamp fields. */
-function record(id: number, timeSeconds: number, payload: Uint8Array): Uint8Array {
-  const h = new DataView(new ArrayBuffer(17))
-  h.setUint8(0, 0x3 | (0x3 << 2) | (0x7 << 4))
-  h.setUint32(1, id, true)
-  h.setUint32(5, payload.length, true)
-  h.setBigInt64(9, BigInt(Math.round(timeSeconds * 1e6)), true) // signed: a negative time is a pre-sync NT record
-  return concat([new Uint8Array(h.buffer), payload])
-}
-
+/**
+ * The fixture as a .wpilog, through the same writer Foresight uses (src/readers/wpilog-writer.ts); only the value
+ * encoding is the fixture's own. Each entry's records are put in time order (stable, so equal times keep their order).
+ */
 export function writeWpilog(entries: FixtureEntry[]): Uint8Array {
-  const header = concat([enc.encode('WPILOG'), new Uint8Array([0x00, 0x01]), u32(0)])
-  const parts: Uint8Array[] = [header]
-  const t0 = Math.max(0, Math.min(...entries.flatMap((e) => e.records.map((r) => r[0]))))
-  entries.forEach((e, i) => {
-    const start = concat([new Uint8Array([0]), u32(i + 1), lenString(e.name), lenString(e.type), lenString(e.metadata ?? '')])
-    parts.push(record(0, t0, start))
-  })
-  const all = entries.flatMap((e, i) => e.records.map((r) => ({ id: i + 1, t: r[0], payload: encodeValue(e.type, r[1]) })))
-  all.sort((a, b) => a.t - b.t)
-  for (const r of all) parts.push(record(r.id, r.t, r.payload))
-  return concat(parts)
+  return writeRecords(entries.map((e) => {
+    const order = e.records.map((_, i) => i).sort((a, b) => e.records[a][0] - e.records[b][0] || a - b)
+    return { name: e.name, type: e.type, metadata: e.metadata, t: order.map((i) => e.records[i][0]), payload: order.map((i) => encodeValue(e.type, e.records[i][1])) }
+  }))
 }
 
 export function writeDslog(ds: FixtureDslog): Uint8Array {

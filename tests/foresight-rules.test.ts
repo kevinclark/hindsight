@@ -4,17 +4,30 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
-import { openWpilog, readNumbers } from '../src/readers/wpilog.ts'
+import { openWpilog, readNumbers, readRaw } from '../src/readers/wpilog.ts'
 import { RecordStore } from '../src/foresight/records.ts'
 import { evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/foresight/engine.ts'
-import { foresightKeys } from '../src/foresight/keys.ts'
+import { foresightKeys, RECENT_SECONDS } from '../src/foresight/keys.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
+import { markOnchecks } from '../src/foresight/onchecks.ts'
+import { KEEP_SECONDS } from '../src/foresight/records.ts'
+import { photonTargetCount } from '../src/readers/photon.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 import { CALGAMES, haveCalGames } from './helpers/load.ts'
 
 const START = 10
 const NOW = 100
 const steady = (value: number | boolean | string) => [[START, value]] as [number, number | boolean | string][]
+/** A reading that changes every loop, like a motor's stator current at rest. */
+const jitter = (from = START, to = NOW): [number, number][] => {
+  const out: [number, number][] = []
+  for (let t = from, i = 0; t <= to; t += 0.02, i++) out.push([t, i % 2 ? 0.1 : 0.2])
+  return out
+}
+/** A PhotonVision result with no targets (sequence id 1), or with n targets (empty target messages). */
+const photonResult = (n = 0) => new Uint8Array([0x20, 0x01, ...Array.from({ length: n }, () => [0x12, 0x00]).flat()])
+const RESULT_TYPE = 'proto:photonvision.proto.ProtobufPhotonPipelineResult'
+const motors = offseason2026.motorGroups.flatMap((g) => g.motors)
 
 /** A healthy robot sitting disabled in the pit, tethered, from START to NOW. */
 function healthy(): FixtureEntry[] {
@@ -38,6 +51,11 @@ function healthy(): FixtureEntry[] {
     ...[...offseason2026.motorGroups.flatMap((g) => g.motors.map((m) => m.connected!)), ...offseason2026.otherDevices.map((d) => d.connected), ...offseason2026.cameras.map((c) => c.connected)]
       .map((name) => ({ name, type: 'boolean', records: steady(true) })),
     ...offseason2026.cameras.map((c) => ({ name: c.stale, type: 'boolean', records: steady(true) })),
+    // Cool motors, readings that change at rest, cameras that see no tag (the pit).
+    ...motors.map((m) => ({ name: m.temperature!, type: 'double', records: steady(30) })),
+    ...[...motors.map((m) => m.updating), ...offseason2026.otherDevices.map((d) => d.updating)].filter((k): k is string => !!k)
+      .map((name) => ({ name, type: 'double', records: jitter() })),
+    ...offseason2026.cameras.map((c) => ({ name: c.result!, type: RESULT_TYPE, records: jitter().map(([t]) => [t, photonResult()] as [number, Uint8Array]) })),
   ]
 }
 
@@ -59,11 +77,14 @@ const rules = (r: ReturnType<typeof check>, level?: string) => r.verdict.items.f
 const flagged = (r: ReturnType<typeof check>) => r.verdict.items.filter((i) => i.level !== 'grey').map((i) => i.finding.rule)
 
 describe('Foresight checks on a robot in the pit', () => {
-  it('a healthy robot: GO, nothing flagged, gyro drift as grey context', () => {
+  it('a healthy robot: GO, nothing flagged; grey: hold a tag up to each camera, and gyro drift', () => {
     const r = check([])
     expect(r.verdict.verdict).toBe('GO')
     expect(flagged(r)).toEqual([])
-    expect(rules(r, 'grey')).toEqual(['foresight/gyro-still-drift'])
+    expect(rules(r, 'grey')).toEqual(['foresight/camera-sees-tag', 'foresight/camera-sees-tag', 'foresight/gyro-still-drift'])
+    expect(r.verdict.items.filter((i) => i.finding.rule === 'foresight/camera-sees-tag').map((i) => i.finding.title)).toEqual(['Hold an AprilTag up to Back_Left', 'Hold an AprilTag up to Back_Right'])
+    // Values-updating ran on all 16 readings, and says which devices it can't judge.
+    expect(r.report.skipped.find((s) => s.rule === 'foresight/values-updating')?.reason).toMatch(/no reading that changes at rest for Flywheel leader, .*Intake CANcoder$/)
     expect(r.report.crashed).toEqual([])
   })
 
@@ -159,10 +180,122 @@ describe('Foresight checks on a robot in the pit', () => {
     expect(f.causes.find((c) => c.id === 'battery-sag')?.ruledOut).toBeUndefined()
   })
 
+  it('a motor above 60 °C before the match is amber; 60 °C is not', () => {
+    const r = check([{ name: '/Swerve/Back Left Module/DriveTempC', type: 'double', records: [[START, 30], [80, 65]] }])
+    expect(flagged(r)).toEqual(['foresight/motor-temperature'])
+    const item = r.verdict.items.find((i) => i.finding.rule === 'foresight/motor-temperature')!
+    expect(item.level).toBe('amber')
+    expect(item.finding.title).toBe('Back Left drive is at 65 °C with the robot disabled (above 60 °C)')
+    expect(r.verdict.verdict).toBe('GO')
+    expect(flagged(check([{ name: '/Drum/Flywheel/Leader/TempC', type: 'double', records: steady(60) }]))).toEqual([])
+  })
+
+  it('a reading frozen for 5 s while the others change; not while the device is off CAN', () => {
+    const frozen = { name: '/Intake/Pivot/StatorCurrentAmps', type: 'double', records: jitter(START, 94) } as FixtureEntry
+    const r = check([frozen])
+    expect(flagged(r)).toEqual(['foresight/values-updating'])
+    expect(r.verdict.items[0].finding.title).toBe('Intake pivot: its readings have not changed for 5 s while 15 other device readings did')
+    expect(r.verdict.items[0].level).toBe('amber')
+    // Frozen 4 s only: fine.
+    expect(flagged(check([{ ...frozen, records: jitter(START, 96.5) }]))).toEqual([])
+    // Off CAN: device-dropout says it, not this.
+    const off = check([frozen, { name: '/Intake/Pivot/Connected', type: 'boolean', records: [[START, true], [94, false]] }])
+    expect(flagged(off)).toEqual(['can/device-dropout'])
+  })
+
+  it('every reading frozen while the robot still sends: one amber for the whole robot, and the line says so', () => {
+    const still = [...motors.map((m) => m.updating), '/Swerve/Gyro/YawVelocityRadPerSec'].filter((k): k is string => !!k)
+      .map((name) => ({ name, type: 'double', records: jitter(START, 90) }))
+    const r = check(still)
+    expect(flagged(r)).toEqual(['foresight/values-updating'])
+    expect(r.verdict.items[0].finding.title).toBe('No device reading changed in the last 5 s (16 watched): the robot may have stopped reading its devices')
+    expect(r.verdict.items[0].proof).toMatch(/no false reds on 3 match logs/)
+    expect(markOnchecks(r).find((l) => l.line === 'All device values updating')!.state).toBe('amber')
+  })
+
+  it('a reading the robot does not send (or announced with no value) is skipped for that device only', () => {
+    const r = check([{ name: '/Intake/Pivot/StatorCurrentAmps', type: 'double', records: [] }])
+    const store = RecordStore.fromWpilog(openWpilog(robot([])), null)
+    store.entries.delete('/Intake/Pivot/StatorCurrentAmps')
+    const missing = evaluateForesight({ store, codeStart: START, now: NOW, lastPassingSha: null, profile: offseason2026 })
+    if (missing.state !== 'checked') throw new Error(missing.state)
+    expect(missing.report.skipped.find((s) => s.rule === 'foresight/values-updating')?.reason).toMatch(/^partly checked; .*Intake pivot: the robot does not send \/Intake\/Pivot\/StatorCurrentAmps/)
+    // Announced but no value yet: skipped the same way, not "frozen".
+    expect(flagged(r)).toEqual([])
+    expect(r.report.skipped.find((s) => s.rule === 'foresight/values-updating')?.reason).toMatch(/Intake pivot: the robot does not send/)
+  })
+
+  it('a camera passes once it sees a tag during the check (one is enough), or once it makes a pose', () => {
+    const left = { name: '/Apriltag VisionBack_Left/Result', type: RESULT_TYPE, records: [[START, photonResult()], [70, photonResult(1)], [70.02, photonResult()]] } as FixtureEntry
+    const r = check([left])
+    expect(r.verdict.items.filter((i) => i.finding.rule === 'foresight/camera-sees-tag').map((i) => i.finding.title)).toEqual(['Hold an AprilTag up to Back_Right'])
+    const line = markOnchecks(r).find((l) => l.line === 'All cameras on and detecting AprilTags')!
+    expect([line.state, line.detail]).toEqual(['to do', 'Hold an AprilTag up to Back_Right'])
+    const pose = { name: '/RealOutputs/Vision/Back_Right/Pose2d', type: 'struct:Pose2d', records: [[80, { x: 1, y: 2, rot: 0 }]] } as FixtureEntry
+    const both = check([left, pose])
+    expect(rules(both, 'grey')).toEqual(['foresight/gyro-still-drift'])
+    expect(markOnchecks(both).find((l) => l.line === 'All cameras on and detecting AprilTags')!.state).toBe('ok')
+  })
+
+  it('one camera unread: the cameras line is not checked, even when the other camera saw a tag', () => {
+    const store = RecordStore.fromWpilog(openWpilog(robot([{ name: '/Apriltag VisionBack_Left/Result', type: RESULT_TYPE, records: [[START, photonResult()], [70, photonResult(1)]] }])), null)
+    store.entries.delete('/Apriltag VisionBack_Right/Result')
+    const r = evaluateForesight({ store, codeStart: START, now: NOW, lastPassingSha: null, profile: offseason2026 })
+    if (r.state !== 'checked') throw new Error(r.state)
+    const line = markOnchecks(r).find((l) => l.line === 'All cameras on and detecting AprilTags')!
+    expect(line.state).toBe('not checked')
+    expect(line.detail).toMatch(/Back_Right sends neither its camera result nor a pose/)
+  })
+
+  it('with only poses to go on, the step asks for two tags', () => {
+    // A pose from before the check started: the topic exists, but nothing during the check.
+    const store = RecordStore.fromWpilog(openWpilog(robot([{ name: '/RealOutputs/Vision/Back_Left/Pose2d', type: 'struct:Pose2d', records: [[START + 1, { x: 1, y: 2, rot: 0 }]] }])), null)
+    store.entries.delete('/Apriltag VisionBack_Left/Result')
+    const r = evaluateForesight({ store, codeStart: START, now: NOW, lastPassingSha: null, profile: offseason2026 })
+    if (r.state !== 'checked') throw new Error(r.state)
+    expect(r.verdict.items.filter((i) => i.finding.rule === 'foresight/camera-sees-tag').map((i) => i.finding.title)).toEqual(['Hold two AprilTags up to Back_Left (it reports only poses)', 'Hold an AprilTag up to Back_Right'])
+  })
+
+  it('a tag seen only before the check started does not count', () => {
+    const r = check([{ name: '/Apriltag VisionBack_Left/Result', type: RESULT_TYPE, records: [[START, photonResult()], [20, photonResult(2)]] }])
+    expect(r.verdict.items.filter((i) => i.finding.rule === 'foresight/camera-sees-tag').length).toBe(2)
+  })
+
+  it('after 15 min the oldest records are dropped: the stretch starts there and counts say "in the last 15 min"', () => {
+    const late = START + KEEP_SECONDS + 200
+    const store = RecordStore.fromWpilog(openWpilog(robot([
+      { name: '/Timestamp', type: 'int64', records: [[START, START * 1e6], [late, late * 1e6]] },
+      { name: '/Apriltag VisionBack_Left/Connected', type: 'boolean', records: [[START, true], [late - 100, false], [late - 95, true]] },
+    ])), null)
+    store.prune()
+    const r = evaluateForesight({ store, codeStart: START, now: late, lastPassingSha: null, profile: offseason2026 })
+    if (r.state !== 'checked') throw new Error(r.state)
+    expect(r.start).toBeCloseTo(late - KEEP_SECONDS)
+    expect(r.verdict.items.find((i) => i.finding.rule === 'vision/stale')!.finding.title).toMatch(/dropped out 1 time in the last 15 min/)
+  })
+
   it('zero sanity waits while the mechanism is being moved', () => {
     const r = check([{ name: '/Intake/Pivot/PositionRotations', type: 'double', records: [[START, 0.3677], [99, 0.3677 + 5 / 360], [99.5, 0.6536]] }])
     expect(flagged(r)).toEqual([])
     expect(r.report.skipped.find((s) => s.rule === 'foresight/zero-sanity')?.reason).toMatch(/Intake pivot not checked: it is moving/)
+  })
+})
+
+describe('Foresight record store: fast readings kept only for their last 30 s', () => {
+  it('writes and keeps only the last RECENT_SECONDS of a recent key, with its held value at the cut', () => {
+    const store = RecordStore.fromWpilog(openWpilog(writeWpilog([
+      { name: '/a', type: 'double', records: jitter(0, 100) },
+      { name: '/b', type: 'double', records: jitter(0, 100) },
+    ])), null)
+    store.recent.set('/a', RECENT_SECONDS)
+    const a = readNumbers(openWpilog(store.windowLog(10, 100)), '/a')!
+    const b = readNumbers(openWpilog(store.windowLog(10, 100)), '/b')!
+    expect(a.t[0]).toBeCloseTo(100 - RECENT_SECONDS)
+    expect(b.t[0]).toBeCloseTo(10)
+    store.prune()
+    expect(store.entries.get('/a')!.t[0]).toBeLessThanOrEqual(100 - RECENT_SECONDS)
+    expect(store.entries.get('/a')!.t[1]).toBeGreaterThan(100 - RECENT_SECONDS)
+    expect(store.prunedTo).toBe(-Infinity) // a recent key's cut is not "the oldest records are gone"
   })
 })
 
@@ -211,7 +344,31 @@ describe.skipIf(!haveCalGames)('the keys Foresight subscribes to are enough', ()
       const subscribed = summary(RecordStore.fromWpilog(log, foresightKeys(offseason2026)))
       const whole = summary(RecordStore.fromWpilog(log, null))
       expect(subscribed).toEqual(whole)
-      expect(foresightKeys(offseason2026).length).toBeLessThan(80)
+      expect(foresightKeys(offseason2026).length).toBeLessThan(120) // 105: the robot publishes ~455
+    })
+  }
+})
+
+// Why foresight/camera-sees-tag reads the camera's raw result, not the accepted pose: on the CalGames logs the robot
+// code logged a pose only from two or more tags, so one hand-held tag never makes one.
+describe.skipIf(!haveCalGames)('CalGames logs: what a camera result and an accepted pose mean', () => {
+  for (const path of [CALGAMES.q13, CALGAMES.q21, CALGAMES.p0]) {
+    it(path.split('/').pop()!, () => {
+      const log = openWpilog(new Uint8Array(readFileSync(path)))
+      for (const camera of offseason2026.cameras) {
+        const results = readRaw(log, camera.result!)!
+        const counts = results.payload.map(photonTargetCount)
+        expect(counts.every((n) => n !== null)).toBe(true)
+        const tagsAt = new Map(results.t.map((t, i) => [t, counts[i]!]))
+        const poses = readRaw(log, camera.acceptedPose)!.t
+        // Every pose was logged in the same loop as a result with two or more tags...
+        expect(poses.every((t) => (tagsAt.get(t) ?? 0) >= 2)).toBe(true)
+        // ...and every such result logged one; no one-tag result did.
+        const poseAt = new Set(poses)
+        expect(results.t.filter((t, i) => counts[i]! >= 2).every((t) => poseAt.has(t))).toBe(true)
+        expect(results.t.filter((t, i) => counts[i] === 1).some((t) => poseAt.has(t))).toBe(false)
+        expect(counts.filter((n) => n === 1).length).toBeGreaterThan(1000)
+      }
     })
   }
 })

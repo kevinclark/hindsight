@@ -1,8 +1,8 @@
 /**
  * Are the drive team's controllers plugged in, on the ports the robot code reads?
  *
- * Checks (Foresight, the live pit check, only): Driver Station ports 0..n-1 (n from the robot profile) each report a
- * controller with a name right now, while the Driver Station is connected.
+ * Checks (Foresight, the live pit check, only): each Driver Station port the robot profile lists (its controller-name
+ * keys, `foresight.controllerNames`) reports a controller with a name right now, while the Driver Station is connected.
  * Why: a controller unplugged, or plugged into another port, leaves the driver with nothing on the field. In all
  * three CalGames match logs both Xbox controllers showed up on ports 0 and 1 within 0.2 s of the DS connecting.
  */
@@ -29,12 +29,12 @@ export default rule({
     if (!fp) return match.couldNotCheck('the robot profile does not say how many controllers the drive team uses')
     const now = stretch.end
     if (match.signal('dsAttached').at(now) < 0.5) return match.couldNotCheck('the Driver Station is not connected to the robot')
-    const names = Array.from({ length: fp.controllers }, (_, port) => match.text(`/DriverStation/Joystick${port}/Name`).at(now))
+    const names = fp.controllerNames.map((key) => match.text(key).at(now))
     const missing = names.flatMap((name, port) => (name ? [] : [port]))
     if (missing.length === 0) return
     return {
-      likely: missing.length === fp.controllers ? ['unplugged'] : ['unplugged', 'wrong-port'],
-      message: `No controller on Driver Station port${missing.length === 1 ? '' : 's'} ${missing.join(' and ')} (the code reads ports 0 to ${fp.controllers - 1})`,
+      likely: missing.length === names.length ? ['unplugged'] : ['unplugged', 'wrong-port'],
+      message: `No controller on Driver Station port${missing.length === 1 ? '' : 's'} ${missing.join(' and ')} (the code reads ports 0 to ${names.length - 1})`,
       at: now,
       evidence: Object.fromEntries(names.map((name, port) => [`port ${port}`, name || '(nothing)'])),
       measured: [{ label: 'controllers missing', value: missing.length, unit: '' }],

@@ -14,16 +14,17 @@ writes to it: Foresight only subscribes.
   copied to the DS laptop.
 - Robot on, robot code running, Driver Station open and showing Communications green, robot **disabled**.
 - Both controllers plugged into the DS laptop.
+- A printed AprilTag (36h11, the field's family; one tag is enough), for step 7.
 
 ## Steps
 
 1. **Open the page from a file.** Double-click `hindsight.html` on the DS laptop (its address bar shows `file://`).
    Click **Foresight** at the top.
 2. **Connect.** Robot: `172.22.11.2` for USB, `10.80.33.2` for Ethernet. Click **Connect**. Within about 5 s the line
-   next to the button should say `Connected. Robot: 2026 offseason robot (<branch>); reading 66 signals.`
-   If it says it cannot tell the robot is in the pit, or the connection closes: go to step 8 and note the message.
+   next to the button should say `Connected. Robot: 2026 offseason robot (<branch>); reading 105 signals.`
+   If it says it cannot tell the robot is in the pit, or the connection closes: go to step 9 and note the message.
 3. **Check the counts** under **Readings**: *Topics announced / signals asked for*. Replaying the CalGames logs gives
-   55 / 66: 54 of the 66 signals are in those logs (the 12 missing are the battery tracker's, which the robot code
+   94 / 105: 93 of the 105 signals are in those logs (the 12 missing are the battery tracker's, which the robot code
    doesn't log yet), plus WPILib's `/FMSInfo/FMSControlData` for the field guard. Note both numbers. *Values received* should climb every second.
 4. **Check the clock.** *Robot time* should read `… s · code started at … s (from the metadata)`. Note whether it says
    *from the metadata* or *from the first value*, and whether the code-start time looks right (just after a reboot
@@ -34,13 +35,21 @@ writes to it: Foresight only subscribes.
      missing" item appears; plug it back and it clears);
    - *Code*: the GitSHA and branch match what was deployed.
 6. **Wait for the verdict.** Until 30 s after the robot code started it shows a countdown, then GO, NO-GO or NOT
-   CHECKED with the findings. Note the verdict and any items.
-7. **Note the versions:** the browser (Chrome: menu → Help → About; Edge: Settings → About) and the roboRIO image
+   CHECKED with the findings. Note the verdict and any items. Two items say **Do: Hold an AprilTag up to Back_Left**
+   (and Back_Right): that is the next step, not a fault, and it never changes the verdict.
+7. **Show each camera a tag.** Hold the tag 0.5–2 m in front of Back_Left for a couple of seconds, then Back_Right.
+   Each "Hold an AprilTag up to …" item should clear within a second or two of the camera seeing it, and the
+   checklist line *All cameras on and detecting AprilTags* should go from **Do** to **OK**. If an item doesn't clear,
+   note which camera, and whether PhotonVision's own dashboard shows the tag. If the line says *Not checked* instead,
+   the robot isn't publishing the camera's raw result (`/Apriltag Vision<camera>/Result`): note it.
+   The pass lasts until the robot is next driven, or for 15 min: after either the two items come back, so show the
+   tag again before the match.
+8. **Note the versions:** the browser (Chrome: menu → Help → About; Edge: Settings → About) and the roboRIO image
    (Driver Station → Diagnostics tab, or the roboRIO's web page).
-8. **Save the record.** Click **Download for Claude** under Readings. It saves `foresight-readings-<time>.json`: the
+9. **Save the record.** Click **Download for Claude** under Readings. It saves `foresight-readings-<time>.json`: the
    counts, clock, verdict, browser, and the list of signals the robot never sent. Add the roboRIO image version from
-   step 7 in a note next to it.
-9. **Disconnect and close the page.** Click **Disconnect**, then close the tab.
+   step 8 in a note next to it.
+10. **Disconnect and close the page.** Click **Disconnect**, then close the tab.
 
 ## What can't be checked in the pit
 
@@ -49,3 +58,7 @@ writes to it: Foresight only subscribes.
   against a real field.
 - Whether **AdvantageKit's values carry the robot's own timestamps** on the roboRIO (so robot time matches the log)
   is assumed from AdvantageKit's source; step 4 shows it.
+- **The camera step** is tested only against replayed logs, where no tag was ever in view before a match (0 of 62,681
+  results on the three CalGames field stretches). Two things are assumed until step 7 shows them: that AdvantageKit
+  publishes the camera's raw PhotonVision result over NetworkTables (it logs it), and that PhotonVision reports a
+  hand-held tag. The robot's accepted pose would not do: it is logged only from two or more tags at once.

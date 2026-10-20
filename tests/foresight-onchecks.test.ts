@@ -36,4 +36,18 @@ describe('the team\'s pit checklist in Foresight', () => {
     // The list is a view: the verdict is what verdictFor said, nothing more.
     expect(verdict.verdict).toBe('NO-GO')
   })
+
+  it('an assisted check: its grey finding is a step ("Do"), and a camera check that could not run is not OK', () => {
+    const step = { findings: [finding('foresight/camera-sees-tag', 'info', 'Hold an AprilTag up to Back_Right')], skipped: [], crashed: [] }
+    const marked = markOnchecks({ verdict: verdictFor(step, proven), report: step })
+    expect(marked.find((l) => l.line === 'All cameras on and detecting AprilTags')).toMatchObject({ state: 'to do', detail: 'Hold an AprilTag up to Back_Right' })
+    expect(verdictFor(step, proven).verdict).toBe('GO')
+    const blind = { findings: [], skipped: [{ rule: 'foresight/camera-sees-tag', reason: 'missing /Apriltag VisionBack_Left/Result' }], crashed: [] }
+    expect(state(markOnchecks({ verdict: verdictFor(blind, proven), report: blind }), 'All cameras on and detecting AprilTags')).toBe('not checked')
+    // The lines this work ticked, and the ones still waiting.
+    const none = { findings: [], skipped: [], crashed: [] }
+    const ok = markOnchecks({ verdict: verdictFor(none, proven), report: none })
+    expect(['No motors overheating', 'All device values updating'].map((l) => state(ok, l))).toEqual(['ok', 'ok'])
+    expect(['CANcoder offsets correct and unchanged', 'Log stick in'].map((l) => state(ok, l))).toEqual(['not yet', 'not yet'])
+  })
 })

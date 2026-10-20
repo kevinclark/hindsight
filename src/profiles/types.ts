@@ -10,6 +10,12 @@ export interface Motor {
   connected?: string
   /** The controller's temperature (°C), e.g. a TalonFX's DeviceTemp. */
   temperature?: string
+  /**
+   * A signal that changes every few robot loops even while the motor sits still and disabled, so a value frozen for
+   * seconds means the readings stopped (foresight/values-updating). Leave out when the motor has none: a still
+   * motor's position and velocity sit unchanged for minutes, so they can't tell.
+   */
+  updating?: string
 }
 
 export interface CurrentLimits {
@@ -59,7 +65,10 @@ export interface ZeroingMechanism {
 
 export interface Camera {
   name: string
+  /** The robot pose the code took from this camera (logged only when the code made one, e.g. from two or more tags). */
   acceptedPose: string
+  /** The camera's raw PhotonVision pipeline result (proto:photonvision.proto.ProtobufPhotonPipelineResult): what it saw. */
+  result?: string
   stale: string
   connected: string
 }
@@ -142,7 +151,8 @@ export interface RobotProfile {
     healthyResistanceMaxOhms: number
   }
   motorGroups: MotorGroup[]
-  otherDevices: { name: string; connected: string }[]
+  /** `updating`: as for a motor (Motor.updating). */
+  otherDevices: { name: string; connected: string; updating?: string }[]
   /**
    * Each CAN bus and the health signals of the devices on it, so a drop of the whole bus (the CANivore, its USB cable
    * or its power) reads as one event rather than as one device. `key` is a Connected flag (true = fine), or, with
@@ -179,8 +189,8 @@ export interface RobotProfile {
 
 /** Foresight (the live pit check): the robot's controllers, gyro and the zeros it can check against an absolute sensor. */
 export interface ForesightProfile {
-  /** How many controllers the drive team uses: DS ports 0..count-1 must each have one plugged in. */
-  controllers: number
+  /** Each Driver Station port the robot code reads a controller from, port 0 first: the key of its controller name. */
+  controllerNames: string[]
   /** The gyro's yaw (struct:Rotation2d, radians). */
   gyroYaw: string
   /** Mechanisms whose motor position can be checked against an absolute encoder, and those that can't (and why). */

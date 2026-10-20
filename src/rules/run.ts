@@ -135,6 +135,9 @@ function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: ()
         const camera: CameraView = {
           name: c.name,
           acceptedPose: () => view.pose(c.acceptedPose),
+          acceptedPoseKey: c.acceptedPose,
+          resultKey: c.result ?? null,
+          tagsSeen: () => view.photonTargets(need(c.result, `${c.name} PhotonVision result`), `${c.name} tags seen`),
           stale: () => view.signal(c.stale, `${c.name} stale`),
           connected: () => view.signal(c.connected, `${c.name} connected`),
         }

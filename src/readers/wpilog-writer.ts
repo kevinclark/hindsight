@@ -3,7 +3,8 @@
  *
  * Foresight keeps the robot's live NetworkTables values as records and, every second, writes the ones since start-up
  * settled into a small .wpilog that the ordinary reader, match model and rules read unchanged. The backtest does the
- * same from a match log, so the live check and the backtest run the same code.
+ * same from a match log, so the live check and the backtest run the same code. The tests write their fixtures with
+ * it too (tests/helpers/fixture-format.ts), so there is one writer.
  *
  * Format spec: https://github.com/wpilibsuite/allwpilib/blob/main/wpiutil/doc/datalog.adoc
  */

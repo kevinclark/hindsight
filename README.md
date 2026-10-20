@@ -188,17 +188,20 @@ instead of after it. One verdict, readable at arm's length: **GO**, **NO-GO** or
 worst first, each red with the one thing to do before the robot goes on the field (swap the battery, redeploy from a
 commit, reseat a controller).
 
-- **Read-only.** It only subscribes (`src/foresight/nt4-client.ts` refuses anything else, tested), to the ~66 signals
+- **Read-only.** It only subscribes (`src/foresight/nt4-client.ts` refuses anything else, tested), to the ~105 signals
   its checks read for this robot, never the whole tree.
 - **Never on the field.** The moment `/DriverStation/FMSAttached` (or WPILib's `/FMSInfo/FMSControlData`) says the
   field is attached it disconnects, shows "On the field: close Foresight.", and won't connect again until the page is
   reloaded. If the robot publishes neither, it disconnects: it can't tell where it is.
 - **Settle:** nothing is judged until 30 s after the robot code started (start-up camera and time-sync alerts clear in
   12.5–18.9 s in the CalGames logs). A robot already on for 30 s gets a verdict at once.
-- **Checks:** `power/rest-voltage`, `can/device-dropout`, `foresight/controllers`, `foresight/zero-sanity`,
-  `build/dirty`, `vision/stale` (drop-outs only, while disabled), `vision/time-sync`, the battery tracker's two,
-  `foresight/commit-matches` (code changed since the last GO, kept in `hindsight-history.jsonl`), `alerts/passthrough`,
-  and `foresight/gyro-still-drift` as context. Not here: the auto choice and alliance (they reset on the field).
+- **Checks:** `power/rest-voltage`, `can/device-dropout`, `foresight/values-updating` (a connected device's readings
+  frozen 5 s while others change), `foresight/controllers`, `foresight/zero-sanity`, `foresight/motor-temperature`
+  (above 60 °C), `build/dirty`, `vision/stale` (drop-outs only, while disabled), `vision/time-sync`, the battery
+  tracker's two, `foresight/commit-matches` (code changed since the last GO, kept in `hindsight-history.jsonl`),
+  `alerts/passthrough`, `foresight/camera-sees-tag` (a step: "hold an AprilTag up to Back_Left" until each camera has
+  seen one; never moves the verdict), and `foresight/gyro-still-drift` as context. Not here: the auto choice and
+  alliance (they reset on the field).
 - **Red is earned:** every check is amber until `scripts/foresight-backtest.ts` finds no false reds on field logs;
   the screen says how many logs each red was proven on (`src/foresight/proven.ts`, `docs/measurements.md`).
 - **Download for Claude** (under Readings) saves the counts, clock, verdict and which signals never came.

@@ -60,6 +60,8 @@ export interface ForesightWindow {
   end: number
   /** The code (GitSHA) of the last pit check that came out GO before this one, if any. */
   lastPassingSha: string | null
+  /** The stretch in words, for counts ("dropped out 2 times since start-up settled"). */
+  words?: string
 }
 
 export interface DsAttachment { file: DslogFile; fileName: string; startTime: number; endTime: number }
