@@ -32,7 +32,7 @@ describe('comms/loss severity', () => {
   it('one blip of 0.1 s is info, and the message says it was brief', () => {
     const f = lossFinding([100], [0.1])
     expect(f.severity).toBe('info')
-    expect(f.title).toMatch(/^Lost comms for 0\.1 s \(a blip\)/)
+    expect(f.title).toMatch(/^Comms blipped \(outputs back on within 0\.1 s\), at /)
   })
   it('a loss of 0.49 s is a blip; one of 0.5 s is an error', () => {
     expect(lossFinding([100], [0.49]).severity).toBe('info')
@@ -42,7 +42,7 @@ describe('comms/loss severity', () => {
     expect(lossFinding([100, 200], [0.1, 0.2]).severity).toBe('info')
     const three = lossFinding([100, 200, 300], [0.1, 0.2, 0.3])
     expect(three.severity).toBe('warning')
-    expect(three.title).toMatch(/^Lost comms 3 times \(all blips, the longest 0\.3 s\)/)
+    expect(three.title).toMatch(/^Lost comms 3 times, all blips \(outputs back on within 0\.3 s\), first at /)
   })
   it('a single long loss among blips keeps the error', () => {
     expect(lossFinding([100, 200, 300], [0.1, 0.2, 7.4]).severity).toBe('error')
@@ -93,10 +93,15 @@ describe('power/limit-not-applied severity', () => {
     expect(f.severity).toBe('error')
     expect(f.title).not.toMatch(/switched off/)
   })
-  it('a limit switched off in code and exceeded is a warning, and the message says why', () => {
-    const entries = flywheel.motors.flatMap((m) => [amps(m.supplyCurrent!, 90), amps(m.statorCurrent!, 10)])
-    const f = only(match(entries), 'power/limit-not-applied').find((x) => x.title.includes('supply'))!
+  const ranCode = (sha: string): FixtureEntry => ({ name: '/RealMetadata/GitSHA', type: 'string', records: [[0, sha]] })
+  const flywheelOver = () => flywheel.motors.flatMap((m) => [amps(m.supplyCurrent!, 90), amps(m.statorCurrent!, 10)])
+  it('a limit switched off in the code this log ran is a warning, and the message says why', () => {
+    const f = only(match([...flywheelOver(), ranCode(offseason2026.code.sha)]), 'power/limit-not-applied').find((x) => x.title.includes('supply'))!
     expect(f.severity).toBe('warning')
     expect(f.title).toMatch(/switched off in code \(deliberate\?\)/)
+  })
+  it('when the log ran other code than the profile\'s, "off" is not known for it, so it stays an error', () => {
+    const f = only(match([...flywheelOver(), ranCode('0000000')]), 'power/limit-not-applied').find((x) => x.title.includes('supply'))!
+    expect(f.severity).toBe('error')
   })
 })

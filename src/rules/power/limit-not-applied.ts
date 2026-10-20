@@ -15,7 +15,7 @@ export default rule({
   title: 'Current limit not holding',
   severity: 'error',
   who: ['software'],
-  meaning: 'The motors drew far more current than the limit that is supposed to hold them back, so the limit is not doing its job. Heavy current like this is a common reason for brownouts.',
+  meaning: 'The motors drew far more current than their configured limit: the limit is switched off, or it is on and not reaching the motors. Heavy current like this is a common reason for brownouts.',
   causes: [
     { id: 'limit-off', cause: 'The limit is configured but switched off in code (the enable flag is false)', look: 'the code file in this finding\'s "set in" evidence: the current-limit enable setting for this group' },
     { id: 'not-saved', cause: 'The configuration never reached the motor (the apply call failed, or a follower was missed, or the controller was replaced)', look: 'the return code of the config apply call in the code, for the leader and each follower; the vendor tool\'s view of the motor\'s limits' },
@@ -53,15 +53,17 @@ export default rule({
       const ruledOut: Record<string, string> = {}
       if (!isOn) {
         likely = ['limit-off']
-        nextStep = `Switch the ${kind} limit on in ${group.limits.where}, then measure the mechanism before and after.`
+        nextStep = `The ${kind} limit is switched off in ${group.limits.where}. On purpose? Mark it as a known issue. If not, switch it on and measure the mechanism before and after.`
       } else if (sameCode) {
         likely = ['not-saved', 'default-limit']
         ruledOut['limit-off'] = 'the limit is switched on in the code'
       }
       const switchedOff = isOn ? '' : ' that is switched off in code (deliberate?)'
+      // Switched off in the code this log ran may be deliberate (the mechanism may not need a limit): a warning. When the
+      // log ran other code than the profile's, "off" is not known for this log, so it stays an error.
+      const offInThisCode = !isOn && sameCode
       problems.push({
-        // Switched off in code may be deliberate (the mechanism may not need a limit): a warning, not an error.
-        severity: isOn ? undefined : 'warning',
+        severity: offInThisCode ? 'warning' : undefined,
         likely,
         ruledOut,
         nextStep,

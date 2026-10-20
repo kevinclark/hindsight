@@ -142,7 +142,7 @@ describe('Foresight checks on a robot in the pit', () => {
     expect(titles).toEqual(['Alert "Intake CANcoder disconnected!" 1× since start-up settled'])
   })
 
-  it('time-sync keeps its warning in the pit; an alert from before the stretch is not seen at all', () => {
+  it('time-sync in the pit: an alert in the stretch is a warning; one from before it is not in view at all', () => {
     const sync = (t: number) => ({ name: '/RealOutputs/PhotonAlerts/warnings', type: 'string[]', records: [[START, []], [t, ['Camera is not connected to the TimeSyncServer']], [t + 1, []]] }) as FixtureEntry
     const during = check([sync(80)]).verdict.items.find((i) => i.finding.rule === 'vision/time-sync')!
     expect([during.finding.severity, during.level]).toEqual(['warning', 'amber'])

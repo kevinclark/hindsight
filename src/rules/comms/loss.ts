@@ -60,15 +60,17 @@ export default rule({
     let severity: Severity | undefined
     if (allBlips) severity = losses.length >= MANY_BLIPS ? 'warning' : 'info'
 
-    const longest = Math.max(...deadSeconds).toFixed(1)
+    const longest = Math.max(...deadSeconds)
+    const within = longest < 0.05 ? 'under 0.1 s' : `within ${longest.toFixed(1)} s`
     let lostWords = `Lost comms ${plural(losses.length, 'time')}`
-    if (allBlips && losses.length === 1) lostWords = `Lost comms for ${longest} s (a blip)`
-    else if (allBlips) lostWords += ` (all blips, the longest ${longest} s)`
+    if (allBlips && losses.length === 1) lostWords = `Comms blipped (outputs back on ${within})`
+    else if (allBlips) lostWords += `, all blips (outputs back on ${within})`
+    const first = losses.length === 1 ? 'at' : 'first at'
 
     let radioReach = 'not logged'
     if (radio) radioReach = radioLost ? 'no, it lost the radio during the match' : 'yes, the whole match'
     return {
-      message: `${lostWords}, first at ${match.when(losses[0])}`,
+      message: `${lostWords}, ${first} ${match.when(losses[0])}`,
       severity,
       at: losses[0],
       likely, ruledOut, nextStep: ds?.nextStep,

@@ -48,8 +48,9 @@ export default rule({
       likely = ['version', 'server']
       ruledOut['boot-timing'] = 'the alerts came during the match, not just at boot'
     }
-    // Only at boot (every alert outside the match) is a note. Foresight keeps its severity: its window is the pit stretch.
-    const bootOnly = duringMatch === 0 && !match.judgingPit
+    // Only at boot (every alert outside the match) is a note. Foresight never sees this case: its log starts after
+    // start-up settles, so every alert it sees is inside its window.
+    const bootOnly = duringMatch === 0
     return {
       severity: bootOnly ? 'info' : undefined,
       likely,
