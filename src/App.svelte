@@ -8,6 +8,7 @@
   import MatchTab from './ui/MatchTab.svelte'
   import PowerTab from './ui/PowerTab.svelte'
   import LimitsTab from './ui/LimitsTab.svelte'
+  import LoggingTab from './ui/LoggingTab.svelte'
   import Wizard from './ui/Wizard.svelte'
   import SessionView from './ui/SessionView.svelte'
   import SnapshotView from './ui/SnapshotView.svelte'
@@ -30,7 +31,7 @@
   let analyses = $state<Analysis[]>([])
   let problems = $state<string[]>([])
   let selected = $state(0)
-  let tab = $state<'match' | 'power' | 'limits'>('match')
+  let tab = $state<'match' | 'power' | 'limits' | 'logging'>('match')
   // Review match logs, a whole session of them, the limits wizard, or a robot snapshot (device settings and faults).
   let mode = $state<'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight'>('review')
   // Robot profiles kept in this browser (built in the Robot profile mode), offered beside the built-in ones.
@@ -250,10 +251,11 @@
     <button role="tab" aria-selected={tab === 'match'} class:active={tab === 'match'} onclick={() => (tab = 'match')}>Match</button>
     <button role="tab" aria-selected={tab === 'power'} class:active={tab === 'power'} onclick={() => (tab = 'power')}>Power</button>
     <button role="tab" aria-selected={tab === 'limits'} class:active={tab === 'limits'} onclick={() => (tab = 'limits')}>Limits</button>
+    <button role="tab" aria-selected={tab === 'logging'} class:active={tab === 'logging'} onclick={() => (tab = 'logging')}>Logging</button>
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={current} {issues} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else}<LimitsTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={current} {issues} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>

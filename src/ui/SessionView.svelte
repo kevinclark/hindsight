@@ -15,6 +15,8 @@
   import type { IssueEvent } from '../triage/history.ts'
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
+  import { loggingChanges, neverLogged, type StateRun } from '../coverage/coverage.ts'
+  import { STATE_ICON, STATE_WORDS } from '../coverage/words.ts'
   import SessionReport from './SessionReport.svelte'
   import { buildCard } from '../report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
@@ -84,6 +86,10 @@
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
   const grid = $derived(session ? ruleGrid(session) : [])
   const merged = $derived(session ? mergeFindings(session) : [])
+  // Signals that appeared, vanished or changed between matches (by build), and those missing from every match.
+  const changes = $derived(session ? loggingChanges(session.matches) : [])
+  const missingAll = $derived(session ? neverLogged(session.matches) : [])
+  const withLogging = $derived(session ? session.matches.filter((m) => m.logging).length : 0)
   // The robots (profiles) this session's logs were read with, and how many matches each.
   const robots = $derived.by(() => {
     const by = new Map<string, MatchSummary[]>()
@@ -217,6 +223,11 @@
   // How far past the line, in words: "12 % past it", or "7× the line" when it is far past.
   const past = (margin: number) => (margin < 1 ? `${pct(margin)} past it` : `${(1 + margin).toFixed(1)}× the line`)
   const CELL = { fired: '●', quiet: '·', 'not checked': '–' } as const
+  const builds = (r: StateRun) => {
+    const [a, b] = [r.first.build?.sha || '?', r.last.build?.sha || '?']
+    return a === b ? `build ${a}` : `builds ${a}–${b}`
+  }
+  const span = (r: StateRun) => (r.matches === 1 ? label(r.first) : `${label(r.first)} to ${label(r.last)}, ${r.matches} matches`)
   // At most 2 decimals, without trailing zeros: 7.4, 1.2–2.1, 53.
   const fmt = (x: number) => String(+x.toFixed(Math.abs(x) >= 100 ? 0 : 2))
 </script>
@@ -314,6 +325,28 @@
   </div>
   <p class="hint">● fired · quiet – not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
 
+  <h3>Logging across the session</h3>
+  {#if withLogging === 0}
+    <p class="hint">Read these logs again (choose the folder) to see which signals each match logged.</p>
+  {:else}
+    <p class="hint">Signals the checks need whose state changed from one match to the next, in the order the matches were played, with the code build each ran. Open a match's Logging tab for what each one guards.{withLogging < session.matches.length ? ` ${session.matches.length - withLogging} matches were read before Hindsight kept this and are left out.` : ''}</p>
+    {#if changes.length === 0}
+      <p>No signal appeared or vanished between matches.</p>
+    {:else}
+      <ul class="changes">
+        {#each changes as c (c.key ?? c.what)}
+          <li>
+            <strong>{c.what}</strong>{#if c.key}{' '}<code>{c.key}</code>{/if}:
+            {#each c.runs as r, i (i)}{i ? ' → ' : ''}<span class="run">{STATE_ICON[r.state]} {STATE_WORDS[r.state]} in {span(r)} ({builds(r)})</span>{/each}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if missingAll.length}
+      <p class="note">Not in any match ({missingAll.length}): {missingAll.map((s) => s.what).join(', ')}.</p>
+    {/if}
+  {/if}
+
   <h3>Per match</h3>
   <Trends matches={session.matches} {typedBatteries} />
 
@@ -372,6 +405,9 @@
   .chip.once { border-style: dashed; }
   .grid-wrap { overflow-x: auto; }
   table { border-collapse: collapse; font-size: 0.8rem; }
+  .changes { padding-left: 1.1rem; font-size: 0.85rem; }
+  .changes li { margin-bottom: 0.3rem; overflow-wrap: anywhere; }
+  .run { white-space: normal; }
   .grid th, .grid td { padding: 0.1rem 0.5rem; text-align: center; white-space: nowrap; }
   .grid th[scope='row'], .grid thead th:first-child { text-align: left; }
   .grid thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
