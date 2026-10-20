@@ -23,6 +23,8 @@ import robot_snapshot_fixtures as fx  # noqa: E402
 
 tool = fx.load_tool()
 QUIET = lambda *_: None  # noqa: E731
+# The fake owlets are #! scripts, which Windows can't run.
+POSIX_ONLY = unittest.skipUnless(os.name == "posix", "the fake owlet is a #! script")
 NEVER = ("blink", "controlv2", "setconfigv2", "setid", "setname", "setupdatefrequency", "plotpro", "getcontrols",
          "getsignalvalue", "fieldupgrade", "setconfig", "selftest", "getconfig")
 
@@ -43,8 +45,8 @@ class Run:
                                   runner=runner, say=QUIET)
             self.requests = stub.requests
         path = self.out / "snapshot.json"
-        self.snapshot = json.loads(path.read_text()) if path.exists() else None
-        self.readme = (self.out / "README.txt").read_text() if (self.out / "README.txt").exists() else ""
+        self.snapshot = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+        self.readme = (self.out / "README.txt").read_text(encoding="utf-8") if (self.out / "README.txt").exists() else ""
 
     def actions(self):
         return [(r["query"].get("action"), r["query"].get("model"), r["query"].get("id")) for r in self.requests]
@@ -53,11 +55,17 @@ class Run:
 class DeviceSnapshot(unittest.TestCase):
     def assert_read_only(self, run):
         for r in run.requests:
-            self.assertEqual(r["method"], "GET")
-            self.assertEqual(r["path"], "/")
-            self.assertEqual(r["actions"], [r["query"].get("action")])  # exactly one action per request
-            self.assertIn(r["query"].get("action"), tool.ALLOWED_ACTIONS)
-            self.assertLessEqual(set(r["query"]), {"action", "model", "id", "canbus"})
+            self.assertIsNone(fx.read_only_problem(r, tool.ALLOWED_ACTIONS))
+
+    def test_read_only_check_flags_anything_else(self):
+        def request(raw, method="GET"):
+            path, _, query = raw.partition("?")
+            pairs = [pair.split("=", 1) for pair in query.split("&") if pair]
+            return {"method": method, "path": path, "query": dict(pairs), "actions": [v for k, v in pairs if k == "action"], "raw": raw}
+        self.assertIsNone(fx.read_only_problem(request("/?action=getdevices"), tool.ALLOWED_ACTIONS))
+        for raw, method in (("/?action=getdevices", "POST"), ("/x?action=getdevices", "GET"), ("/?action=blink", "GET"),
+                            ("/?action=getdevices&action=blink", "GET"), ("/", "GET"), ("/?action=getsignals&signals=1", "GET")):
+            self.assertIsNotNone(fx.read_only_problem(request(raw, method), tool.ALLOWED_ACTIONS), "%s %s" % (method, raw))
 
     def test_normal_run(self):
         run = Run()
@@ -173,12 +181,13 @@ class DeviceSnapshot(unittest.TestCase):
     def test_vpn_route_stops_before_contact(self):
         def vpn(argv, timeout=10):
             return {"rc": 0, "stdout": "interface: utun4\n", "stderr": ""}
-        run = Run(runner=vpn)
-        self.assertEqual(run.code, 1)
-        self.assertEqual(run.requests, [])
-        self.assertIsNone(run.snapshot)
-        run = Run(runner=vpn, extra=["--ignore-route"])
-        self.assertEqual(run.code, 0)
+        with mock.patch.object(tool.platform, "system", return_value="Darwin"):  # the route check runs on Mac and Linux
+            run = Run(runner=vpn)
+            self.assertEqual(run.code, 1)
+            self.assertEqual(run.requests, [])
+            self.assertIsNone(run.snapshot)
+            run = Run(runner=vpn, extra=["--ignore-route"])
+            self.assertEqual(run.code, 0)
 
     def test_route_parsing(self):
         mac = tool.check_route("172.22.11.2", lambda a, timeout=10: {"rc": 0, "stdout": "   route to: 172.22.11.2\n  interface: en7\n", "stderr": ""}, "Darwin")
@@ -312,7 +321,7 @@ class DoubleClick(unittest.TestCase):
 
 
 class ReadOnlyByConstruction(unittest.TestCase):
-    source = (fx.REPO / "tools" / "robot-snapshot.py").read_text()
+    source = (fx.REPO / "tools" / "robot-snapshot.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
 
     def test_only_read_actions_can_be_built(self):
@@ -421,7 +430,7 @@ class ReadOnlyByConstruction(unittest.TestCase):
         self.assertIn("-O", tool.scp_argv("lvuser", "172.22.11.2", "/home/lvuser/logs/a.hoot", Path("/tmp/out"), legacy=True))
         # from the robot, to this computer
         self.assertEqual(argv[-2], "lvuser@172.22.11.2:/home/lvuser/logs/run1/a_Q1_rio.hoot")
-        self.assertEqual(argv[-1], "/tmp/out" + os.sep)
+        self.assertEqual(argv[-1], str(Path("/tmp/out")) + os.sep)
         for bad in ("/home/lvuser/logs/a;rm -rf x.hoot", "/home/lvuser/../../etc/x.hoot", "-oProxyCommand=x.hoot",
                     "/home/lvuser/logs/$(reboot).hoot", "/home/lvuser/logs/a b.hoot", "relative.hoot", "/x/a.wpilog"):
             with self.assertRaises(ValueError, msg=bad):
@@ -482,6 +491,7 @@ class Hoot(unittest.TestCase):
         (self.dir / "short.hoot").write_bytes(b"x" * 70)
         self.assertIsNone(tool.hoot_compliancy(self.dir / "short.hoot"))
 
+    @POSIX_ONLY
     def test_local_hoot_converted_with_cached_owlet(self):
         cache = self.dir / "owlet"
         cache.mkdir()
@@ -495,11 +505,11 @@ class Hoot(unittest.TestCase):
         out = self.dir / "snap"
         code = tool.main(["--hoot-file", str(hoot), "--owlet-dir", str(cache), "--out", str(out)], say=QUIET)
         self.assertEqual(code, 0)
-        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
         copy = str(out / "hoot" / "_Q1_rio_x.hoot")
         self.assertEqual(calls, [[copy, "--check-pro", "-F"], [copy, "--scan", "-F"], [copy, str(out / "hoot" / "_Q1_rio_x.wpilog"), "-f", "wpilog"]])
         self.assertFalse((self.dir / "wrong-owlet.jsonl").exists())
-        s = json.loads((out / "snapshot.json").read_text())
+        s = json.loads((out / "snapshot.json").read_text(encoding="utf-8"))
         self.assertIsNone(s["address"])
         record = s["hoot"]["files"][0]
         self.assertEqual((record["compliancy"], record["owlet"], record["wpilog"]), (19, "owlet-26.3.0-C19", "_Q1_rio_x.wpilog"))
@@ -513,10 +523,10 @@ class Hoot(unittest.TestCase):
         hoot.write_bytes(hoot_bytes(21))
         out = self.dir / "snap"
         tool.main(["--hoot-file", str(hoot), "--owlet-dir", str(self.dir / "empty"), "--out", str(out)], say=QUIET)
-        s = json.loads((out / "snapshot.json").read_text())
+        s = json.loads((out / "snapshot.json").read_text(encoding="utf-8"))
         self.assertIn("AdvantageScope", s["hoot"]["files"][0]["note"])
         self.assertIsNone(s["hoot"]["files"][0]["owlet"])
-        self.assertIn("AdvantageScope", (out / "README.txt").read_text())
+        self.assertIn("AdvantageScope", (out / "README.txt").read_text(encoding="utf-8"))
 
     def test_parse_ls(self):
         self.assertEqual(tool.parse_ls(LS_OUTPUT), [
@@ -525,6 +535,7 @@ class Hoot(unittest.TestCase):
             {"path": "/home/lvuser/logs/run1/_P3_rio_2026-01-10_09-05-00.hoot", "bytes": 400000},
         ])
 
+    @POSIX_ONLY
     def test_list_and_copy_from_robot(self):
         cache = self.dir / "owlet"
         cache.mkdir()
@@ -576,6 +587,7 @@ class Hoot(unittest.TestCase):
         run = Run(extra=["--hoot-list"], runner=runner)
         self.assertIn("Listing failed (ssh 255)", run.snapshot["hoot"]["notes"][0])
 
+    @POSIX_ONLY
     def test_failed_conversion_not_reported_as_converted(self):
         cache = self.dir / "owlet"
         cache.mkdir()
@@ -586,7 +598,7 @@ class Hoot(unittest.TestCase):
         hoot.write_bytes(hoot_bytes(19))
         out = self.dir / "snap"
         tool.main(["--hoot-file", str(hoot), "--owlet-dir", str(cache), "--out", str(out)], say=QUIET)
-        record = json.loads((out / "snapshot.json").read_text())["hoot"]["files"][0]
+        record = json.loads((out / "snapshot.json").read_text(encoding="utf-8"))["hoot"]["files"][0]
         self.assertIsNone(record["wpilog"])
         self.assertIn("owlet failed (exit 3)", record["note"])
 
@@ -623,7 +635,7 @@ class RealHootFiles(unittest.TestCase):
             out = Path(tmp) / "snap"
             args = [a for f in files for a in ("--hoot-file", str(f))]
             self.assertEqual(tool.main([*args, "--out", str(out)], say=QUIET), 0)
-            s = json.loads((out / "snapshot.json").read_text())
+            s = json.loads((out / "snapshot.json").read_text(encoding="utf-8"))
             for record in s["hoot"]["files"]:
                 names = {line.split(":")[0].strip() for line in record["scan"]["stdout"].splitlines() if ":" in line}
                 self.assertEqual(names, {"RobotEnable", "RobotMode"}, record["name"])
@@ -635,11 +647,11 @@ class Fixtures(unittest.TestCase):
     def test_committed_snapshots_match_a_fresh_run(self):
         for name, (after, taken_at) in fx.SNAPSHOT_FIXTURES.items():
             fresh = fx.fixture_text(fx.make_snapshot(after, taken_at))
-            self.assertEqual((fx.FIXTURES / name).read_text(), fresh, "%s is stale: python3 scripts/make-snapshot-fixtures.py" % name)
+            self.assertEqual((fx.FIXTURES / name).read_text(encoding="utf-8"), fresh, "%s is stale: python3 scripts/make-snapshot-fixtures.py" % name)
 
     def test_no_real_serials_or_addresses(self):
         for name in fx.SNAPSHOT_FIXTURES:
-            s = json.loads((fx.FIXTURES / name).read_text())
+            s = json.loads((fx.FIXTURES / name).read_text(encoding="utf-8"))
             serials = {d["SerialNo"] for d in s["getdevices"]["body"]["DeviceArray"]}
             self.assertTrue(all(x.startswith("SIM-") for x in serials))
 
