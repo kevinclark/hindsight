@@ -10,7 +10,7 @@ import type { IssueEvent } from '../triage/history.ts'
 import { VERSION } from '../version.ts'
 import { SCHEMA, findingsFileName } from './findings-json.ts'
 import type { CardModel, Tone } from './card.ts'
-import { descendants, nest, severityWords, withParents, type FindingNode } from './finding-tree.ts'
+import { descendants, nest, partitionStanding, severityWords, withParents, type FindingNode } from './finding-tree.ts'
 import { cardTitle, shortTitle } from './titles.ts'
 import { stripRepoPaths } from './repo-paths.ts'
 
@@ -41,6 +41,12 @@ export interface ReviewModel {
   known: Finding[]
   /** The active findings as headlines, with the findings each explains under it (finding-tree.ts). */
   headlines: FindingNode[]
+  /**
+   * Headlines folded because they fired in every match of the loaded session (finding-tree.ts partitionStanding, the
+   * same split as the Match tab): left out of `headlines`, named in one line. Empty without a session. Counts
+   * (`errors`, `warnings`, ...) still include them.
+   */
+  standing: FindingNode[]
   knownHeadlines: FindingNode[]
   errors: Finding[]
   warnings: Finding[]
@@ -86,7 +92,7 @@ export function matchDate(analysis: Analysis): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>): ReviewModel {
+export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>, standingKeys: Set<string> = new Set()): ReviewModel {
   // Always the "Everyone" list: a report must not depend on which audience the viewer last picked.
   const all = analysis.report.findings.filter((f) => f.rule !== 'meta/not-checked')
   // Parents name a group of findings (src/rules/parents.ts): listed with them, never counted.
@@ -99,10 +105,13 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
   const known = all.filter(isKnown)
   const bySeverity = (s: string) => active.filter((f) => f.severity === s)
   const m = analysis.match
+  const cameBackList = active.filter((f) => findingStatus(f, issues, played) === 'came back')
+  // A parent heads its group wherever the group is: marked known, it still heads new members (MatchTab does the same).
+  const fullHeadlines = nest(withParents(active, parents), withGroups, withGroups.filter(isKnown), cameBackList)
+  const partition = partitionStanding(fullHeadlines, standingKeys, cameBackList, parents)
   const model = {
     active, known,
-    // A parent heads its group wherever the group is: marked known, it still heads new members (MatchTab does the same).
-    headlines: nest(withParents(active, parents), withGroups, withGroups.filter(isKnown), active.filter((f) => findingStatus(f, issues, played) === 'came back')),
+    headlines: partition.listed, standing: partition.folded,
     knownHeadlines: nest(withParents(known, parents), withGroups),
     errors: bySeverity('error'), warnings: bySeverity('warning'), infos: bySeverity('info'),
     notChecked: analysis.report.skipped.map((s) => ({ rule: s.rule, reason: s.reason })),
@@ -116,10 +125,10 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
     jsonFile: findingsFileName(m), schema: SCHEMA,
   }
   // "Worst:" names a headline, not a finding shown under one (the counts still count every finding).
-  const heads = new Set(model.headlines.map((n) => n.finding))
+  const heads = new Set(fullHeadlines.map((n) => n.finding))
   const headlinesFirst = (list: Finding[]) => [...list.filter((f) => heads.has(f)), ...list.filter((f) => !heads.has(f))]
   // A parent as the worst headline names its group, and stands for the errors in the group (not those nested deeper).
-  const worst = model.headlines.find((n) => n.finding.severity === 'error')
+  const worst = fullHeadlines.find((n) => n.finding.severity === 'error')
   const groupErrors = worst ? worst.children.filter((c) => c.finding.severity === 'error').length : 0
   const group = worst && parents.includes(worst.finding) ? { title: worst.finding.title, covers: groupErrors } : undefined
   model.bottomLine = bottomLine(headlinesFirst(model.errors), headlinesFirst(model.warnings), model.infos, known.length, group)
@@ -135,7 +144,7 @@ export function headlinesOf(m: ReviewModel, s: Severity): FindingNode[] {
 
 /** How many active findings of this severity the report lists under a more serious headline (for its section count). */
 export function listedAbove(m: ReviewModel, s: Severity): number {
-  const here = new Set(headlinesOf(m, s).flatMap((n) => [n.finding, ...descendants(n)]))
+  const here = new Set([...headlinesOf(m, s), ...m.standing.filter((n) => n.finding.severity === s)].flatMap((n) => [n.finding, ...descendants(n)]))
   return m.active.filter((f) => f.severity === s && !here.has(f)).length
 }
 
@@ -187,6 +196,17 @@ export function keyNumber(f: Finding): { label: string; value: string; text: str
   return { label: first[0], value, text: `${first[0]}: ${value}`, inTitle: titleHasValue(f.title, value) }
 }
 
+/** "1 error: <title>, 5 warnings": what the standing fold holds, as the Match tab's summary says it. */
+export function standingSummary(m: ReviewModel): { errors: string[]; warnings: number; infos: number; first?: Finding } {
+  const errs = m.standing.filter((n) => n.finding.severity === 'error').map((n) => n.finding)
+  return {
+    errors: errs.map((f) => cardTitle(f.title)),
+    warnings: m.standing.filter((n) => n.finding.severity === 'warning').length,
+    infos: m.standing.filter((n) => n.finding.severity === 'info').length,
+    first: errs[0],
+  }
+}
+
 /** "2:25 into the match" from "2:25 into the match (teleop; robot time 532.8 s)", for tight places. */
 export function shortWhen(when: string | null): string {
   return when ? when.replace(/\s*\(.*$/, '') : ''
@@ -210,6 +230,7 @@ export function reviewCard(m: ReviewModel): CardModel {
     heading: n ? plural(n, 'error') : 'No errors',
     headingTone: n ? 'error' : 'ok',
     subheading: `${plural(m.warnings.length, 'warning')} · ${m.infos.length} info${m.known.length ? ` · ${m.known.length} known` : ''}${crashed}`,
+    standingNote: m.standing.length ? `+ ${m.standing.length} in every match this session` : undefined,
     items: worst.map((n) => {
       const f = n.finding
       const k = keyNumber(f)
@@ -218,7 +239,7 @@ export function reviewCard(m: ReviewModel): CardModel {
       const number = [k.inTitle ? '' : k.text, under.length ? `explains ${severityWords(under)}` : ''].filter(Boolean).join(' · ')
       return { word, tone, title: cardTitle(f.title), number }
     }),
-    emptyText: 'Nothing to fix from this log.',
+    emptyText: m.standing.length ? 'Nothing new in this match.' : 'Nothing to fix from this log.',
     footer: [h.build.text, `Hindsight ${h.version}`],
     uncommitted: h.build.uncommitted,
     uncommittedText: 'UNCOMMITTED CODE ran this match',

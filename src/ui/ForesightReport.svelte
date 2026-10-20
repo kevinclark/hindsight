@@ -110,7 +110,7 @@
 
 <style>
   .print-only { display: none; }
-  @media print { .print-only { display: block; font-size: 9.5pt; line-height: 1.3; color: var(--fg); } }
+  @media print { .print-only { display: block; font-size: 9.5pt; line-height: 1.22; color: var(--fg); } }
   h1 { font-size: 15pt; margin: 0; }
   h2 { font-size: 10.5pt; margin: 0.6rem 0 0.2rem; padding-bottom: 0.1rem; border-bottom: 1px solid var(--border); }
   p { margin: 0.12rem 0; }
@@ -124,7 +124,7 @@
   .v-not-checked { color: var(--muted); }
   .build.dirty { color: var(--warning); font-weight: 600; }
   .items { list-style: none; margin: 0; padding: 0; }
-  .items li { padding: 0.2rem 0 0.2rem 0.5rem; border-left: 4px solid var(--border); margin-bottom: 0.3rem; break-inside: avoid; }
+  .items li { padding: 0.2rem 0 0.2rem 0.5rem; border-left: 4px solid var(--border); margin-bottom: 0.2rem; break-inside: avoid; }
   .items li.red { border-left-color: var(--error); }
   .items li.amber { border-left-color: var(--warning); }
   .title { font-weight: 700; font-size: 10.5pt; }

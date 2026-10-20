@@ -144,7 +144,7 @@
   }
 
   // "Save for Slack": the browser's print dialog (Save as PDF; the title names the file), then the phone card as a PNG.
-  const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(a, issues)))
+  const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(a, issues, standing)))
   let saveProblem = $state<string | null>(null)
   async function saveForSlackReview() {
     saveProblem = null
@@ -299,7 +299,7 @@
 {/if}
 </div>
 
-{#if mode === 'review' && current}<ReviewReport analysis={current} {issues} />{/if}
+{#if mode === 'review' && current}<ReviewReport analysis={current} {issues} {standing} />{/if}
 
 <style>
   :global(:root) {

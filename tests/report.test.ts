@@ -136,6 +136,24 @@ describe('report model, from the real CalGames fixtures', () => {
     expect(m.cameBack.has(first.key)).toBe(true)
     expect(reviewCard(m).items.some((i) => i.word === 'ERROR · CAME BACK')).toBe(true)
   })
+  it('folds standing headlines out of the report lists and the card, and changes nothing without a session', () => {
+    const none = reviewModel(p0, new Map())
+    expect(none.standing).toEqual([])
+    expect(reviewModel(p0, new Map(), new Set())).toEqual(none)
+    expect(reviewCard(none).standingNote).toBeUndefined()
+    const keys = new Set(none.headlines.map((n) => n.finding.key))
+    const all = reviewModel(p0, new Map(), keys)
+    expect(all.headlines.length + all.standing.length).toBe(none.headlines.length)
+    expect(all.standing.length).toBeGreaterThan(0)
+    // Counts still count every finding; the card names how many it left off.
+    expect(all.errors).toEqual(none.errors)
+    expect(all.bottomLine).toBe(none.bottomLine)
+    const card = reviewCard(all)
+    expect(card.standingNote).toBe(`+ ${all.standing.length} in every match this session`)
+    expect(card.heading).toBe(reviewCard(none).heading)
+    expect(card.items.length).toBe(all.headlines.filter((n) => n.finding.severity === 'error').length)
+    expect(buildCard(card).svg).toContain('in every match this session')
+  })
   it('says a crashed rule on the card and in the report model, and a clean run says none', () => {
     const crashed = { ...p0, report: { ...p0.report, crashed: [{ rule: 'x/boom', reason: 'it threw' }] } }
     const m = reviewModel(crashed, new Map())
