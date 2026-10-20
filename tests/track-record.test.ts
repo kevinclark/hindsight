@@ -43,6 +43,8 @@ describe('track record', () => {
     expect(howSure(r({ fired: 3, untriaged: 3 }), true)).toBe('New check: never confirmed on our matches (fired 3 times: 3 not marked yet)')
     expect(howSure(r({}), true)).toBe('New check: never confirmed on our matches')
     expect(howSure(r({ fired: 6, real: 5, wrong: 1 }), true)).toBe('marked real on 5 of the 6 times it fired on our matches; 1 marked not a real problem')
+    expect(howSure(r({ fired: 1, real: 1 }), true)).toBe('marked real the one time it fired on our matches')
+    expect(howSure(r({ fired: 2, real: 1, wrong: 1 }), true)).toBe('marked real on 1 of the 2 times it fired on our matches; 1 marked not a real problem')
     expect(howSure(r({ fired: 5, real: 1, known: 3, untriaged: 1 }), true)).toBe('marked real on 1 of the 5 times it fired on our matches; a known issue on 3 more; 1 not marked yet')
   })
   it('names the match short, without the event; a log with no match label is named by its file', () => {

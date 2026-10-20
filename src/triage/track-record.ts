@@ -84,7 +84,8 @@ export function howSure(r: TrackRecord, anyMarks: boolean): string | null {
   ].filter(Boolean).join('; ')
   const times = (n: number) => `${n} time${n === 1 ? '' : 's'}`
   if (r.real === 0 && r.wrong === 0) return `New check: never confirmed on our matches${r.fired ? ` (fired ${times(r.fired)}${rest ? `: ${rest}` : ''})` : ''}`
-  return `marked real on ${r.real} of the ${times(r.fired)} it fired on our matches${rest ? `; ${rest}` : ''}`
+  const head = r.fired === 1 && r.real === 1 ? 'marked real the one time it fired on our matches' : `marked real on ${r.real} of the ${times(r.fired)} it fired on our matches`
+  return `${head}${rest ? `; ${rest}` : ''}`
 }
 
 const DAY = 86400e3

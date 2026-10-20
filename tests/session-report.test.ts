@@ -273,6 +273,12 @@ describe('the Session view and its exports with "not a real problem" marks (same
     for (const f of j.findings) expect(Object.keys(f)).not.toContain('wrong')
     for (const f of j.findings) expect(Object.keys(f)).not.toContain('demoted')
   })
+  it('a real mark on Q2 keeps Q2\'s red red in the Session view, while Q3 is still demoted by Q1\'s wrong mark', () => {
+    const x = marked(wrongOn(1), { ...wrongOn(2), status: 'real', note: '', when: '2026-10-20T11:00:00Z' })
+    expect(x.matches[1].rules['power/brownout'].findings[0]).toMatchObject({ severity: 'error' })
+    expect(x.matches[1].rules['power/brownout'].findings[0].demoted).toBeUndefined()
+    expect(x.matches[2].rules['power/brownout'].findings[0]).toMatchObject({ severity: 'warning', demoted: { match: 'Q1' } })
+  })
   it('a wrong mark on Q1 keeps Q1\'s count, files Q1, and turns the reds on Q2 and Q3 amber with the reason', () => {
     const x = marked(wrongOn(1))
     const f = mergeFindings(x).find((m) => m.key === BROWN.key)!
