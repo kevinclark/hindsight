@@ -1,0 +1,94 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'com.frc8033'
+version = '2026.0.1'
+
+def wpilibVersion = '2026.2.1'
+def akitVersion = '26.0.2'
+def pwfVersion = '2026.5.08'
+
+// Where the published Maven repo will live; pass -PmavenUrl=... when publishing for real
+def mavenUrl = findProperty('mavenUrl') ?: layout.buildDirectory.dir('repo').get().asFile.toURI().toString()
+def jsonUrl = findProperty('jsonUrl') ?: ''
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+    maven { url 'https://frcmaven.wpi.edu/artifactory/release/' }
+    maven { url 'https://frcmaven.wpi.edu/artifactory/littletonrobotics-mvn-release/' }
+    maven { url 'https://www.playingwithfusion.com/frc/maven/' }
+}
+
+// The robot project already has WPILib, AdvantageKit and the PWF vendordep, so none of them is
+// bundled or listed as a runtime dependency
+def provided = [
+    "edu.wpi.first.wpilibj:wpilibj-java:$wpilibVersion",
+    "edu.wpi.first.wpiutil:wpiutil-java:$wpilibVersion",
+    "edu.wpi.first.ntcore:ntcore-java:$wpilibVersion",
+    "edu.wpi.first.hal:hal-java:$wpilibVersion",
+    "edu.wpi.first.wpimath:wpimath-java:$wpilibVersion",
+    "edu.wpi.first.wpiunits:wpiunits-java:$wpilibVersion",
+    "us.hebi.quickbuf:quickbuf-runtime:1.4",
+    "org.littletonrobotics.akit:akit-java:$akitVersion",
+    "com.playingwithfusion.frc:PlayingWithFusion-java:$pwfVersion",
+]
+
+dependencies {
+    provided.each {
+        compileOnly it
+        testImplementation it
+    }
+    annotationProcessor "org.littletonrobotics.akit:akit-autolog:$akitVersion"
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'battery-tracker-java'
+            from components.java
+        }
+    }
+    repositories {
+        maven { url = layout.buildDirectory.dir('repo') }
+    }
+}
+
+// Writes the vendordep JSON that teams install (WPILib: Manage Vendor Libraries)
+tasks.register('vendordepJson') {
+    def out = layout.buildDirectory.file('vendordep/FRC8033BatteryTracker.json')
+    outputs.file(out)
+    doLast {
+        def json = [
+            fileName        : 'FRC8033BatteryTracker.json',
+            name            : 'FRC8033BatteryTracker',
+            version         : project.version,
+            uuid            : '419b5f18-b25a-4c9c-9f06-ac492b6bbf63',
+            frcYear         : '2026',
+            mavenUrls       : [mavenUrl],
+            jsonUrl         : jsonUrl,
+            javaDependencies: [[groupId: project.group, artifactId: 'battery-tracker-java', version: project.version]],
+            jniDependencies : [],
+            cppDependencies : [],
+            requires        : [
+                [uuid: 'd820cc26-74e3-11ec-90d6-0242ac120003', errorMessage: 'FRC8033BatteryTracker needs AdvantageKit', offlineFileName: 'AdvantageKit.json', onlineUrl: 'https://github.com/Mechanical-Advantage/AdvantageKit/releases/latest/download/AdvantageKit.json'],
+                [uuid: '14b8ad04-24df-11ea-978f-2e728ce88125', errorMessage: 'FRC8033BatteryTracker needs the PlayingWithFusion vendordep', offlineFileName: 'playingwithfusion2026.json', onlineUrl: 'https://www.playingwithfusion.com/frc/playingwithfusion2026.json'],
+            ],
+        ]
+        out.get().asFile.parentFile.mkdirs()
+        out.get().asFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json)) + '\n'
+    }
+}
