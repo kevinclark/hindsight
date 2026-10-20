@@ -15,8 +15,12 @@
   import type { IssueEvent } from '../triage/history.ts'
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
+  import SessionReport from './SessionReport.svelte'
+  import { buildCard } from '../report/card.ts'
+  import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
+  import { sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
 
-  let { issues, onOpen }: { issues: Map<string, IssueEvent>; onOpen: (files: File[]) => void } = $props()
+  let { issues, onOpen, hasSession = $bindable(false) }: { issues: Map<string, IssueEvent>; onOpen: (files: File[]) => void; hasSession?: boolean } = $props()
 
   let summaries = $state<MatchSummary[]>([])
   // File handles only (not their contents), so a match can be reopened in Match review.
@@ -173,6 +177,29 @@
     const name = session.label.replace(/[^\w-]+/g, '-').toLowerCase()
     downloadText(`${name}.session-findings.json`, JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1))
   }
+  // "Save for Slack": the phone card as a PNG, then the print dialog (Save as PDF; the title names the file).
+  const cardOf = (s: Session) => buildCard(sessionCard(sessionModel(s, issues, typedBatteries)))
+  let saveProblem = $state<string | null>(null)
+  async function saveForSlackSession() {
+    saveProblem = null
+    if (!session) return
+    const base = sessionBase(session.label)
+    try { saveProblem = await saveForSlack(`${base}.session-report`, `${base}.session-card.png`, cardOf(session)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  // Tells App.svelte that a session is selected, so print shows the session report instead of the app.
+  $effect(() => { hasSession = !!session })
+  // For scripts/report.ts --session: the same builders the buttons use.
+  $effect(() => {
+    const api = (window as unknown as { hindsight?: Record<string, unknown> }).hindsight
+    if (!api) return
+    api.sessionList = () => sessions.map((s) => ({ id: s.id, label: s.label, matches: s.matches.length }))
+    api.selectSession = (id: string) => { selectedId = id }
+    api.sessionFile = () => (session ? `${sessionBase(session.label)}.session-findings.json` : null)
+    api.sessionBase = () => (session ? sessionBase(session.label) : null)
+    api.sessionFindingsJson = () => (session ? JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1) : null)
+    api.sessionCardPng = async () => (session ? await cardToPngDataUrl(cardOf(session)) : null)
+    api.sessionReport = () => (session ? sessionModel(session, issues, typedBatteries) : null)
+  })
   function newSessionFor(fileName: string) {
     const label = window.prompt('Move this log to the session named:', '')
     if (label) moveMatch(fileName, label.trim())
@@ -195,6 +222,7 @@
   const fmt = (x: number) => String(+x.toFixed(Math.abs(x) >= 100 ? 0 : 2))
 </script>
 
+<div class:screen-only={!!session}>
 <p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
 
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
@@ -227,8 +255,12 @@
 {#if session}
   <section class="head">
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
-    <button class="button" onclick={download}>Download for Claude</button>
+    <span class="actions">
+      <button class="button" onclick={download}>Download for Claude</button>
+      <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
+    </span>
   </section>
+  {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   {#each robots as r (r.robot.profileId)}
     <p class="note">Robot: <strong>{r.robot.name}</strong>, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
   {/each}
@@ -307,6 +339,8 @@
     </tbody>
   </table></div>
 {/if}
+</div>
+{#if session}<SessionReport {session} {issues} {typedBatteries} />{/if}
 
 <style>
   .intro, .hint, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
@@ -320,6 +354,7 @@
   .sessions button { padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
   .sessions button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
   .sessions small { color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   h2 { font-size: 1.2rem; margin: 0; }
   h3 { font-size: 1rem; margin: 1.5rem 0 0.25rem; }
