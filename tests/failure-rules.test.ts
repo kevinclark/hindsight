@@ -1,4 +1,4 @@
-// mech/stall, mech/slip and loop/stopped-while-enabled on made-up logs for the 2026 competition robot's profile.
+// mech/stall and mech/slip on made-up logs for the 2026 competition robot's profile.
 // The real cases (2026-02-21 practice) are not in the repo; their numbers are in the rules' comments.
 import { describe, expect, it } from 'vitest'
 import { competition2026 } from '../src/profiles/2026-competition.ts'
@@ -87,56 +87,5 @@ describe('mech/slip without slipChecks', () => {
   it('says it could not check', () => {
     const report = analyzeFiles([{ name: 'x.wpilog', bytes: writeWpilog([enabledFrom20To60, battery]) }], { ...competition2026, slipChecks: undefined }).analyses[0].report
     expect(report.skipped.find((s) => s.rule === 'mech/slip')?.reason).toMatch(/pairs no motor with an absolute angle/)
-  })
-})
-
-describe('loop/stopped-while-enabled', () => {
-  const endsEnabled: FixtureEntry = { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true]] }
-  const batteryTo40: FixtureEntry = { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[10, 12.5], [40, 12.45]] }
-
-  it('fires on a log that ends 20 s into an enable, and rules out a battery sag at 12.45 V', () => {
-    const finding = run([endsEnabled, batteryTo40]).findings.find((f) => f.rule === 'loop/stopped-while-enabled')
-    expect(finding?.evidence['enabled for, when the log ends (s)']).toBe(20)
-    expect(finding?.causes.find((c) => c.id === 'slow-sag')?.ruledOut).toBeTruthy()
-  })
-  it('points at a crash when the console says so in the last seconds', () => {
-    const console: FixtureEntry = { name: '/RealOutputs/Console', type: 'string', records: [[39, 'Unhandled exception: java.lang.NullPointerException']] }
-    const finding = run([endsEnabled, batteryTo40, console]).findings.find((f) => f.rule === 'loop/stopped-while-enabled')
-    expect(finding?.causes[0]).toMatchObject({ id: 'crash', likely: true })
-  })
-  it('stays quiet on a log that ends disabled, and on the field (restart-mid-match covers that)', () => {
-    expect(fired(run([enabledFrom20To60, battery]))).not.toContain('loop/stopped-while-enabled')
-    const fms: FixtureEntry = { name: '/DriverStation/FMSAttached', type: 'boolean', records: [[10, true]] }
-    expect(fired(run([endsEnabled, batteryTo40, fms]))).not.toContain('loop/stopped-while-enabled')
-  })
-
-  describe('with the next run loaded', () => {
-    const WALL = 1_771_700_000 // seconds since 1970, any time with a valid clock
-    const clock = (start: number, end: number): FixtureEntry[] => [
-      { name: '/SystemStats/SystemTimeValid', type: 'boolean', records: [[10, true]] },
-      { name: '/SystemStats/EpochTimeMicros', type: 'int64', records: [[10, (start + 10) * 1e6], [end, (start + end) * 1e6]] },
-    ]
-    const build = (sha: string): FixtureEntry => ({ name: '/RealMetadata/GitSHA', type: 'string', records: [[10, sha]] })
-    // This run's program starts at WALL and logs until 40 s; the next starts 12 s after that and runs disabled.
-    const nextRun = (sha: string) => writeWpilog([
-      { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [30, false]] }, batteryTo40, ...clock(WALL + 52, 30), build(sha),
-    ])
-    const both = (thisSha: string, nextSha: string) => analyzeFiles([
-      { name: 'a.wpilog', bytes: writeWpilog([endsEnabled, batteryTo40, ...clock(WALL, 40), build(thisSha)]) },
-      { name: 'b.wpilog', bytes: nextRun(nextSha) },
-    ], competition2026).analyses[0].report.findings.find((f) => f.rule === 'loop/stopped-while-enabled')
-
-    it('names the next run and its commit, points at a redeploy, and rules out a cut-short file', () => {
-      const finding = both('aaaaaaa', 'bbbbbbb')
-      expect(finding?.evidence['next program started (s later)']).toBe(12)
-      expect(finding?.evidence['next log']).toBe('b.wpilog, commit bbbbbbb (a different commit)')
-      expect(finding?.causes[0]).toMatchObject({ id: 'redeploy', likely: true })
-      expect(finding?.causes.find((c) => c.id === 'cut-short')?.ruledOut).toBeTruthy()
-    })
-    it('does not call a missing commit a different one', () => {
-      const finding = both('aaaaaaa', '')
-      expect(finding?.evidence['next log']).toMatch(/can't compare/)
-      expect(finding?.causes.find((c) => c.id === 'redeploy')?.likely).toBeFalsy()
-    })
   })
 })

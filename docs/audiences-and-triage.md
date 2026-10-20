@@ -29,7 +29,6 @@ A rule can have two: the fix for a brownout is partly battery handling (pit) and
 | mech/zero-not-completed | ✓ | | | command sequencing |
 | mech/follower-mismatch | | ✓ | | belt, pulley, set screw |
 | mech/stall, mech/slip | | ✓ | | a jam; a loose gear or pulley |
-| loop/stopped-while-enabled | ✓ | ✓ | | roboRIO power wiring; a crash or a deploy while enabled |
 | collision/tilt, collision/impact | ✓ | ✓ | ✓ | inspect for damage; guard in code; driving |
 | loop/overrun, vision/*, build/dirty | ✓ | | | code |
 | battery/identity, battery/gauge-capacity | | ✓ | | gauge plugged in, battery rotation |
