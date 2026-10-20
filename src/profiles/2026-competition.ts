@@ -5,7 +5,8 @@
  * Copied from the robot code on branch `comp-bring-up`, commit 2cd2843 (2026-02-21 13:41 PST). The practice logs of
  * 2026-02-20/21 ran 13 commits of that branch (7525889 to b675b5d, and two of them from `comp-bring-up-2-21`); none of
  * them changes a current limit, CAN ID, logged key, magnet offset or gear ratio, so this one profile fits them all.
- * 2cd2843 ran the most of those logs (12) and still has the intake's current zero (b675b5d stubs the intake out).
+ * 2cd2843 ran 12 of those logs, as many as 7525889 (11 Friday evening, one Saturday morning), and still has the
+ * intake's current zero (b675b5d stubs the intake out).
  *
  * A limit the code never sets is left out and Phoenix 6's default applies; a supply limit set without its enable flag
  * is on (Phoenix's default for the flag).
@@ -50,8 +51,8 @@ export const competition2026: RobotProfile = {
   codebase: 'Rebuilt',
   code: { repo: 'HighlanderRobotics/Rebuilt', branch: 'comp-bring-up', sha: '2cd2843', alsoBranches: ['comp-bring-up-2-21'] },
 
-  // The code loads WPILib's default field (SwerveConstants.java:39). The size is the welded layout's (its
-  // 2026-rebuilt-welded.json), assumed to be that default; the AndyMark layout is 2 cm smaller.
+  // The code loads WPILib's default field (SwerveConstants.java:39): k2026RebuiltWelded in WPILib 2026.2.1, the
+  // version build.gradle pins. Size from the code's 2026-rebuilt-welded.json.
   game: { name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 140, field: { length: 16.541, width: 8.069 } },
 
   signals: {
@@ -249,8 +250,8 @@ export const competition2026: RobotProfile = {
 
   // The what-if sliders cap this group's supply current per motor.
   whatIfGroup: 'Flywheel',
-  // Assumed to be the same board as the 2026 offseason robot (a CTRE PDP 2.0, no current telemetry): no
-  // /PowerDistribution channel currents are in these logs either.
+  // Assumed to be the same board as the 2026 offseason robot (a CTRE PDP 2.0, no current telemetry): these logs
+  // have a 24-channel /PowerDistribution entry, but every channel and the total read 0 A in all 55.
   powerDistribution: 'ctre-pdp-2',
 
   // The hood zeroes on the driver's B button (Robot.java:615-621, with the intake and the climber): it drives down at
@@ -317,8 +318,9 @@ export const competition2026: RobotProfile = {
         // SDS Mk5n R1: 7.03 motor turns per wheel turn, 2 in wheel radius (SwerveConstants.java:111): motor rotations
         // per meter of travel.
         { group: 'Drive', sensorToMechanism: 7.03 / (2 * Math.PI * 0.0508), where: 'R1WispSwerveConstants.java:156 (gear ratio) and :221 (SensorToMechanismRatio)' },
-        // Mk5n steer 287/11, fused with the CANcoder: the ratio is rotor-to-sensor, sensor-to-mechanism 1.
-        { group: 'Steer', rotorToSensor: 287 / 11, sensorToMechanism: 1, where: 'R1WispSwerveConstants.java:162 (gear ratio) and :255-256' },
+        // Mk5n steer, fused with the CANcoder: the ratio is rotor-to-sensor, sensor-to-mechanism 1. The code writes
+        // `return 287 / 11;` (int literals), which Java computes as 26, not 26.09: 26 is what the motors run.
+        { group: 'Steer', rotorToSensor: 26, sensorToMechanism: 1, where: 'R1WispSwerveConstants.java:162 (gear ratio) and :255-256' },
         // (42/12)·(32/16)·(85/10) = 59.5 motor turns per turret turn.
         { group: 'Turret', sensorToMechanism: (42 / 12) * (32 / 16) * (85 / 10), where: 'TurretIO.java:21 (TURRET_GEAR_RATIO) and :57' },
       ],
