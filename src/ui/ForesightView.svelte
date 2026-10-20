@@ -14,9 +14,10 @@
   import { profileId } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
-  import { ASSISTED_RULES, markOnchecks } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, markOnchecks, type MarkedLine } from '../foresight/onchecks.ts'
   import { SNAPSHOT_RULES } from '../foresight/snapshot-checks.ts'
   import { parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
+  import type { VerdictItem } from '../foresight/verdict.ts'
   import ForesightReport from './ForesightReport.svelte'
 
   let { history, onPitCheck }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void } = $props()
@@ -109,12 +110,41 @@
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
   }
   const onchecks = $derived(markOnchecks(checked))
+  // Only red and amber items decide GO/NO-GO; grey ones (context, or a step for a person) sit in their own short list.
+  const decisive = $derived(checked ? checked.verdict.items.filter((i) => i.level !== 'grey') : [])
+  const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey') : [])
+  // Lines the tool can never judge (a person's, or not built yet) fold away; the rest are live, in the team's order.
+  const inert = (l: { state: string }) => l.state === 'by eye' || l.state === 'not yet'
+  const liveLines = $derived(onchecks.filter((l) => !inert(l)))
+  const inertLines = $derived(onchecks.filter(inert))
   const snapshotWhy = $derived(checked && !checked.snapshotUsed ? checked.report.skipped.find((s) => s.rule === SNAPSHOT_RULES[0])?.reason ?? null : null)
   let reportView = $state<{ save: () => Promise<string | null> }>()
   let saveProblem = $state<string | null>(null)
   const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
+
+{#snippet checkLine(l: MarkedLine)}
+  <li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.detail}</span></li>
+{/snippet}
+
+{#snippet itemRow(item: VerdictItem)}
+  <li class={`item ${item.level}`}>
+    <button class="row" onclick={() => (open = { ...open, [item.finding.key]: !open[item.finding.key] })} aria-expanded={!!open[item.finding.key]}>
+      <span class="chip">{ASSISTED_RULES.has(item.finding.rule) && item.level === 'grey' ? 'Do' : LEVEL_WORD[item.level]}</span>
+      <span class="title">{item.finding.title}</span>
+    </button>
+    {#if item.level !== 'grey' || ASSISTED_RULES.has(item.finding.rule)}<p class="action"><strong>Do:</strong> {item.action}</p>{/if}
+    <p class="proof">{item.finding.rule} · {item.proof}</p>
+    {#if open[item.finding.key]}
+      <div class="detail">
+        <p>{item.finding.meaning}</p>
+        <dl>{#each Object.entries(item.finding.evidence) as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}</dl>
+        <p class="small">Could be: {item.finding.causes.map((c) => `${c.cause} (${c.look})`).join('; ')}</p>
+      </div>
+    {/if}
+  </li>
+{/snippet}
 
 <!-- A file dropped anywhere but the snapshot box would open in this tab and end the check. -->
 <svelte:window ondragover={(e) => e.preventDefault()} ondrop={(e) => e.preventDefault()} />
@@ -149,25 +179,14 @@
   </section>
 
   {#if checked}
-    {#if checked.verdict.items.length}
-      <ol class="items">
-        {#each checked.verdict.items as item (item.finding.key + item.finding.title)}
-          <li class={`item ${item.level}`}>
-            <button class="row" onclick={() => (open = { ...open, [item.finding.key]: !open[item.finding.key] })} aria-expanded={!!open[item.finding.key]}>
-              <span class="chip">{ASSISTED_RULES.has(item.finding.rule) && item.level === 'grey' ? 'Do' : LEVEL_WORD[item.level]}</span>
-              <span class="title">{item.finding.title}</span>
-            </button>
-            {#if item.level !== 'grey' || ASSISTED_RULES.has(item.finding.rule)}<p class="action"><strong>Do:</strong> {item.action}</p>{/if}
-            <p class="proof">{item.finding.rule} · {item.proof}</p>
-            {#if open[item.finding.key]}
-              <div class="detail">
-                <p>{item.finding.meaning}</p>
-                <dl>{#each Object.entries(item.finding.evidence) as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}</dl>
-                <p class="small">Could be: {item.finding.causes.map((c) => `${c.cause} (${c.look})`).join('; ')}</p>
-              </div>
-            {/if}
-          </li>
-        {/each}
+    {#if decisive.length}
+      <ol class="items" aria-label="Findings that decide GO or NO-GO">
+        {#each decisive as item (item.finding.key + item.finding.title)}{@render itemRow(item)}{/each}
+      </ol>
+    {/if}
+    {#if contextItems.length}
+      <ol class="items context-items" aria-label="Context: never changes the verdict">
+        {#each contextItems as item (item.finding.key + item.finding.title)}{@render itemRow(item)}{/each}
       </ol>
     {/if}
     {#if checked.verdict.notChecked.length || checked.verdict.crashed.length}
@@ -185,10 +204,14 @@
     <section class="onchecks" aria-label="The team's pit checklist">
       <h3>Pit checklist: battery, controllers, software</h3>
       <ul>
-        {#each onchecks as l (l.line)}
-          <li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.detail}</span></li>
-        {/each}
+        {#each liveLines as l (l.line)}{@render checkLine(l)}{/each}
       </ul>
+      <details class="inert">
+        <summary>{inertLines.length} lines for a person or not built yet</summary>
+        <ul>
+          {#each inertLines as l (l.line)}{@render checkLine(l)}{/each}
+        </ul>
+      </details>
       <p class="small">In the team's 2026 checklist order. A line is marked only from the check on screen now; "By eye" lines are for a person and never count toward GO.</p>
     </section>
   {/if}
@@ -253,7 +276,11 @@
   .onchecks ul { list-style: none; margin: 0; padding: 0; }
   .oc { display: grid; grid-template-columns: 6.5rem minmax(10rem, 1fr) 2fr; gap: 0.15rem 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
   .oc .mark { font-weight: 700; font-size: 0.8rem; }
-  .oc.ok .mark { color: var(--go, #188038); }
+  .oc.ok .mark { color: var(--muted); }
+  .inert { margin-top: 0.4rem; }
+  .inert summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; padding: 0.25rem 0; }
+  .inert ul { list-style: none; margin: 0; padding: 0; }
+  .context-items { margin-top: 0.75rem; }
   .oc.red .mark { color: var(--error); }
   .oc.amber .mark { color: var(--warning); }
   .oc.to-do .mark { color: var(--fg); }
