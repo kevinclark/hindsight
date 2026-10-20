@@ -1,4 +1,4 @@
-package com.frc8033.battery;
+package com.frc8033.hindsight.battery;
 
 import edu.wpi.first.wpilibj.Alert;
 import edu.wpi.first.wpilibj.Alert.AlertType;
@@ -24,12 +24,18 @@ public class BatteryTracker {
   /** The gauge is read once a second: its values change slowly. */
   private static final int GAUGE_READ_PERIOD_LOOPS = 50;
 
+  // The keys Hindsight reads; companion/keys.json lists them and a test checks they match
+  static final String GAUGE_KEY = "BatteryGauge";
+  static final String ID_KEY = "Battery/Id";
+  static final String ID_SOURCE_KEY = "Battery/IdSource";
+  static final String TYPED_ID_KEY = "/SmartDashboard/BatteryId";
+
   record Resolved(String id, String source) {}
 
   private final BatteryGaugeIO gaugeIO;
   private final BatteryGaugeIOInputsAutoLogged gaugeInputs = new BatteryGaugeIOInputsAutoLogged();
   private final LoggedNetworkString batteryIdEntry =
-      new LoggedNetworkString("/SmartDashboard/BatteryId", "");
+      new LoggedNetworkString(TYPED_ID_KEY, "");
   private int loopCount = 0;
   private String lastGaugeId = "";
   private boolean teleopEnabledInMatch = false;
@@ -51,7 +57,7 @@ public class BatteryTracker {
     if (loopCount++ % GAUGE_READ_PERIOD_LOOPS == 0) {
       gaugeIO.updateInputs(gaugeInputs);
     }
-    Logger.processInputs("BatteryGauge", gaugeInputs);
+    Logger.processInputs(GAUGE_KEY, gaugeInputs);
 
     String liveGaugeId = gaugeId(gaugeInputs.valid, gaugeInputs.nickname, gaugeInputs.serialNumber);
     if (!liveGaugeId.isEmpty()) {
@@ -60,8 +66,8 @@ public class BatteryTracker {
     String typedId = normalize(batteryIdEntry.get());
     Resolved resolved = resolve(liveGaugeId, lastGaugeId, typedId);
 
-    Logger.recordOutput("Battery/Id", resolved.id());
-    Logger.recordOutput("Battery/IdSource", resolved.source());
+    Logger.recordOutput(ID_KEY, resolved.id());
+    Logger.recordOutput(ID_SOURCE_KEY, resolved.source());
 
     notSetAlert.set(resolved.id().isEmpty());
     gaugeDisconnectedAlert.set(RobotBase.isReal() && !gaugeInputs.valid);

@@ -1,4 +1,4 @@
-package com.frc8033.battery;
+package com.frc8033.hindsight.battery;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

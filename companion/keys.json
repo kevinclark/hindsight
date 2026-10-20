@@ -1,0 +1,41 @@
+{
+  "about": [
+    "Every key the companion library logs, as it appears in a wpilog from a real robot, and its wpilog type.",
+    "{bus} is the CANivore's name; the CANBus(\"*\") bus (any CANivore) logs as Any.",
+    "Outputs log under /RealOutputs on a robot and /ReplayOutputs in a replay; inputs log at the root either way.",
+    "Two tests read this file, so a renamed key fails on both sides: KeysTest.java in core and battery, and tests/companion-keys.test.ts."
+  ],
+  "keys": [
+    {"key": "/Hindsight/System/CpuPercent", "type": "double", "module": "core"},
+    {"key": "/Hindsight/System/MemAvailableBytes", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/System/MemTotalBytes", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/System/HeapUsedBytes", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/System/HeapMaxBytes", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/System/Status", "type": "string", "module": "core"},
+    {"key": "/Hindsight/LogDrive/Path", "type": "string", "module": "core"},
+    {"key": "/Hindsight/LogDrive/ResolvedPath", "type": "string", "module": "core"},
+    {"key": "/Hindsight/LogDrive/Device", "type": "string", "module": "core"},
+    {"key": "/Hindsight/LogDrive/OnUsb", "type": "boolean", "module": "core"},
+    {"key": "/Hindsight/LogDrive/FreeBytes", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/LogDrive/TotalBytes", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/LogDrive/Status", "type": "string", "module": "core"},
+    {"key": "/Hindsight/CANivore/{bus}/Status", "type": "string", "module": "core"},
+    {"key": "/Hindsight/CANivore/{bus}/UtilizationPercent", "type": "double", "module": "core"},
+    {"key": "/Hindsight/CANivore/{bus}/BusOffCount", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/CANivore/{bus}/TxFullCount", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/CANivore/{bus}/Rec", "type": "int64", "module": "core"},
+    {"key": "/Hindsight/CANivore/{bus}/Tec", "type": "int64", "module": "core"},
+    {"key": "/BatteryGauge/Connected", "type": "boolean", "module": "battery"},
+    {"key": "/BatteryGauge/Valid", "type": "boolean", "module": "battery"},
+    {"key": "/BatteryGauge/SerialNumber", "type": "int64", "module": "battery"},
+    {"key": "/BatteryGauge/Nickname", "type": "string", "module": "battery"},
+    {"key": "/BatteryGauge/EffectiveCapacityAh", "type": "double", "module": "battery"},
+    {"key": "/BatteryGauge/RatedCapacityAh", "type": "double", "module": "battery"},
+    {"key": "/BatteryGauge/RemainingChargePct", "type": "double", "module": "battery"},
+    {"key": "/BatteryGauge/NumCycles", "type": "int64", "module": "battery"},
+    {"key": "/BatteryGauge/BatteryAgeDays", "type": "double", "module": "battery"},
+    {"key": "/RealOutputs/Battery/Id", "type": "string", "module": "battery"},
+    {"key": "/RealOutputs/Battery/IdSource", "type": "string", "module": "battery"},
+    {"key": "/NetworkInputs/SmartDashboard/BatteryId", "type": "string", "module": "battery"}
+  ]
+}

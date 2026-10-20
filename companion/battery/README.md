@@ -1,6 +1,7 @@
-# FRC8033BatteryTracker
+# HindsightCompanionBattery
 
-A WPILib vendor library that logs which battery is in the robot, so log analysis can follow each battery across
+The battery half of the Hindsight companion library (`../README.md`). It was the standalone `FRC8033BatteryTracker`;
+its log keys haven't changed. A WPILib vendor library that logs which battery is in the robot, so log analysis can follow each battery across
 matches and spot a weak one (CalGames 2026 P0 browned out on a battery that read fully charged but had low capacity).
 
 It reads the battery's Playing With Fusion Battery Fuel Gauge. If there is no gauge, it falls back to a label typed on
@@ -9,13 +10,14 @@ the dashboard. Everything is logged through AdvantageKit, so it works in replay.
 ## Adopting it
 
 1. In VS Code: **WPILib: Manage Vendor Libraries → Install new library (online)**, and paste the vendordep URL
-   (TBD until it's hosted). The project must already have AdvantageKit and the PlayingWithFusion vendordep.
+   (TBD until it's hosted; until then, see "Building and publishing"). The project must already have AdvantageKit and
+   the PlayingWithFusion vendordep. The vendordep is `HindsightCompanionBattery.json`.
 2. In `Robot.java`:
 
    ```java
-   import com.frc8033.battery.BatteryGaugeIO;
-   import com.frc8033.battery.BatteryGaugeIOReal;
-   import com.frc8033.battery.BatteryTracker;
+   import com.frc8033.hindsight.battery.BatteryGaugeIO;
+   import com.frc8033.hindsight.battery.BatteryGaugeIOReal;
+   import com.frc8033.hindsight.battery.BatteryTracker;
 
    // Fuel gauge CAN ID: every battery's gauge must use this one
    private final BatteryTracker batteryTracker =
@@ -57,10 +59,6 @@ When `Valid` is false, the other `BatteryGauge/*` fields are zero.
 
 ## Building and publishing
 
-JDK 17. `./gradlew build` runs the tests. `./gradlew publish vendordepJson -PmavenUrl=<maven repo URL>
--PjsonUrl=<vendordep URL>` writes the Maven repo to `build/repo` and the vendordep to
-`build/vendordep/FRC8033BatteryTracker.json`. Without `-PmavenUrl`, the vendordep points at the local `build/repo`,
-which is useful for testing against a robot project on the same machine.
-
-WPILib, AdvantageKit and the PWF library are compile-only: the robot project provides them, so none is bundled.
-Versions are set at the top of `build.gradle` (WPILib 2026.2.1, AdvantageKit 26.0.2, PWF 2026.5.08).
+It builds with the rest of the companion library, from `companion/`: see `../README.md`. Its vendordep is written
+to `battery/build/vendordep/HindsightCompanionBattery.json`. WPILib, AdvantageKit and the PWF library are
+compile-only: the robot project provides them, so none is bundled.

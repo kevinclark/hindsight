@@ -1,0 +1,55 @@
+package com.frc8033.hindsight;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.frc8033.hindsight.LogDriveIO.LogDriveIOInputs;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class LogDriveIORealTest {
+  private static final String MOUNTS = Fixtures.proc("mounts");
+
+  @Test
+  void theLongestMountPointHoldingThePathWins() {
+    assertEquals("/dev/sda1", LogDriveIOReal.deviceFor(MOUNTS, "/media/sda1"));
+    assertEquals("/dev/sda1", LogDriveIOReal.deviceFor(MOUNTS, "/media/sda1/logs"));
+    assertEquals("ubi0:rootfs", LogDriveIOReal.deviceFor(MOUNTS, "/home/lvuser/logs"));
+    assertEquals("ubi0:rootfs", LogDriveIOReal.deviceFor(MOUNTS, "/media/sda10"));
+    assertEquals("/dev/sdb1", LogDriveIOReal.deviceFor(MOUNTS, "/media/my stick/logs"));
+  }
+
+  @Test
+  void onlyScsiDisksAreUsb() {
+    assertTrue(LogDriveIOReal.isUsb("/dev/sda1"));
+    assertFalse(LogDriveIOReal.isUsb("ubi0:rootfs"));
+    assertFalse(LogDriveIOReal.isUsb("/dev/mmcblk0p1"));
+    assertFalse(LogDriveIOReal.isUsb(""));
+  }
+
+  @Test
+  void aMissingStickReportsTheFolderAboveItNotOnUsb(@TempDir Path dir) throws IOException {
+    Path mounts = dir.resolve("mounts");
+    Files.writeString(mounts, "ubi0:rootfs / ubifs rw 0 0\n");
+    LogDriveIOInputs inputs = new LogDriveIOInputs();
+    new LogDriveIOReal(dir.resolve("U/logs").toString(), mounts).updateInputs(inputs);
+    assertEquals("ok", inputs.status);
+    assertEquals(dir.resolve("U/logs").toString(), inputs.path);
+    assertEquals(dir.toFile().getCanonicalPath(), inputs.resolvedPath);
+    assertEquals("ubi0:rootfs", inputs.device);
+    assertFalse(inputs.onUsb);
+    assertTrue(inputs.freeBytes > 0 && inputs.totalBytes >= inputs.freeBytes);
+  }
+
+  @Test
+  void withoutProcMountsItSaysUnavailableAndNeverThrows(@TempDir Path dir) {
+    LogDriveIOInputs inputs = new LogDriveIOInputs();
+    new LogDriveIOReal(dir.toString(), dir.resolve("no-mounts")).updateInputs(inputs);
+    assertTrue(inputs.status.startsWith("unavailable: "), inputs.status);
+    assertFalse(inputs.onUsb);
+  }
+}
