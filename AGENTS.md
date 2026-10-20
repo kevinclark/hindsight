@@ -2,6 +2,8 @@
 
 Notes for coding agents working in this repository. `README.md` and `docs/` are for people.
 
+This repository is public (since 2026-10-19). Nothing private goes into code, docs, fixtures or commit messages: no people's names or contact details, no private Slack or mail, no other team's name next to a criticism.
+
 ## Rules (`src/rules/`)
 
 - Rules are written for a high-school student to read and copy: follow CONTRIBUTING.md, "How a rule should read".
