@@ -144,9 +144,10 @@ function talon(path: string, records: [number, number, number][]): FixtureEntry 
  * The leader dips to 0 for 40 ms every 2 s, and a follower record lands in each dip: held for 0.25 s, that stale
  * value would look like a slipping follower if the rule compared it between records. `followerShare` sets how fast
  * the followers really spin, relative to the leader. With `slowLeaderSeconds` the leader is logged at 4 Hz too, and
- * runs at steady speed for only that long (no dips): few comparisons, but real seconds.
+ * runs at steady speed for only that long (no dips): few comparisons, but real seconds. `leaderHz` sets how often the
+ * leader of such a short run is logged (the followers stay at 4 Hz).
  */
-function team340Log(followerShare = 1, slowLeaderSeconds?: number): Uint8Array {
+function team340Log(followerShare = 1, slowLeaderSeconds?: number, leaderHz = 4): Uint8Array {
   const teleop = 34.5
   const lead: [number, number, number][] = []
   const follow: [number, number, number][] = []
@@ -162,11 +163,12 @@ function team340Log(followerShare = 1, slowLeaderSeconds?: number): Uint8Array {
       follow.push([+t.toFixed(3), 40, dip ? 0 : 60 * followerShare])
     }
   } else {
-    const records = slowLeaderSeconds * 4
-    for (let k = 0; k <= records + 8; k++) {
-      const running = k <= records
-      lead.push([+(teleop + 1 + k * 0.25).toFixed(3), 40, running ? 60 : 0])
-      follow.push([+(teleop + 1.01 + k * 0.25).toFixed(3), 40, running ? 60 * followerShare : 0])
+    const leadStep = 1 / leaderHz
+    for (let k = 0; k * leadStep <= slowLeaderSeconds + 2; k++) {
+      lead.push([+(teleop + 1 + k * leadStep).toFixed(3), 40, k * leadStep <= slowLeaderSeconds ? 60 : 0])
+    }
+    for (let k = 0; k <= 560; k++) {
+      follow.push([+(teleop + 0.99 + k * 0.25).toFixed(3), 40, k * 0.25 <= slowLeaderSeconds ? 60 * followerShare : 0])
     }
   }
   const still = (path: string) => talon(path, [[5, 0, 0]])
@@ -219,6 +221,10 @@ describe("a team-340-shaped log: TalonFX structs, no battery voltage", () => {
     const trends = summarizeLog(file)!.metrics.followerSecondsOff
     expect(trends).not.toBeNull()
     expect(trends!).toBeCloseTo(rule!.measured![0].value, 1)
+    // A fast leader steady for 0.8 s, followers at 4 Hz counting 1.0 s off: the rule fires on the followers' seconds, so Trends reports it too.
+    const brief = { name: '340-brief.wpilog', bytes: team340Log(0.7, 1.3, 50) }
+    expect(analyze([brief])[0].report.findings.some((x) => x.rule === 'mech/follower-mismatch')).toBe(true)
+    expect(summarizeLog(brief)!.metrics.followerSecondsOff).toBeGreaterThanOrEqual(1)
     // Under a second of steady running is still "not measured".
     expect(summarizeLog({ name: '340-short.wpilog', bytes: team340Log(0.7, 0.5) })!.metrics.followerSecondsOff).toBeNull()
   })

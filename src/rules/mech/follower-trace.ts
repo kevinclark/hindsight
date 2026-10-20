@@ -18,7 +18,7 @@ export const FOLLOWER_DT = 0.02 // compare every 20 ms
 export const OFF_FRACTION = 0.15
 /** Seconds off the leader at which the rule fires. */
 export const FOLLOWER_LINE_SECONDS = 1
-/** Less steady running than this is too little to call the group measured. */
+/** Less steady running than this (unless the rule fires) is too little to call the group measured. */
 const MIN_STEADY_SECONDS = 1
 
 /** One motor's speed on the grid, plus its speed as a fraction of the leader's at each steady moment. */
@@ -108,8 +108,10 @@ export function worstFollowerSecondsOff(match: MatchView): number | null {
     const group = motorGroup(g, match)
     try {
       const motors = traceGroup(group, match)
-      if (motors[0].ratios.length * motors[0].weight < MIN_STEADY_SECONDS) continue
       const s = mostOffLeader(motors).secondsOff
+      // Where the rule would fire (s at its line) the group is measured, whatever the leader's own steady seconds say:
+      // a slowly logged follower counts 0.25 s a record against a leader whose steady stretch can be a little shorter.
+      if (motors[0].ratios.length * motors[0].weight < MIN_STEADY_SECONDS && s < FOLLOWER_LINE_SECONDS) continue
       worst = Math.max(worst ?? 0, s)
     } catch (e) {
       if (!(e instanceof MissingSignal)) throw e
