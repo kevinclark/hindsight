@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { LiveStatus } from '../foresight/live.ts'
   import type { ForesightResult } from '../foresight/engine.ts'
-  import { ASSISTED_RULES, type MarkedLine } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, type ChecklistLine } from '../foresight/onchecks.ts'
   import { profileId } from '../profiles/index.ts'
   import { buildCard, type Card } from '../report/card.ts'
   import { saveForSlack } from '../report/card-png.ts'
@@ -21,7 +21,7 @@
     checked: Extract<ForesightResult, { state: 'checked' }> | null
     verdict: 'GO' | 'NO-GO' | 'NOT CHECKED'
     why: string
-    onchecks: MarkedLine[]
+    onchecks: ChecklistLine[]
     battery: number | null
     controllers: string[]
     totalChecks: number
@@ -44,9 +44,9 @@
   // Grey items that ask a person to do something (hold a tag up to a camera) are steps, not context.
   const steps = $derived(input.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule)))
   const greys = $derived(input.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)))
-  // Lines the tool can never judge are listed by name under the table, not as rows.
-  const liveLines = $derived(onchecks.filter((l) => l.state !== 'by eye'))
-  const byEyeLines = $derived(onchecks.filter((l) => l.state === 'by eye'))
+  // Lines the tool can never judge, and context that is never a fault (the gyro), are listed by name under the table, not as rows.
+  const liveLines = $derived(onchecks.filter((l) => !l.folded))
+  const byEyeLines = $derived(onchecks.filter((l) => l.folded))
   const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': '– Not checked', 'by eye': 'By eye' } as const
 
   /** Print as PDF (the title names the file), then save the phone card. */
@@ -103,7 +103,7 @@
       {/each}
     </tbody>
   </table>
-  {#if byEyeLines.length}<p class="small"><strong>By eye (a person checks):</strong> {byEyeLines.map((l) => l.line).join(' · ')}</p>{/if}
+  {#if byEyeLines.length}<p class="small"><strong>By eye (a person checks) or context:</strong> {byEyeLines.map((l) => l.line).join(' · ')}</p>{/if}
 
   <h2>Readings</h2>
   <p>Battery {battery === null ? '—' : `${battery.toFixed(2)} V`} · Controllers {controllers.map((c, i) => `${i}: ${c}`).join(' · ') || '—'}</p>

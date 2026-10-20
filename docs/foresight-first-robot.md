@@ -52,9 +52,10 @@ writes to it: Foresight only subscribes.
 8. **Take a robot snapshot** (about 1 minute; see `docs/robot-snapshot.md`). Don't press Clear Faults or blink
    anything first. With Foresight still connected, double-click the downloaded robot-snapshot program (or run `python3 tools/robot-snapshot.py` in a
    terminal) on the same laptop, then click **Robot snapshot…** and choose the `snapshot.json` it saved. The box should say *Used for
-   this check*, and four checklist lines (*All CAN devices licensed and ID'd*, *CANcoder offsets correct and
-   unchanged*, *Swerve ratio unchanged*, *Current limits as the code sets them*) should change from *Not checked* to
-   **OK** or **Look**. Note each line's mark and text. A line that says *partly checked* or *Not checked* with a
+   this check*, and the checklist line *Robot snapshot matches the code* (it merges four of the team's lines: *CANcoder
+   offsets correct and unchanged*, *Swerve ratio unchanged*, *All CAN devices licensed and ID'd*, *Current limits as
+   the code sets them*) should change from *Not checked* to **OK** or **Look**. If it is not OK, its text names which of
+   the four. Note each line's mark and text. A line that says *partly checked* or *Not checked* with a
    reason about a name or a value that wasn't read means the real robot answers differently from CTRE's simulator:
    note it, and keep the snapshot folder for Claude (it holds no names, only device serial numbers).
 9. **Check the "Log stick in" line.** Until the robot code uses the Hindsight companion library (the students'
