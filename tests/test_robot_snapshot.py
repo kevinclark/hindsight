@@ -456,15 +456,20 @@ def hoot_bytes(compliancy, size=200):
     return bytes(data)
 
 
-LAUNCHER = """using System;
+LAUNCHER = r"""using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text.RegularExpressions;
 class Owlet {
+    static string Quote(string a) {
+        a = Regex.Replace(a, "(\\\\*)\"", "$1$1\\\"");
+        return "\"" + Regex.Replace(a, "(\\\\+)$", "$1$1") + "\"";
+    }
     static int Main(string[] args) {
         string script = Path.ChangeExtension(Process.GetCurrentProcess().MainModule.FileName, ".py");
         string python = File.ReadAllLines(script)[0].Substring(2);
-        var start = new ProcessStartInfo(python, "\\"" + script + "\\"") { UseShellExecute = false };
-        foreach (string a in args) start.Arguments += " \\"" + a.Replace("\\"", "\\\\\\"") + "\\"";
+        var start = new ProcessStartInfo(python, Quote(script)) { UseShellExecute = false };
+        foreach (string a in args) start.Arguments += " " + Quote(a);
         using (var p = Process.Start(start)) { p.WaitForExit(); return p.ExitCode; }
     }
 }
@@ -482,10 +487,11 @@ def script_owlet(folder: Path, name: str, source: str) -> Path:
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
         return path
     path = folder / (name + ".exe")
-    (folder / (name + ".py")).write_text(script, newline="\n")
+    (folder / (name + ".py")).write_text(script, encoding="utf-8", newline="\n")
     csc = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe"
     (folder / "launcher.cs").write_text(LAUNCHER)
-    subprocess.run([str(csc), "/nologo", "/out:" + str(path), str(folder / "launcher.cs")], check=True, capture_output=True)
+    built = subprocess.run([str(csc), "/nologo", "/out:" + str(path), str(folder / "launcher.cs")], capture_output=True, text=True)
+    assert built.returncode == 0, built.stdout + built.stderr
     (folder / "launcher.cs").unlink()
     return path
 
@@ -547,6 +553,13 @@ class Hoot(unittest.TestCase):
         self.assertEqual(hoot.read_bytes(), original)  # the original is untouched
         # owlet is never copied anywhere
         self.assertEqual([p.name for p in out.rglob("owlet*")], [])
+
+    def test_fake_owlet_receives_its_arguments_intact(self):
+        log = self.dir / "args.jsonl"
+        owlet = fake_owlet(self.dir, "owlet-26.3.0-C19", log)
+        argv = ["a b", "c" + "\\", 'd"e', "f\\\\" + '"g', "-F"]
+        self.assertEqual(subprocess.run([str(owlet), *argv]).returncode, 0)
+        self.assertEqual(json.loads(log.read_text(encoding="utf-8")), argv)
 
     def test_no_cached_owlet_says_open_advantagescope(self):
         hoot = self.dir / "a.hoot"
