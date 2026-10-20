@@ -4,13 +4,13 @@
  */
 
 import type { Analysis } from '../analyze.ts'
-import { ruleById } from '../rules/index.ts'
+import { makerOf } from '../rules/index.ts'
 import type { Finding, Severity } from '../rules/types.ts'
 import type { IssueEvent } from '../triage/history.ts'
 import { VERSION } from '../version.ts'
 import { SCHEMA, findingsFileName } from './findings-json.ts'
 import type { CardModel, Tone } from './card.ts'
-import { descendants, nest, severityWords, type FindingNode } from './finding-tree.ts'
+import { descendants, nest, severityWords, withParents, type FindingNode } from './finding-tree.ts'
 import { cardTitle, shortTitle } from './titles.ts'
 import { stripRepoPaths } from './repo-paths.ts'
 
@@ -89,15 +89,21 @@ export function matchDate(analysis: Analysis): string {
 export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>): ReviewModel {
   // Always the "Everyone" list: a report must not depend on which audience the viewer last picked.
   const all = analysis.report.findings.filter((f) => f.rule !== 'meta/not-checked')
+  // Parents name a group of findings (src/rules/parents.ts): listed with them, never counted.
+  const parents = analysis.report.parents ?? []
+  const withGroups = [...all, ...parents]
   const played = playedAt(analysis)
-  const active = all.filter((f) => { const s = findingStatus(f, issues, played); return !s || s === 'came back' })
-  const known = all.filter((f) => { const s = findingStatus(f, issues, played); return s === 'known' || s === 'fixed later' })
+  const isActive = (f: Finding) => { const s = findingStatus(f, issues, played); return !s || s === 'came back' }
+  const isKnown = (f: Finding) => { const s = findingStatus(f, issues, played); return s === 'known' || s === 'fixed later' }
+  const active = all.filter(isActive)
+  const known = all.filter(isKnown)
   const bySeverity = (s: string) => active.filter((f) => f.severity === s)
   const m = analysis.match
   const model = {
     active, known,
-    headlines: nest(active, all, known, active.filter((f) => findingStatus(f, issues, played) === 'came back')),
-    knownHeadlines: nest(known, all),
+    // A parent heads its group wherever the group is: marked known, it still heads new members (MatchTab does the same).
+    headlines: nest(withParents(active, parents), withGroups, withGroups.filter(isKnown), active.filter((f) => findingStatus(f, issues, played) === 'came back')),
+    knownHeadlines: nest(withParents(known, parents), withGroups),
     errors: bySeverity('error'), warnings: bySeverity('warning'), infos: bySeverity('info'),
     notChecked: analysis.report.skipped.map((s) => ({ rule: s.rule, reason: s.reason })),
     crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
@@ -112,7 +118,11 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
   // "Worst:" names a headline, not a finding shown under one (the counts still count every finding).
   const heads = new Set(model.headlines.map((n) => n.finding))
   const headlinesFirst = (list: Finding[]) => [...list.filter((f) => heads.has(f)), ...list.filter((f) => !heads.has(f))]
-  model.bottomLine = bottomLine(headlinesFirst(model.errors), headlinesFirst(model.warnings), model.infos, known.length)
+  // A parent as the worst headline names its group, and stands for the errors in the group (not those nested deeper).
+  const worst = model.headlines.find((n) => n.finding.severity === 'error')
+  const groupErrors = worst ? worst.children.filter((c) => c.finding.severity === 'error').length : 0
+  const group = worst && parents.includes(worst.finding) ? { title: worst.finding.title, covers: groupErrors } : undefined
+  model.bottomLine = bottomLine(headlinesFirst(model.errors), headlinesFirst(model.warnings), model.infos, known.length, group)
   return model
 }
 
@@ -129,13 +139,15 @@ export function listedAbove(m: ReviewModel, s: Severity): number {
   return m.active.filter((f) => f.severity === s && !here.has(f)).length
 }
 
-export function bottomLine(errors: Finding[], warnings: Finding[], infos: Finding[], known: number): string {
+/** `group`: the worst headline is a parent, standing for this many of the errors. */
+export function bottomLine(errors: Finding[], warnings: Finding[], infos: Finding[], known: number, group?: { title: string; covers: number }): string {
   const tail = `${plural(warnings.length, 'warning')}, ${infos.length} info${known ? `, ${known} known` : ''}`
   const stop = (t: string) => (t.endsWith('…') ? t : `${t}.`)
   if (errors.length === 0) return warnings.length ? `No errors. ${tail}. Worst: ${stop(shortTitle(warnings[0].title))}` : `No errors or warnings. ${tail}.`
-  const rest = errors.length - 1
+  const worst = group?.title ?? errors[0].title
+  const rest = errors.length - (group?.covers ?? 1)
   const more = rest ? `; +${rest} more error${rest === 1 ? '' : 's'}.` : ''
-  return `${plural(errors.length, 'error')}, ${tail}. Worst: ${rest ? shortTitle(errors[0].title) : stop(shortTitle(errors[0].title))}${more}`
+  return `${plural(errors.length, 'error')}, ${tail}. Worst: ${rest ? shortTitle(worst) : stop(shortTitle(worst))}${more}`
 }
 
 /**
@@ -181,7 +193,7 @@ export function shortWhen(when: string | null): string {
 }
 
 export function incidentFor(f: Finding): string {
-  const r = ruleById(f.rule)
+  const r = makerOf(f.rule)
   return r ? stripRepoPaths(r.incident) : ''
 }
 

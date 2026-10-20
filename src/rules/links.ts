@@ -7,9 +7,10 @@
  * real matches named above it. A finding gets at most one explanation: the first link here that matches.
  * To add one, copy a link, then run `npm run golden` before and after and look at every finding that changed.
  */
-import { link, likely, mostLikely, type Link } from './rule.ts'
+import { isBetween, link, likely, mostLikely, secondsAfter, within, type Link } from './rule.ts'
 import type { Finding } from './types.ts'
 import { BUS_DEVICES } from './can/bus-dropout.ts'
+import { GROUP_DEVICES } from './parents.ts'
 
 export const LINKS: Link[] = [
   // CalGames 2026 P0 and MTTD 2025 Q61: the battery collapsed, so the robot browned out.
@@ -78,25 +79,18 @@ export const LINKS: Link[] = [
   link({
     cause: 'can/bus-dropout',
     explains: 'alerts/passthrough',
-    when: (bus, alert) => namesAKindOfDeviceOn(bus, alert) && within(bus, alert, 2),
+    when: (bus, alert) => namesAKindOfDevice(bus.evidence[BUS_DEVICES], alert) && within(bus, alert, 2),
     why: 'the robot code saw the devices on the bus go missing',
   }),
+  // CalGames 2026 Q2 with no CAN bus in the robot profile: the same 12 swerve "Disconnected ... module" alerts and
+  // "Missing Module Data" came on with the 25 devices that dropped together (a parent, parents.ts), as with the bus.
+  link({
+    cause: 'can/devices-dropped-together',
+    explains: 'alerts/passthrough',
+    when: (group, alert) => namesAKindOfDevice(group.evidence[GROUP_DEVICES], alert) && within(group, alert, 2),
+    why: 'the robot code saw the devices go missing',
+  }),
 ]
-
-/** How many seconds after the first finding the second one happened (NaN if either has no time). */
-function secondsAfter(first: Finding, second: Finding): number {
-  return (second.time ?? NaN) - (first.time ?? NaN)
-}
-
-/** Is x from low to high? (False for NaN.) */
-function isBetween(x: number, low: number, high: number): boolean {
-  return x >= low && x <= high
-}
-
-/** Did the two findings happen within this many seconds of each other? (False if either has no time.) */
-function within(a: Finding, b: Finding, seconds: number): boolean {
-  return Math.abs(secondsAfter(a, b)) <= seconds
-}
 
 /**
  * Does the alert's text name this thing? A trailing CAN id may be left out: "Flywheel Follower Disconnected" names
@@ -115,11 +109,12 @@ function alertNames(alert: Finding, name: string | null): boolean {
 const POSITIONS = ['front', 'back', 'left', 'right']
 
 /**
- * Does the alert name a kind of device on the bus? "Missing Gyro Data" names "Gyro (Pigeon)", and "Missing Module
- * Data" names "Front Left module" (where a device sits doesn't count).
+ * Does the alert name a kind of device in this list (a finding's evidence line, "Front Left drive, Gyro (Pigeon)")?
+ * "Missing Gyro Data" names "Gyro (Pigeon)", and "Missing Module Data" names "Front Left steer" (where a device sits
+ * doesn't count).
  */
-function namesAKindOfDeviceOn(bus: Finding, alert: Finding): boolean {
-  const kinds = wordsOf(String(bus.evidence[BUS_DEVICES] ?? '')).filter((w) => !POSITIONS.includes(w))
+function namesAKindOfDevice(devices: number | string | undefined, alert: Finding): boolean {
+  const kinds = wordsOf(String(devices ?? '')).filter((w) => !POSITIONS.includes(w))
   return wordsOf(alert.about ?? '').flatMap((w) => [w, ...(ALERT_WORDS[w] ?? [])]).some((w) => kinds.includes(w))
 }
 

@@ -7,7 +7,9 @@ import { analyzeFiles } from '../src/analyze.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { BUS_DEVICES } from '../src/rules/can/bus-dropout.ts'
 import { LINKS } from '../src/rules/index.ts'
-import { linkFindings } from '../src/rules/run.ts'
+import { consolidate } from '../src/rules/run.ts'
+import { bottomLine, reviewCard, reviewModel } from '../src/report/review-model.ts'
+import { buildFindingsJson } from '../src/report/findings-json.ts'
 import type { Finding } from '../src/rules/types.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 
@@ -63,6 +65,47 @@ describe('can/device-dropout: bus-wide and partial drops', () => {
     expect(per.map((f) => f.about).sort()).toEqual(devices.map((d) => d.name).sort())
   })
 
+  it('the net under it: the 24 that dropped together get one parent, which adds nothing to any count', () => {
+    const drops: Record<string, [number, boolean][]> = { Hood: [[5, false]] }
+    devices.filter((d) => d.name !== 'Hood').forEach((d, i) => { drops[d.name] = [[5, true], [40 + i * 0.04, false], [50, true]] })
+    const [analysis] = analyzeFiles([{ name: 'a.wpilog', bytes: writeWpilog(log(drops)) }], offseason2026).analyses
+    const { findings, parents = [] } = analysis.report
+    expect(parents.map((p) => p.title)).toEqual(['24 CAN devices dropped within 0.92 s'])
+    const grouped = findings.filter((f) => f.explainedBy?.rule === 'can/devices-dropped-together')
+    expect(grouped).toHaveLength(24)
+    expect(findings.find((f) => f.about === 'Hood')?.explainedBy).toBeUndefined()
+    const model = reviewModel(analysis, new Map())
+    expect(model.errors).toHaveLength(25)
+    // Hood went first (off since before enable), then the group: report order, the group where its first device was.
+    expect(model.headlines.map((n) => n.finding.about ?? n.finding.title)).toEqual(['Hood', '24 CAN devices dropped within 0.92 s'])
+    expect(model.headlines[1].children).toHaveLength(24)
+    expect(model.bottomLine).toMatch(/^25 errors, .*Worst: Hood dropped off CAN .*; \+24 more errors\.$/)
+    // When the group is the worst headline, it stands for its errors.
+    expect(bottomLine(model.errors, [], [], 0, { title: parents[0].title, covers: 24 })).toBe('25 errors, 0 warnings, 0 info. Worst: 24 CAN devices dropped within 0.92 s; +1 more error.')
+    const card = reviewCard(model)
+    expect(card.heading).toBe('25 errors')
+    expect(card.items.map((it) => it.title)[1]).toBe('24 CAN devices dropped within 0.92 s')
+    expect(card.items[1].number).toBe('explains 24 errors')
+    expect(JSON.stringify(buildFindingsJson(analysis.match, analysis.report))).toContain('"parents":[{"rule":"can/devices-dropped-together"')
+  })
+
+  it('a parent marked known still heads its new members in the active list, and no count moves', () => {
+    const drops: Record<string, [number, boolean][]> = {}
+    devices.slice(0, 4).forEach((d, i) => { drops[d.name] = [[5, true], [40 + i * 0.1, false], [50, true]] })
+    const [analysis] = analyzeFiles([{ name: 'a.wpilog', bytes: writeWpilog(log(drops)) }], { ...offseason2026, canBuses: undefined }).analyses
+    const [group] = analysis.report.parents ?? []
+    const known = new Map([[group.key, { type: 'issue' as const, key: group.key, status: 'known' as const, note: '', when: '2026-10-20T00:00:00Z' }]])
+    const model = reviewModel(analysis, known)
+    expect([model.errors.length, model.known.length]).toEqual([4, 0])
+    expect(model.headlines.map((n) => [n.finding, n.children.length])).toEqual([[group, 4]])
+    expect(model.knownHeadlines).toEqual([])
+    // Mark one member known too: the parent heads it in the known list as well.
+    known.set(analysis.report.findings[0].key, { ...known.get(group.key)!, key: analysis.report.findings[0].key })
+    const split = reviewModel(analysis, known)
+    expect(split.headlines.map((n) => [n.finding, n.children.length])).toEqual([[group, 3]])
+    expect(split.knownHeadlines.map((n) => [n.finding, n.children.length])).toEqual([[group, 1]])
+  })
+
   it('a whole-bus drop is still one bus finding with no per-device findings', () => {
     const drops = Object.fromEntries(devices.map((d, i) => [d.name, [[5, true], [40 + i * 0.01, false], [50, true]] as [number, boolean][]]))
     const found = run(log(drops))
@@ -88,21 +131,21 @@ describe('alert words for the bus link', () => {
       alert('Missing Module Data', 613.9),
       alert('Disconnected drive motor on Back Left module!'),
     ]
-    linkFindings([bus, ...alerts], LINKS)
+    consolidate([bus, ...alerts], { links: LINKS })
     expect(alerts.map((a) => a.explainedBy?.rule)).toEqual(Array(4).fill('can/bus-dropout'))
   })
 
   it('an alert that names no kind of device on the bus is still its own headline', () => {
     const odometry = alert('Using Sync Odometry')
     const far = alert('Disconnected turn motor on Back Left module!', 700)
-    linkFindings([bus, odometry, far], LINKS)
+    consolidate([bus, odometry, far], { links: LINKS })
     expect([odometry.explainedBy, far.explainedBy]).toEqual([undefined, undefined])
   })
 
   it('turn and module mean steer only when the bus has a steer motor', () => {
     const noSteer = { ...bus, evidence: { [BUS_DEVICES]: 'Front Left drive, Hood, Gyro (Pigeon)' } }
     const turn = alert('Disconnected turn motor on Back Left module!')
-    linkFindings([noSteer, turn], LINKS)
+    consolidate([noSteer, turn], { links: LINKS })
     expect(turn.explainedBy).toBeUndefined()
   })
 })

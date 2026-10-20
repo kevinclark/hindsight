@@ -41,7 +41,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "0.0.1"
 # The release workflow replaces "source" with the git commit the built file came from.
 BUILD = "source"
 SCHEMA = "hindsight.robot-snapshot/1"

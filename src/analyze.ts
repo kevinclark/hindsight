@@ -7,7 +7,7 @@ import { openWpilog } from './readers/wpilog.ts'
 import { readDslog, type DslogFile } from './readers/dslog.ts'
 import { parseHistory, type HistoryEvent } from './triage/history.ts'
 import { attachDslog, buildMatch, dslogOverlap, type Match } from './match/match.ts'
-import { LINKS, RULES, runRules, type Report } from './rules/index.ts'
+import { CONSOLIDATORS, RULES, runRules, type Report } from './rules/index.ts'
 import { PROFILES } from './profiles/index.ts'
 import { chooseProfile } from './profiles/choose.ts'
 import type { RobotProfile } from './profiles/types.ts'
@@ -73,7 +73,7 @@ export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((file
   for (const a of analyses) a.match.others = analyses.map((x) => x.match).filter((m) => m !== a.match)
   for (const a of analyses) {
     const started = performance.now()
-    a.report = runRules(a.match, RULES, LINKS)
+    a.report = runRules(a.match, RULES, CONSOLIDATORS)
     a.timing.rulesMs = performance.now() - started
   }
   // Oldest match first (by the robot's wall clock when known, else by file name).

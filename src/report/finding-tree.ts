@@ -40,6 +40,20 @@ export function nest(list: Finding[], all: Finding[], known: Finding[] = [], cam
   return list.filter((f) => !parentInList(f)).map((f) => ({ ...node(f), note: noteFor(f, all, known) }))
 }
 
+/**
+ * The list with the parents from the reduce stage (src/rules/parents.ts) put in, each just before the first finding
+ * of its group that is in the list. A parent with none of its group in the list is left out.
+ */
+export function withParents(list: Finding[], parents: Finding[] = []): Finding[] {
+  const out: Finding[] = []
+  for (const f of list) {
+    const p = explainerOf(f, parents)
+    if (p && !out.includes(p)) out.push(p)
+    out.push(f)
+  }
+  return out
+}
+
 /** "explained by a known issue (<its short title>): <why>", or the same without "a known issue", for a headline. */
 function noteFor(f: Finding, all: Finding[], known: Finding[]): string | undefined {
   const parent = explainerOf(f, all)
@@ -72,14 +86,15 @@ export function severityWords(findings: Finding[]): string {
  * Splits the top-level nodes for the Match tab's fold: a node folds only when its headline and every finding under it
  * are standing (`standing`: issue keys that fired in every match of the session) and none of them came back after a
  * fix. Otherwise the node stays listed with all it explains, so a one-off finding is never folded away with a
- * standing cause. Order within each side is kept.
+ * standing cause. Order within each side is kept. `parents`: the parents in the tree (they count as standing).
  */
-export function partitionStanding(tree: FindingNode[], standing: Set<string>, cameBack: Finding[] = []): { listed: FindingNode[]; folded: FindingNode[] } {
+export function partitionStanding(tree: FindingNode[], standing: Set<string>, cameBack: Finding[] = [], parents: Finding[] = []): { listed: FindingNode[]; folded: FindingNode[] } {
   const listed: FindingNode[] = []
   const folded: FindingNode[] = []
   for (const n of tree) {
-    const whole = [n.finding, ...descendants(n)]
-    const folds = whole.every((f) => standing.has(f.key) && !cameBack.includes(f))
+    // A parent is never in a session's history (it isn't counted): it is standing when its group is.
+    const whole = [n.finding, ...descendants(n)].filter((f) => !parents.includes(f))
+    const folds = whole.length > 0 && whole.every((f) => standing.has(f.key) && !cameBack.includes(f))
     ;(folds ? folded : listed).push(n)
   }
   return { listed, folded }

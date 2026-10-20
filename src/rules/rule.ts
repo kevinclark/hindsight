@@ -165,10 +165,51 @@ export function link(definition: Link): Link {
   return definition
 }
 
+/**
+ * A parent is a finding that names a group of findings: "25 CAN devices dropped within 0.25 s". The app lists the
+ * group under it (nothing is deleted), and it adds nothing to any count. Parents live in parents.ts.
+ */
+export interface Parent extends Omit<About, 'severity' | 'needsProfile' | 'foresightOnly'> {
+  /** The rule whose findings it groups. */
+  over: string
+  /** True when this finding belongs in the same group as the first (earliest) one. */
+  together: (first: Finding, other: Finding) => boolean
+  /** How many findings make a group (at least 2). */
+  atLeast: number
+  /** The parent's title, from its group (in time order): '25 CAN devices dropped within 0.25 s'. */
+  name: (group: Finding[]) => string
+  /** Why, in a few words, shown with each finding in the group. */
+  why: string
+  /** The causes this group points to (their ids), most likely first. */
+  likely: (group: Finding[]) => string[]
+  /** The numbers behind it. */
+  evidence: (group: Finding[]) => Record<string, number | string>
+}
+
+/** Declare a parent. Like `rule`, it only checks the shape. */
+export function parent(definition: Parent): Parent {
+  return definition
+}
+
 /** Did the log point to this cause for this finding? likely(dropout, 'battery-sag'). */
 export const likely = (finding: Finding, causeId: string) => finding.causes.some((c) => c.id === causeId && c.likely)
 /** Is this the first cause the log points to? mostLikely(brownout, 'weak-battery'). */
 export const mostLikely = (finding: Finding, causeId: string) => finding.causes[0]?.id === causeId && !!finding.causes[0].likely
+
+/** How many seconds after the first finding the second one happened (NaN if either has no time). */
+export function secondsAfter(first: Finding, second: Finding): number {
+  return (second.time ?? NaN) - (first.time ?? NaN)
+}
+
+/** Is x from low to high? (False for NaN.) */
+export function isBetween(x: number, low: number, high: number): boolean {
+  return x >= low && x <= high
+}
+
+/** Did the two findings happen within this many seconds of each other? (False if either has no time.) */
+export function within(a: Finding, b: Finding, seconds: number): boolean {
+  return Math.abs(secondsAfter(a, b)) <= seconds
+}
 
 // Tests for signal.episodes(...): read them out loud, e.g. episodes(below(7)) = "stretches below 7".
 export const below = (limit: number) => (v: number) => v < limit

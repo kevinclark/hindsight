@@ -10,7 +10,7 @@
 
 import { has, num, type Match } from '../match/match.ts'
 import { maxOf, minOf, percentile, slice, type NumberSeries } from '../match/series.ts'
-import { RULES, type Report } from '../rules/index.ts'
+import { PARENTS, RULES, type Report } from '../rules/index.ts'
 import type { Finding, Plot } from '../rules/types.ts'
 import { powerReport } from '../power/power-report.ts'
 import { buildPowerGrid } from '../power/battery-model.ts'
@@ -26,6 +26,17 @@ export interface WindowSeries { label: string; key: string | null; t: number[]; 
 
 export function buildFindingsJson(match: Match, report: Report, issues: Map<string, IssueEvent> = new Map()): object {
   const power = powerReport(match)
+  const issue = (f: Finding) => issues.get(f.key)
+  // The match rules (as before parents) or the parent that made the finding.
+  const maker = (f: Finding) => RULES.find((r) => r.id === f.rule) ?? PARENTS.find((p) => p.id === f.rule)
+  const entry = (f: Finding) => ({
+    ...f,
+    plot: undefined,
+    issue: issue(f) ? { status: issue(f)!.status, note: issue(f)!.note, since: issue(f)!.when } : null,
+    who: maker(f)?.who ?? [],
+    incident: maker(f)?.incident ?? null,
+    window: f.plot ? windowFor(match, f.plot) : null,
+  })
   return {
     schema: SCHEMA,
     tool: { name: 'hindsight', version: VERSION, rules: RULES.map((r) => r.id) },
@@ -45,14 +56,9 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
       wallClockOffsetSeconds: match.epochOffset,
       dslogs: match.ds.map((d) => ({ file: d.fileName, start: d.startTime, end: d.endTime })),
     },
-    findings: report.findings.map((f) => ({
-      ...f,
-      plot: undefined,
-      issue: issues.get(f.key) ? { status: issues.get(f.key)!.status, note: issues.get(f.key)!.note, since: issues.get(f.key)!.when } : null,
-      who: RULES.find((r) => r.id === f.rule)?.who ?? [],
-      incident: RULES.find((r) => r.id === f.rule)?.incident ?? null,
-      window: f.plot ? windowFor(match, f.plot) : null,
-    })),
+    findings: report.findings.map(entry),
+    // Findings that name a group (src/rules/parents.ts), which the group's findings point at with explainedBy.
+    ...(report.parents ? { parents: report.parents.map(entry) } : {}),
     notChecked: report.skipped,
     crashedRules: report.crashed,
     summary: summary(match),

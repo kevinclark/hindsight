@@ -3,8 +3,8 @@
  * To add a rule, write src/rules/<area>/<name>.ts and add it here (see CONTRIBUTING.md).
  */
 import type { Match } from '../match/match.ts'
-import type { Link, Rule } from './rule.ts'
-import { runRules as run, type Report } from './run.ts'
+import type { Parent, Rule } from './rule.ts'
+import { runRules as run, type Consolidators, type Report } from './run.ts'
 import brownout from './power/brownout.ts'
 import batteryCollapse from './power/battery-collapse.ts'
 import commsLoss from './comms/loss.ts'
@@ -63,13 +63,23 @@ export const FORESIGHT_RULES: Rule[] = [
 ]
 
 export type { Report, SkippedRule } from './run.ts'
-export { LINKS } from './links.ts'
+import { LINKS } from './links.ts'
+import { PARENTS } from './parents.ts'
+export { LINKS, PARENTS }
 
-/** Run the rules on a match. Match analysis (analyze.ts) also passes LINKS; Foresight passes none. */
-export function runRules(match: Match, rules: Rule[] = RULES, links: Link[] = []): Report {
-  return run(match, rules, links)
+/** The consolidators match analysis runs after the rules: in each pass, the links, then the parents. */
+export const CONSOLIDATORS: Consolidators = { links: LINKS, parents: PARENTS }
+
+/** Run the rules on a match. Match analysis (analyze.ts) also passes CONSOLIDATORS; Foresight passes none. */
+export function runRules(match: Match, rules: Rule[] = RULES, consolidators: Consolidators = {}): Report {
+  return run(match, rules, consolidators)
 }
 
 export function ruleById(id: string): Rule | undefined {
   return RULES.find((r) => r.id === id) ?? FORESIGHT_RULES.find((r) => r.id === id)
+}
+
+/** The rule or parent behind a finding (for its title, who acts and why it exists). */
+export function makerOf(id: string): Rule | Parent | undefined {
+  return ruleById(id) ?? PARENTS.find((p) => p.id === id)
 }

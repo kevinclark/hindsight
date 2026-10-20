@@ -181,6 +181,32 @@ and name them in the comment above the link. Then run `npm run golden` before an
 look at each finding that gained `explainedBy`: a wrong link hides a real problem under the wrong headline.
 `scripts/check.ts` prints "explained by" under each linked finding.
 
+### When several findings are one event (parents)
+
+Sometimes a group of findings is one event, but none of them is the cause of the others: 25 devices dropped off CAN
+in the same quarter second because the bus (or its power) went, not because each device failed. A link can't help:
+there is no finding fit to be the headline. A **parent** in `src/rules/parents.ts` makes one. It names the rule whose
+findings it groups, when two of them belong together, and how many make a group; the app lists the group under it.
+The parent adds nothing to any count (every finding in the group still counts), and it can be marked known or fixed
+like any finding.
+
+```ts
+parent({
+  id: 'can/devices-dropped-together',
+  over: 'can/device-dropout',
+  together: (first, other) => isBetween(secondsAfter(first, other), 0, 1),
+  atLeast: 3,
+  name: (devices) => `${devices.length} CAN devices dropped within ${spreadOf(devices).toFixed(2)} s`,
+  why: 'it dropped off CAN with the others: one event, not separate faults',
+  // ...plus title, who, meaning, causes, likely, evidence, nextStep and incident, as a rule has
+}),
+```
+
+After the rules run, the links and the parents take turns until nothing changes, so a link can name a parent as its
+cause (`can/devices-dropped-together` explains the robot code's "Disconnected ... module" alerts). A finding a link
+already explains is never grouped: the specific explanation wins. Give the parent the same `who` as the rule it
+groups. As with a link, run `npm run golden` before and after and look at every finding that changed.
+
 ## Things that trip people up
 
 - `/SystemStats/BatteryCurrent` is the roboRIO's own current (~0.5 A), not the battery's. For total current use
