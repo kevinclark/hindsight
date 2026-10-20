@@ -36,10 +36,14 @@ A team without battery fuel gauges installs only the first.
 
    ```java
    motor = new TalonFX(15, canBus);
-   HindsightDevices.watch(motor);
+   device = HindsightDevices.watch(motor);   // a String field: "Any/TalonFX/15"
+
+   // in updateInputs, so the log says which keys belong to this device:
+   inputs.device = device;                   // a String input, logged as <your IO's key>/Device
    ```
 
-   That's all: the companion then logs whether the device is answering, its firmware, its live and sticky faults,
+   The key is `<bus>/<model>/<id>`: the bus name (`CANBus("*")`, any CANivore, logs as `Any`; give your CANivore its
+   real name so Foresight can match it to the right bus), the device's class name and its CAN id. The companion then logs whether the device is answering, its firmware, its live and sticky faults,
    and its reboots. It reads its own copies of the signals, so it never changes a rate, a config or your code's
    signal objects. A device you don't watch isn't logged, and nothing warns you in the robot code: Hindsight's
    Logging tab lists each motor, CANcoder and gyro the robot profile names with a CAN ID that has no watch entry.
