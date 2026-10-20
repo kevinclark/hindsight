@@ -43,13 +43,13 @@ over 138–345 s of disabled robot on the field. 91 s for all 11 on the M5 Max.
 | Check | Logs it could judge | Fired on | Judged | Verdict colour |
 |---|---|---|---|---|
 | `power/rest-voltage` | 9 | Q21 (12.45–12.48 V; Hindsight also flags it before auto) | true | **red**, proven on 9 |
-| `build/dirty` | 6 | P0 (123eec6, uncommitted) and 2151 ILCH Q19 (a9f9b9b, uncommitted) | both true | **red**, proven on 6 |
+| `build/dirty` | 6 | P0 (123eec6, uncommitted) and one other team's public 2026 log (uncommitted) | both true | **red**, proven on 6 |
 | `vision/time-sync` | 8 | none (start-up alerts clear before the 30 s settle) | — | amber: no real fire on our logs yet |
 | `can/device-dropout` | 3 | none | — | amber: no real fire on our logs yet |
 | `foresight/controllers` | 3 | none | — | amber: no real fire on our logs yet |
 | `foresight/zero-sanity` | 3 | none | — | amber: no real fire on our logs yet |
 | `vision/stale` (drop-outs only while disabled) | 3 | none | — | amber: no real fire on our logs yet |
-| `alerts/passthrough` | 8 | rafchuk21 QM36: "limelight name … is invalid" and "Vision Camera 0 Disconnected" | the Limelight-name alert is an always-on config nag: **false** | amber |
+| `alerts/passthrough` | 8 | one public 2026 log (QM36): "limelight name … is invalid" and "Vision Camera 0 Disconnected" | the Limelight-name alert is an always-on config nag: **false** | amber |
 | `battery/identity`, `battery/gauge-capacity` | 0 | no log has the battery tracker's keys yet | — | amber |
 | `foresight/commit-matches` | 0 | needs a passing pit check on record | — | amber |
 | `foresight/gyro-still-drift` | 3 | context only (grey): no line | — | grey |
