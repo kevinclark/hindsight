@@ -207,6 +207,12 @@ export function standingSummary(m: ReviewModel): { errors: string[]; warnings: n
   }
 }
 
+/** ", including <first folded error>" for the card's note when the fold left no items; empty when none is an error. */
+function foldedFirst(m: ReviewModel): string {
+  const f = m.standing.find((n) => n.finding.severity === 'error')?.finding
+  return f ? `, including ${cardTitle(f.title)}` : ''
+}
+
 /** "2:25 into the match" from "2:25 into the match (teleop; robot time 532.8 s)", for tight places. */
 export function shortWhen(when: string | null): string {
   return when ? when.replace(/\s*\(.*$/, '') : ''
@@ -230,7 +236,8 @@ export function reviewCard(m: ReviewModel): CardModel {
     heading: n ? plural(n, 'error') : 'No errors',
     headingTone: n ? 'error' : 'ok',
     subheading: `${plural(m.warnings.length, 'warning')} · ${m.infos.length} info${m.known.length ? ` · ${m.known.length} known` : ''}${crashed}`,
-    standingNote: m.standing.length ? `+ ${m.standing.length} in every match this session` : undefined,
+    // When the fold took every item, the note also names the first folded error, so the card still says what to fix.
+    standingNote: m.standing.length ? `+ ${m.standing.length} in every match this session${worst.length ? '' : foldedFirst(m)}` : undefined,
     items: worst.map((n) => {
       const f = n.finding
       const k = keyNumber(f)
@@ -239,7 +246,8 @@ export function reviewCard(m: ReviewModel): CardModel {
       const number = [k.inTitle ? '' : k.text, under.length ? `explains ${severityWords(under)}` : ''].filter(Boolean).join(' · ')
       return { word, tone, title: cardTitle(f.title), number }
     }),
-    emptyText: m.standing.length ? 'Nothing new in this match.' : 'Nothing to fix from this log.',
+    // "No new errors": true by construction, whereas "nothing new" was false when only the errors folded and new warnings stayed.
+    emptyText: m.standing.length ? `No new ${tone}s in this match.` : 'Nothing to fix from this log.',
     footer: [h.build.text, `Hindsight ${h.version}`],
     uncommitted: h.build.uncommitted,
     uncommittedText: 'UNCOMMITTED CODE ran this match',

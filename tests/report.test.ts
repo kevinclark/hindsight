@@ -1,4 +1,5 @@
 // The report export: the phone card (pure SVG), the model behind it and behind the printed report.
+import { descendants } from '../src/report/finding-tree.ts'
 import { describe, expect, it } from 'vitest'
 import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE, CARD_WIDTH, wrap, type CardModel } from '../src/report/card.ts'
 import { bottomLine, cardTitle, keyNumber, reviewCard, reviewModel, shortTitle, stripRepoPaths, titleHasValue } from '../src/report/review-model.ts'
@@ -153,6 +154,16 @@ describe('report model, from the real CalGames fixtures', () => {
     expect(card.heading).toBe(reviewCard(none).heading)
     expect(card.items.length).toBe(all.headlines.filter((n) => n.finding.severity === 'error').length)
     expect(buildCard(card).svg).toContain('in every match this session')
+  })
+  it('says "no new errors", never "nothing new", when only the error headlines fold and new warnings stay', () => {
+    const none = reviewModel(p0, new Map())
+    const errorKeys = new Set(none.headlines.filter((n) => n.finding.severity === 'error').flatMap((n) => [n.finding, ...descendants(n)]).map((f) => f.key))
+    const m = reviewModel(p0, new Map(), errorKeys)
+    const card = reviewCard(m)
+    expect(card.items.length).toBe(0)
+    expect(m.headlines.some((n) => n.finding.severity === 'warning')).toBe(true)
+    expect(card.emptyText).toBe('No new errors in this match.')
+    expect(card.standingNote).toContain(', including ')
   })
   it('says a crashed rule on the card and in the report model, and a clean run says none', () => {
     const crashed = { ...p0, report: { ...p0.report, crashed: [{ rule: 'x/boom', reason: 'it threw' }] } }
