@@ -2,7 +2,7 @@
  * Shared by can/device-dropout and can/bus-dropout: the CAN buses the profile maps (canBuses), when each device on
  * one dropped, and the battery plot both findings draw. Not a rule itself.
  */
-import { isFalse } from '../rule.ts'
+import { isFalse, voltageList } from '../rule.ts'
 import type { Episode, MatchView, Signal } from '../view.ts'
 
 export const LOW_VOLTS = 7
@@ -59,6 +59,36 @@ export function alreadyOffAt(match: MatchView, drop: Episode): number | null {
 /** How long this drop lasted inside the watched windows (s): time off CAN while disabled doesn't count. */
 export function secondsWatched(match: MatchView, drop: Episode): number {
   return watched(match).reduce((sum, w) => sum + Math.max(0, Math.min(drop.end, w.end) - Math.max(drop.start, w.start)), 0)
+}
+
+/** The battery before each drop, with a drop already under way timed from the start of the watched window. */
+export interface DropReadings {
+  /** The drops, each starting where it is timed from (the window start for a drop already under way). */
+  timed: Episode[]
+  /** True for a drop already under way when the first watched window began. */
+  alreadyOff: boolean[]
+  /** The voltages of the drops that began while watched: the sag verdicts rest on these only. */
+  voltages: number[]
+  /** One entry per drop for the evidence: its voltage, or that it was already off. */
+  text: string[]
+  /** How the drops' voltage sentence says "every": all of them, or only those that began while watched. */
+  everyDrop: string
+}
+
+/** The lowest battery voltage in the 0.5 s before each drop (the flag goes false after the device misses its frames). */
+export function readDrops(match: MatchView, battery: Signal, drops: Episode[]): DropReadings {
+  const offAt = drops.map((d) => alreadyOffAt(match, d))
+  const timed = drops.map((d, i) => ({ ...d, start: offAt[i] ?? d.start }))
+  // null for a drop already under way: it has no voltage to read.
+  const readings = timed.map((d, i) => (offAt[i] === null ? battery.lowest(match.before(d.start, 0.5)).value : null))
+  const voltages = readings.filter((v): v is number => v !== null)
+  const pit = match.beforeEnable.length > 0
+  const alreadyOffText = `already off when ${pit ? 'the check started' : 'enabled'}`
+  const everyDrop = voltages.length < drops.length ? `at every drop that began ${pit ? 'while the check ran' : 'while enabled'}` : 'at every drop'
+  return {
+    timed, alreadyOff: offAt.map((o) => o !== null), voltages, everyDrop,
+    text: readings.map((v) => (v === null ? alreadyOffText : voltageList([v]))),
+  }
 }
 
 /** The battery voltage from `before` s ahead of the first drop to time `to`, marking each drop, with the 7 V line. */

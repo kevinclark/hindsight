@@ -9,9 +9,9 @@
  *
  * Drops that took the whole bus down at once are left to can/bus-dropout.
  */
-import { isFalse, plural, round, rule, voltageList, type Problem } from '../rule.ts'
+import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
 import type { DeviceView, Episode, MatchView } from '../view.ts'
-import { alreadyOffAt, busOf, isBusWide, LOW_VOLTS, plotDrops, secondsWatched, watched } from './bus.ts'
+import { busOf, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, watched } from './bus.ts'
 
 
 export default rule({
@@ -48,27 +48,18 @@ export default rule({
 function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): Problem {
   const battery = match.signal('batteryVoltage')
   // A drop already under way when the watched window began is timed from that start. It says nothing about sag.
-  const offAtStart = drops.map((d) => alreadyOffAt(match, d))
-  const timed = drops.map((d, i) => ({ ...d, start: offAtStart[i] ?? d.start }))
+  const { timed, alreadyOff, voltages, text: voltageText, everyDrop } = readDrops(match, battery, drops)
   const first = timed[0]
   const pit = match.beforeEnable.length > 0
-  const firstWhen = offAtStart[0] === null
-    ? match.whenAt(first.start)
-    : `already off when ${pit ? 'the check started' : 'the robot enabled'} ${match.whenAt(first.start)}`
+  const firstWhen = alreadyOff[0]
+    ? `already off when ${pit ? 'the check started' : 'the robot enabled'} ${match.whenAt(first.start)}`
+    : match.whenAt(first.start)
   const secondsMissing = drops.reduce((sum, d) => sum + secondsWatched(match, d), 0)
-  // The flag goes false only after the device misses its status frames, so look at the 0.5 s before it.
-  // null for a drop already under way: it has no voltage to read.
-  const readings = timed.map((d, i) => (offAtStart[i] === null ? battery.lowest(match.before(d.start, 0.5)).value : null))
-  const voltages = readings.filter((v): v is number => v !== null)
-  const alreadyOff = `already off when ${pit ? 'the check started' : 'enabled'}`
-  const voltageText = readings.map((v) => (v === null ? alreadyOff : voltageList([v])))
   const lowOnes = voltages.filter((v) => v < LOW_VOLTS).length
   const allLow = voltages.length > 0 && lowOnes === voltages.length
   const closeCall = voltages.some((v) => Math.abs(v - LOW_VOLTS) < 0.5)
   // No battery voltage logged just before a drop that began while enabled.
   const unknownVolts = voltages.some((v) => Number.isNaN(v))
-  // The battery verdicts below rest only on drops that began while enabled (in Foresight, while the check ran).
-  const everyDrop = voltages.length < drops.length ? `at every drop that began ${pit ? 'while the check ran' : 'while enabled'}` : 'at every drop'
   const cameBack = timed[timed.length - 1].end >= match.logEnd ? 'no, still off at the end of the log' : 'yes'
   const others = otherDevices(match, device.name)
   const together = devicesDroppedWith(others, drops)

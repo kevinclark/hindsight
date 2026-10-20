@@ -25,7 +25,7 @@ const swerveCanIds: Record<string, { drive: number; steer: number }> = {
   'Back Right': { drive: 6, steer: 7 },
 }
 
-export const offseason2026: RobotProfile = {
+const robot: RobotProfile = {
   name: '2026 offseason robot',
   codebase: '2026 Offseason',
   code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'main', sha: 'cb68b20' },
@@ -283,6 +283,17 @@ export const offseason2026: RobotProfile = {
     },
   },
 }
+
+/**
+ * Every device that reports a Connected flag, as members of the one bus (see the header: one CANivore for all of
+ * them). A whole-bus drop is then one finding about the CANivore, not one per device (can/bus-dropout).
+ */
+const connectedMembers = [
+  ...robot.motorGroups.flatMap((g) => g.motors.flatMap((m) => (m.connected ? [{ name: m.name, key: m.connected }] : []))),
+  ...robot.otherDevices.map((d) => ({ name: d.name, key: d.connected })),
+]
+
+export const offseason2026: RobotProfile = { ...robot, canBuses: [{ name: 'CANivore', members: connectedMembers }] }
 
 /**
  * The same robot, running the code from the October 2026 event (CalGames): branch `event-calgames`, head

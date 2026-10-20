@@ -7,9 +7,9 @@
  * Why: MTTD 2025 Q41: at 745 s every CAN device stopped reporting for 58 s while the loop ran on; the swerve modules'
  * refresh status went CanMessageStale and the Pigeon's flag false. Only the Pigeon was reported, as if alone.
  */
-import { isFalse, round, rule, voltageList, type Problem } from '../rule.ts'
+import { isFalse, round, rule, type Problem } from '../rule.ts'
 import type { Episode, MatchView, Signal } from '../view.ts'
-import { canBuses, dropAround, isBusWide, LOW_VOLTS, plotDrops, TOGETHER_SECONDS, watched, type CanBus } from './bus.ts'
+import { canBuses, dropAround, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, TOGETHER_SECONDS, watched, type CanBus } from './bus.ts'
 
 /** The evidence line that names the bus's devices (links.ts reads it to tell which alerts are about the bus). */
 export const BUS_DEVICES = 'devices that report their health on this bus'
@@ -47,26 +47,34 @@ export default rule({
 /** The finding for drops of the whole bus: every member that reports its health dropped within 1 s. */
 function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
   const battery = match.signal('batteryVoltage')
-  const first = drops[0].start
-  const voltages = drops.map((d) => battery.lowest(match.before(d.start, 0.5)).value)
+  // A bus already off when the watched window began is timed from that start and has no battery reading.
+  const { timed, alreadyOff, voltages, text: voltageText } = readDrops(match, battery, drops)
+  const first = timed[0].start
   const earlier = lowestEarlier(match, battery, first)
-  const low = voltages.every((v) => v < LOW_VOLTS)
+  const low = voltages.length > 0 && voltages.every((v) => v < LOW_VOLTS)
   // A deeper but shorter sag earlier doesn't rule a sag out (Q41: cause unknown), but it does stop it being "likely".
   const sagExplains = low && !(earlier <= Math.min(...voltages))
   // How long the bus was gone: until the last member came back, per drop.
-  const gone = drops.map((d) => lastBackAt(bus, d.start) - d.start)
-  const statuses = reportedStatuses(match, bus, first + TOGETHER_SECONDS)
+  const gone = drops.map((d, i) => lastBackAt(bus, d.start) - timed[i].start)
+  const statuses = reportedStatuses(match, bus, drops[0].start + TOGETHER_SECONDS)
   const pastEnd = match.matchEnd !== null && first + gone[0] > match.matchEnd ? ' (past the end of the match)' : ''
   const times = drops.length > 1 ? `, ${drops.length} times, first` : ''
+  // At the first drop, which members came back (after how long) and which were still off at the end of the log.
+  const { cameBack, neverBack } = whoCameBack(bus, drops[0].start, match)
+  const withoutThem = Math.max(0, ...neverBack.map((m) => secondsWatched(match, m.drop)))
+  const when = alreadyOff[0] ? `already off when the robot enabled ${match.whenAt(first)}` : match.whenAt(first)
+  const howLong = neverBack.length === 0
+    ? `for ${gone[0].toFixed(0)} s${pastEnd}`
+    : `${neverBack.length} of them never came back (still off at the end of the log, ${round(withoutThem)} s of the enabled match without them)`
 
   const likely = sagExplains ? ['battery-sag', 'bus'] : ['bus']
   const ruledOut: Record<string, string> = {
     'device-fault': `all ${bus.members.length} devices that report their health on the bus dropped together`,
   }
-  if (voltages.every((v) => v >= LOW_VOLTS + 0.5)) ruledOut['battery-sag'] = 'the battery stayed above 7.5 V at every drop'
+  if (voltages.length > 0 && voltages.every((v) => v >= LOW_VOLTS + 0.5)) ruledOut['battery-sag'] = 'the battery stayed above 7.5 V at every drop'
 
   return {
-    message: `Every device on the ${bus.name} bus that reports its health (${bus.members.length}) stopped reporting at once${times} ${match.whenAt(first)}, for ${gone[0].toFixed(0)} s${pastEnd}`,
+    message: `Every device on the ${bus.name} bus that reports its health (${bus.members.length}) stopped reporting at once${times} ${when}, ${howLong}`,
     at: first,
     about: `${bus.name} bus`,
     likely,
@@ -75,14 +83,34 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
     evidence: {
       [BUS_DEVICES]: bus.members.map((m) => m.name).join(', '),
       drops: drops.length,
-      'seconds until every device was back': gone.map((g) => g.toFixed(1)).join(', '),
+      'seconds until every device was back': gone.map((g, i) => (stillOffAtEnd(match, bus, drops[i]) ? 'never' : g.toFixed(1))).join(', '),
+      'came back at the first drop, after (s)': neverBack.length ? cameBack.map((m) => `${m.name} ${m.seconds.toFixed(1)}`).join(', ') || 'none' : undefined,
+      'never came back at the first drop': neverBack.length ? neverBack.map((m) => m.name).join(', ') : undefined,
       'status the devices reported': statuses.length ? statuses.join(', ') : undefined,
-      'lowest battery voltage in the 0.5 s before each drop (V)': voltageList(voltages),
+      'lowest battery voltage in the 0.5 s before each drop (V)': voltageText.join(', '),
       'lowest battery voltage earlier while enabled, with no bus drop (V)': Number.isFinite(earlier) ? round(earlier) : undefined,
     },
     measured: [{ label: 'whole-bus drops', value: drops.length, unit: '' }],
-    plot: plotDrops(battery, drops, 5, first + gone[0] + 2),
+    plot: plotDrops(battery, timed, 5, first + gone[0] + 2),
   }
+}
+
+/** The members' own drops that started with the bus drop at time t: who was back, after how long, and who never was. */
+function whoCameBack(bus: CanBus, t: number, match: MatchView) {
+  const cameBack: { name: string; seconds: number }[] = []
+  const neverBack: { name: string; drop: Episode }[] = []
+  for (const member of bus.members) {
+    const drop = dropAround(member.drops, t)
+    if (!drop) continue
+    if (drop.end >= match.logEnd) neverBack.push({ name: member.name, drop })
+    else cameBack.push({ name: member.name, seconds: drop.seconds })
+  }
+  return { cameBack, neverBack }
+}
+
+/** Was any member still off at the end of the log from the bus drop that started at this episode? */
+function stillOffAtEnd(match: MatchView, bus: CanBus, drop: Episode): boolean {
+  return whoCameBack(bus, drop.start, match).neverBack.length > 0
 }
 
 /** The deepest battery sag earlier in the match, while enabled, that didn't drop the bus (NaN if none). */

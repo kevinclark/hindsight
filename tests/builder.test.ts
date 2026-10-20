@@ -403,10 +403,10 @@ describe.skipIf(!haveCalGames)('a team with no profile (8033 2026 CalGames logs,
     }
   })
 
-  it.each([0, 1, 2])('log %i: what is not checked beyond the built-in profile is zeroing and cameras', (i) => {
+  it.each([0, 1, 2])('log %i: what is not checked beyond the built-in profile is zeroing, cameras and the CAN bus (the builder maps none)', (i) => {
     const skipped = (r: typeof builtIn[0]) => new Set(r.report.skipped.map((s) => s.rule))
     const extra = [...skipped(fromBuilt[i])].filter((r) => !skipped(builtIn[i]).has(r)).sort()
-    expect(extra).toEqual(['mech/zero-not-completed', 'vision/outliers', 'vision/stale'])
+    expect(extra).toEqual(['can/bus-dropout', 'mech/zero-not-completed', 'vision/outliers', 'vision/stale'])
   })
 })
 

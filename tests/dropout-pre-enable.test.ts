@@ -58,18 +58,34 @@ describe('can/device-dropout: a device already off when the robot enabled', () =
   })
 })
 
-describe('can/bus-dropout: the voltage list', () => {
+describe('can/bus-dropout', () => {
   const modules = ['Front Left', 'Front Right', 'Back Left', 'Back Right']
-  it('says "not logged" where the battery has no reading, never NaN', () => {
-    // The whole bus is off from 5 s, and the battery is first logged at 6 s: no reading just before the drop.
-    const status = (m: string): FixtureEntry => ({ name: `/RealOutputs/Module${m}refresh status code`, type: 'string', records: [[5, 'CanMessageStale'], [30, 'OK']] })
-    const entries = log([{ name: '/Swerve/Gyro/IsConnected', type: 'boolean', records: [[5, false], [30, true]] }, ...modules.map(status)], 6)
-    const [f] = findings(entries, 'can/bus-dropout')
-    expect(f).toBeDefined()
-    expect(f.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('not logged')
+  const stale = (m: string, records: [number, string][]): FixtureEntry => ({ name: `/RealOutputs/Module${m}refresh status code`, type: 'string', records })
+  const bus = (gyro: [number, boolean][], status: [number, string][], battery = 5): FixtureEntry[] =>
+    log([{ name: '/Swerve/Gyro/IsConnected', type: 'boolean', records: gyro }, ...modules.map((m) => stale(m, status))], battery)
+
+  it('a bus already off when the robot enabled is timed from the enable and has no voltage', () => {
+    const [f] = findings(bus([[5, false], [30, true]], [[5, 'CanMessageStale'], [30, 'OK']]), 'can/bus-dropout')
+    expect(f.title).toMatch(/at once already off when the robot enabled at 0:00 into the match.*, for 10 s/)
+    expect(f.time).toBe(20)
+    expect(f.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('already off when enabled')
+    expect(f.causes.find((c) => c.id === 'bus')?.likely).toBe(true)
+    expect(f.causes.find((c) => c.id === 'battery-sag')?.ruledOut).toBeUndefined()
     expect(JSON.stringify(f)).not.toContain('NaN')
   })
-  it('formats two decimals', () => {
+
+  it('says plainly which devices never came back, and which came back, when some stay off to the end of the log', () => {
+    // Everything stops at 50 s. The gyro and two modules are back after a second; two modules stay off to the end.
+    const entries = bus([[5, true], [50, false], [51, true]], [[5, 'OK'], [50, 'CanMessageStale'], [51, 'OK']])
+      .map((e) => (e.name.includes('ModuleBack') ? { ...e, records: [[5, 'OK'], [50, 'CanMessageStale']] } : e)) as FixtureEntry[]
+    const [f] = findings(entries, 'can/bus-dropout')
+    expect(f.title).toMatch(/\(5\) stopped reporting at once at .*, 2 of them never came back \(still off at the end of the log, 30 s of the enabled match without them\)$/)
+    expect(f.evidence['never came back at the first drop']).toBe('Back Left module, Back Right module')
+    expect(f.evidence['came back at the first drop, after (s)']).toBe('Gyro (Pigeon) 1.0, Front Left module 1.0, Front Right module 1.0')
+    expect(f.evidence['seconds until every device was back']).toBe('never')
+  })
+
+  it('formats two decimals, "not logged" where there is no reading', () => {
     expect(voltageList([6.5, NaN, 12])).toBe('6.50, not logged, 12.00')
   })
 })
