@@ -273,6 +273,8 @@ export interface GroupView {
   limits: CurrentLimits
   /** True when the motors follow one control loop and should spin at the same speed. */
   sameLoop: boolean
+  /** True when these motors should never push hard without turning (the profile's `neverStalls`). */
+  neverStalls: boolean
 }
 
 /** Anything with a Connected flag: motors, encoders, the gyro. */

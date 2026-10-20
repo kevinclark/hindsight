@@ -175,6 +175,8 @@ export const below = (limit: number) => (v: number) => v < limit
 export const above = (limit: number) => (v: number) => v > limit
 /** Further from zero than the limit, either way: beyond(15) is true for 20 and for −20. */
 export const beyond = (limit: number) => (v: number) => Math.abs(v) > limit
+/** Closer to zero than the limit, either way: within(0.2) is true for 0.1 and for −0.1. */
+export const within = (limit: number) => (v: number) => Math.abs(v) < limit
 export const isTrue = (v: number) => v > 0.5
 export const isFalse = (v: number) => v < 0.5
 

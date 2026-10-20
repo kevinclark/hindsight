@@ -23,6 +23,9 @@ import margin from './power/margin.ts'
 import restVoltage from './power/rest-voltage.ts'
 import wiringResistance from './power/wiring-resistance.ts'
 import followerMismatch from './mech/follower-mismatch.ts'
+import stall from './mech/stall.ts'
+import slip from './mech/slip.ts'
+import stoppedWhileEnabled from './loop/stopped-while-enabled.ts'
 import impact from './collision/impact.ts'
 import overrun from './loop/overrun.ts'
 import visionOutliers from './vision/outliers.ts'
@@ -44,8 +47,8 @@ import cameraSeesTag from './foresight/camera-sees-tag.ts'
 import logUsbStick from './foresight/log-usb-stick.ts'
 
 export const RULES: Rule[] = [
-  brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, noneAtEnable, stuckState, tilt, zeroNotCompleted, deviceDropout, busDropout, dsLogTruncated,
-  limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, impact, overrun,
+  brownout, batteryCollapse, restartMidMatch, stoppedWhileEnabled, emergencyStop, commsLoss, earlyDisable, noneAtEnable, stuckState, tilt, zeroNotCompleted, deviceDropout, busDropout, dsLogTruncated,
+  limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, slip, stall, impact, overrun,
   visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough,
 ]
 

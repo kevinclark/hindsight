@@ -151,6 +151,8 @@ export const competition2026: RobotProfile = {
         updating: '/Shooter/Turret/StatorCurrentAmps',
       }],
       limits: { supplyA: 40, supplyEnabled: true, statorA: 40, statorEnabled: true, where: 'TurretIO.java:58-61' },
+      // Nothing for the turret to hold and no hard stop it rests on (soft limits in TurretSubsystem): a stall is a jam.
+      neverStalls: true,
     },
     {
       name: 'Intake rack',
@@ -277,6 +279,19 @@ export const competition2026: RobotProfile = {
       },
     },
   ],
+
+  // The turret motor's position is a Rotation2d in turret radians (SensorToMechanismRatio = TURRET_GEAR_RATIO,
+  // TurretIO.java:57); the code's turret angle from its two CANcoders is a Rotation2d too. Over 1-s moves of 0.2 to 3 rad,
+  // the motor moved 0.96–1.02 times the absolute angle (median per log, the 17 logs of 2026-02-21 with 5 or more such
+  // moves; none in the gear-off stretch): both in turret radians.
+  slipChecks: [{
+    mechanism: 'Turret',
+    motor: '/Shooter/Turret/PositionRotations',
+    motorToDegrees: 180 / Math.PI,
+    absolute: '/RealOutputs/Shooter/Turret/Turret Calculated Rotation',
+    absoluteToDegrees: 180 / Math.PI,
+    where: 'TurretSubsystem.java:248 (getCalculatedTurretRotations, from the two turret CANcoders; it also seeds the motor at boot, :142-145)',
+  }],
 
   // Camera.java:100 logs each camera under "Apriltag Vision/<name>"; :168 logs the pose the code took from it.
   // Names from R1WispSwerveConstants.java:63-106.

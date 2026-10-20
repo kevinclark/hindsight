@@ -145,7 +145,7 @@ function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: ()
       return p.motorGroups.flatMap((g) => g.motors.map((m) => ({ name: m.name, check: () => rule.check(motor(m, g.name), view) })))
     case 'motorGroup':
       return p.motorGroups.map((g) => {
-        const group: GroupView = { name: g.name, motors: g.motors.map((m) => motor(m, g.name)), limits: g.limits, sameLoop: !!g.sameLoop }
+        const group: GroupView = { name: g.name, motors: g.motors.map((m) => motor(m, g.name)), limits: g.limits, sameLoop: !!g.sameLoop, neverStalls: !!g.neverStalls }
         return { name: g.name, check: () => rule.check(group, view) }
       })
     case 'device': {
