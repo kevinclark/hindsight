@@ -58,8 +58,10 @@ export default rule({
         likely = ['not-saved', 'default-limit']
         ruledOut['limit-off'] = 'the limit is switched on in the code'
       }
-      const switchedOff = isOn ? '' : ' that is switched off in code'
+      const switchedOff = isOn ? '' : ' that is switched off in code (deliberate?)'
       problems.push({
+        // Switched off in code may be deliberate (the mechanism may not need a limit): a warning, not an error.
+        severity: isOn ? undefined : 'warning',
         likely,
         ruledOut,
         nextStep,

@@ -142,6 +142,14 @@ describe('Foresight checks on a robot in the pit', () => {
     expect(titles).toEqual(['Alert "Intake CANcoder disconnected!" 1× since start-up settled'])
   })
 
+  it('time-sync keeps its warning in the pit; an alert from before the stretch is not seen at all', () => {
+    const sync = (t: number) => ({ name: '/RealOutputs/PhotonAlerts/warnings', type: 'string[]', records: [[START, []], [t, ['Camera is not connected to the TimeSyncServer']], [t + 1, []]] }) as FixtureEntry
+    const during = check([sync(80)]).verdict.items.find((i) => i.finding.rule === 'vision/time-sync')!
+    expect([during.finding.severity, during.level]).toEqual(['warning', 'amber'])
+    // Hindsight calls a boot-only alert info; the pit's window starts after start-up, so there it is simply not in view.
+    expect(check([sync(START + 5)]).verdict.items.find((i) => i.finding.rule === 'vision/time-sync')).toBeUndefined()
+  })
+
   it('rest voltage is the last 2 s; uncommitted code; code changed since the last passing check', () => {
     const r = check([
       { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[START, 12.7], [95, 12.3]] },

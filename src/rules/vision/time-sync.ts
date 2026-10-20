@@ -48,7 +48,10 @@ export default rule({
       likely = ['version', 'server']
       ruledOut['boot-timing'] = 'the alerts came during the match, not just at boot'
     }
+    // Only at boot (every alert outside the match) is a note. Foresight keeps its severity: its window is the pit stretch.
+    const bootOnly = duringMatch === 0 && !match.judgingPit
     return {
+      severity: bootOnly ? 'info' : undefined,
       likely,
       ruledOut,
       message: `Camera time-sync problems: ${total} alerts`,

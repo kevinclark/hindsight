@@ -3,17 +3,21 @@
  *
  * Checks: /SystemStats/CommsDisableCount going up, or DSAttached going false, during the match, and how long the
  * outputs stayed off after each.
+ * Severity: error. A blip (outputs back on in under 0.5 s) is only info, or a warning from 3 blips; any longer loss,
+ * or one whose length is unknown, stays an error.
  * Why: CalGames 2026 Q13 lost comms twice in the last 16 s (7.4 s and 4.3 s dead); the DS log stopped mid-match.
  *
  * Which cause it points to, from this log: the radio rebooted if the roboRIO lost the radio too, or the outputs
  * stayed off for 15 s or more (a radio boots in 20–40 s); a DS log that stops during the loss points to the DS laptop;
  * lost packets or a long trip time in the DS log just before point to the wireless link.
  */
-import { isFalse, plural, rule, round } from '../rule.ts'
+import { isFalse, plural, rule, round, type Severity } from '../rule.ts'
 import type { MatchView } from '../view.ts'
 
 const RADIO = '/RadioStatus/Connected' // AdvantageKit's radio logger: can the roboRIO reach the radio?
 const RADIO_REBOOT_SECONDS = 15
+const BLIP_SECONDS = 0.5 // a loss whose outputs came back on in less than this is a blip
+const MANY_BLIPS = 3 // this many blips and nothing longer: a warning, not just a note
 
 export default rule({
   id: 'comms/loss',
@@ -51,10 +55,21 @@ export default rule({
     if (ds?.points === 'wireless') likely.push('wireless')
     if (ds?.points === 'not-ds-laptop') ruledOut['ds-laptop'] = 'the DS log kept running through the loss'
 
+    // Every loss a blip (outputs back on in under 0.5 s)? Then one or two are a note, three or more a warning.
+    const allBlips = deadSeconds.every((d) => d < BLIP_SECONDS) // NaN (not logged) is not a blip
+    let severity: Severity | undefined
+    if (allBlips) severity = losses.length >= MANY_BLIPS ? 'warning' : 'info'
+
+    const longest = Math.max(...deadSeconds).toFixed(1)
+    let lostWords = `Lost comms ${plural(losses.length, 'time')}`
+    if (allBlips && losses.length === 1) lostWords = `Lost comms for ${longest} s (a blip)`
+    else if (allBlips) lostWords += ` (all blips, the longest ${longest} s)`
+
     let radioReach = 'not logged'
     if (radio) radioReach = radioLost ? 'no, it lost the radio during the match' : 'yes, the whole match'
     return {
-      message: `Lost comms ${plural(losses.length, 'time')}, first at ${match.when(losses[0])}`,
+      message: `${lostWords}, first at ${match.when(losses[0])}`,
+      severity,
       at: losses[0],
       likely, ruledOut, nextStep: ds?.nextStep,
       evidence: {

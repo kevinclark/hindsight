@@ -322,6 +322,10 @@ export class MatchView {
    * stretch instead when the robot hasn't been enabled.
    */
   readonly beforeEnable: Window
+  /** Is this the Foresight pit check (the disabled stretch is judged, there is no match window)? */
+  get judgingPit(): boolean {
+    return this.wholeMatch.length === 0 && this.beforeEnable.length > 0
+  }
   /** The stretch alerts and dropouts are counted in, in words: "during the match" or "since start-up settled". */
   readonly windowWords: string
 
