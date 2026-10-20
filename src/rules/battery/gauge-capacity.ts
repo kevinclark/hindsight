@@ -5,6 +5,7 @@
  * Why: CalGames 2026 P0's battery collapsed after ~3.5 Ah. The gauges learn each battery's capacity. 12 Ah is the
  * AndyMark CBA "not for competition" line, an assumption until gauge readings are compared with CBA tests.
  */
+import { keysOf } from '../../profiles/sources.ts'
 import { rule, round } from '../rule.ts'
 
 const LEAST_AH = 12
@@ -33,7 +34,7 @@ export default rule({
     const latest = readings[readings.length - 1]
     if (latest >= LEAST_AH) return
 
-    const hasRated = b.ratedCapacityAh.some((key) => match.has(key))
+    const hasRated = keysOf(b.ratedCapacityAh).some((key) => match.has(key))
     const rated = hasRated ? match.signal(match.firstOf(b.ratedCapacityAh)).last() : 'not logged'
     return {
       message: `Fuel gauge: effective capacity ${latest.toFixed(1)} Ah (under ${LEAST_AH} Ah)`,

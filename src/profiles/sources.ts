@@ -24,12 +24,12 @@ export function resolveSignals(signals: SignalSources, present: (key: string) =>
 }
 
 /**
- * The first key the logs have. With none, the robot log's key (so "missing" names the key a student can add; a
- * Driver Station log may just not be loaded), or '' when the robot log has no place for it.
+ * The first key the logs have. With none, the first non-empty key: the robot log's when there is one (so "missing"
+ * names the key a student can add), else the Driver Station log's (so it says to load the .dslog).
  */
 function pick(source: Source, present: (key: string) => boolean): string {
-  const keys = typeof source === 'string' ? [source] : source
-  return keys.find((k) => k !== '' && present(k)) ?? keys.find((k) => !isDslogKey(k)) ?? ''
+  const keys = keysOf(source)
+  return keys.find((k) => k !== '' && present(k)) ?? keys.find((k) => k !== '') ?? ''
 }
 
 /** Every key a signal map names, in order, lists flattened. */

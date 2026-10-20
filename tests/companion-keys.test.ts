@@ -1,6 +1,7 @@
 // companion/keys.json lists every key the companion library (the Java side, in companion/) logs. Its own Java tests
 // check the library logs exactly these keys; this one checks the list is well formed and that the keys Hindsight
 // already reads are on it, so renaming a key on either side fails a test.
+import { keysOf } from '../src/profiles/sources.ts'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { PROFILES } from '../src/profiles/index.ts'
@@ -34,7 +35,7 @@ describe('companion key list', () => {
 
   it('has every battery key the 2026 profile reads', () => {
     for (const [field, candidates] of Object.entries(offseason2026.battery)) {
-      expect(candidates.some((key) => listed.has(key)), field).toBe(true)
+      expect(keysOf(candidates).some((key) => listed.has(key)), field).toBe(true)
     }
   })
 

@@ -7,7 +7,7 @@
  * Why: CalGames 2026 P0 browned out 53 times in the last 18 s; nine shots in a row failed.
  */
 import { plural, rule, round } from '../rule.ts'
-import type { PowerGrid } from '../../power/battery-model.ts'
+import { MOTOR_CURRENT_LABEL, type PowerGrid } from '../../power/battery-model.ts'
 import { batteryHealth } from './battery-health.ts'
 
 export default rule({
@@ -37,7 +37,7 @@ export default rule({
     const power = match.powerIfLogged()
     const health = batteryHealth(match, power)
     const load = power ? loadAt(power.grid, first) : null
-    const currentLabel = power?.grid.currentLabel ?? 'total motor current'
+    const currentLabel = power?.grid.currentLabel ?? MOTOR_CURRENT_LABEL
 
     // Which cause this log points to. A collapsed battery (power/battery-collapse) comes before the load: it has
     // normal resistance, so resistance alone can't tell it from too much load.

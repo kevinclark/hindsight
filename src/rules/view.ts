@@ -15,8 +15,8 @@
 import { ranPinnedCommit, type LimitLines } from '../code/limit-lines.ts'
 import { has, matchSeconds, matchTimeLeft, matchWhen, matchWhenAt, num, phaseAt, values, type Match } from '../match/match.ts'
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
-import type { CurrentLimits, ResolvedProfile } from '../profiles/types.ts'
-import { isDslogKey } from '../profiles/sources.ts'
+import type { CurrentLimits, ResolvedProfile, Source } from '../profiles/types.ts'
+import { isDslogKey, keysOf } from '../profiles/sources.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
@@ -552,8 +552,9 @@ export class MatchView {
     return this.has(name) ? this.signal(name, label) : null
   }
 
-  /** The first of several possible keys that the log has (the battery tracker's keys moved between versions). */
-  firstOf(keys: string[]): string {
+  /** The first of a source's keys that the log has (the battery tracker's keys moved between versions). */
+  firstOf(source: Source): string {
+    const keys = keysOf(source)
     const key = keys.find((k) => has(this.raw, k))
     if (!key) throw new MissingSignal(keys[0] ?? 'a battery tracker key (the robot profile has none)')
     return key
@@ -666,7 +667,7 @@ export class MatchView {
     const grid = buildPowerGrid(this.raw)
     this.markPowerSignals(grid)
     const report = powerReport(this.raw)
-    if (!grid || !report) throw new MissingSignal(this.has('batteryVoltage') ? 'motor supply currents' : (this.profile.signals.batteryVoltage || 'battery voltage (the robot profile has no key for it)'))
+    if (!grid || !report) throw new MissingSignal(this.has('batteryVoltage') ? CURRENTS : (this.profile.signals.batteryVoltage || 'battery voltage (the robot profile has no key for it)'))
     return { report, grid }
   }
 
@@ -678,7 +679,7 @@ export class MatchView {
   currents(): PowerGrid {
     const grid = buildCurrentGrid(this.raw)
     this.markPowerSignals(grid)
-    if (!grid) throw new MissingSignal('motor supply currents')
+    if (!grid) throw new MissingSignal(CURRENTS)
     return grid
   }
 
@@ -794,9 +795,17 @@ function isLogKey(name: string): boolean {
 }
 
 /** The "not checked" reason for a missing signal: its key, or that the robot profile names no key for it. */
+/** Why a signal with no key in the robot log is missing (the Logging tab matches these words: coverage.ts). */
+export const NO_KEY = 'the robot profile has no key for it'
+export const ONLY_DS_LOG = 'only a Driver Station log has it: load this match\'s .dslog'
+
 function missing(name: string, key: string): MissingSignal {
-  return new MissingSignal(key || `${words(name)} (the robot profile has no key for it)`)
+  if (isDslogKey(key)) return new MissingSignal(`${words(name)} (${ONLY_DS_LOG})`)
+  return new MissingSignal(key || `${words(name)} (${NO_KEY})`)
 }
+
+/** What the power model needs besides voltage: the motors' currents, or a measured total (see src/power/). */
+const CURRENTS = 'motor supply currents'
 
 /** 2023-01-01: a wall clock earlier than this was never set. */
 const EARLIEST_PLAUSIBLE_EPOCH = Date.UTC(2023, 0, 1) / 1000

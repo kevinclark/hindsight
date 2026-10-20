@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest'
 import { analyze } from '../src/analyze.ts'
 import { buildPowerGrid } from '../src/power/battery-model.ts'
+import { coverage } from '../src/coverage/coverage.ts'
+import { DSLOG } from '../src/profiles/sources.ts'
 import { frc334_2026 } from '../src/profiles/frc334-2026.ts'
 import { writeDslog, writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 
@@ -130,5 +132,21 @@ describe('brownouts from the Driver Station log, when the robot log has no flag'
     const f = a.report.findings.find((x) => x.rule === 'power/brownout')
     expect(f?.title).toMatch(/^Browned out 3 times/)
     expect(f?.evidence['read from']).not.toMatch(/browned out/)
+  })
+})
+
+describe('the Logging tab', () => {
+  it("doesn't call a signal the log type decides a gap in the robot's profile", () => {
+    const [a] = analyze([{ name: '334.wpilog', bytes: writeWpilog(dogLogMatch()) }])
+    const gaps = coverage(a.match, a.report).lines.filter((l) => l.state === 'profile gap').map((l) => l.what)
+    expect(gaps).not.toContain('total current')
+    expect(gaps).not.toContain('radio connected')
+  })
+  it('ties a brownout flag only a Driver Station log has to the checks it darkens', () => {
+    const dsOnly = { ...frc334_2026, signals: { ...frc334_2026.signals, brownedOut: `${DSLOG}brownout` } }
+    const [a] = analyze([{ name: '334.wpilog', bytes: writeWpilog(dogLogMatch(0.12, false)) }], dsOnly)
+    const row = coverage(a.match, a.report).lines.find((l) => l.what === 'browned out')
+    expect(row?.state).toBe('profile gap')
+    expect(row?.dark.map((d) => d.rule)).toContain('power/brownout')
   })
 })

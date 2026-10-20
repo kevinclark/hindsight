@@ -16,6 +16,9 @@ import { makeGrid, median, resample, round } from '../match/series.ts'
 
 export const DT = 0.02 // 50 Hz grid, the robot's loop rate
 
+/** What the grid's current is when it is the motors' sum (evidence labels say it). */
+export const MOTOR_CURRENT_LABEL = 'total motor current'
+
 export interface PowerGrid {
   t: Float64Array
   volts: Float64Array
@@ -107,7 +110,7 @@ function gridWithCurrents(match: Match, t: Float64Array, volts: Float64Array): P
   const ah = chargeDrawn(t, amps, match.matchStart, match.matchEnd)
   const { matchStart, matchEnd } = match
   const base = { t, volts, amps, ah, enabled: enabledMask, matchStart, matchEnd, groups, motors }
-  if (shift === null) return { ...base, currentLabel: 'total motor current' }
+  if (shift === null) return { ...base, currentLabel: MOTOR_CURRENT_LABEL }
   const moved = shift > 0 ? `, moved ${shift.toFixed(2)} s earlier to line up with the battery voltage` : ''
   const currentFrom = `the power distribution board's own total (no motor currents are logged)${moved}`
   return { ...base, currentLabel: 'total current', currentFrom, totalCurrentShift: shift }

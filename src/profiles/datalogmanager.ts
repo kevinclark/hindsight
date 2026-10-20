@@ -41,6 +41,8 @@ export const DATALOGMANAGER_SIGNALS: SignalSources = {
   gitBranch: '',
   gitDate: '',
   gitDirty: '',
+  codebase: '',
+  logClock: '',
   epochMicros: 'systemTime',
   systemTimeValid: '',
   batteryVoltage: '',

@@ -3,8 +3,7 @@
  * DataLogManager), the code's identity, and the robot-specific keys that can be told by their shape alone.
  */
 import { hasEntry, readValues, type WpilogEntry, type WpilogFile } from '../readers/wpilog.ts'
-import { LOG_FORMATS } from '../profiles/formats.ts'
-import { keysOf } from '../profiles/sources.ts'
+import { codeIdentity, firstText, formatOf, LOG_FORMATS } from '../profiles/formats.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 
 type Signals = RobotProfile['signals']
@@ -27,15 +26,8 @@ export interface SignalDraft {
 }
 
 const records = (log: WpilogFile, e: WpilogEntry) => log.entryStart[e.id + 1] - log.entryStart[e.id]
-/** The code's name for itself: AdvantageKit's Codebase, or ProjectName (the AdvantageKit template's name for it). */
-export const codebaseOf = (log: WpilogFile) => firstString(log, '/RealMetadata/Codebase') || firstString(log, '/RealMetadata/ProjectName')
-
-const firstString = (log: WpilogFile, key: string) => { const v = readValues<string>(log, key)?.v; return v?.find((x) => typeof x === 'string' && x !== '') ?? '' }
-
-/** The first log type (profiles/formats.ts) whose marker the log has; AdvantageKit's map when none. */
-function formatOf(log: WpilogFile) {
-  return LOG_FORMATS.find((f) => hasEntry(log, f.marker))
-}
+/** The code's name for itself (the log type's codebase signal). */
+export const codebaseOf = (log: WpilogFile) => codeIdentity(log).codebase
 
 /** Folders whose `errors` / `warnings` / `infos` children are string arrays: AdvantageKit's (and WPILib's) Alerts groups. */
 function alertGroups(entries: WpilogEntry[]): string[] {
@@ -103,7 +95,6 @@ export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalD
 
   // Identity: AdvantageKit's Codebase, or ProjectName (the AdvantageKit template's name for it).
   const codebase = codebaseOf(log)
-  const first = (name: 'gitBranch' | 'gitSha') => keysOf(signals[name]).map((k) => firstString(log, k)).find((v) => v) ?? ''
-  const code = { repo: '', branch: first('gitBranch'), sha: first('gitSha') }
+  const code = { repo: '', branch: firstText(log, signals.gitBranch), sha: firstText(log, signals.gitSha) }
   return { framework, signals, guessed, alternatives, battery, codebase, code, otherDevices }
 }

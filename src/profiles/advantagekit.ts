@@ -28,6 +28,9 @@ export const ADVANTAGEKIT_SIGNALS: SignalSources = {
   gitBranch: '/RealMetadata/GitBranch',
   gitDate: '/RealMetadata/GitDate',
   gitDirty: '/RealMetadata/GitDirty',
+  // AdvantageKit's template names the code ProjectName; some teams set Codebase.
+  codebase: ['/RealMetadata/Codebase', '/RealMetadata/ProjectName'],
+  logClock: '/Timestamp',
 
   epochMicros: orPlain('/SystemStats/EpochTimeMicros', 'epochMicros'),
   systemTimeValid: '/SystemStats/SystemTimeValid',

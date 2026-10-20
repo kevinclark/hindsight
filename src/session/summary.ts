@@ -3,6 +3,7 @@
  * per match for trends. The raw log is dropped after this, so hundreds of logs fit in memory.
  */
 
+import { keysOf } from '../profiles/sources.ts'
 import { analyzeFiles, analyzeFilesWithCode, type AnalyzeResult, type InputFile } from '../analyze.ts'
 import type { CodeFolder } from '../code/limit-lines.ts'
 import { has, num, values, type Match } from '../match/match.ts'
@@ -141,7 +142,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
       findings: findings.map((f) => toSummaryFinding(f, rule.nextStep)),
     }
   }
-  const idKey = match.profile.battery.id.find((k) => has(match, k))
+  const idKey = keysOf(match.profile.battery.id).find((k) => has(match, k))
   const ids = idKey ? values<string>(match, idKey) : null
   const atStart = ids && match.matchStart !== null ? heldAt(ids, match.matchStart) : undefined
   return {

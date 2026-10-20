@@ -128,9 +128,9 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
   const s = profile.signals
   let logStart = Infinity
   let logEnd = -Infinity
-  // AdvantageKit logs /Timestamp every cycle, so its first and last records give the log's extent; otherwise the
-  // first and last record of any kind.
-  const clock = readNumbers(log, '/Timestamp') ?? readNumbers(log, s.batteryVoltage)
+  // A key logged every loop (AdvantageKit's /Timestamp) gives the log's extent; otherwise the battery voltage, or
+  // the first and last record of any kind.
+  const clock = readNumbers(log, s.logClock) ?? readNumbers(log, s.batteryVoltage)
   if (clock && clock.t.length) { logStart = clock.t[0]; logEnd = clock.t[clock.t.length - 1] }
   if (!Number.isFinite(logStart)) { logStart = log.firstTime; logEnd = log.lastTime }
 

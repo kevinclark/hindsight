@@ -64,7 +64,7 @@ export function foresightKeysIn(log: WpilogFile, profile: RobotProfile): string[
 export function foresightKeys(profile: RobotProfile): string[] {
   const s = profile.signals
   const keys = [
-    '/Timestamp',
+    ...keysOf(s.logClock),
     ...METADATA_KEYS,
     // Every place each may be (profiles/sources.ts); not the Driver Station log's, which isn't on NetworkTables.
     ...[s.enabled, s.autonomous, s.fmsAttached, s.dsAttached, s.gitSha, s.gitBranch, s.gitDate, s.gitDirty, s.batteryVoltage]

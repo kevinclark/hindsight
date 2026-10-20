@@ -53,7 +53,7 @@ export interface ProfileJson extends Partial<Omit<RobotProfile, 'motorGroups' | 
 }
 
 const EMPTY_SIGNALS: RobotProfile['signals'] = {
-  radioConnected: '', powerDistributionCurrents: '', powerDistributionVoltage: '', powerDistributionChannels: '', totalCurrent: '',
+  codebase: '', logClock: '', radioConnected: '', powerDistributionCurrents: '', powerDistributionVoltage: '', powerDistributionChannels: '', totalCurrent: '',
   enabled: '', autonomous: '', fmsAttached: '', dsAttached: '', eventName: '', matchType: '', matchNumber: '', replayNumber: '',
   allianceStation: '', gitSha: '', gitBranch: '', gitDate: '', gitDirty: '', epochMicros: '', systemTimeValid: '', batteryVoltage: '',
   brownedOut: '', brownoutVoltage: '', commsDisableCount: '', systemActive: '', loopCycleMs: '', console: '', alertGroups: [],

@@ -143,6 +143,10 @@ export interface SignalKeys {
   gitBranch: string
   gitDate: string
   gitDirty: string
+  /** The code's name for itself (how a log says which robot it is from; see choose.ts). */
+  codebase: string
+  /** A key logged every robot loop, whose first and last records are the log's extent. */
+  logClock: string
   epochMicros: string
   systemTimeValid: string
   batteryVoltage: string
@@ -206,13 +210,13 @@ export interface RobotProfile<Signals = SignalSources> {
   signals: Signals
   /** Battery tracker keys. Each lists the places the key may be; the first one present is used. */
   battery: {
-    id: string[]
-    idSource: string[]
-    gaugeValid: string[]
-    effectiveCapacityAh: string[]
-    ratedCapacityAh: string[]
-    remainingChargePct: string[]
-    numCycles: string[]
+    id: Source
+    idSource: Source
+    gaugeValid: Source
+    effectiveCapacityAh: Source
+    ratedCapacityAh: Source
+    remainingChargePct: Source
+    numCycles: Source
   }
   power: {
     otherLoadsAmps: number
