@@ -99,3 +99,32 @@ describe('power/main-breaker-margin: the peak is inside the match', () => {
     expect(f?.time).toBeLessThanOrEqual(260)
   })
 })
+
+describe('power/limit-not-applied: an enabled limit that is often exceeded', () => {
+  // Enabled 10-410 s (400 s). The front left drive's supply limit is 40 A (switched on in the profile). It spends
+  // `burst` seconds at 44.5 A (111 %) every `every` seconds: never 0.2 s at 120 %, so the old test saw nothing.
+  const bursts = (every: number, burst: number): Entries => {
+    const records: [number, number][] = [[0, 0]]
+    for (let t = 10; t < 410; t += every) records.push([t, 44.5], [t + burst, 0])
+    return [
+      { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [410, false]] },
+      { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
+      { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 12.5], [420, 12.3]] },
+      { name: '/Swerve/Front Left Module/DriveSupplyCurrentAmps', type: 'double', records },
+      ...['Front Right', 'Back Left', 'Back Right'].map((m) => ({ name: `/Swerve/${m} Module/DriveSupplyCurrentAmps`, type: 'double', records: [[0, 5]] })),
+      ...modules.map((m) => ({ name: `/Swerve/${m} Module/DriveStatorCurrentAmps`, type: 'double', records: [[0, 5]] })),
+    ] as Entries
+  }
+  const found = (entries: Entries) => run(entries).findings.find((x) => x.rule === 'power/limit-not-applied' && x.about === 'Drive supply')
+
+  it('fires when the worst motor is over 110 % of the limit for 3 % of the enabled time', () => {
+    const f = found(bursts(5, 0.15))
+    expect(f?.title).toMatch(/^Drive supply current was over 110 % of its 40 A limit for 3 % of the enabled time \(peak 45 A\)/)
+    expect(f?.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(3)
+    expect(f?.evidence['worst motor']).toBe('Front Left drive')
+    expect(f?.severity).toBe('error')
+  })
+  it('stays quiet at 0.3 % of the enabled time', () => {
+    expect(found(bursts(50, 0.15))).toBeUndefined()
+  })
+})
