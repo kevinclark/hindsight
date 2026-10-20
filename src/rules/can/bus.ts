@@ -47,13 +47,13 @@ export function watched(match: MatchView) {
 }
 
 /**
- * When the watched window began, if this drop was already under way then (a device off from boot, or off since
- * before the robot enabled); null for a drop that began inside a watched window.
+ * When the first watched window began, if this drop was already under way then (a device off from boot, or off
+ * since before the robot first enabled); null for any other drop. A drop that began while disabled between two
+ * watched windows (say, auto to teleop) is not this: it has its own start and its own battery reading.
  */
 export function alreadyOffAt(match: MatchView, drop: Episode): number | null {
-  const touched = watched(match).filter((w) => drop.start < w.end && drop.end > w.start)
-  const first = touched.sort((a, b) => a.start - b.start)[0]
-  return first && drop.start < first.start ? first.start : null
+  const firstStart = Math.min(...watched(match).map((w) => w.start))
+  return drop.start < firstStart ? firstStart : null
 }
 
 /** How long this drop lasted inside the watched windows (s): time off CAN while disabled doesn't count. */

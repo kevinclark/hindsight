@@ -106,3 +106,19 @@ describe('matchWhenAt: "at" only where a time follows', () => {
     expect(matchWhenAt({ matchStart: null, matchEnd: null } as unknown as Match, 7)).toBe('at robot time 7.0 s')
   })
 })
+
+describe('can/device-dropout: a drop that began between two enables', () => {
+  it('keeps its own start and battery reading (only a drop under way at the first enable is "already off")', () => {
+    // Enabled 20-40 and 45-80. Off 42-60: it began in the gap, so it is not "already off when enabled".
+    const gyro: FixtureEntry = { name: '/Swerve/Gyro/IsConnected', type: 'boolean', records: [[5, true], [42, false], [60, true]] }
+    const entries = log([gyro])
+    const battery = entries.find((e) => e.name === '/SystemStats/BatteryVoltage')!
+    battery.records = [[5, 12.5], [41.8, 6.5], [90, 12.4]]
+    const [f] = findings(entries, 'can/device-dropout')
+    expect(f.time).toBe(42)
+    expect(f.title).not.toMatch(/already off/)
+    expect(f.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('6.50')
+    expect(f.causes.find((c) => c.id === 'battery-sag')?.likely).toBe(true)
+    expect(f.evidence['seconds missing']).toBe(15) // 45-60 only: the gap is not watched
+  })
+})
