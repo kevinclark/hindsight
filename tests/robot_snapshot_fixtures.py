@@ -190,6 +190,9 @@ def read_only_problem(request, allowed_actions):
         return "action not allowed: %s" % request["raw"]
     if not set(request["query"]) <= READ_PARAMETERS:
         return "unexpected parameter: %s" % request["raw"]
+    names = [name for name, _ in parse_qsl(urlsplit(request["raw"]).query, keep_blank_values=True)]
+    if len(names) != len(set(names)):  # the logged query is a dict, which keeps only the last of a repeated name
+        return "repeated parameter: %s" % request["raw"]
     return None
 
 
@@ -245,7 +248,7 @@ class StubServer:
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     self.wfile.write(data)
-                except (BrokenPipeError, ConnectionResetError):
+                except ConnectionError:  # the client gave up first (a timeout test); Windows says ConnectionAbortedError
                     pass
 
             do_GET = do_POST = do_PUT = do_DELETE = _any

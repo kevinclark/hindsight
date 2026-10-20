@@ -64,7 +64,8 @@ class DeviceSnapshot(unittest.TestCase):
             return {"method": method, "path": path, "query": dict(pairs), "actions": [v for k, v in pairs if k == "action"], "raw": raw}
         self.assertIsNone(fx.read_only_problem(request("/?action=getdevices"), tool.ALLOWED_ACTIONS))
         for raw, method in (("/?action=getdevices", "POST"), ("/x?action=getdevices", "GET"), ("/?action=blink", "GET"),
-                            ("/?action=getdevices&action=blink", "GET"), ("/", "GET"), ("/?action=getsignals&signals=1", "GET")):
+                            ("/?action=getdevices&action=blink", "GET"), ("/", "GET"), ("/?action=getsignals&signals=1", "GET"),
+                            ("/?action=getsignals&id=1&id=2", "GET")):
             self.assertIsNotNone(fx.read_only_problem(request(raw, method), tool.ALLOWED_ACTIONS), "%s %s" % (method, raw))
 
     def test_normal_run(self):
