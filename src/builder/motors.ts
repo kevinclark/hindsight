@@ -5,8 +5,7 @@
  *  - Otherwise a key ending in a current (`SupplyCurrentAmps`, `StatorCurrentAmp`, `CurrentA`, a bare `Current`) is a
  *    motor's current when the same folder also has that motor's velocity, voltage, temperature or connected flag.
  *    The motor is the key without the current part, so `/X/DriveSupplyCurrentAmps` and `/X/DriveStatorCurrentAmps`
- *    are one motor, `/X/Drive`. A bare `Current` leaf with no unit (`/Arm/Position/Current`) often means "the
- *    present value", so a velocity beside it isn't enough: it needs a voltage, temperature or connected key.
+ *    are one motor, `/X/Drive`.
  *  - /SystemStats and /PowerDistribution (not motors), /RealOutputs (computed values) and dashboard tables (copies a
  *    team chose to show, rarely every motor) are skipped. Dashboard currents are listed as seen, not used.
  */
@@ -40,8 +39,6 @@ const DASHBOARD = /^(NT:)?\/(SmartDashboard|Shuffleboard|Elastic|NetworkInputs\/
 const NUMERIC = new Set(['double', 'float', 'int64'])
 /** A sibling that says this is a motor (not, say, a computed "current" of something else). */
 const MOTOR_SIBLING = /Velocity|Volt|Temp|Connected/
-/** What a bare, unitless `Current` needs beside it: a mechanism's position or setpoint folder has a velocity too. */
-const DEVICE_SIBLING = /Volt|Temp|Connected/
 /** A connected flag of another device that sits beside the motor (an encoder in the same module). */
 const OTHER_DEVICE = /Encoder|Cancoder|CANcoder|Gyro|Pigeon|Camera/i
 
@@ -104,8 +101,6 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
     const rest = (e: WpilogEntry) => e.name.slice(s.folder.length + 1 + s.part.length)
     const own = siblings.filter((e) => MOTOR_SIBLING.test(rest(e)) && !OTHER_DEVICE.test(rest(e)))
     if (own.length === 0) { for (const k of s.keys) notUsed.push({ key: k.name, why: 'no velocity, voltage, temperature or connected key beside it' }); continue }
-    const bare = s.part === '' && s.keys.every((k) => k.name.endsWith('/Current'))
-    if (bare && !own.some((e) => DEVICE_SIBLING.test(rest(e)))) { for (const k of s.keys) notUsed.push({ key: k.name, why: 'a bare "Current" with only a velocity beside it (a present value, not amps?)' }); continue }
     const pick = (re: RegExp, types: Set<string>, avoid?: RegExp) => own.filter((e) => re.test(rest(e)) && types.has(e.type) && !(avoid && avoid.test(rest(e)))).map((e) => e.name).sort((a, b) => a.length - b.length)[0]
     const find = (kind: string) => s.keys.find((k) => k.kind === kind)?.name
     motors.push(clean({

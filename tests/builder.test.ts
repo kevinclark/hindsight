@@ -271,17 +271,6 @@ describe('review fixes', () => {
 })
 
 describe('deferred review fixes', () => {
-  it('reads a bare "Current" beside only a velocity as a value, not a motor; with a connected flag it is one', () => {
-    const { motors, notUsed } = motorsFromLog(openWpilog(writeWpilog([
-      ...DS,
-      d('/Arm/Position/Current'), d('/Arm/Position/Velocity'), d('/Arm/Position/Goal'),
-      d('/Wrist/Current'), d('/Wrist/Velocity'), b('/Wrist/Connected'),
-      d('/Roller/CurrentAmps'), d('/Roller/VelocityRPS'),
-    ])))
-    expect(motors.map((m) => m.path)).toEqual(['/Roller', '/Wrist'])
-    expect(notUsed.find((n) => n.key === '/Arm/Position/Current')?.why).toMatch(/only a velocity/)
-  })
-
   it('gives every group its own name, even when the folders don\'t tell them apart', () => {
     const m = (path: string) => ({ path, from: 'keys' as const, supplyCurrent: `${path}/SupplyCurrentAmps` })
     const names = groupMotors([m('/A/X/Roller'), m('/B/X/Roller'), m('/A/Y/X/Roller')]).map((g) => g.name)

@@ -21,8 +21,7 @@ what you already confirmed.
 
 Hindsight finds a motor when the log has a `struct:TalonFX` entry for it, or a current key (`…SupplyCurrentAmps`,
 `…StatorCurrentAmps`, `…CurrentAmps`) with the same motor's velocity, voltage, temperature or connected key beside
-it. A bare `Current` with no unit (`/Arm/Position/Current`) is often a present value, so a velocity beside it isn't
-enough: it needs a voltage, temperature or connected key. It does not use `/RealOutputs` (computed values), dashboard tables (`SmartDashboard`, `Elastic`), or currents
+it. It does not use `/RealOutputs` (computed values), dashboard tables (`SmartDashboard`, `Elastic`), or currents
 logged as arrays; those are listed under **Seen, not used**.
 
 ## 2. Confirm
