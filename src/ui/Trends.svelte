@@ -6,7 +6,7 @@
   import type { MatchSummary, MatchMetrics } from '../session/summary.ts'
   import { TREND_METRICS } from '../session/trends.ts'
 
-  let { matches, typedBatteries }: { matches: MatchSummary[]; typedBatteries: Record<string, string> } = $props()
+  let { matches, typedBatteries, labels = [] }: { matches: MatchSummary[]; typedBatteries: Record<string, string>; labels?: string[] } = $props()
 
   // Five colours; batteries beyond five also get a letter on the point so none can be confused.
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
@@ -14,15 +14,17 @@
   const batteries = $derived([...new Set(matches.map(battery).filter(Boolean))])
   const colour = (m: MatchSummary) => (battery(m) ? COLORS[batteries.indexOf(battery(m)) % COLORS.length] : 'var(--muted)')
 
-  const W = 220, H = 70, P = 6
+  const W = 220, H = 84, P = 6, PX = 12, AXIS = 14 // AXIS: room under the plot for the match labels
+  // Every match is labelled on the x axis; with many matches only every nth, so labels never overlap (about 22 px each).
+  const every = $derived(Math.max(1, Math.ceil(22 / ((W - 2 * PX) / Math.max(1, matches.length - 1)))))
   function points(key: keyof MatchMetrics, line?: number) {
     const vals = matches.map((m) => m.metrics[key])
     const nums = vals.filter((v): v is number => v !== null && Number.isFinite(v))
     if (nums.length === 0) return null
     let lo = Math.min(...nums, line ?? Infinity), hi = Math.max(...nums, line ?? -Infinity)
     if (hi - lo < 1e-9) { lo -= 1; hi += 1 }
-    const x = (i: number) => P + (matches.length === 1 ? (W - 2 * P) / 2 : (i * (W - 2 * P)) / (matches.length - 1))
-    const y = (v: number) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P)
+    const x = (i: number) => PX + (matches.length === 1 ? (W - 2 * PX) / 2 : (i * (W - 2 * PX)) / (matches.length - 1))
+    const y = (v: number) => H - P - AXIS - ((v - lo) / (hi - lo)) * (H - 2 * P)
     return { vals, x, y, lo, hi }
   }
 </script>
@@ -42,6 +44,11 @@
               <circle cx={p.x(i)} cy={p.y(v)} r="3.5" fill={colour(m)}><title>{m.matchLabel || m.fileName}: {v.toFixed(metric.digits)} {metric.unit}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
             {/if}
           {/each}
+          {#if labels.length === matches.length}
+            {#each matches as m, i (m.fileName)}
+              {#if i % every === 0}<text class="xl" x={p.x(i)} y={H - 3} text-anchor="middle"><title>{m.matchLabel || m.fileName}</title>{labels[i]}</text>{/if}
+            {/each}
+          {/if}
         </svg>
         <div class="range">{p.lo.toFixed(metric.digits)}–{p.hi.toFixed(metric.digits)}</div>
       {:else}
@@ -62,6 +69,7 @@
   figcaption { font-size: 0.8rem; }
   figcaption span, .range, .none, .key { color: var(--muted); font-size: 0.75rem; }
   svg { width: 100%; height: auto; display: block; border-bottom: 1px solid var(--border); }
+  .xl { font-size: 10px; fill: var(--muted); }
   .tag { font-size: 8px; fill: var(--muted); }
   .ref { stroke: var(--error); stroke-dasharray: 3 3; stroke-width: 1; opacity: 0.6; }
   .key { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }

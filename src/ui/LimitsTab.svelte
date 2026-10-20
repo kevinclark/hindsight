@@ -34,15 +34,19 @@
   const limitText = (l: LimitView) => (l.limitA === null ? 'not set' : `${l.limitA} A, ${l.on ? 'on' : 'OFF'}`)
 </script>
 
-<ul class="summary" aria-label="Summary of the groups below">
-  {#each groups as g (g.group)}
-    <li>
-      <strong>{g.group}</strong>
-      <span class={`chip ${g.verdict.replace(/ /g, '-')}`}>{VERDICT[g.verdict]}</span>
-      <span class="cap" class:off={!Number.isFinite(g.capPerMotorA)}>Battery draw capped at {capText(g)}</span>
-    </li>
-  {/each}
-</ul>
+<table class="summary" aria-label="Summary of the groups below">
+  <thead><tr><th>group</th><th>verdict</th><th>share of enabled time at the limit</th><th>battery draw capped at</th></tr></thead>
+  <tbody>
+    {#each groups as g (g.group)}
+      <tr>
+        <th scope="row">{g.group}</th>
+        <td><span class={`chip ${g.verdict.replace(/ /g, '-')}`}>{VERDICT[g.verdict]}</span></td>
+        <td class="share">{g.verdict === 'no current logged' ? '—' : `${(100 * g.shareAtLimit).toFixed(1)} %`}</td>
+        <td class="cap" class:off={!Number.isFinite(g.capPerMotorA)}>{capText(g)}</td>
+      </tr>
+    {/each}
+  </tbody>
+</table>
 
 <details class="read">
   <summary>How to read this</summary>
@@ -150,8 +154,10 @@
 {/each}
 
 <style>
-  .summary { list-style: none; margin: 0.25rem 0 0.5rem; padding: 0; display: grid; gap: 0.15rem; font-size: 0.9rem; }
-  .summary li { display: flex; flex-wrap: wrap; gap: 0 0.6rem; align-items: baseline; }
+  .summary { display: table; margin: 0.25rem 0 0.5rem; font-size: 0.9rem; overflow: visible; }
+  .summary th, .summary td { padding: 0.1rem 1rem 0.1rem 0; white-space: normal; vertical-align: baseline; }
+  .summary tbody th { font-weight: 600; white-space: nowrap; }
+  .summary .share { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .summary .cap { color: var(--muted); font-size: 0.85rem; }
   .summary .cap.off { color: var(--error); font-weight: 600; }
   .read { margin: 0.25rem 0; font-size: 0.85rem; }
