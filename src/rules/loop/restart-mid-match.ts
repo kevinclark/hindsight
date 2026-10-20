@@ -105,7 +105,7 @@ export default rule({
         ...(startsMid ? { 'controllers in the first 10 s of this log': ports(now) } : {}),
         ...(before ? { 'controllers before the stop': ports(controllers(before.v, before.v.logEnd - 10)) } : {}),
       },
-      plot: endsMid ? ['batteryVoltage'] : undefined, plotUnit: 'V',
+      plot: endsMid ? { signals: ['batteryVoltage'], unit: 'V' } : undefined,
     }
   },
 })

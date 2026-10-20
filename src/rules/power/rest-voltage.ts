@@ -36,8 +36,7 @@ export default rule({
       at,
       evidence: { [`rest voltage, 2 s ${match.autoStart !== null ? 'before auto' : 'up to now'} (V)`]: round(rest), 'lowest OK (V)': LOWEST_REST_VOLTAGE },
       measured: [{ label: `rest voltage ${match.autoStart !== null ? 'before auto' : 'before enable'}`, value: round(rest), unit: 'V', threshold: LOWEST_REST_VOLTAGE }],
-      plot: ['batteryVoltage'], plotUnit: 'V', plotFrom: at - 10, plotTo: at + 5,
-      plotLine: { value: LOWEST_REST_VOLTAGE, label: `${LOWEST_REST_VOLTAGE} V` },
+      plot: { signals: ['batteryVoltage'], unit: 'V', from: at - 10, to: at + 5, line: { value: LOWEST_REST_VOLTAGE, label: `${LOWEST_REST_VOLTAGE} V` } },
     }
   },
 })

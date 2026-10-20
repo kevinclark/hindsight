@@ -60,8 +60,7 @@ export default rule({
         'seconds under 7 V in teleop': round(secondsUnder7(match.teleop), 1),
       },
       measured: [{ label: 'lowest voltage while enabled', value: round(low.value), unit: 'V', threshold: setting + MARGIN_VOLTS }],
-      plot: [battery], plotUnit: 'V', plotFrom: low.at - 10, plotTo: low.at + 10,
-      plotLine: { value: setting, label: 'brownout setting' }, plotMarks: [low.at],
+      plot: { signals: [battery], unit: 'V', from: low.at - 10, to: low.at + 10, line: { value: setting, label: 'brownout setting' }, marks: [low.at] },
     }
   },
 })

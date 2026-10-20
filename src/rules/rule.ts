@@ -11,7 +11,7 @@
  *     who: ['pit'],
  *     meaning: 'The battery started the match partly discharged, so it sags sooner and deeper under load.',
  *     causes: [
- *       { id: 'not-charged', cause: 'The battery wasn't charged', look: 'the charger cart: was this battery on it?' },
+ *       { id: 'not-charged', cause: "The battery wasn't charged", look: 'the charger cart: was this battery on it?' },
  *       { id: 'worn', cause: 'A worn battery that no longer holds a charge', look: 'Power tab: its resistance' },
  *     ],
  *     nextStep: 'Put a battery reading 12.5 V or more at rest on the robot.',
@@ -20,7 +20,7 @@
  *       if (match.autoStart === null) return           // never enabled: nothing to check
  *       const rest = match.signal('batteryVoltage').median(match.before(match.autoStart, 2))
  *       if (rest >= 12.5) return                       // nothing wrong: return nothing
- *       return { message: `Battery rested at ${volts(rest)}`, at: match.autoStart }
+ *       return { message: `Battery rested at ${volts(rest)}`, at: match.autoStart, plot: { signals: ['batteryVoltage'], unit: 'V' } }
  *     },
  *   })
  *
@@ -30,7 +30,7 @@
  * missing is listed under "Not checked" without stopping the others.
  */
 
-import type { AlertView, CameraView, DeviceView, GroupView, MatchView, MechanismView, MotorView, Signal } from './view.ts'
+import type { AlertView, CameraView, DeviceView, Episode, GroupView, MatchView, MechanismView, MotorView, Signal } from './view.ts'
 
 /** red = it cost or nearly cost a match; amber = a margin is eroding; grey = context. */
 export type Severity = 'error' | 'warning' | 'info'
@@ -44,8 +44,8 @@ export interface Problem {
   message: string
   /** When it happened, in log seconds. Leave out for whole-match problems. */
   at?: number | null
-  /** The numbers behind it, labelled in plain English: { 'rest voltage (V)': 12.44 }. */
-  evidence?: Record<string, number | string>
+  /** The numbers behind it, labelled in plain English: { 'rest voltage (V)': 12.44 }. A value left undefined is left out. */
+  evidence?: Record<string, number | string | undefined>
   /** Only when this one problem is more (or less) serious than the rule's usual severity. */
   severity?: Severity
   /** What it is about, if the rule didn't use forEach: "Pitch", "Back_Left". Used to track the issue across matches. */
@@ -56,10 +56,8 @@ export interface Problem {
    * any more are context shown in session summaries, e.g. "median speed vs leader 93–97 %".
    */
   measured?: Measurement[]
-  /** Signals to draw around `at`: profile names, log keys or Signals. */
-  plot?: (string | Signal)[]
-  /** The plot's unit label: 'V', 'A', '°'. */
-  plotUnit?: string
+  /** What to draw: plot: { signals: [battery], unit: 'V' }. By default 5 s either side of `at`. */
+  plot?: PlotRequest
   /**
    * Causes this log points to (their ids), most likely first. The rest follow in the rule's order. Use it when the
    * evidence says which cause fits: "the radio stayed linked, so it's the DS laptop, not the radio".
@@ -69,11 +67,21 @@ export interface Problem {
   ruledOut?: Record<string, string>
   /** The next step for this log, when the rule's usual one doesn't fit (e.g. the DS log is already loaded). */
   nextStep?: string
-  /** Plot window and extras, when the default (5 s either side of `at`) isn't right. */
-  plotFrom?: number
-  plotTo?: number
-  plotLine?: { value: number; label: string }
-  plotMarks?: number[]
+}
+
+/** A finding's plot. Only `signals` is needed; the rest are for when the default isn't right. */
+export interface PlotRequest {
+  /** Profile names, log keys or Signals. Names and keys missing from the log are left off. */
+  signals: (string | Signal)[]
+  /** The unit label: 'V', 'A', '°'. */
+  unit?: string
+  /** The window, in log seconds (default: 5 s either side of `at`). */
+  from?: number
+  to?: number
+  /** A horizontal line, e.g. the limit: { value: 7, label: '7 V' }. */
+  line?: { value: number; label: string }
+  /** Vertical marks at these times. */
+  marks?: number[]
 }
 
 export interface Measurement {
@@ -145,3 +153,7 @@ export const amps = (a: number) => `${a.toFixed(0)} A`
 export const secs = (s: number) => `${s.toFixed(1)} s`
 export const pct = (fraction: number) => `${(100 * fraction).toFixed(1)} %`
 export const round = (x: number, digits = 2) => +x.toFixed(digits)
+/** A count with its noun: plural(1, 'time') is "1 time", plural(3, 'time') is "3 times". */
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+/** How long a list of episodes lasted, added up (s). */
+export const totalSeconds = (episodes: Episode[]) => episodes.reduce((sum, e) => sum + e.seconds, 0)

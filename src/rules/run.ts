@@ -191,7 +191,7 @@ function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchV
     nextStep: p.nextStep ?? rule.nextStep,
     about,
     key: about ? `${rule.id} · ${about}` : rule.id,
-    evidence: p.evidence ?? {},
+    evidence: definedOnly(p.evidence),
     measured: p.measured,
     plot: toPlot(p, view),
   }
@@ -203,14 +203,19 @@ function withSampling(f: Finding, slow: { label: string; note: string }[]): Find
 }
 
 function toPlot(p: Problem, view: MatchView): Plot | undefined {
-  if (!p.plot || p.plot.length === 0) return undefined
-  const from = p.plotFrom ?? (p.at ?? NaN) - 5
-  const to = p.plotTo ?? (p.at ?? NaN) + 5
+  if (!p.plot || p.plot.signals.length === 0) return undefined
+  const from = p.plot.from ?? (p.at ?? NaN) - 5
+  const to = p.plot.to ?? (p.at ?? NaN) + 5
   if (!Number.isFinite(from) || !Number.isFinite(to)) return undefined
   const lines: PlotLine[] = []
-  for (const s of p.plot) {
+  for (const s of p.plot.signals) {
     if (typeof s !== 'string') lines.push({ label: s.label, data: s.series })
     else if (view.has(s)) lines.push({ label: words(s), data: view.signal(s).series })
   }
-  return { from, to, lines, unit: p.plotUnit ?? '', threshold: p.plotLine, markers: p.plotMarks?.map((t) => ({ t, label: '' })) }
+  return { from, to, lines, unit: p.plot.unit ?? '', threshold: p.plot.line, markers: p.plot.marks?.map((t) => ({ t, label: '' })) }
+}
+
+/** The evidence without the entries a rule left undefined. */
+function definedOnly(evidence: Problem['evidence']): Record<string, number | string> {
+  return Object.fromEntries(Object.entries(evidence ?? {}).filter((e): e is [string, number | string] => e[1] !== undefined))
 }

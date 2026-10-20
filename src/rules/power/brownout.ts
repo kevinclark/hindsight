@@ -68,8 +68,10 @@ export default rule({
         { label: 'brownouts', value: onsets.length, unit: '' },
         { label: 'lowest voltage at the first brownout', value: round(battery.lowest(match.between(first - 1, first + 1)).value), unit: 'V' },
       ],
-      plot: [battery], plotUnit: 'V', plotFrom: first - 8, plotTo: Math.min(first + 12, last + 2),
-      plotLine: Number.isNaN(setting) ? undefined : { value: setting, label: 'brownout setting' }, plotMarks: onsets,
+      plot: {
+        signals: [battery], unit: 'V', from: first - 8, to: Math.min(first + 12, last + 2), marks: onsets,
+        line: Number.isNaN(setting) ? undefined : { value: setting, label: 'brownout setting' },
+      },
     }
   },
 })

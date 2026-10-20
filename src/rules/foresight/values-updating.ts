@@ -77,7 +77,7 @@ export default rule({
         'value, unchanged': Number.isFinite(d.value) ? round(d.value, 3) : 'no value yet',
         'CalGames 2026, at rest': 'changed 41–49 times a second; never still longer than 0.16 s',
       },
-      plot: [d.key], plotFrom: stretch.end - 2 * STILL_SECONDS, plotTo: stretch.end,
+      plot: { signals: [d.key], from: stretch.end - 2 * STILL_SECONDS, to: stretch.end },
     }))
   },
 })

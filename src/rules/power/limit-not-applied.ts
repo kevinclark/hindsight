@@ -72,8 +72,10 @@ export default rule({
           'set in': group.limits.where,
         },
         measured: [{ label: `peak ${kind} current`, value: round(worst.peak, 0), unit: 'A', threshold: round(limit * 1.2, 0) }],
-        plot: group.motors.map((m) => (kind === 'supply' ? m.supply() : m.stator())), plotUnit: 'A',
-        plotFrom: worst.start - 2, plotTo: worst.start + 4, plotLine: { value: limit, label: `${limit} A limit` },
+        plot: {
+          signals: group.motors.map((m) => (kind === 'supply' ? m.supply() : m.stator())), unit: 'A',
+          from: worst.start - 2, to: worst.start + 4, line: { value: limit, label: `${limit} A limit` },
+        },
       })
     }
     return problems

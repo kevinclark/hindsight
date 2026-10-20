@@ -56,7 +56,7 @@ export default rule({
         'position jump when the zero landed (°)': zeroed ? round(jump, 1) : 'n/a',
         'travel in the 0.2 s before the zero (°)': zeroed ? round(drift, 1) : 'n/a',
       },
-      plot: [position], plotUnit: '°', plotFrom: movedAt - 2, plotTo: movedAt + 6, plotMarks: [movedAt],
+      plot: { signals: [position], unit: '°', from: movedAt - 2, to: movedAt + 6, marks: [movedAt] },
     }
   },
 })

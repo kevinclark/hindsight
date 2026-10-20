@@ -46,7 +46,7 @@ export default rule({
       at: h.at,
       evidence: { 'sideways acceleration (g)': round(h.g), 'threshold (g)': LIMIT_G },
       measured: [{ label: 'sideways acceleration', value: round(h.g), unit: 'g', threshold: LIMIT_G }],
-      plot: ['accelX', 'accelY'], plotUnit: 'm/s²', plotFrom: h.at - 2, plotTo: h.at + 2,
+      plot: { signals: ['accelX', 'accelY'], unit: 'm/s²', from: h.at - 2, to: h.at + 2 },
       nextStep: after.length ? `The robot ${after.join(' and ')} within 2 s of this hit: check the battery leads, the main breaker and the radio\'s power and Ethernet cables first.` : undefined,
       }
     })

@@ -39,7 +39,7 @@ export default rule({
           severity: phase === 'auto' ? 'error' : 'warning',
           measured: [{ label: `${axis.label.toLowerCase()}`, value: round(Math.abs(angle), 1), unit: '°', threshold: 15 }],
           evidence: { axis: axis.label, 'peak (°)': round(angle, 1), 'seconds beyond ±15°': round(e.seconds), phase },
-          plot: [pitch, roll], plotUnit: '°', plotFrom: e.start - 3, plotTo: e.end + 3,
+          plot: { signals: [pitch, roll], unit: '°', from: e.start - 3, to: e.end + 3 },
           // In auto the path drives itself, so a wedge there points at the path and what was raised.
           nextStep: phase === 'auto' ? 'It tilted during auto, so the auto path drove into something: watch the video, and check the path near this spot and what was raised.' : undefined,
         })

@@ -168,6 +168,11 @@ export class Signal {
     return new Signal(label, this.key, { name: this.series.name, t: this.series.t, v: this.series.v.map((x) => x * factor) }, this.logEnd)
   }
 
+  /** The same signal, from radians to degrees (gyro pitch and roll are logged in radians). */
+  inDegrees(label = this.label): Signal {
+    return this.times(180 / Math.PI, label)
+  }
+
   /** Where to start scanning for a window: its first record (binary search), so short windows are fast. */
   private firstIndex(during?: Window): number {
     if (!during || during.length === 0) return 0
@@ -416,6 +421,11 @@ export class MatchView {
   /** True when the log has this signal (for the rare rule that works either way). */
   has(name: string): boolean {
     return has(this.raw, this.keyFor(name))
+  }
+
+  /** The signal, or null when the log doesn't have it: for extra evidence a rule can do without. */
+  signalIfLogged(name: string, label = words(name)): Signal | null {
+    return this.has(name) ? this.signal(name, label) : null
   }
 
   /** The first of several possible keys that the log has (the battery tracker's keys moved between versions). */

@@ -132,8 +132,7 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
     },
     likely, ruledOut, nextStep,
     measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
-    plot: [battery], plotUnit: 'V', plotFrom: drops[0].start - 3, plotTo: drops[drops.length - 1].end + 2,
-    plotMarks: drops.map((d) => d.start), plotLine: { value: LOW_VOLTS, label: `${LOW_VOLTS} V` },
+    plot: { signals: [battery], unit: 'V', from: drops[0].start - 3, to: drops[drops.length - 1].end + 2, marks: drops.map((d) => d.start), line: { value: LOW_VOLTS, label: `${LOW_VOLTS} V` } },
   }
 }
 
@@ -169,7 +168,6 @@ function busProblem(bus: Bus, drops: Episode[], match: MatchView): Problem {
       ...(Number.isFinite(earlier) ? { 'lowest battery voltage earlier while enabled, with no bus drop (V)': round(earlier) } : {}),
     },
     measured: [{ label: 'whole-bus drops', value: drops.length, unit: '' }],
-    plot: [battery], plotUnit: 'V', plotFrom: drops[0].start - 5, plotTo: drops[0].start + gone[0] + 2,
-    plotMarks: drops.map((d) => d.start), plotLine: { value: LOW_VOLTS, label: `${LOW_VOLTS} V` },
+    plot: { signals: [battery], unit: 'V', from: drops[0].start - 5, to: drops[0].start + gone[0] + 2, marks: drops.map((d) => d.start), line: { value: LOW_VOLTS, label: `${LOW_VOLTS} V` } },
   }
 }

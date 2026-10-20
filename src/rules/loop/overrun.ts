@@ -44,8 +44,10 @@ export default rule({
         'teleop: share over 20 ms (%)': round(100 * overShare(teleop), 1), 'teleop: p99 (ms)': round(loop.percentile(99, match.teleop), 0), 'teleop: worst (ms)': round(maxOf(teleop), 0),
       },
       measured: [{ label: `${worstName} loops over 20 ms`, value: round(100 * overShare(worst), 1), unit: '%', threshold: 10 }],
-      plot: [loop], plotUnit: 'ms', plotLine: { value: 20, label: '20 ms' },
-      plotFrom: (worstName === 'auto' ? match.auto : match.teleop)[0]?.start, plotTo: (worstName === 'auto' ? match.auto : match.teleop)[0]?.end,
+      plot: {
+        signals: [loop], unit: 'ms', line: { value: 20, label: '20 ms' },
+        from: (worstName === 'auto' ? match.auto : match.teleop)[0]?.start, to: (worstName === 'auto' ? match.auto : match.teleop)[0]?.end,
+      },
     }
   },
 })

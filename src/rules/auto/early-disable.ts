@@ -95,8 +95,7 @@ export default rule({
         // Context only: how much auto was left when it was disabled ("× the line" would read as how bad it was).
         measured: [{ label: 'left in auto when disabled', value: round(match.timeLeft(a.end), 1), unit: 's' }],
         evidence: { 'auto enabled (robot time, s)': round(match.autoStart!), 'disabled (robot time, s)': round(a.end), 'auto time left (s)': round(match.timeLeft(a.end), 1), 'DS still attached': 'yes', ...history.evidence },
-        plot: gyro,
-        plotUnit: '°', plotFrom: match.autoStart! - 1, plotTo: a.end + 4, plotMarks: [a.end],
+        plot: { signals: gyro, unit: '°', from: match.autoStart! - 1, to: a.end + 4, marks: [a.end] },
       }
     })
   },

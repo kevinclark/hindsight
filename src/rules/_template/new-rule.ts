@@ -35,7 +35,7 @@ export default rule({
       message: `Battery dipped under ${LIMIT} V, first at ${match.when(dips[0].start)}`,
       at: dips[0].start,
       evidence: { 'times under the limit': dips.length, 'lowest (V)': round(battery.lowest(match.enabled).value) },
-      plot: [battery], plotUnit: 'V',
+      plot: { signals: [battery], unit: 'V' },
       // Optional: when the evidence points at a cause, name it (by id) so it is listed first.
       // likely: ['<short-name>'],
     }

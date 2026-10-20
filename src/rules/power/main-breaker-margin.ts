@@ -91,9 +91,8 @@ export default rule({
       nextStep: top && total > 0 ? `${top.name} carried ${Math.round((100 * top.e) / total)} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the sum of the sustained limits at or under about 120 A.` : undefined,
       // Battery voltage if logged; otherwise the supply current of the group that carried most of it.
       ...(match.has('batteryVoltage')
-        ? { plot: [match.signal('batteryVoltage')], plotUnit: 'V' }
-        : { plot: topGroupSupply(match, top?.name), plotUnit: 'A' }),
-      plotFrom: t - 60, plotTo: t + 10, plotMarks: [t],
+        ? { plot: { signals: [match.signal('batteryVoltage')], unit: 'V', from: t - 60, to: t + 10, marks: [t] } }
+        : { plot: { signals: topGroupSupply(match, top?.name), unit: 'A', from: t - 60, to: t + 10, marks: [t] } }),
     }
   },
 })

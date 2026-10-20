@@ -45,7 +45,7 @@ export default rule({
         [`yaw change in the last ${STILL_SECONDS} s (°)`]: round(moved, 3),
         'CalGames, disabled on the field (°)': '0.005–0.044 before enable; 0.3–4.4 in the first 1–2 min after boot',
       },
-      plot: [yaw], plotUnit: '°', plotFrom: stretch.end - STILL_SECONDS, plotTo: stretch.end,
+      plot: { signals: [yaw], unit: '°', from: stretch.end - STILL_SECONDS, to: stretch.end },
     }
   },
 })

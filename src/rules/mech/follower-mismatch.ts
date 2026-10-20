@@ -88,7 +88,7 @@ export default rule({
         { label: `${worst.name}: seconds more than 15 % off`, value: round(worst.secondsOff, 1), unit: 's', threshold: 1 },
         { label: `${worst.name}: median speed vs leader`, value: round(100 * worst.median, 0), unit: '%' },
       ],
-      plot: group.motors.map((m) => m.velocity()), plotUnit: 'rot/s',
+      plot: { signals: group.motors.map((m) => m.velocity()), unit: 'rot/s' },
     }
   },
 })

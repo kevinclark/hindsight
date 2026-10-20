@@ -93,8 +93,10 @@ export default rule({
       },
       measured: [{ label: 'comms losses', value: losses.length, unit: '' }],
       likely, ruledOut, nextStep,
-      plot: [match.signal('dsAttached', 'DS attached'), ...(match.has('systemActive') ? [match.signal('systemActive', 'Outputs enabled')] : [])],
-      plotFrom: losses[0] - 5, plotTo: losses[losses.length - 1] + 10, plotMarks: losses,
+      plot: {
+        signals: [match.signal('dsAttached', 'DS attached'), ...(match.has('systemActive') ? [match.signal('systemActive', 'Outputs enabled')] : [])],
+        from: losses[0] - 5, to: losses[losses.length - 1] + 10, marks: losses,
+      },
     }
   },
 })
