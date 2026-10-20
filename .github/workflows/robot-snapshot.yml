@@ -79,5 +79,10 @@ jobs:
 
           It asks for your team number (press Enter if the robot is plugged in by USB).
           NOTES
+          # 0.x versions are early: published as pre-releases
+          pre=""
+          case "$GITHUB_REF_NAME" in
+            robot-snapshot-v0.*) pre="--prerelease" ;;
+          esac
           gh release create "$GITHUB_REF_NAME" robot-snapshot-mac.zip robot-snapshot-windows.zip \
-            --repo "$GITHUB_REPOSITORY" --title "Robot snapshot ${GITHUB_REF_NAME#robot-snapshot-v}" --notes-file ../notes.md
+            --repo "$GITHUB_REPOSITORY" --title "Robot snapshot ${GITHUB_REF_NAME#robot-snapshot-v}" --notes-file ../notes.md $pre
