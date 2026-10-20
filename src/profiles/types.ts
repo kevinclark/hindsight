@@ -61,6 +61,13 @@ export interface ZeroingMechanism {
    * zeroing itself; only travel the other way counts as moving before the zero completed.
    */
   zeroDirection: 'down' | 'up'
+  /**
+   * The angle (degrees) the zero sets when it reaches the stop, if the code sets a fixed one. A log with no zero in it
+   * whose first position is within moveDegrees of this started already zeroed: the motor controller kept an earlier
+   * zero through a code restart. Leave it out when an unzeroed reading could land there too: an unzeroed Talon FX
+   * reads near 0 at boot (the 2026 hood: -1.3° and 1.85°, within half a rotor turn, ±180° / gear ratio).
+   */
+  stopDegrees?: number
 }
 
 export interface Camera {
