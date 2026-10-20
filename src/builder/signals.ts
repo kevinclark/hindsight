@@ -3,7 +3,7 @@
  * DataLogManager), the code's identity, and the robot-specific keys that can be told by their shape alone.
  */
 import { hasEntry, readValues, type WpilogEntry, type WpilogFile } from '../readers/wpilog.ts'
-import { codeIdentity, firstText, formatOf, LOG_FORMATS } from '../profiles/formats.ts'
+import { codeIdentity, firstText, formatOf, isRoboRioReading, LOG_FORMATS } from '../profiles/formats.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 
 type Signals = RobotProfile['signals']
@@ -55,8 +55,6 @@ const BATTERY_LEAVES: Record<keyof Battery, RegExp> = {
 
 /** Not motors or devices this builder reads: cameras are out of scope, and their connected flags belong to them. */
 const CAMERA_FOLDER = /vision|camera|photon|limelight|apriltag/i
-/** Connected flags that aren't CAN devices: the radio, NetworkTables clients. */
-const NOT_A_DEVICE = /^(NT:)?\/(RadioStatus|SystemStats|PowerDistribution)(\/|$)/
 
 export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalDraft {
   const format = formatOf(log)
@@ -89,7 +87,7 @@ export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalD
 
   // Connected flags that aren't a motor's or a camera's: encoders, the gyro, sensors.
   const otherDevices = entries
-    .filter((e) => e.type === 'boolean' && /Connected$/.test(e.name) && !motorKeys.has(e.name) && !CAMERA_FOLDER.test(e.name) && !NOT_A_DEVICE.test(e.name))
+    .filter((e) => e.type === 'boolean' && /Connected$/.test(e.name) && !motorKeys.has(e.name) && !CAMERA_FOLDER.test(e.name) && !isRoboRioReading(e.name))
     .map((e) => ({ name: e.name.replace(/^NT:/, '').replace(/^\//, '').replace(/\/?(Is)?Connected$/, '').replace(/\//g, ' '), connected: e.name }))
     .sort((a, b) => a.connected.localeCompare(b.connected))
 

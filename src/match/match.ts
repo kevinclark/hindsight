@@ -93,7 +93,9 @@ function dslogSeries(match: Match, key: string): NumberSeries | null {
   const offset = match.epochOffset
   if (offset === null) return null
   const field = key.slice(DSLOG.length) as keyof DslogRecord
-  const points = match.ds.flatMap((d) => d.file.records)
+  const records = match.ds.flatMap((d) => d.file.records)
+  if (records.length === 0 || !(field in records[0])) return null // no DS log, or no such field
+  const points = records
     .filter((r) => r.voltage !== null)
     .map((r) => ({ t: r.epochSeconds - offset, v: Number(r[field]) }))
     .filter((p) => p.t >= match.logStart && p.t <= match.logEnd)
@@ -275,7 +277,8 @@ export function attachDslog(match: Match, file: DslogFile, fileName: string): vo
   const offset = match.epochOffset ?? 0
   match.ds.push({ file, fileName, startTime: file.startEpochSeconds - offset, endTime: dslogEndEpoch(file) - offset })
   match.ds.sort((a, b) => a.startTime - b.startTime)
-  for (const key of match.cache.keys()) if (isDslogKey(key)) match.cache.delete(key)
+  // Every series from a DS log, and the power model built on the old picks, are out of date.
+  for (const key of match.cache.keys()) if (isDslogKey(key) || key.startsWith('power:')) match.cache.delete(key)
   const { signals, battery } = resolveProfile(match.sources, (key) => has(match, key))
   match.profile = { ...match.profile, battery, signals: { ...signals, alertGroups: match.profile.signals.alertGroups } }
 }

@@ -10,6 +10,7 @@
  * toProfile(): where each value came from, a motor's CAN bus, a current that doesn't say supply or stator, a
  * suggested "same loop", and which snapshot the limits were read from.
  */
+import { formatOfSignals } from '../profiles/formats.ts'
 import type { CurrentLimits, Motor, MotorGroup, RobotProfile, ZeroingMechanism } from '../profiles/types.ts'
 
 export const PROFILE_SCHEMA = 'hindsight.profile/1'
@@ -81,7 +82,8 @@ export function toProfile(json: ProfileJson): RobotProfile {
     whatIfGroup: '',
     cameras: [],
     ...rest,
-    signals: { ...EMPTY_SIGNALS, ...signals },
+    // A profile kept before a signal existed gets its log type's key for it (when the type is clear), not ''.
+    signals: { ...EMPTY_SIGNALS, ...(signals ? formatOfSignals(signals)?.signals : undefined), ...signals },
     battery: { ...EMPTY_BATTERY, ...battery },
     zeroing: (zeroing ?? []).map((z) => ({ ...z, doneMessage: new RegExp(z.doneMessage.source, z.doneMessage.flags) })),
     motorGroups: motorGroups.map(({ sameLoopSuggested: _ss, groupedBy: _g, motors, limits, ...g }) => ({

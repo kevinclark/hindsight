@@ -9,6 +9,7 @@
  *  - /SystemStats and /PowerDistribution (not motors), /RealOutputs (computed values) and dashboard tables (copies a
  *    team chose to show, rarely every motor) are skipped. Dashboard currents are listed as seen, not used.
  */
+import { isRoboRioReading } from '../profiles/formats.ts'
 import { structLayout, type WpilogEntry, type WpilogFile } from '../readers/wpilog.ts'
 
 export interface LogMotor {
@@ -34,7 +35,7 @@ export interface LogMotors {
 }
 
 const CURRENT = /(Supply|Stator)?Current(Amps?|A)?$/
-const SKIP = /^(NT:)?\/(SystemStats|PowerDistribution|RealOutputs|\.schema)(\/|$)/
+const SKIP = /^(NT:)?\/(RealOutputs|\.schema)(\/|$)/
 const DASHBOARD = /^(NT:)?\/(SmartDashboard|Shuffleboard|Elastic|NetworkInputs\/SmartDashboard|DashboardInputs)(\/|$)/
 const NUMERIC = new Set(['double', 'float', 'int64'])
 /** A sibling that says this is a motor (not, say, a computed "current" of something else). */
@@ -78,7 +79,7 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
     const i = e.name.lastIndexOf('/')
     const leaf = e.name.slice(i + 1)
     const m = CURRENT.exec(leaf)
-    if (!m || SKIP.test(e.name)) continue
+    if (!m || SKIP.test(e.name) || isRoboRioReading(e.name)) continue
     if (DASHBOARD.test(e.name)) { if (NUMERIC.has(e.type)) notUsed.push({ key: e.name, why: 'a dashboard copy' }); continue }
     if (e.type === 'double[]' || e.type === 'float[]') { arrays.set(e.name.slice(0, i), (arrays.get(e.name.slice(0, i)) ?? 0) + 1); continue }
     if (!NUMERIC.has(e.type)) continue

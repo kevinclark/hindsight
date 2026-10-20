@@ -17,10 +17,13 @@ export interface LogFormat {
   marker: string
   /**
    * The signals this type of log keeps in the same place on every robot: 'all' of the map, or a list. They don't tell
-   * robots apart, so they don't count toward a profile's fit (choose.ts), and an empty one isn't a gap in the robot's
-   * profile (coverage.ts). AdvantageKit's other fixed keys do count: 8033's profiles have always been fitted with them.
+   * robots apart, so they don't count toward a profile's fit (choose.ts). Only listed names are also exempt from
+   * "profile gap" on the Logging tab (coverage.ts): an empty slot in an 'all' map, like a plain log's battery voltage,
+   * is a real gap a team can fill. AdvantageKit's other fixed keys count toward fit: 8033's profiles always have.
    */
   sameOnEveryRobot: 'all' | (keyof SignalKeys)[]
+  /** Folders where this type of log keeps the roboRIO's own readings: not the robot's motors or devices (builder/). */
+  roboRioFolders: string[]
 }
 
 export const LOG_FORMATS: LogFormat[] = [
@@ -32,10 +35,23 @@ export const LOG_FORMATS: LogFormat[] = [
       'emergencyStop', 'matchTimeLeft', 'autoChoice', 'joystickButtonCounts', 'radioConnected', 'codebase', 'logClock',
       'powerDistributionCurrents', 'powerDistributionVoltage', 'powerDistributionChannels', 'totalCurrent',
     ],
+    roboRioFolders: ['/SystemStats', '/PowerDistribution', '/RadioStatus'],
   },
-  { name: 'DogLog', signals: DOGLOG_SIGNALS, marker: '/Robot/DogLog/Options', sameOnEveryRobot: 'all' },
-  { name: 'WPILib DataLogManager', signals: DATALOGMANAGER_SIGNALS, marker: 'DS:enabled', sameOnEveryRobot: 'all' },
+  {
+    name: 'DogLog',
+    signals: DOGLOG_SIGNALS,
+    marker: '/Robot/DogLog/Options',
+    sameOnEveryRobot: 'all',
+    roboRioFolders: ['/Robot/SystemStats', '/Robot/RadioStatus'],
+  },
+  { name: 'WPILib DataLogManager', signals: DATALOGMANAGER_SIGNALS, marker: 'DS:enabled', sameOnEveryRobot: 'all', roboRioFolders: [] },
 ]
+
+/** True for a key under any log type's roboRIO folders (with or without NetworkTables' "NT:"). */
+export function isRoboRioReading(key: string): boolean {
+  const path = key.replace(/^NT:/, '')
+  return LOG_FORMATS.some((f) => f.roboRioFolders.some((folder) => path === folder || path.startsWith(`${folder}/`)))
+}
 
 /** Signal names some log type keeps in the same place on every robot (sameOnEveryRobot lists). */
 export const NAMES_SAME_ON_EVERY_ROBOT = new Set(LOG_FORMATS.flatMap((f) => (f.sameOnEveryRobot === 'all' ? [] : f.sameOnEveryRobot)))
@@ -65,8 +81,15 @@ export function codeIdentity(log: WpilogFile): { codebase: string; branch: strin
   return { codebase: firstText(log, signals.codebase), branch: firstText(log, signals.gitBranch) }
 }
 
-/** The log type a profile's signals were drafted from: the one whose map most of them match (a kept profile, too). */
+/**
+ * The log type a profile's signals were drafted from: the one whose map more of them match than any other (a kept
+ * profile, too). Undefined on a tie: a guess could hand a profile another type's keys.
+ */
 export function formatOfSignals(signals: Partial<SignalSources>): LogFormat | undefined {
-  const same = (f: LogFormat) => Object.entries(signals).filter(([name, source]) => JSON.stringify(f.signals[name as keyof SignalSources]) === JSON.stringify(source)).length
-  return [...LOG_FORMATS].sort((a, b) => same(b) - same(a))[0]
+  const text = (source: unknown) => (source === undefined ? '' : keysOf(source as Source).join())
+  const sameKeys = (f: LogFormat) => Object.entries(signals)
+    .filter(([name, source]) => text(f.signals[name as keyof SignalSources]) === text(source))
+    .length
+  const [best, next] = LOG_FORMATS.map((f) => ({ f, n: sameKeys(f) })).sort((a, b) => b.n - a.n)
+  return best.n > (next?.n ?? -1) ? best.f : undefined
 }

@@ -6,7 +6,12 @@ import { describe, expect, it } from 'vitest'
 import { analyze } from '../src/analyze.ts'
 import { buildPowerGrid } from '../src/power/battery-model.ts'
 import { coverage } from '../src/coverage/coverage.ts'
-import { DSLOG } from '../src/profiles/sources.ts'
+import { DSLOG, resolveSignals } from '../src/profiles/sources.ts'
+import { fromProfile, toProfile } from '../src/builder/json.ts'
+import { draftProfile } from '../src/builder/draft.ts'
+import { openWpilog } from '../src/readers/wpilog.ts'
+import { offseason2026 } from '../src/profiles/2026-offseason.ts'
+import { frc340Daly2026 } from '../src/profiles/frc340-2026.ts'
 import { frc334_2026 } from '../src/profiles/frc334-2026.ts'
 import { writeDslog, writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 
@@ -142,11 +147,50 @@ describe('the Logging tab', () => {
     expect(gaps).not.toContain('total current')
     expect(gaps).not.toContain('radio connected')
   })
-  it('ties a brownout flag only a Driver Station log has to the checks it darkens', () => {
+  it('lists a brownout flag only a Driver Station log has: not logged without the .dslog, logged with it', () => {
     const dsOnly = { ...frc334_2026, signals: { ...frc334_2026.signals, brownedOut: `${DSLOG}brownout` } }
-    const [a] = analyze([{ name: '334.wpilog', bytes: writeWpilog(dogLogMatch(0.12, false)) }], dsOnly)
-    const row = coverage(a.match, a.report).lines.find((l) => l.what === 'browned out')
-    expect(row?.state).toBe('profile gap')
+    const robotLog = { name: '334.wpilog', bytes: writeWpilog(dogLogMatch(0.12, false)) }
+    const [alone] = analyze([robotLog], dsOnly)
+    const row = coverage(alone.match, alone.report).lines.find((l) => l.what === 'browned out')
+    expect(row?.state).toBe('not logged')
+    expect(row?.todo).toMatch(/^Load this match's \.dslog/)
     expect(row?.dark.map((d) => d.rule)).toContain('power/brownout')
+    const dslog = writeDslog({ name: 'm.dslog', startEpochSeconds: EPOCH + 1, count: 8000, robotFrom: 0, noRobotFrom: 8000 })
+    const [both] = analyze([robotLog, { name: 'm.dslog', bytes: dslog }], dsOnly)
+    expect(coverage(both.match, both.report).lines.find((l) => l.what === 'browned out')?.state).toBe('logged')
+  })
+})
+
+describe('profiles kept before the log-type keys existed', () => {
+  /** A profile.json as saved before: one string key per signal, none of the newer signals. */
+  const oldJson = (profile: typeof offseason2026) => {
+    const json = fromProfile(profile)
+    const signals: Record<string, unknown> = { ...resolveSignals(profile.signals, () => true) }
+    for (const k of ['codebase', 'logClock', 'radioConnected', 'powerDistributionCurrents', 'powerDistributionVoltage', 'powerDistributionChannels', 'totalCurrent']) delete signals[k]
+    return { ...json, signals: signals as never }
+  }
+  it("an AdvantageKit one gets AdvantageKit's keys for them", () => {
+    const kept = toProfile(oldJson(offseason2026))
+    expect(kept.signals.powerDistributionCurrents).toBe('/PowerDistribution/ChannelCurrent')
+    expect(kept.signals.logClock).toBe('/Timestamp')
+  })
+  it("a plain WPILib one gets DataLogManager's (empty) ones, not DogLog's", () => {
+    const kept = toProfile(oldJson(frc340Daly2026))
+    expect(kept.signals.powerDistributionCurrents).toBe('')
+    expect(kept.signals.radioConnected).toBe('')
+  })
+})
+
+describe('the Profile Builder on a DogLog log', () => {
+  it("doesn't draft the roboRIO's own readings as motors or devices", () => {
+    const entries: FixtureEntry[] = [
+      ...dogLogMatch(),
+      { name: '/Robot/SystemStats/3v3Rail/Current', type: 'double', records: [[0, 0.1], [1, 0.2]] },
+      { name: '/Robot/SystemStats/3v3Rail/Voltage', type: 'double', records: [[0, 3.3], [1, 3.3]] },
+      { name: '/Robot/RadioStatus/Connected', type: 'boolean', records: [[0, true]] },
+    ]
+    const d = draftProfile({ logs: [{ log: openWpilog(writeWpilog(entries)), fileName: '334.wpilog' }] })
+    expect(d.json.motorGroups.flatMap((g) => g.motors.map((m) => m.supplyCurrent ?? m.current))).not.toContain('/Robot/SystemStats/3v3Rail/Current')
+    expect((d.json.otherDevices ?? []).map((x) => x.connected)).not.toContain('/Robot/RadioStatus/Connected')
   })
 })
