@@ -7,6 +7,7 @@ import { consolidate } from '../src/rules/run.ts'
 import { link, parent } from '../src/rules/rule.ts'
 import type { Finding, Severity } from '../src/rules/types.ts'
 import { nest, partitionStanding, withParents } from '../src/report/finding-tree.ts'
+import { GROUP_DEVICES } from '../src/rules/parents.ts'
 
 /** A finding as the runner makes it, with these likely causes tagged. */
 function finding(rule: string, time: number | null, more: { about?: string; severity?: Severity; likely?: string[] } = {}): Finding {
@@ -36,6 +37,8 @@ describe('parents.ts', () => {
       expect(ids.has(p.over), p.over).toBe(true)
       expect(ids.has(p.id), `${p.id} is also a rule`).toBe(false)
       expect(p.atLeast).toBeGreaterThanOrEqual(2)
+      // The same readers as its group, or under another audience the group would show without its headline.
+      expect(p.who).toEqual(ruleById(p.over)!.who)
     }
   })
 })
@@ -102,7 +105,7 @@ describe('the reduce stage runs to a fixpoint', () => {
   it('still changing at the pass cap is reported as crashed, not a silent stop', () => {
     const crashed: { rule: string; reason: string }[] = []
     consolidate(setup(), { links: [brownoutExplainsGroup, ...LINKS], parents: PARENTS }, crashed, 2)
-    expect(crashed).toEqual([{ rule: 'consolidators', reason: 'still changing after 2 passes' }])
+    expect(crashed).toEqual([{ rule: 'consolidators', reason: 'did not settle within 2 passes' }])
   })
 
   it('a parent that throws is listed as crashed and changes nothing', () => {
@@ -134,3 +137,39 @@ describe('parents in the lists', () => {
     expect(partitionStanding(tree, standing, [], [group]).listed.map((n) => n.finding)).toEqual([group])
   })
 })
+
+describe('alerts the robot code raised for a group', () => {
+  const group = (devices: string, at = 614) => consolidate(devices.split(', ').map((d, i) => dropout(d, at + i * 0.01)), { parents: PARENTS })[0]
+  const alert = (text: string, time = 614.5) => finding('alerts/passthrough', time, { about: text, severity: 'error' })
+
+  it('Q2 with no bus: module and gyro alerts nest under the group, in the pass after it is made', () => {
+    const all = q2().map((f, i) => ({ ...f, about: Q2_DEVICES[i] }))
+    const alerts = [alert('Missing Module Data', 613.9), alert('Disconnected turn motor on Back Left module!'), alert('Missing Gyro Data')]
+    const parents = consolidate([...all, ...alerts], CONSOLIDATORS)
+    expect(parents[0].evidence[GROUP_DEVICES]).toContain('Back Left steer')
+    expect(alerts.map(explainer)).toEqual([GROUP, GROUP, GROUP])
+  })
+
+  it('module means steer only when the group has a steer motor', () => {
+    const module = alert('Missing Module Data')
+    consolidate([group('Hood, Indexer, Kicker leader'), module], { links: LINKS })
+    expect(module.explainedBy).toBeUndefined()
+    consolidate([group('Front Left steer, Hood, Indexer'), module], { links: LINKS })
+    expect(explainer(module)).toBe(GROUP)
+  })
+
+  it('an alert more than 2 s from the group is its own headline', () => {
+    const late = alert('Missing Module Data', 616.5)
+    consolidate([group('Front Left steer, Hood, Indexer'), late], { links: LINKS })
+    expect(late.explainedBy).toBeUndefined()
+  })
+})
+
+/** CalGames 2026 Q2's 25 devices in the order they dropped. */
+const Q2_DEVICES = [
+  'Flywheel leader', 'Flywheel follower 16', 'Flywheel follower 17', 'Flywheel follower 18', 'Hood', 'Intake pivot',
+  'Intake roller leader', 'Indexer', 'Kicker leader', 'Kicker follower', 'Intake CANcoder', 'Front Left drive',
+  'Front Right drive', 'Back Left drive', 'Back Right drive', 'Front Left steer', 'Front Right steer', 'Back Left steer',
+  'Back Right steer', 'Front Left CANcoder', 'Front Right CANcoder', 'Back Left CANcoder', 'Back Right CANcoder',
+  'Gyro (Pigeon)', 'Intake roller follower',
+]

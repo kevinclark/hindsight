@@ -89,6 +89,23 @@ describe('can/device-dropout: bus-wide and partial drops', () => {
     expect(JSON.stringify(buildFindingsJson(analysis.match, analysis.report))).toContain('"parents":[{"rule":"can/devices-dropped-together"')
   })
 
+  it('a parent marked known still heads its new members in the active list, and no count moves', () => {
+    const drops: Record<string, [number, boolean][]> = {}
+    devices.slice(0, 4).forEach((d, i) => { drops[d.name] = [[5, true], [40 + i * 0.1, false], [50, true]] })
+    const [analysis] = analyzeFiles([{ name: 'a.wpilog', bytes: writeWpilog(log(drops)) }], { ...offseason2026, canBuses: undefined }).analyses
+    const [group] = analysis.report.parents ?? []
+    const known = new Map([[group.key, { type: 'issue' as const, key: group.key, status: 'known' as const, note: '', when: '2026-10-20T00:00:00Z' }]])
+    const model = reviewModel(analysis, known)
+    expect([model.errors.length, model.known.length]).toEqual([4, 0])
+    expect(model.headlines.map((n) => [n.finding, n.children.length])).toEqual([[group, 4]])
+    expect(model.knownHeadlines).toEqual([])
+    // Mark one member known too: the parent heads it in the known list as well.
+    known.set(analysis.report.findings[0].key, { ...known.get(group.key)!, key: analysis.report.findings[0].key })
+    const split = reviewModel(analysis, known)
+    expect(split.headlines.map((n) => [n.finding, n.children.length])).toEqual([[group, 3]])
+    expect(split.knownHeadlines.map((n) => [n.finding, n.children.length])).toEqual([[group, 1]])
+  })
+
   it('a whole-bus drop is still one bus finding with no per-device findings', () => {
     const drops = Object.fromEntries(devices.map((d, i) => [d.name, [[5, true], [40 + i * 0.01, false], [50, true]] as [number, boolean][]]))
     const found = run(log(drops))

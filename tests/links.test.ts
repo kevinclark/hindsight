@@ -2,7 +2,7 @@
 // are shaped like the real ones (CalGames Q13, P0, Q21; MTTD Q41, Q61), with their times and evidence; the real logs
 // themselves are checked in calgames-logs.test.ts and mttd-rules.test.ts when they are in ~/Downloads.
 import { describe, expect, it } from 'vitest'
-import { FORESIGHT_RULES, LINKS, RULES, ruleById, runRules } from '../src/rules/index.ts'
+import { FORESIGHT_RULES, LINKS, PARENTS, RULES, ruleById, runRules } from '../src/rules/index.ts'
 import { consolidate } from '../src/rules/run.ts'
 import type { Finding, Severity } from '../src/rules/types.ts'
 import { BUS_DEVICES } from '../src/rules/can/bus-dropout.ts'
@@ -28,15 +28,16 @@ const explainer = (f: Finding) => f.explainedBy && `${f.explainedBy.rule}${f.exp
 const alert = (text: string, time: number | null, severity: Severity = 'error') => finding('alerts/passthrough', time, { about: text, severity })
 
 describe('links.ts', () => {
-  it('names only rules that exist, never links a rule to itself, and has no cycle', () => {
-    const ids = new Set(RULES.map((r) => r.id))
+  it('names only rules and parents that exist, never links a rule to itself, and has no cycle', () => {
+    const ids = new Set([...RULES.map((r) => r.id), ...PARENTS.map((p) => p.id)])
     for (const l of LINKS) {
       expect(ids.has(l.cause), l.cause).toBe(true)
       expect(ids.has(l.explains), l.explains).toBe(true)
       expect(l.cause).not.toBe(l.explains)
     }
     // Depth-first from every rule: reaching a rule already on the path is a cycle.
-    const next = (id: string) => LINKS.filter((l) => l.cause === id).map((l) => l.explains)
+    // A parent explains the findings it groups, as a link does.
+    const next = (id: string) => [...LINKS.filter((l) => l.cause === id).map((l) => l.explains), ...PARENTS.filter((p) => p.id === id).map((p) => p.over)]
     const visit = (id: string, path: string[]): void => {
       expect(path, `cycle: ${[...path, id].join(' → ')}`).not.toContain(id)
       for (const n of next(id)) visit(n, [...path, id])
@@ -140,9 +141,9 @@ describe('links.ts', () => {
     expect(JSON.stringify(all)).toBe(settled)
     expect(all.map(explainer)).toEqual(['power/battery-collapse', undefined, 'power/brownout'])
     expect(crashed).toEqual([])
-    // One pass explains both; only a second pass could show it had settled, so with a cap of 1 it is still changing.
+    // One pass explains both; only a second pass could show it had settled, so a cap of 1 is not enough.
     consolidate(chain(), { links: LINKS }, crashed, 1)
-    expect(crashed).toEqual([{ rule: 'consolidators', reason: 'still changing after 1 pass' }])
+    expect(crashed).toEqual([{ rule: 'consolidators', reason: 'did not settle within 1 pass' }])
   })
 
   it('stays quiet: a dropout at normal voltage, a dropout before the brownout, a margin above zero, an alert only outside the match', () => {

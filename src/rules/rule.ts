@@ -196,6 +196,21 @@ export const likely = (finding: Finding, causeId: string) => finding.causes.some
 /** Is this the first cause the log points to? mostLikely(brownout, 'weak-battery'). */
 export const mostLikely = (finding: Finding, causeId: string) => finding.causes[0]?.id === causeId && !!finding.causes[0].likely
 
+/** How many seconds after the first finding the second one happened (NaN if either has no time). */
+export function secondsAfter(first: Finding, second: Finding): number {
+  return (second.time ?? NaN) - (first.time ?? NaN)
+}
+
+/** Is x from low to high? (False for NaN.) */
+export function isBetween(x: number, low: number, high: number): boolean {
+  return x >= low && x <= high
+}
+
+/** Did the two findings happen within this many seconds of each other? (False if either has no time.) */
+export function within(a: Finding, b: Finding, seconds: number): boolean {
+  return Math.abs(secondsAfter(a, b)) <= seconds
+}
+
 // Tests for signal.episodes(...): read them out loud, e.g. episodes(below(7)) = "stretches below 7".
 export const below = (limit: number) => (v: number) => v < limit
 export const above = (limit: number) => (v: number) => v > limit

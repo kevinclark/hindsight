@@ -45,10 +45,9 @@ export function nest(list: Finding[], all: Finding[], known: Finding[] = [], cam
  * of its group that is in the list. A parent with none of its group in the list is left out.
  */
 export function withParents(list: Finding[], parents: Finding[] = []): Finding[] {
-  const parentOf = (f: Finding) => parents.find((p) => f.explainedBy?.rule === p.rule && f.explainedBy.about === p.about && f.explainedBy.time === p.time)
   const out: Finding[] = []
   for (const f of list) {
-    const p = parentOf(f)
+    const p = explainerOf(f, parents)
     if (p && !out.includes(p)) out.push(p)
     out.push(f)
   }

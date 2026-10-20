@@ -90,13 +90,14 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
 export function consolidate(findings: Finding[], consolidators: Consolidators, crashed: SkippedRule[] = [], maxPasses = MAX_PASSES): Finding[] {
   const parents: Finding[] = []
   for (let pass = 1; pass <= maxPasses; pass++) {
+    const all = [...findings, ...parents]
     // Links first, so a specific explanation (this brownout dropped this device) wins over a group.
-    const nested = nestPass([...findings, ...parents], consolidators.links ?? [], crashed)
-    const made = groupPass([...findings, ...parents], consolidators.parents ?? [], crashed)
+    const nested = nestPass(all, consolidators.links ?? [], crashed)
+    const made = groupPass(all, consolidators.parents ?? [], crashed)
     parents.push(...made)
     if (!nested && made.length === 0) return parents
   }
-  crashed.push({ rule: 'consolidators', reason: `still changing after ${maxPasses} pass${maxPasses === 1 ? '' : 'es'}` })
+  crashed.push({ rule: 'consolidators', reason: `did not settle within ${maxPasses} pass${maxPasses === 1 ? '' : 'es'}` })
   return parents
 }
 

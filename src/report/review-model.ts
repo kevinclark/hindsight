@@ -101,8 +101,9 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
   const m = analysis.match
   const model = {
     active, known,
-    headlines: nest(withParents(active, parents.filter(isActive)), withGroups, withGroups.filter(isKnown), active.filter((f) => findingStatus(f, issues, played) === 'came back')),
-    knownHeadlines: nest(withParents(known, parents.filter(isKnown)), withGroups),
+    // A parent heads its group wherever the group is: marked known, it still heads new members (MatchTab does the same).
+    headlines: nest(withParents(active, parents), withGroups, withGroups.filter(isKnown), active.filter((f) => findingStatus(f, issues, played) === 'came back')),
+    knownHeadlines: nest(withParents(known, parents), withGroups),
     errors: bySeverity('error'), warnings: bySeverity('warning'), infos: bySeverity('info'),
     notChecked: analysis.report.skipped.map((s) => ({ rule: s.rule, reason: s.reason })),
     crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
@@ -117,9 +118,10 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
   // "Worst:" names a headline, not a finding shown under one (the counts still count every finding).
   const heads = new Set(model.headlines.map((n) => n.finding))
   const headlinesFirst = (list: Finding[]) => [...list.filter((f) => heads.has(f)), ...list.filter((f) => !heads.has(f))]
-  // A parent as the worst headline names its group, which stands for the errors in it.
+  // A parent as the worst headline names its group, and stands for the errors in the group (not those nested deeper).
   const worst = model.headlines.find((n) => n.finding.severity === 'error')
-  const group = worst && parents.includes(worst.finding) ? { title: worst.finding.title, covers: descendants(worst).filter((f) => f.severity === 'error').length } : undefined
+  const groupErrors = worst ? worst.children.filter((c) => c.finding.severity === 'error').length : 0
+  const group = worst && parents.includes(worst.finding) ? { title: worst.finding.title, covers: groupErrors } : undefined
   model.bottomLine = bottomLine(headlinesFirst(model.errors), headlinesFirst(model.warnings), model.infos, known.length, group)
   return model
 }

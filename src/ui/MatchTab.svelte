@@ -43,9 +43,8 @@
   const active = $derived([...cameBack, ...fresh])
   // Every known issue, whichever audience is picked, so a hidden one still reads "explained by a known issue".
   const allKnown = $derived(withGroups.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
-  const activeParents = $derived(shownParents.filter((f) => !status(f) || status(f) === 'came back'))
-  const knownParents = $derived(shownParents.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
-  const fullTree = $derived(nest(withParents(active, activeParents), withGroups, allKnown, cameBack))
+  // A parent heads its group wherever the group is: marked known, it still heads new members in this list (badged).
+  const fullTree = $derived(nest(withParents(active, shownParents), withGroups, allKnown, cameBack))
   // A top-level finding folds into a closed group, with what it explains, only when it and everything under it fires in
   // every match of the session and none came back (partitionStanding). Anything else stays in the list.
   const partition = $derived(partitionStanding(fullTree, standing, cameBack, parents))
@@ -62,7 +61,7 @@
   // step is then shown in the fold's summary (the rows inside a closed fold can't show it).
   const firstError = $derived(activeTree.find((n) => n.finding.severity === 'error' && !issues.get(n.finding.key))?.finding)
   const fallbackError = $derived(!firstError && standingTree.length ? standingTree.find((n) => n.finding.severity === 'error')?.finding : undefined)
-  const knownTree = $derived(nest(withParents(known, knownParents), withGroups))
+  const knownTree = $derived(nest(withParents(known, shownParents), withGroups))
   const firing = $derived(new Set(withGroups.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
   // A rule that couldn't run says nothing about whether an issue is gone.

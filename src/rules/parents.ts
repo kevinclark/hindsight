@@ -9,8 +9,11 @@
  * grouped: the specific explanation wins.
  * To add one, copy a parent, then run `npm run golden` before and after and look at every finding that changed.
  */
-import { likely, parent, type Parent } from './rule.ts'
+import { isBetween, likely, parent, secondsAfter, type Parent } from './rule.ts'
 import type { Finding } from './types.ts'
+
+/** The evidence line that names the devices in a CAN group (links.ts reads it to tell which alerts are about them). */
+export const GROUP_DEVICES = 'devices'
 
 export const PARENTS: Parent[] = [
   // CalGames 2026 Q2 with no CAN bus in the robot profile: 25 devices dropped off CAN between 614.04 and 614.28 s,
@@ -25,32 +28,36 @@ export const PARENTS: Parent[] = [
     name: (devices) => `${devices.length} CAN devices dropped within ${spreadOf(devices).toFixed(2)} s`,
     why: 'it dropped off CAN with the others: one event, not separate faults',
     who: ['pit'],
-    meaning: 'Several devices dropped off CAN at the same moment. That is one event with one cause they share, not a fault in each device.',
+    meaning: 'Several devices dropped off CAN at the same moment. That is one event with one cause they share, '
+      + 'not a fault in each device.',
     causes: [
-      { id: 'battery-sag', cause: 'The battery sagged so low that the devices lost power (voltage under about 7 V)', look: 'Power tab: battery voltage at the drop; the power/brownout and power/margin findings' },
-      { id: 'bus', cause: 'The whole CAN bus went down: the CANivore (its USB cable to the roboRIO, its power) or the wiring at it', look: 'the CANivore\'s USB cable, power connector and status light' },
-      { id: 'shared-wiring', cause: 'Wiring or power these devices share: a CAN splice or branch, a shared power breaker or channel', look: 'what the devices listed below have in common: the same CAN branch or splice, the same PDH channel' },
+      {
+        id: 'battery-sag',
+        cause: 'The battery sagged so low that the devices lost power (voltage under about 7 V)',
+        look: 'Power tab: battery voltage at the drop; the power/brownout and power/margin findings',
+      },
+      {
+        id: 'bus',
+        cause: 'The whole CAN bus went down: the CANivore (its USB cable to the roboRIO, its power) or the wiring at it',
+        look: 'the CANivore\'s USB cable, power connector and status light',
+      },
+      {
+        id: 'shared-wiring',
+        cause: 'Wiring or power these devices share: a CAN splice or branch, a shared power breaker or channel',
+        look: 'what the devices listed below have in common: the same CAN branch or splice, the same PDH channel',
+      },
     ],
     likely: (devices) => (devices.every((d) => likely(d, 'battery-sag')) ? ['battery-sag'] : ['bus', 'shared-wiring']),
     evidence: (devices) => ({
-      devices: devices.map((d) => d.about).join(', '),
+      [GROUP_DEVICES]: devices.map((d) => d.about).join(', '),
       'first drop (robot time, s)': devices[0].time ?? NaN,
       'seconds from the first drop to the last': spreadOf(devices),
     }),
-    nextStep: 'Look at what these devices share: the CANivore and its USB cable, a CAN splice, a power channel. If they are all on one bus, add it to the robot profile (canBuses), so Hindsight can say when the whole bus drops.',
+    nextStep: 'Look at what these devices share: the CANivore and its USB cable, a CAN splice, a power channel. '
+      + 'If they are all on one bus, add it to the robot profile (canBuses), so Hindsight can say when the whole bus drops.',
     incident: 'CalGames 2026 Q2: 25 devices off CAN within 0.25 s, listed as 25 separate errors when the robot profile mapped no bus',
   }),
 ]
-
-/** How many seconds after the first finding the second one happened (NaN if either has no time). */
-function secondsAfter(first: Finding, second: Finding): number {
-  return (second.time ?? NaN) - (first.time ?? NaN)
-}
-
-/** Is x from low to high? (False for NaN.) */
-function isBetween(x: number, low: number, high: number): boolean {
-  return x >= low && x <= high
-}
 
 /** Seconds from the first finding's time to the last one's (the findings are in time order). */
 function spreadOf(findings: Finding[]): number {
