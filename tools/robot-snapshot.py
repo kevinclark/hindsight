@@ -42,6 +42,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 VERSION = "1.0.0"
+# The release workflow replaces "source" with the git commit the built file came from.
+BUILD = "source"
 SCHEMA = "hindsight.robot-snapshot/1"
 PORT = 1250
 USB_ADDRESS = "172.22.11.2"
@@ -424,7 +426,8 @@ def collect_hoot(snapshot: dict, args, folder: Path, runner=run_local, say=print
 
 
 def readme_text(snapshot: dict) -> str:
-    lines = ["Robot snapshot, taken %s (%s)" % (snapshot["takenAtLocal"], snapshot["takenAt"]), ""]
+    lines = ["Robot snapshot, taken %s (%s)" % (snapshot["takenAtLocal"], snapshot["takenAt"]),
+             "Collector %s, build %s" % (snapshot["collector"]["version"], snapshot["collector"]["build"]), ""]
     if snapshot["address"]:
         lines.append("Robot address: %s, port %d" % (snapshot["address"], snapshot["port"]))
     if snapshot.get("getdevices"):
@@ -453,7 +456,56 @@ def readme_text(snapshot: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def main(argv: list | None = None, runner=run_local, say=print) -> int:
+def answer_to_args(text: str) -> list | None:
+    """What a typed team number means: Enter is the USB robot, digits 1..25599 a team, anything else None."""
+    text = text.strip()
+    if not text:
+        return []
+    if re.fullmatch(r"[0-9]{1,5}", text) and 1 <= int(text) <= 25599:
+        return ["--team", str(int(text))]
+    return None
+
+
+def double_clicked(argv: list | None, frozen: bool) -> bool:
+    """True only for a built file started with no arguments in a window a person can type in."""
+    return argv is None and not sys.argv[1:] and frozen and sys.stdin is not None and sys.stdin.isatty()
+
+
+def main(argv: list | None = None, runner=run_local, say=print, ask=input, frozen: bool | None = None) -> int:
+    frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    if not double_clicked(argv, frozen):
+        return run_snapshot(argv, runner, say)
+    try:
+        while True:
+            try:
+                answer = ask("Team number (just press Enter if the robot is plugged in by USB): ")
+            except (EOFError, KeyboardInterrupt):
+                say("Stopped.")
+                return 1
+            args = answer_to_args(answer)
+            if args is not None:
+                break
+            say("That is not a team number (1 to 25599). Type the digits only, or press Enter for USB.")
+        # Say why a run ended before the pause: anything printed after it vanishes with the window.
+        try:
+            return run_snapshot(args, runner, say)
+        except SystemExit as stop:
+            if isinstance(stop.code, int) or stop.code is None:
+                raise
+            say(str(stop.code))
+            return 1
+        except Exception as error:
+            say("Something went wrong: %s: %s" % (type(error).__name__, error))
+            return 1
+    finally:
+        say("Press Enter to close this window.")
+        try:
+            ask("")
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+
+def run_snapshot(argv: list | None = None, runner=run_local, say=print) -> int:
     parser = argparse.ArgumentParser(description="Read-only snapshot of a robot's CTRE devices (and optionally its hoot logs).")
     parser.add_argument("--address", default=None, help="robot address (default %s, the roboRIO over USB)" % USB_ADDRESS)
     parser.add_argument("--team", type=int, help="team number: use the robot at 10.TE.AM.2")
@@ -492,7 +544,7 @@ def main(argv: list | None = None, runner=run_local, say=print) -> int:
     now = datetime.now(timezone.utc)
     snapshot = {
         "schema": SCHEMA,
-        "collector": {"name": "robot-snapshot.py", "version": VERSION, "python": platform.python_version()},
+        "collector": {"name": "robot-snapshot.py", "version": VERSION, "build": BUILD, "python": platform.python_version()},
         "takenAt": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "takenAtLocal": now.astimezone().isoformat(timespec="seconds"),
         "address": args.address,

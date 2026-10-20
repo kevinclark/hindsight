@@ -10,6 +10,25 @@ A robot snapshot records what every CTRE (Phoenix 6) device on the robot says ab
 A small program on the laptop reads all of this from the robot and saves it in a file. Hindsight then compares that
 file with your robot profile. The program only reads. It never changes a setting, moves a motor or clears a fault.
 
+## Get it (no Python needed)
+
+1. Open the Releases page: https://github.com/kevinclark/hindsight/releases
+2. Download `robot-snapshot-mac.zip` (Mac) or `robot-snapshot-windows.zip` (Windows) and unzip it.
+3. Double-click `robot-snapshot` (`robot-snapshot.exe` on Windows). It asks for your team number: type it and press
+   Enter, or just press Enter if the robot is plugged in by USB. The window stays open at the end so you can read it.
+
+The first time only, because the files are not signed:
+
+- **Mac:** if it says it can't be opened, go to System Settings, Privacy & Security, scroll down and click
+  **Open Anyway**, then double-click it again.
+- **Windows:** if it says "Windows protected your PC", click **More info**, then **Run anyway**.
+
+The hoot options and `--address` need the command line (Terminal on a Mac, PowerShell on Windows), for example
+`./robot-snapshot --hoot-list` in the unzipped folder (`.\robot-snapshot.exe --hoot-list` on Windows). On Windows the program does not check for a VPN on the
+robot's address (only macOS and Linux do), so switch any VPN off yourself.
+
+Running it from source with Python is described below.
+
 ## Before you start: what not to press
 
 - **Don't press "Clear Faults" in Phoenix Tuner X, and don't blink any device,** until the snapshot is saved.
@@ -22,7 +41,7 @@ file with your robot profile. The program only reads. It never changes a setting
 - The robot turned on, with the robot code running. The code starts the reader the program talks to (CTRE's
   diagnostic server).
 - A USB cable from the laptop to the roboRIO's USB port. Over the robot's Wi-Fi also works, see below.
-- Python 3.8 or newer. Check with `python3 --version`. On a Mac that has never had it, that command offers to
+- Python 3.8 or newer (not needed if you use the download above). Check with `python3 --version`. On a Mac that has never had it, that command offers to
   install Apple's command line tools, which include Python: say yes and wait a few minutes.
 - No VPN switched on. A VPN can capture the robot's address, and then the program stops before it starts.
 - This repository's `tools/robot-snapshot.py`. It is one file, so you can copy just that file.

@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import robot_snapshot_fixtures as fx  # noqa: E402
@@ -189,6 +190,125 @@ class DeviceSnapshot(unittest.TestCase):
         with self.assertRaises(SystemExit):
             tool.new_output_folder(str(fx.REPO / "tests" / "should-not-exist"), tool.datetime.now(tool.timezone.utc))
         self.assertFalse((fx.REPO / "tests" / "should-not-exist").exists())
+
+
+class FakeTerminal:
+    def isatty(self):
+        return True
+
+
+class DoubleClick(unittest.TestCase):
+    """The prompt for a built file started by double-click. Nothing here contacts a robot: a VPN route stub stops the run first."""
+
+    def start(self, answers, frozen=True, argv=("tool",)):
+        asked, said, routes = [], [], []
+        replies = iter(answers)
+
+        def ask(prompt):
+            asked.append(prompt)
+            reply = next(replies)
+            if isinstance(reply, BaseException):
+                raise reply
+            return reply
+
+        def vpn(command, timeout=10):
+            routes.append(command[-1])
+            return {"rc": 0, "stdout": "interface: utun4\n", "stderr": ""}
+
+        with mock.patch.object(sys, "argv", list(argv)), mock.patch.object(sys, "stdin", FakeTerminal()), \
+                mock.patch.object(tool.platform, "system", return_value="Darwin"):
+            code = tool.main(runner=vpn, say=said.append, ask=ask, frozen=frozen)
+        return code, asked, said, routes
+
+    def test_answers_map_to_arguments(self):
+        self.assertEqual(tool.answer_to_args(""), [])
+        self.assertEqual(tool.answer_to_args("  "), [])
+        self.assertEqual(tool.answer_to_args("8033"), ["--team", "8033"])
+        self.assertEqual(tool.answer_to_args(" 25599 "), ["--team", "25599"])
+        for bad in ("0", "25600", "abc", "80 33", "-5", "1e3", "123456", "８０３３"):
+            self.assertIsNone(tool.answer_to_args(bad), bad)
+
+    def test_asks_again_then_targets_the_team_and_waits_at_the_end(self):
+        code, asked, said, routes = self.start(["abc", "8033", ""])
+        self.assertEqual(code, 1)  # the VPN stub stops the run before contact
+        self.assertEqual(routes, ["10.80.33.2"])
+        self.assertEqual(len(asked), 3)
+        self.assertTrue(asked[0].startswith("Team number"))
+        self.assertEqual(asked[0], asked[1])  # asked again after "abc"
+        self.assertEqual(asked[2], "")  # the pause
+        self.assertTrue(any("not a team number" in m for m in said))
+        self.assertEqual(said[-1], "Press Enter to close this window.")
+
+    def test_enter_means_usb(self):
+        code, asked, said, routes = self.start(["", ""])
+        self.assertEqual(routes, [tool.USB_ADDRESS])
+        self.assertEqual(len(asked), 2)
+
+    def test_closed_input_stops_with_code_1_and_still_pauses(self):
+        code, asked, said, routes = self.start([EOFError(), EOFError()])
+        self.assertEqual(code, 1)
+        self.assertEqual(routes, [])
+        self.assertEqual(said[-1], "Press Enter to close this window.")
+        code, asked, said, routes = self.start([KeyboardInterrupt(), ""])
+        self.assertEqual((code, routes), (1, []))
+
+    def test_pause_happens_when_the_run_exits(self):
+        # a team number the parser accepts but the output-folder refusal rejects
+        said, asked = [], []
+        answers = iter(["", ""])
+        with mock.patch.object(sys, "argv", ["tool"]), mock.patch.object(sys, "stdin", FakeTerminal()), \
+                mock.patch.object(tool, "run_snapshot", side_effect=SystemExit("Refusing to write")):
+            code = tool.main(say=said.append, ask=lambda p: asked.append(p) or next(answers), frozen=True)
+        # the reason is said before the pause, not after it (where a closing window would hide it)
+        self.assertEqual(code, 1)
+        self.assertEqual(said[-2:], ["Refusing to write", "Press Enter to close this window."])
+        self.assertEqual(len(asked), 2)
+
+    def test_a_crash_is_said_before_the_pause(self):
+        said, answers = [], iter(["", ""])
+        with mock.patch.object(sys, "argv", ["tool"]), mock.patch.object(sys, "stdin", FakeTerminal()), \
+                mock.patch.object(tool, "run_snapshot", side_effect=PermissionError("no write access")):
+            code = tool.main(say=said.append, ask=lambda p: next(answers), frozen=True)
+        self.assertEqual(code, 1)
+        self.assertEqual(said[-2:], ["Something went wrong: PermissionError: no write access", "Press Enter to close this window."])
+
+    def test_no_stdin_never_prompts(self):
+        with mock.patch.object(sys, "argv", ["tool"]), mock.patch.object(sys, "stdin", None):
+            self.assertFalse(tool.double_clicked(None, True))
+
+    def test_source_run_never_prompts(self):
+        def never(prompt):
+            raise AssertionError("asked: %s" % prompt)
+
+        def vpn(command, timeout=10):
+            return {"rc": 0, "stdout": "interface: utun4\n", "stderr": ""}
+
+        with mock.patch.object(sys, "stdin", FakeTerminal()), mock.patch.object(tool.platform, "system", return_value="Darwin"):
+            # python3 tools/robot-snapshot.py with no arguments: not a built file
+            with mock.patch.object(sys, "argv", ["tool"]):
+                self.assertEqual(tool.main(runner=vpn, say=QUIET, ask=never, frozen=False), 1)
+            # a built file given arguments on the command line
+            with mock.patch.object(sys, "argv", ["tool", "--team", "5"]):
+                self.assertEqual(tool.main(runner=vpn, say=QUIET, ask=never, frozen=True), 1)
+            # explicit argv (how every other test calls it)
+            self.assertEqual(tool.main(["--team", "5"], runner=vpn, say=QUIET, ask=never, frozen=True), 1)
+
+    def test_not_a_terminal_never_prompts(self):
+        class Piped:
+            def isatty(self):
+                return False
+        with mock.patch.object(sys, "argv", ["tool"]), mock.patch.object(sys, "stdin", Piped()):
+            self.assertFalse(tool.double_clicked(None, True))
+        with mock.patch.object(sys, "argv", ["tool"]), mock.patch.object(sys, "stdin", FakeTerminal()):
+            self.assertTrue(tool.double_clicked(None, True))
+            self.assertFalse(tool.double_clicked(None, False))
+            self.assertFalse(tool.double_clicked([], True))
+
+    def test_build_is_stamped(self):
+        run = Run()
+        self.assertEqual(run.snapshot["collector"]["build"], tool.BUILD)
+        self.assertIn("Collector %s, build %s" % (tool.VERSION, tool.BUILD), run.readme)
+        self.assertEqual(tool.BUILD, "source")  # only the release build changes it
 
 
 class ReadOnlyByConstruction(unittest.TestCase):
