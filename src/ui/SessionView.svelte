@@ -17,7 +17,8 @@
   import { staleNote } from '../session/stale.ts'
   import { changeText, diffFindings, snapshotFindings, type FindingChange, type FindingSnapshot } from '../session/changes.ts'
   import { VERSION } from '../version.ts'
-  import type { IssueEvent } from '../triage/history.ts'
+  import type { Triage } from '../triage/history.ts'
+  import { sessionWithMarks } from '../triage/track-record.ts'
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
   import { shortMatchLabel } from './match-label.ts'
@@ -26,9 +27,11 @@
   import SessionReport from './SessionReport.svelte'
   import { buildCard } from '../report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
-  import { crashedNote, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
+  import { allMarked, crashedNote, gridCells, marksText, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
 
-  let { issues, onOpen, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { issues: Map<string, IssueEvent>; onOpen: (files: File[]) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
+  // `marks`: the team's history (known, fixed and "not a real problem" marks).
+  let { marks, onOpen, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
+  const issues = $derived(marks.issues)
 
   let summaries = $state<MatchSummary[]>([])
   // File handles only (not their contents), so a match can be reopened in Match review.
@@ -106,27 +109,29 @@
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
   // Until one is picked, show the event (the matches that count), else the first session.
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
+  // The session as the team's marks show it (Match review shows the same): a red that a "not a real problem" mark on
+  // another match of the event demotes is amber, with the reason. Findings, the grid's colours and the exports use it.
+  const shown = $derived(session ? sessionWithMarks(session, marks) : undefined)
   const grid = $derived(session ? ruleGrid(session) : [])
-  const merged = $derived(session ? mergeFindings(session) : [])
+  const merged = $derived(shown ? mergeFindings(shown) : [])
   // "Once" rows (one match only, low confidence) fold under one summary; the rest stay listed. Same order inside each.
   // A row that came back after a fix stays listed whatever its confidence: it is the news, never folded away.
   const folds = (f: (typeof merged)[number]) => f.confidence === 'once' && cameBack(f.key, f.matches).length === 0
-  const listed = $derived(merged.filter((f) => !folds(f)))
-  const onceRows = $derived(merged.filter(folds))
+  // Marked "not a real problem" in every match it fired in: listed apart, like Match review's known issues.
+  const filedRows = $derived(merged.filter(allMarked))
+  const unfiled = $derived(merged.filter((f) => !allMarked(f)))
+  const listed = $derived(unfiled.filter((f) => !folds(f)))
+  const onceRows = $derived(unfiled.filter(folds))
   // What the fold holds, counted from its rows: "43 errors, 4 warnings".
   const onceHolds = $derived((['error', 'warning', 'info'] as const).map((sev) => [sev, onceRows.filter((f) => f.severity === sev).length] as const).filter(([, n]) => n > 0).map(([sev, n]) => (sev === 'info' ? `${n} info` : `${n} ${sev}${n === 1 ? '' : 's'}`)).join(', '))
   // Rule × match rows: most matches fired first, then the worse severity, then the rules' own order.
   const SEV_RANK = { error: 0, warning: 1, info: 2 } as const
   const gridRows = $derived.by(() => {
     const rows = grid.map((r, row) => {
-      const sevs = r.cells.map((c, i) => {
-        if (c !== 'fired') return null
-        const fs = session!.matches[i].rules[r.rule]?.findings ?? []
-        // Fired with no finding listed: shown as the worst, never quietly grey.
-        return fs.length ? fs.reduce((a, b) => (SEV_RANK[b.severity] < SEV_RANK[a] ? b.severity : a), fs[0].severity) : 'error'
-      })
-      const worst = Math.min(3, ...sevs.map((v) => (v ? SEV_RANK[v] : 3)))
-      return { ...r, sevs, worst, row }
+      // A cell marked not a real problem keeps its severity's shape, greyed, and doesn't sort the row up.
+      const cells = gridCells(shown!, r.rule)
+      const worst = Math.min(3, ...cells.map((c) => (c.severity && !c.marked ? SEV_RANK[c.severity] : 3)))
+      return { ...r, gridCells: cells, worst, row }
     })
     return rows.sort((a, b) => b.fired - a.fired || a.worst - b.worst || a.row - b.row)
   })
@@ -336,16 +341,17 @@
   const changesFor = (s: Session) => (reread && reread.sessionId === s.id ? reread.changes : undefined)
   function download() {
     if (!session) return
-    downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(session, issues, typedBatteries, changesFor(session)), null, 1))
+    downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(shown!, issues, typedBatteries, changesFor(session)), null, 1))
   }
   // "Save for Slack": the phone card as a PNG, then the print dialog (Save as PDF; the title names the file).
+  // `s` as the team's marks show it (`shown`).
   const cardOf = (s: Session) => buildCard(sessionCard(sessionModel(s, issues, typedBatteries)))
   let saveProblem = $state<string | null>(null)
   async function saveForSlackSession() {
     saveProblem = null
     if (!session) return
     const base = sessionBase(session.label)
-    try { saveProblem = await saveForSlack(`${base}.session-report`, `${base}.session-card.png`, cardOf(session)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
+    try { saveProblem = await saveForSlack(`${base}.session-report`, `${base}.session-card.png`, cardOf(shown!)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   // Tells App.svelte that a session is selected, so print shows the session report instead of the app.
   $effect(() => { hasSession = !!session })
@@ -359,9 +365,9 @@
     api.selectSession = (id: string) => { selectedId = id }
     api.sessionFile = () => (session ? `${sessionBase(session.label)}.session-findings.json` : null)
     api.sessionBase = () => (session ? sessionBase(session.label) : null)
-    api.sessionFindingsJson = () => (session ? JSON.stringify(buildSessionJson(session, issues, typedBatteries, changesFor(session)), null, 1) : null)
-    api.sessionCardPng = async () => (session ? await cardToPngDataUrl(cardOf(session)) : null)
-    api.sessionReport = () => (session ? sessionModel(session, issues, typedBatteries) : null)
+    api.sessionFindingsJson = () => (session ? JSON.stringify(buildSessionJson(shown!, issues, typedBatteries, changesFor(session)), null, 1) : null)
+    api.sessionCardPng = async () => (shown ? await cardToPngDataUrl(cardOf(shown)) : null)
+    api.sessionReport = () => (shown ? sessionModel(shown, issues, typedBatteries) : null)
   })
   function newSessionFor(fileName: string) {
     const label = window.prompt('Move this log to the session named:', '')
@@ -397,12 +403,14 @@
 
 {#snippet row(f: (typeof merged)[number])}
   {@const back = cameBack(f.key, f.matches)}
-  <li class={f.severity}>
+  {@const marked = marksText(shown!, f)}
+  <li class={f.severity} class:filed={allMarked(f)}>
     <span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span>
     <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
     {#if f.measured.length}
       <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
     {/if}
+    {#if marked}<span class="marked">↳ {marked}</span>{/if}
     <span class="latest">Latest: {f.title}</span>
   </li>
 {/snippet}
@@ -497,7 +505,7 @@
           <tr>
             <th scope="row"><code>{r.rule}</code></th>
             {#each r.cells as c, i (i)}
-              {#if c === 'fired'}{@const sev = r.sevs[i] ?? 'error'}<td class={`cell fired ${sev}`} title={`${SEV_WORD[sev]}: fired`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}</span></td>
+              {#if c === 'fired'}{@const cell = r.gridCells[i]}{@const sev = cell.severity ?? 'error'}{@const markedNote = cell.marked ? ', marked not a real problem' : ''}<td class={`cell fired ${sev}`} class:filed={cell.marked} title={`${SEV_WORD[sev]}: fired${markedNote}`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}{markedNote}</span></td>
               {:else}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/if}
             {/each}
             <td class="rate">{r.checkable ? `${CONFIDENCE_WORDS[r.confidence]}: ${r.fired} of ${r.checkable}` : 'not checked'}</td>
@@ -506,7 +514,7 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
+  <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
 
   <h3>Logging across the session</h3>
   {#if withLogging === 0}
@@ -550,6 +558,16 @@
       </ul>
     </details>
   {/if}
+  {#if filedRows.length}
+    <details class="once-fold filed-fold">
+      <summary>{filedRows.length} marked not a real problem in every match {filedRows.length === 1 ? 'it' : 'they'} fired in</summary>
+      <ul class="merged">
+        {#each filedRows as f (f.key)}
+          {@render row(f)}
+        {/each}
+      </ul>
+    </details>
+  {/if}
 
   <h3>Matches in this session</h3>
   <div class="grid-wrap"><table class="list">
@@ -574,7 +592,7 @@
   </table></div>
 {/if}
 </div>
-{#if session}<SessionReport {session} {issues} {typedBatteries} />{/if}
+{#if shown}<SessionReport session={shown} {issues} {typedBatteries} />{/if}
 
 <style>
   .intro, .hint, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
@@ -599,7 +617,9 @@
   .link { border: none; background: none; color: var(--focus); font: inherit; font-size: 0.85rem; cursor: pointer; padding: 0.2rem 0.25rem; min-height: 24px; box-sizing: border-box; }
   .merged { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--border); }
   .merged li { display: grid; grid-template-columns: 8rem 1fr; gap: 0.1rem 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
-  .merged .measured, .merged .latest { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
+  .merged .measured, .merged .latest, .merged .marked { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
+  /* Marked not a real problem in every match it fired in: muted like Match review's known issues; the words still say its severity. */
+  .merged li.filed .title code { color: var(--muted); }
   .merged .title { overflow-wrap: anywhere; }
   .error .title code { color: var(--error); }
   .warning .title code { color: var(--warning); }
@@ -621,7 +641,7 @@
   .cell.fired.error { color: var(--error); }
   .cell.fired.warning { color: var(--warning); }
   .cell.fired.info { color: var(--muted); }
-  .cell.not-checked { color: var(--muted); }
+  .cell.not-checked, .cell.fired.filed { color: var(--muted); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .grid th.match { padding-left: 0.2rem; padding-right: 0.2rem; }
   .grid th.match .link { min-width: 24px; }
@@ -632,5 +652,5 @@
   .list thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   input:not([type='file']), select { min-height: 24px; box-sizing: border-box; }
   input, select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; max-width: 100%; }
-  @media (max-width: 640px) { .merged li { grid-template-columns: 1fr; } .merged .measured, .merged .latest { grid-column: 1; } }
+  @media (max-width: 640px) { .merged li { grid-template-columns: 1fr; } .merged .measured, .merged .latest, .merged .marked { grid-column: 1; } }
 </style>

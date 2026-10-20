@@ -47,7 +47,7 @@ export const ONCHECKS: OncheckLine[] = [
   { section: 'Software', line: 'All CAN devices licensed and ID\'d', rules: ['snapshot/devices', 'snapshot/licensed'], group: 'snapshot', note: 'from the robot snapshot: every motor, CANcoder and the gyro on its own ID, and no Pro feature used without a licence' },
   { section: 'Software', line: 'Current limits as the code sets them', rules: ['snapshot/current-limits'], group: 'snapshot', note: 'Foresight\'s line, not on the team\'s list: from the robot snapshot, every motor\'s six current-limit settings, followers included' },
   { section: 'Software', line: 'All device values updating', rules: ['can/device-dropout', 'foresight/values-updating'], group: 'devices', note: 'devices connected and their readings changing; not the CANcoders or flywheel motors (nothing of theirs changes at rest)' },
-  { section: 'Software', line: 'CTRE devices healthy', rules: ['can/device-rebooted', 'foresight/sticky-faults', 'foresight/firmware-mismatch'], note: 'Foresight\'s line, not on the team\'s list: from the Hindsight companion\'s reading of each device the code watches (HindsightDevices.watch): no reboot, no sticky fault, one firmware per model' },
+  { section: 'Software', line: 'CTRE devices healthy', rules: ['can/device-rebooted', 'foresight/sticky-faults', 'foresight/firmware-mismatch'], group: 'devices', note: 'Foresight\'s line, not on the team\'s list: from the Hindsight companion\'s reading of each device the code watches (HindsightDevices.watch): no reboot, no sticky fault, one firmware per model' },
   { section: 'Software', line: 'Log stick in', rules: ['foresight/log-usb-stick'], note: 'the robot\'s own reading, once a second since its code started (Hindsight companion library): OK only if the stick has been in the whole time. Pulled it, even if it\'s back? Restart the robot code: the log doesn\'t carry on when a stick goes back in' },
   { section: 'Software', line: 'Gyro seems normal', rules: ['foresight/gyro-still-drift'], context: true, note: 'heading drift while still, as context: no line yet' },
   { section: 'Software', line: 'No undeployed changes', rules: ['build/dirty', 'foresight/commit-matches'] },
@@ -119,7 +119,7 @@ export function wantedLines(current: { report: Report } | null): WantedLine[] {
  */
 export const MERGED_LINES: Record<string, { line: string; ok: string }> = {
   snapshot: { line: 'Robot snapshot matches the code', ok: 'from the robot snapshot: CANcoder offsets, swerve ratio, every CAN device licensed and on its ID, current limits as the code sets them' },
-  devices: { line: 'Devices connected, motors cool', ok: 'devices connected and their readings changing (not the CANcoders or flywheel motors: nothing of theirs changes at rest); every motor at or under 60 °C' },
+  devices: { line: 'Devices connected, motors cool', ok: 'devices connected and their readings changing (not the CANcoders or flywheel motors: nothing of theirs changes at rest); CTRE devices with no reboot, no sticky fault, one firmware per model; every motor at or under 60 °C' },
 }
 
 export interface ChecklistLine extends MarkedLine {

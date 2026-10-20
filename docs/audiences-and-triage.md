@@ -65,8 +65,13 @@ the same problem in five matches is one issue with five sightings, not five rows
   match only, and it files the finding with the known issues there. While it stands, the same check's reds on the
   other matches of that event (same event name, played within 4 days) show amber with "marked not a real problem in
   Q13: <reason>"; nothing is hidden. *Undo* writes `unmark`, which undoes only that mark (a build from before this
-  feature skips both lines; a `new` would have cleared the issue's known or fixed mark there). The Session view does
-  not apply the demotion yet.
+  feature skips both lines; a `new` would have cleared the issue's known or fixed mark there). The Session view
+  applies the same marks match by match (`sessionWithMarks`): a session row keeps every match it fired in, says where
+  it was marked and why, and is as serious as its unmarked matches; a grid cell marked in its match is grey (same
+  shape; × on the printed grid). A row marked in every match it fired in is listed apart, out of the bottom line and
+  the card, as Match review files it with the known issues. Its report, card and session-findings.json (`wrong`,
+  `demoted`) say the same. Both views date a match the same way (`session/summary.ts playedAt`: the robot clock, else
+  the file name's date).
 - **How sure:** with any marks in the history, each finding says how its check has done on our matches, counted once
   per issue per match over the open logs plus every match named in the history: *marked real* (known or fixed on that
   very match), *a known issue* (another fire of a known issue, or one before its fix; nobody looked), *marked not a

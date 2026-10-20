@@ -15,11 +15,13 @@ import {
 } from '../session/session.ts'
 import { SESSION_FINDINGS_SCHEMA } from '../session/export.ts'
 import type { MatchSummary, RuleStatus } from '../session/summary.ts'
+import type { Severity } from '../rules/types.ts'
 import { TREND_METRICS } from '../session/trends.ts'
 import { titleHasValue } from './review-model.ts'
 import type { CardModel, Tone } from './card.ts'
 import { ruleById } from '../rules/index.ts'
 import { cardTitle } from './titles.ts'
+import { shortMatchLabel } from '../ui/match-label.ts'
 
 const plural = (n: number, one: string, many = `${one}es`) => `${n} ${n === 1 ? one : many}`
 export const pct = (x: number) => `${Math.round(100 * x)} %`
@@ -59,6 +61,10 @@ export interface ReportFinding {
   matchLabels: string[]
   /** The first measured quantity, for the card; empty when the title already says its number. */
   cardMeasured: string
+  /** What the team's marks say about it (marksText); empty with none. */
+  marks: string
+  /** The matches where it was marked not a real problem ("Q24"), for the card. */
+  wrongIn: string[]
 }
 
 export interface TrendPoint { /** The file name: unique even when two matches share a label (a replay). */ id: string; match: string; value: number; x: number; y: number; letter: string }
@@ -84,8 +90,14 @@ export interface Trends {
 export interface GridModel {
   /** One per match; `id` is the file name, since two matches can share a label. */
   columns: { id: string; label: string }[]
-  rows: { rule: string; title: string; cells: RuleStatus[]; rate: string; firedAnywhere: boolean }[]
+  rows: { rule: string; title: string; cells: RuleStatus[]; rate: string; firedAnywhere: boolean; marked: boolean[] }[]
 }
+
+/**
+ * One cell of the rule × match grid: what the rule said in that match, its worst finding, and whether the team marked
+ * every warning and error there "not a real problem" (the cell then keeps that severity's shape, greyed).
+ */
+export interface GridCell { status: RuleStatus; severity: Severity | null; marked: boolean }
 
 export interface SessionModel {
   label: string
@@ -100,8 +112,10 @@ export interface SessionModel {
   uncommitted: number
   buildUnknown: number
   bottomLine: string
-  /** Every merged error and warning, in the report's order (the card, the grid page and the JSON use all of them). */
+  /** Every merged error and warning, in the report's order, except `filed` (the bottom line, the card and page 1 use these). */
   findings: ReportFinding[]
+  /** Marked "not a real problem" in every match they fired in: listed apart, like Match review's known issues. */
+  filed: ReportFinding[]
   /** Page 1's rows: `findings`, with the once-only ones folded into `onceFold` when all of them would not fit on page 1 (PAGE1_ROWS). */
   rows: ReportFinding[]
   onceFold: { count: number; rules: number; text: string } | null
@@ -131,6 +145,49 @@ export function cameBack(session: Session, issues: Map<string, IssueEvent>, key:
   if (!issue || issue.status !== 'fixed') return []
   const fixedAt = Date.parse(issue.when)
   return matchIdx.map((i) => session.matches[i]).filter((m) => m.playedAt !== null && m.playedAt > fixedAt).map(matchLabel)
+}
+
+/** The matches where a finding was marked not a real problem, short ("Q24"). */
+export function wrongIn(session: Session, f: Pick<MergedFinding, 'wrong'>): string[] {
+  // A log with no match label by its file, as the mark itself names it (track-record.ts matchRef, shortMatch).
+  return (f.wrong ?? []).map((w) => { const m = session.matches[w.match]; return m.matchLabel ? shortMatchLabel(m.matchLabel, w.match) : m.fileName })
+}
+
+/** Marked "not a real problem" in every match it fired in. */
+export const allMarked = (f: Pick<MergedFinding, 'wrong' | 'matches'>) => (f.wrong?.length ?? 0) === f.matches.length
+
+const SEV_RANK = { error: 0, warning: 1, info: 2 } as const
+
+/** A rule's cells across the session, as the team's marks show them (pass the session through sessionWithMarks). */
+export function gridCells(session: Session, rule: string): GridCell[] {
+  return session.matches.map((m) => {
+    const r = m.rules[rule]
+    const status = r?.status ?? 'not checked'
+    if (status !== 'fired') return { status, severity: null, marked: false }
+    const all = r!.findings
+    const marked = all.length > 0 && all.every((f) => f.severity === 'info' || f.wrongMark)
+    const fs = marked ? all : all.filter((f) => !f.wrongMark)
+    // Fired with no finding listed: shown as the worst, never quietly grey.
+    const severity = fs.length ? fs.reduce((a, b) => (SEV_RANK[b.severity] < SEV_RANK[a] ? b.severity : a), fs[0].severity) : 'error'
+    return { status, severity, marked }
+  })
+}
+
+/**
+ * The team's marks on a merged finding, in Match review's words: "marked not a real problem in Q24: <reason>", and
+ * "amber, not red: marked not a real problem in Q24: <reason>" for reds a mark on another match demoted (said once
+ * when it is the same mark). Empty when nothing is marked.
+ */
+export function marksText(session: Session, f: Pick<MergedFinding, 'wrong' | 'demoted'>): string {
+  const labels = wrongIn(session, f)
+  const wrong = (f.wrong ?? []).map((w, i) => `${labels[i]}${w.reason ? `: ${w.reason}` : ''}`).join('; ')
+  const d = f.demoted
+  const sameMark = d && f.wrong?.some((w) => w.when === d.when && w.reason === d.reason)
+  return [
+    wrong ? `marked not a real problem in ${wrong}` : '',
+    d && sameMark ? 'its reds on the other matches show amber' : '',
+    d && !sameMark ? `amber, not red: marked not a real problem in ${d.match}${d.reason ? `: ${d.reason}` : ''}` : '',
+  ].filter(Boolean).join('; ')
 }
 
 export function measuredText(f: Pick<MergedFinding, 'measured'>): string {
@@ -189,7 +246,7 @@ export function trendsModel(matches: MatchSummary[], typedBatteries: Record<stri
 
 export function gridModel(session: Session): GridModel {
   const rows = ruleGrid(session).map((r: RuleRow) => ({
-    rule: r.rule, title: r.title, cells: r.cells, firedAnywhere: r.fired > 0,
+    rule: r.rule, title: r.title, cells: r.cells, firedAnywhere: r.fired > 0, marked: gridCells(session, r.rule).map((c) => c.marked),
     rate: r.checkable ? `${CONFIDENCE_WORDS[r.confidence]}: ${r.fired} of ${r.checkable}` : 'not checked',
   }))
   // Rules that fired anywhere first (most matches first), then the rest in the rules' own order.
@@ -231,9 +288,10 @@ export function fold(findings: ReportFinding[]): { rows: ReportFinding[]; onceFo
 const ORDER: Confidence[] = ['consistent', 'intermittent', 'once', 'not enough data']
 
 /** "3 matches. Consistent: flywheel followers slow, 3 of 3. Once: brownout, 1 of 3." One clause per confidence, worst first. */
-export function bottomLine(matchCount: number, findings: ReportFinding[]): string {
+export function bottomLine(matchCount: number, findings: ReportFinding[], filed = 0): string {
   const head = `${plural(matchCount, 'match')}.`
-  if (findings.length === 0) return `${head} No errors or warnings in any match.`
+  const marked = filed ? ` ${filed} marked not a real problem in every match ${filed === 1 ? 'it' : 'they'} fired in.` : ''
+  if (findings.length === 0) return `${head} No ${filed ? 'other ' : ''}errors or warnings in any match.${marked}`
   const clauses = ORDER.flatMap((c) => {
     const here = findings.filter((f) => f.confidence === c)
     if (!here.length) return []
@@ -242,16 +300,17 @@ export function bottomLine(matchCount: number, findings: ReportFinding[]): strin
     const more = here.length - named.length
     return [`${CONFIDENCE_WORDS[c]}: ${named.map((f) => `${f.ruleTitle}, ${f.ratio}`).join('; ')}${more ? ` (+${more} more)` : ''}.`]
   })
-  return `${head} ${clauses.join(' ')}`
+  return `${head} ${clauses.join(' ')}${marked}`
 }
 
+/** Pass the session as the team's marks show it (triage/track-record.ts sessionWithMarks). */
 export function sessionModel(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}): SessionModel {
   // The report's order (not the view's): how sure we are first, then how serious, then in how many matches.
   const rank = (c: Confidence) => ORDER.indexOf(c)
   const sev = { error: 0, warning: 1 }
   const ordered = mergeFindings(session).filter((f): f is MergedFinding & { severity: 'error' | 'warning' } => f.severity !== 'info')
     .sort((a, b) => rank(a.confidence) - rank(b.confidence) || sev[a.severity] - sev[b.severity] || b.matches.length - a.matches.length)
-  const findings = ordered.map((f): ReportFinding => {
+  const all = ordered.map((f): ReportFinding => {
     const ratio = `${f.matches.length} of ${f.checkable}`
     return {
       key: f.key, rule: f.rule, severity: f.severity, sevWord: f.severity === 'error' ? 'Error' : 'Warning',
@@ -261,8 +320,12 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
       measured: measuredText(f), cameBack: cameBack(session, issues, f.key, f.matches),
       matchLabels: f.matches.map((i) => matchLabel(session.matches[i])),
       cardMeasured: f.measured[0] && !(f.measured[0].min === f.measured[0].max && titleHasValue(cardTitle(f.title), f.measured[0].min)) ? measuredText({ measured: [f.measured[0]] }) : '',
+      marks: marksText(session, f), wrongIn: wrongIn(session, f),
     }
   })
+  const isFiled = new Set(ordered.filter(allMarked).map((f) => f.key))
+  const findings = all.filter((f) => !isFiled.has(f.key))
+  const filed = all.filter((f) => isFiled.has(f.key))
   const byRobot = new Map<string, { m: MatchSummary; n: number }>()
   for (const m of session.matches) byRobot.set(m.robot.profileId, { m, n: (byRobot.get(m.robot.profileId)?.n ?? 0) + 1 })
   const model: SessionModel = {
@@ -271,8 +334,8 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
     builds: buildsOf(session.matches),
     uncommitted: session.matches.filter((m) => m.build?.uncommitted).length,
     buildUnknown: session.matches.filter((m) => !m.build || (!m.build.sha && !m.build.branch)).length,
-    bottomLine: bottomLine(session.matches.length, findings),
-    findings, ...fold(findings), notes: sessionNotes(session), trends: trendsModel(session.matches, typedBatteries), grid: gridModel(session),
+    bottomLine: bottomLine(session.matches.length, findings, filed.length),
+    findings, filed, ...fold(findings), notes: sessionNotes(session), trends: trendsModel(session.matches, typedBatteries), grid: gridModel(session),
     jsonFile: `${sessionBase(session.label)}.session-findings.json`, schema: SESSION_FINDINGS_SCHEMA, version: VERSION,
   }
   return model
@@ -323,12 +386,12 @@ export function sessionCard(m: SessionModel): CardModel {
     context: [m.label, m.dates].filter(Boolean).join(' · '),
     heading: plural(m.matchCount, 'match'),
     headingTone: 'muted' as Tone,
-    subheading: parts.length ? parts.join(' · ') : 'No errors or warnings in any match',
+    subheading: [parts.length ? parts.join(' · ') : m.filed.length ? 'No other errors or warnings' : 'No errors or warnings in any match', m.filed.length ? `${m.filed.length} not a real problem` : ''].filter(Boolean).join(' · '),
     items: m.findings.map((f) => ({
       word: `${f.sevWord.toUpperCase()}${f.confidence === 'quiet' ? '' : ` · ${f.confidenceWord.toUpperCase()}`}${f.cameBack.length ? ' · CAME BACK' : ''}`,
       tone: (f.severity === 'error' ? 'error' : 'warning') as Tone,
       title: f.title,
-      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured].filter(Boolean).join(' · '),
+      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured, f.wrongIn.length ? `not a real problem in ${f.wrongIn.join(', ')}` : ''].filter(Boolean).join(' · '),
       short: `${f.ruleTitle} (${f.matchLabels.join(', ')})`,
     })),
     emptyText: 'Nothing to fix from these logs.',

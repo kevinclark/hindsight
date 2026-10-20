@@ -19,21 +19,27 @@ export interface ChosenFolder { name: string; code: CodeFolder | null; problem: 
 /** The folder input's files (webkitdirectory): paths like "Rebuilt/.git/objects/pack/pack-1.idx". */
 export function folderFromFiles(files: File[]): ChosenFolder {
   const name = files[0]?.webkitRelativePath.split('/')[0] || 'the folder'
+  const repo = gitRepoOfFiles(files)
+  if (!repo) return { name, code: null, problem: noGit(name, files.some((f) => /^[^/]+\/\.git$/.test(f.webkitRelativePath))) }
+  return { name, code: { repo, cache: browserCache() }, problem: null }
+}
+
+/** The .git among a folder input's files, or null when the folder has none. */
+export function gitRepoOfFiles(files: File[]): GitRepo | null {
   const inGit = new Map<string, File>()
   for (const f of files) {
     const at = f.webkitRelativePath.indexOf('/.git/')
     if (at >= 0 && f.webkitRelativePath.lastIndexOf('/', at - 1) < 0) inGit.set(f.webkitRelativePath.slice(at + 6), f)
   }
-  if (inGit.size === 0) return { name, code: null, problem: noGit(name, files.some((f) => /^[^/]+\/\.git$/.test(f.webkitRelativePath))) }
-  const dir: GitDir = {
+  if (inGit.size === 0) return null
+  return new GitRepo({
     read: async (path, start, end) => {
       const f = inGit.get(path)
       return f ? new Uint8Array(await (start === undefined ? f : f.slice(start, end)).arrayBuffer()) : null
     },
     size: async (path) => inGit.get(path)?.size ?? null,
     list: async (path) => [...inGit.keys()].filter((p) => p.startsWith(`${path}/`) && !p.slice(path.length + 1).includes('/')).map((p) => p.slice(path.length + 1)),
-  }
-  return { name, code: { repo: new GitRepo(dir), cache: browserCache() }, problem: null }
+  })
 }
 
 /** A folder handle (showDirectoryPicker). */

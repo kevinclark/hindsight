@@ -35,6 +35,8 @@ export type SummaryFinding = Omit<Finding, 'plot' | 'meaning' | 'causes' | 'next
   ruledOut: Record<string, string>
   /** Only when this log's next step differs from the rule's usual one. */
   nextStep?: string
+  /** Set only by the team's history (triage/track-record.ts sessionWithMarks), never kept: marked "not a real problem" on this match. */
+  wrongMark?: { reason: string; when: string }
 }
 
 export function toSummaryFinding(f: Finding, ruleNextStep: string | undefined): SummaryFinding {

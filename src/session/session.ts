@@ -160,11 +160,19 @@ export interface MergedFinding {
   interval: [number, number]
   /** Per measured quantity: the range across matches, and how far past the threshold (as a fraction) at the median. */
   measured: { label: string; unit: string; min: number; max: number; threshold?: number; medianMargin?: number }[]
+  /**
+   * The team's marks (triage/track-record.ts sessionWithMarks), only when there are some: the matches (by index into
+   * session.matches) where it was marked "not a real problem", and the wrong mark on another match of the event that
+   * turned its reds amber (the newest, when there are several).
+   */
+  wrong?: { match: number; reason: string; when: string }[]
+  demoted?: Finding['demoted']
 }
 
 /** The same finding across matches (by key), worst first. */
 export function mergeFindings(session: Session): MergedFinding[] {
   const byKey = new Map<string, { f: SummaryFinding[]; idx: number[] }>()
+  const wrongIn = new Map<string, NonNullable<MergedFinding['wrong']>>()
   session.matches.forEach((m, i) => {
     for (const r of Object.values(m.rules)) {
       // Grey (info) findings are context, not something that fired in the match.
@@ -173,6 +181,8 @@ export function mergeFindings(session: Session): MergedFinding[] {
         e.f.push(f)
         if (!e.idx.includes(i)) e.idx.push(i)
         byKey.set(f.key, e)
+        const w = wrongIn.get(f.key) ?? []
+        if (f.wrongMark && !w.some((x) => x.match === i)) wrongIn.set(f.key, [...w, { match: i, ...f.wrongMark }])
       }
     }
   })
@@ -181,7 +191,9 @@ export function mergeFindings(session: Session): MergedFinding[] {
   for (const [key, { f, idx }] of byKey) {
     const rule = f[0].rule
     const checkable = session.matches.filter((m) => (m.rules[rule]?.status ?? 'not checked') !== 'not checked').length
-    const worst = f.reduce((a, b) => (order[b.severity] < order[a.severity] ? b : a))
+    // A match where it was marked not a real problem doesn't make it more serious, unless every match was.
+    const counted = f.some((x) => !x.wrongMark) ? f.filter((x) => !x.wrongMark) : f
+    const worst = counted.reduce((a, b) => (order[b.severity] < order[a.severity] ? b : a))
     const labels = [...new Set(f.flatMap((x) => (x.measured ?? []).map((m) => m.label)))]
     const measured = labels.flatMap((label) => {
       const vals = f.flatMap((x) => (x.measured ?? []).filter((m) => m.label === label && Number.isFinite(m.value)))
@@ -194,9 +206,11 @@ export function mergeFindings(session: Session): MergedFinding[] {
         threshold, medianMargin: margins.length ? median(margins) : undefined,
       }]
     })
+    const demoted = f.map((x) => x.demoted).filter((d) => !!d).sort((a, b) => a.when.localeCompare(b.when)).at(-1)
     out.push({
       key, rule, severity: worst.severity, title: f[f.length - 1].title,
       matches: idx, checkable, confidence: confidence(idx.length, checkable), interval: wilson(idx.length, checkable), measured,
+      ...(wrongIn.has(key) ? { wrong: wrongIn.get(key) } : {}), ...(demoted ? { demoted } : {}),
     })
   }
   const place = (r: string) => RULES.findIndex((x) => x.id === r)
