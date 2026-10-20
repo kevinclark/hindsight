@@ -147,6 +147,14 @@ describe('links.ts', () => {
     expect(all.map(explainer)).toEqual([undefined, undefined, undefined, undefined])
   })
 
+  it('a hit while the mechanism moved from the wrong zero nests like a tilt', () => {
+    const zero = finding('mech/zero-not-completed', 270.9, { about: 'Hood', evidence: { 'zero completed (robot time, s)': 293.5 } })
+    const hit = finding('collision/impact', 281.9, { evidence: { phase: 'auto' } })
+    const after = finding('collision/impact', 300, { evidence: { phase: 'teleop' } })
+    linkFindings([zero, hit, after], LINKS)
+    expect([explainer(hit), explainer(after)]).toEqual(['mech/zero-not-completed · Hood', undefined])
+  })
+
   it('a zero that never completed explains a later tilt in auto, not one in teleop', () => {
     const zero = finding('mech/zero-not-completed', 83.4, { about: 'Intake pivot', evidence: { 'zero completed (robot time, s)': 'never' } })
     const inAuto = finding('collision/tilt', 90, { about: 'Pitch', severity: 'error', evidence: { phase: 'auto' } })
