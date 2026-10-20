@@ -9,49 +9,11 @@
  * and there was no log (program down or starting up) for 13 s and 50 s of the last ~84 s. After the second restart the driver's
  * controller (port 0) was missing. In 81 logs (MTTD 2025 and CalGames 2026) only Q28's start or end enabled on the field.
  */
-import { rule, round, type Measurement } from '../rule.ts'
+import { rule, round } from '../rule.ts'
 import type { MatchView, Signal } from '../view.ts'
 
 const SAME_MATCH_SECONDS = 30 * 60 // pieces of one match start within 30 min (the session view's rule, session.ts)
 const SLOW_SAG_VOLTS = 9 // above this in the last 2 s, the battery wasn't sagging toward a roboRIO reset (assumed)
-
-/** Is the robot enabled with the field attached at time t (at the start: each signal's first record, if later)? */
-const live = (m: MatchView, t: number) => ['enabled', 'fmsAttached'].every((name) => {
-  const s = m.signal(name)
-  return s.at(Math.max(t, s.series.t[0] ?? t)) > 0.5
-})
-/** Did this piece start already enabled on the field (the program came back mid-match)? */
-const startsLive = (m: MatchView) => live(m, m.logStart)
-
-/** Joystick ports with a controller plugged in at some point in the 10 s from t (button count above 0). */
-function controllers(m: MatchView, t: number): number[] {
-  return m.profile.signals.joystickButtonCounts.flatMap((key, port) => {
-    if (!m.has(key)) return []
-    const s = m.signal(key) // logged only when it changes: the value held at t counts too
-    return Math.max(s.at(t) || 0, s.highest(m.between(t, t + 10)).value || 0) > 0 ? [port] : []
-  })
-}
-const ports = (list: number[]) => (list.length ? list.map((p) => `port ${p}`).join(', ') : 'none')
-
-/** One log of the match, with its wall-clock (robot clock) start and end. */
-interface Piece {
-  v: MatchView
-  start: number
-  end: number
-}
-
-/** The loaded logs of this match (this one included), in order, with their wall-clock extent. */
-function piecesOf(match: MatchView): Piece[] {
-  const sameMatch = match.otherLogs().filter(
-    (o) => o.onField && o.event === match.event && o.matchLabel === match.matchLabel,
-  )
-  const all = [match, ...sameMatch]
-    .map((v) => ({ v, start: v.wallClock(v.logStart), end: v.wallClock(v.logEnd) }))
-    .filter((p): p is Piece => p.start !== null && p.end !== null)
-  const me = all.find((p) => p.v === match)
-  if (!me || !match.matchLabel) return []
-  return all.filter((p) => Math.abs(p.start - me.start) < SAME_MATCH_SECONDS).sort((a, b) => a.start - b.start)
-}
 
 export default rule({
   id: 'loop/restart-mid-match',
@@ -88,19 +50,9 @@ export default rule({
     const clockAfterStart = clock ? clockJustAfterStart(match, clock) : NaN
     const lowestVolts = endsMid ? lowestInLastTwoSeconds(match) : NaN
 
-    let what: string
-    if (startsMid && endsMid) {
-      what = 'restarted mid-match and stopped again: this log starts and ends while enabled on the field'
-    } else if (startsMid) {
-      what = 'restarted mid-match: this log starts already enabled on the field'
-    } else {
-      what = `stopped at ${match.when(match.logEnd - 0.001)}: the log ends while enabled on the field`
-    }
     // Wall-clock gaps are good to ~2 s: the robot clock offset scatters by that much between logs (MTTD Q28).
-    let downBefore = ''
-    if (before && me) downBefore = `, ${(me.start - before.end).toFixed(0)} s after the previous log stopped`
-    let downAfter = ''
-    if (after && me) downAfter = `; the next log starts ${(after.start - me.end).toFixed(0)} s later`
+    const downBefore = before && me ? `, ${(me.start - before.end).toFixed(0)} s after the previous log stopped` : ''
+    const downAfter = after && me ? `; the next log starts ${(after.start - me.end).toFixed(0)} s later` : ''
     const noController = lostPorts.length ? `; no controller on ${ports(lostPorts)} after the restart` : ''
 
     const ruledOut: Record<string, string> = {}
@@ -111,22 +63,17 @@ export default rule({
       ruledOut['cut-short'] = 'the program\'s next log from this match is loaded'
     }
 
-    let nextStep: string | undefined
-    if (pieces.length > 1) {
-      nextStep = 'Read the Driver Station log\'s messages for this match: a stack trace means the code crashed; none points at power (tug-test the roboRIO\'s power wiring).'
-    }
-    let measured: Measurement[] | undefined
-    if (gaps.length) {
-      measured = [{ label: 'between logs (program down or starting up)', value: round(sum(gaps), 1), unit: 's' }]
-    }
-
     return {
-      message: `Robot program ${what}${downBefore}${downAfter}${noController}`,
+      message: `Robot program ${whatHappened(match, startsMid, endsMid)}${downBefore}${downAfter}${noController}`,
       // A log that starts mid-match counts match time from its own first enable, so its "when" would mislead.
       at: startsMid ? null : match.logEnd,
       ruledOut,
-      nextStep,
-      measured,
+      nextStep: pieces.length > 1
+        ? 'Read the Driver Station log\'s messages for this match: a stack trace means the code crashed; none points at power (tug-test the roboRIO\'s power wiring).'
+        : undefined,
+      measured: gaps.length
+        ? [{ label: 'between logs (program down or starting up)', value: round(gaps.reduce((a, b) => a + b, 0), 1), unit: 's' }]
+        : undefined,
       evidence: {
         'this log starts': startsMid ? 'already enabled on the field' : 'normally (before the match)',
         'this log ends': endsMid ? 'while enabled on the field' : 'normally',
@@ -142,6 +89,13 @@ export default rule({
     }
   },
 })
+
+/** How the log's ends read in the message: restarted, stopped, or both. */
+function whatHappened(match: MatchView, startsMid: boolean, endsMid: boolean): string {
+  if (startsMid && endsMid) return 'restarted mid-match and stopped again: this log starts and ends while enabled on the field'
+  if (startsMid) return 'restarted mid-match: this log starts already enabled on the field'
+  return `stopped at ${match.when(match.logEnd - 0.001)}: the log ends while enabled on the field`
+}
 
 /** Each gap between a log that ended enabled and the next one that started enabled: no program, or one starting up. */
 function gapsBetween(pieces: Piece[]): number[] {
@@ -171,4 +125,49 @@ function lowestInLastTwoSeconds(match: MatchView): number {
   return lows.length ? Math.min(...lows) : NaN
 }
 
-const sum = (numbers: number[]) => numbers.reduce((a, b) => a + b, 0)
+/** Is the robot enabled with the field attached at time t (at the start: each signal's first record, if later)? */
+function live(m: MatchView, t: number): boolean {
+  return ['enabled', 'fmsAttached'].every((name) => {
+    const s = m.signal(name)
+    return s.at(Math.max(t, s.series.t[0] ?? t)) > 0.5
+  })
+}
+
+/** Did this piece start already enabled on the field (the program came back mid-match)? */
+function startsLive(m: MatchView): boolean {
+  return live(m, m.logStart)
+}
+
+/** Joystick ports with a controller plugged in at some point in the 10 s from t (button count above 0). */
+function controllers(m: MatchView, t: number): number[] {
+  return m.profile.signals.joystickButtonCounts.flatMap((key, port) => {
+    if (!m.has(key)) return []
+    const s = m.signal(key) // logged only when it changes: the value held at t counts too
+    return Math.max(s.at(t) || 0, s.highest(m.between(t, t + 10)).value || 0) > 0 ? [port] : []
+  })
+}
+
+/** "port 0, port 2", or "none". */
+function ports(list: number[]): string {
+  return list.length ? list.map((p) => `port ${p}`).join(', ') : 'none'
+}
+
+/** One log of the match, with its wall-clock (robot clock) start and end. */
+interface Piece {
+  v: MatchView
+  start: number
+  end: number
+}
+
+/** The loaded logs of this match (this one included), in order, with their wall-clock extent. */
+function piecesOf(match: MatchView): Piece[] {
+  const sameMatch = match.otherLogs().filter(
+    (o) => o.onField && o.event === match.event && o.matchLabel === match.matchLabel,
+  )
+  const all = [match, ...sameMatch]
+    .map((v) => ({ v, start: v.wallClock(v.logStart), end: v.wallClock(v.logEnd) }))
+    .filter((p): p is Piece => p.start !== null && p.end !== null)
+  const me = all.find((p) => p.v === match)
+  if (!me || !match.matchLabel) return []
+  return all.filter((p) => Math.abs(p.start - me.start) < SAME_MATCH_SECONDS).sort((a, b) => a.start - b.start)
+}

@@ -12,13 +12,74 @@
  * loaded logs (a judgment: a new build is a suspect, not a proof). Two builds of one commit with different
  * uncommitted changes can't be told apart.
  */
-import { rule, round, type Problem } from '../rule.ts'
+import { rule, round, secs } from '../rule.ts'
 import type { MatchView, Signal, Window } from '../view.ts'
-
-type Evidence = Record<string, string | number | undefined>
 
 const TILTED_DEGREES = 15 // the same line as collision/tilt
 const FULL_AUTO_SLACK = 1 // an auto run within 1 s of the auto length counts as run to the end (assumed)
+
+export default rule({
+  id: 'auto/early-disable',
+  title: 'Disabled during auto',
+  severity: 'error',
+  who: ['software', 'drive'],
+  meaning: 'The robot was disabled partway through auto while the Driver Station was still connected, so a person or the field turned it off on purpose. It was not a comms loss.',
+  causes: [
+    { id: 'a-stop', cause: 'The drive team pressed A-stop or disabled it because the robot was stuck, headed somewhere wrong or unsafe', look: 'ask the drive team what they saw; the match video at this time' },
+    { id: 'wedged', cause: 'The robot hit or wedged on a field element (it tilted, then stopped)', look: 'Match tab: pitch and roll just before the disable; the collision/tilt finding for this match' },
+    { id: 'mechanism', cause: 'A mechanism was out of position (a failed zero, a stuck arm or intake)', look: 'the mech/zero-not-completed finding; the mechanism\'s position in AdvantageScope just before the disable' },
+    { id: 'field', cause: 'The field or a referee disabled the robot', look: 'ask the head referee or FTA why; the field log for this match' },
+    { id: 'new-auto', cause: 'The auto had not run before on this build: new or changed code ran in a match for the first time', look: 'the evidence below (earlier runs of this auto and their builds); git log between those builds and this one' },
+  ],
+  nextStep: 'Ask the drive team why they disabled it, then check what happened in the seconds before: tilt, a mechanism out of position, a stuck path.',
+  incident: 'CalGames 2026 Q13: disabled at 282.7 s with 7.4 s of auto left after the hood hit the trench (2026-10-17-calgames-q13-log-analysis.md §1)',
+
+  check(match) {
+    const autoStart = match.autoStart
+    if (!match.onField || autoStart === null) return
+    const attached = match.signal('dsAttached')
+    const autoEnd = autoStart + match.profile.game.autoSeconds
+    const autoPeriods = match.auto.filter((a) => a.start >= autoStart && a.start < autoEnd)
+    const early = autoPeriods.filter((a) => match.timeLeft(a.end) > 1 && attached.at(a.end + 0.05) > 0.5)
+    // The plot is a bonus: draw the gyro if the log has it, but don't let a missing gyro stop the rule.
+    const pitch = match.signalIfLogged('gyroPitch')
+    const roll = match.signalIfLogged('gyroRoll')
+    const gyro = pitch && roll ? [pitch.inDegrees('Pitch'), roll.inDegrees('Roll')] : []
+
+    return early.map((a) => {
+      const timeLeft = match.timeLeft(a.end)
+      // How far did it tilt in the 3 s before the disable? Past the collision/tilt line, it probably hit something.
+      const tilt = tiltIn(gyro, match.before(a.end, 3))
+      const wedged = tilt > TILTED_DEGREES
+      const history = autoHistory(match, a.start)
+
+      let likely: string[] | undefined
+      if (wedged) {
+        likely = ['wedged']
+      } else if (history.firstOnBuild) {
+        likely = ['new-auto']
+      }
+
+      return {
+        // The last instant of auto: at a.end itself the robot already reads as disabled.
+        message: `Disabled in auto at ${match.when(a.end - 0.001)} with ${secs(timeLeft)} of auto left`,
+        at: a.end - 0.001,
+        likely,
+        nextStep: wedged ? `The robot tilted ${tilt.toFixed(0)}° in the 3 s before the disable: watch the video for what it hit, and add a guard in code near that spot.` : undefined,
+        // Context only: how much auto was left when it was disabled ("× the line" would read as how bad it was).
+        measured: [{ label: 'left in auto when disabled', value: round(timeLeft, 1), unit: 's' }],
+        evidence: {
+          'auto enabled (robot time, s)': round(autoStart),
+          'disabled (robot time, s)': round(a.end),
+          'auto time left (s)': round(timeLeft, 1),
+          'DS still attached': 'yes',
+          ...history.evidence,
+        },
+        plot: { signals: gyro, unit: '°', from: autoStart - 1, to: a.end + 4, marks: [a.end] },
+      }
+    })
+  },
+})
 
 /** One run of an auto period in a log. */
 interface Run {
@@ -62,12 +123,12 @@ function describeLastRun(last: Run, match: MatchView): string {
   const field = last.onField ? 'on the field' : 'off the field'
   const dirty = last.dirty ? ' with uncommitted changes' : ''
   const ran = last.seconds >= last.log.profile.game.autoSeconds - FULL_AUTO_SLACK
-  const ended = ran ? 'ran the whole auto' : `ended after ${last.seconds.toFixed(1)} s`
+  const ended = ran ? 'ran the whole auto' : `ended after ${secs(last.seconds)}`
   return `${where}, ${field}, build ${last.sha.slice(0, 7) || 'unknown'}${dirty}: ${ended}`
 }
 
 /** What this log says about the chosen auto's history (empty if it doesn't log the chooser). */
-function autoHistory(match: MatchView, start: number): { evidence: Evidence; firstOnBuild: boolean } {
+function autoHistory(match: MatchView, start: number) {
   if (!match.has('autoChoice')) return { evidence: {}, firstOnBuild: false }
   const name = match.text('autoChoice').at(start)
   // No auto chosen: an empty name would match every log's auto before its chooser was logged.
@@ -92,7 +153,7 @@ function autoHistory(match: MatchView, start: number): { evidence: Evidence; fir
   // With no other logs loaded, the count would only cover this log.
   const onBuildCount = onlyThisLog && here.length === 0 ? 'not known (only this log is loaded)' : onBuild
 
-  const evidence: Evidence = {
+  const evidence = {
     auto: name,
     'runs of it earlier in this log': here.length,
     'runs of it in the other logs loaded, earlier': othersCount,
@@ -108,70 +169,3 @@ function tiltIn(gyro: Signal[], window: Window): number {
   const swings = gyro.map((axis) => Math.max(Math.abs(axis.lowest(window).value), Math.abs(axis.highest(window).value)))
   return Math.max(0, ...swings)
 }
-
-export default rule({
-  id: 'auto/early-disable',
-  title: 'Disabled during auto',
-  severity: 'error',
-  who: ['software', 'drive'],
-  meaning: 'The robot was disabled partway through auto while the Driver Station was still connected, so a person or the field turned it off on purpose. It was not a comms loss.',
-  causes: [
-    { id: 'a-stop', cause: 'The drive team pressed A-stop or disabled it because the robot was stuck, headed somewhere wrong or unsafe', look: 'ask the drive team what they saw; the match video at this time' },
-    { id: 'wedged', cause: 'The robot hit or wedged on a field element (it tilted, then stopped)', look: 'Match tab: pitch and roll just before the disable; the collision/tilt finding for this match' },
-    { id: 'mechanism', cause: 'A mechanism was out of position (a failed zero, a stuck arm or intake)', look: 'the mech/zero-not-completed finding; the mechanism\'s position in AdvantageScope just before the disable' },
-    { id: 'field', cause: 'The field or a referee disabled the robot', look: 'ask the head referee or FTA why; the field log for this match' },
-    { id: 'new-auto', cause: 'The auto had not run before on this build: new or changed code ran in a match for the first time', look: 'the evidence below (earlier runs of this auto and their builds); git log between those builds and this one' },
-  ],
-  nextStep: 'Ask the drive team why they disabled it, then check what happened in the seconds before: tilt, a mechanism out of position, a stuck path.',
-  incident: 'CalGames 2026 Q13: disabled at 282.7 s with 7.4 s of auto left after the hood hit the trench (2026-10-17-calgames-q13-log-analysis.md §1)',
-
-  check(match) {
-    const autoStart = match.autoStart
-    if (!match.onField || autoStart === null) return
-    const attached = match.signal('dsAttached')
-    const autoEnd = autoStart + match.profile.game.autoSeconds
-    const autoPeriods = match.auto.filter((a) => a.start >= autoStart && a.start < autoEnd)
-    const early = autoPeriods.filter((a) => match.timeLeft(a.end) > 1 && attached.at(a.end + 0.05) > 0.5)
-    // The plot is a bonus: draw the gyro if the log has it, but don't let a missing gyro stop the rule.
-    const pitch = match.signalIfLogged('gyroPitch')
-    const roll = match.signalIfLogged('gyroRoll')
-    const gyro = pitch && roll ? [pitch.inDegrees('Pitch'), roll.inDegrees('Roll')] : []
-
-    return early.map((a): Problem => {
-      const timeLeft = match.timeLeft(a.end)
-      // How far did it tilt in the 3 s before the disable? Past the collision/tilt line, it probably hit something.
-      const tilt = tiltIn(gyro, match.before(a.end, 3))
-      const wedged = tilt > TILTED_DEGREES
-      const history = autoHistory(match, a.start)
-
-      let likely: string[] | undefined
-      if (wedged) {
-        likely = ['wedged']
-      } else if (history.firstOnBuild) {
-        likely = ['new-auto']
-      }
-      let nextStep: string | undefined
-      if (wedged) {
-        nextStep = `The robot tilted ${tilt.toFixed(0)}° in the 3 s before the disable: watch the video for what it hit, and add a guard in code near that spot.`
-      }
-
-      return {
-        // The last instant of auto: at a.end itself the robot already reads as disabled.
-        message: `Disabled in auto at ${match.when(a.end - 0.001)} with ${timeLeft.toFixed(1)} s of auto left`,
-        at: a.end - 0.001,
-        likely,
-        nextStep,
-        // Context only: how much auto was left when it was disabled ("× the line" would read as how bad it was).
-        measured: [{ label: 'left in auto when disabled', value: round(timeLeft, 1), unit: 's' }],
-        evidence: {
-          'auto enabled (robot time, s)': round(autoStart),
-          'disabled (robot time, s)': round(a.end),
-          'auto time left (s)': round(timeLeft, 1),
-          'DS still attached': 'yes',
-          ...history.evidence,
-        },
-        plot: { signals: gyro, unit: '°', from: autoStart - 1, to: a.end + 4, marks: [a.end] },
-      }
-    })
-  },
-})

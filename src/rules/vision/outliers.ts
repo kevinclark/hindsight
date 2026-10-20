@@ -17,15 +17,6 @@ import { isTimeSyncAlert } from './time-sync.ts'
 const MIN_POSES = 20 // fewer accepted poses than this can't give a rate worth acting on
 const OFF_FIELD_METERS = 1 // past the field's edge by more than this, a robot pose is impossible (assumed: half a robot plus drift)
 
-/** Is this pose off the field (the profile's field size)? False when the profile doesn't say how big the field is. */
-function offField(match: MatchView, pose: Pose2d): boolean {
-  const f = match.profile.game.field
-  if (!f) return false
-  const beyondX = pose.x < -OFF_FIELD_METERS || pose.x > f.length + OFF_FIELD_METERS
-  const beyondY = pose.y < -OFF_FIELD_METERS || pose.y > f.width + OFF_FIELD_METERS
-  return beyondX || beyondY
-}
-
 export default rule({
   id: 'vision/outliers',
   title: 'Vision poses far from odometry',
@@ -76,20 +67,18 @@ export default rule({
     if (odometryOff) {
       likely = ['odometry']
       offFieldNote = `; odometry was off the field for ${farOffField} of them`
-      let whatToDo = 'Find where odometry left the field (the Match tab), fix that, then look at vision again.'
-      if (start && offField(match, start)) {
-        whatToDo = `It started auto at ${where(start)}: set the robot's starting pose in every auto, then look at vision again.`
-      }
+      const whatToDo = start && offField(match, start)
+        ? `It started auto at ${where(start)}: set the robot's starting pose in every auto, then look at vision again.`
+        : 'Find where odometry left the field (the Match tab), fix that, then look at vision again.'
       nextStep = `Odometry was off the field for ${farOffField} of the ${far} far poses, so these distances measure odometry, not the camera. ${whatToDo}`
     }
 
-    const farPercent = (100 * far) / distances.length
     return {
       likely,
       nextStep,
       ruledOut,
       message: `${camera.name}: ${pct(far / distances.length)} of accepted vision poses were more than 0.5 m from odometry${offFieldNote}`,
-      measured: [{ label: 'accepted poses > 0.5 m from odometry', value: round(farPercent, 1), unit: '%', threshold: 5 }],
+      measured: [{ label: 'accepted poses > 0.5 m from odometry', value: round((100 * far) / distances.length, 1), unit: '%', threshold: 5 }],
       evidence: {
         'accepted poses in the match': distances.length,
         'over 0.5 m': far,
@@ -105,4 +94,13 @@ export default rule({
 /** A pose's position in words: "(1.2, 3.4) m". */
 function where(pose: Pose2d): string {
   return `(${pose.x.toFixed(1)}, ${pose.y.toFixed(1)}) m`
+}
+
+/** Is this pose off the field (the profile's field size)? False when the profile doesn't say how big the field is. */
+function offField(match: MatchView, pose: Pose2d): boolean {
+  const f = match.profile.game.field
+  if (!f) return false
+  const beyondX = pose.x < -OFF_FIELD_METERS || pose.x > f.length + OFF_FIELD_METERS
+  const beyondY = pose.y < -OFF_FIELD_METERS || pose.y > f.width + OFF_FIELD_METERS
+  return beyondX || beyondY
 }

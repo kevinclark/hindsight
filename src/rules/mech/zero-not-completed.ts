@@ -9,7 +9,7 @@
  * Why: CalGames 2026 Q13/Q21: the hood's zero was cancelled 0.2 s into auto, so "10°" was 8° above the hard stop
  * all auto, and the hood hit the trench in Q13. Fixed in 8ba92cb (zero at boot); P0 must stay quiet.
  */
-import { rule, round } from '../rule.ts'
+import { rule, round, secs } from '../rule.ts'
 
 export default rule({
   id: 'mech/zero-not-completed',
@@ -40,40 +40,26 @@ export default rule({
     if (movedAt === null || movedAt >= doneAt) return
     const plot = { signals: [position], unit: '°', from: movedAt - 2, to: movedAt + 6, marks: [movedAt] }
 
-    // The zero never completed: every angle in the match was measured from the wrong starting point.
-    if (!Number.isFinite(doneAt)) {
-      return {
-        message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed (it never did)`,
-        at: movedAt,
-        evidence: {
-          'first move while enabled (robot time, s)': round(movedAt),
-          'zero completed (robot time, s)': 'never',
-          'seconds moving in the wrong frame': 'whole match',
-          'position jump when the zero landed (°)': 'n/a',
-          'travel in the 0.2 s before the zero (°)': 'n/a',
-        },
-        plot,
-      }
-    }
-
+    // No zero by the end: every angle in the match was measured from the wrong starting point.
+    const zeroed = Number.isFinite(doneAt)
     const secondsLater = doneAt - movedAt
-    const jump = position.at(doneAt + 0.1) - position.at(doneAt - 0.1)
+    const jump = zeroed ? position.at(doneAt + 0.1) - position.at(doneAt - 0.1) : NaN
     // Less the travel it was already making (the 0.2 s before), so motion at that moment isn't read as a jump.
-    const travelBefore = position.at(doneAt - 0.1) - position.at(doneAt - 0.3)
+    const travelBefore = zeroed ? position.at(doneAt - 0.1) - position.at(doneAt - 0.3) : NaN
     const drift = Number.isFinite(travelBefore) ? travelBefore : 0 // a zero right at the start of the log has no travel before it
-    if (Math.abs(jump - drift) < mechanism.moveDegrees) return
+    if (zeroed && Math.abs(jump - drift) < mechanism.moveDegrees) return
 
     return {
       // The log can't tell a cancelled zero from a late one, so only rule out "never ran" when it did finish.
-      ruledOut: { 'zero-never-ran': `the zero did complete, ${secondsLater.toFixed(1)} s after the first move` },
-      message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed, ${secondsLater.toFixed(1)} s later`,
+      ruledOut: zeroed ? { 'zero-never-ran': `the zero did complete, ${secs(secondsLater)} after the first move` } : undefined,
+      message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed${zeroed ? `, ${secs(secondsLater)} later` : ' (it never did)'}`,
       at: movedAt,
       evidence: {
         'first move while enabled (robot time, s)': round(movedAt),
-        'zero completed (robot time, s)': round(doneAt),
-        'seconds moving in the wrong frame': round(secondsLater, 1),
-        'position jump when the zero landed (°)': round(jump, 1),
-        'travel in the 0.2 s before the zero (°)': round(drift, 1),
+        'zero completed (robot time, s)': zeroed ? round(doneAt) : 'never',
+        'seconds moving in the wrong frame': zeroed ? round(secondsLater, 1) : 'whole match',
+        'position jump when the zero landed (°)': zeroed ? round(jump, 1) : 'n/a',
+        'travel in the 0.2 s before the zero (°)': zeroed ? round(drift, 1) : 'n/a',
       },
       plot,
     }
