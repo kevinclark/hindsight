@@ -28,15 +28,17 @@ const explainer = (f: Finding) => f.explainedBy && `${f.explainedBy.rule}${f.exp
 const alert = (text: string, time: number | null, severity: Severity = 'error') => finding('alerts/passthrough', time, { about: text, severity })
 
 describe('links.ts', () => {
-  it('names only rules that exist, never links a rule to itself, and has no cycle', () => {
+  it('names only rules that exist, links a rule to itself only for dropped-with drops, and has no cycle', () => {
     const ids = new Set(RULES.map((r) => r.id))
     for (const l of LINKS) {
       expect(ids.has(l.cause), l.cause).toBe(true)
       expect(ids.has(l.explains), l.explains).toBe(true)
-      expect(l.cause).not.toBe(l.explains)
     }
+    // can/device-dropout names the device it dropped with, and a device always names an earlier one (see the rule), so
+    // that one link may join two findings of the same rule without a loop. No other rule does.
+    expect(LINKS.filter((l) => l.cause === l.explains).map((l) => l.cause)).toEqual(['can/device-dropout'])
     // Depth-first from every rule: reaching a rule already on the path is a cycle.
-    const next = (id: string) => LINKS.filter((l) => l.cause === id).map((l) => l.explains)
+    const next = (id: string) => LINKS.filter((l) => l.cause === id && l.explains !== id).map((l) => l.explains)
     const visit = (id: string, path: string[]): void => {
       expect(path, `cycle: ${[...path, id].join(' → ')}`).not.toContain(id)
       for (const n of next(id)) visit(n, [...path, id])
