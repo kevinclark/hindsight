@@ -41,6 +41,10 @@
   // Grey items that ask a person to do something (hold a tag up to a camera) are steps, not context.
   const steps = $derived(input.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule)))
   const greys = $derived(input.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)))
+  // Lines the tool can never judge are listed by name under the table, not as rows.
+  const liveLines = $derived(onchecks.filter((l) => l.state !== 'by eye' && l.state !== 'not yet'))
+  const byEyeLines = $derived(onchecks.filter((l) => l.state === 'by eye'))
+  const notYetLines = $derived(onchecks.filter((l) => l.state === 'not yet'))
   const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
 
   /** Print as PDF (the title names the file), then save the phone card. */
@@ -57,14 +61,15 @@
 <article class="print-only report" aria-hidden="true">
   <header>
     <h1>Foresight pit check</h1>
-    <p class="meta">Read {stamp(readAt)} · connection: {input.state}{input.url ? ` (${input.url})` : ''} · {input.message}</p>
-    <p class="meta">{input.robot ?? 'robot not identified'} · Hindsight {VERSION}</p>
   </header>
 
   <section class={`verdict v-${verdict.replace(' ', '-').toLowerCase()}`}>
     <p class="big">{verdict}</p>
     <p class="why">{why}</p>
   </section>
+
+  <p class="meta">Read {stamp(readAt)} · connection: {input.state}{input.url ? ` (${input.url})` : ''} · {input.message}</p>
+  <p class="meta">{input.robot ?? 'robot not identified'} · Hindsight {VERSION}</p>
 
   {#if build}<p class={`build ${build.uncommitted ? 'dirty' : ''}`}><strong>Code:</strong> {build.text}</p>{/if}
 
@@ -86,11 +91,13 @@
   <h2>Pit checklist</h2>
   <table>
     <tbody>
-      {#each onchecks as l (l.line)}
+      {#each liveLines as l (l.line)}
         <tr class={l.state.replace(' ', '-')}><th scope="row">{l.line}</th><td class="mark">{MARK[l.state]}</td><td class="d">{l.detail}</td></tr>
       {/each}
     </tbody>
   </table>
+  {#if byEyeLines.length}<p class="small"><strong>By eye (a person checks):</strong> {byEyeLines.map((l) => l.line).join(' · ')}</p>{/if}
+  {#if notYetLines.length}<p class="small"><strong>Not built yet:</strong> {notYetLines.map((l) => l.line).join(' · ')}</p>{/if}
 
   <h2>Readings</h2>
   <p>Battery {battery === null ? '—' : `${battery.toFixed(2)} V`} · Controllers {controllers.map((c, i) => `${i}: ${c}`).join(' · ') || '—'}</p>
@@ -127,7 +134,7 @@
   td { padding: 0.08rem 0.4rem 0.08rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
   td.mark { font-weight: 700; width: 5rem; white-space: nowrap; }
   td.d { color: var(--muted); font-size: 8pt; }
-  tr.ok .mark { color: var(--go); }
+  tr.ok .mark { color: var(--muted); }
   tr.red .mark { color: var(--error); }
   tr.amber .mark { color: var(--warning); }
   tr.not-checked .mark, tr.not-yet .mark, tr.context .mark, tr.by-eye .mark { color: var(--muted); }

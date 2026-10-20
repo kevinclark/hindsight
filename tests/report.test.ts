@@ -194,9 +194,19 @@ describe('Foresight card', () => {
   it('puts the verdict word first, stamps the time read, and flags uncommitted code', () => {
     const c = foresightCard(base)
     expect(c.heading).toBe('NO-GO')
-    expect(c.context).toContain('2026-10-19 17:36:04')
+    expect(c.context).not.toContain('2026')
+    expect(c.footer[0]).toContain('2026-10-19 17:36:04')
+    expect(c.footer.join(' ')).toContain('123eec6')
+    expect(c.footer.join(' ')).not.toContain('123eec6268b7')
     expect(c.uncommitted).toBe(true)
     expect(c.uncommittedText).toContain('robot')
+  })
+  it('shows a 40-character sha as 7 characters in an item\'s number line', () => {
+    const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
+    const finding = { rule: 'build/dirty', title: `Robot ran uncommitted changes on top of ${sha.slice(0, 7)}`, evidence: { 'git sha': sha } }
+    const item = { finding, level: 'red', proof: '', action: 'x' } as unknown as ForesightReportInput['items'][number]
+    const text = JSON.stringify(foresightCard({ ...base, items: [item] }).items)
+    expect(text).not.toContain(sha)
   })
   it('a withdrawn verdict prints as NOT CHECKED, never GO', () => {
     const c = foresightCard({ ...base, verdict: 'NOT CHECKED', why: 'not connected', build: null })
