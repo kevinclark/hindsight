@@ -6,7 +6,9 @@
 import { analyzeFiles, analyzeFilesWithCode, type AnalyzeResult, type InputFile } from '../analyze.ts'
 import type { CodeFolder } from '../code/limit-lines.ts'
 import { has, num, values, type Match } from '../match/match.ts'
-import { heldAt, makeGrid, median, resample } from '../match/series.ts'
+import { heldAt } from '../match/series.ts'
+import { MatchView } from '../rules/view.ts'
+import { worstFollowerSecondsOff } from '../rules/mech/follower-trace.ts'
 import { powerReport } from '../power/power-report.ts'
 import { RULES, type Report } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
@@ -21,7 +23,7 @@ import { coverage, worstAcross, type LoggedState } from '../coverage/coverage.ts
  * shape is the same as this one's. Bump it whenever MatchSummary changes in a way old code can't be drawn from
  * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it.
  */
-export const SUMMARY_SHAPE = 1
+export const SUMMARY_SHAPE = 2
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
@@ -61,6 +63,11 @@ export interface MatchSummary {
   clockNote: string | null
   event: string
   matchLabel: string
+  /**
+   * /DriverStation/MatchType as logged: 0 none, 1 practice, 2 qualification, 3 elimination. Null when the log has no
+   * such signal. The Trends labels a log with no match number from it.
+   */
+  matchType?: number | null
   onField: boolean
   /** Battery ID logged at the start of the match (null until the robot code logs one). */
   batteryId: string | null
@@ -83,8 +90,10 @@ export interface MatchMetrics {
   secondsUnder7: number | null
   chargeAh: number | null
   resistanceMilliohms: number | null
-  /** Worst follower's median speed as % of its leader, over steady running (100 = matched). */
-  followerSpeedPct: number | null
+  /** Seconds the worst follower ran more than 15 % off its leader at steady speed: the number mech/follower-mismatch fires on (1 s). */
+  followerSecondsOff: number | null
+  /** The brownout setting the log recorded (V); power/margin's line is this + 1.0 V. Null when not logged. */
+  brownoutVolts: number | null
   /** Share of loops over 20 ms in auto (where overruns concentrate), %. */
   loopOverrunPct: number | null
   /** Share of accepted vision poses more than 0.5 m from odometry, worst camera, %. */
@@ -146,7 +155,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
   const atStart = ids && match.matchStart !== null ? heldAt(ids, match.matchStart) : undefined
   return {
     fileName: match.fileName, fileSize, ...when,
-    event: match.event, matchLabel: match.matchLabel, onField: match.fms,
+    event: match.event, matchLabel: match.matchLabel, matchType: matchTypeOf(match), onField: match.fms,
     batteryId: atStart || null,
     build: { sha: match.build.sha.slice(0, 7), branch: match.build.branch, uncommitted: /uncommitted/i.test(match.build.dirty) },
     rules, metrics: metrics(match), timing, problems: [],
@@ -187,7 +196,8 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
   const nums = (k: keyof MatchMetrics) => pieces.map((p) => p.metrics[k]).filter((v): v is number => v !== null)
   const pick = (k: keyof MatchMetrics, f: (xs: number[]) => number) => (nums(k).length ? f(nums(k)) : null)
   const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
-  const worstFrom100 = (xs: number[]) => xs.reduce((a, b) => (Math.abs(100 - b) > Math.abs(100 - a) ? b : a))
+  // The line power/margin judged the lowest voltage against is the setting of the piece that had it.
+  const lowest = pieces.filter((p) => p.metrics.minVolts !== null).reduce<MatchSummary | null>((a, b) => (a && a.metrics.minVolts! <= b.metrics.minVolts! ? a : b), null)
   return {
     ...first,
     fileSize: sum(pieces.map((p) => p.fileSize)),
@@ -200,7 +210,8 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
       secondsUnder7: pick('secondsUnder7', sum),
       chargeAh: pick('chargeAh', sum),
       resistanceMilliohms: pick('resistanceMilliohms', (xs) => Math.max(...xs)),
-      followerSpeedPct: pick('followerSpeedPct', worstFrom100),
+      followerSecondsOff: pick('followerSecondsOff', (xs) => Math.max(...xs)),
+      brownoutVolts: lowest?.metrics.brownoutVolts ?? null,
       loopOverrunPct: pick('loopOverrunPct', (xs) => Math.max(...xs)),
       visionOutlierPct: pick('visionOutlierPct', (xs) => Math.max(...xs)),
     },
@@ -246,33 +257,22 @@ function metrics(match: Match): MatchMetrics {
     secondsUnder7: p ? p.secondsUnder7 : null,
     chargeAh: p ? p.chargeAh : null,
     resistanceMilliohms: p?.resistanceOhms ? p.resistanceOhms * 1000 : null,
-    followerSpeedPct: followerSpeed(match),
+    followerSecondsOff: followerSecondsOff(match),
+    brownoutVolts: p && Number.isFinite(p.brownoutVolts) ? p.brownoutVolts : null,
     loopOverrunPct: loopOverrun(match),
     visionOutlierPct: visionOutliers(match),
   }
 }
 
-/** Worst follower's median speed vs its leader at steady speed (same steady test as mech/follower-mismatch). */
-function followerSpeed(match: Match): number | null {
-  if (match.matchStart === null || match.matchEnd === null) return null
-  const grid = makeGrid(match.matchStart, match.matchEnd, 0.02)
-  let worst: number | null = null
-  for (const g of match.profile.motorGroups.filter((x) => x.sameLoop)) {
-    const keys = g.motors.map((m) => m.velocity).filter((k): k is string => !!k && has(match, k))
-    if (keys.length < 2) continue
-    const speeds = keys.map((k) => resample(num(match, k)!, grid).map(Math.abs))
-    for (let k = 1; k < speeds.length; k++) {
-      const ratios: number[] = []
-      for (let i = 25; i < grid.length; i++) {
-        const lead = speeds[0][i]
-        if (lead > 20 && Math.abs(lead - speeds[0][i - 25]) <= 0.03 * lead) ratios.push(speeds[k][i] / lead)
-      }
-      if (ratios.length < 50) continue
-      const pct = 100 * median(ratios)
-      if (worst === null || Math.abs(100 - pct) > Math.abs(100 - worst)) worst = pct
-    }
-  }
-  return worst
+/** Seconds the worst follower ran more than 15 % off its leader: mech/follower-mismatch's own trace code. */
+function followerSecondsOff(match: Match): number | null {
+  return worstFollowerSecondsOff(new MatchView(match))
+}
+
+/** /DriverStation/MatchType as logged (last value), or null when the log has no such signal. */
+function matchTypeOf(match: Match): number | null {
+  const v = num(match, match.profile.signals.matchType)
+  return v && v.v.length ? v.v[v.v.length - 1] : null
 }
 
 function loopOverrun(match: Match): number | null {

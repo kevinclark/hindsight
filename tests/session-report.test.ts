@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE } from '../src/report/card.ts'
 import { bottomLine, buildText, cameBack, gridCells, gridModel, sessionBase, sessionCard, sessionModel, trendsModel, wrongIn } from '../src/report/session-model.ts'
-import { TREND_METRICS } from '../src/session/trends.ts'
+import { trendRows } from '../src/session/trends.ts'
 import { groupSessions, mergeFindings, type Session } from '../src/session/session.ts'
 import { summarizeLog, type MatchSummary } from '../src/session/summary.ts'
 import { triage, type IssueEvent } from '../src/triage/history.ts'
@@ -12,7 +12,7 @@ import { buildSessionJson } from '../src/session/export.ts'
 import { PAGE1_ROWS, crashedNote } from '../src/report/session-model.ts'
 import { analyzeFixture, CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
 
-const METRICS = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSpeedPct: 90, loopOverrunPct: 5, visionOutlierPct: null }
+const METRICS = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSecondsOff: 2.0, brownoutVolts: 6, loopOverrunPct: 5, visionOutlierPct: null }
 const fit = { profileId: 'p @ main', name: 'Test robot', code: { repo: 'r', branch: 'main', sha: 'abc1234def' }, how: 'signals', note: null, present: 40, total: 40 }
 const finding = (key: string, rule: string, severity: string, title: string, value?: number) => ({
   key, rule, severity, title, when: null, evidence: {}, measured: value === undefined ? undefined : [{ label: 'slowest follower', value, unit: '%', threshold: 85 }],
@@ -95,22 +95,26 @@ describe('session report model', () => {
 
 describe('session trends', () => {
   const s = three()
-  it('use the same metrics as the Trends component and one scale per number, the dashed line included', () => {
+  it('use the Session view\'s rows, verdicts and order (trendRows) and one scale per number, the dashed line included', () => {
     const t = trendsModel(s.matches)
-    expect(t.panels.map((p) => p.key)).toEqual(TREND_METRICS.map((x) => x.key))
+    expect(t.panels.map((p) => p.key)).toEqual(trendRows(s.matches).map((r) => r.metric.key))
+    expect(t.panels.map((p) => p.verdict)).toEqual(trendRows(s.matches).map((r) => r.verdict))
     const volts = t.panels.find((p) => p.key === 'minVolts')!
     expect(volts.points).toHaveLength(3)
     expect(volts.lineY).not.toBeNull()
     expect(volts.range).toBe('8.00–10.00')
+    expect(volts.verdict).toBe('Under 7 V in 0 of 3 matches')
+    expect(volts.worst).toBe('worst: Q1 8.00 V')
+    expect(volts.points.filter((p) => p.worst).map((p) => p.match)).toEqual(['Qualification 1'])
     // Higher is higher up the chart (smaller y), the line at 7 V sits below every point.
     expect(volts.points[2].y).toBeLessThan(volts.points[0].y)
     expect(volts.lineY!).toBeGreaterThan(volts.points[0].y)
-    expect(t.panels.find((p) => p.key === 'visionOutlierPct')).toMatchObject({ points: [], range: 'not in these logs' })
+    expect(t.panels.find((p) => p.key === 'visionOutlierPct')).toMatchObject({ points: [], range: 'not in these logs', verdict: 'not in these logs' })
   })
   it('batteries get a letter each, so identity never rests on colour; matches with none get no letter', () => {
     const t = trendsModel([match(1, [], { batteryId: 'B-17' }), match(2, [], { batteryId: 'B-02' }), match(3, [], { batteryId: 'B-17' }), match(4, [])], { 'q4.wpilog': '' })
     expect(t.batteries).toEqual([{ letter: 'A', id: 'B-17' }, { letter: 'B', id: 'B-02' }])
-    expect(t.panels[0].points.map((p) => p.letter)).toEqual(['A', 'B', 'A', ''])
+    expect(t.panels.find((p) => p.key === 'minVolts')!.points.map((p) => p.letter)).toEqual(['A', 'B', 'A', ''])
     expect(t.anyUnlabelled).toBe(true)
     // A typed battery counts the same as a logged one.
     expect(trendsModel([match(1, [])], { 'q1.wpilog': 'typed-1' }).panels[0].points[0].letter).toBe('A')

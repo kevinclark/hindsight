@@ -48,7 +48,7 @@ describe('dates and grouping', () => {
     expect(sessions.map((s) => s.matches.length)).toEqual([2, 1, 2])
   })
   it('on-field matches with no event name still make one event; a match split across logs counts once', () => {
-    const metrics = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSpeedPct: null, loopOverrunPct: 5, visionOutlierPct: null }
+    const metrics = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSecondsOff: null, brownoutVolts: 6, loopOverrunPct: 5, visionOutlierPct: null }
     const fit = { profileId: 'p @ main', name: 'p', code: { repo: 'r', branch: 'main', sha: 'abc1234' }, how: 'signals', note: null, present: 40, total: 90 }
     const m = (fileName: string, playedAt: number, matchLabel: string, fired: boolean) => ({
       fileName, fileSize: 1, playedAt, onField: true, event: '', matchLabel, batteryId: null, clockNote: null, problems: [], robot: fit,

@@ -1,7 +1,7 @@
 <!--
   The printed Session report: hidden on screen, the only thing shown under @media print (App.svelte hides the rest).
   Page 1 stands alone (the matches, the bottom line, the merged findings with their confidence in words, the trends
-  as small multiples on one scale, the notes); page 2 is the rule × match grid. Same findings and wording as the
+  as small multiples on one scale with each number's verdict, the notes); page 2 is the rule × match grid. Same findings and wording as the
   Session view (report/session-model.ts), no controls. Severity and confidence are words, battery identity is a
   letter, a grid cell is a symbol: it reads in greyscale (WCAG 2.2 SC 1.4.1).
 -->
@@ -51,8 +51,8 @@
   </section>
 
   <section class="trends">
-    <h2>Per match, one scale per number</h2>
-    <p class="small">Matches left to right: {t.order.join(', ')}.{t.batteries.length ? ' Letters mark the battery: ' : ''}{#each t.batteries as b (b.letter)}<span class="bk"><strong>{b.letter}</strong> = {b.id}</span>{/each}{#if t.batteries.length && t.anyUnlabelled}<span class="bk">no letter = no battery ID</span>{/if}{#if !t.batteries.length}{' '}No battery IDs in these logs.{/if} Dashed line: the rule's line.</p>
+    <h2>Per match: verdict, one scale per number</h2>
+    <p class="small">Matches left to right: {t.order.join(', ')}.{t.batteries.length ? ' Letters mark the battery: ' : ''}{#each t.batteries as b (b.letter)}<span class="bk"><strong>{b.letter}</strong> = {b.id}</span>{/each}{#if t.batteries.length && t.anyUnlabelled}<span class="bk">no letter = no battery ID</span>{/if}{#if !t.batteries.length}{' '}No battery IDs in these logs.{/if} Dashed line: the rule's line. Large dot: the worst match.</p>
     <div class="multiples">
       {#each t.panels as p (p.key)}
         <figure>
@@ -61,11 +61,12 @@
             <svg viewBox={`0 0 ${t.width} ${t.height}`} role="img" aria-label={`${p.label} per match`}>
               {#if p.lineY !== null}<line class="ref" x1="6" x2={t.width - 6} y1={p.lineY} y2={p.lineY} />{/if}
               {#each p.points as pt (pt.id)}
-                <circle cx={pt.x} cy={pt.y} r="3.2" class="pt" />
+                <circle cx={pt.x} cy={pt.y} r={pt.worst ? 3.6 : 2.6} class={pt.worst ? 'pt worst' : 'pt'} />
                 {#if pt.letter}<text x={pt.x + 4.5} y={pt.y - 3.5} class={`lt ${crowded ? 'small' : ''}`}>{pt.letter}</text>{/if}
               {/each}
             </svg>
             <div class="range">{p.range}</div>
+            <div class="verdict">{p.verdict}</div>
           {:else}
             <p class="range">not in these logs</p>
           {/if}
@@ -134,6 +135,8 @@
   figcaption span, .range { color: var(--muted); font-size: 6.5pt; }
   .multiples svg { width: 100%; height: auto; display: block; overflow: visible; border-bottom: 1px solid var(--border); }
   .pt { fill: var(--fg); }
+  .pt.worst { fill: var(--fg); stroke: var(--bg); stroke-width: 0.8; }
+  .verdict { font-size: 6.5pt; line-height: 1.1; margin-top: 0.05rem; }
   .lt.small { font-size: 5px; }
   .lt { font-size: 9px; font-weight: 700; fill: var(--fg); }
   .ref { stroke: var(--muted); stroke-dasharray: 3 3; stroke-width: 0.8; }
