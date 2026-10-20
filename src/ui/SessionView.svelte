@@ -12,6 +12,9 @@
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
   import { clearCached, fileKey, loadCached, saveCached } from '../session/cache.ts'
+  import { staleNote } from '../session/stale.ts'
+  import { changeText, diffFindings, snapshotFindings, type FindingChange, type FindingSnapshot } from '../session/changes.ts'
+  import { VERSION } from '../version.ts'
   import type { IssueEvent } from '../triage/history.ts'
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
@@ -46,20 +49,28 @@
   // How many summaries this browser holds, and whether saving works here (a private window or Safari from disk may refuse).
   let savedCount = $state(0)
   let saveFailed = $state(false)
+  // Summaries on the page that an older Hindsight read (restored after an update), by log file name: shown, but
+  // not reused as if current. "Read again" replaces them.
+  let stale = $state<Record<string, { version?: string; savedAt: string }>>({})
+  // Saved summaries too old to draw (another shape): only counted.
+  let hiddenOld = $state(0)
   // Restoring finishes before any load reads the cache, so a folder chosen right after a reload reuses it.
   const ready = loadCached().then((saved) => {
     // One per file name (the newest), and only those read with the robot picked for that log now.
-    const newest = new Map<string, (typeof saved)[number]>()
-    for (const c of saved) {
+    const newest = new Map<string, (typeof saved.current)[number]>()
+    for (const c of [...saved.current, ...saved.stale]) {
       const prev = newest.get(c.summary.fileName)
       if (!prev || c.savedAt > prev.savedAt) newest.set(c.summary.fileName, c)
     }
     const usable = [...newest.values()].filter((c) => reusable(c.summary, c.summary.fileName))
+    const oldRead = new Set(saved.stale.map((c) => c.key))
     for (const c of usable) {
-      cache.set(c.key, c.summary)
+      if (oldRead.has(c.key)) stale[c.summary.fileName] = { version: c.version, savedAt: c.savedAt }
+      else cache.set(c.key, c.summary)
       if (!collected.some((s) => s.fileName === c.summary.fileName)) collected.push(c.summary)
     }
-    savedCount = saved.length
+    savedCount = saved.current.length + saved.stale.length + saved.otherShape.length
+    hiddenOld = saved.otherShape.length
     if (usable.length) {
       summaries = [...collected]
       restored = { count: usable.length, savedAt: usable.map((c) => c.savedAt).sort()[0] }
@@ -125,6 +136,10 @@
   const chosenId = $derived(session && session.matches.every((m) => m.robot.how === 'chosen by you') && robots.length === 1 ? robots[0].robot.profileId : null)
   const notes = $derived([...new Set(session ? session.matches.map((m) => m.robot.note).filter((n): n is string => !!n) : [])])
 
+  const staleShown = $derived(summaries.filter((m) => stale[m.fileName]).map((m) => stale[m.fileName]))
+  const sessionIsStale = $derived(!!session && session.matches.some((m) => (m.pieces ?? [m.fileName]).some((n) => stale[n])))
+  const staleText = $derived(staleNote(staleShown, hiddenOld))
+
   function readStore(key: string): Record<string, string> {
     try { return JSON.parse(localStorage.getItem(key) ?? '{}') } catch { return {} }
   }
@@ -132,7 +147,7 @@
     try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* private window: not remembered */ }
   }
 
-  async function load(list: FileList | File[] | null) {
+  async function load(list: FileList | File[] | null, { fresh = false }: { fresh?: boolean } = {}) {
     await ready
     const chosen = Array.from(list ?? []).filter((f) => /\.wpilog$/i.test(f.name))
     if (chosen.length === 0) { problems = ['No .wpilog files in what you chose. To load a folder, use "Choose a folder…" (dragging a folder in only works for the files themselves).']; return }
@@ -148,12 +163,13 @@
       try {
         const key = fileKey(file)
         const saved = cache.get(key)
-        const summary = reusable(saved, file.name) ? saved : summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, chosenRobot(file.name), [...PROFILES, ...stored])
+        const summary = !fresh && reusable(saved, file.name) ? saved : summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, chosenRobot(file.name), [...PROFILES, ...stored])
         if (summary && summary !== saved) {
           cache.set(key, summary)
           saveCached(key, $state.snapshot(summary) as MatchSummary).then((ok) => { if (ok) savedCount++; else saveFailed = true })
         }
         if (summary) {
+          delete stale[summary.fileName]
           const old = collected.findIndex((s) => s.fileName === summary.fileName)
           if (old >= 0) collected.splice(old, 1)
           collected.push(summary)
@@ -169,6 +185,63 @@
     }
     publish()
     withoutFile = collected.filter((s) => !files.has(s.fileName)).length
+  }
+
+  /** Start over: clear the summaries on the page and saved in this browser. What the student wrote down stays. */
+  async function newSession() {
+    const n = summaries.length
+    if (!window.confirm(`Start a new session? This clears the ${n} log summar${n === 1 ? 'y' : 'ies'} on this page and saved in this browser. Moved logs, session names, battery ids and known-issue marks are kept.`)) return
+    await clearCached()
+    cache.clear()
+    files.clear()
+    collected.length = 0
+    summaries = []
+    selectedId = null
+    progress = null
+    problems = []
+    restored = null
+    withoutFile = 0
+    savedCount = 0
+    saveFailed = false
+    heapMB = null
+    stale = {}
+    hiddenOld = 0
+    reread = null
+    pendingReread = null
+  }
+
+  // What the last "Read again" changed, for the session it was run on (until dismissed or a new session starts).
+  let reread = $state<{ sessionId: string; changes: FindingChange[]; dismissed: boolean } | null>(null)
+  // A "Read again" waiting for the student to choose the folder, with the findings as they stood when it was pressed.
+  let pendingReread: { names: string[]; before: FindingSnapshot[] } | null = null
+  let rereadInput: HTMLInputElement | undefined = $state()
+
+  /** Read every log of this session again with this Hindsight, ignoring the saved summaries, and see what changed. */
+  function readAgain(s: Session) {
+    const names = s.matches.flatMap((m) => m.pieces ?? [m.fileName])
+    const before = snapshotFindings(mergeFindings(s))
+    if (names.every((n) => files.has(n))) void rereadLogs(names, before, [])
+    else {
+      // The button press is the click the browser needs to open the folder chooser.
+      pendingReread = { names, before }
+      rereadInput?.click()
+    }
+  }
+  async function rereadChosen(list: FileList | null) {
+    const pending = pendingReread
+    pendingReread = null
+    if (pending) await rereadLogs(pending.names, pending.before, Array.from(list ?? []))
+    if (rereadInput) rereadInput.value = ''
+  }
+  async function rereadLogs(names: string[], before: FindingSnapshot[], chosen: File[]) {
+    const picked = new Map(chosen.map((f) => [f.name, f]))
+    const use = names.map((n) => picked.get(n) ?? files.get(n)).filter((f): f is File => !!f)
+    if (use.length === 0) { problems = ["None of this session's logs were in what you chose, so nothing was read again."]; return }
+    await load(use, { fresh: true })
+    const missing = names.filter((n) => !picked.has(n) && !files.has(n))
+    if (missing.length) problems = [...problems, `${missing.length} of this session's logs were not in what you chose, so they were not read again: ${missing.join(', ')}.`]
+    const after = sessions.find((x) => x.matches.some((m) => (m.pieces ?? [m.fileName]).some((n) => names.includes(n))))
+    if (after) reread = { sessionId: after.id, changes: diffFindings(before, snapshotFindings(mergeFindings(after))), dismissed: false }
   }
 
   // The student picked the robot for every log in this session: read them again with that profile.
@@ -201,9 +274,10 @@
     typedBatteries = { ...typedBatteries, [fileName]: id.trim() }
     writeStore('hindsight.typedBatteries', typedBatteries)
   }
+  const changesFor = (s: Session) => (reread && reread.sessionId === s.id ? reread.changes : undefined)
   function download() {
     if (!session) return
-    downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1))
+    downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(session, issues, typedBatteries, changesFor(session)), null, 1))
   }
   // "Save for Slack": the phone card as a PNG, then the print dialog (Save as PDF; the title names the file).
   const cardOf = (s: Session) => buildCard(sessionCard(sessionModel(s, issues, typedBatteries)))
@@ -226,7 +300,7 @@
     api.selectSession = (id: string) => { selectedId = id }
     api.sessionFile = () => (session ? `${sessionBase(session.label)}.session-findings.json` : null)
     api.sessionBase = () => (session ? sessionBase(session.label) : null)
-    api.sessionFindingsJson = () => (session ? JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1) : null)
+    api.sessionFindingsJson = () => (session ? JSON.stringify(buildSessionJson(session, issues, typedBatteries, changesFor(session)), null, 1) : null)
     api.sessionCardPng = async () => (session ? await cardToPngDataUrl(cardOf(session)) : null)
     api.sessionReport = () => (session ? sessionModel(session, issues, typedBatteries) : null)
   })
@@ -280,6 +354,8 @@
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
   <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
+  {#if summaries.length}<button class="button" onclick={newSession} title="Clears the log summaries on this page and saved in this browser. Moved logs, session names, battery ids and known-issue marks are kept.">New session</button>{/if}
+  <input type="file" webkitdirectory multiple hidden data-reread-input bind:this={rereadInput} onchange={(e) => rereadChosen((e.currentTarget as HTMLInputElement).files)} />
   {#if progress}
     <span class="progress" role="status">
       {progress.done} of {progress.total} logs{progress.done < progress.total ? ` · reading ${progress.current}` : ''} ·
@@ -296,6 +372,8 @@
   </p>
 {/if}
 
+{#if staleText}<p class="note warn" data-stale-note>{staleText}</p>{/if}
+
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
@@ -308,11 +386,26 @@
   <section class="head">
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
     <span class="actions">
+      <button class="button" class:prominent={sessionIsStale} onclick={() => readAgain(session)} title="Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, it asks for the folder.">Read again</button>
       <button class="button" onclick={download}>Download for Claude</button>
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
   </section>
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
+  {#if reread && reread.sessionId === session.id && !reread.dismissed}
+    <section class="changed" data-reread-changes>
+      {#if reread.changes.length === 0}
+        <p class="note">Read again with Hindsight {VERSION}: no finding changed. <button class="link" onclick={() => (reread!.dismissed = true)}>Dismiss</button></p>
+      {:else}
+        <h3>What changed when these logs were read again (Hindsight {VERSION}) <button class="link" onclick={() => (reread!.dismissed = true)}>Dismiss</button></h3>
+        <ul class="changes">
+          {#each reread.changes as c (c.key)}
+            <li class={c.severity}><span aria-hidden="true">{SEV_ICON[c.severity]}</span> <span class="sr">{SEV_WORD[c.severity]}: </span>{changeText(c)}</li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
   {#each robots as r (r.robot.profileId)}
     <p class="note">Robot: <strong>{r.robot.name}</strong>, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
   {/each}
@@ -434,6 +527,10 @@
   .sessions button { min-height: 24px; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
   .sessions button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
   .sessions small { color: var(--muted); }
+  .button.prominent { border-color: var(--warning); color: var(--warning); font-weight: 600; }
+  .changed h3 { margin-top: 1rem; }
+  .changed .error { color: var(--error); }
+  .changed .warning { color: var(--warning); }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   h2 { font-size: 1.2rem; margin: 0; }
