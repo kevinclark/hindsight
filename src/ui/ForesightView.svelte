@@ -15,6 +15,8 @@
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
   import { ASSISTED_RULES, markOnchecks } from '../foresight/onchecks.ts'
+  import { SNAPSHOT_RULES } from '../foresight/snapshot-checks.ts'
+  import { parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import ForesightReport from './ForesightReport.svelte'
 
   let { history, onPitCheck }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void } = $props()
@@ -29,6 +31,22 @@
   let status = $state.raw<LiveStatus | null>(null)
   let recorded = false
   let open = $state<Record<string, boolean>>({})
+  // A robot snapshot (tools/robot-snapshot.py) dropped here: Foresight never reads the diagnostic server itself.
+  let snapshot = $state.raw<Snapshot | null>(null)
+  let snapshotProblem = $state<string | null>(null)
+
+  async function loadSnapshot(files: FileList | null | undefined) {
+    const file = files?.[0]
+    if (!file) return
+    try {
+      snapshot = parseSnapshot(await file.text(), file.name)
+      snapshotProblem = null
+    } catch (error) {
+      snapshot = null
+      snapshotProblem = error instanceof Error ? error.message : String(error)
+    }
+    live?.setSnapshot(snapshot)
+  }
 
   function connect() {
     live?.disconnect()
@@ -36,6 +54,7 @@
     // Compared with the last passing check from before this connection, not with this one.
     const since = lastPassingSha(history)
     live = new ForesightLive({ address, lastPassingSha: since, onUpdate: (s) => { status = s; record(s) } })
+    live.setSnapshot(snapshot)
     live.start()
   }
   function disconnect() {
@@ -84,17 +103,21 @@
       url: status.url, state: status.state, message: status.message, topicsAnnounced: status.topicsAnnounced, signalsAskedFor: status.subscribed.length,
       valuesReceived: status.valuesReceived, robotTime: status.robotTime, codeStart: status.codeStart, codeStartFrom: status.codeStartFrom,
       robot: status.profile ? profileId(status.profile) : null, neverSent, battery, controllers,
+      snapshot: snapshot && { file: snapshot.fileName, takenAt: snapshot.takenAt, devices: snapshot.devices.length, stopped: snapshot.stopped, responseShapes: snapshot.responseShapes, used: checked?.snapshotUsed ?? null },
       verdict: checked ? { verdict: checked.verdict.verdict, reason: checked.verdict.reason, items: checked.verdict.items.map((i) => ({ level: i.level, rule: i.finding.rule, title: i.finding.title })), notChecked: checked.verdict.notChecked, crashed: checked.verdict.crashed, build: checked.match.build } : result,
     }
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
   }
   const onchecks = $derived(markOnchecks(checked))
+  const snapshotWhy = $derived(checked && !checked.snapshotUsed ? checked.report.skipped.find((s) => s.rule === SNAPSHOT_RULES[0])?.reason ?? null : null)
   let reportView = $state<{ save: () => Promise<string | null> }>()
   let saveProblem = $state<string | null>(null)
   const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
 
+<!-- A file dropped anywhere but the snapshot box would open in this tab and end the check. -->
+<svelte:window ondragover={(e) => e.preventDefault()} ondrop={(e) => e.preventDefault()} />
 <div class="screen-only">
 {#if field}
   <section class="field" role="alert">
@@ -107,6 +130,16 @@
     <datalist id="foresight-addresses">{#each ADDRESSES as a (a.value)}<option value={a.value}>{a.label}</option>{/each}</datalist>
     {#if connected}<button class="button" onclick={disconnect}>Disconnect</button>{:else}<button class="button" onclick={connect}>Connect</button>{/if}
     <span class="status">{status?.message ?? 'Tethered in the pit or queue (USB or Ethernet), robot on, Driver Station connected. Never on the field.'}</span>
+  </section>
+
+  <section class="connect" aria-label="Robot snapshot" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); loadSnapshot(e.dataTransfer?.files) }}>
+    <label class="button">Robot snapshot… <input type="file" accept=".json,application/json" hidden onchange={(e) => { const input = e.currentTarget as HTMLInputElement; loadSnapshot(input.files); input.value = '' }} /></label>
+    <span class="status">
+      {#if snapshotProblem}{snapshotProblem}
+      {:else if !snapshot}For the CAN devices, CANcoder offsets, swerve ratio and current limits: once this page has a verdict, run <code>python3 tools/robot-snapshot.py</code> (robot on, not enabled), then choose or drop its <code>snapshot.json</code> here. Don't press Clear Faults or blink first.
+      {:else}<code>{snapshot.fileName}</code>, taken {snapshot.takenAtLocal}: {snapshot.devices.length} devices{snapshot.stopped ? ' (stopped early: incomplete)' : ''}{checked ? (checked.snapshotUsed ? '. Used for this check.' : `. Not used: ${snapshotWhy}`) : ''}
+        <button class="button" onclick={() => { snapshot = null; live?.setSnapshot(null) }}>Remove</button>{/if}
+    </span>
   </section>
 
   <section class={`verdict v-${verdict.replace(' ', '-').toLowerCase()}`} aria-live="polite">
@@ -139,7 +172,7 @@
     {/if}
     {#if checked.verdict.notChecked.length || checked.verdict.crashed.length}
       <details class="notchecked">
-        <summary>Not checked or partly checked: {checked.verdict.notChecked.length + checked.verdict.crashed.length} of {FORESIGHT_RULES.length} checks</summary>
+        <summary>Not checked or partly checked: {checked.verdict.notChecked.length + checked.verdict.crashed.length} of {FORESIGHT_RULES.length + SNAPSHOT_RULES.length} checks</summary>
         <ul>
           {#each checked.verdict.notChecked as s (s.rule)}<li><code>{s.rule}</code>: {s.reason}</li>{/each}
           {#each checked.verdict.crashed as s (s.rule)}<li><code>{s.rule}</code> crashed: {s.reason}</li>{/each}
@@ -186,6 +219,7 @@
 <ForesightReport bind:this={reportView} {status} {checked} {verdict} {why} {onchecks} {battery} {controllers} />
 
 <style>
+  .connect + .connect { margin-top: 0.5rem; }
   .connect { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; }
   .connect input { font: inherit; padding: 0.25rem 0.4rem; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }
   .status { color: var(--muted); font-size: 0.85rem; flex: 1 1 18rem; }

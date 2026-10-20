@@ -255,6 +255,32 @@ export const offseason2026: RobotProfile = {
       },
       { mechanism: 'Hood', notCheckable: 'the hood has no absolute encoder in the log, so its zero can only be checked once the robot code logs a "zeroed" flag' },
     ],
+    // From the code at cb68b20. The same values at event-calgames d339f29: DumperSwerveConstants.java is identical there;
+    // only the intake lines moved (offseason2026Event overrides that `where`).
+    snapshot: {
+      devices: [
+        // ModuleConstants(..., cancoderID, offset): CANcoders 0-3, each read by its module's steer motor
+        // (getTurnConfig: FeedbackRemoteSensorID = cancoderID, DumperSwerveConstants.java:214). An offset written as
+        // fromRotations(x).plus(k180deg) is applied as x + 0.5 wrapped into -0.5..0.5 (Rotation2d.getRotations()).
+        ...swerveModules.map((m, i) => ({
+          name: `${m} CANcoder`,
+          model: 'CANcoder' as const,
+          canId: i,
+          magnetOffset: [-0.337646 + 0.5, -0.145264, -0.42627 + 0.5, 0.4548 + 0.5 - 1][i],
+          readBy: swerveCanIds[m].steer,
+          where: `DumperSwerveConstants.java:${[127, 132, 138, 144][i]}`,
+        })),
+        { name: 'Intake CANcoder', model: 'CANcoder', canId: 4, magnetOffset: -0.4106, readBy: 8, where: 'SlapdownSubsystem.java:309 (getCancoderConfig), Robot.java:75' },
+        { name: 'Gyro (Pigeon)', model: 'Pigeon 2', canId: 0, where: 'DumperSwerveConstants.java getGyroID()' },
+      ],
+      ratios: [
+        // SDS Mk5n R2: 6.03 motor turns per wheel turn, 2 in wheel radius (SwerveConstants.java:114), so motor
+        // rotations per meter of travel.
+        { group: 'Drive', sensorToMechanism: 6.03 / (2 * Math.PI * 0.0508), where: 'DumperSwerveConstants.java:109 (gear ratio) and :184 (SensorToMechanismRatio)' },
+        // Mk5n steer 287/11, fused with the CANcoder: the ratio is rotor-to-sensor, sensor-to-mechanism 1.
+        { group: 'Steer', rotorToSensor: 287 / 11, sensorToMechanism: 1, where: 'DumperSwerveConstants.java:115 (gear ratio) and :215-216' },
+      ],
+    },
   },
 }
 
@@ -307,6 +333,16 @@ export const offseason2026Event: RobotProfile = {
         return [group]
     }
   }),
+
+  // The intake CANcoder's lines moved at d339f29: MagnetOffset SlapdownSubsystem.java:329, its reader (Talon FX 8,
+  // FeedbackRemoteSensorID = 4) :272, and CANcoderIO(4…) Robot.java:76. Values unchanged.
+  foresight: {
+    ...offseason2026.foresight!,
+    snapshot: {
+      ...offseason2026.foresight!.snapshot!,
+      devices: offseason2026.foresight!.snapshot!.devices.map((d) => (d.name === 'Intake CANcoder' ? { ...d, where: 'SlapdownSubsystem.java:329 (getCancoderConfig), Robot.java:76' } : d)),
+    },
+  },
 
   zeroing: offseason2026.zeroing.map((z) =>
     z.zeroCurrent

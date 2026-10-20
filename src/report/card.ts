@@ -25,6 +25,8 @@ export interface CardItem {
   title: string
   /** The one decisive number, with its label: "brownout onsets: 53". */
   number: string
+  /** A short name ("roboRIO brownout (Qualification 42)"): an error left off the card is still named by it, in one line. */
+  short?: string
 }
 
 export interface CardModel {
@@ -124,18 +126,29 @@ export function buildCard(model: CardModel): Card {
   })
 
   const moreHeight = 36 * 1.25 + 14
-  let shown = 0
-  let used = 0
-  const room = CARD_MAX_HEIGHT - y - footerHeight
-  for (const b of itemBlocks) {
-    const remaining = itemBlocks.length - shown - 1
-    const need = used + b.height + (remaining > 0 ? moreHeight : 0)
-    if (need > room) break
-    used += b.height
-    shown++
+  const fit = (room: number) => {
+    let shown = 0, used = 0
+    for (const b of itemBlocks) {
+      const remaining = itemBlocks.length - shown - 1
+      if (used + b.height + (remaining > 0 ? moreHeight : 0) > room) break
+      used += b.height
+      shown++
+    }
+    // Never an empty list when there are findings: one item is shown even if that pushes the card past 4:5.
+    return shown === 0 && itemBlocks.length ? 1 : shown
   }
-  // Never an empty list when there are findings: one item is shown even if that pushes the card past 4:5.
-  if (shown === 0 && itemBlocks.length) shown = 1
+  // Errors that don't fit are still named, in one line under "+N more" (an error that happened once can still lose a match).
+  const alsoLines = (shown: number) => {
+    const names = new Map<string, number>()
+    for (const it of model.items.slice(shown)) if (it.tone === 'error' && it.short) names.set(it.short, (names.get(it.short) ?? 0) + 1)
+    if (names.size === 0) return []
+    const n = [...names.values()].reduce((a, b) => a + b, 0)
+    const parts = [...names].map(([name, k]) => (k > 1 ? `${name} ×${k}` : name))
+    return wrap(`Also ${n} error${n === 1 ? '' : 's'}: ${parts.join('; ')}`, 32, INNER, 2)
+  }
+  // The line adds height rather than taking an item's place: the card may run up to two lines past 4:5.
+  const shown = fit(CARD_MAX_HEIGHT - y - footerHeight)
+  const also = alsoLines(shown)
   if (itemBlocks.length === 0) {
     add(block(wrap(model.emptyText, 36, INNER, 3), MARGIN, y, 36, COLOR.muted))
   } else {
@@ -145,6 +158,7 @@ export function buildCard(model: CardModel): Card {
       parts.push(`<rect x="${MARGIN}" y="${y}" width="${INNER}" height="2" fill="${COLOR.line}"/>`)
       add(block([`+${hidden} more in the PDF`], MARGIN, y + 14, 36, COLOR.fg, true))
       y += 14
+      if (also.length) { y += 8; add(block(also, MARGIN, y, 32, COLOR.error)) }
     }
   }
 

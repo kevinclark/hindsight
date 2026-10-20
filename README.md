@@ -10,7 +10,8 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
 
 ## Use it
 
-- **Offline (events):** copy `hindsight.html` to the DS laptop and double-click it. Works from `file://`.
+- **Offline (events):** copy `hindsight.html` to the laptop you review and check from (a pit laptop; teams that keep
+  the drive laptop for driving only, as 8033 does, copy the `.dslog` off it) and double-click it. Works from `file://`.
 - Drop one or more `.wpilog` files, plus `.dslog` files. A DS log is matched to the robot log it overlaps on the wall
   clock; one from another match is reported and ignored.
 - **Match** tab: findings, worst first. Each shows its evidence numbers, a plot of the moment, what it might mean,
@@ -45,10 +46,16 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   1080 px phone card (verdict or counts, each error's title and one number, the build with an uncommitted flag, type
   32 px or more) to post as the Slack image, with the PDF attached. Print is always light, whatever the screen is.
   Foresight's report is one page stamped with the time read, so a withdrawn verdict prints as NOT CHECKED, never GO.
+  The Session view has the same button: page 1 is the match count, a bottom line, the merged findings with their
+  confidence in words ("Consistent", "3 of 3 where it could be checked", the measured range and its line), the trends
+  as small multiples (battery identity is a letter, not just a colour) and the notes; page 2 is the rule × match grid.
+  The card is `<label>.session-card.png`, the PDF `<label>.session-report.pdf`.
 - **From the command line**, for Claude or a script: `node --experimental-strip-types scripts/report.ts <out-dir> <log>
   [<dslog>] [-- <log> …]` builds first (`--no-build` skips), drives headless Chrome on `hindsight.html` and writes
   `<log>.report.pdf`, `<log>.card.png` and `<log>.findings.json`. `scripts/chrome-foresight-report-check.ts <out-dir>`
   replays P0 and Q13 as the robot's NT4 stream and writes the Foresight PDFs and cards.
+  `scripts/report.ts --session <out-dir> <log|folder> …` loads them into the Session view and writes, per session,
+  `<label>.session-report.pdf`, `<label>.session-card.png` and `<label>.session-findings.json`.
 - **Ctrl+P** in Match review (any tab) also prints the report, not the app. What the report and card carry out of the
   laptop: the log file names, the build sha and branch, any notes students wrote in the team's history file, and in
   Foresight the robot's address and the controller names as read.
@@ -252,7 +259,7 @@ skips with a message when they aren't there; `fixtures/*.json` are small cuts th
 | `src/rules/rule.ts`, `view.ts`, `run.ts` | how a rule is written, what it can ask about a match, and the runner |
 | `src/triage/` | known issues and the history file |
 | `src/power/` | battery model, resistance from current steps, open-circuit curve, what-ifs, fleet reference |
-| `src/report/` | `findings.json` |
+| `src/report/` | `findings.json`, the Match review, Foresight and Session report models, the phone card |
 | `src/foresight/` | the live pit check: read-only NT4 client and field guard, record store, engine, verdict, earned reds |
 | `src/ui/`, `src/App.svelte` | the page |
 

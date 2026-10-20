@@ -48,6 +48,9 @@ describe('the team\'s pit checklist in Foresight', () => {
     const none = { findings: [], skipped: [], crashed: [] }
     const ok = markOnchecks({ verdict: verdictFor(none, proven), report: none })
     expect(['No motors overheating', 'All device values updating'].map((l) => state(ok, l))).toEqual(['ok', 'ok'])
-    expect(['CANcoder offsets correct and unchanged', 'Log stick in'].map((l) => state(ok, l))).toEqual(['not yet', 'not yet'])
+    expect(state(ok, 'Log stick in')).toBe('not yet')
+    // The snapshot lines are never OK without a snapshot the check used, even when the report says nothing of them.
+    expect(['CANcoder offsets correct and unchanged', 'Swerve ratio unchanged', 'All CAN devices licensed and ID\'d', 'Current limits as the code sets them'].map((l) => state(ok, l))).toEqual(Array(4).fill('not checked'))
+    expect(ok.find((l) => l.line === 'Swerve ratio unchanged')!.detail).toMatch(/no robot snapshot/)
   })
 })

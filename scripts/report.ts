@@ -9,21 +9,29 @@
  *   <log>.report.pdf      Page.printToPDF with the print stylesheet (Letter)
  *   <log>.card.png        the phone card, from the page's own card code
  *   <log>.findings.json   the same builder as "Download for Claude"
+ *
+ *   node --experimental-strip-types scripts/report.ts --session <out-dir> <log|folder> [<log|folder> …] [--no-build] [--dark]
+ *
+ * loads all of them into the Session view (`[data-session-view] input[type=file][multiple][accept=".wpilog"]`) and, for each session found, writes
+ *   <label>.session-report.pdf, <label>.session-card.png, <label>.session-findings.json   (the label made file-safe)
+ * and prints what the view itself lists, so the PDF can be checked against the screen.
  * --dark emulates a dark colour scheme first, to check that print stays light.
  * The log input is selected by its accept list: input[type=file] alone also matches the Snapshot view's .json input.
  */
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const args = process.argv.slice(2)
-const flags = new Set<string>(args.filter((a) => a === '--no-build' || a === '--dark'))
+const flags = new Set<string>(args.filter((a) => a === '--no-build' || a === '--dark' || a === '--session'))
 const [outDir, ...rest] = args.filter((a) => !flags.has(a))
-if (!outDir || rest.length === 0) { console.error('usage: report.ts <out-dir> <log> [<dslog>] [-- <log> …] [--no-build] [--dark]'); process.exit(2) }
+if (!outDir || rest.length === 0) { console.error('usage: report.ts [--session] <out-dir> <log> [<dslog>] [-- <log> …] [--no-build] [--dark]'); process.exit(2) }
 const groups: string[][] = [[]]
 for (const a of rest) { if (a === '--') groups.push([]); else groups.at(-1)!.push(resolve(a)) }
+/** A folder given to --session stands for the .wpilog files in it. */
+const expand = (paths: string[]) => paths.flatMap((p) => (statSync(p).isDirectory() ? readdirSync(p).filter((f) => /\.wpilog$/i.test(f)).sort().map((f) => `${p}/${f}`) : [p]))
 mkdirSync(outDir, { recursive: true })
 if (!flags.has('--no-build')) execSync('npm run build', { stdio: 'inherit' })
 
@@ -60,7 +68,48 @@ const written: string[] = []
 const summaries: object[] = []
 try {
   await start()
-  for (const files of groups) {
+  if (flags.has('--session')) {
+    const files = expand(groups.flat())
+    const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
+    const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
+    await send('Page.enable', {}, sessionId)
+    await send('DOM.enable', {}, sessionId)
+    await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1400, deviceScaleFactor: 1, mobile: false }, sessionId)
+    if (flags.has('--dark')) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, sessionId)
+    await send('Page.navigate', { url: page }, sessionId)
+    await sleep(1000)
+    await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText.trim() === 'Session').click()`)
+    const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
+    const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '[data-session-view] input[type=file][multiple][accept=".wpilog"]' }, sessionId)
+    if (!nodeId) throw new Error('the Session view log input was not found in hindsight.html')
+    await send('DOM.setFileInputFiles', { nodeId, files }, sessionId)
+    // Done when the progress line says "N of N logs" and a session is listed.
+    let ready = false
+    for (let i = 0; i < 1800 && !ready; i++) {
+      await sleep(100)
+      ready = await evalIn(sessionId, `(() => { const m = /^\\s*(\\d+) of (\\d+) logs/.exec(document.querySelector('.progress')?.innerText || ''); return !!m && m[1] === m[2] && !!document.querySelector('.sessions button') })()`)
+    }
+    if (!ready) throw new Error(`the Session view did not finish loading: ${await evalIn(sessionId, `document.querySelector('.progress')?.innerText || document.querySelector('.problem')?.innerText || 'nothing'`)}`)
+    const sessions: { id: string; label: string; matches: number }[] = await evalIn(sessionId, 'hindsight.sessionList()')
+    for (const s of sessions) {
+      await evalIn(sessionId, `hindsight.selectSession(${JSON.stringify(s.id)})`)
+      await sleep(300)
+      const base: string = await evalIn(sessionId, 'hindsight.sessionBase()')
+      if (!(await evalIn(sessionId, `document.querySelector('.head h2')?.innerText.startsWith(${JSON.stringify(s.label)})`))) throw new Error(`session "${s.label}" did not come up on screen`)
+      writeFileSync(`${outDir}/${base}.session-findings.json`, await evalIn(sessionId, 'hindsight.sessionFindingsJson()'))
+      const png: string = await evalIn(sessionId, 'hindsight.sessionCardPng()')
+      writeFileSync(`${outDir}/${base}.session-card.png`, Buffer.from(png.split(',')[1], 'base64'))
+      const { result: pdf } = await send('Page.printToPDF', { printBackground: true, preferCSSPageSize: true, paperWidth: 8.5, paperHeight: 11 }, sessionId)
+      writeFileSync(`${outDir}/${base}.session-report.pdf`, Buffer.from(pdf.data, 'base64'))
+      // What the Session view itself lists (the merged findings), and what the report lists, for checking against each other.
+      const listed: string[] = await evalIn(sessionId, `[...document.querySelectorAll('ul.merged > li')].map(li => li.querySelector('.title').innerText.trim())`)
+      const reported: number = await evalIn(sessionId, `document.querySelectorAll('.sr-find').length`)
+      const model = await evalIn(sessionId, 'hindsight.sessionReport()')
+      summaries.push({ base, matches: s.matches, viewMerged: listed.length, reportRows: reported, foldedOnce: model.onceFold?.count ?? 0, reportFindings: model.findings.length, bottomLine: model.bottomLine })
+      written.push(`${base}.session-report.pdf`, `${base}.session-card.png`, `${base}.session-findings.json`)
+    }
+    await send('Target.closeTarget', { targetId })
+  } else for (const files of groups) {
     const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
     const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Page.enable', {}, sessionId)

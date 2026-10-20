@@ -55,6 +55,8 @@ export interface MatchSummary {
   metrics: MatchMetrics
   timing: { parseMs: number; rulesMs: number }
   problems: string[]
+  /** The code build the log says it ran (/RealMetadata): sha, branch and whether it had uncommitted changes. Absent in summaries made before this was kept. */
+  build?: { sha: string; branch: string; uncommitted: boolean }
   /** The robot profile used for this log, how it was picked, and how many of its signals are in the log. */
   robot: { profileId: string; name: string; code: CodePin; how: ProfileChoice['how']; note: string | null; present: number; total: number }
   /** When one match was recorded in several logs (the robot program restarted mid-match): every log's file name. */
@@ -95,13 +97,15 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
   const rules: MatchSummary['rules'] = {}
   for (const rule of RULES) {
     const skipped = report.skipped.find((s) => s.rule === rule.id)
+    // A rule that crashed is a Hindsight bug and says nothing about the log: not checked, never quiet.
+    const crashed = report.crashed.find((s) => s.rule === rule.id)
     const findings = report.findings.filter((f) => f.rule === rule.id)
     const fullySkipped = skipped && !skipped.reason.startsWith('partly')
     // Grey (info) findings are context, e.g. an alert seen only before the match: they don't count as "fired".
     const fired = findings.some((f) => f.severity !== 'info')
     rules[rule.id] = {
-      status: fired ? 'fired' : fullySkipped ? 'not checked' : 'quiet',
-      reason: skipped?.reason,
+      status: fired ? 'fired' : fullySkipped || crashed ? 'not checked' : 'quiet',
+      reason: crashed ? `crashed: ${crashed.reason}` : skipped?.reason,
       // Plots hold whole series; a session keeps only the words and numbers.
       findings: findings.map((f) => toSummaryFinding(f, rule.nextStep)),
     }
@@ -113,6 +117,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
     fileName: match.fileName, fileSize, ...when,
     event: match.event, matchLabel: match.matchLabel, onField: match.fms,
     batteryId: atStart || null,
+    build: { sha: match.build.sha.slice(0, 7), branch: match.build.branch, uncommitted: /uncommitted/i.test(match.build.dirty) },
     rules, metrics: metrics(match), timing, problems: [],
     robot: robotOf(match),
   }
@@ -155,6 +160,7 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
     ...first,
     fileSize: sum(pieces.map((p) => p.fileSize)),
     batteryId: pieces.find((p) => p.batteryId)?.batteryId ?? null,
+    build: first.build ? { ...first.build, uncommitted: pieces.some((p) => p.build?.uncommitted) } : undefined,
     clockNote: pieces.find((p) => p.clockNote)?.clockNote ?? null,
     rules,
     metrics: {

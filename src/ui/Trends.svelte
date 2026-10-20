@@ -4,18 +4,10 @@
 -->
 <script lang="ts">
   import type { MatchSummary, MatchMetrics } from '../session/summary.ts'
+  import { TREND_METRICS } from '../session/trends.ts'
 
   let { matches, typedBatteries }: { matches: MatchSummary[]; typedBatteries: Record<string, string> } = $props()
 
-  const METRICS: { key: keyof MatchMetrics; label: string; unit: string; digits: number; line?: number }[] = [
-    { key: 'minVolts', label: 'Lowest voltage', unit: 'V', digits: 2, line: 7 },
-    { key: 'secondsUnder7', label: 'Time under 7 V', unit: 's', digits: 1 },
-    { key: 'chargeAh', label: 'Charge drawn', unit: 'Ah', digits: 2 },
-    { key: 'resistanceMilliohms', label: 'Battery + wiring', unit: 'mΩ', digits: 1, line: 20 },
-    { key: 'followerSpeedPct', label: 'Slowest follower vs leader', unit: '%', digits: 0, line: 85 },
-    { key: 'loopOverrunPct', label: 'Auto loops over 20 ms', unit: '%', digits: 1, line: 10 },
-    { key: 'visionOutlierPct', label: 'Vision poses > 0.5 m off', unit: '%', digits: 1, line: 5 },
-  ]
   // Five colours; batteries beyond five also get a letter on the point so none can be confused.
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
   const battery = (m: MatchSummary) => m.batteryId ?? typedBatteries[m.fileName] ?? ''
@@ -36,7 +28,7 @@
 </script>
 
 <div class="multiples">
-  {#each METRICS as metric (metric.key)}
+  {#each TREND_METRICS as metric (metric.key)}
     {@const p = points(metric.key, metric.line)}
     <figure>
       <figcaption>{metric.label} <span>({metric.unit})</span></figcaption>

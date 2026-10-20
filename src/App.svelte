@@ -139,8 +139,10 @@
     const base = current.match.fileName.replace(/\.wpilog$/i, '')
     try { saveProblem = await saveForSlack(`${base}.report`, `${base}.card.png`, reviewCardOf(current)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
   }
-  // Print shows the report instead of the app, in Match review (with a log loaded) and Foresight; other views print as they are.
-  const reportable = $derived((mode === 'review' && !!current) || mode === 'foresight')
+  // Print shows the report instead of the app, in Match review (with a log loaded), Foresight and Session (with a
+  // session selected: SessionView hides its own screen content and prints SessionReport); other views print as they are.
+  let sessionShown = $state(false)
+  const reportable = $derived((mode === 'review' && !!current) || mode === 'foresight' || (mode === 'session' && sessionShown))
 
   // For automated checks (e.g. a test page that already has File objects): window.hindsight.load(files)
   ;(window as unknown as { hindsight: object }).hindsight = {
@@ -187,7 +189,7 @@
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">A pit check was added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
-<div hidden={mode !== 'session'} class:screen-only={reportable}><SessionView {issues} onOpen={openFromSession} /></div>
+<div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} bind:hasSession={sessionShown} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
   <label class="button">
