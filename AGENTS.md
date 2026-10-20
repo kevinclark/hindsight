@@ -4,6 +4,11 @@ Notes for coding agents working in this repository. `README.md` and `docs/` are 
 
 This repository is public (since 2026-10-19). Nothing private goes into code, docs, fixtures or commit messages: no people's names or contact details, no private Slack or mail, no other team's name next to a criticism.
 
+## Landing a branch
+
+- After CI passes on a branch tip, land it with `git merge --no-ff` so the tested commits are the ones on main. If
+  you must rebase, re-run every suite on the rebased result before pushing (165e7dd and 9875905 did).
+
 ## Rules (`src/rules/`)
 
 - Rules are written for a high-school student to read and copy: follow CONTRIBUTING.md, "How a rule should read".
