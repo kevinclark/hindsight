@@ -15,6 +15,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 - A cleanup that must not change what a rule finds is proved, not argued: `npm run golden -- <out.json> <log
   folder> ...` before and after, then `cmp`. It records every finding, evidence value, plot and not-checked
   reason. Rules that never fire on the logs you have are covered only by the unit tests.
+- A new rule adds a "not checked" entry, and one to meta/not-checked's count and evidence, on every log that
+  lacks its keys, so golden can't stay byte-identical. Prove it adds nothing else: strip those from both runs and
+  require zero residual differences per log (2026-10-20: 264 logs, can/device-rebooted).
 
 ## Session summaries (`src/session/`)
 
