@@ -15,6 +15,7 @@ export default rule({
   id: 'foresight/gyro-still-drift',
   title: 'Gyro drift while still',
   severity: 'info',
+  foresightOnly: true,
   who: ['software', 'pit'],
   meaning: 'How much the robot\'s heading changed while it sat disabled. A gyro that drifts while still makes field-relative driving and auto paths slowly turn.',
   causes: [
@@ -26,8 +27,7 @@ export default rule({
   incident: 'CalGames 2026 Q21: 0.49° per 20 s early in the disabled stretch (foresight-proposal.md)',
 
   check(match) {
-    const stretch = match.beforeEnable.at(-1)
-    if (!stretch) return // a match log: this is a pit check
+    const stretch = match.pitStretch
     const fp = match.profile.foresight
     if (!fp) return match.couldNotCheck('the robot profile does not name the gyro')
     if (stretch.end - stretch.start < STILL_SECONDS - 0.01) return match.couldNotCheck(`less than ${STILL_SECONDS} s to measure over yet`)

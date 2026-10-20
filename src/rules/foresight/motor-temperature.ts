@@ -17,6 +17,7 @@ export default rule({
   id: 'foresight/motor-temperature',
   title: 'Motor hot before the match',
   severity: 'warning',
+  foresightOnly: true,
   who: ['pit'],
   meaning: 'A motor is already hotter than any of this robot\'s motors got by the end of a full match. It has less room before it overheats and loses power during the match.',
   causes: [
@@ -29,8 +30,7 @@ export default rule({
   forEach: 'motor',
 
   check(motor, match) {
-    const stretch = match.beforeEnable.at(-1)
-    if (!stretch) return // a match log: this is a pit check
+    const stretch = match.pitStretch
     const temperature = motor.temperature()
     const now = temperature.at(stretch.end)
     if (!Number.isFinite(now)) return match.couldNotCheck(`${motor.name} sent no temperature yet`)

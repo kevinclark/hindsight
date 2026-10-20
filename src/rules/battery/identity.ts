@@ -30,20 +30,12 @@ export default rule({
 
     // An ID from the dashboard means the code works and someone typed a label; only the gauge was missing.
     const message = id ? `Battery ${id} identified from the dashboard, not its fuel gauge` : 'Battery ID unknown for this match'
-    let likely: string[] | undefined
-    let ruledOut: Record<string, string> | undefined
-    let nextStep: string | undefined
-    if (id) {
-      likely = ['gauge-unplugged']
-      ruledOut = { code: 'the code logged a battery ID', 'no-label': 'a label was typed in' }
-      nextStep = 'The ID was typed in, not read from the gauge: plug the gauge in so it is read automatically.'
-    }
     return {
       message,
       at: match.autoStart,
-      likely,
-      ruledOut,
-      nextStep,
+      likely: id ? ['gauge-unplugged'] : undefined,
+      ruledOut: id ? { code: 'the code logged a battery ID', 'no-label': 'a label was typed in' } : undefined,
+      nextStep: id ? 'The ID was typed in, not read from the gauge: plug the gauge in so it is read automatically.' : undefined,
       evidence: { 'battery id': id || '(none)', 'id source': source },
     }
   },

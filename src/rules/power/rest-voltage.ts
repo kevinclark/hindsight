@@ -8,6 +8,7 @@
 import { rule, volts, round } from '../rule.ts'
 
 const LOWEST_REST_VOLTAGE = 12.5
+const LINE = { value: LOWEST_REST_VOLTAGE, label: `${LOWEST_REST_VOLTAGE} V` }
 
 export default rule({
   id: 'power/rest-voltage',
@@ -42,13 +43,9 @@ export default rule({
         [`rest voltage, 2 s ${inMatchLog ? 'before auto' : 'up to now'} (V)`]: round(rest),
         'lowest OK (V)': LOWEST_REST_VOLTAGE,
       },
-      measured: [{
-        label: `rest voltage ${inMatchLog ? 'before auto' : 'before enable'}`,
-        value: round(rest),
-        unit: 'V',
-        threshold: LOWEST_REST_VOLTAGE,
-      }],
-      plot: { signals: ['batteryVoltage'], unit: 'V', from: at - 10, to: at + 5, line: { value: LOWEST_REST_VOLTAGE, label: `${LOWEST_REST_VOLTAGE} V` } },
+      measured: [{ label: `rest voltage ${inMatchLog ? 'before auto' : 'before enable'}`,
+        value: round(rest), unit: 'V', threshold: LOWEST_REST_VOLTAGE }],
+      plot: { signals: ['batteryVoltage'], unit: 'V', from: at - 10, to: at + 5, line: LINE },
     }
   },
 })

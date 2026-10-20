@@ -40,10 +40,9 @@ export default rule({
     return hits.map((hit): Problem => {
       // Did the robot brown out or lose comms in the 2 s after the hit? Then something was probably knocked loose.
       const after = troubleBetween(match, hit.at, hit.at + 2)
-      let nextStep: string | undefined
-      if (after.length > 0) {
-        nextStep = `The robot ${after.join(' and ')} within 2 s of this hit: check the battery leads, the main breaker and the radio\'s power and Ethernet cables first.`
-      }
+      const nextStep = after.length > 0
+        ? `The robot ${after.join(' and ')} within 2 s of this hit: check the battery leads, the main breaker and the radio\'s power and Ethernet cables first.`
+        : undefined
       return {
         message: `${hit.g.toFixed(1)} g hit at ${match.when(hit.at)}`,
         at: hit.at,

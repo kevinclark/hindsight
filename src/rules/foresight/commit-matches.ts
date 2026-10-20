@@ -11,6 +11,7 @@ export default rule({
   id: 'foresight/commit-matches',
   title: 'Code changed since the last passing pit check',
   severity: 'warning',
+  foresightOnly: true,
   who: ['software'],
   meaning: 'The robot is running different code from the last pit check that passed. That can be on purpose (a fix between matches), but it is the change nothing has checked yet.',
   causes: [
@@ -21,7 +22,6 @@ export default rule({
   incident: 'Foresight phase 1 brief: "GitSHA the same as the last passing pit check"',
 
   check(match) {
-    if (match.beforeEnable.length === 0) return // a match log: this is a pit check
     const sha = match.text('gitSha').last()
     if (!sha) return match.couldNotCheck('the robot did not report its GitSHA')
     const last = match.lastPassingSha

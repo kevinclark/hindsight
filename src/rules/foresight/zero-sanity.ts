@@ -21,6 +21,7 @@ export default rule({
   id: 'foresight/zero-sanity',
   title: 'Mechanism zero disagrees with its absolute encoder',
   severity: 'warning',
+  foresightOnly: true,
   who: ['software', 'pit'],
   meaning: 'The motor thinks the mechanism is somewhere other than where its absolute encoder says it is, so position commands will drive it to the wrong place.',
   causes: [
@@ -32,8 +33,7 @@ export default rule({
   incident: 'Foresight proposal §5 (zero sanity); the intake pivot is seeded from its CANcoder at start-up (SlapdownSubsystem.slapdownInit)',
 
   check(match) {
-    const stretch = match.beforeEnable.at(-1)
-    if (!stretch) return // a match log: this is a pit check
+    const stretch = match.pitStretch
     const fp = match.profile.foresight
     if (!fp) return match.couldNotCheck('the robot profile names no mechanisms with absolute encoders')
     const recent = match.before(stretch.end, AVERAGE_SECONDS)

@@ -31,22 +31,20 @@ export default rule({
     const teleopShare = shareOver20ms(teleop)
 
     // Judge whichever period was worse.
-    const autoWasWorse = autoShare >= teleopShare
-    const worstName = autoWasWorse ? 'auto' : 'teleop'
-    const worst = autoWasWorse ? auto : teleop
-    const worstShare = autoWasWorse ? autoShare : teleopShare
-    const worstWindow = autoWasWorse ? match.auto : match.teleop
-    if (worstShare <= 0.1) return
+    const worst = autoShare >= teleopShare
+      ? { name: 'auto', samples: auto, share: autoShare, window: match.auto }
+      : { name: 'teleop', samples: teleop, share: teleopShare, window: match.teleop }
+    if (worst.share <= 0.1) return
 
     // Late in over 20 % of loops, or a late middle loop: the loop is too heavy (the work, or the CPU). Less often
     // than that: the work is still the first suspect, then pauses (garbage collection).
-    const middle = loop.percentile(50, worstWindow)
-    const tooHeavy = middle > 20 || worstShare > 0.2
+    const middle = loop.percentile(50, worst.window)
+    const tooHeavy = middle > 20 || worst.share > 0.2
     return {
       likely: tooHeavy ? ['heavy-work', 'cpu'] : ['heavy-work', 'gc'],
-      message: `${pct(worstShare)} of ${worstName} loops took longer than 20 ms (worst ${maxOf(worst).toFixed(0)} ms)`,
+      message: `${pct(worst.share)} of ${worst.name} loops took longer than 20 ms (worst ${maxOf(worst.samples).toFixed(0)} ms)`,
       evidence: {
-        [`${worstName}: median loop (ms)`]: round(middle, 1),
+        [`${worst.name}: median loop (ms)`]: round(middle, 1),
         'auto: share over 20 ms (%)': round(100 * autoShare, 1),
         'auto: p99 (ms)': round(loop.percentile(99, match.auto), 0),
         'auto: worst (ms)': round(maxOf(auto), 0),
@@ -54,10 +52,10 @@ export default rule({
         'teleop: p99 (ms)': round(loop.percentile(99, match.teleop), 0),
         'teleop: worst (ms)': round(maxOf(teleop), 0),
       },
-      measured: [{ label: `${worstName} loops over 20 ms`, value: round(100 * worstShare, 1), unit: '%', threshold: 10 }],
+      measured: [{ label: `${worst.name} loops over 20 ms`, value: round(100 * worst.share, 1), unit: '%', threshold: 10 }],
       plot: {
         signals: [loop], unit: 'ms', line: { value: 20, label: '20 ms' },
-        from: worstWindow[0]?.start, to: worstWindow[0]?.end,
+        from: worst.window[0]?.start, to: worst.window[0]?.end,
       },
     }
   },

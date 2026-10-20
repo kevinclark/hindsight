@@ -54,7 +54,7 @@ export default rule({
       if (seconds < STUCK_SECONDS || presses.length === 0) continue
 
       const pressCount = presses.reduce((sum, r) => sum + r.n, 0)
-      const trigger = exitTrigger(match, state)
+      const trigger = exitTrigger(match, machine, state)
       let message = `${machine.name} stayed in ${state} for ${seconds.toFixed(0)} s while enabled, from ${match.when(during[0].start)}, through ${pressCount} driver requests`
       let likely: string[] | undefined
       let triggerCame: string | undefined
@@ -86,13 +86,9 @@ export default rule({
 
 /** The part of a stretch that the robot was enabled for. */
 function enabledPart(match: MatchView, stretch: { start: number; end: number }): Window {
-  const during: Window = []
-  for (const interval of match.enabled) {
-    if (interval.end > stretch.start && interval.start < stretch.end) {
-      during.push({ start: Math.max(interval.start, stretch.start), end: Math.min(interval.end, stretch.end) })
-    }
-  }
-  return during
+  return match.enabled
+    .filter((interval) => interval.end > stretch.start && interval.start < stretch.end)
+    .map((interval) => ({ start: Math.max(interval.start, stretch.start), end: Math.min(interval.end, stretch.end) }))
 }
 
 /** The trigger during the stretch, in words. */

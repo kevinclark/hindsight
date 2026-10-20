@@ -33,10 +33,9 @@ export default rule({
         const angle = Math.abs(e.lowest) > Math.abs(e.highest) ? e.lowest : e.highest
         const phase = match.phaseAt(e.start)
         // In auto the path drives itself, so a wedge there points at the path and what was raised.
-        let nextStep: string | undefined
-        if (phase === 'auto') {
-          nextStep = 'It tilted during auto, so the auto path drove into something: watch the video, and check the path near this spot and what was raised.'
-        }
+        const nextStep = phase === 'auto'
+          ? 'It tilted during auto, so the auto path drove into something: watch the video, and check the path near this spot and what was raised.'
+          : undefined
         problems.push({
           message: `${axis.label} ${angle.toFixed(0)}° for ${secs(e.seconds)} at ${match.when(e.start)}`,
           at: e.start,

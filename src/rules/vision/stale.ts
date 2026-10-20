@@ -11,7 +11,7 @@
  * CalGames logs, a working camera facing no tags.
  */
 import { lengthOf, type CameraView, type Episode, type MatchView } from '../view.ts'
-import { isFalse, isTrue, pct, plural, rule, round, totalSeconds, type Answer, type Problem } from '../rule.ts'
+import { isFalse, isTrue, pct, plural, rule, secs, round, totalSeconds, type Answer, type Problem } from '../rule.ts'
 
 export default rule({
   id: 'vision/stale',
@@ -80,5 +80,5 @@ function dropoutsBeforeEnable(camera: CameraView, match: MatchView): Problem | u
 /** "Back_Right dropped out 2 times during the match (first at 1:23 for 6.0 s)". */
 function dropoutMessage(camera: string, drops: Episode[], when: string, match: MatchView): string {
   const first = drops[0]
-  return `${camera} dropped out ${plural(drops.length, 'time')} ${when} (first at ${match.when(first.start)} for ${first.seconds.toFixed(1)} s)`
+  return `${camera} dropped out ${plural(drops.length, 'time')} ${when} (first at ${match.when(first.start)} for ${secs(first.seconds)})`
 }

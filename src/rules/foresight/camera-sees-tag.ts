@@ -17,6 +17,7 @@ export default rule({
   id: 'foresight/camera-sees-tag',
   title: 'Camera has not seen an AprilTag yet',
   severity: 'info',
+  foresightOnly: true,
   who: ['pit', 'software'],
   meaning: 'This camera has not reported an AprilTag since the check started. In the pit that is normal: hold a tag in front of it to prove it is on and detecting.',
   causes: [
@@ -29,8 +30,7 @@ export default rule({
   forEach: 'camera',
 
   check(camera, match) {
-    const stretch = match.beforeEnable.at(-1)
-    if (!stretch) return // a match log: this is a pit check
+    const stretch = match.pitStretch
     // Strictly inside the stretch: the value held at its start is from before it.
     const during = [{ start: stretch.start + 1e-6, end: stretch.end + 1e-6 }]
     const hasResult = camera.resultKey !== null && match.has(camera.resultKey)

@@ -6,7 +6,6 @@
  * AndyMark CBA "not for competition" line, an assumption until gauge readings are compared with CBA tests.
  */
 import { rule, round } from '../rule.ts'
-import type { Signal } from '../view.ts'
 
 const LEAST_AH = 12
 
@@ -28,7 +27,8 @@ export default rule({
     const b = match.profile.battery
     const valid = match.signal(match.firstOf(b.gaugeValid))
     const capacity = match.signal(match.firstOf(b.effectiveCapacityAh))
-    const readings = validReadings(capacity, valid)
+    // The readings above zero that the gauge marked valid at the moment it logged them.
+    const readings = capacity.series.v.filter((ah, i) => ah > 0 && valid.at(capacity.series.t[i]) > 0.5)
     if (readings.length === 0) return match.couldNotCheck('the fuel gauge never gave a valid reading')
     const latest = readings[readings.length - 1]
     if (latest >= LEAST_AH) return
@@ -42,14 +42,3 @@ export default rule({
     }
   },
 })
-
-/** The capacity readings (Ah) above zero that the gauge marked valid at the moment it logged them. */
-function validReadings(capacity: Signal, gaugeValid: Signal): number[] {
-  const readings: number[] = []
-  for (let i = 0; i < capacity.series.v.length; i++) {
-    const ah = capacity.series.v[i]
-    const loggedAt = capacity.series.t[i]
-    if (ah > 0 && gaugeValid.at(loggedAt) > 0.5) readings.push(ah)
-  }
-  return readings
-}

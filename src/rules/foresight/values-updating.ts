@@ -26,6 +26,7 @@ export default rule({
   id: 'foresight/values-updating',
   title: 'Device readings stopped updating',
   severity: 'warning',
+  foresightOnly: true,
   who: ['software', 'pit'],
   meaning: 'A device says it is connected, but its readings have not changed at all for several seconds while the others keep changing. The robot code may be acting on old values from it.',
   causes: [
@@ -37,8 +38,7 @@ export default rule({
   incident: 'The team\'s 2026 pit checklist: "All device values updating"',
 
   check(match) {
-    const stretch = match.beforeEnable.at(-1)
-    if (!stretch) return // a match log: this is a pit check
+    const stretch = match.pitStretch
     if (stretch.end - stretch.start < STILL_SECONDS) return match.couldNotCheck(`less than ${STILL_SECONDS} s to measure over yet`)
 
     const devices = [...match.profile.motorGroups.flatMap((g) => g.motors), ...match.profile.otherDevices]
@@ -76,12 +76,10 @@ export default rule({
   },
 })
 
-interface StillReading { name: string; key: string; value: number }
-
 /** Which devices' readings did not change at all in the last STILL_SECONDS, and how many others did. */
 function watchReadings(match: MatchView, devices: { name: string; updating?: string; connected?: string }[], now: number) {
   const recent = [{ start: now - STILL_SECONDS, end: now + 1e-6 }]
-  const still: StillReading[] = []
+  const still: { name: string; key: string; value: number }[] = []
   let movingCount = 0
   for (const device of devices) {
     const key = device.updating

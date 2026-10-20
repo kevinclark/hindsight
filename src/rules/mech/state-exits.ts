@@ -8,7 +8,7 @@
  * and 80 % of them. Its base rate (how much of the enabled time has such a flip in the 0.3 s before) says whether
  * the match is better than chance: arm has-piece → true came before 33 of 33 MTTD handoff exits, at a 1 % base rate.
  */
-import { isTrue } from '../rule.ts'
+import { isTrue, plural } from '../rule.ts'
 import { inside, lengthOf, type MatchView } from '../view.ts'
 
 const BEFORE_EXIT_SECONDS = 0.3
@@ -52,16 +52,14 @@ function flips(match: MatchView, key: string): { t: number; to: boolean }[] {
   return out
 }
 
-export function exitTrigger(match: MatchView, state: string): Trigger {
-  const machine = match.profile.stateMachine!
+export function exitTrigger(match: MatchView, machine: StateMachine, state: string): Trigger {
   const sameRobot = match.otherLogs().filter((o) => o.profile.name === match.profile.name && o.has(machine.state))
   const logs = [match, ...sameRobot]
-  const across = `${logs.length} loaded log${logs.length === 1 ? '' : 's'}`
+  const across = plural(logs.length, 'loaded log')
 
   const { exits, candidates } = countExits(logs, machine, state)
   if (exits < MIN_EXITS) {
-    const ended = `${exits} time${exits === 1 ? '' : 's'}`
-    const text = `not learned: ${state} ended ${ended} while enabled in the ${across} (needs ${MIN_EXITS} or more: load more logs of this robot)`
+    const text = `not learned: ${state} ended ${plural(exits, 'time')} while enabled in the ${across} (needs ${MIN_EXITS} or more: load more logs of this robot)`
     return { named: false, key: '', to: true, words: '', text }
   }
   // The flip seen before the most exits (the first one found, on a tie).
@@ -71,7 +69,7 @@ export function exitTrigger(match: MatchView, state: string): Trigger {
     return { named: false, key: '', to: true, words: '', text }
   }
   const { key, to } = best
-  const words = `${machine.sensors.find((x) => x.key === key)!.name} turns ${to}`
+  const words = `${best.name} turns ${to}`
   if (best.exits < MIN_SHARE * exits) {
     const text = `not learned: the most common, ${words}, came before ${best.exits} of ${exits} exits (needs ${100 * MIN_SHARE} %)`
     return { named: false, key, to, words, text }
@@ -83,10 +81,10 @@ export function exitTrigger(match: MatchView, state: string): Trigger {
 
 /** How many times the state was left while enabled, and for each sensor flip, how many of those exits it came before. */
 function countExits(logs: MatchView[], machine: StateMachine, state: string) {
-  const candidates: { key: string; to: boolean; exits: number }[] = []
+  const candidates: { key: string; name: string; to: boolean; exits: number }[] = []
   let exits = 0
   for (const log of logs) {
-    const sensors = machine.sensors.filter((x) => log.has(x.key)).map((x) => ({ key: x.key, flips: flips(log, x.key) }))
+    const sensors = machine.sensors.filter((x) => log.has(x.key)).map((x) => ({ key: x.key, name: x.name, flips: flips(log, x.key) }))
     for (const stretch of stateStretches(log, machine.state)) {
       if (stretch.state !== state || !stretch.left || !inside(log.enabled, stretch.end)) continue
       exits++
@@ -98,7 +96,7 @@ function countExits(logs: MatchView[], machine: StateMachine, state: string) {
         if (!before) continue
         const seen = candidates.find((c) => c.key === sensor.key && c.to === before.to)
         if (seen) seen.exits++
-        else candidates.push({ key: sensor.key, to: before.to, exits: 1 })
+        else candidates.push({ key: sensor.key, name: sensor.name, to: before.to, exits: 1 })
       }
     }
   }

@@ -31,8 +31,9 @@ export default rule({
     const firstTimes = alert.onsetsInMatch.slice(0, 6).map((t) => match.when(t)).join('; ')
     const window = match.windowWords
 
-    let message = `Alert "${alert.text}" only before or after the match (${alert.onsetsOutsideMatch}×)`
-    if (during > 0) message = `Alert "${alert.text}" ${during}× ${window}`
+    const message = during > 0
+      ? `Alert "${alert.text}" ${during}× ${window}`
+      : `Alert "${alert.text}" only before or after the match (${alert.onsetsOutsideMatch}×)`
     return {
       message,
       at: alert.onsetsInMatch[0] ?? null,

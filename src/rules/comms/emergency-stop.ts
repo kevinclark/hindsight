@@ -45,10 +45,9 @@ export default rule({
       }
 
       // Pressed in the same instant as the enable: not a reaction to what the robot did.
-      let nextStep: string | undefined
-      if (sinceEnable !== null && sinceEnable < 0.5) {
-        nextStep = `The e-stop came ${sinceEnable.toFixed(2)} s after the enable, before the robot could have done anything to react to: look for a key pressed at enable (the DS space bar).`
-      }
+      const nextStep = sinceEnable !== null && sinceEnable < 0.5
+        ? `The e-stop came ${sinceEnable.toFixed(2)} s after the enable, before the robot could have done anything to react to: look for a key pressed at enable (the DS space bar).`
+        : undefined
 
       return {
         message,

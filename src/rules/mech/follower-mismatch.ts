@@ -66,9 +66,8 @@ export default rule({
 
     // Off for most of the steady time: a constant offset, so slip or a wrong setup. Off only now and then: something loose.
     const constant = worst.steadyShare > 0.5
-    const likely = constant ? ['slip', 'config'] : ['loose', 'motor-fault']
     return {
-      likely,
+      likely: constant ? ['slip', 'config'] : ['loose', 'motor-fault'],
       message: `${worst.name} ran more than 15 % off ${motors[0].name} for ${worst.secondsOff.toFixed(1)} s at steady speed (median ${(100 * worst.median).toFixed(0)} %)`,
       at: worst.at,
       evidence,
@@ -98,12 +97,8 @@ interface MotorTrace {
 function motorTrace(motor: MotorView, match: MatchView, grid: Float64Array): MotorTrace {
   const velocity = motor.velocity()
   const rate = sampleRate(velocity.series, match.enabled)
-  let slow = false
-  let weight = DT
-  if (rate && rate.fastHz < SLOW_HZ) {
-    slow = true
-    weight = 1 / rate.typicalHz
-  }
+  const slow = !!rate && rate.fastHz < SLOW_HZ
+  const weight = slow ? 1 / rate.typicalHz : DT
   const speed = velocity.onGrid(grid)
   return { name: motor.name, speed, recordTimes: velocity.series.t, slow, weight, ratios: [], times: [] }
 }

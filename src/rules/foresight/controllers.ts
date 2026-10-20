@@ -12,6 +12,7 @@ export default rule({
   id: 'foresight/controllers',
   title: 'Controller missing',
   severity: 'warning',
+  foresightOnly: true,
   who: ['drive'],
   meaning: 'The Driver Station does not show a controller on a port the robot code reads, so that driver would have no control.',
   causes: [
@@ -23,8 +24,7 @@ export default rule({
   incident: 'Controller drops on the field (#in-hindsight: at least 8 episodes); Foresight proposal §5',
 
   check(match) {
-    const stretch = match.beforeEnable.at(-1)
-    if (!stretch) return // a match log: this is a pit check
+    const stretch = match.pitStretch
     const fp = match.profile.foresight
     if (!fp) return match.couldNotCheck('the robot profile does not say how many controllers the drive team uses')
     const now = stretch.end
