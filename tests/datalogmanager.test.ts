@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { hasEntry, openWpilog, readNumbers, readValues } from '../src/readers/wpilog.ts'
 import { analyze, analyzeFiles } from '../src/analyze.ts'
+import { summarizeLog } from '../src/session/summary.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { frc340Daly2026 } from '../src/profiles/frc340-2026.ts'
 import { frc3602_2026 } from '../src/profiles/frc3602-2026.ts'
@@ -142,21 +143,31 @@ function talon(path: string, records: [number, number, number][]): FixtureEntry 
  * 180 A total heats the main breaker), the shooter leader at 50 Hz and its followers at 4 Hz.
  * The leader dips to 0 for 40 ms every 2 s, and a follower record lands in each dip: held for 0.25 s, that stale
  * value would look like a slipping follower if the rule compared it between records. `followerShare` sets how fast
- * the followers really spin, relative to the leader.
+ * the followers really spin, relative to the leader. With `slowLeaderSeconds` the leader is logged at 4 Hz too, and
+ * runs at steady speed for only that long (no dips): few comparisons, but real seconds.
  */
-function team340Log(followerShare = 1): Uint8Array {
+function team340Log(followerShare = 1, slowLeaderSeconds?: number): Uint8Array {
   const teleop = 34.5
   const lead: [number, number, number][] = []
   const follow: [number, number, number][] = []
-  for (let k = 0; k <= 7000; k++) {
-    const t = teleop + k * 0.02
-    const dip = k % 100 >= 50 && k % 100 < 52 // 40 ms at 1.0–1.04 s into every 2 s
-    lead.push([+t.toFixed(3), 40, dip ? 0 : 60])
-  }
-  for (let k = 0; k <= 560; k++) {
-    const t = teleop + 1.01 + k * 0.25 // every 8th record lands in a dip
-    const dip = k % 8 === 0
-    follow.push([+t.toFixed(3), 40, dip ? 0 : 60 * followerShare])
+  if (slowLeaderSeconds === undefined) {
+    for (let k = 0; k <= 7000; k++) {
+      const t = teleop + k * 0.02
+      const dip = k % 100 >= 50 && k % 100 < 52 // 40 ms at 1.0–1.04 s into every 2 s
+      lead.push([+t.toFixed(3), 40, dip ? 0 : 60])
+    }
+    for (let k = 0; k <= 560; k++) {
+      const t = teleop + 1.01 + k * 0.25 // every 8th record lands in a dip
+      const dip = k % 8 === 0
+      follow.push([+t.toFixed(3), 40, dip ? 0 : 60 * followerShare])
+    }
+  } else {
+    const records = slowLeaderSeconds * 4
+    for (let k = 0; k <= records + 8; k++) {
+      const running = k <= records
+      lead.push([+(teleop + 1 + k * 0.25).toFixed(3), 40, running ? 60 : 0])
+      follow.push([+(teleop + 1.01 + k * 0.25).toFixed(3), 40, running ? 60 * followerShare : 0])
+    }
   }
   const still = (path: string) => talon(path, [[5, 0, 0]])
   return writeWpilog([
@@ -199,6 +210,17 @@ describe("a team-340-shaped log: TalonFX structs, no battery voltage", () => {
     const slow = analyze([{ name: '340-slip.wpilog', bytes: team340Log(0.7) }])[0]
     const f = slow.report.findings.find((x) => x.rule === 'mech/follower-mismatch')
     expect(f?.title).toMatch(/follower ran more than 15 % off .* \(median 70 %\)/)
+  })
+  it('measures a slowly logged leader by steady seconds, not by a comparison count (rule and Trends agree)', () => {
+    // 5 s of steady running at 4 Hz: about 20 comparisons (under 50), each standing for 0.25 s.
+    const file = { name: '340-slow-leader.wpilog', bytes: team340Log(0.7, 5) }
+    const rule = analyze([file])[0].report.findings.find((x) => x.rule === 'mech/follower-mismatch')
+    expect(rule).toBeDefined()
+    const trends = summarizeLog(file)!.metrics.followerSecondsOff
+    expect(trends).not.toBeNull()
+    expect(trends!).toBeCloseTo(rule!.measured![0].value, 1)
+    // Under a second of steady running is still "not measured".
+    expect(summarizeLog({ name: '340-short.wpilog', bytes: team340Log(0.7, 0.5) })!.metrics.followerSecondsOff).toBeNull()
   })
   it('says what it could not check, and why', () => {
     expect(skipped('power/limit-not-applied')).toMatch(/no current limits for Drive \(not read from 340's robot code\)/)

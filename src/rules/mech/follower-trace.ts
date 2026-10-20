@@ -10,6 +10,7 @@
  */
 import { indexAt } from '../../match/series.ts'
 import { median } from '../rule.ts'
+import { motorGroup } from '../run.ts'
 import { MissingSignal, SLOW_HZ, sampleRate, type GroupView, type MatchView, type MotorView } from '../view.ts'
 
 export const FOLLOWER_DT = 0.02 // compare every 20 ms
@@ -17,8 +18,8 @@ export const FOLLOWER_DT = 0.02 // compare every 20 ms
 export const OFF_FRACTION = 0.15
 /** Seconds off the leader at which the rule fires. */
 export const FOLLOWER_LINE_SECONDS = 1
-/** Fewer steady comparisons than this (1 s) is too little to call the group measured. */
-const MIN_STEADY_COMPARISONS = 50
+/** Less steady running than this is too little to call the group measured. */
+const MIN_STEADY_SECONDS = 1
 
 /** One motor's speed on the grid, plus its speed as a fraction of the leader's at each steady moment. */
 export interface MotorTrace {
@@ -104,20 +105,10 @@ export function worstFollowerSecondsOff(match: MatchView): number | null {
   let worst: number | null = null
   for (const g of match.profile.motorGroups) {
     if (!g.sameLoop) continue
-    const group: GroupView = {
-      name: g.name, limits: g.limits, sameLoop: true,
-      motors: g.motors.map((m) => ({
-        name: m.name, group: g.name,
-        supply: () => match.signal(m.supplyCurrent ?? '', `${m.name} supply`),
-        stator: () => match.signal(m.statorCurrent ?? '', `${m.name} stator`),
-        velocity: () => match.signal(m.velocity ?? '', m.name),
-        connected: () => match.signal(m.connected ?? '', `${m.name} connected`),
-        temperature: () => match.signal(m.temperature ?? '', `${m.name} temperature`),
-      })),
-    }
+    const group = motorGroup(g, match)
     try {
       const motors = traceGroup(group, match)
-      if (motors[0].ratios.length < MIN_STEADY_COMPARISONS) continue
+      if (motors[0].ratios.length * motors[0].weight < MIN_STEADY_SECONDS) continue
       const s = mostOffLeader(motors).secondsOff
       worst = Math.max(worst ?? 0, s)
     } catch (e) {

@@ -237,17 +237,30 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
   return { findings, notChecked, items: items.length, itemsSkipped }
 }
 
-/** The things a rule checks, each with its name and a call to the rule's check. */
-function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: () => Answer }[] {
-  const p = view.profile
-  const motor = (m: (typeof p.motorGroups)[0]['motors'][0], group: string): MotorView => ({
+type ProfileGroup = MatchView['profile']['motorGroups'][0]
+type ProfileMotor = ProfileGroup['motors'][0]
+
+/** A profile motor as a rule sees it: each signal is read when asked for, and throws MissingSignal if the profile doesn't name it. */
+function motorView(m: ProfileMotor, group: string, view: MatchView): MotorView {
+  return {
     name: m.name, group,
     supply: () => view.signal(need(m.supplyCurrent, `${m.name} supply current`), `${m.name} supply`),
     stator: () => view.signal(need(m.statorCurrent, `${m.name} stator current`), `${m.name} stator`),
     velocity: () => view.signal(need(m.velocity, `${m.name} velocity`), m.name),
     connected: () => view.signal(need(m.connected, `${m.name} Connected flag`), `${m.name} connected`),
     temperature: () => view.signal(need(m.temperature, `${m.name} temperature`), `${m.name} temperature`),
-  })
+  }
+}
+
+/** A profile motor group (a leader and its followers) as a rule sees it. */
+export function motorGroup(g: ProfileGroup, view: MatchView): GroupView {
+  return { name: g.name, motors: g.motors.map((m) => motorView(m, g.name, view)), limits: g.limits, sameLoop: !!g.sameLoop }
+}
+
+/** The things a rule checks, each with its name and a call to the rule's check. */
+function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: () => Answer }[] {
+  const p = view.profile
+  const motor = (m: ProfileMotor, group: string) => motorView(m, group, view)
   switch (rule.forEach) {
     case undefined:
     case 'match':
@@ -256,7 +269,7 @@ function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: ()
       return p.motorGroups.flatMap((g) => g.motors.map((m) => ({ name: m.name, check: () => rule.check(motor(m, g.name), view) })))
     case 'motorGroup':
       return p.motorGroups.map((g) => {
-        const group: GroupView = { name: g.name, motors: g.motors.map((m) => motor(m, g.name)), limits: g.limits, sameLoop: !!g.sameLoop }
+        const group = motorGroup(g, view)
         return { name: g.name, check: () => rule.check(group, view) }
       })
     case 'device': {
