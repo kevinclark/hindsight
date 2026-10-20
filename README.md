@@ -49,6 +49,9 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   [<dslog>] [-- <log> …]` builds first (`--no-build` skips), drives headless Chrome on `hindsight.html` and writes
   `<log>.report.pdf`, `<log>.card.png` and `<log>.findings.json`. `scripts/chrome-foresight-report-check.ts <out-dir>`
   replays P0 and Q13 as the robot's NT4 stream and writes the Foresight PDFs and cards.
+- **Ctrl+P** in Match review (any tab) also prints the report, not the app. What the report and card carry out of the
+  laptop: the log file names, the build sha and branch, any notes students wrote in the team's history file, and in
+  Foresight the robot's address and the controller names as read.
 
 ## Which robot a log is from
 

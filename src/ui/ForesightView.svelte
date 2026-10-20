@@ -89,7 +89,8 @@
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
   }
   const onchecks = $derived(markOnchecks(checked))
-  let reportView = $state<{ save: () => Promise<void> }>()
+  let reportView = $state<{ save: () => Promise<string | null> }>()
+  let saveProblem = $state<string | null>(null)
   const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
@@ -176,7 +177,8 @@
         {/if}
       </dl>
       <button class="button" onclick={downloadReadings} title="Saves foresight-readings-….json: these readings, the verdict, and which signals the robot never sent">Download for Claude</button>
-      <button class="button" onclick={() => reportView?.save()} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
+      <button class="button" onclick={async () => { saveProblem = (await reportView?.save()) ?? null }} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
+      {#if saveProblem}<p class="small" role="alert">{saveProblem}</p>{/if}
     </details>
   {/if}
 {/if}

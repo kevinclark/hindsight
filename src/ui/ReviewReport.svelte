@@ -36,8 +36,8 @@
         {@const k = keyNumber(f)}
         <div class="err">
           <div class="txt">
-            <p class="title"><span class="sev error">Error</span>{f.title}</p>
-            <p class="num">{#if k.label}<span class="s"><span class="n">{k.value}</span> {k.label}</span>{/if}{#if f.when && !f.title.includes(shortWhen(f.when))}<span class="s">{shortWhen(f.when)}</span>{/if}<code class="s">{f.rule}</code></p>
+            <p class="title"><span class="sev error">Error</span>{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}</p>
+            <p class="num">{#if k.label && !k.inTitle}<span class="s"><span class="n">{k.value}</span> {k.label}</span>{/if}{#if f.when && !f.title.includes(shortWhen(f.when))}<span class="s">{shortWhen(f.when)}</span>{/if}<code class="s">{f.rule}</code></p>
             <p class="next"><strong>Next step:</strong> {f.nextStep}</p>
           </div>
           {#if f.plot}<div class="plot"><Plot model={plotModel(analysis.match, f.plot)} height={52} compact /></div>{/if}
@@ -49,13 +49,13 @@
   {#if m.warnings.length}
     <section>
       <h2>Warnings ({m.warnings.length})</h2>
-      <ul class="lines">{#each m.warnings as f (f.key + f.time)}<li><span class="sev warning">Warning</span><span class="t">{f.title}</span><code>{f.rule}</code></li>{/each}</ul>
+      <ul class="lines">{#each m.warnings as f (f.key + f.time)}<li><span class="sev warning">Warning</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   {#if m.infos.length}
     <section>
       <h2>Info ({m.infos.length})</h2>
-      <ul class="lines">{#each m.infos as f (f.key + f.time)}<li><span class="sev info">Info</span><span class="t">{f.title}</span><code>{f.rule}</code></li>{/each}</ul>
+      <ul class="lines">{#each m.infos as f (f.key + f.time)}<li><span class="sev info">Info</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   {#if m.known.length}
@@ -64,7 +64,10 @@
       <ul class="lines">{#each m.known as f (f.key + f.time)}<li><span class="sev info">{f.severity === 'error' ? 'Error' : f.severity === 'warning' ? 'Warning' : 'Info'}</span><span class="t"><span class="badge">Known</span> {f.title}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
-  <p class="notchecked"><strong>Not checked ({m.notChecked.length}):</strong> {m.notChecked.length ? m.notChecked.map((s) => s.rule).join(', ') + '. These rules could not run on this log, so their silence means nothing.' : 'every rule ran.'}</p>
+  <p class="notchecked">
+    {#if m.crashed.length}<strong>{m.crashed.length} {m.crashed.length === 1 ? 'rule' : 'rules'} crashed (a bug in Hindsight, not the robot):</strong> {m.crashed.map((s) => `${s.rule} (${s.reason})`).join('; ')}. {/if}
+    {#if m.notChecked.length}<strong>Not checked ({m.notChecked.length}):</strong> {m.notChecked.map((s) => s.rule).join(', ')}. These rules could not run on this log, so their silence means nothing.{:else if !m.crashed.length}<strong>Not checked (0):</strong> every rule ran.{/if}
+  </p>
   <p class="foot">The same run as data: <code>{m.jsonFile}</code> (schema <code>{m.schema}</code>) · printed {stamp(new Date()).slice(0, 10)}</p>
 
   {#if m.errors.length}

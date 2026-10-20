@@ -36,12 +36,24 @@ function downloadBlob(fileName: string, blob: Blob): void {
 }
 
 /**
- * "Save for Slack": the browser's print dialog (its Save as PDF names the file from the page title), then the
- * phone card as a PNG. `base` is the file name without extension: `<log>.report` for the PDF, `<log>.card.png`.
+ * "Save for Slack": the phone card as a PNG first (inside the click's user activation, before the print dialog can
+ * swallow it), then the browser's print dialog (its Save as PDF names the file from the page title). `base` is the
+ * file name without extension: `<log>.report` for the PDF. The title is restored on `afterprint`, with a late
+ * fallback (Safari's print() returns at once, so restoring then would lose the PDF's name).
+ * Returns null, or a one-line message to show on screen when the card could not be made; the print still runs.
  */
-export async function saveForSlack(base: string, cardName: string, card: Card): Promise<void> {
+export async function saveForSlack(base: string, cardName: string, card: Card): Promise<string | null> {
+  let problem: string | null = null
+  try {
+    downloadBlob(cardName, await cardToPngBlob(card))
+  } catch (error) {
+    problem = `The phone card could not be saved (${error instanceof Error ? error.message : String(error)}). The PDF is still offered.`
+  }
   const before = document.title
-  document.title = `${base}`
-  try { window.print() } finally { document.title = before }
-  downloadBlob(cardName, await cardToPngBlob(card))
+  const restore = () => { document.title = before; window.removeEventListener('afterprint', restore) }
+  window.addEventListener('afterprint', restore)
+  setTimeout(restore, 30_000)
+  document.title = base
+  try { window.print() } catch (error) { restore(); problem = `${problem ? `${problem} ` : ''}Printing failed (${error instanceof Error ? error.message : String(error)}).` }
+  return problem
 }

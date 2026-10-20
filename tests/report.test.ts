@@ -1,7 +1,7 @@
 // The report export: the phone card (pure SVG), the model behind it and behind the printed report.
 import { describe, expect, it } from 'vitest'
 import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE, CARD_WIDTH, wrap, type CardModel } from '../src/report/card.ts'
-import { bottomLine, cardTitle, keyNumber, reviewCard, reviewModel, stripRepoPaths } from '../src/report/review-model.ts'
+import { bottomLine, cardTitle, keyNumber, reviewCard, reviewModel, shortTitle, stripRepoPaths, titleHasValue } from '../src/report/review-model.ts'
 import { foresightCard, type ForesightReportInput } from '../src/report/foresight-model.ts'
 import { RULES } from '../src/rules/index.ts'
 import { analyzeFixture } from './helpers/load.ts'
@@ -38,6 +38,14 @@ describe('phone card', () => {
   it('escapes markup in finding text', () => {
     expect(card.svg).toContain('&amp; it was &lt;bad&gt;')
     expect(card.svg).not.toContain('<bad>')
+  })
+  it('never clips: the height covers every drawn line, and one item shows even if it alone is too tall', () => {
+    const tall = buildCard(model(1, { items: [{ word: 'ERROR', tone: 'error', title: 'word '.repeat(300), number: 'n '.repeat(300) }], footer: ['f '.repeat(400)] }))
+    expect(tall.shown).toBe(1)
+    for (const c of [tall, buildCard(model(3)), buildCard(model(40))]) {
+      const ys = [...c.svg.matchAll(/<text [^>]*y="(\d+)"/g)].map((m) => Number(m[1]))
+      expect(c.height).toBeGreaterThanOrEqual(Math.max(...ys))
+    }
   })
   it('lists the most that fit, then says "+N more", and never grows past 4:5', () => {
     const big = buildCard(model(40))
@@ -93,8 +101,40 @@ describe('report model, from the real CalGames fixtures', () => {
   it('puts one decisive number on every error, in the card', () => {
     const card = reviewCard(reviewModel(p0, new Map()))
     expect(card.items.length).toBeGreaterThan(0)
-    for (const item of card.items) { expect(item.word).toBe('ERROR'); expect(item.number.length).toBeGreaterThan(0); expect(item.title).not.toMatch(/robot time/) }
+    for (const item of card.items) { expect(item.word).toBe('ERROR'); expect(item.number.length === 0 ? /^(Browned out|Flywheel follower \d+ dropped|Alert)/.test(item.title) : true).toBe(true); expect(item.title).not.toMatch(/robot time/) }
     expect(buildCard(card).svg).toContain(card.items[0].title.slice(0, 20))
+  })
+  it('never calls a trip line a "limit", on any P0 or Q13 finding', () => {
+    for (const a of [p0, q13]) for (const f of a.report.findings) expect(keyNumber(f).text, f.rule).not.toMatch(/limit/i)
+    const f = p0.report.findings.find((x) => x.measured?.[0]?.threshold !== undefined)!
+    expect(keyNumber(f).text).toContain('(line ')
+  })
+  it('leaves the number line out when the title already says the value', () => {
+    const brown = p0.report.findings.find((x) => x.rule === 'power/brownout')!
+    expect(keyNumber(brown).inTitle).toBe(true)
+    const drop = p0.report.findings.find((x) => x.rule === 'can/device-dropout')!
+    expect(keyNumber(drop).inTitle).toBe(true)
+    const items = reviewCard(reviewModel(p0, new Map())).items
+    expect(items.find((i) => i.title.startsWith('Browned out 53 times'))!.number).toBe('')
+    expect(titleHasValue('Lost comms at 2:27 into the match', 2)).toBe(false)
+    expect(titleHasValue('Browned out 53 times', 53)).toBe(true)
+    expect(titleHasValue('Browned out 253 times', 53)).toBe(false)
+  })
+  it('marks a finding that came back after a fix, on the card and in the model', () => {
+    const first = p0.report.findings.find((f) => f.severity === 'error')!
+    const issues = new Map([[first.key, { type: 'issue' as const, key: first.key, status: 'fixed' as const, note: 'belt', when: '2020-01-01T00:00:00Z' }]])
+    expect(p0.match.matchStart).not.toBeNull()
+    const dated = { ...p0, match: { ...p0.match, epochOffset: 1.7e9 } } // played in 2023, fixed in 2020: it came back
+    const m = reviewModel(dated, issues)
+    expect(m.cameBack.has(first.key)).toBe(true)
+    expect(reviewCard(m).items.some((i) => i.word === 'ERROR · CAME BACK')).toBe(true)
+  })
+  it('says a crashed rule on the card and in the report model, and a clean run says none', () => {
+    const crashed = { ...p0, report: { ...p0.report, crashed: [{ rule: 'x/boom', reason: 'it threw' }] } }
+    const m = reviewModel(crashed, new Map())
+    expect(m.crashed).toEqual([{ rule: 'x/boom', reason: 'crashed: it threw' }])
+    expect(reviewCard(m).subheading).toContain('1 rule crashed')
+    expect(reviewCard(reviewModel(p0, new Map())).subheading).not.toContain('crashed')
   })
   it('flags uncommitted code on the card when the log says so', () => {
     const m = reviewModel(p0, new Map())
@@ -104,8 +144,24 @@ describe('report model, from the real CalGames fixtures', () => {
   it('uses the judged measurement as the number when the rule gave one, else the first evidence line', () => {
     const f = p0.report.findings.find((x) => x.measured?.length)!
     expect(keyNumber(f).text).toContain(String(f.measured![0].value))
+    expect(keyNumber(f).text).not.toContain('limit')
     const bare = { ...f, measured: undefined }
     expect(keyNumber(bare).text).toBe(`${Object.keys(f.evidence)[0]}: ${Object.values(f.evidence)[0]}`)
+  })
+})
+
+describe('shortTitle (the bottom line)', () => {
+  it('keeps what happened for the three real titles that lost it', () => {
+    expect(shortTitle('Hood moved at 0:00 into the match (auto; robot time 270.9 s) before its zero completed, 22.6 s later')).toMatch(/^Hood moved at 0:00 into the match before its zero…?/)
+    expect(shortTitle('Disabled in auto at 0:12 into the match (auto; robot time 282.7 s) with 7.4 s of auto left')).toBe('Disabled in auto at 0:12 into the match with 7.4 s of auto left')
+    const amps = shortTitle('Flywheel supply current reached 77 A against a 40 A limit that is switched off in code (as of event-calgames d339f29; this log ran 123eec6)')
+    expect(amps.length).toBeLessThanOrEqual(70)
+    expect(amps).toMatch(/…$/)
+    expect(amps).toMatch(/ (code|in|off|is)…$|[a-z]…$/)
+    expect(amps.replace(/…$/, '').endsWith(' ')).toBe(false)
+    expect('Flywheel supply current reached 77 A against a 40 A limit that is switched off in code').toContain(amps.replace(/…$/, ''))
+    expect(shortTitle('Browned out 53 times, first at 2:25 into the match (teleop; robot time 532.8 s)')).toBe('Browned out 53 times')
+    expect(shortTitle('Flywheel follower 18 ran more than 15 % off Flywheel leader for 1.2 s (median 97 %)')).toBe('Flywheel follower 18 ran more than 15 % off Flywheel leader for 1.2 s')
   })
 })
 
@@ -146,5 +202,20 @@ describe('Foresight card', () => {
     expect(c.headingTone).toBe('muted')
     expect(c.uncommitted).toBe(false)
     expect(buildCard(c).svg).toContain('NOT CHECKED')
+  })
+})
+
+describe('printed report component', () => {
+  it('names a crashed rule in the not-checked line and never says "every rule ran" then', async () => {
+    const { render } = await import('svelte/server')
+    const { default: ReviewReport } = await import('../src/ui/ReviewReport.svelte')
+    const a = analyzeFixture('p0-brownout').analyses[0]
+    const crashed = { ...a, report: { ...a.report, skipped: [], crashed: [{ rule: 'x/boom', reason: 'it threw' }] } }
+    const html = render(ReviewReport, { props: { analysis: crashed, issues: new Map() } }).body
+    expect(html).toContain('1 rule crashed')
+    expect(html).toContain('x/boom (crashed: it threw)')
+    expect(html).not.toContain('every rule ran')
+    const clean = render(ReviewReport, { props: { analysis: { ...a, report: { ...a.report, skipped: [], crashed: [] } }, issues: new Map() } }).body
+    expect(clean).toContain('every rule ran')
   })
 })

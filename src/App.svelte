@@ -128,10 +128,12 @@
 
   // "Save for Slack": the browser's print dialog (Save as PDF; the title names the file), then the phone card as a PNG.
   const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(a, issues)))
-  function saveForSlackReview() {
+  let saveProblem = $state<string | null>(null)
+  async function saveForSlackReview() {
+    saveProblem = null
     if (!current) return
     const base = current.match.fileName.replace(/\.wpilog$/i, '')
-    return saveForSlack(`${base}.report`, `${base}.card.png`, reviewCardOf(current))
+    try { saveProblem = await saveForSlack(`${base}.report`, `${base}.card.png`, reviewCardOf(current)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   // Print shows the report instead of the app, in Match review (with a log loaded) and Foresight; other views print as they are.
   const reportable = $derived((mode === 'review' && !!current) || mode === 'foresight')
@@ -233,6 +235,7 @@
       <button class="button" onclick={downloadForClaude} title="Saves findings.json: findings, evidence and short data windows, for analysis with Claude">Download for Claude</button>
       <button class="button" onclick={saveForSlackReview} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
+    {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   </section>
 
   <div class="tabs" role="tablist">

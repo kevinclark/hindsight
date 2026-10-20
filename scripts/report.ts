@@ -12,7 +12,7 @@
  * --dark emulates a dark colour scheme first, to check that print stays light.
  * The log input is selected by its accept list: input[type=file] alone also matches the Snapshot view's .json input.
  */
-import { spawn, execSync } from 'node:child_process'
+import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -30,7 +30,7 @@ if (!flags.has('--no-build')) execSync('npm run build', { stdio: 'inherit' })
 const page = `file://${resolve('hindsight.html')}`
 const profile = mkdtempSync(`${tmpdir()}/hindsight-report-`)
 const port = 9300 + Math.floor(Math.random() * 500)
-const chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--headless=new', '--no-first-run', '--window-size=1100,900', 'about:blank'], { stdio: 'ignore' })
+let chrome: ChildProcess | undefined
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 async function cdp() {
@@ -39,11 +39,16 @@ async function cdp() {
   }
   throw new Error('Chrome did not start')
 }
-const ws = new WebSocket(await cdp())
-await new Promise((r) => ws.addEventListener('open', r, { once: true }))
+let ws!: WebSocket
 let nextId = 1
+/** Start Chrome and connect. Called inside the try below, so a failure still kills Chrome and removes the profile. */
+async function start() {
+  chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--headless=new', '--no-first-run', '--window-size=1100,900', 'about:blank'], { stdio: 'ignore' })
+  ws = new WebSocket(await cdp())
+  await new Promise((r) => ws.addEventListener('open', r, { once: true }))
+  ws.addEventListener('message', (e) => { const m = JSON.parse(String(e.data)); if (m.id && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id) } })
+}
 const pending = new Map<number, (v: any) => void>()
-ws.addEventListener('message', (e) => { const m = JSON.parse(String(e.data)); if (m.id && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id) } })
 const send = (method: string, params: object = {}, sessionId?: string): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params, sessionId })) })
 const evalIn = async (sessionId: string, expression: string) => {
   const r = (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)).result
@@ -54,6 +59,7 @@ const evalIn = async (sessionId: string, expression: string) => {
 const written: string[] = []
 const summaries: object[] = []
 try {
+  await start()
   for (const files of groups) {
     const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
     const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
@@ -87,8 +93,8 @@ try {
   console.log(written.map((w) => `${outDir}/${w}`).join('\n'))
   console.log(JSON.stringify(summaries))
 } finally {
-  ws.close()
-  chrome.kill()
+  ws?.close()
+  chrome?.kill()
   await sleep(500)
   rmSync(profile, { recursive: true, force: true })
 }

@@ -9,7 +9,7 @@
  * Replays P0 (expect NO-GO: uncommitted code) and Q13 (expect GO), each tethered in the pit. Writes
  * foresight-<name>.report.pdf and foresight-<name>.card.png, and prints the verdict seen on screen.
  */
-import { spawn, execSync } from 'node:child_process'
+import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -24,7 +24,7 @@ mkdirSync(outDir, { recursive: true })
 const page = `file://${resolve('hindsight.html')}`
 const profile = mkdtempSync(`${tmpdir()}/foresight-report-`)
 const port = 9300 + Math.floor(Math.random() * 500)
-const chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--headless=new', '--no-first-run', '--window-size=1000,1400', 'about:blank'], { stdio: 'ignore' })
+let chrome: ChildProcess | undefined
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const log = (p: string) => `${homedir()}/Downloads/${p}`
 
@@ -34,11 +34,16 @@ async function cdp() {
   }
   throw new Error('Chrome did not start')
 }
-const ws = new WebSocket(await cdp())
-await new Promise((r) => ws.addEventListener('open', r, { once: true }))
+let ws!: WebSocket
 let nextId = 1
+/** Start Chrome and connect. Called inside the try below, so a failure still kills Chrome and removes the profile. */
+async function start() {
+  chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--headless=new', '--no-first-run', '--window-size=1000,1400', 'about:blank'], { stdio: 'ignore' })
+  ws = new WebSocket(await cdp())
+  await new Promise((r) => ws.addEventListener('open', r, { once: true }))
+  ws.addEventListener('message', (e) => { const m = JSON.parse(String(e.data)); if (m.id && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id) } })
+}
 const pending = new Map<number, (v: any) => void>()
-ws.addEventListener('message', (e) => { const m = JSON.parse(String(e.data)); if (m.id && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id) } })
 const send = (method: string, params: object = {}, sessionId?: string): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params, sessionId })) })
 const evalIn = async (sessionId: string, expression: string) => {
   const r = (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)).result
@@ -52,6 +57,7 @@ const cases = [
 ]
 const results: object[] = []
 try {
+  await start()
   for (const c of cases) {
     const server = await startReplayServer({ bytes: new Uint8Array(readFileSync(log(c.file))), pit: true, speed: c.speed })
     const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
@@ -82,8 +88,8 @@ try {
   }
   console.log(JSON.stringify({ page, chrome: execSync(`"${CHROME}" --version`).toString().trim(), results }, null, 1))
 } finally {
-  ws.close()
-  chrome.kill()
+  ws?.close()
+  chrome?.kill()
   await sleep(500)
   rmSync(profile, { recursive: true, force: true })
 }

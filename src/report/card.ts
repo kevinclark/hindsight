@@ -1,7 +1,7 @@
 /**
  * The phone card: one portrait image for a Slack message, drawn as pure SVG (rect, path, text; no foreignObject,
  * system fonts only, light palette). Slack shows an image at about 360 px wide on a phone, so the card is 1080 px
- * wide (3x) and its smallest type is 32 px (10.7 px at 360). Tall enough for the content, never taller than 4:5.
+ * wide (3x) and its smallest type is 32 px (10.7 px at 360). Tall enough for the content: at most 4:5, and taller only when a single item needs it (never clipped).
  *
  * Severity is always a word, never colour alone (WCAG 2.2 SC 1.4.1). Text is wrapped by an estimated width (there is
  * no font to measure in Node), deliberately on the wide side, so a line may end early but never runs off the card.
@@ -134,6 +134,8 @@ export function buildCard(model: CardModel): Card {
     used += b.height
     shown++
   }
+  // Never an empty list when there are findings: one item is shown even if that pushes the card past 4:5.
+  if (shown === 0 && itemBlocks.length) shown = 1
   if (itemBlocks.length === 0) {
     add(block(wrap(model.emptyText, 36, INNER, 3), MARGIN, y, 36, COLOR.muted))
   } else {
@@ -155,7 +157,7 @@ export function buildCard(model: CardModel): Card {
   }
   for (const lines of foot) add(block(lines, MARGIN, y, 32, COLOR.muted))
   y += MARGIN
-  const height = Math.min(CARD_MAX_HEIGHT, Math.ceil(y))
+  const height = Math.ceil(y) // never clamped: clipped text is worse than a taller card
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${height}" viewBox="0 0 ${CARD_WIDTH} ${height}" font-family="${esc(FONT)}">` +
     `<rect x="0" y="0" width="${CARD_WIDTH}" height="${height}" fill="${COLOR.bg}"/>` + parts.join('') + '</svg>'

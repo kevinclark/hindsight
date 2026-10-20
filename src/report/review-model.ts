@@ -37,6 +37,10 @@ export interface ReviewModel {
   warnings: Finding[]
   infos: Finding[]
   notChecked: { rule: string; reason: string }[]
+  /** Rules that crashed (a Hindsight bug): they say nothing about the log either. */
+  crashed: { rule: string; reason: string }[]
+  /** Keys of active findings that came back after being marked fixed. */
+  cameBack: Set<string>
   header: ReviewHeader
   bottomLine: string
   /** Names the matching findings.json. */
@@ -85,6 +89,8 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
     active, known,
     errors: bySeverity('error'), warnings: bySeverity('warning'), infos: bySeverity('info'),
     notChecked: analysis.report.skipped.map((s) => ({ rule: s.rule, reason: s.reason })),
+    crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
+    cameBack: new Set(active.filter((f) => findingStatus(f, issues, played) === 'came back').map((f) => f.key)),
     header: {
       robot: m.profile.name, event: m.event, matchLabel: m.matchLabel, date: matchDate(analysis), logFile: m.fileName,
       dsFiles: m.ds.map((d) => d.fileName), build: buildLine(m.build), version: VERSION,
@@ -98,29 +104,44 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-/** First words of a title, up to a natural stop, so the bottom line can name the worst finding. */
+/** The card's title without its asides, then cut at a stop (", first at ", "(median …") and at 70 characters on a word boundary. */
 export function shortTitle(title: string): string {
-  const cut = title.split(/\s*\(|, first at | at \d:\d\d /)[0]
-  return cut.length > 70 ? `${cut.slice(0, 67).trimEnd()}…` : cut
+  const cut = cardTitle(title).split(/, first at |\s*\((?:median|worst) /)[0].trim()
+  if (cut.length <= 70) return cut
+  const words = cut.slice(0, 69).split(' ')
+  if (words.length > 1 && cut[69] !== ' ') words.pop()
+  return `${words.join(' ').replace(/[\s,;:]+$/, '')}…`
 }
 
 export function bottomLine(errors: Finding[], warnings: Finding[], infos: Finding[], known: number): string {
   const tail = `${plural(warnings.length, 'warning')}, ${infos.length} info${known ? `, ${known} known` : ''}`
-  if (errors.length === 0) return warnings.length ? `No errors. ${tail}. Worst: ${shortTitle(warnings[0].title)}.` : `No errors or warnings. ${tail}.`
+  const stop = (t: string) => (t.endsWith('…') ? t : `${t}.`)
+  if (errors.length === 0) return warnings.length ? `No errors. ${tail}. Worst: ${stop(shortTitle(warnings[0].title))}` : `No errors or warnings. ${tail}.`
   const rest = errors.length - 1
-  return `${plural(errors.length, 'error')}, ${tail}. Worst: ${shortTitle(errors[0].title)}${rest ? `; +${rest} more error${rest === 1 ? '' : 's'}` : ''}.`
+  const more = rest ? `; +${rest} more error${rest === 1 ? '' : 's'}.` : ''
+  return `${plural(errors.length, 'error')}, ${tail}. Worst: ${rest ? shortTitle(errors[0].title) : stop(shortTitle(errors[0].title))}${more}`
 }
 
-/** The one decisive number for a finding: the judged measurement when the rule gave one, else the first evidence line. */
-export function keyNumber(f: Finding): { label: string; value: string; text: string } {
+/** True when the title already says this number (not as part of a time like 2:27 or a longer number). */
+export function titleHasValue(title: string, value: number | string): boolean {
+  const v = String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![\\d.:])${v}(?![\\d:]|\\.\\d)`).test(title)
+}
+
+/**
+ * The one decisive number for a finding: the judged measurement when the rule gave one, else the first evidence line.
+ * `inTitle`: the title already says it (the card and the report then leave the number line out).
+ * The threshold is the rule's trip line, not a limit ("line", as the Session view says).
+ */
+export function keyNumber(f: Finding): { label: string; value: string; text: string; inTitle: boolean } {
   const m = f.measured?.[0]
   if (m) {
     const unit = m.unit ? ` ${m.unit}` : ''
-    const value = `${m.value}${unit}${m.threshold !== undefined ? ` (limit ${m.threshold}${unit})` : ''}`
-    return { label: m.label, value, text: `${value} ${m.label}` }
+    const value = `${m.value}${unit}${m.threshold !== undefined ? ` (line ${m.threshold}${unit})` : ''}`
+    return { label: m.label, value, text: `${value} ${m.label}`, inTitle: titleHasValue(f.title, m.value) }
   }
   const first = Object.entries(f.evidence)[0]
-  return first ? { label: first[0], value: String(first[1]), text: `${first[0]}: ${first[1]}` } : { label: '', value: '', text: '' }
+  return first ? { label: first[0], value: String(first[1]), text: `${first[0]}: ${first[1]}`, inTitle: false } : { label: '', value: '', text: '', inTitle: false }
 }
 
 /** "2:25 into the match" from "2:25 into the match (teleop; robot time 532.8 s)", for tight places. */
@@ -151,15 +172,19 @@ export function incidentFor(f: Finding): string {
 export function reviewCard(m: ReviewModel): CardModel {
   const h = m.header
   const worst = m.errors.length ? m.errors : m.warnings
-  const word = m.errors.length ? 'ERROR' : 'WARNING'
   const tone: Tone = m.errors.length ? 'error' : 'warning'
   const n = m.errors.length
+  const crashed = m.crashed.length ? ` · ${plural(m.crashed.length, 'rule')} crashed` : ''
   return {
     context: [h.matchLabel || 'Match', h.event, h.date].filter(Boolean).join(' · '),
     heading: n ? plural(n, 'error') : 'No errors',
     headingTone: n ? 'error' : 'ok',
-    subheading: `${plural(m.warnings.length, 'warning')} · ${m.infos.length} info${m.known.length ? ` · ${m.known.length} known` : ''}`,
-    items: worst.map((f) => { const k = keyNumber(f); return { word, tone, title: cardTitle(f.title), number: k.text } }),
+    subheading: `${plural(m.warnings.length, 'warning')} · ${m.infos.length} info${m.known.length ? ` · ${m.known.length} known` : ''}${crashed}`,
+    items: worst.map((f) => {
+      const k = keyNumber(f)
+      const word = (m.errors.length ? 'ERROR' : 'WARNING') + (m.cameBack.has(f.key) ? ' · CAME BACK' : '')
+      return { word, tone, title: cardTitle(f.title), number: k.inTitle ? '' : k.text }
+    }),
     emptyText: 'Nothing to fix from this log.',
     footer: [h.build.text, `Hindsight ${h.version}`],
     uncommitted: h.build.uncommitted,

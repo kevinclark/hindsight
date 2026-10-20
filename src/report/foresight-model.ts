@@ -38,7 +38,7 @@ export function foresightCard(i: ForesightReportInput): CardModel {
   const reds = i.items.filter((x) => x.level === 'red')
   const ambers = i.items.filter((x) => x.level === 'amber')
   const build = foresightBuild(i)
-  const item = (x: VerdictItem, word: string, tone: Tone) => { const n = keyNumber(x.finding); return { word, tone, title: cardTitle(x.finding.title), number: n.text } }
+  const item = (x: VerdictItem, word: string, tone: Tone) => { const n = keyNumber(x.finding); return { word, tone, title: cardTitle(x.finding.title), number: n.inTitle ? '' : n.text } }
   return {
     context: `Foresight, read ${stamp(i.readAt)}${i.robot ? ` · ${i.robot}` : ''}`,
     heading: i.verdict,

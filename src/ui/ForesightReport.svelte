@@ -42,8 +42,8 @@
   const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
 
   /** Print as PDF (the title names the file), then save the phone card. */
-  export function save(): Promise<void> {
-    return saveForSlack(`foresight-${fileStamp(readAt)}.report`, `foresight-${fileStamp(readAt)}.card.png`, card)
+  export async function save(): Promise<string | null> {
+    try { return await saveForSlack(`foresight-${fileStamp(readAt)}.report`, `foresight-${fileStamp(readAt)}.card.png`, card) } catch (error) { return `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   // For the command-line checks (scripts/chrome-foresight-report-check.ts): the card as the page would save it.
   $effect(() => {
