@@ -2,6 +2,13 @@
 
 Notes for coding agents working in this repository. `README.md` and `docs/` are for people.
 
+## Rules (`src/rules/`)
+
+- Rules are written for a high-school student to read and copy: follow CONTRIBUTING.md, "How a rule should read".
+- A cleanup that must not change what a rule finds is proved, not argued: `npm run golden -- <out.json> <log
+  folder> ...` before and after, then `cmp`. It records every finding, evidence value, plot and not-checked
+  reason. Rules that never fire on the logs you have are covered only by the unit tests.
+
 ## Robot snapshot (`tools/robot-snapshot.py`, `src/snapshot/`, `src/ui/SnapshotView.svelte`)
 
 - **The collector is read-only by construction, and the tests enforce it.** `_get()` is the only network call.
