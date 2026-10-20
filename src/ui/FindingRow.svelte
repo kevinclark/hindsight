@@ -13,7 +13,7 @@
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
   import { keyNumber } from '../report/review-model.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, statusOf, showNext = false }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, wrong, sure, statusOf, showNext = false }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -28,13 +28,19 @@
     nested?: boolean
     /** For the rows under this one: their known-issue state. */
     issues?: Map<string, IssueEvent>
+    /** This match's "not a real problem" marks, by issue key (this row's and the rows under it). */
+    wrong?: Map<string, IssueEvent>
+    /** The check's "How sure" line from the team's marks (null: no marks to go on). */
+    sure?: (rule: string) => string | null
     statusOf?: (f: Finding) => string | undefined
     /** The list's first active error: its closed row carries the next step and who acts (derived by the list, so it moves when that error is marked known or the audience changes). */
     showNext?: boolean
   } = $props()
   const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
   const rule = $derived(makerOf(finding.rule))
-  const cameBack = $derived(issue?.status === 'fixed' && !fixedLater)
+  const wrongMark = $derived(wrong?.get(finding.key))
+  const cameBack = $derived(issue?.status === 'fixed' && !fixedLater && !wrongMark)
+  const howSure = $derived(sure?.(finding.rule) ?? null)
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
   const ICON = { error: '●', warning: '▲', info: '○' } as const
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
@@ -42,41 +48,51 @@
   const key = $derived(keyNumber(finding))
   // Every row starts closed except one that came back after a fix; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
-  let open = $state(!nested && issue?.status === 'fixed' && !fixedLater)
+  let open = $state(!nested && issue?.status === 'fixed' && !fixedLater && !wrong?.has(finding.key))
   const who = $derived(rule ? rule.who.map((a) => WHO[a]).join(', ') : '')
 
   function mark(status: IssueStatus) {
     const ask = status === 'known' ? 'What do we know about it? (e.g. "belt slipping on 17/18, new belt before elims")'
-      : status === 'fixed' ? 'What fixed it? (e.g. "replaced belt, retensioned")' : ''
-    const note = status === 'new' ? '' : window.prompt(ask, issue?.note ?? '')
+      : status === 'fixed' ? 'What fixed it? (e.g. "replaced belt, retensioned")'
+      : status === 'wrong' ? 'Why is this not a real problem on this match? (e.g. "deliberate A-stop", "zero kept through a restart")' : ''
+    let note: string | null = status === 'new' || status === 'unmark' ? '' : window.prompt(ask, status === 'wrong' ? '' : (issue?.note ?? ''))
+    // A wrong mark needs its reason: it turns this check's reds amber on the event's other matches.
+    while (status === 'wrong' && note !== null && !note.trim()) note = window.prompt(`A reason is needed. ${ask}`, '')
     if (note === null) return // cancelled
     onMark(finding, status, note.trim())
   }
   const date = (iso: string) => iso.slice(0, 10)
 </script>
 
-<li class={`finding ${finding.severity}`} class:known={issue?.status === 'known' || fixedLater}>
+<li class={`finding ${finding.severity}`} class:known={issue?.status === 'known' || fixedLater || !!wrongMark}>
   <details bind:open>
     <summary>
       <span class="sev" title={LABEL[finding.severity]}><span aria-hidden="true">{ICON[finding.severity]}</span> {LABEL[finding.severity]}</span>
       <span class="title">
         {#if cameBack}<span class="badge back">Came back after a fix</span>{/if}
-        {#if issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
-        {#if fixedLater}<span class="badge known-badge">{issue?.when ? 'Fixed after this match' : 'Fixed (date unknown)'}</span>{/if}
+        {#if wrongMark}<span class="badge known-badge">Not a real problem</span>{:else if issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
+        {#if fixedLater && !wrongMark}<span class="badge known-badge">{issue?.when ? 'Fixed after this match' : 'Fixed (date unknown)'}</span>{/if}
         {finding.title}
         {#if nested && finding.explainedBy}<span class="why">↳ {finding.explainedBy.why}</span>{/if}
         {#if note}<span class="why">↳ {note}</span>{/if}
+        {#if finding.demoted}<span class="why">↳ amber, not red: marked not a real problem in {finding.demoted.match}{finding.demoted.reason ? `: ${finding.demoted.reason}` : ''}</span>{/if}
         {#if finding.measured?.length && !key.inTitle}<span class="key">{key.value}{key.label ? ` ${key.label}` : ''}</span>{/if}
       </span>
       <span class="rule">{finding.rule}</span>
       {#if showNext && !open}<span class="next"><strong>Next step:</strong> {finding.nextStep}{#if who}{' · '}<strong>Who acts:</strong> {who}{/if}</span>{/if}
     </summary>
     <div class="body">
-      {#if issue}
+      {#if wrongMark}
+        <p class="issue-note"><strong>Not a real problem</strong> on this match, marked {date(wrongMark.when)}: {wrongMark.note}</p>
+      {:else if issue}
         <p class="issue-note">
           <strong>{issue.status === 'known' ? 'Known issue' : 'Marked fixed'}</strong> on {date(issue.when)}{issue.match ? ` (${issue.match})` : ''}{issue.note ? `: ${issue.note}` : ''}
         </p>
       {/if}
+      {#if finding.demoted}
+        <p class="issue-note">This check was marked not a real problem in {finding.demoted.match} on {date(finding.demoted.when)}{finding.demoted.reason ? ` ("${finding.demoted.reason}")` : ''}, so its reds this event show amber. Mark this one too if it is the same, or as known if it is real.</p>
+      {/if}
+      {#if howSure}<p class="sure"><strong>How sure:</strong> {howSure}.</p>{/if}
       <table class="evidence">
         <tbody>
           {#each Object.entries(finding.evidence) as [k, v] (k)}
@@ -105,9 +121,10 @@
         <p class="incident"><strong>Who acts:</strong> {who} · <strong>Tracked as:</strong> <code>{finding.key}</code></p>
       {/if}
       <div class="actions">
-        {#if issue?.status !== 'known'}<button onclick={() => mark('known')}>Mark as known…</button>{/if}
-        {#if issue?.status !== 'fixed'}<button onclick={() => mark('fixed')}>Mark as fixed…</button>{/if}
-        {#if issue}<button onclick={() => mark('new')}>Treat as new</button>{/if}
+        {#if wrongMark || issue?.status !== 'known'}<button onclick={() => mark('known')}>Mark as known…</button>{/if}
+        {#if wrongMark || issue?.status !== 'fixed'}<button onclick={() => mark('fixed')}>Mark as fixed…</button>{/if}
+        {#if !wrongMark}<button onclick={() => mark('wrong')}>Not a real problem…</button>{/if}
+        {#if wrongMark}<button onclick={() => mark('unmark')}>Undo "not a real problem"</button>{:else if issue}<button onclick={() => mark('new')}>Treat as new</button>{/if}
       </div>
     </div>
   </details>
@@ -116,7 +133,7 @@
       <summary>Explains {under.length} more ({severityWords(under)})</summary>
       <ul>
         {#each explains as c (c.finding.key + c.finding.time)}
-          <FindingRow finding={c.finding} explains={c.children} nested {analysis} {issues} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
+          <FindingRow finding={c.finding} explains={c.children} nested {analysis} {issues} {wrong} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
         {/each}
       </ul>
     </details>
@@ -142,6 +159,7 @@
   .rule { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
   .body { padding: 0 0.25rem 0.9rem 7.25rem; }
   .issue-note { font-size: 0.85rem; margin: 0 0 0.5rem; padding: 0.25rem 0.6rem; border-left: 3px solid var(--muted); }
+  .sure { font-size: 0.85rem; margin: 0 0 0.5rem; color: var(--muted); }
   .evidence { border-collapse: collapse; font-size: 0.85rem; }
   .evidence th { text-align: left; font-weight: normal; color: var(--muted); padding: 0.1rem 1rem 0.1rem 0; vertical-align: top; }
   .evidence td { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

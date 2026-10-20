@@ -15,8 +15,9 @@
   import { under, type FindingNode } from '../report/finding-tree.ts'
   import type { Severity } from '../rules/types.ts'
 
-  let { analysis, issues }: { analysis: Analysis; issues: Map<string, IssueEvent> } = $props()
-  const m = $derived(reviewModel(analysis, issues))
+  // `analysis` as the team's marks show it (track-record.ts withMarks); `wrong`: this match's "not a real problem" marks.
+  let { analysis, issues, wrong = new Map() }: { analysis: Analysis; issues: Map<string, IssueEvent>; wrong?: Map<string, IssueEvent> } = $props()
+  const m = $derived(reviewModel(analysis, issues, wrong))
   const h = $derived(m.header)
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
   const issueFor = (key: string) => issues.get(key)
@@ -69,7 +70,7 @@
   {#if m.warnings.length}
     <section>
       <h2>Warnings ({m.warnings.length}{aboveNote('warning')})</h2>
-      <ul class="lines">{#each headlinesOf('warning') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev warning">Warning</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
+      <ul class="lines">{#each headlinesOf('warning') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev warning">Warning</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{#if f.demoted}<span class="small"> ↳ amber, not red: marked not a real problem in {f.demoted.match}{f.demoted.reason ? `: ${f.demoted.reason}` : ''}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   {#if m.infos.length}
@@ -80,8 +81,8 @@
   {/if}
   {#if m.known.length}
     <section>
-      <h2>Known issues seen this match ({m.known.length})</h2>
-      <ul class="lines">{#each m.knownHeadlines as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">{SEV[f.severity]}</span><span class="t"><span class="badge">Known</span> {f.title}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
+      <h2>{wrong.size && m.known.some((f) => wrong.has(f.key)) ? 'Known issues and false alarms' : 'Known issues'} seen this match ({m.known.length})</h2>
+      <ul class="lines">{#each m.knownHeadlines as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">{SEV[f.severity]}</span><span class="t"><span class="badge">{wrong.has(f.key) ? 'Not a real problem' : 'Known'}</span> {f.title}{#if wrong.get(f.key)?.note}<span class="small"> ({wrong.get(f.key)?.note})</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   <p class="notchecked">

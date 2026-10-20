@@ -17,10 +17,11 @@
   import ReviewReport from './ui/ReviewReport.svelte'
   import { buildCard } from './report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from './report/card-png.ts'
-  import { reviewCard, reviewModel } from './report/review-model.ts'
+  import { playedAt, reviewCard, reviewModel } from './report/review-model.ts'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
-  import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
+  import { HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, triage, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
+  import { howSure, matchRef, trackRecord, withMarks, wrongHere, type Fire } from './triage/track-record.ts'
   import type { Finding } from './rules/types.ts'
   import { PROFILES, profileId } from './profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './ui/robot-choice.ts'
@@ -65,7 +66,40 @@
   const STORE = 'hindsight.history'
   let history = $state<HistoryEvent[]>(readStoredHistory())
   let unsaved = $state(false)
-  const issues = $derived(currentStatus(history))
+  const marks = $derived(triage(history))
+  const issues = $derived(marks.issues)
+
+  // The current match as the team's marks show it: reds that a wrong mark on another match of this event demotes are
+  // amber, and this match's own wrong marks. The other tabs read the log as it is.
+  const refOf = (a: Analysis) => matchRef(a.match, playedAt(a))
+  const here = $derived(current ? refOf(current) : null)
+  const marked = (a: Analysis) => withMarks(a, refOf(a), marks)
+  const shownCurrent = $derived(current ? marked(current) : undefined)
+  const wrongNow = $derived(here ? wrongHere(here, marks) : new Map())
+  // Every warning or error in the open logs (Match review and Session), for each check's track record.
+  const fires = $derived.by(() => {
+    const out: Fire[] = []
+    for (const a of analyses) {
+      const { id, played } = refOf(a)
+      for (const f of a.report.findings) if (f.severity !== 'info') out.push({ key: f.key, match: id, played })
+    }
+    for (const s of sessions) for (const m of s.matches) {
+      const { id, played } = matchRef(m, m.playedAt)
+      for (const r of Object.values(m.rules)) for (const f of r.findings) if (f.severity !== 'info') out.push({ key: f.key, match: id, played })
+    }
+    return out
+  })
+  const anyMarks = $derived(history.some((e) => e.type === 'issue'))
+  // Each check's How sure line, worked out once per check while the marks and open logs stay the same.
+  const sure = $derived.by(() => {
+    // Read here, not only inside the returned function, so the cache is rebuilt whenever they change.
+    const [t, events, open, any] = [marks, history, fires, anyMarks]
+    const lines = new Map<string, string | null>()
+    return (rule: string) => {
+      if (!lines.has(rule)) lines.set(rule, howSure(trackRecord(rule, t, events, open), any))
+      return lines.get(rule)!
+    }
+  })
 
   function readStoredHistory(): HistoryEvent[] {
     try { return parseHistory(localStorage.getItem(STORE) ?? '').events } catch { return [] }
@@ -76,8 +110,8 @@
     try { localStorage.setItem(STORE, serializeHistory(events)) } catch { /* private window: the file is the only copy */ }
   }
   function mark(finding: Finding, status: IssueStatus, note: string) {
-    const label = current ? `${current.match.event} ${current.match.matchLabel}`.trim() : ''
-    keep([...history, { type: 'issue', key: finding.key, status, note, when: new Date().toISOString(), match: label || undefined }], true)
+    const at = here ? { match: here.id, ...(here.event ? { event: here.event } : {}), ...(here.played !== null ? { played: new Date(here.played).toISOString() } : {}) } : {}
+    keep([...history, { type: 'issue', key: finding.key, status, note, when: new Date().toISOString(), ...at }], true)
   }
   function saveHistory() {
     downloadText(HISTORY_FILE_NAME, serializeHistory(history), 'application/x-ndjson')
@@ -138,13 +172,13 @@
   }
 
   function downloadForClaude() {
-    if (!current) return
-    const json = JSON.stringify(buildFindingsJson(current.match, current.report, issues), null, 1)
+    if (!current || !shownCurrent) return
+    const json = JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow), null, 1)
     downloadText(findingsFileName(current.match), json)
   }
 
   // "Save for Slack": the browser's print dialog (Save as PDF; the title names the file), then the phone card as a PNG.
-  const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(a, issues)))
+  const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(marked(a), issues, wrongHere(refOf(a), marks))))
   let saveProblem = $state<string | null>(null)
   async function saveForSlackReview() {
     saveProblem = null
@@ -162,7 +196,7 @@
     load,
     version: VERSION,
     // For scripts/report.ts: the same builders the buttons use, for the log in view.
-    findingsJson: () => (current ? JSON.stringify(buildFindingsJson(current.match, current.report, issues), null, 1) : null),
+    findingsJson: () => (shownCurrent ? JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow), null, 1) : null),
     findingsFile: () => (current ? findingsFileName(current.match) : null),
     reviewCard: () => (current ? reviewCardOf(current) : null),
     reviewCardPng: async () => (current ? await cardToPngDataUrl(reviewCardOf(current)) : null),
@@ -200,7 +234,7 @@
 <div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder /></div>
 <div hidden={mode !== 'foresight'}>
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
-  {#if unsaved}<p class="history screen-only">A pit check was added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
+  {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
 <div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
@@ -222,7 +256,7 @@
 
 {#if history.length}
   <p class="history">
-    Known issues: {issues.size} tracked{#if unsaved}{' · '}<strong>changes not saved to a file yet</strong>{/if}
+    Known issues: {issues.size} tracked{#if marks.wrong.size}{' · '}{marks.wrong.size} marked not a real problem{/if}{#if unsaved}{' · '}<strong>changes not saved to a file yet</strong>{/if}
     <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button>
   </p>
 {/if}
@@ -230,7 +264,7 @@
 {#if analyses.length > 1}
   <nav class="matches" aria-label="Loaded matches">
     {#each analyses as a, i (i)}
-      {@const errors = a.report.findings.filter((f) => f.severity === 'error').length}
+      {@const errors = marked(a).report.findings.filter((f) => f.severity === 'error').length}
       <button class:active={i === selected} onclick={() => (selected = i)}>
         <span>{a.match.matchLabel || a.match.fileName}</span>
         <small>{errors} error{errors === 1 ? '' : 's'}</small>
@@ -276,7 +310,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={current} {issues} {standing} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} {sure} {standing} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>
@@ -299,7 +333,7 @@
 {/if}
 </div>
 
-{#if mode === 'review' && current}<ReviewReport analysis={current} {issues} />{/if}
+{#if mode === 'review' && current}<ReviewReport analysis={shownCurrent ?? current} {issues} wrong={wrongNow} />{/if}
 
 <style>
   :global(:root) {

@@ -38,6 +38,12 @@ const ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
 /** Things only a fitting robot profile can name: rules over them don't run on a log the profile doesn't fit. */
 const ROBOT_ITEMS = ['motor', 'motorGroup', 'device', 'camera', 'mechanism']
 
+/** Worst first: severity, then the rule's place in the list (things that cost the match first), then time. */
+export function worstFirst(rules: { id: string }[]): (a: Finding, b: Finding) => number {
+  const place = (f: Finding) => { const i = rules.findIndex((r) => r.id === f.rule); return i < 0 ? rules.length : i }
+  return (a, b) => ORDER[a.severity] - ORDER[b.severity] || place(a) - place(b) || (a.time ?? Infinity) - (b.time ?? Infinity)
+}
+
 export function runRules(match: Match, rules: Rule[], consolidators: Consolidators = {}): Report {
   const view = new MatchView(match)
   const findings: Finding[] = []
@@ -74,9 +80,7 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
       evidence: Object.fromEntries(skipped.map((s) => [s.rule, s.reason])),
     })
   }
-  // Worst first: severity, then the rule's place in the list (things that cost the match first), then time.
-  const place = (f: Finding) => { const i = rules.findIndex((r) => r.id === f.rule); return i < 0 ? rules.length : i }
-  findings.sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || place(a) - place(b) || (a.time ?? Infinity) - (b.time ?? Infinity))
+  findings.sort(worstFirst(rules))
   const parents = consolidate(findings, consolidators, crashed)
   return { findings, skipped, crashed, ...(parents.length ? { parents } : {}) }
 }
