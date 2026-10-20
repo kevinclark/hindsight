@@ -41,6 +41,9 @@ export const LOG_DRIVE_KEYS = {
   device: '/Hindsight/LogDrive/Device',
 } as const
 
+/** A log drive whose device starts with this is a USB stick: the companion's LogDriveIO.isUsb (companion-keys test). */
+export const USB_DEVICE_PREFIX = '/dev/sd'
+
 /** Every log key Foresight's checks read for this robot profile. */
 export function foresightKeys(profile: RobotProfile): string[] {
   const s = profile.signals

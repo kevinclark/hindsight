@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { PROFILES } from '../src/profiles/index.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
-import { LOG_DRIVE_KEYS } from '../src/foresight/keys.ts'
+import { LOG_DRIVE_KEYS, USB_DEVICE_PREFIX } from '../src/foresight/keys.ts'
 
 interface CompanionKey { key: string; type: string; module: string }
 
@@ -47,5 +47,10 @@ describe('companion key list', () => {
   it('has the log-drive keys Foresight reads, with their types', () => {
     const types = Object.fromEntries(keys.map((k) => [k.key, k.type]))
     expect(Object.values(LOG_DRIVE_KEYS).map((key) => types[key])).toEqual(['boolean', 'string', 'string', 'string'])
+  })
+
+  it('calls a log drive a USB stick by the same device prefix as the library', () => {
+    const java = readFileSync(new URL('../companion/core/src/main/java/com/frc8033/hindsight/LogDriveIO.java', import.meta.url), 'utf8')
+    expect(java).toContain(`return device.startsWith("${USB_DEVICE_PREFIX}");`)
   })
 })

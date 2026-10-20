@@ -54,8 +54,12 @@ class HindsightCompanionTest {
     @Override
     public void updateInputs(LogDriveIOInputs inputs) {
       logDriveReads++;
+      if (throwOnRead) {
+        throw new IllegalStateException("boom");
+      }
       inputs.status = drive.status;
       inputs.path = drive.path;
+      inputs.device = drive.device;
       inputs.onUsb = drive.onUsb;
       inputs.freeBytes = drive.freeBytes;
     }
@@ -138,12 +142,12 @@ class HindsightCompanionTest {
   }
 
   @Test
-  void readsOnceASecondAndTheLogDriveOnlyAtBoot() {
+  void readsOnceASecond() {
     HindsightCompanion companion = companion(true);
     runSeconds(companion, 3);
     assertEquals(3, hardware.systemReads);
     assertEquals(3, hardware.canivoreReads);
-    assertEquals(1, hardware.logDriveReads);
+    assertEquals(3, hardware.logDriveReads);
   }
 
   @Test
@@ -161,6 +165,44 @@ class HindsightCompanionTest {
         });
     assertTrue(statuses.contains("Hindsight/System unavailable: IllegalStateException"), statuses.toString());
     assertTrue(statuses.contains("Hindsight/CANivore/Any unavailable: IllegalStateException"));
+    assertTrue(statuses.contains("Hindsight/LogDrive unavailable: IllegalStateException"));
+  }
+
+  @Test
+  void aStickOutAtAnyReadStaysOffUsbAfterItGoesBackInButAFailedReadDoesNot() {
+    hardware.drive.status = "ok";
+    hardware.drive.device = "/dev/sda1";
+    hardware.drive.onUsb = true;
+    hardware.drive.freeBytes = 10_000_000_000L;
+    HindsightCompanion companion = companion(true);
+    runSeconds(companion, 1);
+    hardware.drive.status = "unavailable: /proc/mounts";
+    hardware.drive.onUsb = false;
+    runSeconds(companion, 1);
+    hardware.drive.status = "ok";
+    hardware.drive.onUsb = true;
+    runSeconds(companion, 1);
+    assertTrue(loggedOnUsb(companion));
+    assertEquals(List.of(), shown());
+
+    hardware.drive.onUsb = false;
+    hardware.drive.device = "ubi0:rootfs";
+    runSeconds(companion, 1);
+    hardware.drive.onUsb = true;
+    hardware.drive.device = "/dev/sda1";
+    runSeconds(companion, 1);
+    assertFalse(loggedOnUsb(companion));
+    assertEquals(
+        List.of(
+            "kError: Robot log isn't going to the USB stick: it wasn't in the whole time since the"
+                + " robot code started (restart the robot code)"),
+        shown());
+  }
+
+  private static boolean loggedOnUsb(HindsightCompanion companion) {
+    org.littletonrobotics.junction.LogTable table = new org.littletonrobotics.junction.LogTable(0);
+    companion.forEachInputs((key, inputs) -> inputs.toLog(table.getSubtable(key)));
+    return table.get("Hindsight/LogDrive/OnUsb", false);
   }
 
   @Test
@@ -234,7 +276,19 @@ class HindsightCompanionTest {
     hardware.drive.onUsb = false;
     HindsightCompanion offUsb = companion(true);
     offUsb.periodic();
-    assertEquals(List.of("kError: Robot log isn't going to a USB stick: /U is on the roboRIO"), shown());
+    assertEquals(
+        List.of("kError: Robot log isn't going to a USB stick: /U is on the roboRIO, or nowhere"),
+        shown());
+
+    alerts.clear();
+    hardware.drive.device = "/dev/sda1";
+    HindsightCompanion stickWasOut = companion(true);
+    stickWasOut.periodic();
+    assertEquals(
+        List.of(
+            "kError: Robot log isn't going to the USB stick: it wasn't in the whole time since the"
+                + " robot code started (restart the robot code)"),
+        shown());
 
     alerts.clear();
     hardware.drive.onUsb = true;

@@ -65,6 +65,7 @@ public class HindsightCompanion {
   private final AlertOut devicesRebooted;
   private final AlertOut devicesWithStickyFaults;
   private final AlertOut firmwareMismatch;
+  private boolean stickWasOut = false;
   private int loopCount = 0;
 
   /**
@@ -138,18 +139,22 @@ public class HindsightCompanion {
   /** Call once per loop from robotPeriodic. */
   public void periodic() {
     if (real && loopCount % READ_PERIOD_LOOPS == 0) {
-      readHardware(loopCount == 0);
+      readHardware();
     }
     loopCount++;
     forEachInputs(Logger::processInputs);
     updateAlerts();
   }
 
-  private void readHardware(boolean atBoot) {
+  private void readHardware() {
     readSafely(() -> systemIO.updateInputs(systemInputs), why -> systemInputs.status = why);
-    if (atBoot) {
-      readSafely(() -> logDriveIO.updateInputs(logDriveInputs), why -> logDriveInputs.status = why);
+    readSafely(() -> logDriveIO.updateInputs(logDriveInputs), why -> logDriveInputs.status = why);
+    // AdvantageKit opens its log file once, so a stick that was out at any read has lost the log
+    // until the code restarts, even after it goes back in
+    if (logDriveInputs.status.equals("ok") && !logDriveInputs.onUsb) {
+      stickWasOut = true;
     }
+    logDriveInputs.onUsb &= !stickWasOut;
     for (Canivore canivore : canivores) {
       readSafely(() -> canivore.io.updateInputs(canivore.inputs), why -> canivore.inputs.status = why);
     }
@@ -190,7 +195,12 @@ public class HindsightCompanion {
             logDriveInputs.freeBytes / 1_000_000, LOW_LOG_DRIVE_BYTES / 1_000_000));
     logDriveNotUsb.set(
         driveRead && !logDriveInputs.onUsb,
-        "Robot log isn't going to a USB stick: " + logDriveInputs.path + " is on the roboRIO");
+        LogDriveIO.isUsb(logDriveInputs.device)
+            ? "Robot log isn't going to the USB stick: it wasn't in the whole time since the robot"
+                + " code started (restart the robot code)"
+            : "Robot log isn't going to a USB stick: "
+                + logDriveInputs.path
+                + " is on the roboRIO, or nowhere");
     for (Canivore canivore : canivores) {
       canivore.updateAlerts();
     }

@@ -317,11 +317,17 @@ describe('Foresight: the log USB stick, from the companion library\'s log-drive 
     expect(r.verdict.reason).toBe('nothing found')
   })
 
-  it('the log on the stick: OK, saying it is the reading from code start', () => {
+  it('the log on the stick: OK, saying it means the stick was in the whole time since code start', () => {
     const r = check(drive(true))
     expect(r.report.skipped.map((s) => s.rule)).not.toContain('foresight/log-usb-stick')
     expect(line(r)).toMatchObject({ state: 'ok' })
-    expect(line(r).detail).toMatch(/when its code started.*Restart the robot code/)
+    expect(line(r).detail).toMatch(/since its code started.*the whole time.*Restart the robot code/)
+  })
+
+  it('a stick that was out since code start and is back (OnUsb false on a /dev/sd device): amber, saying it was out', () => {
+    const item = check(drive(false)).verdict.items.find((i) => i.finding.rule === 'foresight/log-usb-stick')!
+    expect(item.level).toBe('amber')
+    expect(item.finding.title).toBe('The robot log (/U) is not on the USB stick: the stick was out at some point since the robot code started')
   })
 
   it('the log not on a stick: amber (never red: no log of ours has it), GO with one to look at', () => {
