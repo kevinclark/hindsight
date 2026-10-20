@@ -60,7 +60,7 @@ The page shows which profile each log used and why, and **use…** (Match review
 commit they read ("as of event-x d339f29; this log ran 45e3eba"): a log run before the branch's last commit may have
 had different limits.
 
-To add a robot: copy a profile file, change the keys, limits and `code` pin, and add it to `src/profiles/index.ts`.
+To add a robot: **Robot profile** drafts one from your logs, a robot snapshot and (optionally) your code folder, and keeps it in the browser or saves a `profile.json` (`docs/robot-profile.md`; code in `src/builder/`). A built-in profile is a TypeScript file in `src/profiles/`, listed in `src/profiles/index.ts`.
 
 ### Robots without AdvantageKit
 

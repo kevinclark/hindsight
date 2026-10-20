@@ -4,6 +4,7 @@
  */
 import { PROFILES, profileId } from '../profiles/index.ts'
 import type { RobotProfile } from '../profiles/types.ts'
+import { storedProfiles } from '../builder/store.ts'
 
 const KEY = 'hindsight.chosenRobot'
 
@@ -11,10 +12,10 @@ function read(): Record<string, string> {
   try { return JSON.parse(localStorage.getItem(KEY) ?? '{}') } catch { return {} }
 }
 
-/** The profile chosen for this log, if any (and if that profile still exists). */
+/** The profile chosen for this log, if any (and if that profile still exists: a built-in one, or one kept in this browser). */
 export function chosenRobot(fileName: string): RobotProfile | undefined {
   const id = read()[fileName]
-  return id ? PROFILES.find((p) => profileId(p) === id) : undefined
+  return id ? [...PROFILES, ...storedProfiles()].find((p) => profileId(p) === id) : undefined
 }
 
 /** Choose a profile for these logs; null goes back to choosing automatically. */

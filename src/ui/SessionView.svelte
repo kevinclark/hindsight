@@ -8,6 +8,7 @@
   import { PROFILE_FIT_MIN } from '../profiles/choose.ts'
   import { PROFILES, profileId } from '../profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
+  import { profilesNow } from './kept-profiles.svelte.ts'
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
   import { clearCached, fileKey, loadCached, saveCached } from '../session/cache.ts'
@@ -72,6 +73,7 @@
     return chosen ? s.robot.how === 'chosen by you' && s.robot.profileId === profileId(chosen) : s.robot.how !== 'chosen by you'
   }
 
+  const stored = $derived(profilesNow())
   const sessions = $derived(groupSessions(summaries, overrides, renames))
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
   // Until one is picked, show the event (the matches that count), else the first session.
@@ -113,7 +115,7 @@
       try {
         const key = fileKey(file)
         const saved = cache.get(key)
-        const summary = reusable(saved, file.name) ? saved : summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, chosenRobot(file.name))
+        const summary = reusable(saved, file.name) ? saved : summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, chosenRobot(file.name), [...PROFILES, ...stored])
         if (summary && summary !== saved) {
           cache.set(key, summary)
           saveCached(key, $state.snapshot(summary) as MatchSummary).then((ok) => { if (ok) savedCount++; else saveFailed = true })
@@ -232,7 +234,7 @@
   {/each}
   <p class="note"><label>Robot for this session: <select onchange={(e) => setRobot(session, (e.currentTarget as HTMLSelectElement).value)}>
     <option value="auto" selected={!chosenId}>automatic (from each log)</option>
-    {#each PROFILES as p (profileId(p))}<option value={profileId(p)} selected={profileId(p) === chosenId}>{profileId(p)}</option>{/each}
+    {#each [...PROFILES, ...stored] as p (profileId(p))}<option value={profileId(p)} selected={profileId(p) === chosenId}>{profileId(p)}</option>{/each}
   </select></label></p>
   {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
   {#if misfits.length}

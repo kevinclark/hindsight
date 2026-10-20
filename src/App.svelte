@@ -18,6 +18,8 @@
   import type { Finding } from './rules/types.ts'
   import { PROFILES, profileId } from './profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './ui/robot-choice.ts'
+  import ProfileBuilder from './ui/ProfileBuilder.svelte'
+  import { profilesNow } from './ui/kept-profiles.svelte.ts'
 
   // Every file dropped so far, so a .dslog dropped after its .wpilog still finds its match. "Clear" empties it.
   let inputs: InputFile[] = []
@@ -26,7 +28,9 @@
   let selected = $state(0)
   let tab = $state<'match' | 'power' | 'limits'>('match')
   // Review match logs, a whole session of them, the limits wizard, or a robot snapshot (device settings and faults).
-  let mode = $state<'review' | 'session' | 'wizard' | 'snapshot' | 'foresight'>('review')
+  let mode = $state<'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight'>('review')
+  // Robot profiles kept in this browser (built in the Robot profile mode), offered beside the built-in ones.
+  const stored = $derived(profilesNow())
 
   // From the Session view: open one match's log (every piece, if the robot program restarted during it) in Match review.
   async function openFromSession(files: File[]) {
@@ -75,7 +79,7 @@
       const sameFile = (a: InputFile, b: InputFile) => a.name === b.name && a.bytes.length === b.bytes.length
       inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
       const read = performance.now()
-      const result = analyzeFiles(inputs, chosenRobot)
+      const result = analyzeFiles(inputs, chosenRobot, [...PROFILES, ...stored])
       const done = performance.now()
       analyses = result.analyses
       problems = result.problems
@@ -96,7 +100,7 @@
     if (!current) return
     chooseRobot([current.match.fileName], id === 'auto' ? null : id)
     const file = current.match.fileName
-    const result = analyzeFiles(inputs, chosenRobot)
+    const result = analyzeFiles(inputs, chosenRobot, [...PROFILES, ...stored])
     analyses = result.analyses
     selected = Math.max(0, analyses.findIndex((a) => a.match.fileName === file))
   }
@@ -146,6 +150,7 @@
   <button class:active={mode === 'session'} onclick={() => (mode = 'session')}>Session</button>
   <button class:active={mode === 'wizard'} onclick={() => (mode = 'wizard')}>Limits wizard</button>
   <button class:active={mode === 'snapshot'} onclick={() => (mode = 'snapshot')}>Robot snapshot</button>
+  <button class:active={mode === 'profile'} onclick={() => (mode = 'profile')}>Robot profile</button>
   <button class:active={mode === 'foresight'} onclick={() => (mode = 'foresight')}>Foresight</button>
 </nav>
 
@@ -153,6 +158,7 @@
      the matches in review, the wizard's progress, or a snapshot. -->
 <div hidden={mode !== 'wizard'}><Wizard matches={analyses} /></div>
 <div hidden={mode !== 'snapshot'}><SnapshotView /></div>
+<div hidden={mode !== 'profile'}><ProfileBuilder /></div>
 <div hidden={mode !== 'foresight'}>
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history">A pit check was added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
@@ -204,7 +210,7 @@
         ({HOW_WORDS[current.match.profileChoice.how]}) ·
         <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
           <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>
-          {#each PROFILES as p (profileId(p))}<option value={profileId(p)} selected={current.match.profileChoice.how === 'chosen by you' && profileId(p) === profileId(current.match.profile)}>{profileId(p)}</option>{/each}
+          {#each [...PROFILES, ...stored] as p (profileId(p))}<option value={profileId(p)} selected={current.match.profileChoice.how === 'chosen by you' && profileId(p) === profileId(current.match.profile)}>{profileId(p)}</option>{/each}
         </select></label>
       </p>
       {#if current.match.profileChoice.note}<p class="meta dirty">{current.match.profileChoice.note}</p>{/if}

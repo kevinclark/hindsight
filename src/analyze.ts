@@ -30,9 +30,10 @@ export interface AnalyzeResult {
 
 /**
  * `profile`: the profile to use as is (a test or script pins one), or, per file name, the one the student chose
- * (checked for fit). Logs without one get the profile that fits them (profiles/choose.ts).
+ * (checked for fit). Logs without one get the profile that fits them (profiles/choose.ts) from `profiles`: the
+ * built-in ones, plus any the page passes in (profiles kept in this browser, src/builder/store.ts).
  */
-export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((fileName: string) => RobotProfile | undefined)): AnalyzeResult {
+export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((fileName: string) => RobotProfile | undefined), profiles: RobotProfile[] = PROFILES): AnalyzeResult {
   const problems: string[] = []
   const analyses: Analysis[] = []
   const dslogs: { name: string; file: DslogFile }[] = []
@@ -44,7 +45,7 @@ export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((file
         const started = performance.now()
         const log = openWpilog(f.bytes)
         // A profile passed in directly (a test or script pins it) is used as is; the student's choice is checked for fit.
-        const picked = typeof profile === 'object' ? { profile, choice: { how: 'given' as const, note: null, fit: null } } : chooseProfile(log, PROFILES, profile?.(f.name))
+        const picked = typeof profile === 'object' ? { profile, choice: { how: 'given' as const, note: null, fit: null } } : chooseProfile(log, profiles, profile?.(f.name))
         const match = buildMatch(f.name, log, picked.profile, picked.choice)
         analyses.push({ match, report: { findings: [], skipped: [], crashed: [] }, timing: { parseMs: performance.now() - started, rulesMs: 0 } })
       } else if (kind === 'dslog') {

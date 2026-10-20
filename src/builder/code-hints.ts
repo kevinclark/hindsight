@@ -1,0 +1,87 @@
+/**
+ * Hints from a team's robot-code folder: where the code builds each Talon FX, with the CAN ID it passes. Hints only:
+ * the ID usually reaches the subsystem that logs the motor through two or three files, so no single line proves which
+ * log key a constructor is. They label the CAN ID choices in the builder ("15: Shooter.java:45, FLYWHEEL_LEADER_ID").
+ *
+ * Read only, in the browser: the folder's files are never changed or uploaded.
+ */
+
+export interface CodeFile { path: string; text: string }
+
+export interface TalonSite {
+  /** The CAN ID, when it is a number or a constant found in the folder. */
+  id: number | null
+  /** What the code passes: "15" or "FLYWHEEL_LEADER_ID". */
+  expr: string
+  /** The bus argument as written, if any ("canivore", "kCANBus"). */
+  bus: string | null
+  file: string
+  line: number
+}
+
+export interface CodeHints {
+  sites: TalonSite[]
+  /** The commit the folder is on (from .git), if it could be read. */
+  sha: string | null
+  branch: string | null
+  notes: string[]
+}
+
+/** `new TalonFX(15)` (Java) or `TalonFX(15)` (Kotlin). */
+const NEW_TALON = /\b(?:new\s+)?TalonFX\s*\(\s*([A-Za-z_][\w.]*(?:\(\))?|\d+)\s*(?:,\s*([^()]*?(?:\([^()]*\))?[^()]*?))?\s*\)/g
+/** `final int NAME = 15;` (Java) or `const val NAME = 15` / `val NAME: Int = 15` (Kotlin). Parameters and locals don't count. */
+const INT_CONST = /\b(?:(?:static\s+)?final\s+(?:static\s+)?(?:int|Integer)|const\s+val|val)\s+([A-Za-z_]\w*)\s*(?::\s*Int\s*)?=\s*(\d+)(?![\w.])/g
+
+const fileName = (p: string) => p.split('/').pop() ?? p
+
+export function codeHints(files: CodeFile[]): CodeHints {
+  const notes: string[] = []
+  const sources = files.filter((f) => /\.(java|kt)$/.test(f.path))
+  // Integer constants by simple name. A name defined with two values can't be resolved.
+  const constants = new Map<string, number | null>()
+  for (const f of sources) {
+    for (const m of f.text.matchAll(INT_CONST)) {
+      const prev = constants.get(m[1])
+      constants.set(m[1], prev === undefined || prev === Number(m[2]) ? Number(m[2]) : null)
+    }
+  }
+  const sites: TalonSite[] = []
+  for (const f of sources) {
+    for (const m of f.text.matchAll(NEW_TALON)) {
+      const expr = m[1]
+      const simple = expr.replace(/\(\)$/, '').split('.').pop()!
+      const id = /^\d+$/.test(expr) ? Number(expr) : (constants.get(simple) ?? null)
+      const line = f.text.slice(0, m.index).split('\n').length
+      sites.push({ id, expr, bus: m[2]?.trim() || null, file: f.path, line })
+    }
+  }
+  if (sources.length && sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java or Kotlin files.')
+  const git = gitHead(files)
+  return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), ...git, notes: [...notes, ...git.notes] }
+}
+
+/** The commit .git/HEAD points at: a loose ref, or a line of packed-refs. */
+function gitHead(files: CodeFile[]): { sha: string | null; branch: string | null; notes: string[] } {
+  const find = (suffix: string) => files.find((f) => f.path === suffix || f.path.endsWith(`/${suffix}`))
+  const head = find('.git/HEAD')?.text.trim()
+  if (!head) return { sha: null, branch: null, notes: ['No .git folder: can\'t tell which commit this code is.'] }
+  if (/^[0-9a-f]{40}$/.test(head)) return { sha: head, branch: null, notes: [] }
+  const ref = /^ref:\s*(\S+)$/.exec(head)?.[1]
+  if (!ref) return { sha: null, branch: null, notes: ['.git/HEAD isn\'t readable.'] }
+  const branch = ref.replace(/^refs\/heads\//, '')
+  const loose = find(`.git/${ref}`)?.text.trim()
+  if (loose && /^[0-9a-f]{40}$/.test(loose)) return { sha: loose, branch, notes: [] }
+  const packed = find('.git/packed-refs')?.text.split('\n').map((l) => l.trim().split(' ')).find(([, r]) => r === ref)?.[0]
+  if (packed && /^[0-9a-f]{40}$/.test(packed)) return { sha: packed, branch, notes: [] }
+  return { sha: null, branch, notes: [`Couldn't find the commit of branch ${branch} in .git.`] }
+}
+
+/** A warning when the code folder isn't the commit the log ran (the log's GitSHA may be short). */
+export function shaWarning(hints: CodeHints, logSha: string): string | null {
+  if (!hints.sha || !logSha) return null
+  const a = hints.sha.toLowerCase(), b = logSha.toLowerCase().replace(/[^0-9a-f]/g, '')
+  if (b.length >= 7 && (a.startsWith(b) || b.startsWith(a))) return null
+  return `This code folder is on ${hints.branch ?? 'a detached commit'} ${hints.sha.slice(0, 7)}, but the log ran ${logSha.slice(0, 7)}: CAN IDs may have changed.`
+}
+
+export const siteLabel = (s: TalonSite) => `${fileName(s.file)}:${s.line}${/^\d+$/.test(s.expr) ? '' : ` (${s.expr})`}`
