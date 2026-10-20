@@ -5,12 +5,15 @@
 
 import type { Analysis } from '../analyze.ts'
 import { ruleById } from '../rules/index.ts'
-import type { Finding } from '../rules/types.ts'
+import type { Finding, Severity } from '../rules/types.ts'
 import type { IssueEvent } from '../triage/history.ts'
 import { VERSION } from '../version.ts'
 import { SCHEMA, findingsFileName } from './findings-json.ts'
 import type { CardModel, Tone } from './card.ts'
-import { descendants, nest, type FindingNode } from './finding-tree.ts'
+import { descendants, nest, severityWords, type FindingNode } from './finding-tree.ts'
+import { cardTitle, shortTitle } from './titles.ts'
+
+export { cardTitle, shortTitle } from './titles.ts'
 
 export type FindingStatus = 'known' | 'came back' | 'fixed later'
 
@@ -91,7 +94,8 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
   const m = analysis.match
   const model = {
     active, known,
-    headlines: nest(active, all, known), knownHeadlines: nest(known, all),
+    headlines: nest(active, all, known, active.filter((f) => findingStatus(f, issues, played) === 'came back')),
+    knownHeadlines: nest(known, all),
     errors: bySeverity('error'), warnings: bySeverity('warning'), infos: bySeverity('info'),
     notChecked: analysis.report.skipped.map((s) => ({ rule: s.rule, reason: s.reason })),
     crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
@@ -112,13 +116,15 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-/** The card's title without its asides, then cut at a stop (", first at ", "(median …") and at 70 characters on a word boundary. */
-export function shortTitle(title: string): string {
-  const cut = cardTitle(title).split(/, first at |\s*\((?:median|worst) /)[0].trim()
-  if (cut.length <= 70) return cut
-  const words = cut.slice(0, 69).split(' ')
-  if (words.length > 1 && cut[69] !== ' ') words.pop()
-  return `${words.join(' ').replace(/[\s,;:]+$/, '')}…`
+/** The headlines of one severity, as the report lists them. */
+export function headlinesOf(m: ReviewModel, s: Severity): FindingNode[] {
+  return m.headlines.filter((n) => n.finding.severity === s)
+}
+
+/** How many active findings of this severity the report lists under a more serious headline (for its section count). */
+export function listedAbove(m: ReviewModel, s: Severity): number {
+  const here = new Set(headlinesOf(m, s).flatMap((n) => [n.finding, ...descendants(n)]))
+  return m.active.filter((f) => f.severity === s && !here.has(f)).length
 }
 
 export function bottomLine(errors: Finding[], warnings: Finding[], infos: Finding[], known: number): string {
@@ -160,11 +166,6 @@ export function shortWhen(when: string | null): string {
   return when ? when.replace(/\s*\(.*$/, '') : ''
 }
 
-/** A finding's title for the card: without the "(teleop; robot time 417.4 s)" aside, which the PDF keeps (card space is tight). */
-export function cardTitle(title: string): string {
-  return title.replace(/\s*\([^()]*robot time [\d.]+ s\)/g, '').replace(/\s*\(as of [^()]*\)/g, '').replace(/\s+/g, ' ').trim()
-}
-
 /** Drops the repo-path citations in a rule's `incident` text: "(…q13-log-analysis.md §1)" means nothing to a student. */
 export function stripRepoPaths(text: string): string {
   return text
@@ -196,8 +197,8 @@ export function reviewCard(m: ReviewModel): CardModel {
       const f = n.finding
       const k = keyNumber(f)
       const word = (m.errors.length ? 'ERROR' : 'WARNING') + (m.cameBack.has(f.key) ? ' · CAME BACK' : '')
-      const under = descendants(n).length
-      const number = [k.inTitle ? '' : k.text, under ? `explains ${under} more` : ''].filter(Boolean).join(' · ')
+      const under = descendants(n)
+      const number = [k.inTitle ? '' : k.text, under.length ? `explains ${severityWords(under)}` : ''].filter(Boolean).join(' · ')
       return { word, tone, title: cardTitle(f.title), number }
     }),
     emptyText: 'Nothing to fix from this log.',

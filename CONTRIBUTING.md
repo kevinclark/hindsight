@@ -157,6 +157,29 @@ A rule that judges the robot sitting disabled in the pit sets `foresightOnly: tr
 (the stretch it checks, up to now). It doesn't run on match logs. `src/rules/foresight/motor-temperature.ts` is the
 simplest one.
 
+### When one finding explains another (links)
+
+Some findings are one story: the battery collapsed, so the robot browned out, so a motor controller lost power and
+dropped off CAN, so the robot code raised its "disconnected" alert. Each rule reports its own part, and that is right:
+each says something true. A **link** in `src/rules/links.ts` tells the app that one finding explains another, so the
+app lists the explained one under the other ("Explains 3 more"), collapsed. Nothing is deleted and every count still
+counts it.
+
+```ts
+link({
+  cause: 'power/brownout',
+  explains: 'can/device-dropout',
+  when: (brownout, dropout) => likely(dropout, 'battery-sag') && secondsAfter(brownout, dropout) >= -1,
+  why: 'the device lost power in the brownout',
+}),
+```
+
+`when` gets two findings (not signals): use their `time`, `about`, `evidence` and the causes the log pointed to
+(`likely(finding, 'id')`, `mostLikely(finding, 'id')`). Write it from real matches where you saw the two together,
+and name them in the comment above the link. Then run `npm run golden` before and after on every log you have and
+look at each finding that gained `explainedBy`: a wrong link hides a real problem under the wrong headline.
+`scripts/check.ts` prints "explained by" under each linked finding.
+
 ## Things that trip people up
 
 - `/SystemStats/BatteryCurrent` is the roboRIO's own current (~0.5 A), not the battery's. For total current use

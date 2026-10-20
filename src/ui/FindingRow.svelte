@@ -12,7 +12,7 @@
   import FindingRow from './FindingRow.svelte'
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, children = [], note, nested = false, issues, statusOf }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, statusOf }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -20,7 +20,7 @@
     fixedLater?: boolean
     onMark: (finding: Finding, status: IssueStatus, note: string) => void
     /** The findings this one explains, shown collapsed under it. */
-    children?: FindingNode[]
+    explains?: FindingNode[]
     /** Something explains this finding but it is listed on its own: says what. */
     note?: string
     /** Shown under the finding that explains it. */
@@ -29,7 +29,7 @@
     issues?: Map<string, IssueEvent>
     statusOf?: (f: Finding) => string | undefined
   } = $props()
-  const under = $derived(children.flatMap((c) => [c.finding, ...descendants(c)]))
+  const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
   const rule = $derived(ruleById(finding.rule))
   const cameBack = $derived(issue?.status === 'fixed' && !fixedLater)
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
@@ -103,12 +103,12 @@
       </div>
     </div>
   </details>
-  {#if children.length}
+  {#if explains.length}
     <details class="explains">
       <summary>Explains {under.length} more ({severityWords(under)})</summary>
       <ul>
-        {#each children as c (c.finding.key + c.finding.time)}
-          <FindingRow finding={c.finding} children={c.children} nested {analysis} {issues} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
+        {#each explains as c (c.finding.key + c.finding.time)}
+          <FindingRow finding={c.finding} explains={c.children} nested {analysis} {issues} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
         {/each}
       </ul>
     </details>

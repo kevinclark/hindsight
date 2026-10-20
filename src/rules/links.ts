@@ -16,6 +16,7 @@ export const LINKS: Link[] = [
   link({
     cause: 'power/battery-collapse',
     explains: 'power/brownout',
+    // No time test: the brownout ranks the weak battery first from the same health check the collapse comes from.
     when: (collapse, brownout) => mostLikely(brownout, 'weak-battery'),
     why: 'the battery collapsed under load, so the voltage fell below the brownout level',
   }),
@@ -23,6 +24,7 @@ export const LINKS: Link[] = [
   link({
     cause: 'power/brownout',
     explains: 'can/device-dropout',
+    // The drop started no more than 1 s before the first brownout (or any time after it).
     when: (brownout, dropout) => likely(dropout, 'battery-sag') && secondsAfter(brownout, dropout) >= -1,
     why: 'the device lost power in the brownout',
   }),
@@ -95,11 +97,17 @@ function within(a: Finding, b: Finding, seconds: number): boolean {
   return Math.abs(secondsAfter(a, b)) <= seconds
 }
 
-/** Does the alert's text name this thing? Without a trailing CAN id: "Flywheel follower 16" → "flywheel follower". */
+/**
+ * Does the alert's text name this thing? A trailing CAN id may be left out: "Flywheel Follower Disconnected" names
+ * "Flywheel follower 16", but "Flywheel Follower 17 Disconnected" doesn't.
+ */
 function alertNames(alert: Finding, name: string | null): boolean {
   if (!alert.about || !name) return false
+  const id = name.match(/\s(\d+)$/)?.[1]
   const withoutId = name.replace(/\s+\d+$/, '').toLowerCase()
-  return alert.about.toLowerCase().includes(withoutId)
+  const numbers: string[] = alert.about.match(/\d+/g) ?? []
+  const sameId = id === undefined || numbers.length === 0 || numbers.includes(id)
+  return alert.about.toLowerCase().includes(withoutId) && sameId
 }
 
 /** Where a device sits on the robot, which says nothing about what kind of device it is. */

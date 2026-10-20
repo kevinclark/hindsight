@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { buildFindingsJson } from '../src/report/findings-json.ts'
-import { reviewModel } from '../src/report/review-model.ts'
+import { listedAbove, reviewCard, reviewModel } from '../src/report/review-model.ts'
 import { powerReport } from '../src/power/power-report.ts'
 import { CALGAMES, fired, haveCalGames, readInput } from './helpers/load.ts'
 
@@ -100,7 +100,11 @@ describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
     // Headlines as the Match tab lists them: Q21's red alert stays one, since its camera finding is only amber.
     const redHeadlines = (name: string) => { const m = reviewModel(byName(name), new Map()); return [m.errors.length, m.headlines.filter((n) => n.finding.severity === 'error').length] }
     expect([redHeadlines('q13'), redHeadlines('p0'), redHeadlines('q21')]).toEqual([[6, 3], [5, 2], [4, 4]])
-    expect(reviewModel(p0(), new Map()).bottomLine).toMatch(/^5 errors, .*Worst: Battery fell 2\.4 V below a healthy battery/)
+    const p0Model = reviewModel(p0(), new Map())
+    expect(p0Model.bottomLine).toMatch(/^5 errors, .*Worst: Battery fell 2\.4 V below a healthy battery/)
+    // The printed report's section counts: P0's margin warning is listed under the collapse, in the Errors section.
+    expect([listedAbove(p0Model, 'warning'), listedAbove(p0Model, 'info')]).toEqual([1, 0])
+    expect(reviewCard(p0Model).items[0].number).toMatch(/explains 3 errors, 1 warning$/)
   })
 
   it('findings.json is under 2 MB and carries no radio status', () => {

@@ -60,19 +60,25 @@ export function runRules(match: Match, rules: Rule[], links: Link[] = []): Repor
   // Worst first: severity, then the rule's place in the list (things that cost the match first), then time.
   const place = (f: Finding) => { const i = rules.findIndex((r) => r.id === f.rule); return i < 0 ? rules.length : i }
   findings.sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || place(a) - place(b) || (a.time ?? Infinity) - (b.time ?? Infinity))
-  linkFindings(findings, links)
+  linkFindings(findings, links, crashed)
   return { findings, skipped, crashed }
 }
 
 /**
  * One pass over the links (src/rules/links.ts): a finding that another finding explains gets `explainedBy`. Nothing
  * is removed, merged or reordered. Each finding gets at most one: the first link that matches, in links.ts order, and
- * the first cause finding in report order.
+ * the first cause finding in report order. A link that throws is listed with the crashed rules, like a rule.
  */
-export function linkFindings(findings: Finding[], links: Link[]): void {
+export function linkFindings(findings: Finding[], links: Link[], crashed: SkippedRule[] = []): void {
   for (const symptom of findings) {
     for (const l of links.filter((x) => x.explains === symptom.rule)) {
-      const cause = findings.find((c) => c !== symptom && c.rule === l.cause && l.when(c, symptom))
+      let cause: Finding | undefined
+      try {
+        cause = findings.find((c) => c !== symptom && c.rule === l.cause && l.when(c, symptom))
+      } catch (error) {
+        const name = `link ${l.cause} → ${l.explains}`
+        if (!crashed.some((c) => c.rule === name)) crashed.push({ rule: name, reason: String(error) })
+      }
       if (!cause) continue
       symptom.explainedBy = { rule: cause.rule, about: cause.about, time: cause.time, why: l.why }
       break

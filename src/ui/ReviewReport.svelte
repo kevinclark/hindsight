@@ -8,12 +8,12 @@
   import type { Analysis } from '../analyze.ts'
   import type { IssueEvent } from '../triage/history.ts'
   import { ruleById } from '../rules/index.ts'
-  import { incidentFor, keyNumber, reviewModel, shortWhen } from '../report/review-model.ts'
+  import { headlinesOf as headlinesIn, incidentFor, keyNumber, listedAbove, reviewModel, shortWhen } from '../report/review-model.ts'
   import { stamp } from '../report/foresight-model.ts'
   import Plot from './Plot.svelte'
   import { plotModel } from './plot-data.ts'
   import { under, type FindingNode } from '../report/finding-tree.ts'
-  import type { Finding, Severity } from '../rules/types.ts'
+  import type { Severity } from '../rules/types.ts'
 
   let { analysis, issues }: { analysis: Analysis; issues: Map<string, IssueEvent> } = $props()
   const m = $derived(reviewModel(analysis, issues))
@@ -21,16 +21,12 @@
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
   const issueFor = (key: string) => issues.get(key)
   const SEV = { error: 'Error', warning: 'Warning', info: 'Info' } as const
-  const headlinesOf = (s: Severity) => m.headlines.filter((n) => n.finding.severity === s)
-  // How many findings of this severity are listed under a more serious headline, so the section count still adds up.
-  const elsewhere = (s: Severity, list: Finding[]) => {
-    const here = new Set(headlinesOf(s).flatMap((n) => [n.finding, ...under(n).map((u) => u.finding)]))
-    return list.filter((f) => !here.has(f)).length
-  }
+  const headlinesOf = (s: Severity) => headlinesIn(m, s)
   // Each error in the order the page lists them: a headline, then the errors under it.
   const detailOrder = $derived(headlinesOf('error').flatMap((n) => [n.finding, ...under(n).map((u) => u.finding)]).filter((f) => f.severity === 'error'))
-  const aboveNote = (s: Severity, list: Finding[]) => {
-    const n = elsewhere(s, list)
+  // The section count is every finding; say how many of them are listed under a more serious headline above.
+  const aboveNote = (s: Severity) => {
+    const n = listedAbove(m, s)
     return n ? `; ${n} listed under a more serious finding above` : ''
   }
 </script>
@@ -72,13 +68,13 @@
 
   {#if m.warnings.length}
     <section>
-      <h2>Warnings ({m.warnings.length}{aboveNote('warning', m.warnings)})</h2>
+      <h2>Warnings ({m.warnings.length}{aboveNote('warning')})</h2>
       <ul class="lines">{#each headlinesOf('warning') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev warning">Warning</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   {#if m.infos.length}
     <section>
-      <h2>Info ({m.infos.length}{aboveNote('info', m.infos)})</h2>
+      <h2>Info ({m.infos.length}{aboveNote('info')})</h2>
       <ul class="lines">{#each headlinesOf('info') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">Info</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}

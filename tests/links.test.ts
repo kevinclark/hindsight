@@ -8,6 +8,7 @@ import type { Finding, Severity } from '../src/rules/types.ts'
 import { BUS_DEVICES } from '../src/rules/can/bus-dropout.ts'
 import { nest, severityWords } from '../src/report/finding-tree.ts'
 import { reviewCard, reviewModel } from '../src/report/review-model.ts'
+import { link } from '../src/rules/rule.ts'
 import { analyzeFixture } from './helpers/load.ts'
 
 /** A finding as the runner makes it: the rule's causes with these likely ones first. */
@@ -106,6 +107,25 @@ describe('links.ts', () => {
     expect(all.map(explainer)).toEqual([undefined, 'can/bus-dropout · CANivore bus', 'can/bus-dropout · CANivore bus', undefined, undefined, undefined])
   })
 
+  it('an alert naming another device of the same kind stays separate (follower 17 is not follower 16)', () => {
+    const dropout = finding('can/device-dropout', 535.307, { about: 'Flywheel follower 16', likely: ['battery-sag'] })
+    const other = alert('Flywheel Follower 17 Disconnected', 535.4)
+    const same = alert('Flywheel Follower Disconnected', 535.307)
+    linkFindings([dropout, other, same], LINKS)
+    expect([explainer(other), explainer(same)]).toEqual([undefined, 'can/device-dropout · Flywheel follower 16'])
+  })
+
+  it('a link that throws is listed as crashed and the other links still run', () => {
+    const broken = link({ cause: 'power/brownout', explains: 'power/margin', when: () => { throw new Error('typo') }, why: 'x' })
+    const brownout = finding('power/brownout', 703, { likely: ['weak-battery'] })
+    const collapse = finding('power/battery-collapse', 705, { severity: 'error' })
+    const margin = finding('power/margin', 703.3, { evidence: { 'margin (V)': -0.06 } })
+    const crashed: { rule: string; reason: string }[] = []
+    linkFindings([brownout, collapse, margin], [broken, ...LINKS], crashed)
+    expect(crashed).toEqual([{ rule: 'link power/brownout → power/margin', reason: 'Error: typo' }])
+    expect(explainer(brownout)).toBe('power/battery-collapse')
+  })
+
   it('stays quiet: a dropout at normal voltage, a dropout before the brownout, a margin above zero, an alert only outside the match', () => {
     const brownout = finding('power/brownout', 423.539)
     const normal = finding('can/device-dropout', 430, { about: 'Intake roller follower', likely: ['can-connector'] })
@@ -146,13 +166,27 @@ describe('nesting in the lists', () => {
     const active = [brownout, margin]
     const heads = nest(active, all, [collapse])
     expect(heads.map((n) => n.finding)).toEqual([brownout])
-    expect(heads[0].note).toMatch(/^explained by a known issue: /)
+    expect(heads[0].note).toMatch(/^explained by a known issue \(power\/battery-collapse at 542\): /)
     expect(heads[0].children.map((c) => c.finding)).toEqual([margin])
   })
 
   it('a finding whose headline is not shown (another audience) says what explains it', () => {
     const heads = nest([margin], all)
-    expect(heads[0].note).toMatch(/^explained by power\/brownout at 532/)
+    expect(heads[0].note).toBe('explained by power/brownout at 532: the voltage went below the brownout setting, so there was no margin left')
+  })
+
+  it('a chain with a known middle: the finding under it becomes an active headline, labelled', () => {
+    const active = [collapse, margin]
+    const heads = nest(active, all, [brownout])
+    expect(heads.map((n) => n.finding)).toEqual([collapse, margin])
+    expect(heads[0].children).toEqual([])
+    expect(heads[1].note).toMatch(/^explained by a known issue \(power\/brownout at 532\): /)
+  })
+
+  it('a finding that came back after a fix stays a headline', () => {
+    const heads = nest(all, all, [], [brownout])
+    expect(heads.map((n) => n.finding)).toEqual([brownout, collapse])
+    expect(heads[0].children.map((c) => c.finding)).toEqual([margin])
   })
 
   it('says how serious the nested findings are', () => {

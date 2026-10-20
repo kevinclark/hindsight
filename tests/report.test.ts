@@ -116,8 +116,8 @@ describe('report model, from the real CalGames fixtures', () => {
     const drop = p0.report.findings.find((x) => x.rule === 'can/device-dropout')!
     expect(keyNumber(drop).inTitle).toBe(true)
     const items = reviewCard(reviewModel(p0, new Map())).items
-    // No number (the title says 53); only what it explains (the follower dropout and its alert, nested under it).
-    expect(items.find((i) => i.title.startsWith('Browned out 53 times'))!.number).toBe('explains 2 more')
+    // No number (the title says 53); only what it explains (in this cut: the follower dropout and the margin).
+    expect(items.find((i) => i.title.startsWith('Browned out 53 times'))!.number).toBe('explains 1 error, 1 warning')
     expect(titleHasValue('Lost comms at 2:27 into the match', 2)).toBe(false)
     expect(titleHasValue('Browned out 53 times', 53)).toBe(true)
     expect(titleHasValue('Browned out 253 times', 53)).toBe(false)

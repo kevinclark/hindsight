@@ -5,6 +5,7 @@
  */
 
 import type { Finding, Severity } from '../rules/types.ts'
+import { shortTitle } from './titles.ts'
 
 export interface FindingNode {
   finding: Finding
@@ -25,24 +26,26 @@ export function explainerOf(f: Finding, all: Finding[]): Finding | undefined {
 /**
  * The list as headlines, each with the findings it explains nested under it. A finding is nested only when what
  * explains it is in the same list and is at least as serious; otherwise it stays a headline with a note saying what
- * explains it, so a link never hides a red under an amber. `known`: findings already filed as known issues.
+ * explains it, so a link never hides a red under an amber. A finding that came back after a fix stays a headline
+ * too. `known`: every finding filed as a known issue; `cameBack`: findings that came back after a fix.
  */
-export function nest(list: Finding[], all: Finding[], known: Finding[] = []): FindingNode[] {
+export function nest(list: Finding[], all: Finding[], known: Finding[] = [], cameBack: Finding[] = []): FindingNode[] {
   const inList = new Set(list)
   const parentInList = (f: Finding) => {
     const parent = explainerOf(f, all)
-    return parent && inList.has(parent) && RANK[f.severity] >= RANK[parent.severity] ? parent : undefined
+    const nestable = parent && inList.has(parent) && RANK[f.severity] >= RANK[parent.severity] && !cameBack.includes(f)
+    return nestable ? parent : undefined
   }
   const node = (f: Finding): FindingNode => ({ finding: f, children: list.filter((c) => parentInList(c) === f).map(node) })
   return list.filter((f) => !parentInList(f)).map((f) => ({ ...node(f), note: noteFor(f, all, known) }))
 }
 
-/** "explained by a known issue", or "explained by <its title>: <why>", for a headline that something explains. */
+/** "explained by a known issue (<its short title>): <why>", or the same without "a known issue", for a headline. */
 function noteFor(f: Finding, all: Finding[], known: Finding[]): string | undefined {
   const parent = explainerOf(f, all)
   if (!parent || !f.explainedBy) return undefined
-  if (known.includes(parent)) return `explained by a known issue: ${parent.title} (${f.explainedBy.why})`
-  return `explained by ${parent.title} (${f.explainedBy.why})`
+  const what = known.includes(parent) ? `a known issue (${shortTitle(parent.title)})` : shortTitle(parent.title)
+  return `explained by ${what}: ${f.explainedBy.why}`
 }
 
 /** Every finding under a node, at any depth. */

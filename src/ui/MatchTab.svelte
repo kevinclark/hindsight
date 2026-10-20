@@ -33,7 +33,9 @@
   const fresh = $derived(shown.filter((f) => !status(f)))
   const known = $derived(shown.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
   const active = $derived([...cameBack, ...fresh])
-  const activeTree = $derived(nest(active, all, known))
+  // Every known issue, whichever audience is picked, so a hidden one still reads "explained by a known issue".
+  const allKnown = $derived(all.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
+  const activeTree = $derived(nest(active, all, allKnown, cameBack))
   const knownTree = $derived(nest(known, all))
   const firing = $derived(new Set(all.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
@@ -78,7 +80,7 @@
 {:else}
   <ul class="findings">
     {#each activeTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} children={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} {onMark} />
     {/each}
   </ul>
 {/if}
@@ -88,7 +90,7 @@
     <summary><h3>Known issues seen this match ({known.length})</h3></summary>
     <ul class="findings">
       {#each knownTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} children={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} statusOf={status} {onMark} />
+        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} statusOf={status} {onMark} />
       {/each}
     </ul>
   </details>
