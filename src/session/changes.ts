@@ -15,7 +15,7 @@ export interface FindingSnapshot {
 }
 
 /** How a finding stood: its confidence and "fired in k of n". */
-export interface Standing { confidence: Confidence; fired: number; checkable: number }
+export interface Standing { confidence: Confidence; fired: number; checkable: number; severity: 'error' | 'warning' | 'info' }
 
 export interface FindingChange {
   key: string
@@ -36,7 +36,7 @@ export function snapshotFindings(merged: MergedFinding[]): FindingSnapshot[] {
   }))
 }
 
-const standing = (f: FindingSnapshot): Standing => ({ confidence: f.confidence, fired: f.fired, checkable: f.checkable })
+const standing = (f: FindingSnapshot): Standing => ({ confidence: f.confidence, fired: f.fired, checkable: f.checkable, severity: f.severity })
 
 /** Findings that are new, gone, or have another confidence or "fired in k of n"; worst severity first. */
 export function diffFindings(before: FindingSnapshot[], after: FindingSnapshot[]): FindingChange[] {
@@ -46,7 +46,7 @@ export function diffFindings(before: FindingSnapshot[], after: FindingSnapshot[]
   for (const f of after) {
     const old = was.get(f.key)
     if (!old) changes.push({ key: f.key, severity: f.severity, title: f.title, kind: 'new', after: standing(f) })
-    else if (old.confidence !== f.confidence || old.fired !== f.fired || old.checkable !== f.checkable) {
+    else if (old.severity !== f.severity || old.confidence !== f.confidence || old.fired !== f.fired || old.checkable !== f.checkable) {
       changes.push({ key: f.key, severity: f.severity, title: f.title, kind: 'changed', before: standing(old), after: standing(f) })
     }
   }
@@ -63,10 +63,14 @@ export function standingText(s: Standing): string {
   return `${CONFIDENCE_WORDS[s.confidence]}, ${s.fired} of ${s.checkable}`
 }
 
-/** One line for a change: "New: …", "Gone: …" or "Changed: … Once, 1 of 4 → Consistent, 3 of 4". */
+/** One line for a change, led by the finding's title with its key in brackets. */
 export function changeText(c: FindingChange): string {
-  if (c.kind === 'new' && c.after) return `New: ${c.key} (${standingText(c.after)})`
-  if (c.kind === 'gone' && c.before) return `Gone: ${c.key} (was ${standingText(c.before)})`
-  if (c.before && c.after) return `Changed: ${c.key} (${standingText(c.before)} → ${standingText(c.after)})`
+  if (c.kind === 'new' && c.after) return `New: ${c.title} (${c.key}; ${standingText(c.after)})`
+  if (c.kind === 'gone' && c.before) return `Gone: ${c.title} (${c.key}; was ${standingText(c.before)})`
+  if (c.before && c.after) {
+    const rate = standingText(c.before) === standingText(c.after) ? standingText(c.after) : `${standingText(c.before)} → ${standingText(c.after)}`
+    const severity = c.before.severity === c.after.severity ? '' : `; ${c.before.severity} → ${c.after.severity}`
+    return `Changed: ${c.title} (${c.key}; ${rate}${severity})`
+  }
   return c.key
 }

@@ -58,6 +58,8 @@ const chooseLogs = async (selector: string, paths = files) => {
   await send('DOM.setFileInputFiles', { nodeId, files: paths }, sid)
 }
 const loaded = () => waitFor(`new RegExp('^${files.length} of ${files.length} logs').test(document.querySelector('.progress')?.innerText ?? '')`, 'the logs to load')
+/** Wait until saving has finished: the IndexedDB count has stopped changing. */
+const settled = async () => { let last = -1; for (let i = 0; i < 50; i++) { const n = (await savedEntries()).length; if (n === last && n > 0) return; last = n; await sleep(400) } }
 const reload = async () => { await send('Page.reload', {}, sid); await sleep(2500); await click('Session'); await sleep(800) }
 const step = async (title: string) => { console.log(`\n== ${title}`); console.log(await pageText()) }
 
@@ -72,6 +74,7 @@ await chooseLogs('input[type=file][accept=".wpilog"]')
 await loaded()
 await evalIn(`localStorage.setItem('hindsight.sessionRenames', '{"x":"My name"}'); localStorage.setItem('hindsight.typedBatteries', '{"a.wpilog":"B7"}'); localStorage.setItem('hindsight.sessionOverrides', '{"a.wpilog":"Moved"}')`)
 const keptBefore = await localKeys()
+await settled()
 await step('1a. logs loaded')
 expect((await savedEntries()).length === files.length, `${files.length} summaries saved`)
 await click('New session')
@@ -114,13 +117,18 @@ expect(await evalIn(`/^New: /m.test(document.querySelector('[data-reread-changes
 const after = await savedEntries()
 expect(after.length === files.length && after.every((e) => e.build !== 'older0build0000' && e.version && e.shape), 'saved entries replaced by this build\'s, with version and shape')
 
-// 4. Read again with the logs on the page: no picker, nothing changed.
+// 4. Read again with the logs on the page: no picker, nothing changed. The saved copies must be written again.
+const savedAtOf = async () => JSON.parse(await evalIn(`new Promise((res) => { const r = indexedDB.open('hindsight', 1); r.onsuccess = () => { const q = r.result.transaction('summaries').objectStore('summaries').getAll(); q.onsuccess = () => { r.result.close(); res(JSON.stringify(q.result.map((c) => c.savedAt).sort())) } } })`)) as string[]
+const savedBefore4 = await savedAtOf()
 await click('Read again')
 await sleep(300)
 await loaded()
 await sleep(1500)
 await step('4. Read again, logs already on the page')
 expect(await evalIn(`/no finding changed/.test(document.querySelector('[data-reread-changes]')?.innerText ?? '')`), '"no finding changed" shown')
+let savedAfter4 = await savedAtOf()
+for (let i = 0; i < 40 && !savedAfter4.every((t, k) => t > savedBefore4[k]); i++) { await sleep(250); savedAfter4 = await savedAtOf() }
+expect(savedAfter4.length === savedBefore4.length && savedAfter4.every((t, i) => t > savedBefore4[i]), 'every saved copy was written again (savedAt advanced): the cache was bypassed')
 expect((await localKeys()) === keptBefore, 'localStorage still untouched')
 
 console.log(failures.length ? `\nFAILED:\n - ${failures.join('\n - ')}` : '\nall checks passed')

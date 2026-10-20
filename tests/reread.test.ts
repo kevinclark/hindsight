@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { changeText, diffFindings, type FindingSnapshot } from '../src/session/changes.ts'
 import { splitSaved, staleNote, type SavedSummary } from '../src/session/stale.ts'
 import { buildSessionJson } from '../src/session/export.ts'
-import { SUMMARY_SHAPE, type MatchSummary } from '../src/session/summary.ts'
+import { SUMMARY_SHAPE, summarizeLog, type MatchSummary } from '../src/session/summary.ts'
+import { loadFixture } from './helpers/load.ts'
 
 const snap = (key: string, fired: number, checkable: number, over: Partial<FindingSnapshot> = {}): FindingSnapshot => ({
   key, severity: 'warning', title: `${key} title`, fired, checkable,
@@ -18,8 +19,8 @@ describe('diffFindings', () => {
     const changes = diffFindings(before, after)
     expect(changes.map((c) => [c.kind, c.key])).toEqual([['new', 'e/new'], ['gone', 'b/gone'], ['changed', 'c/changed']])
     const changed = changes.find((c) => c.kind === 'changed')!
-    expect(changed.before).toEqual({ confidence: 'once', fired: 1, checkable: 4 })
-    expect(changed.after).toEqual({ confidence: 'consistent', fired: 3, checkable: 4 })
+    expect(changed.before).toEqual({ confidence: 'once', fired: 1, checkable: 4, severity: 'warning' })
+    expect(changed.after).toEqual({ confidence: 'consistent', fired: 3, checkable: 4, severity: 'warning' })
   })
   it('nothing changed: an empty list', () => {
     const same = [snap('a/x', 2, 3), snap('b/y', 1, 3)]
@@ -28,7 +29,12 @@ describe('diffFindings', () => {
   it('the same confidence with another "k of n" counts as changed', () => {
     const [c] = diffFindings([snap('a/x', 2, 5)], [snap('a/x', 2, 4)])
     expect(c.kind).toBe('changed')
-    expect(changeText(c)).toBe('Changed: a/x (Intermittent, 2 of 5 → Intermittent, 2 of 4)')
+    expect(changeText(c)).toBe('Changed: a/x title (a/x; Intermittent, 2 of 5 → Intermittent, 2 of 4)')
+  })
+  it('a severity change alone counts as changed and is shown', () => {
+    const [c] = diffFindings([snap('a/x', 3, 3)], [snap('a/x', 3, 3, { severity: 'error' })])
+    expect(c.kind).toBe('changed')
+    expect(changeText(c)).toBe('Changed: a/x title (a/x; Consistent, 3 of 3; warning → error)')
   })
   it('worst severity first, then new, gone, changed', () => {
     const before = [snap('w/gone', 2, 3), snap('i/changed', 1, 3, { severity: 'info' }), snap('e/changed', 1, 3, { severity: 'error' })]
@@ -37,8 +43,8 @@ describe('diffFindings', () => {
   })
   it('says new and gone in words', () => {
     const [n, g] = [diffFindings([], [snap('a/x', 3, 3)])[0], diffFindings([snap('b/y', 1, 4)], [])[0]]
-    expect(changeText(n)).toBe('New: a/x (Consistent, 3 of 3)')
-    expect(changeText(g)).toBe('Gone: b/y (was Once, 1 of 4)')
+    expect(changeText(n)).toBe('New: a/x title (a/x; Consistent, 3 of 3)')
+    expect(changeText(g)).toBe('Gone: b/y title (b/y; was Once, 1 of 4)')
   })
 })
 
@@ -85,3 +91,17 @@ describe('session-findings.json', () => {
     expect(buildSessionJson(session, new Map(), {}, [])).toHaveProperty('changedOnReread.changes', [])
   })
 })
+
+describe('the shape of a saved summary', () => {
+  it('has the keys SUMMARY_SHAPE was set for', () => {
+    const [log] = loadFixture('q13-auto-and-comms').filter((f) => f.name.endsWith('.wpilog'))
+    const summary = summarizeLog(log)!
+    // What a summary of one log has. Keys present only sometimes (pieces) aren't on a single log and aren't pinned.
+    const keys = Object.keys(summary).sort()
+    expect(keys, 'MatchSummary changed: bump SUMMARY_SHAPE in src/session/summary.ts if old summaries can\'t be drawn, then update this list').toEqual(EXPECTED_KEYS)
+  })
+})
+const EXPECTED_KEYS = [
+  'batteryId', 'build', 'clockNote', 'event', 'fileName', 'fileSize', 'logging', 'matchLabel', 'metrics', 'onField',
+  'playedAt', 'playedAtSource', 'problems', 'robot', 'rules', 'timing',
+]
