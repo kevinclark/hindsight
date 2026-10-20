@@ -11,6 +11,9 @@ import { isFalse, round, rule, type Problem } from '../rule.ts'
 import type { Episode, MatchView, Signal } from '../view.ts'
 import { canBuses, dropAround, isBusWide, LOW_VOLTS, plotDrops, TOGETHER_SECONDS, watched, type CanBus } from './bus.ts'
 
+/** The evidence line that names the bus's devices (links.ts reads it to tell which alerts are about the bus). */
+export const BUS_DEVICES = 'devices that report their health on this bus'
+
 export default rule({
   id: 'can/bus-dropout',
   title: 'Whole CAN bus dropped out',
@@ -70,7 +73,7 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
     ruledOut,
     nextStep: `Check the ${bus.name} itself: its USB cable to the roboRIO (seated and strain-relieved), its power wiring and the CAN wiring at it. Have the code log the ${bus.name}'s status every loop, so the next drop says why.`,
     evidence: {
-      'devices that report their health on this bus': bus.members.map((m) => m.name).join(', '),
+      [BUS_DEVICES]: bus.members.map((m) => m.name).join(', '),
       drops: drops.length,
       'seconds until every device was back': gone.map((g) => g.toFixed(1)).join(', '),
       'status the devices reported': statuses.length ? statuses.join(', ') : undefined,

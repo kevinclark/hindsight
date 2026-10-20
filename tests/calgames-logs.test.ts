@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { buildFindingsJson } from '../src/report/findings-json.ts'
+import { reviewModel } from '../src/report/review-model.ts'
 import { powerReport } from '../src/power/power-report.ts'
 import { CALGAMES, fired, haveCalGames, readInput } from './helpers/load.ts'
 
@@ -89,6 +90,17 @@ describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
     expect(r('p0').fit!.kVoltsPerAh).toBeCloseTo(0.49, 1)
     const b = p0().report.findings.find((f) => f.rule === 'can/device-dropout')!
     expect(b.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('5.86, 6.20, 6.31, 5.85, 6.10, 6.02, 5.96')
+  })
+
+  it('links: Q13 and P0 read as one story each, Q21\'s camera alerts sit under the camera, red headlines 6 → 3, 5 → 2, 4 → 4', () => {
+    const links = (name: string) => byName(name).report.findings.filter((f) => f.explainedBy).map((f) => `${f.rule}${f.about ? ` ${f.about}` : ''} ← ${f.explainedBy!.rule}`)
+    expect(links('q13')).toEqual(['auto/early-disable ← collision/tilt', 'collision/tilt Pitch ← mech/zero-not-completed', 'comms/ds-log-truncated ← comms/loss'])
+    expect(links('p0')).toEqual(['power/brownout ← power/battery-collapse', 'can/device-dropout Flywheel follower 16 ← power/brownout', 'alerts/passthrough Flywheel Follower Disconnected ← can/device-dropout', 'power/margin ← power/brownout'])
+    expect(links('q21')).toEqual(['alerts/passthrough Back_Right Camera Disconnected! ← vision/stale', "alerts/passthrough PhotonCamera 'Back_Right' is disconnected. ← vision/stale"])
+    // Headlines as the Match tab lists them: Q21's red alert stays one, since its camera finding is only amber.
+    const redHeadlines = (name: string) => { const m = reviewModel(byName(name), new Map()); return [m.errors.length, m.headlines.filter((n) => n.finding.severity === 'error').length] }
+    expect([redHeadlines('q13'), redHeadlines('p0'), redHeadlines('q21')]).toEqual([[6, 3], [5, 2], [4, 4]])
+    expect(reviewModel(p0(), new Map()).bottomLine).toMatch(/^5 errors, .*Worst: Battery fell 2\.4 V below a healthy battery/)
   })
 
   it('findings.json is under 2 MB and carries no radio status', () => {

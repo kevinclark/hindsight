@@ -31,6 +31,7 @@
  */
 
 import type { AlertView, CameraView, DeviceView, Episode, GroupView, MatchView, MechanismView, MotorView, Signal } from './view.ts'
+import type { Finding } from './types.ts'
 
 /** red = it cost or nearly cost a match; amber = a margin is eroding; grey = context. */
 export type Severity = 'error' | 'warning' | 'info'
@@ -143,6 +144,31 @@ export type Rule = About & (
 export function rule<R extends Rule>(definition: R): R {
   return definition
 }
+
+/**
+ * A link says one finding explains another in the same match: "the brownout dropped this device off CAN". The app
+ * then shows the explained finding under the one that explains it (nothing is deleted). Links live in links.ts.
+ */
+export interface Link {
+  /** The rule whose finding explains. */
+  cause: string
+  /** The rule whose finding it explains. */
+  explains: string
+  /** True when this cause finding explains this symptom finding. */
+  when: (cause: Finding, symptom: Finding) => boolean
+  /** Why, in a few words, shown with the explained finding: 'the device lost power in the brownout'. */
+  why: string
+}
+
+/** Declare a link. Like `rule`, it only checks the shape. */
+export function link(definition: Link): Link {
+  return definition
+}
+
+/** Did the log point to this cause for this finding? likely(dropout, 'battery-sag'). */
+export const likely = (finding: Finding, causeId: string) => finding.causes.some((c) => c.id === causeId && c.likely)
+/** Is this the first cause the log points to? mostLikely(brownout, 'weak-battery'). */
+export const mostLikely = (finding: Finding, causeId: string) => finding.causes[0]?.id === causeId && !!finding.causes[0].likely
 
 // Tests for signal.episodes(...): read them out loud, e.g. episodes(below(7)) = "stretches below 7".
 export const below = (limit: number) => (v: number) => v < limit

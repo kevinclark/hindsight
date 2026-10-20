@@ -1,6 +1,6 @@
 <!--
   One finding: severity, title and time; opens to evidence, a plot of the moment, the fix, the incident, and the
-  buttons that track it as a known issue.
+  buttons that track it as a known issue. Under it, collapsed, the findings it explains (report/finding-tree.ts).
 -->
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
@@ -9,15 +9,27 @@
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import Plot from './Plot.svelte'
   import { plotModel } from './plot-data.ts'
+  import FindingRow from './FindingRow.svelte'
+  import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, children = [], note, nested = false, issues, statusOf }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
     /** Marked fixed, but the fix came after this match was played. */
     fixedLater?: boolean
     onMark: (finding: Finding, status: IssueStatus, note: string) => void
+    /** The findings this one explains, shown collapsed under it. */
+    children?: FindingNode[]
+    /** Something explains this finding but it is listed on its own: says what. */
+    note?: string
+    /** Shown under the finding that explains it. */
+    nested?: boolean
+    /** For the rows under this one: their known-issue state. */
+    issues?: Map<string, IssueEvent>
+    statusOf?: (f: Finding) => string | undefined
   } = $props()
+  const under = $derived(children.flatMap((c) => [c.finding, ...descendants(c)]))
   const rule = $derived(ruleById(finding.rule))
   const cameBack = $derived(issue?.status === 'fixed' && !fixedLater)
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
@@ -25,7 +37,7 @@
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
   // Errors start open; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
-  let open = $state((finding.severity === 'error' && !issue) || (issue?.status === 'fixed' && !fixedLater))
+  let open = $state(!nested && ((finding.severity === 'error' && !issue) || (issue?.status === 'fixed' && !fixedLater)))
 
   function mark(status: IssueStatus) {
     const ask = status === 'known' ? 'What do we know about it? (e.g. "belt slipping on 17/18, new belt before elims")'
@@ -46,6 +58,8 @@
         {#if issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
         {#if fixedLater}<span class="badge known-badge">{issue?.when ? 'Fixed after this match' : 'Fixed (date unknown)'}</span>{/if}
         {finding.title}
+        {#if nested && finding.explainedBy}<span class="why">↳ {finding.explainedBy.why}</span>{/if}
+        {#if note}<span class="why">↳ {note}</span>{/if}
       </span>
       <span class="rule">{finding.rule}</span>
     </summary>
@@ -89,6 +103,16 @@
       </div>
     </div>
   </details>
+  {#if children.length}
+    <details class="explains">
+      <summary>Explains {under.length} more ({severityWords(under)})</summary>
+      <ul>
+        {#each children as c (c.finding.key + c.finding.time)}
+          <FindingRow finding={c.finding} children={c.children} nested {analysis} {issues} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
+        {/each}
+      </ul>
+    </details>
+  {/if}
 </li>
 
 <style>
@@ -120,11 +144,18 @@
   .causes .ruled-out { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border); }
   .causes .ruled-out .tag { text-decoration: none; display: inline-block; }
   .incident { color: var(--muted); }
+  .why { display: block; font-size: 0.8rem; color: var(--muted); }
+  .explains { margin: 0 0 0.4rem 7.25rem; }
+  .explains > summary { display: block; padding: 0.2rem 0.25rem; font-size: 0.85rem; color: var(--muted); }
+  .explains > summary::before { content: '▸ '; }
+  .explains[open] > summary::before { content: '▾ '; }
+  .explains > ul { padding: 0; margin: 0; border-left: 2px solid var(--border); }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
   .actions button { padding: 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; font-size: 0.85rem; cursor: pointer; }
   .actions button:hover { border-color: var(--muted); }
   @media (max-width: 640px) {
     summary { grid-template-columns: 1fr; gap: 0.15rem; }
     .body { padding-left: 0.25rem; }
+    .explains { margin-left: 0.25rem; }
   }
 </style>

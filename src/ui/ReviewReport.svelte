@@ -2,7 +2,7 @@
   The printed Match review report: hidden on screen, the only thing shown under @media print (App.svelte hides the
   rest). Page 1 stands alone (the bottom line, each error with its one number, next step and plot, then warnings and
   info one line each); the pages after it hold the detail. Same findings, wording and known-issue split as the
-  Match tab (report/review-model.ts), no controls.
+  Match tab (report/review-model.ts), no controls. A finding another explains is a line under that one's headline.
 -->
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
@@ -12,13 +12,34 @@
   import { stamp } from '../report/foresight-model.ts'
   import Plot from './Plot.svelte'
   import { plotModel } from './plot-data.ts'
+  import { under, type FindingNode } from '../report/finding-tree.ts'
+  import type { Finding, Severity } from '../rules/types.ts'
 
   let { analysis, issues }: { analysis: Analysis; issues: Map<string, IssueEvent> } = $props()
   const m = $derived(reviewModel(analysis, issues))
   const h = $derived(m.header)
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
   const issueFor = (key: string) => issues.get(key)
+  const SEV = { error: 'Error', warning: 'Warning', info: 'Info' } as const
+  const headlinesOf = (s: Severity) => m.headlines.filter((n) => n.finding.severity === s)
+  // How many findings of this severity are listed under a more serious headline, so the section count still adds up.
+  const elsewhere = (s: Severity, list: Finding[]) => {
+    const here = new Set(headlinesOf(s).flatMap((n) => [n.finding, ...under(n).map((u) => u.finding)]))
+    return list.filter((f) => !here.has(f)).length
+  }
+  // Each error in the order the page lists them: a headline, then the errors under it.
+  const detailOrder = $derived(headlinesOf('error').flatMap((n) => [n.finding, ...under(n).map((u) => u.finding)]).filter((f) => f.severity === 'error'))
+  const aboveNote = (s: Severity, list: Finding[]) => {
+    const n = elsewhere(s, list)
+    return n ? `; ${n} listed under a more serious finding above` : ''
+  }
 </script>
+
+{#snippet explained(node: FindingNode)}
+  {#each under(node) as u (u.finding.key + u.finding.time)}
+    <span class="under" style={`padding-left: ${u.depth * 0.9}rem`}>↳ <span class={`sev ${u.finding.severity}`}>{SEV[u.finding.severity]}</span>{u.finding.title} <span class="small">({u.finding.explainedBy?.why})</span></span>
+  {/each}
+{/snippet}
 
 <article class="print-only report" aria-hidden="true">
   <header class="rh">
@@ -32,13 +53,16 @@
   {#if m.errors.length}
     <section>
       <h2>Errors ({m.errors.length})</h2>
-      {#each m.errors as f (f.key + f.time)}
+      {#each headlinesOf('error') as node (node.finding.key + node.finding.time)}
+        {@const f = node.finding}
         {@const k = keyNumber(f)}
         <div class="err">
           <div class="txt">
             <p class="title"><span class="sev error">Error</span>{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}</p>
             <p class="num">{#if k.label && !k.inTitle}<span class="s"><span class="n">{k.value}</span> {k.label}</span>{/if}{#if f.when && !f.title.includes(shortWhen(f.when))}<span class="s">{shortWhen(f.when)}</span>{/if}<code class="s">{f.rule}</code></p>
+            {#if node.note}<p class="small">↳ {node.note}</p>{/if}
             <p class="next"><strong>Next step:</strong> {f.nextStep}</p>
+            {@render explained(node)}
           </div>
           {#if f.plot}<div class="plot"><Plot model={plotModel(analysis.match, f.plot)} height={52} compact /></div>{/if}
         </div>
@@ -48,20 +72,20 @@
 
   {#if m.warnings.length}
     <section>
-      <h2>Warnings ({m.warnings.length})</h2>
-      <ul class="lines">{#each m.warnings as f (f.key + f.time)}<li><span class="sev warning">Warning</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}</span><code>{f.rule}</code></li>{/each}</ul>
+      <h2>Warnings ({m.warnings.length}{aboveNote('warning', m.warnings)})</h2>
+      <ul class="lines">{#each headlinesOf('warning') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev warning">Warning</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   {#if m.infos.length}
     <section>
-      <h2>Info ({m.infos.length})</h2>
-      <ul class="lines">{#each m.infos as f (f.key + f.time)}<li><span class="sev info">Info</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}</span><code>{f.rule}</code></li>{/each}</ul>
+      <h2>Info ({m.infos.length}{aboveNote('info', m.infos)})</h2>
+      <ul class="lines">{#each headlinesOf('info') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">Info</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   {#if m.known.length}
     <section>
       <h2>Known issues seen this match ({m.known.length})</h2>
-      <ul class="lines">{#each m.known as f (f.key + f.time)}<li><span class="sev info">{f.severity === 'error' ? 'Error' : f.severity === 'warning' ? 'Warning' : 'Info'}</span><span class="t"><span class="badge">Known</span> {f.title}</span><code>{f.rule}</code></li>{/each}</ul>
+      <ul class="lines">{#each m.knownHeadlines as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">{SEV[f.severity]}</span><span class="t"><span class="badge">Known</span> {f.title}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   <p class="notchecked">
@@ -73,12 +97,13 @@
   {#if m.errors.length}
     <section class="detail">
       <h2>Detail for each error</h2>
-      {#each m.errors as f (f.key + f.time)}
+      {#each detailOrder as f (f.key + f.time)}
         {@const rule = ruleById(f.rule)}
         {@const note = issueFor(f.key)}
         <div class="d">
           <p class="title"><span class="sev error">Error</span> {f.title}</p>
           {#if f.when}<p class="small">{f.when}</p>{/if}
+          {#if f.explainedBy}<p class="small">Explained by <code>{f.explainedBy.rule}</code>{f.explainedBy.about ? ` (${f.explainedBy.about})` : ''}: {f.explainedBy.why}.</p>{/if}
           <p><strong>What this might mean:</strong> {f.meaning}</p>
           <p class="cl"><strong>Possible causes</strong>{f.causes.some((c) => c.likely) ? ' (tagged: what this log points to)' : ', most likely first'}:</p>
           <ol>
@@ -135,4 +160,6 @@
   .ruled { color: var(--muted); text-decoration: line-through; }
   .ruled .tag { text-decoration: none; display: inline-block; }
   .why { color: var(--muted); }
+  .under { display: block; font-size: 8pt; margin: 0.02rem 0; }
+  .under .sev { font-size: 7.5pt; }
 </style>

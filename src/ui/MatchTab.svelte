@@ -1,6 +1,7 @@
 <!--
   The lint report for one match: new findings worst first (anything that came back after a fix at the top), then
-  known issues, then tracked issues that didn't show up, then what couldn't be checked.
+  known issues, then tracked issues that didn't show up, then what couldn't be checked. A finding that another one
+  explains is listed under it, collapsed (report/finding-tree.ts); the counts still count it.
 -->
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
@@ -9,6 +10,7 @@
   import type { Audience, Finding } from '../rules/types.ts'
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import { findingStatus, playedAt } from '../report/review-model.ts'
+  import { nest } from '../report/finding-tree.ts'
 
   let { analysis, issues, onMark }: {
     analysis: Analysis
@@ -31,6 +33,8 @@
   const fresh = $derived(shown.filter((f) => !status(f)))
   const known = $derived(shown.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
   const active = $derived([...cameBack, ...fresh])
+  const activeTree = $derived(nest(active, all, known))
+  const knownTree = $derived(nest(known, all))
   const firing = $derived(new Set(all.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
   // A rule that couldn't run says nothing about whether an issue is gone.
@@ -73,8 +77,8 @@
   <p>No new findings{audience === 'all' ? '' : ' for this group'}. Every rule not listed under "Not checked" looked and found nothing new.</p>
 {:else}
   <ul class="findings">
-    {#each active as f (f.key + f.time)}
-      <FindingRow finding={f} {analysis} issue={issues.get(f.key)} {onMark} />
+    {#each activeTree as n (n.finding.key + n.finding.time)}
+      <FindingRow finding={n.finding} children={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} {onMark} />
     {/each}
   </ul>
 {/if}
@@ -83,8 +87,8 @@
   <details class="known-section">
     <summary><h3>Known issues seen this match ({known.length})</h3></summary>
     <ul class="findings">
-      {#each known as f (f.key + f.time)}
-        <FindingRow finding={f} {analysis} issue={issues.get(f.key)} fixedLater={status(f) === 'fixed later'} {onMark} />
+      {#each knownTree as n (n.finding.key + n.finding.time)}
+        <FindingRow finding={n.finding} children={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} statusOf={status} {onMark} />
       {/each}
     </ul>
   </details>

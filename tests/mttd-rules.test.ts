@@ -277,4 +277,11 @@ describe.skipIf(!haveMttd)('MTTD 2025 logs', () => {
     const outliers = byName(list, '_q66').report.findings.filter((f) => f.rule === 'vision/outliers')
     expect(outliers.map((f) => f.causes[0].id)).toEqual(['odometry', 'odometry'])
   })
+
+  it('links: Q41\'s module and gyro alerts sit under the bus drop ("Using Sync Odometry" does not); Q61\'s brownout under the collapse', () => {
+    const list = read(mttdLogs.filter((n) => /_q41|_q61/.test(n)))
+    const links = (part: string) => byName(list, part).report.findings.filter((f) => f.explainedBy).map((f) => `${f.rule}${f.about ? ` ${f.about}` : ''} ← ${f.explainedBy!.rule}`)
+    expect(links('_q41')).toEqual(['alerts/passthrough Missing Module Data ← can/bus-dropout', 'alerts/passthrough Missing Gyro Data ← can/bus-dropout'])
+    expect(links('_q61')).toEqual(['power/brownout ← power/battery-collapse', 'power/margin ← power/brownout'])
+  })
 })

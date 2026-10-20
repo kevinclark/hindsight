@@ -10,6 +10,7 @@ import type { IssueEvent } from '../triage/history.ts'
 import { VERSION } from '../version.ts'
 import { SCHEMA, findingsFileName } from './findings-json.ts'
 import type { CardModel, Tone } from './card.ts'
+import { descendants, nest, type FindingNode } from './finding-tree.ts'
 
 export type FindingStatus = 'known' | 'came back' | 'fixed later'
 
@@ -33,6 +34,9 @@ export interface ReviewModel {
   /** New findings (and ones that came back), worst first: the app's "Everyone" list. */
   active: Finding[]
   known: Finding[]
+  /** The active findings as headlines, with the findings each explains under it (finding-tree.ts). */
+  headlines: FindingNode[]
+  knownHeadlines: FindingNode[]
   errors: Finding[]
   warnings: Finding[]
   infos: Finding[]
@@ -87,6 +91,7 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
   const m = analysis.match
   const model = {
     active, known,
+    headlines: nest(active, all, known), knownHeadlines: nest(known, all),
     errors: bySeverity('error'), warnings: bySeverity('warning'), infos: bySeverity('info'),
     notChecked: analysis.report.skipped.map((s) => ({ rule: s.rule, reason: s.reason })),
     crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
@@ -98,7 +103,10 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>)
     bottomLine: '',
     jsonFile: findingsFileName(m), schema: SCHEMA,
   }
-  model.bottomLine = bottomLine(model.errors, model.warnings, model.infos, known.length)
+  // "Worst:" names a headline, not a finding shown under one (the counts still count every finding).
+  const heads = new Set(model.headlines.map((n) => n.finding))
+  const headlinesFirst = (list: Finding[]) => [...list.filter((f) => heads.has(f)), ...list.filter((f) => !heads.has(f))]
+  model.bottomLine = bottomLine(headlinesFirst(model.errors), headlinesFirst(model.warnings), model.infos, known.length)
   return model
 }
 
@@ -174,8 +182,9 @@ export function incidentFor(f: Finding): string {
 /** The phone card for a Match review: counts first, then each error's title and one number. */
 export function reviewCard(m: ReviewModel): CardModel {
   const h = m.header
-  const worst = m.errors.length ? m.errors : m.warnings
+  // One item per headline: a finding that another explains is counted in the heading, not listed again.
   const tone: Tone = m.errors.length ? 'error' : 'warning'
+  const worst = m.headlines.filter((n) => n.finding.severity === tone)
   const n = m.errors.length
   const crashed = m.crashed.length ? ` · ${plural(m.crashed.length, 'rule')} crashed` : ''
   return {
@@ -183,10 +192,13 @@ export function reviewCard(m: ReviewModel): CardModel {
     heading: n ? plural(n, 'error') : 'No errors',
     headingTone: n ? 'error' : 'ok',
     subheading: `${plural(m.warnings.length, 'warning')} · ${m.infos.length} info${m.known.length ? ` · ${m.known.length} known` : ''}${crashed}`,
-    items: worst.map((f) => {
+    items: worst.map((n) => {
+      const f = n.finding
       const k = keyNumber(f)
       const word = (m.errors.length ? 'ERROR' : 'WARNING') + (m.cameBack.has(f.key) ? ' · CAME BACK' : '')
-      return { word, tone, title: cardTitle(f.title), number: k.inTitle ? '' : k.text }
+      const under = descendants(n).length
+      const number = [k.inTitle ? '' : k.text, under ? `explains ${under} more` : ''].filter(Boolean).join(' · ')
+      return { word, tone, title: cardTitle(f.title), number }
     }),
     emptyText: 'Nothing to fix from this log.',
     footer: [h.build.text, `Hindsight ${h.version}`],

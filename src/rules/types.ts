@@ -52,4 +52,9 @@ export interface Finding {
   meaning: string
   causes: { id: string; cause: string; look: string; likely?: boolean; ruledOut?: string }[]
   nextStep: string
+  /**
+   * The finding in the same match that explains this one, from a link in src/rules/links.ts (the brownout that
+   * dropped this device off CAN). The app shows this finding under that one. Left out when nothing explains it.
+   */
+  explainedBy?: { rule: string; about: string | null; time: number | null; why: string }
 }

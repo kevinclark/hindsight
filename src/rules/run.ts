@@ -4,7 +4,7 @@
  */
 import type { Match } from '../match/match.ts'
 import type { Finding, Plot, PlotLine } from './types.ts'
-import type { Answer, Problem, Rule, Severity } from './rule.ts'
+import type { Answer, Link, Problem, Rule, Severity } from './rule.ts'
 import { MatchView, MissingSignal, words, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
 
 export interface SkippedRule { rule: string; reason: string }
@@ -21,7 +21,7 @@ const ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
 /** Things only a fitting robot profile can name: rules over them don't run on a log the profile doesn't fit. */
 const ROBOT_ITEMS = ['motor', 'motorGroup', 'device', 'camera', 'mechanism']
 
-export function runRules(match: Match, rules: Rule[]): Report {
+export function runRules(match: Match, rules: Rule[], links: Link[] = []): Report {
   const view = new MatchView(match)
   const findings: Finding[] = []
   const skipped: SkippedRule[] = []
@@ -60,7 +60,24 @@ export function runRules(match: Match, rules: Rule[]): Report {
   // Worst first: severity, then the rule's place in the list (things that cost the match first), then time.
   const place = (f: Finding) => { const i = rules.findIndex((r) => r.id === f.rule); return i < 0 ? rules.length : i }
   findings.sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || place(a) - place(b) || (a.time ?? Infinity) - (b.time ?? Infinity))
+  linkFindings(findings, links)
   return { findings, skipped, crashed }
+}
+
+/**
+ * One pass over the links (src/rules/links.ts): a finding that another finding explains gets `explainedBy`. Nothing
+ * is removed, merged or reordered. Each finding gets at most one: the first link that matches, in links.ts order, and
+ * the first cause finding in report order.
+ */
+export function linkFindings(findings: Finding[], links: Link[]): void {
+  for (const symptom of findings) {
+    for (const l of links.filter((x) => x.explains === symptom.rule)) {
+      const cause = findings.find((c) => c !== symptom && c.rule === l.cause && l.when(c, symptom))
+      if (!cause) continue
+      symptom.explainedBy = { rule: cause.rule, about: cause.about, time: cause.time, why: l.why }
+      break
+    }
+  }
 }
 
 /** Run one rule over each of its things. A thing whose signals are missing is noted, not fatal. */

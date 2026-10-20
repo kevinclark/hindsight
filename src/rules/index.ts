@@ -3,7 +3,7 @@
  * To add a rule, write src/rules/<area>/<name>.ts and add it here (see CONTRIBUTING.md).
  */
 import type { Match } from '../match/match.ts'
-import type { Rule } from './rule.ts'
+import type { Link, Rule } from './rule.ts'
 import { runRules as run, type Report } from './run.ts'
 import brownout from './power/brownout.ts'
 import batteryCollapse from './power/battery-collapse.ts'
@@ -58,9 +58,11 @@ export const FORESIGHT_RULES: Rule[] = [
 ]
 
 export type { Report, SkippedRule } from './run.ts'
+export { LINKS } from './links.ts'
 
-export function runRules(match: Match, rules: Rule[] = RULES): Report {
-  return run(match, rules)
+/** Run the rules on a match. Match analysis (analyze.ts) also passes LINKS; Foresight passes none. */
+export function runRules(match: Match, rules: Rule[] = RULES, links: Link[] = []): Report {
+  return run(match, rules, links)
 }
 
 export function ruleById(id: string): Rule | undefined {
