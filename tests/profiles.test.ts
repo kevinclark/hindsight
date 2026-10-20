@@ -4,6 +4,8 @@ import { openWpilog } from '../src/readers/wpilog.ts'
 import { analyzeFiles } from '../src/analyze.ts'
 import { chooseProfile } from '../src/profiles/choose.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
+import { competition2026 } from '../src/profiles/2026-competition.ts'
+import { PROFILES } from '../src/profiles/index.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
 import { writeWpilog } from './helpers/fixture-format.ts'
 
@@ -40,6 +42,16 @@ describe('choosing a robot profile', () => {
     const { profile, choice } = chooseProfile(log('2026 Offseason', 'event-x'), profiles, other)
     expect(profile).toBe(other)
     expect(choice.how).toBe('chosen by you')
+  })
+})
+
+describe('the built-in profiles', () => {
+  it('a 2026 competition robot log gets its profile, on either bring-up branch', () => {
+    for (const branch of ['comp-bring-up', 'comp-bring-up-2-21']) {
+      const { profile, choice } = chooseProfile(log('Rebuilt', branch), PROFILES)
+      expect(profile).toBe(competition2026)
+      expect(choice.how).toBe('codebase and branch')
+    }
   })
 })
 
