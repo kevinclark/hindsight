@@ -14,9 +14,10 @@
  */
 import { isFalse, plural, round, rule, totalSeconds, type Problem } from '../rule.ts'
 import type { DeviceView, Episode, MatchView, Signal } from '../view.ts'
-import { busOf, connectedDevices, dropAround, TOGETHER_SECONDS, watched, type CanBus } from './bus.ts'
 
 const LOW_VOLTS = 7
+const TOGETHER_SECONDS = 1 // drops starting this close count as one event (assumed)
+const MIN_BUS_MEMBERS = 3 // "every device on the bus" needs at least this many reporting their health (assumed)
 
 export default rule({
   id: 'can/device-dropout',
@@ -81,33 +82,8 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
     likely.push(allLow ? 'device-power' : 'can-connector')
   }
 
-  let nextStep: string | undefined
-  if (allLow) {
-    nextStep = 'The battery was low at every drop: fix the voltage sag first (Power tab), then wiggle-test the power connector on that device.'
-  } else if (together.length) {
-    nextStep = `${together.join(', ')} dropped at the same moment: check what they share (the same CAN branch or splice, the same power channel).`
-  }
-
-  let cause: string
-  if (allLow) {
-    cause = 'power path (every drop at low voltage)'
-  } else if (unknownVolts) {
-    cause = 'not known (no battery voltage logged just before a drop)'
-  } else if (lowOnes === 0) {
-    cause = 'CAN wiring or connector (voltage was normal)'
-  } else {
-    cause = 'mixed: some drops at low voltage'
-  }
+  const cause = voltageCause(allLow, lowOnes, unknownVolts)
   const likelyCause = closeCall ? `possibly ${cause}; a voltage is within 0.5 V of the ${LOW_VOLTS} V line` : cause
-
-  let othersDropped: string
-  if (together.length) {
-    othersDropped = together.join(', ')
-  } else if (others.length) {
-    othersDropped = 'none'
-  } else {
-    othersDropped = 'not checked (no other devices)'
-  }
 
   return {
     message: `${device.name} dropped off CAN ${plural(drops.length, 'time')}, first at ${match.when(drops[0].start)}`,
@@ -116,10 +92,10 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
       drops: drops.length,
       'seconds missing': round(totalSeconds(drops)),
       'lowest battery voltage in the 0.5 s before each drop (V)': voltages.map((v) => v.toFixed(2)).join(', '),
-      'other devices dropped at the same moment': othersDropped,
+      'other devices dropped at the same moment': othersDropped(together, others.length),
       'likely cause': likelyCause,
     },
-    likely, ruledOut, nextStep,
+    likely, ruledOut, nextStep: dropNextStep(allLow, together),
     measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
     plot: plotDrops(battery, drops, 3, drops[drops.length - 1].end + 2),
   }
@@ -202,7 +178,7 @@ function reportedStatuses(match: MatchView, bus: CanBus, t: number): string[] {
 
 /** When each other device dropped off CAN while enabled (every motor with a Connected flag, and the other devices). */
 function otherDevices(match: MatchView, except: string) {
-  return connectedDevices(match)
+  return match.connectedDevices()
     .filter((d) => d.name !== except && match.has(d.key))
     .map((d) => {
       const episodes = match.signal(d.key).episodes(isFalse, { touching: watched(match) })
@@ -218,4 +194,60 @@ function devicesDroppedWith(others: { name: string; drops: number[] }[], drops: 
   return others
     .filter((o) => o.drops.some((t) => drops.some((own) => Math.abs(t - own.start) < 1)))
     .map((o) => o.name)
+}
+
+/** What the battery voltage at the drops says about the cause. */
+function voltageCause(allLow: boolean, lowOnes: number, unknownVolts: boolean): string {
+  if (allLow) return 'power path (every drop at low voltage)'
+  if (unknownVolts) return 'not known (no battery voltage logged just before a drop)'
+  if (lowOnes === 0) return 'CAN wiring or connector (voltage was normal)'
+  return 'mixed: some drops at low voltage'
+}
+
+/** The next step when the battery was low at every drop, or other devices dropped with this one. */
+function dropNextStep(allLow: boolean, together: string[]): string | undefined {
+  if (allLow) return 'The battery was low at every drop: fix the voltage sag first (Power tab), then wiggle-test the power connector on that device.'
+  if (together.length) return `${together.join(', ')} dropped at the same moment: check what they share (the same CAN branch or splice, the same power channel).`
+  return undefined
+}
+
+/** Which other devices dropped at the same moment, for the evidence. */
+function othersDropped(together: string[], otherCount: number): string {
+  if (together.length) return together.join(', ')
+  return otherCount ? 'none' : 'not checked (no other devices)'
+}
+
+/** While enabled, plus (Foresight) the disabled stretch being checked. */
+function watched(match: MatchView) {
+  return [...match.enabled, ...match.beforeEnable]
+}
+
+/** The member's drop that started within 1 s of time t, if any (one already under way is a separate problem). */
+function dropAround(drops: Episode[], t: number) {
+  return drops.find((e) => Math.abs(e.start - t) <= TOGETHER_SECONDS)
+}
+
+/**
+ * A CAN bus from the profile (canBuses): the devices on it that report their health, with the times each dropped.
+ * `ok` is the status text that means healthy (some devices report text, not a true/false flag).
+ * `reporter` is the member that reports a whole-bus drop: the first one that is a device (has a Connected flag).
+ */
+interface CanBus {
+  name: string
+  members: { name: string; key: string; ok?: string; drops: Episode[] }[]
+  reporter: string | undefined
+}
+
+/** The CAN bus this device is on. Null when the profile maps no bus for it, or too few members are in the log. */
+function busOf(match: MatchView, device: string): CanBus | null {
+  const bus = match.profile.canBuses?.find((b) => b.members.some((m) => m.name === device))
+  if (!bus) return null
+  const present = bus.members.filter((m) => match.has(m.key))
+  if (present.length < MIN_BUS_MEMBERS) return null
+  const deviceNames = new Set(match.connectedDevices().map((d) => d.name))
+  const members = present.map((m) => ({
+    ...m,
+    drops: match.health(m.key, m.ok, m.name).episodes(isFalse, { touching: watched(match) }),
+  }))
+  return { name: bus.name, members, reporter: present.find((m) => deviceNames.has(m.name))?.name }
 }

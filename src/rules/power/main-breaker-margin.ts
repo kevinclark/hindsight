@@ -14,11 +14,69 @@
  */
 import { rule, round, type PlotRequest } from '../rule.ts'
 import { DT, type PowerGrid } from '../../power/battery-model.ts'
-import type { MatchView, Signal } from '../view.ts'
+import type { MatchView } from '../view.ts'
 
 const MAIN_BREAKER_A = 120 // FRC rule R609: one 120 A main breaker
 const TRIP_BAND = [1.0, 1.3] // long-run trip, as a share of 120 A, at 25 °C (CB185-120 datasheet, read by eye)
 const TAU_SECONDS = 90 // see "Thresholds" above
+
+export default rule({
+  id: 'power/main-breaker-margin',
+  title: 'Close to tripping the main breaker',
+  severity: 'warning',
+  who: ['software', 'drive'],
+  meaning: 'The total current was high for long enough to heat the 120 A main breaker into the range where it can trip. If it trips, the whole robot goes dead until someone resets it by hand.',
+  causes: [
+    { id: 'pushing', cause: 'Long pushing matches: drive motors held at high current while pinned or wheel-spinning', look: 'the match video at the peak; Power tab: the drive group\'s current in the minute before it' },
+    { id: 'no-sustained-limit', cause: 'No sustained current limit, so motors can sit at their burst limit indefinitely', look: 'the Limits tab: supply limits switched off, or no lower limit and lower time (Phoenix 6: SupplyCurrentLowerLimit / SupplyCurrentLowerTime)' },
+    { id: 'busy-mechanism', cause: 'A big mechanism running hard for long stretches (a flywheel spun up all match, an intake stalled)', look: 'Power tab: which group carries the most current in the minute before the peak (this finding names it)' },
+    { id: 'warm-breaker', cause: 'A breaker that is already warm, worn, or has loose lugs trips sooner than its curve', look: 'the main breaker\'s lugs (tight? discoloured?); whether it has tripped before (replace one that has)' },
+  ],
+  nextStep: 'Set a sustained supply limit on the drive and the biggest mechanisms (a lower limit after about 1 s), and make sure the sum of those sustained limits stays at or under about 120 A.',
+  incident: 'Main-breaker trips while being pushed are a known FRC failure (Chief Delphi threads on main-breaker trips, 2024 and 2026).',
+
+  check(match) {
+    if (match.wholeMatch.length === 0) return
+    // Heating needs current only, so this runs on a log with motor currents and no battery voltage too.
+    const grid = match.currents()
+    const load = heating(grid.amps, TAU_SECONDS)
+    const peakAt = indexOfHighest(load)
+    const share = load[peakAt] / MAIN_BREAKER_A
+    if (share < TRIP_BAND[0]) return
+
+    const t = grid.t[peakAt]
+    const tauMin = lowestSafeTau(grid.amps)
+    const fasterPercent = loadPercent(grid.amps, 30)
+    const slowerPercent = loadPercent(grid.amps, 180)
+    // The minute before the peak: which group carried the most current, and the total's RMS.
+    const from = Math.max(0, peakAt - Math.round(60 / DT))
+    const top = busiestGroup(grid, from, peakAt)
+    const total = sumBetween(grid.amps, from, peakAt)
+    const rms60 = rmsBetween(grid.amps, from, peakAt)
+    const topPercent = top && total > 0 ? Math.round((100 * top.charge) / total) : undefined
+
+    const plot = peakPlot(match, t, top?.name)
+
+    return {
+      message: `Main breaker load reached ${Math.round(100 * share)} % of its ${MAIN_BREAKER_A} A rating at ${match.when(t)}, ${share >= TRIP_BAND[1] ? 'above' : 'inside'} the ${100 * TRIP_BAND[0]}–${100 * TRIP_BAND[1]} % band where it can trip`,
+      at: t,
+      severity: share >= TRIP_BAND[1] ? 'error' : undefined,
+      evidence: {
+        [`breaker load, heating averaged over ~${TAU_SECONDS} s (% of ${MAIN_BREAKER_A} A)`]: Math.round(100 * share),
+        'same, if the breaker heats faster (30 s; closer for short hard pushes) (%)': fasterPercent,
+        'same, if it heats slower (180 s) (%)': slowerPercent,
+        'total current, RMS over the minute before (A)': round(rms60, 0),
+        'carried most of it': top && topPercent !== undefined ? `${top.name} (${topPercent} % of the current)` : 'unknown',
+        'if it did not trip, under this model its time constant is at least (s)': tauMin ?? 'over 300',
+      },
+      measured: [{ label: `main breaker load (~${TAU_SECONDS} s)`, value: Math.round(100 * share), unit: '%', threshold: 100 * TRIP_BAND[0] }],
+      nextStep: top && topPercent !== undefined
+        ? `${top.name} carried ${topPercent} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the sum of the sustained limits at or under about 120 A.`
+        : undefined,
+      plot,
+    }
+  },
+})
 
 /** The breaker's load over time: the root of the exponential average of current², with time constant tau (s). */
 function heating(amps: Float64Array, tau: number): Float64Array {
@@ -64,6 +122,18 @@ function sumBetween(values: Float64Array, from: number, to: number): number {
   return sum
 }
 
+/** The root-mean-square of a series from index `from` to `to`, both included. */
+function rmsBetween(values: Float64Array, from: number, to: number): number {
+  let squares = 0
+  for (let i = from; i <= to; i++) squares += values[i] * values[i]
+  return Math.sqrt(squares / (to - from + 1))
+}
+
+/** The peak load of the main breaker at time constant tau, in whole percent of its rating. */
+function loadPercent(amps: Float64Array, tau: number): number {
+  return Math.round(100 * peakHeating(amps, tau) / MAIN_BREAKER_A)
+}
+
 /** The group that carried the most current from index `from` to `to` (current adds up by group; heating doesn't). */
 function busiestGroup(grid: PowerGrid, from: number, to: number) {
   const groups = grid.groups.map((g) => ({ name: g.name, charge: sumBetween(g.amps, from, to) }))
@@ -71,76 +141,11 @@ function busiestGroup(grid: PowerGrid, from: number, to: number) {
   return groups[0]
 }
 
-export default rule({
-  id: 'power/main-breaker-margin',
-  title: 'Close to tripping the main breaker',
-  severity: 'warning',
-  who: ['software', 'drive'],
-  meaning: 'The total current was high for long enough to heat the 120 A main breaker into the range where it can trip. If it trips, the whole robot goes dead until someone resets it by hand.',
-  causes: [
-    { id: 'pushing', cause: 'Long pushing matches: drive motors held at high current while pinned or wheel-spinning', look: 'the match video at the peak; Power tab: the drive group\'s current in the minute before it' },
-    { id: 'no-sustained-limit', cause: 'No sustained current limit, so motors can sit at their burst limit indefinitely', look: 'the Limits tab: supply limits switched off, or no lower limit and lower time (Phoenix 6: SupplyCurrentLowerLimit / SupplyCurrentLowerTime)' },
-    { id: 'busy-mechanism', cause: 'A big mechanism running hard for long stretches (a flywheel spun up all match, an intake stalled)', look: 'Power tab: which group carries the most current in the minute before the peak (this finding names it)' },
-    { id: 'warm-breaker', cause: 'A breaker that is already warm, worn, or has loose lugs trips sooner than its curve', look: 'the main breaker\'s lugs (tight? discoloured?); whether it has tripped before (replace one that has)' },
-  ],
-  nextStep: 'Set a sustained supply limit on the drive and the biggest mechanisms (a lower limit after about 1 s), and make sure the sum of those sustained limits stays at or under about 120 A.',
-  incident: 'Main-breaker trips while being pushed are a known FRC failure (Chief Delphi threads on main-breaker trips, 2024 and 2026).',
-
-  check(match) {
-    if (match.wholeMatch.length === 0) return
-    // Heating needs current only, so this runs on a log with motor currents and no battery voltage too.
-    const grid = match.currents()
-    const load = heating(grid.amps, TAU_SECONDS)
-    const peakAt = indexOfHighest(load)
-    const share = load[peakAt] / MAIN_BREAKER_A
-    if (share < TRIP_BAND[0]) return
-
-    const t = grid.t[peakAt]
-    const tauMin = lowestSafeTau(grid.amps)
-    const fasterPercent = Math.round(100 * peakHeating(grid.amps, 30) / MAIN_BREAKER_A)
-    const slowerPercent = Math.round(100 * peakHeating(grid.amps, 180) / MAIN_BREAKER_A)
-    // The minute before the peak: which group carried the most current, and the total's RMS.
-    const from = Math.max(0, peakAt - Math.round(60 / DT))
-    const top = busiestGroup(grid, from, peakAt)
-    const total = sumBetween(grid.amps, from, peakAt)
-    let squares = 0
-    for (let i = from; i <= peakAt; i++) squares += grid.amps[i] * grid.amps[i]
-    const rms60 = Math.sqrt(squares / (peakAt - from + 1))
-    const topPercent = top && total > 0 ? Math.round((100 * top.charge) / total) : undefined
-
-    let nextStep: string | undefined
-    if (top && topPercent !== undefined) {
-      nextStep = `${top.name} carried ${topPercent} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the sum of the sustained limits at or under about 120 A.`
-    }
-    // Battery voltage if logged; otherwise the supply current of the group that carried most of it.
-    const battery = match.signalIfLogged('batteryVoltage')
-    let plot: PlotRequest
-    if (battery) {
-      plot = { signals: [battery], unit: 'V', from: t - 60, to: t + 10, marks: [t] }
-    } else {
-      plot = { signals: topGroupSupply(match, top?.name), unit: 'A', from: t - 60, to: t + 10, marks: [t] }
-    }
-
-    return {
-      message: `Main breaker load reached ${Math.round(100 * share)} % of its ${MAIN_BREAKER_A} A rating at ${match.when(t)}, ${share >= TRIP_BAND[1] ? 'above' : 'inside'} the ${100 * TRIP_BAND[0]}–${100 * TRIP_BAND[1]} % band where it can trip`,
-      at: t,
-      severity: share >= TRIP_BAND[1] ? 'error' : undefined,
-      evidence: {
-        [`breaker load, heating averaged over ~${TAU_SECONDS} s (% of ${MAIN_BREAKER_A} A)`]: Math.round(100 * share),
-        'same, if the breaker heats faster (30 s; closer for short hard pushes) (%)': fasterPercent,
-        'same, if it heats slower (180 s) (%)': slowerPercent,
-        'total current, RMS over the minute before (A)': round(rms60, 0),
-        'carried most of it': top && topPercent !== undefined ? `${top.name} (${topPercent} % of the current)` : 'unknown',
-        'if it did not trip, under this model its time constant is at least (s)': tauMin ?? 'over 300',
-      },
-      measured: [{ label: `main breaker load (~${TAU_SECONDS} s)`, value: Math.round(100 * share), unit: '%', threshold: 100 * TRIP_BAND[0] }],
-      nextStep,
-      plot,
-    }
-  },
-})
-
-function topGroupSupply(match: MatchView, group: string | undefined): Signal[] {
-  const motors = match.profile.motorGroups.find((g) => g.name === group)?.motors ?? []
-  return motors.filter((m) => m.supplyCurrent && match.has(m.supplyCurrent)).map((m) => match.signal(m.supplyCurrent!, `${m.name} supply`))
+/** The plot around the peak: battery voltage if logged; otherwise the supply current of the group that carried most. */
+function peakPlot(match: MatchView, t: number, topGroup: string | undefined): PlotRequest {
+  const battery = match.signalIfLogged('batteryVoltage')
+  if (battery) return { signals: [battery], unit: 'V', from: t - 60, to: t + 10, marks: [t] }
+  const motors = match.profile.motorGroups.find((g) => g.name === topGroup)?.motors ?? []
+  const supply = motors.flatMap((m) => (m.supplyCurrent && match.has(m.supplyCurrent) ? [match.signal(m.supplyCurrent, `${m.name} supply`)] : []))
+  return { signals: supply, unit: 'A', from: t - 60, to: t + 10, marks: [t] }
 }

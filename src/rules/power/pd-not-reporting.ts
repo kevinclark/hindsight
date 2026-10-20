@@ -10,6 +10,7 @@
  * controllers. Without it, Hindsight adds up the motor controllers' own supply currents instead.
  */
 import { maxOf, round, rule } from '../rule.ts'
+import type { MatchView } from '../view.ts'
 
 const PD = '/PowerDistribution'
 const MOTORS_DRAWING_AMPS = 20 // total motor current that the board's channels must show if it is reporting
@@ -41,23 +42,14 @@ export default rule({
     if (!(motorPeak > MOTORS_DRAWING_AMPS)) return match.couldNotCheck('no motor current to compare with')
 
     const channels = match.lists(`${PD}/ChannelCurrent`)
-    let highestChannel = 0
-    for (const record of channels.v) {
-      highestChannel = Math.max(highestChannel, maxOf(record.filter(Number.isFinite)) || 0)
-    }
-    const boardVolts = match.has(`${PD}/Voltage`) ? match.signal(`${PD}/Voltage`).highest().value : NaN
-    const countLogged = match.has(`${PD}/ChannelCount`)
-    const count = countLogged ? match.signal(`${PD}/ChannelCount`).last() : (channels.v[0]?.length ?? 0)
+    const highestChannel = highestCurrent(channels.v)
+    const boardVolts = match.signalIfLogged(`${PD}/Voltage`)?.highest().value ?? NaN
+    const count = match.signalIfLogged(`${PD}/ChannelCount`)?.last() ?? (channels.v[0]?.length ?? 0)
     const silent = channels.t.length <= 2 || highestChannel < 0.5 || (Number.isFinite(boardVolts) && boardVolts <= 1)
     if (!silent) return
 
     const claimed = CLAIMED[count] ?? `a board with ${count} channels`
-    // A profile that doesn't fit this log may name another robot's board: then the board is unknown. A log claiming
-    // 16 channels means the code built a CTRE PDP (v1) reader, a board that reports; 24 is also what automatic
-    // detection falls back to, so it says nothing about the board.
-    let board = match.profile.powerDistribution
-    if (!board && count === 16) board = 'ctre-pdp'
-    if (!match.profileFits) board = undefined
+    const board = boardOf(match, count)
     const boardSource = match.profile.powerDistribution ? ' (robot profile)' : ' (the log claims 16 channels)'
     const evidence = {
       'board on the robot': board ? `${BOARD[board]}${boardSource}` : 'unknown',
@@ -96,3 +88,20 @@ export default rule({
     }
   },
 })
+
+/** The highest current any channel reported in any record (0 if none is a number). */
+function highestCurrent(records: number[][]): number {
+  let highest = 0
+  for (const record of records) highest = Math.max(highest, maxOf(record.filter(Number.isFinite)) || 0)
+  return highest
+}
+
+/** Which board the robot has, or undefined when that isn't known. */
+function boardOf(match: MatchView, channelCount: number) {
+  // A profile that doesn't fit this log may name another robot's board: then the board is unknown. A log claiming
+  // 16 channels means the code built a CTRE PDP (v1) reader, a board that reports; 24 is also what automatic
+  // detection falls back to, so it says nothing about the board.
+  let board = match.profile.powerDistribution
+  if (!board && channelCount === 16) board = 'ctre-pdp'
+  return match.profileFits ? board : undefined
+}
