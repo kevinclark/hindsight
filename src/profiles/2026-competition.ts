@@ -266,6 +266,9 @@ export const competition2026: RobotProfile = {
       doneMessage: /Hood Zeroed/,
       moveDegrees: 3,
       zeroDirection: 'down',
+      // HOOD_MIN_ANGLE (TurretSubsystem.java:52). An unzeroed hood reads far from it: the 55 logs of 2026-02-21 start
+      // at -1.3° or 1.85° (22 logs) or, zero kept through a code restart, at 23.7-23.9° (33), and nothing in between.
+      stopDegrees: 23.16,
       zeroCurrent: {
         statorCurrent: '/Shooter/Hood/HoodStatorCurrentAmps',
         thresholdA: 30,

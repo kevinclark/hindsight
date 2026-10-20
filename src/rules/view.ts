@@ -66,6 +66,11 @@ export class Signal {
     return i < 0 ? NaN : this.series.v[i]
   }
 
+  /** The first value logged. */
+  first(): number {
+    return this.series.v.length ? this.series.v[0] : NaN
+  }
+
   /** The last value logged. */
   last(): number {
     return this.series.v.length ? this.series.v[this.series.v.length - 1] : NaN
@@ -300,6 +305,8 @@ export interface MechanismView {
   zeroDirection: 'down' | 'up'
   /** Movement in degrees that counts as "moved". */
   moveDegrees: number
+  /** The angle the zero sets at the stop (degrees), if the profile gives one. */
+  stopDegrees?: number
 }
 
 /** One alert text the robot code raised, with when it was on. */
