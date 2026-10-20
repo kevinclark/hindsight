@@ -87,16 +87,40 @@ export class GitRepo {
   }
 
   /** Every file in a commit with this file name (any folder), with its blob hash. */
-  async filesNamed(commit: string, name: string): Promise<{ path: string; sha: string }[]> {
+  filesNamed(commit: string, name: string): Promise<{ path: string; sha: string }[]> {
+    return this.filesWhere(commit, (path) => path === name || path.endsWith(`/${name}`))
+  }
+
+  /** Every file in a commit whose path passes `wanted`, with its blob hash. Submodules are skipped. */
+  async filesWhere(commit: string, wanted: (path: string) => boolean): Promise<{ path: string; sha: string }[]> {
     const found: { path: string; sha: string }[] = []
     const walk = async (tree: string, folder: string) => {
       for (const e of await this.tree(tree)) {
         if (e.mode === '40000') await walk(e.sha, `${folder}${e.name}/`)
-        else if (e.name === name && e.mode !== '160000') found.push({ path: folder + e.name, sha: e.sha })
+        else if (e.mode !== '160000' && wanted(folder + e.name)) found.push({ path: folder + e.name, sha: e.sha })
       }
     }
     await walk(await this.treeOf(commit), '')
     return found
+  }
+
+  /** A blob's text. */
+  async text(sha: string): Promise<string> {
+    return new TextDecoder().decode((await this.object(sha)).data)
+  }
+
+  /** The commit HEAD is on, and its branch (null when detached). Throws GitUnreadable when it can't tell. */
+  async head(): Promise<{ sha: string; branch: string | null }> {
+    const head = (await this.readText('HEAD')).trim()
+    if (/^[0-9a-f]{40}$/.test(head)) return { sha: head, branch: null }
+    const ref = /^ref:\s*(\S+)$/.exec(head)?.[1]
+    if (!ref) throw new GitUnreadable('.git/HEAD isn\'t readable')
+    const branch = ref.replace(/^refs\/heads\//, '')
+    const loose = (await this.readText(ref)).trim()
+    if (/^[0-9a-f]{40}$/.test(loose)) return { sha: loose, branch }
+    const packed = (await this.readText('packed-refs')).split('\n').map((l) => l.trim().split(' ')).find(([, r]) => r === ref)?.[0]
+    if (packed && /^[0-9a-f]{40}$/.test(packed)) return { sha: packed, branch }
+    throw new GitUnreadable(`couldn't find the commit of branch ${branch} in .git`)
   }
 
   /** A file's text at a commit, by its path from the top of the repo. */
@@ -107,9 +131,14 @@ export class GitRepo {
       const entry = (await this.tree(tree)).find((e) => e.name === part)
       if (!entry) throw new GitUnreadable(`${path} isn't in commit ${commit.slice(0, 7)}`)
       if (i < parts.length - 1) tree = entry.sha
-      else return new TextDecoder().decode((await this.object(entry.sha)).data)
+      else return this.text(entry.sha)
     }
     throw new GitUnreadable(`no path given`)
+  }
+
+  /** A file in .git as text, or '' when it isn't there. */
+  private async readText(path: string): Promise<string> {
+    return new TextDecoder().decode((await this.dir.read(path)) ?? new Uint8Array())
   }
 
   /** A loose object (objects/ab/cdef…), or null if there is none. */
