@@ -7,6 +7,7 @@
  * working tree (uncommitted edits count) or from GitHub at one commit; the commit and branch from `codeHead`.
  */
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
+import type { CodeSource } from '../code/source.ts'
 
 export interface CodeFile { path: string; text: string }
 
@@ -35,13 +36,14 @@ const NEW_TALON = /\b(?:new\s+)?TalonFX\s*\(\s*([A-Za-z_][\w.]*(?:\(\))?|\d+)\s*
 const INT_CONST = /\b(?:(?:static\s+)?final\s+(?:static\s+)?(?:int|Integer)|const\s+val|val)\s+([A-Za-z_]\w*)\s*(?::\s*Int\s*)?=\s*(\d+)(?![\w.])/g
 
 const fileName = (p: string) => p.split('/').pop() ?? p
+const SOURCE_FILE = /\.(java|kt)$/
 
 /** The commit the code is on and its branch (null when detached), or why that can't be told. */
 export type CodeHead = { sha: string; branch: string | null } | { why: string }
 
 export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
   const notes: string[] = []
-  const sources = files.filter((f) => /\.(java|kt)$/.test(f.path))
+  const sources = files.filter((f) => SOURCE_FILE.test(f.path))
   // Integer constants by simple name. A name defined with two values can't be resolved.
   const constants = new Map<string, number | null>()
   for (const f of sources) {
@@ -63,6 +65,14 @@ export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
   if (sources.length && sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java or Kotlin files.')
   const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
   return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), ...git, notes: [...notes, ...git.notes] }
+}
+
+/** Hints from the code at a branch or commit (GitHub): every Java and Kotlin file's text at that commit. */
+export async function hintsAt(source: CodeSource, ref: string): Promise<CodeHints> {
+  const sha = await source.resolve(ref)
+  const paths = (await source.files(sha)).map((f) => f.path).filter((path) => SOURCE_FILE.test(path))
+  const files = await Promise.all(paths.map(async (path) => ({ path, text: await source.textAt(sha, path) })))
+  return codeHints(files, { sha, branch: sha.startsWith(ref.trim().toLowerCase()) ? null : ref.trim() })
 }
 
 /** The commit a code folder's .git is on (null: the folder has no .git). */

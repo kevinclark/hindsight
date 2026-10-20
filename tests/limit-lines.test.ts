@@ -1,6 +1,7 @@
 // power/limit-not-applied with a robot-code folder: a log that ran another commit than the profile's is amber when that
 // commit's CurrentLimit lines are the same (src/code/limit-lines.ts), red when they differ or can't be compared.
-// The code folder is a small repo built here with git; the log is made up.
+// The code folder is a small repo built here with git; the log is made up. The same comparisons run against GitHub,
+// served from that repo by a fake (tests/helpers/fake-github.ts): one case table, two sources.
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,10 +9,13 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { analyzeFiles, analyzeFilesWithCode } from '../src/analyze.ts'
 import { GitRepo } from '../src/code/git.ts'
+import { GitHubRepo } from '../src/code/github.ts'
+import type { CodeSource } from '../src/code/source.ts'
 import { compareLimitLines, limitFiles, type CodeFolder, type LimitLines } from '../src/code/limit-lines.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
+import { fakeGitHub, memoryKept } from './helpers/fake-github.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'hindsight-limits-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -58,8 +62,14 @@ async function flywheelFinding(sha: string, code: CodeFolder | null) {
 }
 const LINES = "current-limit lines vs the profile's commit"
 
-describe('comparing CurrentLimit lines between two commits', () => {
-  const repo = () => new GitRepo(nodeGitDir(dir)!)
+const GITHUB = 'HighlanderRobotics/Rebuilt'
+/** The two sources, and how each says a log's commit isn't there. */
+const SOURCES: [string, () => CodeSource, RegExp][] = [
+  ['a code folder', () => new GitRepo(nodeGitDir(dir)!), /commit abcdef1 isn't in this code folder/],
+  ['GitHub', () => new GitHubRepo(GITHUB, memoryKept(), fakeGitHub(dir, GITHUB).fetch), /commit abcdef1 isn't on GitHub in HighlanderRobotics\/Rebuilt/],
+]
+
+describe.each(SOURCES)('comparing CurrentLimit lines between two commits, from %s', (_name, repo, logCommitMissing) => {
   it('the group\'s limit files come from its "where"', () => {
     expect(limitFiles(flywheel)).toEqual(['DrumSubsystem.java'])
   })
@@ -82,11 +92,11 @@ describe('comparing CurrentLimit lines between two commits', () => {
   })
   it('a folder without the profile\'s commit is probably another repo, and says so', async () => {
     expect(await compareLimitLines(repo(), 'abcdef1', otherLinesChanged, ['DrumSubsystem.java'], 'HighlanderRobotics/Rebuilt')).toMatchObject({
-      verdict: 'unknown', why: "the profile's commit abcdef1 isn't in this code folder: is it a clone of HighlanderRobotics/Rebuilt?",
+      verdict: 'unknown', why: `the profile's commit abcdef1 isn't in ${repo().where}: is it a clone of HighlanderRobotics/Rebuilt?`,
     })
   })
   it('unknown, saying why, when the commit or the file isn\'t there', async () => {
-    expect(await compareLimitLines(repo(), pinned.slice(0, 7), 'abcdef1234567', ['DrumSubsystem.java'])).toMatchObject({ verdict: 'unknown', why: expect.stringMatching(/commit abcdef1 isn't in this code folder/) })
+    expect(await compareLimitLines(repo(), pinned.slice(0, 7), 'abcdef1234567', ['DrumSubsystem.java'])).toMatchObject({ verdict: 'unknown', why: expect.stringMatching(logCommitMissing) })
     expect(await compareLimitLines(repo(), pinned.slice(0, 7), otherLinesChanged, ['Nowhere.java'])).toMatchObject({ verdict: 'unknown', why: expect.stringMatching(/Nowhere.java isn't in commit/) })
     expect(await compareLimitLines(repo(), pinned.slice(0, 7), '', ['DrumSubsystem.java'])).toMatchObject({ verdict: 'unknown', why: 'this log has no /RealMetadata/GitSHA' })
   })
@@ -108,6 +118,15 @@ describe('power/limit-not-applied with a code folder', () => {
     const f = await flywheelFinding('abcdef1234567890abcdef1234567890abcdef12', folder())
     expect(f.severity).toBe('error')
     expect(f.evidence[LINES]).toMatch(/^not compared: commit abcdef1 isn't in this code folder/)
+  })
+  it('from GitHub: the same amber answer, and every motor group shares one file list per commit', async () => {
+    const github = new GitHubRepo(GITHUB, memoryKept(), fakeGitHub(dir, GITHUB).fetch)
+    const f = await flywheelFinding(otherLinesChanged, { repo: github, cache: memoryCache() })
+    expect(f.severity).toBe('warning')
+    expect(f.evidence[LINES]).toBe(`the same as ${pinned.slice(0, 7)} in DrumSubsystem.java (read from the code folder)`)
+    // The profile's short hash (1), then each commit's file list (2), for all the groups with limit files.
+    expect(profile.motorGroups.filter((g) => limitFiles(g).length).length).toBeGreaterThan(5)
+    expect(github.calls.api).toBe(3)
   })
   it('the pinned commit itself needs no comparison', async () => {
     const f = await flywheelFinding(pinned, folder())
