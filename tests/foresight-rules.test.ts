@@ -176,7 +176,7 @@ describe('Foresight checks on a robot in the pit', () => {
   it('a device already off when the stretch starts: no claim about the battery it has no data for', () => {
     const r = check([{ name: '/Intake/CANcoder/Connected', type: 'boolean', records: steady(false) }])
     const f = r.verdict.items.find((i) => i.finding.rule === 'can/device-dropout')!.finding
-    expect(f.evidence['likely cause']).toMatch(/not known/)
+    expect(f.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toMatch(/not logged/)
     expect(f.causes.find((c) => c.id === 'battery-sag')?.ruledOut).toBeUndefined()
   })
 

@@ -61,10 +61,7 @@ export default rule({
       likely, ruledOut, nextStep,
       evidence: {
         'brownout onsets': onsets.length,
-        'first brownout': match.when(first),
         'last brownout': match.when(last),
-        'first (robot time, s)': round(first),
-        'last (robot time, s)': round(last),
         'total motor current at the first brownout (A)': load ? round(load.amps, 0) : 'not logged',
         'battery + wiring resistance (mΩ)': health.milliohms ?? 'not measured',
         'lowest voltage around the first (V)': lowest,

@@ -15,6 +15,7 @@ import tilt from './collision/tilt.ts'
 import zeroNotCompleted from './mech/zero-not-completed.ts'
 import stuckState from './mech/stuck-state.ts'
 import deviceDropout from './can/device-dropout.ts'
+import busDropout from './can/bus-dropout.ts'
 import dsLogTruncated from './comms/ds-log-truncated.ts'
 import limitNotApplied from './power/limit-not-applied.ts'
 import margin from './power/margin.ts'
@@ -41,7 +42,7 @@ import valuesUpdating from './foresight/values-updating.ts'
 import cameraSeesTag from './foresight/camera-sees-tag.ts'
 
 export const RULES: Rule[] = [
-  brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, stuckState, tilt, zeroNotCompleted, deviceDropout, dsLogTruncated,
+  brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, stuckState, tilt, zeroNotCompleted, deviceDropout, busDropout, dsLogTruncated,
   limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, impact, overrun,
   visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough,
 ]
@@ -52,7 +53,7 @@ export const RULES: Rule[] = [
  * only run here. Auto choice and alliance are left out: the chooser resets when the robot is power-cycled on the field.
  */
 export const FORESIGHT_RULES: Rule[] = [
-  restVoltage, deviceDropout, valuesUpdating, controllers, zeroSanity, motorTemperature, dirty, visionStale, visionTimeSync,
+  restVoltage, deviceDropout, busDropout, valuesUpdating, controllers, zeroSanity, motorTemperature, dirty, visionStale, visionTimeSync,
   identity, gaugeCapacity, commitMatches, passthrough, cameraSeesTag, gyroStillDrift,
 ]
 

@@ -96,13 +96,15 @@ describe('comms/emergency-stop', () => {
   })
 })
 
-describe('can/device-dropout on a whole bus', () => {
+describe('can/bus-dropout and can/device-dropout on a whole bus', () => {
   const modules = ['Front Left', 'Front Right', 'Back Left', 'Back Right']
   const bus = (gyro: [number, boolean][], status: [number, string][]): Entries => [
     { name: '/Swerve/Gyro/IsConnected', type: 'boolean', records: gyro },
     ...modules.map((m): FixtureEntry => ({ name: `/RealOutputs/Module${m}refresh status code`, type: 'string', records: status })),
   ]
-  const run = (extra: Entries) => findingsOf({ 'b.wpilog': robotLog({ base: WALL, until: 100, enabled: [[10, false], [20, true]], extra }) }, 'b.wpilog', 'can/device-dropout')
+  const log = (extra: Entries) => ({ 'b.wpilog': robotLog({ base: WALL, until: 100, enabled: [[10, false], [20, true]], extra }) })
+  // The bus finding first, then the per-device ones.
+  const run = (extra: Entries) => ['can/bus-dropout', 'can/device-dropout'].flatMap((rule) => findingsOf(log(extra), 'b.wpilog', rule))
 
   it('every device on the bus at once is one finding about the bus', () => {
     const found = run(bus([[10, true], [40, false], [50, true]], [[10, 'OK'], [40.4, 'CanMessageStale'], [50.2, 'OK']]))
@@ -269,9 +271,9 @@ describe.skipIf(!haveMttd)('MTTD 2025 logs', () => {
   it('Q24 is e-stopped 1.5 s before the end; Q41 loses the whole CANivore bus; Q66\'s outliers are odometry', () => {
     const list = read(mttdLogs.filter((n) => /_q24|_q41|_q66/.test(n)))
     expect(byName(list, '_q24').report.findings.find((f) => f.rule === 'comms/emergency-stop')!.title).toMatch(/with 1\.5 s of teleop left/)
-    const bus = byName(list, '_q41').report.findings.filter((f) => f.rule === 'can/device-dropout')
-    expect(bus.map((f) => f.about)).toEqual(['CANivore bus'])
-    expect(bus[0].evidence['seconds until every device was back']).toBe('58.7')
+    const can = byName(list, '_q41').report.findings.filter((f) => f.rule.startsWith('can/'))
+    expect(can.map((f) => `${f.rule} ${f.about}`)).toEqual(['can/bus-dropout CANivore bus'])
+    expect(can[0].evidence['seconds until every device was back']).toBe('58.7')
     const outliers = byName(list, '_q66').report.findings.filter((f) => f.rule === 'vision/outliers')
     expect(outliers.map((f) => f.causes[0].id)).toEqual(['odometry', 'odometry'])
   })

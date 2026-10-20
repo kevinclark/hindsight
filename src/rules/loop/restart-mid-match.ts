@@ -75,8 +75,6 @@ export default rule({
         ? [{ label: 'between logs (program down or starting up)', value: round(gaps.reduce((a, b) => a + b, 0), 1), unit: 's' }]
         : undefined,
       evidence: {
-        'this log starts': startsMid ? 'already enabled on the field' : 'normally (before the match)',
-        'this log ends': endsMid ? 'while enabled on the field' : 'normally',
         'left on the match clock when this log ends (s)': endsMid && clock ? clock.at(match.logEnd) : undefined,
         'left on the match clock just after this log starts (s)': Number.isFinite(clockAfterStart) ? clockAfterStart : undefined,
         'lowest battery voltage in the last 2 s of this log (V)': Number.isFinite(lowestVolts) ? round(lowestVolts) : undefined,
