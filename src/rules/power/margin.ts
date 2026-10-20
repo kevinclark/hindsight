@@ -5,8 +5,8 @@
  * under 7 V in auto and in teleop.
  * Why: CalGames 2026 Q13 (6.28 V) and Q21 (6.15 V) came within 0.3 V of the 6.0 V setting a day before P0 browned out.
  */
-import { furthestBelowHealthy, MOST_BELOW_HEALTHY } from './battery-collapse.ts'
-import { below, rule, round, volts } from '../rule.ts'
+import { below, rule, round, totalSeconds, volts } from '../rule.ts'
+import { batteryHealth } from './battery-health.ts'
 
 const MARGIN_VOLTS = 1.0
 
@@ -32,20 +32,19 @@ export default rule({
     if (Number.isNaN(low.value)) return
     const margin = low.value - setting
     if (margin >= MARGIN_VOLTS) return
-    // Rank by what the log shows: a poor start or high resistance first, otherwise the load.
-    const rest = match.autoStart === null ? NaN : battery.median(match.before(match.autoStart, 2))
-    const power = match.powerIfLogged()
-    const ohms = power?.report.resistanceOhms ?? null
-    // A battery far below a healthy one at the same charge (power/battery-collapse): a weak battery, not the load.
-    const collapse = power && ohms !== null ? furthestBelowHealthy(power.grid, ohms) : null
-    const collapsed = collapse !== null && collapse.healthy - collapse.volts > MOST_BELOW_HEALTHY
-    const startedLow = rest < match.profile.power.restVoltageMin
-    const wiringHigh = ohms !== null && ohms > match.profile.power.healthyResistanceMaxOhms
-    const likely = [...(startedLow ? ['not-full'] : []), ...(collapsed ? ['weak-battery'] : []), ...(wiringHigh ? ['wiring'] : []), 'load']
+    const health = batteryHealth(match, match.powerIfLogged())
+    const secondsUnder7 = (phase: typeof match.auto) => totalSeconds(battery.episodes(below(7), { during: phase }))
+
+    // Rank by what the log shows: a poor start, a collapsed battery or high resistance first, otherwise the load.
+    const likely: string[] = []
+    if (health.startedLow) likely.push('not-full')
+    if (health.collapse) likely.push('weak-battery')
+    if (health.wiringHigh) likely.push('wiring')
+    likely.push('load')
     const ruledOut: Record<string, string> = {}
-    if (rest >= match.profile.power.restVoltageMin) ruledOut['not-full'] = `it rested at ${volts(rest)} before auto`
-    if (ohms !== null && !wiringHigh) ruledOut.wiring = `resistance was only ${round(ohms * 1000, 1)} mΩ`
-    const secondsUnder7 = (phase: typeof match.auto) => battery.episodes(below(7), { during: phase }).reduce((s, e) => s + e.seconds, 0)
+    if (health.startedFull) ruledOut['not-full'] = `it rested at ${volts(health.rest)} before auto`
+    if (health.wiringFine) ruledOut.wiring = `resistance was only ${health.milliohms} mΩ`
+
     return {
       likely, ruledOut,
       message: `Battery fell to ${volts(low.value)} at ${match.when(low.at)}, ${volts(Math.abs(margin))} ${margin >= 0 ? 'above' : 'below'} the ${setting} V brownout setting`,
@@ -53,8 +52,8 @@ export default rule({
       evidence: {
         'lowest voltage while enabled (V)': round(low.value),
         'brownout setting (V)': setting,
-        'rested before auto (V)': Number.isFinite(rest) ? round(rest) : 'not logged',
-        'battery + wiring resistance (mΩ)': ohms === null ? 'not measured' : round(ohms * 1000, 1),
+        'rested before auto (V)': Number.isFinite(health.rest) ? round(health.rest) : 'not logged',
+        'battery + wiring resistance (mΩ)': health.milliohms ?? 'not measured',
         'margin (V)': round(margin),
         'seconds under 7 V in auto': round(secondsUnder7(match.auto), 1),
         'seconds under 7 V in teleop': round(secondsUnder7(match.teleop), 1),

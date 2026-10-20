@@ -5,8 +5,9 @@
  * motor off until the voltage recovers: the robot goes limp.
  * Why: CalGames 2026 P0 browned out 53 times in the last 18 s; nine shots in a row failed.
  */
-import { rule, round } from '../rule.ts'
-import { furthestBelowHealthy, MOST_BELOW_HEALTHY } from './battery-collapse.ts'
+import { plural, rule, round } from '../rule.ts'
+import type { PowerGrid } from '../../power/battery-model.ts'
+import { batteryHealth } from './battery-health.ts'
 
 export default rule({
   id: 'power/brownout',
@@ -29,44 +30,50 @@ export default rule({
     const first = onsets[0]
     const last = onsets[onsets.length - 1]
     const battery = match.signal('batteryVoltage')
-    // The setting is context; a log without it still gets its brownouts reported.
-    const setting = match.has('brownoutVoltage') ? match.signal('brownoutVoltage').last() : NaN
-    // The battery + wiring resistance and the current at the first brownout, from the power model. Optional: a log
-    // without motor currents still gets its brownouts reported.
+    const lowest = round(battery.lowest(match.between(first - 1, first + 1)).value)
+    // Context only: a log without the setting or the motor currents still gets its brownouts reported.
+    const setting = match.signalIfLogged('brownoutVoltage')?.last() ?? NaN
     const power = match.powerIfLogged()
-    const ohms = power?.report.resistanceOhms ?? null
-    const i = power ? power.grid.t.findIndex((t) => t >= first) : -1
-    const amps = power && i >= 0 ? power.grid.amps[i] : null
-    const biggest = power && i >= 0 && power.grid.groups.length ? power.grid.groups.reduce((a, b) => (b.amps[i] > a.amps[i] ? b : a)).name : ''
-    // A battery that fell far below a healthy one (power/battery-collapse) is the cause before the load is: a
-    // collapsed battery has normal resistance, so resistance alone can't tell it from too much load.
-    const collapse = power && ohms !== null ? furthestBelowHealthy(power.grid, ohms) : null
-    const collapsed = collapse !== null && collapse.healthy - collapse.volts > MOST_BELOW_HEALTHY
-    // Resistance past the "good battery" line points at battery or wiring; at or under it, the load is the bigger part.
-    const wiringHigh = ohms !== null && ohms > match.profile.power.healthyResistanceMaxOhms
-    const wiringFine = ohms !== null && !wiringHigh
+    const health = batteryHealth(match, power)
+    const load = power ? loadAt(power.grid, first) : null
+
+    // Which cause this log points to. A collapsed battery (power/battery-collapse) comes before the load: it has
+    // normal resistance, so resistance alone can't tell it from too much load.
+    let likely: string[] = []
+    let nextStep: string | undefined
+    if (health.collapse) {
+      likely = ['weak-battery']
+      const { below, ah } = health.collapse
+      nextStep = `The battery fell ${below.toFixed(1)} V below a healthy one at ${ah} Ah drawn: swap the battery first and capacity-test it (see power/battery-collapse).`
+    } else if (health.wiringHigh) {
+      likely = ['wiring', 'weak-battery']
+    } else if (health.wiringFine) {
+      likely = ['load', 'weak-battery']
+      const biggest = load?.biggest ? ` (${load.biggest} drew the most at the first brownout)` : ''
+      nextStep = `Resistance is fine, so look at the load${biggest}: turn on current limits for the big motors, and load-test the battery used.`
+    }
+    const ruledOut: Record<string, string> = {}
+    if (health.wiringFine) ruledOut.wiring = `battery + wiring resistance was only ${health.milliohms} mΩ`
+
     return {
-      likely: collapsed ? ['weak-battery'] : wiringHigh ? ['wiring', 'weak-battery'] : wiringFine ? ['load', 'weak-battery'] : undefined,
-      ruledOut: wiringFine ? { wiring: `battery + wiring resistance was only ${round(ohms! * 1000, 1)} mΩ` } : undefined,
-      nextStep: collapsed ? `The battery fell ${(collapse!.healthy - collapse!.volts).toFixed(1)} V below a healthy one at ${collapse!.ah} Ah drawn: swap the battery first and capacity-test it (see power/battery-collapse).`
-        : wiringFine ? `Resistance is fine, so look at the load${biggest ? ` (${biggest} drew the most at the first brownout)` : ''}: turn on current limits for the big motors, and load-test the battery used.` : undefined,
-      message: `Browned out ${onsets.length} time${onsets.length === 1 ? '' : 's'}, first at ${match.when(first)}`,
+      message: `Browned out ${plural(onsets.length, 'time')}, first at ${match.when(first)}`,
       at: first,
+      likely, ruledOut, nextStep,
       evidence: {
         'brownout onsets': onsets.length,
         'first brownout': match.when(first),
         'last brownout': match.when(last),
         'first (robot time, s)': round(first),
         'last (robot time, s)': round(last),
-        'total motor current at the first brownout (A)': amps === null ? 'not logged' : round(amps, 0),
-        'battery + wiring resistance (mΩ)': ohms === null ? 'not measured' : round(ohms * 1000, 1),
-        'lowest voltage around the first (V)': round(battery.lowest(match.between(first - 1, first + 1)).value),
+        'total motor current at the first brownout (A)': load ? round(load.amps, 0) : 'not logged',
+        'battery + wiring resistance (mΩ)': health.milliohms ?? 'not measured',
+        'lowest voltage around the first (V)': lowest,
         'brownout setting (V)': Number.isNaN(setting) ? 'not logged' : setting,
       },
       measured: [
         // Context only: a brownout happens at the setting by definition, so "how far past it" says nothing.
         { label: 'brownouts', value: onsets.length, unit: '' },
-        { label: 'lowest voltage at the first brownout', value: round(battery.lowest(match.between(first - 1, first + 1)).value), unit: 'V' },
+        { label: 'lowest voltage at the first brownout', value: lowest, unit: 'V' },
       ],
       plot: {
         signals: [battery], unit: 'V', from: first - 8, to: Math.min(first + 12, last + 2), marks: onsets,
@@ -75,3 +82,11 @@ export default rule({
     }
   },
 })
+
+/** The total motor current at time t, and the group drawing the most (null before the power grid starts). */
+function loadAt(grid: PowerGrid, t: number) {
+  const i = grid.t.findIndex((x) => x >= t)
+  if (i < 0) return null
+  const biggest = grid.groups.length ? grid.groups.reduce((a, b) => (b.amps[i] > a.amps[i] ? b : a)).name : ''
+  return { amps: grid.amps[i], biggest }
+}

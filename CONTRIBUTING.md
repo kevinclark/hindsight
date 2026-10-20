@@ -38,7 +38,7 @@ export default rule({
       message: `Battery rested at ${volts(rest)} before auto (want ${LOWEST_REST_VOLTAGE} V or more)`,
       at: match.autoStart,
       evidence: { 'rest voltage, 2 s before auto (V)': round(rest) },
-      plot: ['batteryVoltage'],
+      plot: { signals: ['batteryVoltage'], unit: 'V' },
     }
   },
 })
@@ -74,6 +74,8 @@ export default rule({
    | "1:47 into the match (teleop; robot time 532.8 s)" | `match.when(t)` |
    | the Driver Station logs loaded with this match | `match.dsLogs` (empty if only the `.wpilog` was dropped) |
    | text (console, git) | `match.text('console').firstMatch(/Rezeroed hood/)` |
+   | a signal you can do without (extra evidence) | `match.signalIfLogged('brownoutVoltage')` → the signal, or `null` |
+   | gyro pitch in degrees (logged in radians) | `match.signal('gyroPitch').inDegrees()` |
 
    Each `episode` has `start`, `end`, `seconds`, `peak` (furthest from zero), `lowest` and `highest`.
    Tests for episodes read out loud: `below(7)`, `above(48)`, `beyond(15)` (either way), `isTrue`, `isFalse`.
@@ -94,7 +96,8 @@ export default rule({
    `match.couldNotCheck('why')` and return; if it checked most of it but had to skip a part, call
    `match.checkedOnlyPart('what was skipped')` and carry on.
 
-   Keep a rule under ~60 lines. Name thresholds (`const LOWEST_REST_VOLTAGE = 12.5`), and say in the comment
+   Keep `check` short (about 30 lines; a rule file about 60 besides its description) and write it the way the
+   next section says. Name thresholds (`const LOWEST_REST_VOLTAGE = 12.5`), and say in the comment
    whether a threshold was measured or assumed.
 4. **Let the log pick the cause, when it can.** If your evidence says which cause fits, return `likely: ['id']`
    (listed first, marked "likely here") or `ruledOut: { id: 'why, in a few words' }`. If the usual next step doesn't
@@ -119,6 +122,31 @@ export default rule({
 6. **Run `npm test`, then try it on real logs:** `node --experimental-strip-types scripts/check.ts <log.wpilog>`
    prints every finding. Before you change a threshold, run it over every log you have and look at what changes,
    not just the match that made you change it.
+
+## How a rule should read
+
+Someone who has never seen this code should be able to read `check` out loud, top to bottom, and say when it
+fires. `power/brownout.ts`, `power/margin.ts` and `comms/loss.ts` are written this way; copy their shape.
+
+1. **Guard first.** Return as soon as there is nothing wrong (`if (onsets.length === 0) return`). The rest of
+   `check` is only about the problem.
+2. **Name the numbers.** One `const` per thing you measured, named for what it is (`lowest`, `deadSeconds`,
+   `health`), before you build the answer. Work out each number once, even if the message, the evidence and
+   `measured` all show it.
+3. **Decide the causes with `if`.** Start with `const likely: string[] = []` and `const ruledOut: Record<string,
+   string> = {}`, then one `if` per piece of evidence: `if (health.startedLow) likely.push('not-full')`. Never a
+   chain of `? :` (`a ? x : b ? y : z`): write `if / else if`. One `? :` choosing between two values is fine.
+4. **Evidence is a plain list.** For a line that only sometimes applies, give the value or `undefined`; a value
+   left `undefined` is left out. Don't write `...(x ? { 'label': v } : {})`.
+5. **Optional signals:** `match.signalIfLogged('name')?.last() ?? NaN`, not `match.has(...) ? match.signal(...) : ...`.
+6. **Say numbers the same way everywhere:** `plural(n, 'time')` ("3 times"), `volts()`, `amps()`, `secs()`,
+   `pct()`, `round()`, and `totalSeconds(episodes)` for how long episodes lasted.
+7. **Long work goes in a named helper below the rule**, as a `function` with a one-line comment saying what it
+   answers (`commsLosses(match)`, `dsLogsAround(match, losses)`). Helpers shared by several rules go in their own
+   file in the area (`power/battery-health.ts`).
+8. **No `!`** (non-null) after a check you already made: keep the checked value in a `const` instead.
+9. **One statement per line, lines under ~120 characters.** If a line needs a comment to be understood, split it
+   into named steps instead.
 
 ## Things that trip people up
 
