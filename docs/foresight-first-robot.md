@@ -15,10 +15,11 @@ writes to it: Foresight only subscribes.
 - Robot on, robot code running, Driver Station open and showing Communications green, robot **disabled**.
 - Both controllers plugged into the DS laptop.
 - A printed AprilTag (36h11, the field's family; one tag is enough), for step 7.
-- For step 8, `tools/robot-snapshot.py` and Python 3.8 or newer on the laptop that runs Foresight. The drive team
-  doesn't install software on the DS laptop, so ask the software lead first; without Python there, skip step 8.
-  (A snapshot from another laptop works too if both laptops' clocks are set automatically: Foresight compares the
-  snapshot's time with when the robot code started, by the clock of the laptop Foresight runs on.)
+- For step 8, a **second laptop** (the pit laptop) with `tools/robot-snapshot.py` and Python 3.8 or newer. The
+  collector never runs on the drive laptop, which takes no installs (Kevin, 2026-10-19). Carry `snapshot.json` to the
+  drive laptop on a USB stick. Both laptops' clocks must be set automatically: Foresight compares the snapshot's time
+  with when the robot code started, by the drive laptop's clock. Note how the pit laptop reached the robot (USB to
+  the roboRIO while the drive laptop is on Ethernet, or the reverse); two tethers at once is untested.
 
 ## Steps
 

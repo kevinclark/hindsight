@@ -84,7 +84,9 @@ offsets correct and unchanged*, *Swerve ratio unchanged*, and *Current limits as
 talks to the diagnostic server itself; you give it the snapshot.
 
 1. Connect Foresight to the robot and wait until it shows a verdict (GO, NO-GO or NOT CHECKED).
-2. Run `python3 tools/robot-snapshot.py` on the same laptop. Don't press Clear Faults or blink anything first.
+2. Run `python3 tools/robot-snapshot.py`, on the same laptop or a second one. Teams whose drive laptop takes no
+   installs (8033 among them) run it from a pit laptop and copy `snapshot.json` across; both clocks must be set
+   automatically. Don't press Clear Faults or blink anything first.
 3. Click **Robot snapshot…** under the Connect button, or drop `snapshot.json` on that box.
 
 The box then says whether the snapshot was used. Foresight uses a snapshot only when it was taken at least 30 s
