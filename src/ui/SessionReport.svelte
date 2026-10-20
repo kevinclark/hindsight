@@ -59,7 +59,7 @@
           <figcaption>{p.label} <span>({p.unit})</span></figcaption>
           {#if p.points.length}
             <svg viewBox={`0 0 ${t.width} ${t.height}`} role="img" aria-label={`${p.label} per match`}>
-              {#if p.lineY !== null}<line class="ref" x1="6" x2={t.width - 6} y1={p.lineY} y2={p.lineY} />{/if}
+              {#if p.lineY !== null}<line class="ref" x1={t.pad} x2={t.width - t.pad} y1={p.lineY} y2={p.lineY} />{/if}
               {#each p.points as pt (pt.id)}
                 <circle cx={pt.x} cy={pt.y} r={pt.worst ? 3.6 : 2.6} class={pt.worst ? 'pt worst' : 'pt'} />
                 {#if pt.letter}<text x={pt.x + 4.5} y={pt.y - 3.5} class={`lt ${crowded ? 'small' : ''}`}>{pt.letter}</text>{/if}

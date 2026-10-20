@@ -104,7 +104,6 @@ describe('session trends', () => {
     expect(volts.lineY).not.toBeNull()
     expect(volts.range).toBe('8.00–10.00')
     expect(volts.verdict).toBe('Under 7 V in 0 of 3 matches')
-    expect(volts.worst).toBe('worst: Q1 8.00 V')
     expect(volts.points.filter((p) => p.worst).map((p) => p.match)).toEqual(['Qualification 1'])
     // Higher is higher up the chart (smaller y), the line at 7 V sits below every point.
     expect(volts.points[2].y).toBeLessThan(volts.points[0].y)

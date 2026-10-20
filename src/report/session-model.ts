@@ -70,8 +70,8 @@ export interface ReportFinding {
 export interface TrendPoint { /** The file name: unique even when two matches share a label (a replay). */ id: string; match: string; value: number; x: number; y: number; letter: string; worst: boolean }
 export interface TrendPanel {
   key: string; label: string; unit: string
-  /** The Session view's verdict for this number ("Under 7 V in 8 of 8 matches"), its "Latest is the worst (Q42)" line (or ""), and the worst match ("worst: Q42 5.69 V"; "highest: ..." with no line). */
-  verdict: string; verdict2: string; worst: string
+  /** The Session view's verdict for this number ("Under 7 V in 8 of 8 matches"). */
+  verdict: string
   /** y of the rule's line, when it has one. */
   lineY: number | null
   points: TrendPoint[]
@@ -80,6 +80,8 @@ export interface TrendPanel {
 }
 export interface Trends {
   width: number; height: number
+  /** Space kept clear round the plot: the dots and the dashed line stay this far from the edge. */
+  pad: number
   panels: TrendPanel[]
   /** One letter per battery, so identity never rests on colour. */
   batteries: { letter: string; id: string }[]
@@ -231,11 +233,10 @@ export function trendsModel(matches: MatchSummary[], typedBatteries: Record<stri
   // The rows, verdicts and order are the Session view's (trendRows): the printed numbers cannot disagree with the screen.
   const panels = trendRows(matches).map((row): TrendPanel => {
     const metric = row.metric
-    const base = { key: metric.key, label: metric.label, unit: metric.unit, verdict: row.verdict, verdict2: row.verdict2 }
+    const base = { key: metric.key, label: metric.label, unit: metric.unit, verdict: row.verdict }
     const w = row.worstIndex
-    const worst = w === null ? '' : `${row.worstWord}: ${row.labels[w]} ${row.values[w]!.toFixed(metric.digits)} ${metric.unit}`
     const nums = row.values.filter((v): v is number => v !== null)
-    if (nums.length === 0) return { ...base, worst, lineY: null, points: [], range: 'not in these logs' }
+    if (nums.length === 0) return { ...base, lineY: null, points: [], range: 'not in these logs' }
     let lo = Math.min(...nums, row.line ?? Infinity), hi = Math.max(...nums, row.line ?? -Infinity)
     if (hi - lo < 1e-9) { lo -= 1; hi += 1 }
     const x = (i: number) => pad + (matches.length === 1 ? (width - 2 * pad) / 2 : (i * (width - 2 * pad)) / (matches.length - 1))
@@ -243,11 +244,11 @@ export function trendsModel(matches: MatchSummary[], typedBatteries: Record<stri
     const points: TrendPoint[] = []
     row.values.forEach((v, i) => { if (v !== null) points.push({ id: matches[i].fileName, match: matchLabel(matches[i]), value: v, x: x(i), y: y(v), letter: battery(matches[i]) ? letter(ids.indexOf(battery(matches[i]))) : '', worst: i === w }) })
     return {
-      ...base, worst, lineY: row.line !== null ? y(row.line) : null, points,
+      ...base, lineY: row.line !== null ? y(row.line) : null, points,
       range: `${Math.min(...nums).toFixed(metric.digits)}–${Math.max(...nums).toFixed(metric.digits)}`,
     }
   })
-  return { width, height, panels, batteries: ids.map((id, i) => ({ letter: letter(i), id })), order: matches.map(matchLabel), anyUnlabelled: matches.some((m) => !battery(m)) }
+  return { width, height, pad, panels, batteries: ids.map((id, i) => ({ letter: letter(i), id })), order: matches.map(matchLabel), anyUnlabelled: matches.some((m) => !battery(m)) }
 }
 
 export function gridModel(session: Session): GridModel {
