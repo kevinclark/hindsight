@@ -151,6 +151,17 @@ export const competition2026: RobotProfile = {
         updating: '/Shooter/Turret/StatorCurrentAmps',
       }],
       limits: { supplyA: 40, supplyEnabled: true, statorA: 40, statorEnabled: true, where: 'TurretIO.java:58-61' },
+      // Nothing for the turret to hold. Stalled short of its setpoint it is jammed (2026-02-21: 6 stalls at -17 to -30°
+      // with the setpoint 3–251° away). Parked at its -270° soft limit (TURRET_MIN_ANGLE, TurretSubsystem.java:55) it
+      // pushes something a few degrees short of it: 15 stalls at -264 to -271°, setpoint -270°, up to 14.7 s at 53 A,
+      // in 10 of the 170 practice logs of 2026-02-19..22.
+      neverStalls: true,
+      setpoint: {
+        position: '/Shooter/Turret/PositionRotations', // a Rotation2d in turret radians
+        setpoint: '/RealOutputs/Shooter/Turret/Setpoint',
+        toDegrees: 180 / Math.PI,
+        where: 'TurretSubsystem.java:55-56 (TURRET_MIN_ANGLE -270°, TURRET_MAX_ANGLE -12.7°)',
+      },
     },
     {
       name: 'Intake rack',
@@ -278,6 +289,19 @@ export const competition2026: RobotProfile = {
     },
   ],
 
+  // The turret motor's position is a Rotation2d in turret radians (SensorToMechanismRatio = TURRET_GEAR_RATIO,
+  // TurretIO.java:57); the code's turret angle from its two CANcoders is a Rotation2d too. Over 1-s moves of 0.2 to 3 rad,
+  // the motor moved 0.96–1.02 times the absolute angle (median per log, the 17 logs of 2026-02-21 with 5 or more such
+  // moves; none in the gear-off stretch): both in turret radians.
+  slipChecks: [{
+    mechanism: 'Turret',
+    motor: '/Shooter/Turret/PositionRotations',
+    motorToDegrees: 180 / Math.PI,
+    absolute: '/RealOutputs/Shooter/Turret/Turret Calculated Rotation',
+    absoluteToDegrees: 180 / Math.PI,
+    where: 'TurretSubsystem.java:248 (getCalculatedTurretRotations, from the two turret CANcoders; it also seeds the motor at boot, :142-145)',
+  }],
+
   // Camera.java:100 logs each camera under "Apriltag Vision/<name>"; :168 logs the pose the code took from it.
   // Names from R1WispSwerveConstants.java:63-106.
   cameras: ['Front_Left', 'Front_Right', 'Back_Left', 'Back_Right'].map((name) => ({
@@ -295,6 +319,7 @@ export const competition2026: RobotProfile = {
       // The turret motor is seeded at boot from the two CANcoders (TurretSubsystem constructor); the code logs that
       // angle every loop as /RealOutputs/Shooter/Turret/Turret Calculated Rotation. The motor's own position is logged
       // as a Rotation2d (radians), which this check reads as rotations, so it can't be compared yet.
+      // mech/slip compares the same pair while the robot runs (slipChecks below).
       { mechanism: 'Turret', notCheckable: 'the turret motor\'s position is logged in radians (a Rotation2d), and this check reads motor positions in rotations' },
       { mechanism: 'Hood', notCheckable: 'the hood has no absolute encoder' },
     ],

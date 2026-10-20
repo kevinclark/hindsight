@@ -43,6 +43,37 @@ export interface MotorGroup {
   sameLoop?: boolean
   /** For the limits wizard: the group spins up to a speed (the first motor is the leader); its setpoint log key. */
   spinUp?: { setpoint?: string; appliedVolts?: string }
+  /**
+   * True when these motors should never push hard without turning: nothing to hold, no game piece to grip (a turret,
+   * a flywheel). mech/stall checks only these groups: an elevator holding against gravity, a pivot resting on its stop
+   * and a roller holding a game piece all stall on purpose.
+   */
+  neverStalls?: boolean
+  /**
+   * The mechanism's position and the code's setpoint for it, with mechanism degrees per logged unit (360 for
+   * rotations, 180/π for a Rotation2d). With it, mech/stall tells a jam (stalled short of the setpoint) from pushing a
+   * stop at the setpoint.
+   */
+  setpoint?: { position: string; setpoint: string; toDegrees: number; where: string }
+}
+
+/**
+ * A motor and an absolute angle of the same mechanism, for mech/slip: the motor turning while the absolute angle
+ * holds still means the drive between them slipped (a loose gear or pulley, a sheared key).
+ */
+export interface SlipCheck {
+  mechanism: string
+  /** The motor's position, and mechanism degrees per logged unit (360 for mechanism rotations, 180/π for radians). */
+  motor: string
+  motorToDegrees: number
+  /**
+   * The mechanism's absolute angle (an absolute encoder, or an angle the code computes from them), likewise. It must
+   * not wrap within the mechanism's travel: a jump from 180° to −180° would read as 360° of travel.
+   */
+  absolute: string
+  absoluteToDegrees: number
+  /** Where the code reads the absolute angle, e.g. "TurretSubsystem.java:120". */
+  where: string
 }
 
 export interface ZeroingMechanism {
@@ -194,6 +225,8 @@ export interface RobotProfile {
    */
   powerDistribution?: 'rev-pdh' | 'ctre-pdp' | 'ctre-pdp-2'
   zeroing: ZeroingMechanism[]
+  /** Mechanisms with both a motor position and an absolute angle in the log, for mech/slip. */
+  slipChecks?: SlipCheck[]
   cameras: Camera[]
   /** What Foresight's pre-match checks need beyond the rest of the profile (src/foresight/). */
   foresight?: ForesightProfile
