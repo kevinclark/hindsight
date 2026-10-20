@@ -5,11 +5,15 @@
  * few degrees AWAY from the stop the zero drives into; travel toward the stop is the zeroing itself), against the
  * first console message saying the zero completed. Moving first means every angle it was sent to was wrong, unless the
  * zero barely changed the position when it landed (less than moveDegrees): then the angles were already right, e.g.
- * the mechanism was seeded from an absolute encoder and this zero was a re-check.
+ * the mechanism was seeded from an absolute encoder and this zero was a re-check. A log with no zero at all that starts
+ * at the angle the zero sets (the profile's stopDegrees) began already zeroed: the motor controller kept the zero
+ * through a code restart. A code restart after an unzeroed run left it at that angle would start there too; the log
+ * can't tell the two apart.
  * Why: CalGames 2026 Q13/Q21: the hood's zero was cancelled 0.2 s into auto, so "10°" was 8° above the hard stop
  * all auto, and the hood hit the trench in Q13. Fixed in 8ba92cb (zero at boot); P0 must stay quiet.
  */
 import { rule, round, secs } from '../rule.ts'
+import type { MechanismView, Signal } from '../view.ts'
 
 export default rule({
   id: 'mech/zero-not-completed',
@@ -29,6 +33,7 @@ export default rule({
   check(mechanism, match) {
     const position = mechanism.position()
     const doneAt = mechanism.zeroDoneAt ?? Infinity
+    if (!Number.isFinite(doneAt) && startsZeroed(mechanism, position)) return
     const away = mechanism.zeroDirection === 'down' ? 1 : -1 // which way is "away from the stop"
     let movedAt: number | null = null
     for (const period of match.enabled) {
@@ -65,3 +70,9 @@ export default rule({
     }
   },
 })
+
+/** Does the log start at the angle the zero sets? (2026-02-21: 15 logs started at 23.8°, the zero kept.) */
+function startsZeroed(mechanism: MechanismView, position: Signal): boolean {
+  const stop = mechanism.stopDegrees
+  return typeof stop === 'number' && Math.abs(position.first() - stop) < mechanism.moveDegrees
+}

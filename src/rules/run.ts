@@ -278,6 +278,7 @@ function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: ()
             zeroDoneAt: view.text('console').firstMatch(z.doneMessage),
             zeroDirection: z.zeroDirection,
             moveDegrees: z.moveDegrees,
+            stopDegrees: z.stopDegrees,
           }
           return rule.check(mechanism, view)
         },

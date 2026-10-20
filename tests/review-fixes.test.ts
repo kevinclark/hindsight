@@ -76,11 +76,14 @@ describe('rules that check several devices report what they could not check', ()
 
 describe('mech/zero-not-completed', () => {
   const base = q13.entries.filter((e) => !['/Drum/Hood/PositionRotations', '/RealOutputs/Console'].includes(e.name))
-  const run = (hood: [number, number][], consoleLines: [number, string][]) => analyzeFiles([{ name: 'z.wpilog', bytes: writeWpilog([
+  const run = (hood: [number, number][], consoleLines: [number, string][], profile = offseason2026) => analyzeFiles([{ name: 'z.wpilog', bytes: writeWpilog([
     ...base,
     { name: '/Drum/Hood/PositionRotations', type: 'double', records: hood.map(([t, deg]) => [t, deg / 360]) },
     { name: '/RealOutputs/Console', type: 'string', records: consoleLines },
-  ]) }], offseason2026).analyses[0].report
+  ]) }], profile).analyses[0].report
+  // As on the 2026 competition robot: the zero sets 23.16°, and the Talon keeps it through a code restart.
+  const withStop = { ...offseason2026, zeroing: offseason2026.zeroing.map((z) => ({ ...z, stopDegrees: 23.16 })) }
+  const noZero: [number, string][] = [[250, 'Robot program startup complete']]
   it('stays quiet when the hood travels down to its stop and then the zero completes', () => {
     const r = run([[260, 30], [270.3, 25], [270.6, 15], [270.9, 2], [271.2, 10], [272, 10]], [[271.1, 'Rezeroed hood']])
     expect(fired(r)).not.toContain('mech/zero-not-completed')
@@ -92,5 +95,18 @@ describe('mech/zero-not-completed', () => {
   it('stays quiet when the late zero barely moves it: the angles were already right', () => {
     const r = run([[260, 2], [270.5, 2], [271, 9], [272, 9], [293.5, 9], [293.6, 8]], [[293.5, 'Rezeroed hood']])
     expect(fired(r)).not.toContain('mech/zero-not-completed')
+  })
+  it('stays quiet when a log with no zero starts at the stop angle (the zero was kept through a code restart)', () => {
+    const r = run([[260, 23.8], [270.5, 23.8], [271, 40], [272, 40]], noZero, withStop)
+    expect(fired(r)).not.toContain('mech/zero-not-completed')
+  })
+  it('still fires "it never did" when a log with no zero starts away from the stop angle (a power cycle)', () => {
+    const r = run([[260, 1.8], [270.5, 1.8], [271, 18], [272, 18]], noZero, withStop)
+    expect(r.findings.find((f) => f.rule === 'mech/zero-not-completed')?.title).toMatch(/it never did/)
+  })
+  it('still fires at the stop angle when the profile gives none, or when a zero in the log jumps', () => {
+    expect(fired(run([[260, 23.8], [270.5, 23.8], [271, 40], [272, 40]], noZero))).toContain('mech/zero-not-completed')
+    const jumped = run([[260, 23.8], [270.5, 23.8], [271, 40], [272, 40], [293.5, 40], [293.6, 30]], [[293.5, 'Rezeroed hood']], withStop)
+    expect(fired(jumped)).toContain('mech/zero-not-completed')
   })
 })
