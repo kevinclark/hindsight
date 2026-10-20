@@ -121,7 +121,9 @@ export default rule({
    `tests/fixtures.test.ts`. Fixtures are small JSON; never commit a `.wpilog`.
 6. **Run `npm test`, then try it on real logs:** `node --experimental-strip-types scripts/check.ts <log.wpilog>`
    prints every finding. Before you change a threshold, run it over every log you have and look at what changes,
-   not just the match that made you change it.
+   not just the match that made you change it. When you tidy a rule without meaning to change what it finds,
+   prove it: `npm run golden -- before.json <log folder>` on the old code, `npm run golden -- after.json <log
+   folder>` on yours, then `cmp before.json after.json`.
 
 ## How a rule should read
 
@@ -134,19 +136,26 @@ fires. `power/brownout.ts`, `power/margin.ts` and `comms/loss.ts` are written th
    `health`), before you build the answer. Work out each number once, even if the message, the evidence and
    `measured` all show it.
 3. **Decide the causes with `if`.** Start with `const likely: string[] = []` and `const ruledOut: Record<string,
-   string> = {}`, then one `if` per piece of evidence: `if (health.startedLow) likely.push('not-full')`. Never a
-   chain of `? :` (`a ? x : b ? y : z`): write `if / else if`. One `? :` choosing between two values is fine.
+   string> = {}`, then one `if` per piece of evidence: `if (rest.low) likely.push('not-full')`. Never a chain of
+   `? :` (`a ? x : b ? y : z`): write `if / else if`. One condition choosing between two values is a `? :`, not a
+   `let` and an `if`: `nextStep: wedged ? 'Watch the video…' : undefined`.
 4. **Evidence is a plain list.** For a line that only sometimes applies, give the value or `undefined`; a value
    left `undefined` is left out. Don't write `...(x ? { 'label': v } : {})`.
 5. **Optional signals:** `match.signalIfLogged('name')?.last() ?? NaN`, not `match.has(...) ? match.signal(...) : ...`.
 6. **Say numbers the same way everywhere:** `plural(n, 'time')` ("3 times"), `volts()`, `amps()`, `secs()`,
    `pct()`, `round()`, and `totalSeconds(episodes)` for how long episodes lasted.
-7. **Long work goes in a named helper below the rule**, as a `function` with a one-line comment saying what it
+7. **Long work goes in a named helper below the rule** (the rule's description comes first in the file), as a `function` with a one-line comment saying what it
    answers (`commsLosses(match)`, `dsLogsAround(match, losses)`). Helpers shared by several rules go in their own
    file in the area (`power/battery-health.ts`).
 8. **No `!`** (non-null) after a check you already made: keep the checked value in a `const` instead.
 9. **One statement per line, lines under ~120 characters.** If a line needs a comment to be understood, split it
    into named steps instead.
+
+### A pit check (Foresight)
+
+A rule that judges the robot sitting disabled in the pit sets `foresightOnly: true` and reads `match.pitStretch`
+(the stretch it checks, up to now). It doesn't run on match logs. `src/rules/foresight/motor-temperature.ts` is the
+simplest one.
 
 ## Things that trip people up
 

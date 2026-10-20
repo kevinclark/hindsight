@@ -89,3 +89,18 @@ describe('cause ids', () => {
     expect(runRules(match, [typo]).crashed[0].reason).toMatch(/no-such-cause/)
   })
 })
+
+describe('what the runner does with an answer', () => {
+  const a = analyzeFiles([{ name: 'test.wpilog', bytes: log }], offseason2026).analyses[0]
+  it('evidence left undefined is left out, and a plot defaults to 5 s either side of `at`', () => {
+    const r = runRules(a.match, [{ ...template, id: 'example/shape', check: () => ({
+      message: 'shape', at: 25, evidence: { kept: 1, dropped: undefined }, plot: { signals: ['batteryVoltage'] },
+    }) }])
+    expect(r.findings[0].evidence).toEqual({ kept: 1 })
+    expect(r.findings[0].plot).toMatchObject({ from: 20, to: 30, unit: '' })
+  })
+  it('a foresightOnly rule stays quiet on a match log', () => {
+    const r = runRules(a.match, [{ ...template, id: 'example/pit', foresightOnly: true, check: (m) => ({ message: 'pit', at: m.pitStretch.end }) }])
+    expect(r).toEqual({ findings: [], skipped: [], crashed: [] })
+  })
+})

@@ -11,7 +11,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "extract-fixtures": "node --experimental-strip-types scripts/extract-fixtures.ts",
-    "bench": "node --experimental-strip-types scripts/bench.ts"
+    "bench": "node --experimental-strip-types scripts/bench.ts",
+    "golden": "node --max-old-space-size=16000 --experimental-strip-types scripts/golden.ts"
   },
   "devDependencies": {
     "@msgpack/msgpack": "3.1.2",

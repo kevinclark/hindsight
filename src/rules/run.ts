@@ -79,6 +79,8 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
   if (items.length === 0 && rule.forEach !== 'alert') {
     return { findings, notChecked: [`the robot profile lists no ${rule.forEach}s`], items: 1, itemsSkipped: 1 }
   }
+  // A pit check has nothing to judge in a match log (no disabled stretch): it stays quiet.
+  if (rule.foresightOnly && view.beforeEnable.length === 0) return { findings, notChecked, items: items.length, itemsSkipped: 0 }
   let itemsSkipped = 0
   for (const item of items) {
     view.notes = []

@@ -47,10 +47,9 @@ export default rule({
     const ruledOut: Record<string, string> = {}
     if (radioLost || deadSeconds.some((d) => d >= RADIO_REBOOT_SECONDS)) likely.push('radio')
     else if (radio) ruledOut.radio = 'the roboRIO could reach the radio the whole match'
-    const lostPct = ds?.lostPct ?? null
-    if (ds?.cut) likely.unshift('ds-laptop')
-    else if (lostPct !== null && lostPct > 10) likely.push('wireless')
-    else if (lostPct !== null) ruledOut['ds-laptop'] = 'the DS log kept running through the loss'
+    if (ds?.points === 'ds-laptop') likely.unshift('ds-laptop') // the DS log stopped during the loss: first suspect
+    if (ds?.points === 'wireless') likely.push('wireless')
+    if (ds?.points === 'not-ds-laptop') ruledOut['ds-laptop'] = 'the DS log kept running through the loss'
 
     let radioReach = 'not logged'
     if (radio) radioReach = radioLost ? 'no, it lost the radio during the match' : 'yes, the whole match'
@@ -86,11 +85,14 @@ function commsLosses(match: MatchView): number[] {
   return losses.sort((a, b) => a - b)
 }
 
+/** The cause a DS log points to: the laptop, the wireless link, not the laptop, or nothing either way. */
+type DsCause = 'ds-laptop' | 'wireless' | 'not-ds-laptop' | null
+
 /**
  * What the loaded DS logs say: whether one stops during a loss (the DS app closed or crashed), and the 3 s before the
- * first loss (lost packets, trip time, laptop CPU), with the next step that follows.
+ * first loss (lost packets, trip time, laptop CPU). `points` is the cause that follows, with its next step.
  */
-function dsLogsAround(match: MatchView, losses: number[]) {
+function dsLogsAround(match: MatchView, losses: number[]): { evidence: Record<string, number | string>; points: DsCause; nextStep: string } {
   const first = losses[0]
   const cut = match.dsLogs.find((d) => losses.some((t) => d.endTime > t - 1 && d.endTime < t + 15))
   const offset = match.epochOffset
@@ -98,20 +100,19 @@ function dsLogsAround(match: MatchView, losses: number[]) {
   const before = offset === null ? [] : records.filter((r) => r.epochSeconds - offset > first - 3 && r.epochSeconds - offset < first)
   const lostPct = before.length ? Math.max(...before.map((r) => r.lostPacketsPct)) : null
   const cpu = before.map((r) => r.cpuPct)
-  const evidence = lostPct === null ? {} : {
+  const evidence: Record<string, number | string> = lostPct === null ? {} : {
     'DS log, 3 s before the first loss: lost packets (%)': round(lostPct, 0),
     'DS log, 3 s before the first loss: trip time (ms)': round(Math.max(...before.map((r) => r.tripTimeMs)), 1),
     'DS log, 3 s before the first loss: DS laptop CPU (%)': `${round(Math.min(...cpu), 0)}–${round(Math.max(...cpu), 0)}`,
   }
-  let nextStep: string
   if (cut) {
-    nextStep = `The DS log stops at ${match.when(cut.endTime)}, during the loss: check the DS laptop (plugged in, high-performance power plan, nothing else running) and its Windows Event Viewer for a Driver Station crash.`
-  } else if (lostPct !== null && lostPct > 10) {
-    nextStep = `The DS log shows up to ${lostPct.toFixed(0)} % lost packets in the 3 s before the loss: check where the radio is mounted and ask the FTA about the field's wireless.`
-  } else if (lostPct !== null) {
-    nextStep = 'The DS log ran through the loss with no packet loss before it: ask the FTA for the field log for this match.'
-  } else {
-    nextStep = 'The DS log has no records in the seconds before the loss (it may not line up with this match): check its file is from this match, and ask the FTA for the field log.'
+    return { evidence, points: 'ds-laptop', nextStep: `The DS log stops at ${match.when(cut.endTime)}, during the loss: check the DS laptop (plugged in, high-performance power plan, nothing else running) and its Windows Event Viewer for a Driver Station crash.` }
   }
-  return { cut, lostPct, evidence, nextStep }
+  if (lostPct !== null && lostPct > 10) {
+    return { evidence, points: 'wireless', nextStep: `The DS log shows up to ${lostPct.toFixed(0)} % lost packets in the 3 s before the loss: check where the radio is mounted and ask the FTA about the field's wireless.` }
+  }
+  if (lostPct !== null) {
+    return { evidence, points: 'not-ds-laptop', nextStep: 'The DS log ran through the loss with no packet loss before it: ask the FTA for the field log for this match.' }
+  }
+  return { evidence, points: null, nextStep: 'The DS log has no records in the seconds before the loss (it may not line up with this match): check its file is from this match, and ask the FTA for the field log.' }
 }

@@ -9,7 +9,7 @@
  */
 import { ocvCurve } from '../../power/battery-model.ts'
 import { rule, round, volts } from '../rule.ts'
-import { batteryHealth, LAST_REFERENCE_AH, MOST_BELOW_HEALTHY } from './battery-health.ts'
+import { batteryHealth, LAST_REFERENCE_AH, MOST_BELOW_HEALTHY, restBeforeAuto } from './battery-health.ts'
 
 export default rule({
   id: 'power/battery-collapse',
@@ -35,15 +35,16 @@ export default rule({
     const health = batteryHealth(match, power)
     const worst = health.collapse
     if (!worst) return
-    const brownedOut = match.has('brownedOut') && match.signal('brownedOut').turnsOn().length > 0
+    const brownedOut = (match.signalIfLogged('brownedOut')?.turnsOn().length ?? 0) > 0
+    const rest = restBeforeAuto(match)
 
     // Rank by what the log shows: a battery that started charged, with fine wiring, points at the battery itself.
     const likely: string[] = []
-    if (health.startedLow) likely.push('not-full')
+    if (rest.low) likely.push('not-full')
     if (health.wiringHigh) likely.push('wiring')
     likely.push('weak-battery')
     const ruledOut: Record<string, string> = {}
-    if (health.startedFull) ruledOut['not-full'] = `it rested at ${volts(health.rest)} before auto`
+    if (rest.full) ruledOut['not-full'] = `it rested at ${volts(rest.volts)} before auto`
     if (!health.wiringHigh) ruledOut.wiring = `resistance was only ${health.milliohms} mΩ`
 
     return {

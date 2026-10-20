@@ -10,8 +10,8 @@
  * Why: CalGames 2026 Q21: flywheel followers 17 and 18 dropped 25 % below the leader while shooting. It was a belt
  * slipping, fixed just before elims. The velocity loop only sees the leader, so nothing corrected it.
  */
-import { indexAt, median } from '../../match/series.ts'
-import { rule, round } from '../rule.ts'
+import { indexAt } from '../../match/series.ts'
+import { median, round, rule } from '../rule.ts'
 import { SLOW_HZ, sampleRate, type MatchView, type MotorView } from '../view.ts'
 
 const DT = 0.02 // compare every 20 ms

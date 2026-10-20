@@ -26,27 +26,27 @@ export function furthestBelowHealthy(grid: PowerGrid, resistanceOhms: number) {
 }
 
 /**
- * The battery's health in this match. `power` is match.power() or match.powerIfLogged(): each rule decides whether
- * it needs the motor currents. Anything the log can't tell is null (or false).
+ * What the power model says about the battery and its wiring. `power` is match.power() or match.powerIfLogged():
+ * each rule decides whether it needs the motor currents. With no measured resistance, every field is null or false
+ * (so wiringHigh and wiringFine are both false: not known).
  */
 export function batteryHealth(match: MatchView, power: { report: PowerReport; grid: PowerGrid } | null) {
-  const limits = match.profile.power
   const ohms = power?.report.resistanceOhms ?? null
   const worst = power && ohms !== null ? furthestBelowHealthy(power.grid, ohms) : null
-  // The battery at rest in the 2 s before auto (NaN if the robot never enabled).
-  const rest = match.autoStart === null ? NaN : match.signal('batteryVoltage').median(match.before(match.autoStart, 2))
+  const most = match.profile.power.healthyResistanceMaxOhms
   return {
-    /** Battery + wiring resistance (Ω), or null when there were too few current steps to measure it. */
-    ohms,
+    /** Battery + wiring resistance (mΩ), or null when there were too few current steps to measure it. */
     milliohms: ohms === null ? null : round(ohms * 1000, 1),
-    wiringHigh: ohms !== null && ohms > limits.healthyResistanceMaxOhms,
-    wiringFine: ohms !== null && ohms <= limits.healthyResistanceMaxOhms,
-    /** Where the battery was furthest below a healthy one: charge drawn (ah), volts, healthy volts, how far below. */
-    worst,
-    /** The same point, only when it was far enough below to count as a collapsed battery (else null). */
+    wiringHigh: ohms !== null && ohms > most,
+    wiringFine: ohms !== null && ohms <= most,
+    /** Where the battery was furthest below a healthy one, when far enough to count as collapsed (else null). */
     collapse: worst !== null && worst.below > MOST_BELOW_HEALTHY ? worst : null,
-    rest,
-    startedLow: rest < limits.restVoltageMin,
-    startedFull: rest >= limits.restVoltageMin,
   }
+}
+
+/** The battery at rest in the 2 s before auto (volts NaN if the robot never enabled; then both flags are false). */
+export function restBeforeAuto(match: MatchView) {
+  const volts = match.autoStart === null ? NaN : match.signal('batteryVoltage').median(match.before(match.autoStart, 2))
+  const lowest = match.profile.power.restVoltageMin
+  return { volts, low: volts < lowest, full: volts >= lowest }
 }

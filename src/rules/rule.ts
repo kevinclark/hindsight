@@ -114,6 +114,11 @@ interface About {
    * match rule that leans on the profile (e.g. its motor names). When no profile fits a log, these rules are listed as not checked.
    */
   needsProfile?: boolean
+  /**
+   * A Foresight (live pit check) rule: it judges the robot sitting disabled, so it doesn't run on a match log.
+   * `match.pitStretch` is the stretch it checks.
+   */
+  foresightOnly?: boolean
 }
 
 /** One possible cause: what it is, and what to look for and where to confirm or rule it out. */
@@ -146,6 +151,9 @@ export const above = (limit: number) => (v: number) => v > limit
 export const beyond = (limit: number) => (v: number) => Math.abs(v) > limit
 export const isTrue = (v: number) => v > 0.5
 export const isFalse = (v: number) => v < 0.5
+
+// Plain statistics over a list of numbers, for rules that collect their own: maxOf([3, 7]) is 7.
+export { maxOf, median, percentile } from '../match/series.ts'
 
 // Formatting numbers for messages, so every rule says them the same way.
 export const volts = (v: number) => `${v.toFixed(2)} V`

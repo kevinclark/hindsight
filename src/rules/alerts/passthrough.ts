@@ -7,7 +7,7 @@
  * Camera time-sync alerts are left to vision/time-sync.
  * Why: CalGames 2026 P0 raised "Flywheel Follower Disconnected" 7 times and nobody saw it until the log review.
  */
-import { TIME_SYNC_ALERTS } from '../vision/time-sync.ts'
+import { isTimeSyncAlert } from '../vision/time-sync.ts'
 import { rule, round } from '../rule.ts'
 
 export default rule({
@@ -26,7 +26,7 @@ export default rule({
   forEach: 'alert',
 
   check(alert, match) {
-    if (TIME_SYNC_ALERTS.some((pattern) => pattern.test(alert.text))) return
+    if (isTimeSyncAlert(alert)) return
     const during = alert.onsetsInMatch.length
     const firstTimes = alert.onsetsInMatch.slice(0, 6).map((t) => match.when(t)).join('; ')
     const window = match.windowWords

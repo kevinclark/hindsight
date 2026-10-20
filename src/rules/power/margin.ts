@@ -6,7 +6,7 @@
  * Why: CalGames 2026 Q13 (6.28 V) and Q21 (6.15 V) came within 0.3 V of the 6.0 V setting a day before P0 browned out.
  */
 import { below, rule, round, totalSeconds, volts } from '../rule.ts'
-import { batteryHealth } from './battery-health.ts'
+import { batteryHealth, restBeforeAuto } from './battery-health.ts'
 
 const MARGIN_VOLTS = 1.0
 
@@ -32,17 +32,18 @@ export default rule({
     if (Number.isNaN(low.value)) return
     const margin = low.value - setting
     if (margin >= MARGIN_VOLTS) return
+    const rest = restBeforeAuto(match)
     const health = batteryHealth(match, match.powerIfLogged())
     const secondsUnder7 = (phase: typeof match.auto) => totalSeconds(battery.episodes(below(7), { during: phase }))
 
     // Rank by what the log shows: a poor start, a collapsed battery or high resistance first, otherwise the load.
     const likely: string[] = []
-    if (health.startedLow) likely.push('not-full')
+    if (rest.low) likely.push('not-full')
     if (health.collapse) likely.push('weak-battery')
     if (health.wiringHigh) likely.push('wiring')
     likely.push('load')
     const ruledOut: Record<string, string> = {}
-    if (health.startedFull) ruledOut['not-full'] = `it rested at ${volts(health.rest)} before auto`
+    if (rest.full) ruledOut['not-full'] = `it rested at ${volts(rest.volts)} before auto`
     if (health.wiringFine) ruledOut.wiring = `resistance was only ${health.milliohms} mΩ`
 
     return {
@@ -52,7 +53,7 @@ export default rule({
       evidence: {
         'lowest voltage while enabled (V)': round(low.value),
         'brownout setting (V)': setting,
-        'rested before auto (V)': Number.isFinite(health.rest) ? round(health.rest) : 'not logged',
+        'rested before auto (V)': Number.isFinite(rest.volts) ? round(rest.volts) : 'not logged',
         'battery + wiring resistance (mΩ)': health.milliohms ?? 'not measured',
         'margin (V)': round(margin),
         'seconds under 7 V in auto': round(secondsUnder7(match.auto), 1),

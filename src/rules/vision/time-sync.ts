@@ -12,6 +12,11 @@ import type { AlertView } from '../view.ts'
 /** Alert texts this rule owns; alerts/passthrough leaves them to this rule so they aren't listed twice. */
 export const TIME_SYNC_ALERTS = [/TimeSyncServer/i, /Coming from .*Future/i]
 
+/** Is this one of the alerts this rule owns? */
+export function isTimeSyncAlert(alert: AlertView): boolean {
+  return TIME_SYNC_ALERTS.some((pattern) => pattern.test(alert.text))
+}
+
 export default rule({
   id: 'vision/time-sync',
   title: 'Camera clocks not synced',
@@ -27,7 +32,7 @@ export default rule({
   incident: 'CalGames 2026: TimeSyncServer warnings at every boot; "Vision Data Coming from The Future" 1–3× per match (Q13 analysis)',
 
   check(match) {
-    const syncAlerts = match.alerts().filter((a) => TIME_SYNC_ALERTS.some((pattern) => pattern.test(a.text)))
+    const syncAlerts = match.alerts().filter(isTimeSyncAlert)
     if (syncAlerts.length === 0) return
 
     const times = (a: AlertView) => a.onsetsInMatch.length + a.onsetsOutsideMatch

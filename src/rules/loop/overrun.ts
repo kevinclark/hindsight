@@ -6,8 +6,7 @@
  * Why: CalGames 2026: 14–27 % of auto loops overran (worst 134 ms). A 130 ms loop at 2.5 m/s is 0.33 m of blind
  * travel on a trench approach.
  */
-import { maxOf } from '../../match/series.ts'
-import { pct, rule, round } from '../rule.ts'
+import { maxOf, pct, round, rule } from '../rule.ts'
 
 export default rule({
   id: 'loop/overrun',

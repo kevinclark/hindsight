@@ -39,16 +39,16 @@ export default rule({
 
     // Which cause this log points to. A collapsed battery (power/battery-collapse) comes before the load: it has
     // normal resistance, so resistance alone can't tell it from too much load.
-    let likely: string[] = []
+    const likely: string[] = []
     let nextStep: string | undefined
     if (health.collapse) {
-      likely = ['weak-battery']
+      likely.push('weak-battery')
       const { below, ah } = health.collapse
       nextStep = `The battery fell ${below.toFixed(1)} V below a healthy one at ${ah} Ah drawn: swap the battery first and capacity-test it (see power/battery-collapse).`
     } else if (health.wiringHigh) {
-      likely = ['wiring', 'weak-battery']
+      likely.push('wiring', 'weak-battery')
     } else if (health.wiringFine) {
-      likely = ['load', 'weak-battery']
+      likely.push('load', 'weak-battery')
       const biggest = load?.biggest ? ` (${load.biggest} drew the most at the first brownout)` : ''
       nextStep = `Resistance is fine, so look at the load${biggest}: turn on current limits for the big motors, and load-test the battery used.`
     }

@@ -340,6 +340,23 @@ export class MatchView {
     this.windowWords = this.wholeMatch.length || !raw.foresight ? 'during the match' : raw.foresight.words ?? 'since start-up settled'
   }
 
+  /**
+   * Foresight: the disabled stretch being checked (since start-up settled, up to now). Only for rules marked
+   * `foresightOnly`, which the runner skips on a match log, so there always is one.
+   */
+  get pitStretch(): Interval {
+    const stretch = this.beforeEnable.at(-1)
+    if (!stretch) throw new Error('pitStretch is only for foresightOnly rules')
+    return stretch
+  }
+
+  /** Every device with a Connected flag in the profile: each motor that has one, then the other devices. */
+  connectedDevices(): { name: string; key: string }[] {
+    const motors = this.profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => (m.connected ? [{ name: m.name, key: m.connected }] : [])))
+    const others = this.profile.otherDevices.map((d) => ({ name: d.name, key: d.connected }))
+    return [...motors, ...others]
+  }
+
   /** The stretch a rule counts alerts and dropouts in: the match, or (Foresight) the disabled stretch. */
   get checkWindow(): Window {
     return this.wholeMatch.length ? this.wholeMatch : this.beforeEnable

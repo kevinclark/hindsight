@@ -9,11 +9,10 @@
  * When odometry was off the field for most of the far poses, the finding says so: those distances measure odometry
  * (a pose never seeded), not the camera. MTTD 2025 Q66: odometry started at (-4.7, -3.9) m, and 82-87 % "outliers".
  */
-import { maxOf, percentile } from '../../match/series.ts'
 import type { Pose2d } from '../../readers/wpilog.ts'
-import { pct, plural, rule, round } from '../rule.ts'
-import type { AlertView, MatchView } from '../view.ts'
-import { TIME_SYNC_ALERTS } from './time-sync.ts'
+import { maxOf, pct, percentile, plural, rule, round } from '../rule.ts'
+import type { MatchView } from '../view.ts'
+import { isTimeSyncAlert } from './time-sync.ts'
 
 const MIN_POSES = 20 // fewer accepted poses than this can't give a rate worth acting on
 const OFF_FIELD_METERS = 1 // past the field's edge by more than this, a robot pose is impossible (assumed: half a robot plus drift)
@@ -102,11 +101,6 @@ export default rule({
     }
   },
 })
-
-/** Is this one of the alerts vision/time-sync owns? */
-function isTimeSyncAlert(alert: AlertView): boolean {
-  return TIME_SYNC_ALERTS.some((pattern) => pattern.test(alert.text))
-}
 
 /** A pose's position in words: "(1.2, 3.4) m". */
 function where(pose: Pose2d): string {

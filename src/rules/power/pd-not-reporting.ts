@@ -9,8 +9,7 @@
  * Why: per-channel current is the only way to see each breaker's real load, including loads that aren't motor
  * controllers. Without it, Hindsight adds up the motor controllers' own supply currents instead.
  */
-import { maxOf } from '../../match/series.ts'
-import { rule, round } from '../rule.ts'
+import { maxOf, round, rule } from '../rule.ts'
 
 const PD = '/PowerDistribution'
 const MOTORS_DRAWING_AMPS = 20 // total motor current that the board's channels must show if it is reporting
