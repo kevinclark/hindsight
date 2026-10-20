@@ -82,7 +82,7 @@ The battery module adds its own ("Battery ID unknown" and the others in `battery
 - That a USB stick on a roboRIO mounts from a `/dev/sd...` device, and that `/U` links to it.
 - Whether `getStatus()` utilization on CAN FD is on the same scale as CTRE's 90 % guidance.
 - Where hoot files go on a roboRIO 2, and how often they're written (sets the 5 s).
-- The CPU cost of reading every watched device once a second (about 100 signal reads for 26 devices).
+- The CPU cost of reading every watched device once a second (100 signal reads a second for 25 devices: 4 per device).
 - In replay, a device's values are read back only if the replayed code watches it too.
 
 ## Building and publishing
