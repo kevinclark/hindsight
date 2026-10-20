@@ -23,6 +23,8 @@ import { shortMatchLabel } from '../ui/match-label.ts'
 import { findingStatus } from '../report/review-model.ts'
 import { explainerOf } from '../report/finding-tree.ts'
 import { matchKey, type HistoryEvent, type IssueEvent, type Triage } from './history.ts'
+import type { Session } from '../session/session.ts'
+import type { MatchSummary, SummaryFinding } from '../session/summary.ts'
 
 /** A match as marks name it. `id` is what a mark's `match` holds. */
 export interface MatchRef {
@@ -93,7 +95,7 @@ const DAY = 86400e3
  * team filed itself (known, fixed after this match, or wrong here) keeps that meaning instead; one that came back
  * after a fix can be demoted, since the fix may be fine and the check wrong. Only reds are demoted.
  */
-export function demotion(f: Finding, here: MatchRef, t: Triage): IssueEvent | undefined {
+export function demotion(f: Pick<Finding, 'key' | 'rule' | 'severity'>, here: MatchRef, t: Triage): IssueEvent | undefined {
   if (f.severity !== 'error' || !here.event || here.played === null) return undefined
   const filed = findingStatus(f, t.issues, here.played, wrongHere(here, t))
   if (filed && filed !== 'came back') return undefined
@@ -128,6 +130,29 @@ export function withMarks(analysis: Analysis, here: MatchRef, t: Triage): Analys
   })
   findings.sort(worstFirst(RULES))
   return { ...analysis, report: { ...analysis.report, findings, ...(parents ? { parents } : {}) } }
+}
+
+/**
+ * A session as the team's marks show it, match by match, with the same test as withMarks: a finding marked "not a real
+ * problem" on its own match carries that mark, and a red that a wrong mark on another match of the event demotes is
+ * amber, with the reason. Which matches a finding fired in is unchanged.
+ */
+export function sessionWithMarks(session: Session, t: Triage): Session {
+  if (t.wrong.size === 0) return session
+  return { ...session, matches: session.matches.map((m) => summaryWithMarks(m, t)) }
+}
+
+function summaryWithMarks(m: MatchSummary, t: Triage): MatchSummary {
+  const here = matchRef(m, m.playedAt)
+  const wrong = wrongHere(here, t)
+  const mark = (f: SummaryFinding): SummaryFinding => {
+    const w = wrong.get(f.key)
+    if (w) return { ...f, wrongMark: { reason: w.note, when: w.when } }
+    const by = demotion(f, here, t)
+    return by ? { ...f, severity: 'warning', demoted: { match: shortMatch(by), reason: by.note, when: by.when } } : f
+  }
+  const rules = Object.fromEntries(Object.entries(m.rules).map(([id, r]) => [id, { ...r, findings: r.findings.map(mark) }]))
+  return { ...m, rules }
 }
 
 /** The wrong marks standing on this match, by issue key. */

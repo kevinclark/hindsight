@@ -10,6 +10,7 @@
   import type { IssueEvent } from '../triage/history.ts'
   import { buildText, sessionModel } from '../report/session-model.ts'
 
+  // `session` as the team's marks show it (triage/track-record.ts sessionWithMarks).
   let { session, issues, typedBatteries }: { session: Session; issues: Map<string, IssueEvent>; typedBatteries: Record<string, string> } = $props()
   const m = $derived(sessionModel(session, issues, typedBatteries))
   const t = $derived(m.trends)
@@ -40,7 +41,7 @@
             <span class={`sev ${f.severity}`}>{f.sevWord}</span>
             <span class={`conf ${f.confidence.replace(/ /g, '-')}`}>{f.confidenceWord}</span>
             <span class="t">{#if f.cameBack.length}<span class="badge">Came back after a fix ({f.cameBack.join(', ')})</span> {/if}<strong class="ttl">{f.title}</strong>
-              <span class="small">{f.rateText}{f.measured ? ` · ${f.measured}` : ''} · <code>{f.key}</code></span></span>
+              <span class="small">{f.rateText}{f.measured ? ` · ${f.measured}` : ''}{f.marks ? ` · ${f.marks}` : ''} · <code>{f.key}</code></span></span>
           </li>
         {/each}
       </ul>

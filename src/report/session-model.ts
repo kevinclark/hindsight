@@ -20,6 +20,7 @@ import { titleHasValue } from './review-model.ts'
 import type { CardModel, Tone } from './card.ts'
 import { ruleById } from '../rules/index.ts'
 import { cardTitle } from './titles.ts'
+import { shortMatchLabel } from '../ui/match-label.ts'
 
 const plural = (n: number, one: string, many = `${one}es`) => `${n} ${n === 1 ? one : many}`
 export const pct = (x: number) => `${Math.round(100 * x)} %`
@@ -59,6 +60,10 @@ export interface ReportFinding {
   matchLabels: string[]
   /** The first measured quantity, for the card; empty when the title already says its number. */
   cardMeasured: string
+  /** What the team's marks say about it (marksText); empty with none. */
+  marks: string
+  /** The matches where it was marked not a real problem ("Q24"), for the card. */
+  wrongIn: string[]
 }
 
 export interface TrendPoint { /** The file name: unique even when two matches share a label (a replay). */ id: string; match: string; value: number; x: number; y: number; letter: string }
@@ -131,6 +136,28 @@ export function cameBack(session: Session, issues: Map<string, IssueEvent>, key:
   if (!issue || issue.status !== 'fixed') return []
   const fixedAt = Date.parse(issue.when)
   return matchIdx.map((i) => session.matches[i]).filter((m) => m.playedAt !== null && m.playedAt > fixedAt).map(matchLabel)
+}
+
+/** The matches where a finding was marked not a real problem, short ("Q24"). */
+export function wrongIn(session: Session, f: Pick<MergedFinding, 'wrong'>): string[] {
+  return (f.wrong ?? []).map((w) => shortMatchLabel(session.matches[w.match].matchLabel, w.match))
+}
+
+/**
+ * The team's marks on a merged finding, in Match review's words: "marked not a real problem in Q24: <reason>", and
+ * "amber, not red: marked not a real problem in Q24: <reason>" for reds a mark on another match demoted (said once
+ * when it is the same mark). Empty when nothing is marked.
+ */
+export function marksText(session: Session, f: Pick<MergedFinding, 'wrong' | 'demoted'>): string {
+  const labels = wrongIn(session, f)
+  const wrong = (f.wrong ?? []).map((w, i) => `${labels[i]}${w.reason ? `: ${w.reason}` : ''}`).join('; ')
+  const d = f.demoted
+  const sameMark = d && f.wrong?.some((w) => w.when === d.when && w.reason === d.reason)
+  return [
+    wrong ? `marked not a real problem in ${wrong}` : '',
+    d && sameMark ? 'its reds on the other matches show amber' : '',
+    d && !sameMark ? `amber, not red: marked not a real problem in ${d.match}${d.reason ? `: ${d.reason}` : ''}` : '',
+  ].filter(Boolean).join('; ')
 }
 
 export function measuredText(f: Pick<MergedFinding, 'measured'>): string {
@@ -245,6 +272,7 @@ export function bottomLine(matchCount: number, findings: ReportFinding[]): strin
   return `${head} ${clauses.join(' ')}`
 }
 
+/** Pass the session as the team's marks show it (triage/track-record.ts sessionWithMarks). */
 export function sessionModel(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}): SessionModel {
   // The report's order (not the view's): how sure we are first, then how serious, then in how many matches.
   const rank = (c: Confidence) => ORDER.indexOf(c)
@@ -261,6 +289,7 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
       measured: measuredText(f), cameBack: cameBack(session, issues, f.key, f.matches),
       matchLabels: f.matches.map((i) => matchLabel(session.matches[i])),
       cardMeasured: f.measured[0] && !(f.measured[0].min === f.measured[0].max && titleHasValue(cardTitle(f.title), f.measured[0].min)) ? measuredText({ measured: [f.measured[0]] }) : '',
+      marks: marksText(session, f), wrongIn: wrongIn(session, f),
     }
   })
   const byRobot = new Map<string, { m: MatchSummary; n: number }>()
@@ -328,7 +357,7 @@ export function sessionCard(m: SessionModel): CardModel {
       word: `${f.sevWord.toUpperCase()}${f.confidence === 'quiet' ? '' : ` · ${f.confidenceWord.toUpperCase()}`}${f.cameBack.length ? ' · CAME BACK' : ''}`,
       tone: (f.severity === 'error' ? 'error' : 'warning') as Tone,
       title: f.title,
-      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured].filter(Boolean).join(' · '),
+      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured, f.wrongIn.length ? `not a real problem in ${f.wrongIn.join(', ')}` : ''].filter(Boolean).join(' · '),
       short: `${f.ruleTitle} (${f.matchLabels.join(', ')})`,
     })),
     emptyText: 'Nothing to fix from these logs.',

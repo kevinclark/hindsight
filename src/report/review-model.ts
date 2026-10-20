@@ -27,7 +27,7 @@ export function playedAt(analysis: Analysis): number | null {
 }
 
 /** `wrong`: this match's wrong marks, by issue key (track-record.ts wrongHere). */
-export function findingStatus(f: Finding, issues: Map<string, IssueEvent>, played: number | null, wrong: Map<string, IssueEvent> = new Map()): FindingStatus | undefined {
+export function findingStatus(f: Pick<Finding, 'key'>, issues: Map<string, IssueEvent>, played: number | null, wrong: Map<string, IssueEvent> = new Map()): FindingStatus | undefined {
   if (wrong.has(f.key)) return 'wrong'
   const issue = issues.get(f.key)
   if (!issue) return undefined

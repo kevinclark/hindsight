@@ -5,7 +5,8 @@ import { bottomLine, buildText, cameBack, gridModel, sessionBase, sessionCard, s
 import { TREND_METRICS } from '../src/session/trends.ts'
 import { groupSessions, mergeFindings, type Session } from '../src/session/session.ts'
 import { summarizeLog, type MatchSummary } from '../src/session/summary.ts'
-import type { IssueEvent } from '../src/triage/history.ts'
+import { triage, type IssueEvent } from '../src/triage/history.ts'
+import { sessionWithMarks } from '../src/triage/track-record.ts'
 import { joinPieces, summarizeMatch } from '../src/session/summary.ts'
 import { buildSessionJson } from '../src/session/export.ts'
 import { PAGE1_ROWS, crashedNote } from '../src/report/session-model.ts'
@@ -250,5 +251,63 @@ describe('session card: errors that do not fit are still named', () => {
   })
   it('says nothing extra when every error is shown', () => {
     expect(buildCard(sessionCard(sessionModel(three()))).svg).not.toMatch(/Also \d+ error/)
+  })
+})
+
+describe('the Session view and its exports with "not a real problem" marks (same test as Match review)', () => {
+  // Invented event and reason: the team's real labels live only in its history file.
+  const ev = (n: number) => match(n, [BROWN, FOLLOW], { event: 'TEST' })
+  const s = groupSessions([ev(1), ev(2), ev(3)])[0]
+  const wrongOn = (n: number, more: Partial<IssueEvent> = {}): IssueEvent => ({
+    type: 'issue', key: BROWN.key, status: 'wrong', note: 'test reason', when: '2026-10-20T10:00:00Z',
+    match: `TEST Qualification ${n}`, event: 'TEST', played: new Date(Date.UTC(2026, 9, 17, 20 + n)).toISOString(), ...more,
+  })
+  const marked = (...events: IssueEvent[]) => sessionWithMarks(s, triage(events))
+  const brown = (x: Session) => sessionModel(x).findings.find((f) => f.key === BROWN.key)!
+
+  it('changes nothing without a wrong mark: the same session, model and JSON', () => {
+    expect(sessionWithMarks(s, triage([]))).toBe(s)
+    expect(sessionWithMarks(s, triage([{ ...wrongOn(1), status: 'known' }]))).toBe(s)
+    expect(brown(s)).toMatchObject({ severity: 'error', marks: '', wrongIn: [] })
+    const j = buildSessionJson(s) as { findings: object[] }
+    for (const f of j.findings) expect(Object.keys(f)).not.toContain('wrong')
+    for (const f of j.findings) expect(Object.keys(f)).not.toContain('demoted')
+  })
+  it('a wrong mark on Q1 keeps Q1\'s count, files Q1, and turns the reds on Q2 and Q3 amber with the reason', () => {
+    const x = marked(wrongOn(1))
+    const f = mergeFindings(x).find((m) => m.key === BROWN.key)!
+    expect(f.matches).toEqual([0, 1, 2])
+    expect(f.wrong).toEqual([{ match: 0, reason: 'test reason', when: '2026-10-20T10:00:00Z' }])
+    expect(f.demoted).toEqual({ match: 'Q1', reason: 'test reason', when: '2026-10-20T10:00:00Z' })
+    expect(x.matches[0].rules['power/brownout'].findings[0]).toMatchObject({ severity: 'error', wrongMark: { reason: 'test reason' } })
+    expect(x.matches[1].rules['power/brownout'].findings[0]).toMatchObject({ severity: 'warning', demoted: { match: 'Q1' } })
+    // Q1's own red is a false alarm: it doesn't keep the merged row red.
+    expect(brown(x)).toMatchObject({ severity: 'warning', sevWord: 'Warning', ratio: '3 of 3', wrongIn: ['Q1'], marks: 'marked not a real problem in Q1: test reason; its reds on the other matches show amber' })
+    // Other checks are untouched.
+    expect(sessionModel(x).findings.find((m) => m.key === FOLLOW.key)).toEqual(sessionModel(s).findings.find((m) => m.key === FOLLOW.key))
+  })
+  it('the JSON names the marked match by file, and the card says where it was marked', () => {
+    const j = buildSessionJson(marked(wrongOn(1))) as { findings: { key: string; severity: string; wrong?: unknown; demoted?: unknown }[] }
+    expect(j.findings.find((f) => f.key === BROWN.key)).toMatchObject({
+      severity: 'warning', wrong: [{ match: 'q1.wpilog', note: 'test reason', since: '2026-10-20T10:00:00Z' }], demoted: { match: 'Q1', reason: 'test reason' },
+    })
+    const item = sessionCard(sessionModel(marked(wrongOn(1)))).items.find((i) => i.title === 'Browned out 53 times')!
+    expect(item).toMatchObject({ word: 'WARNING · CONSISTENT', tone: 'warning', number: '3 of 3 matches · not a real problem in Q1' })
+  })
+  it('a mark on a match outside the loaded logs still demotes, and says where it came from', () => {
+    const x = sessionWithMarks(groupSessions([ev(2), ev(3)])[0], triage([wrongOn(1)]))
+    expect(brown(x)).toMatchObject({ severity: 'warning', wrongIn: [], marks: 'amber, not red: marked not a real problem in Q1: test reason' })
+  })
+  it('a mark on another event, or the same event name 4 days later, demotes nothing', () => {
+    expect(brown(marked(wrongOn(9, { event: 'OTHER', match: 'OTHER Qualification 9' }))).severity).toBe('error')
+    expect(brown(marked(wrongOn(9, { played: '2026-10-25T00:00:00Z' }))).severity).toBe('error')
+  })
+  it('marked in every match: still listed (with its severity, the words say why), never dropped', () => {
+    const x = marked(wrongOn(1), wrongOn(2), wrongOn(3))
+    expect(brown(x)).toMatchObject({ severity: 'error', ratio: '3 of 3', wrongIn: ['Q1', 'Q2', 'Q3'] })
+    expect(brown(x).marks).toBe('marked not a real problem in Q1: test reason; Q2: test reason; Q3: test reason')
+  })
+  it('undoing the mark puts the reds back', () => {
+    expect(brown(marked(wrongOn(1), { ...wrongOn(1), status: 'unmark', when: '2026-10-21T00:00:00Z' })).severity).toBe('error')
   })
 })
