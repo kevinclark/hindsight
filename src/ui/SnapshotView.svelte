@@ -8,9 +8,16 @@
   import { busLabel, parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import { chooseProfile, fieldText, inventory, LIMIT_FIELDS, limitsReport, POWER_FAULTS, stickyFaults, type InventoryStatus, type SnapshotProfile } from '../snapshot/report.ts'
   import { diffSnapshots } from '../snapshot/diff.ts'
+  import { keptId } from '../builder/store.ts'
+  import { toProfile } from '../builder/json.ts'
+  import { keptNow } from './kept-profiles.svelte.ts'
 
-  type Choice = { id: string; profile: SnapshotProfile }
-  const builtIn: Choice[] = PROFILES.map((p) => ({ id: profileId(p), profile: p }))
+  /** `limitsFrom`: the snapshot (its takenAt) a kept profile's limits were read from. */
+  type Choice = { id: string; profile: SnapshotProfile; limitsFrom?: string }
+  const builtIn: Choice[] = $derived([
+    ...PROFILES.map((p) => ({ id: profileId(p), profile: p })),
+    ...keptNow().map((j) => ({ id: keptId(j), profile: toProfile(j) as SnapshotProfile, limitsFrom: j.limitsFrom?.snapshotTakenAt })),
+  ])
 
   let snapshots = $state<Snapshot[]>([])
   let dropped = $state<Choice[]>([])
@@ -23,6 +30,8 @@
   const choices = $derived([...dropped, ...builtIn])
   const auto = $derived(current ? chooseProfile(current, choices.map((c) => c.profile)) : null)
   const profile = $derived(robot === 'auto' ? auto : (choices.find((c) => c.id === robot)?.profile ?? null))
+  // A kept profile whose limits were read from this very snapshot: comparing them with it would compare the robot with itself.
+  const selfCompared = $derived(!!current && !!profile && choices.find((c) => c.profile === profile)?.limitsFrom === current.takenAt)
   const rows = $derived(current ? inventory(current, profile) : [])
   const limits = $derived(current ? limitsReport(current, profile) : null)
   const faults = $derived(current ? stickyFaults(current, profile) : [])
@@ -178,7 +187,12 @@
       </div>
     </section>
 
-    {#if limits && profile}
+    {#if limits && profile && selfCompared}
+      <section class="limits">
+        <h3>Current limits</h3>
+        <p class="note self-compared">These limits were read from this same snapshot, so comparing them with it would compare the robot with itself. Drop a newer snapshot to see what changed.</p>
+      </section>
+    {:else if limits && profile}
       <section class="limits">
         <h3>Current limits</h3>
         <p class="note">What each motor is really running, read from the motor, against the limits the code sets (the profile). A motor that differs had a failed <code>apply()</code> when the robot code started, or still has a Phoenix Tuner X edit (the next deploy or restart re-applies the code's config).</p>

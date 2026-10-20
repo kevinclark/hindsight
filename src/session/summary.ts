@@ -80,9 +80,9 @@ const EARLIEST_PLAUSIBLE = Date.UTC(2023, 0, 1)
 const UNSET_CLOCK_DAY = Date.UTC(2024, 11, 18)
 
 /** Analyse one log and keep only the summary. `profile`: the robot the student chose for it, if any. */
-export function summarizeLog(file: InputFile, profile?: RobotProfile): MatchSummary | null {
+export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?: RobotProfile[]): MatchSummary | null {
   // As the student's choice (checked for fit), not as a pinned profile.
-  const { analyses, problems } = analyzeFiles([file], profile ? () => profile : undefined)
+  const { analyses, problems } = analyzeFiles([file], profile ? () => profile : undefined, profiles)
   const a = analyses[0]
   if (!a) return null
   const s = summarizeMatch(a.match, a.report, file.bytes.length, a.timing)

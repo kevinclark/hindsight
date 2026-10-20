@@ -1,7 +1,7 @@
 /**
  * Which robot profile fits a log. In order:
  *   1. the profile the student chose for it;
- *   2. a profile for the robot the log names (its Codebase), pinned to the branch the log ran;
+ *   2. a profile for the robot the log names (its Codebase, or ProjectName), pinned to the branch the log ran;
  *   3. a profile for that robot pinned to another branch (with a note: limits may differ);
  *   4. the profile with the most of its signals in the log (with a note, and a warning when under 60 % fit).
  */
@@ -59,7 +59,8 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
     const fit = profileFit(log, chosen)
     return { profile: chosen, choice: { how: 'chosen by you', fit, misfit: low(fit), note: low(fit) ? `You chose "${chosen.name}", but only ${fitText(fit)}. ${MISFIT_TEXT}` : null } }
   }
-  const codebase = first(log, '/RealMetadata/Codebase')
+  // AdvantageKit's template names the code ProjectName; some teams set Codebase.
+  const codebase = first(log, '/RealMetadata/Codebase') || first(log, '/RealMetadata/ProjectName')
   const branch = first(log, '/RealMetadata/GitBranch')
   const sameRobot = profiles.filter((p) => codebase && p.codebase === codebase)
   const pinned = sameRobot.find((p) => p.code.branch === branch || (branch && p.code.alsoBranches?.includes(branch)))
@@ -80,7 +81,7 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
   const share = (f: { present: number; total: number }) => (f.total ? f.present / f.total : 0)
   const ranked = profiles.map((p) => ({ p, fit: profileFit(log, p) })).sort((a, b) => share(b.fit) - share(a.fit))
   const best = ranked[0]
-  const named = codebase ? `The code in this log calls itself "${codebase}", and no profile is for that robot` : 'This log does not say which robot it is from (no Codebase entry)'
+  const named = codebase ? `The code in this log calls itself "${codebase}", and no profile is for that robot` : 'This log does not say which robot it is from (no Codebase or ProjectName entry)'
   return {
     profile: best.p,
     choice: {
