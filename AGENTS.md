@@ -16,6 +16,10 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   folder> ...` before and after, then `cmp`. It records every finding, evidence value, plot and not-checked
   reason. Rules that never fire on the logs you have are covered only by the unit tests.
 
+## Plain-node scripts
+
+- `src/version.ts` imports `package.json`, which plain node (`--experimental-strip-types`: golden, check, scripts) can't load without a JSON import attribute. Code those scripts reach (rules, coverage, session) must not import it, even through `src/report/review-model.ts`; shared report helpers go in their own file (`src/report/repo-paths.ts`).
+
 ## Session summaries (`src/session/`)
 
 - Summaries are saved in the browser and shown after an update while their `SUMMARY_SHAPE` matches. Change `MatchSummary` so old copies can't be drawn: bump `SUMMARY_SHAPE` in `summary.ts` and update the key list in `tests/reread.test.ts`.
