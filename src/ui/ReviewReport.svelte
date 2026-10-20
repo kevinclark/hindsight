@@ -8,7 +8,7 @@
   import type { Analysis } from '../analyze.ts'
   import type { IssueEvent } from '../triage/history.ts'
   import { makerOf } from '../rules/index.ts'
-  import { headlinesOf as headlinesIn, incidentFor, keyNumber, listedAbove, reviewModel, shortWhen } from '../report/review-model.ts'
+  import { headlinesOf as headlinesIn, incidentFor, keyNumber, listedAbove, reviewModel, shortWhen, standingSummary } from '../report/review-model.ts'
   import { stamp } from '../report/foresight-model.ts'
   import Plot from './Plot.svelte'
   import { plotModel } from './plot-data.ts'
@@ -16,15 +16,16 @@
   import type { Severity } from '../rules/types.ts'
 
   // `analysis` as the team's marks show it (track-record.ts withMarks); `wrong`: this match's "not a real problem" marks.
-  let { analysis, issues, wrong = new Map() }: { analysis: Analysis; issues: Map<string, IssueEvent>; wrong?: Map<string, IssueEvent> } = $props()
-  const m = $derived(reviewModel(analysis, issues, wrong))
+  let { analysis, issues, standing = new Set<string>(), wrong = new Map() }: { analysis: Analysis; issues: Map<string, IssueEvent>; standing?: Set<string>; wrong?: Map<string, IssueEvent> } = $props()
+  const m = $derived(reviewModel(analysis, issues, standing, wrong))
+  const fold = $derived(standingSummary(m))
   const h = $derived(m.header)
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
   const issueFor = (key: string) => issues.get(key)
   const SEV = { error: 'Error', warning: 'Warning', info: 'Info' } as const
   const headlinesOf = (s: Severity) => headlinesIn(m, s)
   // Each error in the order the page lists them: a headline, then the errors under it.
-  const detailOrder = $derived(headlinesOf('error').flatMap((n) => [n.finding, ...under(n).map((u) => u.finding)]).filter((f) => f.severity === 'error'))
+  const detailOrder = $derived([...headlinesOf('error'), ...m.standing.filter((n) => n.finding.severity === 'error')].flatMap((n) => [n.finding, ...under(n).map((u) => u.finding)]).filter((f) => f.severity === 'error'))
   // The section count is every finding; say how many of them are listed under a more serious headline above.
   const aboveNote = (s: Severity) => {
     const n = listedAbove(m, s)
@@ -65,6 +66,12 @@
         </div>
       {/each}
     </section>
+  {/if}
+  {#if m.standing.length}
+    <p class="standing"><strong>In every match of this session ({m.standing.length}):</strong>
+      {#if fold.errors.length}{fold.errors.length} error{fold.errors.length === 1 ? '' : 's'}: {fold.errors.join('; ')}{#if fold.warnings || fold.infos}{', '}{/if}{/if}{#if fold.warnings}{fold.warnings} warning{fold.warnings === 1 ? '' : 's'}{#if fold.infos}{', '}{/if}{/if}{#if fold.infos}{fold.infos} info{/if}.
+      {#if fold.first && !headlinesOf('error').length}<strong>Next step:</strong> {fold.first.nextStep}{/if}
+    </p>
   {/if}
 
   {#if m.warnings.length}
@@ -145,6 +152,7 @@
   .lines li { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr) auto; gap: 0 0.5rem; align-items: baseline; padding: 0.03rem 0; border-bottom: 1px solid var(--border); font-size: 8pt; break-inside: avoid; }
   .lines li code { color: var(--muted); font-size: 7.5pt; white-space: nowrap; }
   .badge { font-size: 7.5pt; font-weight: 700; padding: 0 0.3rem; border: 1px solid var(--muted); border-radius: 3px; color: var(--muted); }
+  .standing { font-size: 8.5pt; margin: 0.2rem 0; }
   .notchecked { font-size: 8pt; margin-top: 0.25rem; }
   .foot { margin-top: 0.1rem; font-size: 8pt; }
   .detail { break-before: page; }

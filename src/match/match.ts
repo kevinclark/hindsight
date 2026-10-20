@@ -8,6 +8,7 @@
  * - the wall clock, so a Driver Station log can be lined up with the robot log
  */
 
+import type { LimitLines } from '../code/limit-lines.ts'
 import { hasEntry, readNumbers, readValues, type WpilogFile } from '../readers/wpilog.ts'
 import { dslogEndEpoch, type DslogFile } from '../readers/dslog.ts'
 import type { RobotProfile } from '../profiles/types.ts'
@@ -52,6 +53,11 @@ export interface Match {
   cache: Map<string, NumberSeries | ValueSeries<unknown> | null>
   /** Set only by Foresight (the live pit check): the disabled stretch being checked. See src/foresight/engine.ts. */
   foresight?: ForesightWindow
+  /**
+   * Set only when a robot-code folder was given and the log ran another commit than the profile's: per motor group,
+   * whether its current-limit lines match the profile's commit (src/code/limit-lines.ts).
+   */
+  limitLines?: Map<string, LimitLines>
 }
 
 /** The disabled stretch Foresight checks: from start-up settling (or the last disable) to now, in robot time. */

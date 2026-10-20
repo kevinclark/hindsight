@@ -11,6 +11,7 @@ import { CONSOLIDATORS, RULES, runRules, type Report } from './rules/index.ts'
 import { PROFILES } from './profiles/index.ts'
 import { chooseProfile } from './profiles/choose.ts'
 import type { RobotProfile } from './profiles/types.ts'
+import { compareMatchLimits, type CodeFolder } from './code/limit-lines.ts'
 
 export interface InputFile { name: string; bytes: Uint8Array }
 
@@ -33,7 +34,24 @@ export interface AnalyzeResult {
  * (checked for fit). Logs without one get the profile that fits them (profiles/choose.ts) from `profiles`: the
  * built-in ones, plus any the page passes in (profiles kept in this browser, src/builder/store.ts).
  */
-export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((fileName: string) => RobotProfile | undefined), profiles: RobotProfile[] = PROFILES): AnalyzeResult {
+export function analyzeFiles(files: InputFile[], profile?: ProfileChoice, profiles: RobotProfile[] = PROFILES): AnalyzeResult {
+  return runAll(openFiles(files, profile, profiles))
+}
+
+/**
+ * The same, with the robot-code folder: before the rules run, each log that ran another commit than its profile's has
+ * its current-limit lines compared with the profile's commit (src/code/limit-lines.ts). No folder: as analyzeFiles.
+ */
+export async function analyzeFilesWithCode(files: InputFile[], code: CodeFolder | null, profile?: ProfileChoice, profiles: RobotProfile[] = PROFILES): Promise<AnalyzeResult> {
+  const opened = openFiles(files, profile, profiles)
+  if (code) for (const a of opened.analyses) await compareMatchLimits(a.match, code)
+  return runAll(opened)
+}
+
+type ProfileChoice = RobotProfile | ((fileName: string) => RobotProfile | undefined)
+
+/** Read every file and build each match, with its DS logs attached; no rules run yet. */
+function openFiles(files: InputFile[], profile: ProfileChoice | undefined, profiles: RobotProfile[]): AnalyzeResult {
   const problems: string[] = []
   const analyses: Analysis[] = []
   const dslogs: { name: string; file: DslogFile }[] = []
@@ -69,6 +87,11 @@ export function analyzeFiles(files: InputFile[], profile?: RobotProfile | ((file
     if (best && best.seconds > 0) attachDslog(best.a.match, ds.file, ds.name)
     else problems.push(`${ds.name}: doesn't overlap any loaded match (it is from a different match, or the robot clock was never set)`)
   }
+  return { analyses, problems, history }
+}
+
+/** Run the rules on every opened match, oldest match first. */
+function runAll({ analyses, problems, history }: AnalyzeResult): AnalyzeResult {
   // Rules can look across the logs loaded together (a match recorded in pieces, earlier runs of an auto).
   for (const a of analyses) a.match.others = analyses.map((x) => x.match).filter((m) => m !== a.match)
   for (const a of analyses) {

@@ -109,7 +109,7 @@ describe('marks on a real match (CalGames Q13 fixture)', () => {
   })
   it('a wrong mark on this match files the finding with the known issues, out of the active list', () => {
     const t = triage([{ ...other(here.played), match: here.id }])
-    const m = reviewModel(withMarks(q13, here, t), new Map(), wrongHere(here, t))
+    const m = reviewModel(withMarks(q13, here, t), new Map(), new Set(), wrongHere(here, t))
     expect(m.known.map((f) => f.key)).toContain(red.key)
     expect(m.active.map((f) => f.key)).not.toContain(red.key)
   })

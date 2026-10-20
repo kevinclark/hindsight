@@ -10,6 +10,7 @@ import { evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/
 import { foresightKeys, LOG_DRIVE_KEYS, RECENT_SECONDS } from '../src/foresight/keys.ts'
 import { PROVEN } from '../src/foresight/proven.ts'
 import { FORESIGHT_RULES } from '../src/rules/index.ts'
+import { COMPANION_NOT_USB } from '../src/rules/links.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
 import { markOnchecks } from '../src/foresight/onchecks.ts'
 import { KEEP_SECONDS } from '../src/foresight/records.ts'
@@ -135,6 +136,16 @@ describe('Foresight checks on a robot in the pit', () => {
     const r = check([{ name: '/Apriltag VisionBack_Left/Connected', type: 'boolean', records: [[START, true], [60, false], [66, true]] }])
     expect(rules(r)).toContain('vision/stale')
     expect(r.verdict.items.find((i) => i.finding.rule === 'vision/stale')!.finding.title).toMatch(/dropped out 1 time since start-up settled/)
+  })
+
+  it('a camera drop and the robot code\'s alert for it: one amber, the alert under the drop (links.ts)', () => {
+    const r = check([
+      { name: '/Apriltag VisionBack_Left/Connected', type: 'boolean', records: [[START, true], [60, false], [66, true]] },
+      { name: '/RealOutputs/Alerts/errors', type: 'string[]', records: [[START, []], [60, ['Back_Left Camera Disconnected!']], [66, []]] },
+    ])
+    expect(flagged(r)).toEqual(['vision/stale'])
+    expect(r.verdict.items[0].explains.map((i) => i.finding.rule)).toEqual(['alerts/passthrough'])
+    expect(r.verdict.reason).toBe('1 to look at (amber)')
   })
 
   it('a robot alert still on after settle, but not one that cleared before it', () => {
@@ -317,11 +328,17 @@ describe('Foresight: the log USB stick, from the companion library\'s log-drive 
     expect(r.verdict.reason).toBe('nothing found')
   })
 
-  it('the log on the stick: OK, saying it is the reading from code start', () => {
+  it('the log on the stick: OK, saying it means the stick was in the whole time since code start', () => {
     const r = check(drive(true))
     expect(r.report.skipped.map((s) => s.rule)).not.toContain('foresight/log-usb-stick')
     expect(line(r)).toMatchObject({ state: 'ok' })
-    expect(line(r).detail).toMatch(/when its code started.*Restart the robot code/)
+    expect(line(r).detail).toMatch(/since its code started.*the whole time.*Restart the robot code/)
+  })
+
+  it('a stick that was out since code start and is back (OnUsb false on a /dev/sd device): amber, saying it was out', () => {
+    const item = check(drive(false)).verdict.items.find((i) => i.finding.rule === 'foresight/log-usb-stick')!
+    expect(item.level).toBe('amber')
+    expect(item.finding.title).toBe('The robot log (/U) is not on the USB stick: the stick was out at some point since the robot code started')
   })
 
   it('the log not on a stick: amber (never red: no log of ours has it), GO with one to look at', () => {
@@ -341,6 +358,41 @@ describe('Foresight: the log USB stick, from the companion library\'s log-drive 
     expect(item).toMatchObject({ level: 'amber' })
     expect(item.finding.title).toBe('The robot log is not on a USB stick')
     expect(item.finding.evidence).toEqual({})
+  })
+
+  it('no stick and the companion\'s own alert for it: one amber with the alert under it, and the verdict as before', () => {
+    const text = "Robot log isn't going to a USB stick: /U is on the roboRIO"
+    const companionAlert = { name: '/RealOutputs/Alerts/errors', type: 'string[]', records: [[START, []], [START + 1, [text]]] } as FixtureEntry
+    const alone = check(drive(false, 'ok', '/U', '/dev/mmcblk0p1'))
+    const r = check([...drive(false, 'ok', '/U', '/dev/mmcblk0p1'), companionAlert])
+    expect(flagged(r)).toEqual(['foresight/log-usb-stick'])
+    const under = r.verdict.items.find((i) => i.finding.rule === 'foresight/log-usb-stick')!.explains
+    expect(under.map((i) => [i.level, i.finding.rule, i.finding.title])).toEqual([['amber', 'alerts/passthrough', `Alert "${text}" 1× since start-up settled`]])
+    expect(under[0].finding.explainedBy?.why).toBe('the robot code saw the same log folder off the USB stick')
+    expect([r.verdict.verdict, r.verdict.reason]).toEqual([alone.verdict.verdict, alone.verdict.reason])
+    expect(r.verdict.reason).toBe('1 to look at (amber)')
+    // Elastic still shows the alert, so its checklist line is not OK.
+    expect(markOnchecks(r).find((l) => l.line === 'No alerts on Elastic')).toMatchObject({ state: 'amber', detail: `Alert "${text}" 1× since start-up settled` })
+    expect(line(r)).toMatchObject({ state: 'amber' })
+    // A link never hides a red under an amber: were the alert check proven, the alert would stand on its own.
+    const proven = verdictFor(r.report, { ...PROVEN, 'alerts/passthrough': { logs: 1, fires: 1, ourFires: 1, base: 'test', date: 'test' } })
+    expect(proven.items.map((i) => [i.level, i.finding.rule])).toEqual([['red', 'alerts/passthrough'], ['amber', 'foresight/log-usb-stick'], ['grey', 'foresight/camera-sees-tag'], ['grey', 'foresight/camera-sees-tag'], ['grey', 'foresight/gyro-still-drift']])
+    expect(proven.verdict).toBe('NO-GO')
+  })
+
+  it('the link matches every log-off-the-stick alert text the companion library raises', () => {
+    const java = readFileSync('companion/core/src/main/java/com/frc8033/hindsight/HindsightCompanion.java', 'utf8')
+    const literals = [...java.matchAll(/"(Robot log isn't going to [^"]*)"/g)].map((m) => m[1])
+    expect(literals).toHaveLength(2)
+    for (const literal of literals) expect(COMPANION_NOT_USB.test(literal), literal).toBe(true)
+    expect(COMPANION_NOT_USB.test('USB stick nearly full')).toBe(false)
+  })
+
+  it('another alert next to a missing stick stays its own item', () => {
+    const other = { name: '/RealOutputs/Alerts/errors', type: 'string[]', records: [[START, []], [80, ['Intake CANcoder disconnected!']]] } as FixtureEntry
+    const r = check([...drive(false), other])
+    expect(flagged(r)).toEqual(['alerts/passthrough', 'foresight/log-usb-stick'])
+    expect(r.verdict.items.every((i) => i.explains.length === 0)).toBe(true)
   })
 
   it('a reading the robot could not take (simulation, a failed read): not checked, with its status', () => {

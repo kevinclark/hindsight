@@ -8,6 +8,8 @@ import com.frc8033.hindsight.LogDriveIO.LogDriveIOInputs;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,10 +29,10 @@ class LogDriveIORealTest {
 
   @Test
   void onlyScsiDisksAreUsb() {
-    assertTrue(LogDriveIOReal.isUsb("/dev/sda1"));
-    assertFalse(LogDriveIOReal.isUsb("ubi0:rootfs"));
-    assertFalse(LogDriveIOReal.isUsb("/dev/mmcblk0p1"));
-    assertFalse(LogDriveIOReal.isUsb(""));
+    assertTrue(LogDriveIO.isUsb("/dev/sda1"));
+    assertFalse(LogDriveIO.isUsb("ubi0:rootfs"));
+    assertFalse(LogDriveIO.isUsb("/dev/mmcblk0p1"));
+    assertFalse(LogDriveIO.isUsb(""));
   }
 
   @Test
@@ -45,6 +47,47 @@ class LogDriveIORealTest {
     assertEquals("ubi0:rootfs", inputs.device);
     assertFalse(inputs.onUsb);
     assertTrue(inputs.freeBytes > 0 && inputs.totalBytes >= inputs.freeBytes);
+  }
+
+  @Test
+  void eachReadSaysWhereTheFolderIsNow(@TempDir Path dir) throws IOException {
+    Path stick = Files.createDirectories(dir.resolve("media/sda1/logs")).getParent();
+    Path mounts = dir.resolve("mounts");
+    String stickIn =
+        "ubi0:rootfs / ubifs rw 0 0\n/dev/sda1 " + stick.toRealPath() + " vfat rw 0 0\n";
+    Set<String> devices = new HashSet<>(Set.of("/dev/sda1"));
+    LogDriveIOReal io =
+        new LogDriveIOReal(stick.resolve("logs").toString(), mounts, devices::contains);
+    LogDriveIOInputs inputs = new LogDriveIOInputs();
+
+    Files.writeString(mounts, stickIn);
+    io.updateInputs(inputs);
+    assertEquals("/dev/sda1", inputs.device);
+    assertTrue(inputs.onUsb);
+
+    // Pulled: the mount goes, and the folder falls back to the roboRIO's own storage
+    Files.writeString(mounts, "ubi0:rootfs / ubifs rw 0 0\n");
+    io.updateInputs(inputs);
+    assertEquals("ok", inputs.status);
+    assertEquals("ubi0:rootfs", inputs.device);
+    assertFalse(inputs.onUsb);
+
+    // Back in (HindsightCompanion, not the reading, keeps OnUsb false from here)
+    Files.writeString(mounts, stickIn);
+    io.updateInputs(inputs);
+    assertEquals("/dev/sda1", inputs.device);
+    assertTrue(inputs.onUsb);
+  }
+
+  @Test
+  void aPulledStickWhoseMountLingersIsOffUsb(@TempDir Path dir) throws IOException {
+    Path stick = Files.createDirectories(dir.resolve("media/sda1"));
+    Path mounts = dir.resolve("mounts");
+    Files.writeString(mounts, "/dev/sda1 " + stick.toRealPath() + " vfat rw 0 0\n");
+    LogDriveIOInputs inputs = new LogDriveIOInputs();
+    new LogDriveIOReal(stick.toString(), mounts, device -> false).updateInputs(inputs);
+    assertEquals("/dev/sda1", inputs.device);
+    assertFalse(inputs.onUsb);
   }
 
   @Test

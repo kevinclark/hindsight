@@ -12,6 +12,7 @@
  * never has to check for missing signals itself.
  */
 
+import { ranPinnedCommit, type LimitLines } from '../code/limit-lines.ts'
 import { has, matchSeconds, matchTimeLeft, matchWhen, matchWhenAt, num, phaseAt, values, type Match } from '../match/match.ts'
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
 import type { CurrentLimits, RobotProfile } from '../profiles/types.ts'
@@ -359,6 +360,19 @@ export class MatchView {
     this.onField = raw.fms
     this.beforeEnable = raw.foresight ? [{ start: raw.foresight.start, end: raw.foresight.end }] : []
     this.windowWords = this.wholeMatch.length || !raw.foresight ? 'during the match' : raw.foresight.words ?? 'since start-up settled'
+  }
+
+  /**
+   * When this log ran another commit than the profile's and a robot-code folder was given: whether the group's
+   * current-limit lines are the same as at the profile's commit. Null without a code folder.
+   */
+  /** True when this log ran the commit the profile was copied from. */
+  ranPinnedCommit(): boolean {
+    return ranPinnedCommit(this.raw)
+  }
+
+  limitLinesVsProfile(group: GroupView): LimitLines | null {
+    return this.raw.limitLines?.get(group.name) ?? null
   }
 
   /**

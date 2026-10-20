@@ -2,14 +2,18 @@
  * Is each motor's current staying under its configured limit?
  *
  * Checks: for each motor group with limits in the robot profile, supply and stator current above 120 % of the limit
- * for more than 0.2 s while enabled. (Shorter bursts are the limiter catching up: ≤ 0.21 s at CalGames.) Says when the limit is
- * switched off in code. The share of enabled time over 110 % of the limit is evidence only: at CalGames it is made of
+ * for more than 0.2 s while enabled. (Shorter bursts are the limiter catching up: ≤ 0.21 s at CalGames.) Says when the
+ * limit is switched off in code: amber when the log ran the profile's commit, or another commit whose current-limit
+ * lines a robot-code folder shows are the same (src/code/limit-lines.ts); red otherwise, as other code may differ. Only
+ * the lines in the files `where` names are compared: a limit set through a name defined in another file isn't followed.
+ * The share of enabled time over 110 % of the limit is evidence only: at CalGames it is made of
  * 154–233 bursts per motor per match with a median of 0.02 s (one 50 Hz sample) and a longest of 0.26 s, the limiter
  * catching up at each acceleration, so on its own it does not mean the limit is failing.
  * Why: CalGames 2026: the flywheel's 40 A supply limit is configured but switched off (DrumSubsystem.java:310), so
  * four motors pulled 78–94 A each during spin-up.
  */
 import { amps, beyond, isFalse, rule, round, totalSeconds, type Problem } from '../rule.ts'
+import type { LimitLines } from '../../code/limit-lines.ts'
 import { lengthOf, MissingSignal, type GroupView, type MatchView, type MotorView, type Window } from '../view.ts'
 
 export default rule({
@@ -37,10 +41,12 @@ export default rule({
       { kind: 'stator', limit: group.limits.statorA, isOn: group.limits.statorEnabled },
     ] as const
 
-    // The profile copies the limits from one commit of the robot code; say so when this log ran other code.
-    const pin = match.profile.code
-    const sameCode = match.build.sha.startsWith(pin.sha)
-    const asOf = sameCode ? '' : ` (as of ${pin.branch} ${pin.sha}; this log ran ${match.build.sha.slice(0, 7) || 'unknown code'})`
+    // The profile copies the limits from one commit of the robot code. A log that ran another commit counts as that
+    // code when the robot-code folder shows its current-limit lines are the same; otherwise say it ran other code.
+    const ranPin = match.ranPinnedCommit()
+    const compared = ranPin ? null : match.limitLinesVsProfile(group)
+    const sameCode = ranPin || compared?.verdict === 'same'
+    const { asOf, linesWords } = codeWords(match, ranPin, compared)
 
     const problems: Problem[] = []
     for (const { kind, limit, isOn } of kinds) {
@@ -81,6 +87,7 @@ export default rule({
           'configured limit (A)': limit,
           'limit switched on in code': `${isOn ? 'yes' : 'no'}${asOf}`,
           'set in': group.limits.where,
+          'current-limit lines vs the profile\'s commit': linesWords,
         },
         measured: [{ label: `peak ${kind} current`, value: round(worst.peak, 0), unit: 'A', threshold: round(limit * 1.2, 0) }],
         plot: {
@@ -92,6 +99,23 @@ export default rule({
     return problems
   },
 })
+
+/** How the code this log ran compares with the profile's commit, for the message and the evidence. */
+function codeWords(match: MatchView, ranPin: boolean, compared: LimitLines | null) {
+  const pin = match.profile.code
+  const ran = match.build.sha.slice(0, 7) || 'unknown code'
+  if (ranPin) return { asOf: '', linesWords: undefined }
+  if (compared?.verdict === 'same') {
+    return {
+      asOf: ` (same current-limit lines as ${pin.branch} ${pin.sha}; this log ran ${ran})`,
+      linesWords: `the same as ${pin.sha} in ${compared.files.join(', ')} (read from the code folder)`,
+    }
+  }
+  let linesWords: string | undefined
+  if (compared?.verdict === 'different') linesWords = `different from ${pin.sha}: ${compared.lines.join('; ')}`
+  if (compared?.verdict === 'unknown') linesWords = `not compared: ${compared.why}`
+  return { asOf: ` (as of ${pin.branch} ${pin.sha}; this log ran ${ran})`, linesWords }
+}
 
 /**
  * The time while enabled that the motor was on CAN. A controller that dropped off CAN logs no more currents, so the

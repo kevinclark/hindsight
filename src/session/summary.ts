@@ -3,7 +3,8 @@
  * per match for trends. The raw log is dropped after this, so hundreds of logs fit in memory.
  */
 
-import { analyzeFiles, type InputFile } from '../analyze.ts'
+import { analyzeFiles, analyzeFilesWithCode, type AnalyzeResult, type InputFile } from '../analyze.ts'
+import type { CodeFolder } from '../code/limit-lines.ts'
 import { has, num, values, type Match } from '../match/match.ts'
 import { heldAt, makeGrid, median, resample } from '../match/series.ts'
 import { powerReport } from '../power/power-report.ts'
@@ -41,6 +42,8 @@ export function toSummaryFinding(f: Finding, ruleNextStep: string | undefined): 
 
 export interface MatchSummary {
   fileName: string
+  /** The robot-code folder the log was read with (src/code/limit-lines.ts); missing when it was read without one. */
+  codeFolder?: string | null
   fileSize: number
   /** Wall-clock start (ms since 1970) and where it came from. Null when neither the robot clock nor the file name says. */
   playedAt: number | null
@@ -87,7 +90,17 @@ const UNSET_CLOCK_DAY = Date.UTC(2024, 11, 18)
 /** Analyse one log and keep only the summary. `profile`: the robot the student chose for it, if any. */
 export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?: RobotProfile[]): MatchSummary | null {
   // As the student's choice (checked for fit), not as a pinned profile.
-  const { analyses, problems } = analyzeFiles([file], profile ? () => profile : undefined, profiles)
+  return summaryOf(analyzeFiles([file], profile ? () => profile : undefined, profiles), file)
+}
+
+/** The same, with the robot-code folder (src/code/limit-lines.ts); `codeName` names it in the summary. */
+export async function summarizeLogWithCode(file: InputFile, code: CodeFolder | null, codeName: string | null, profile?: RobotProfile, profiles?: RobotProfile[]): Promise<MatchSummary | null> {
+  const s = summaryOf(await analyzeFilesWithCode([file], code, profile ? () => profile : undefined, profiles), file)
+  if (s && code) s.codeFolder = codeName
+  return s
+}
+
+function summaryOf({ analyses, problems }: AnalyzeResult, file: InputFile): MatchSummary | null {
   const a = analyses[0]
   if (!a) return null
   const s = summarizeMatch(a.match, a.report, file.bytes.length, a.timing)
