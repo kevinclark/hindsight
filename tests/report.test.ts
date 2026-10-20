@@ -1,0 +1,150 @@
+// The report export: the phone card (pure SVG), the model behind it and behind the printed report.
+import { describe, expect, it } from 'vitest'
+import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE, CARD_WIDTH, wrap, type CardModel } from '../src/report/card.ts'
+import { bottomLine, cardTitle, keyNumber, reviewCard, reviewModel, stripRepoPaths } from '../src/report/review-model.ts'
+import { foresightCard, type ForesightReportInput } from '../src/report/foresight-model.ts'
+import { RULES } from '../src/rules/index.ts'
+import { analyzeFixture } from './helpers/load.ts'
+
+const model = (n: number, over: Partial<CardModel> = {}): CardModel => ({
+  context: 'Qualification 42 · cacg · 2026-10-18',
+  heading: `${n} errors`, headingTone: 'error', subheading: '9 warnings · 6 info',
+  items: Array.from({ length: n }, (_, i) => ({ word: 'ERROR', tone: 'error' as const, title: `Problem number ${i + 1} happened & it was <bad> at 2:2${i % 10} into the match`, number: `${i + 1} things` })),
+  emptyText: 'Nothing to fix.', footer: ['code abc1234 on main', 'Hindsight 0.1.0'], uncommitted: true, uncommittedText: 'UNCOMMITTED CODE ran this match',
+  ...over,
+})
+const fontSizes = (svg: string) => [...svg.matchAll(/font-size="(\d+(?:\.\d+)?)"/g)].map((m) => Number(m[1]))
+
+describe('phone card', () => {
+  const card = buildCard(model(3))
+  it('is 1080 px wide and at most 4:5', () => {
+    expect(card.width).toBe(CARD_WIDTH)
+    expect(card.height).toBeLessThanOrEqual(CARD_MAX_HEIGHT)
+    expect(card.width / card.height).toBeGreaterThanOrEqual(0.8)
+    expect(card.svg).toContain(`width="1080" height="${card.height}"`)
+  })
+  it('keeps every piece of type at 32 px or more (10.7 px at 360 px wide)', () => {
+    const sizes = fontSizes(card.svg)
+    expect(sizes.length).toBeGreaterThan(8)
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(CARD_MIN_TYPE)
+  })
+  it('is pure SVG: no foreignObject, image, script or external font', () => {
+    expect(card.svg).not.toMatch(/foreignObject|<image|<script|@font-face|url\(/i)
+    expect(card.svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true)
+  })
+  it('says the verdict, each title, its number, the build and the uncommitted flag, with severity as a word', () => {
+    for (const t of ['3 errors', 'Problem number 1', 'Problem number 3', '3 things', 'code abc1234 on main', 'UNCOMMITTED CODE ran this match', 'Qualification 42', 'ERROR']) expect(card.svg).toContain(t)
+  })
+  it('escapes markup in finding text', () => {
+    expect(card.svg).toContain('&amp; it was &lt;bad&gt;')
+    expect(card.svg).not.toContain('<bad>')
+  })
+  it('lists the most that fit, then says "+N more", and never grows past 4:5', () => {
+    const big = buildCard(model(40))
+    expect(big.height).toBeLessThanOrEqual(CARD_MAX_HEIGHT)
+    expect(big.shown).toBeGreaterThan(2)
+    expect(big.shown).toBeLessThan(40)
+    expect(big.hidden).toBe(40 - big.shown)
+    expect(big.svg).toContain(`+${big.hidden} more in the PDF`)
+    expect(big.svg).toContain('Problem number 1 ')
+    expect(big.svg).not.toContain(`Problem number ${big.shown + 1} happened`)
+  })
+  it('draws no flag box when the code was committed, and a short empty card is shorter than a full one', () => {
+    const clean = buildCard(model(0, { uncommitted: false, heading: 'No errors', headingTone: 'ok' }))
+    expect(clean.svg).not.toContain('UNCOMMITTED')
+    expect(clean.svg).toContain('Nothing to fix.')
+    expect(clean.height).toBeLessThan(card.height)
+  })
+})
+
+describe('wrap', () => {
+  it('breaks at words within the width and ends a cut line with an ellipsis', () => {
+    const lines = wrap('one two three four five six seven eight nine ten eleven twelve thirteen fourteen', 32, 400, 2)
+    expect(lines).toHaveLength(2)
+    expect(lines[1].endsWith('…')).toBe(true)
+    expect(lines.every((l) => l.length <= Math.floor(400 / (32 * 0.5)))).toBe(true)
+  })
+  it('breaks one long token (a file name) rather than overflow', () => {
+    const lines = wrap('x'.repeat(200), 32, 400, 5)
+    expect(lines.every((l) => l.length <= 25)).toBe(true)
+  })
+})
+
+describe('report model, from the real CalGames fixtures', () => {
+  const p0 = analyzeFixture('p0-brownout').analyses[0]
+  const q13 = analyzeFixture('q13-auto-and-comms').analyses[0]
+  it('splits errors, warnings and info the way the Match tab does, and names the worst', () => {
+    const m = reviewModel(q13, new Map())
+    expect(m.errors.length + m.warnings.length + m.infos.length).toBe(m.active.length)
+    expect(m.active.every((f) => f.rule !== 'meta/not-checked')).toBe(true)
+    expect(m.errors.length).toBeGreaterThan(0)
+    expect(m.bottomLine).toMatch(/^\d+ errors?, \d+ warnings?, \d+ info\. Worst: /)
+    expect(m.jsonFile).toBe('q13-auto-and-comms.findings.json'.replace('q13-auto-and-comms', q13.match.fileName.replace(/\.wpilog$/i, '')))
+    expect(m.schema).toBe('hindsight.findings/2')
+  })
+  it('files a known finding under Known and out of the active list', () => {
+    const first = p0.report.findings.find((f) => f.severity === 'error')!
+    const issues = new Map([[first.key, { type: 'issue' as const, key: first.key, status: 'known' as const, note: 'belt', when: '2026-10-01T00:00:00Z' }]])
+    const m = reviewModel(p0, issues)
+    expect(m.known.map((f) => f.key)).toContain(first.key)
+    expect(m.active.map((f) => f.key)).not.toContain(first.key)
+    expect(m.bottomLine).toContain('known')
+  })
+  it('puts one decisive number on every error, in the card', () => {
+    const card = reviewCard(reviewModel(p0, new Map()))
+    expect(card.items.length).toBeGreaterThan(0)
+    for (const item of card.items) { expect(item.word).toBe('ERROR'); expect(item.number.length).toBeGreaterThan(0); expect(item.title).not.toMatch(/robot time/) }
+    expect(buildCard(card).svg).toContain(card.items[0].title.slice(0, 20))
+  })
+  it('flags uncommitted code on the card when the log says so', () => {
+    const m = reviewModel(p0, new Map())
+    expect(m.header.build.uncommitted).toBe(/uncommitted/i.test(p0.match.build.dirty))
+    expect(reviewCard(m).uncommitted).toBe(m.header.build.uncommitted)
+  })
+  it('uses the judged measurement as the number when the rule gave one, else the first evidence line', () => {
+    const f = p0.report.findings.find((x) => x.measured?.length)!
+    expect(keyNumber(f).text).toContain(String(f.measured![0].value))
+    const bare = { ...f, measured: undefined }
+    expect(keyNumber(bare).text).toBe(`${Object.keys(f.evidence)[0]}: ${Object.values(f.evidence)[0]}`)
+  })
+})
+
+describe('wording', () => {
+  it('drops repo-path citations from every rule\'s "why this rule exists", keeping the sentence', () => {
+    for (const r of RULES) {
+      const text = stripRepoPaths(r.incident)
+      expect(text, r.id).not.toMatch(/\.md|hindsight-research|8033\/robot/)
+      expect(text.length, r.id).toBeGreaterThan(10)
+    }
+    expect(stripRepoPaths('CalGames Q13: hood moved (2026-10-17-calgames-q13-log-analysis.md §1) before its zero')).toBe('CalGames Q13: hood moved before its zero')
+    expect(stripRepoPaths('Seen at MTTD 2025 (mttd-2025-context.md §1).')).toBe('Seen at MTTD 2025.')
+  })
+  it('shortens a card title without losing what happened', () => {
+    expect(cardTitle('Browned out 53 times, first at 2:25 into the match (teleop; robot time 532.8 s)')).toBe('Browned out 53 times, first at 2:25 into the match')
+    expect(cardTitle('Flywheel supply current reached 77 A against a 40 A limit (as of event-x d339f29; this log ran 123eec6)')).toBe('Flywheel supply current reached 77 A against a 40 A limit')
+  })
+  it('says "No errors" without claiming a count of zero twice', () => {
+    expect(bottomLine([], [], [], 0)).toBe('No errors or warnings. 0 warnings, 0 info.')
+  })
+})
+
+describe('Foresight card', () => {
+  const base: ForesightReportInput = {
+    verdict: 'NO-GO', why: '1 to fix before the robot goes on the field', state: 'connected', message: 'Connected', url: 'ws://x', readAt: new Date(2026, 9, 19, 17, 36, 4),
+    robot: '2026 offseason robot', items: [], onchecks: [], battery: 12.6, controllers: [], build: { sha: '123eec6268b7', branch: 'event-calgames', dirty: 'Uncommitted changes' }, notChecked: [],
+  }
+  it('puts the verdict word first, stamps the time read, and flags uncommitted code', () => {
+    const c = foresightCard(base)
+    expect(c.heading).toBe('NO-GO')
+    expect(c.context).toContain('2026-10-19 17:36:04')
+    expect(c.uncommitted).toBe(true)
+    expect(c.uncommittedText).toContain('robot')
+  })
+  it('a withdrawn verdict prints as NOT CHECKED, never GO', () => {
+    const c = foresightCard({ ...base, verdict: 'NOT CHECKED', why: 'not connected', build: null })
+    expect(c.heading).toBe('NOT CHECKED')
+    expect(c.headingTone).toBe('muted')
+    expect(c.uncommitted).toBe(false)
+    expect(buildCard(c).svg).toContain('NOT CHECKED')
+  })
+})
