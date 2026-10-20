@@ -1,5 +1,6 @@
 <!--
-  Robot profile builder: drop match logs (and optionally a robot snapshot and the robot-code folder) and get a draft
+  Robot profile builder: drop match logs (and optionally a robot snapshot and the robot code: a folder, or a public
+  GitHub repo) and get a draft
   robot profile the student confirms, keeps in this browser, or saves as profile.json. Everything stays in this page.
   The draft says where each value came from; what no file can show is listed under "Not checked with this profile".
 -->
@@ -9,8 +10,10 @@
   import { allMotors, applySnapshot, carryConfirmations, draftProfile, draftWarnings, NOT_INFERRED, refreshLimits, setDevice, type DraftLog } from '../builder/draft.ts'
   import { parseProfileJson, type GroupJson, type MotorJson, type ProfileJson } from '../builder/json.ts'
   import { forgetProfile, keepProfile, keptId, keptProfiles } from '../builder/store.ts'
-  import { codeHead, codeHints, shaWarning, siteLabel, type CodeFile, type CodeHints } from '../builder/code-hints.ts'
-  import { gitRepoOfFiles } from '../code/browser-code-folder.ts'
+  import { codeHead, codeHints, hintsAt, shaWarning, siteLabel, type CodeFile, type CodeHints } from '../builder/code-hints.ts'
+  import { githubSource, gitRepoOfFiles } from '../code/browser-code-folder.ts'
+  import { parseGitHub } from '../code/github.ts'
+  import { PROFILES } from '../profiles/index.ts'
   import { deviceLabel } from '../builder/snapshot.ts'
   import { downloadText } from './download.ts'
   import { changed } from './kept-profiles.svelte.ts'
@@ -18,6 +21,10 @@
   let logs = $state.raw<DraftLog[]>([])
   let snapshot = $state.raw<Snapshot | null>(null)
   let hints = $state.raw<CodeHints | null>(null)
+  /** Where the hints came from: "code folder", or "owner/repo (GitHub)". */
+  let hintsFrom = $state('code folder')
+  let askingGitHub = $state(false)
+  let githubSpec = $state('')
   let json = $state<ProfileJson | null>(null)
   let notUsed = $state<{ key: string; why: string }[]>([])
   let seenLimits = $state<string[]>([])
@@ -122,9 +129,41 @@
       const path = f.webkitRelativePath || f.name
       if (/\.(java|kt)$/.test(path)) read.push({ path, text: await f.text() })
     }
-    hints = codeHints(read, await codeHead(gitRepoOfFiles(files)))
-    if (json) json.builtFrom = { ...json.builtFrom, at: json.builtFrom?.at ?? new Date().toISOString(), code: hints.sha ?? 'unknown commit' }
+    useHints(codeHints(read, await codeHead(gitRepoOfFiles(files))), 'code folder')
     busy = false
+  }
+
+  /**
+   * Pre-fills "Use GitHub" with the profile's repo and branch. A draft from logs knows the codebase and branch but not
+   * the repo: then the repo of a built-in profile for the same codebase.
+   */
+  function askGitHub() {
+    const realRepo = (repo?: string) => !!repo && /^[\w.-]+\/[\w.-]+$/.test(repo)
+    const sameCodebase = PROFILES.find((p) => p.codebase === json?.codebase && realRepo(p.code.repo))
+    const repo = realRepo(json?.code?.repo) ? json?.code?.repo : sameCodebase?.code.repo
+    if (repo) githubSpec = `${repo}@${json?.code?.branch || sameCodebase?.code.branch || 'main'}`
+    askingGitHub = !askingGitHub
+  }
+
+  /** The code at a branch or commit of a public GitHub repo: every Java and Kotlin file's text at that commit. */
+  async function loadGitHub(spec: string) {
+    const parsed = parseGitHub(spec)
+    if (!parsed) { problems = [`"${spec}" isn't a GitHub repo and branch: write it as owner/repo@branch.`]; return }
+    busy = true
+    try {
+      useHints(await hintsAt(githubSource(parsed.repo, parsed.ref).code!.repo, parsed.ref), `${parsed.repo} (GitHub)`)
+      askingGitHub = false
+      problems = []
+    } catch (error) {
+      problems = [error instanceof Error ? error.message : String(error)]
+    }
+    busy = false
+  }
+
+  function useHints(found: CodeHints, from: string) {
+    hints = found
+    hintsFrom = from
+    if (json) json.builtFrom = { ...json.builtFrom, at: json.builtFrom?.at ?? new Date().toISOString(), code: found.sha ?? 'unknown commit' }
   }
 
   const groupOf = (m: MotorJson) => json?.motorGroups.find((g) => g.motors.includes(m))
@@ -206,8 +245,8 @@
 
 <p class="intro">
   Drop your match logs (<code>.wpilog</code>, several is better), your robot snapshot (<code>snapshot.json</code>), or a saved <code>profile.json</code>
-  to draft a robot profile you can check and keep. Optionally choose your robot-code folder: only its <code>.java</code> and <code>.kt</code> files and
-  <code>.git</code> branch files are read, to label the CAN ID choices. Files never leave the computer.
+  to draft a robot profile you can check and keep. Optionally choose your robot-code folder (only its <code>.java</code> and <code>.kt</code> files and
+  <code>.git</code> branch files are read) or a public GitHub repo, to label the CAN ID choices. Files never leave the computer.
 </p>
 
 <section class="drop" class:dragging aria-label="Drop files" aria-busy={busy}
@@ -221,15 +260,24 @@
     <input type="file" webkitdirectory multiple aria-label="Robot code folder" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; loadCode(input.files); input.value = '' }} />
     Robot code folder (optional)…
   </label>
+  <button class="button" aria-expanded={askingGitHub} onclick={askGitHub}>Use GitHub…</button>
   {#if busy}<span class="muted">Reading…</span>{/if}
 </section>
+
+{#if askingGitHub}
+  <form class="github" onsubmit={(e) => { e.preventDefault(); loadGitHub(githubSpec) }}
+    title="Every .java and .kt file at that branch's newest commit (or the commit you name) is read from GitHub. Public repos only; GitHub allows 60 lookups an hour per network without signing in, and this uses 1 or 2.">
+    <label>GitHub repo and branch <input data-builder-github bind:value={githubSpec} placeholder="owner/repo@branch" size="40" spellcheck="false" autocomplete="off" /></label>
+    <button class="button" type="submit">Read</button>
+  </form>
+{/if}
 
 {#each problems as p (p)}<p class="problem" role="alert">{p}</p>{/each}
 
 <div class="loaded">
   {#each logs as l (l.fileName)}<span class="chip">{l.fileName}</span>{/each}
   {#if snapshot}<span class="chip">{snapshot.fileName} · {snapshot.devices.filter((d) => d.isMotor).length} Talon FX</span>{/if}
-  {#if hints}<span class="chip">code folder: {hints.sites.length} Talon FX site{hints.sites.length === 1 ? '' : 's'}{hints.sha ? ` · ${hints.branch ?? 'detached'} ${hints.sha.slice(0, 7)}` : ''}</span>{/if}
+  {#if hints}<span class="chip">{hintsFrom}: {hints.sites.length} Talon FX site{hints.sites.length === 1 ? '' : 's'}{hints.sha ? ` · ${hints.branch ?? 'detached'} ${hints.sha.slice(0, 7)}` : ''}</span>{/if}
 </div>
 {#if hints}{#each hints.notes as n (n)}<p class="note">{n}</p>{/each}{/if}
 
@@ -377,6 +425,8 @@
   .button:hover { border-color: var(--muted); }
   .button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .button:focus-within { outline: 2px solid var(--focus); }
+  .github { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+  .github input { padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; max-width: 100%; }
   .problem { color: var(--error); font-size: 0.85rem; }
   .loaded { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
   .chip { display: inline-block; font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }

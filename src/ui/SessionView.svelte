@@ -306,7 +306,7 @@
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
   <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
-  <CodeFolderControl />
+  <CodeFolderControl suggest={[...PROFILES, ...stored].find((p) => profileId(p) === robots[0]?.robot.profileId)?.code} />
   {#if progress}
     <span class="progress" role="status">
       {progress.done} of {progress.total} logs{progress.done < progress.total ? ` · reading ${progress.current}` : ''} ·

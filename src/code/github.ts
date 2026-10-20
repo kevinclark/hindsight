@@ -97,7 +97,9 @@ export class GitHubRepo implements CodeSource {
   /** A GET with no credentials; offline or blocked becomes a reason, never a thrown network error. */
   private async fetch(url: string): Promise<Response> {
     try {
-      return await this.get(url, { credentials: 'omit' })
+      // Called as a plain function: the browser's fetch refuses to run as a method of another object.
+      const get = this.get
+      return await get(url, { credentials: 'omit' })
     } catch {
       throw new NotNow(`couldn't reach GitHub (offline?): ${OR_FOLDER}`)
     }

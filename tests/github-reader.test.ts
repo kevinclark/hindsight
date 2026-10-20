@@ -50,6 +50,14 @@ describe('reading a public repo', () => {
     await repo.textAt(head, SHOOTER)
     expect(fake.inits).toEqual([{ credentials: 'omit' }])
   })
+  it('calls fetch as a plain function, as the browser\'s fetch requires ("Illegal invocation" otherwise)', async () => {
+    const fake = fakeGitHub(dir, REPO)
+    const strict = function (this: unknown, url: string, init?: RequestInit) {
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation')
+      return fake.fetch(url, init)
+    } as typeof fetch
+    expect(await new GitHubRepo(REPO, memoryKept(), strict).resolve('event')).toBe(head)
+  })
   it('a full hash needs no call; a short one needs one, kept for next time; a branch is asked again', async () => {
     const { repo, fake, kept } = github()
     expect(await repo.resolve(head.toUpperCase())).toBe(head)

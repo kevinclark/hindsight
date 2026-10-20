@@ -91,7 +91,7 @@ export function shaWarning(hints: CodeHints, logSha: string): string | null {
   if (!hints.sha || !logSha) return null
   const a = hints.sha.toLowerCase(), b = logSha.toLowerCase().replace(/[^0-9a-f]/g, '')
   if (b.length >= 7 && (a.startsWith(b) || b.startsWith(a))) return null
-  return `This code folder is on ${hints.branch ?? 'a detached commit'} ${hints.sha.slice(0, 7)}, but the log ran ${logSha.slice(0, 7)}: CAN IDs may have changed.`
+  return `This code is on ${hints.branch ?? 'a detached commit'} ${hints.sha.slice(0, 7)}, but the log ran ${logSha.slice(0, 7)}: CAN IDs may have changed.`
 }
 
 export const siteLabel = (s: TalonSite) => `${fileName(s.file)}:${s.line}${/^\d+$/.test(s.expr) ? '' : ` (${s.expr})`}`
