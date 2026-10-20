@@ -25,6 +25,7 @@ import { PROFILES } from '../src/profiles/index.ts'
 import { valueAt } from '../src/match/series.ts'
 import { RecordStore } from '../src/foresight/records.ts'
 import { evaluateForesight, SETTLE_SECONDS } from '../src/foresight/engine.ts'
+import { allItems } from '../src/foresight/verdict.ts'
 import { FORESIGHT_RULES, runRules } from '../src/rules/index.ts'
 import { foresightKeysIn } from '../src/foresight/keys.ts'
 import { DATALOGMANAGER_SIGNALS } from '../src/profiles/datalogmanager.ts'
@@ -80,7 +81,7 @@ for (const file of files) {
   for (const now of times) {
     last = evaluateForesight({ store, codeStart: match.logStart, now, lastPassingSha: null, profile })
     if (last.state !== 'checked') continue
-    for (const item of last.verdict.items) {
+    for (const item of allItems(last.verdict)) {
       const into = item.level === 'grey' ? result.grey : result.fired
       const titles = (into[item.finding.rule] ??= [])
       if (!titles.includes(item.finding.title) && titles.length < 4) titles.push(item.finding.title)

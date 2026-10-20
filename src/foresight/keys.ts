@@ -43,6 +43,9 @@ export const LOG_DRIVE_KEYS = {
   device: '/Hindsight/LogDrive/Device',
 } as const
 
+/** A log drive whose device starts with this is a USB stick: the companion's LogDriveIO.isUsb (companion-keys test). */
+export const USB_DEVICE_PREFIX = '/dev/sd'
+
 /**
  * Key prefixes Foresight subscribes to as a whole: everything the Hindsight companion logs (/Hindsight/...). Its device
  * keys name each device (/Hindsight/Devices/<bus>/<model>/<id>/...), so they can't be listed ahead; about 7 keys per

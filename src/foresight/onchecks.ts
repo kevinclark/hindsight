@@ -8,7 +8,7 @@
  * whatever the lines show (verdict.ts).
  */
 import type { Report } from '../rules/index.ts'
-import type { Verdict } from './verdict.ts'
+import { allItems, type Verdict } from './verdict.ts'
 import { SNAPSHOT_RULES, TAKE_SNAPSHOT } from './snapshot-checks.ts'
 import { WANTED_CHECKS } from '../rules/wanted.ts'
 
@@ -44,7 +44,7 @@ export const ONCHECKS: OncheckLine[] = [
   { section: 'Software', line: 'Current limits as the code sets them', rules: ['snapshot/current-limits'], note: 'Foresight\'s line, not on the team\'s list: from the robot snapshot, every motor\'s six current-limit settings, followers included' },
   { section: 'Software', line: 'All device values updating', rules: ['can/device-dropout', 'foresight/values-updating'], note: 'devices connected and their readings changing; not the CANcoders or flywheel motors (nothing of theirs changes at rest)' },
   { section: 'Software', line: 'CTRE devices healthy', rules: ['can/device-rebooted', 'foresight/sticky-faults', 'foresight/firmware-mismatch'], note: 'Foresight\'s line, not on the team\'s list: from the Hindsight companion\'s reading of each device the code watches (HindsightDevices.watch): no reboot, no sticky fault, one firmware per model' },
-  { section: 'Software', line: 'Log stick in', rules: ['foresight/log-usb-stick'], note: 'the robot\'s own reading when its code started (Hindsight companion library). Touched the stick since? Restart the robot code: neither this reading nor the log itself survives a pull' },
+  { section: 'Software', line: 'Log stick in', rules: ['foresight/log-usb-stick'], note: 'the robot\'s own reading, once a second since its code started (Hindsight companion library): OK only if the stick has been in the whole time. Pulled it, even if it\'s back? Restart the robot code: the log doesn\'t carry on when a stick goes back in' },
   { section: 'Software', line: 'Gyro seems normal', rules: ['foresight/gyro-still-drift'], note: 'heading drift while still, as context: no line yet' },
   { section: 'Software', line: 'No undeployed changes', rules: ['build/dirty', 'foresight/commit-matches'] },
   { section: 'Software', line: 'No motors overheating', rules: ['foresight/motor-temperature'], note: 'every motor at or under 60 °C (hotter than any ended a CalGames match)' },
@@ -68,7 +68,8 @@ export function markOnchecks(current: { verdict: Verdict; report: Report; snapsh
     if (l.byEye) return { ...l, state: 'by eye', detail: 'check by eye' }
     if (!current) return { ...l, state: 'not checked', detail: 'no current check' }
     const rules = l.rules ?? []
-    const items = current.verdict.items.filter((i) => rules.includes(i.finding.rule))
+    // Items under another count too: "No alerts on Elastic" is not OK while Elastic shows one, whatever explains it.
+    const items = allItems(current.verdict).filter((i) => rules.includes(i.finding.rule))
     const worst = items.find((i) => i.level === 'red') ?? items.find((i) => i.level === 'amber')
     if (worst) return { ...l, state: worst.level as 'red' | 'amber', detail: worst.finding.title }
     const steps = items.filter((i) => i.level === 'grey' && l.assisted?.includes(i.finding.rule))

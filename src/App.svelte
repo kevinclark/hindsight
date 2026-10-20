@@ -3,7 +3,7 @@
   Everything runs in this page. Files never leave the computer.
 -->
 <script lang="ts">
-  import { analyzeFiles, type Analysis, type InputFile } from './analyze.ts'
+  import { analyzeFilesWithCode, type Analysis, type InputFile } from './analyze.ts'
   import { buildFindingsJson, findingsFileName } from './report/findings-json.ts'
   import MatchTab from './ui/MatchTab.svelte'
   import PowerTab from './ui/PowerTab.svelte'
@@ -26,6 +26,8 @@
   import { chooseRobot, chosenRobot, HOW_WORDS } from './ui/robot-choice.ts'
   import ProfileBuilder from './ui/ProfileBuilder.svelte'
   import { profilesNow } from './ui/kept-profiles.svelte.ts'
+  import CodeFolderControl from './ui/CodeFolderControl.svelte'
+  import { codeFolder } from './ui/code-folder.svelte.ts'
 
   // Every file dropped so far, so a .dslog dropped after its .wpilog still finds its match. "Clear" empties it.
   let inputs: InputFile[] = []
@@ -88,6 +90,7 @@
     const files = Array.from(fileList)
     if (files.length === 0) return
     busy = true
+    const pass = ++passes
     await new Promise((r) => setTimeout(r, 30)) // let "Reading…" paint
     try {
       const started = performance.now()
@@ -96,11 +99,12 @@
       const sameFile = (a: InputFile, b: InputFile) => a.name === b.name && a.bytes.length === b.bytes.length
       inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
       const read = performance.now()
-      const result = analyzeFiles(inputs, chosenRobot, [...PROFILES, ...stored])
+      const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored])
+      if (result.history.length) keep(mergeHistory(history, result.history), false)
+      if (pass !== passes) return // a later pass (another code folder, another robot) has the newer answer
       const done = performance.now()
       analyses = result.analyses
       problems = result.problems
-      if (result.history.length) keep(mergeHistory(history, result.history), false)
       const newest = result.analyses.findIndex((a) => added.some((f) => f.name === a.match.fileName))
       selected = Math.max(0, newest)
       const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
@@ -108,7 +112,7 @@
     } catch (error) {
       problems = [String(error)]
     } finally {
-      busy = false
+      if (pass === passes) busy = false
     }
   }
 
@@ -116,11 +120,34 @@
   function setRobot(id: string) {
     if (!current) return
     chooseRobot([current.match.fileName], id === 'auto' ? null : id)
-    const file = current.match.fileName
-    const result = analyzeFiles(inputs, chosenRobot, [...PROFILES, ...stored])
-    analyses = result.analyses
-    selected = Math.max(0, analyses.findIndex((a) => a.match.fileName === file))
+    reanalyze()
   }
+
+  // Read the loaded logs again, keeping the same match selected (another robot picked, another code folder chosen).
+  async function reanalyze() {
+    const file = current?.match.fileName
+    const pass = ++passes
+    busy = true
+    try {
+      const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored])
+      if (pass !== passes) return
+      analyses = result.analyses
+      selected = Math.max(0, analyses.findIndex((a) => a.match.fileName === file))
+    } catch (error) {
+      problems = [String(error)]
+    } finally {
+      if (pass === passes) busy = false
+    }
+  }
+  // Each analysis pass is numbered; only the newest one's result is shown.
+  let passes = 0
+  // A code folder chosen (or forgotten) after logs were loaded: the limit findings may change.
+  let seenFolder = codeFolder.version
+  $effect(() => {
+    if (codeFolder.version === seenFolder) return
+    seenFolder = codeFolder.version
+    if (inputs.length) reanalyze()
+  })
 
   function clearAll() {
     inputs = []
@@ -144,7 +171,7 @@
   }
 
   // "Save for Slack": the browser's print dialog (Save as PDF; the title names the file), then the phone card as a PNG.
-  const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(a, issues)))
+  const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(a, issues, standing)))
   let saveProblem = $state<string | null>(null)
   async function saveForSlackReview() {
     saveProblem = null
@@ -214,6 +241,7 @@
   {:else}
     <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>, and the team's <code>{HISTORY_FILE_NAME}</code>) anywhere on the page.</span>
   {/if}
+  <CodeFolderControl />
   {#if busy}<span class="busy">Reading…</span>{/if}
   {#if analyses.length}<button class="link" onclick={clearAll}>Clear all</button>{/if}
 </section>
@@ -299,7 +327,7 @@
 {/if}
 </div>
 
-{#if mode === 'review' && current}<ReviewReport analysis={current} {issues} />{/if}
+{#if mode === 'review' && current}<ReviewReport analysis={current} {issues} {standing} />{/if}
 
 <style>
   :global(:root) {

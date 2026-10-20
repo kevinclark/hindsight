@@ -72,7 +72,7 @@ export { LINKS, PARENTS }
 /** The consolidators match analysis runs after the rules: in each pass, the links, then the parents. */
 export const CONSOLIDATORS: Consolidators = { links: LINKS, parents: PARENTS }
 
-/** Run the rules on a match. Match analysis (analyze.ts) also passes CONSOLIDATORS; Foresight passes none. */
+/** Run the rules on a match. Match analysis passes CONSOLIDATORS; Foresight (engine.ts) passes the links only. */
 export function runRules(match: Match, rules: Rule[] = RULES, consolidators: Consolidators = {}): Report {
   return run(match, rules, consolidators)
 }
