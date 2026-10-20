@@ -1,0 +1,4 @@
+rootProject.name = 'hindsight-companion'
+
+// Two vendordeps: core (HindsightCompanion) and battery (HindsightCompanionBattery, needs PlayingWithFusion)
+include 'core', 'battery'

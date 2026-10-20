@@ -58,3 +58,22 @@ npx vitest run tests/snapshot.test.ts                            # Hindsight sid
 npx vitest run tests/foresight-snapshot.test.ts                  # Foresight's snapshot checks
 npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.ts <out-dir>   # rendered check
 ```
+
+## Companion library (`companion/`)
+
+- A Gradle build (JDK 17) of two vendordeps, `HindsightCompanion` (`core/`) and `HindsightCompanionBattery`
+  (`battery/`). It logs only what nothing else logs. Don't add anything AdvantageKit, Phoenix's hoot or
+  PhotonVision already logs.
+- **Every key it logs is in `companion/keys.json`.** Java tests (`KeysTest` in each module) check the library logs
+  exactly those keys; `tests/companion-keys.test.ts` checks the keys Hindsight reads are on the list. Change a key in
+  all three places or not at all: Hindsight's profiles read the battery keys.
+- Hardware is read only on a real robot, and every read is an AdvantageKit input, so a replay reads it back. A failed
+  read is logged, never thrown: the library runs inside someone else's robot code.
+- The `/proc` fixtures in `core/src/test/resources/proc` are synthetic.
+
+Tests:
+
+```
+cd companion && JAVA_HOME=<a JDK 17> ./gradlew build     # both vendordeps, their tests, build/vendordep JSONs
+npx vitest run tests/companion-keys.test.ts               # the key list, Hindsight's side
+```

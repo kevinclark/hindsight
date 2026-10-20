@@ -1,0 +1,25 @@
+repositories {
+    maven { url 'https://www.playingwithfusion.com/frc/maven/' }
+}
+
+def pwf = "com.playingwithfusion.frc:PlayingWithFusion-java:$pwfVersion"
+
+dependencies {
+    compileOnly pwf
+    testImplementation pwf
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'hindsight-companion-battery-java'
+            from components.java
+        }
+    }
+}
+
+registerVendordep(project, 'HindsightCompanionBattery', '9748d13c-1fdc-4f15-868a-beb353c2d187', [
+    akitRequirement,
+    [uuid: '14b8ad04-24df-11ea-978f-2e728ce88125', offlineFileName: 'playingwithfusion2026.json',
+     onlineUrl: 'https://www.playingwithfusion.com/frc/playingwithfusion2026.json'],
+])

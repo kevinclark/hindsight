@@ -1,0 +1,101 @@
+// Shared by both vendordeps. WPILib, AdvantageKit, Phoenix and PlayingWithFusion are compile-only: the robot
+// project already has them, so none is bundled or listed as a runtime dependency.
+ext {
+    wpilibVersion = '2026.2.1'
+    akitVersion = '26.0.2'
+    phoenixVersion = '26.3.0'
+    pwfVersion = '2026.5.08'
+
+    // Where the published Maven repo will live; pass -PmavenUrl=... when publishing for real
+    mavenUrl = findProperty('mavenUrl') ?: layout.buildDirectory.dir('repo').get().asFile.toURI().toString()
+    jsonUrl = findProperty('jsonUrl') ?: ''
+
+    akitRequirement = [
+        uuid: 'd820cc26-74e3-11ec-90d6-0242ac120003', offlineFileName: 'AdvantageKit.json',
+        onlineUrl: 'https://github.com/Mechanical-Advantage/AdvantageKit/releases/latest/download/AdvantageKit.json',
+    ]
+
+    // Writes the vendordep JSON that teams install (WPILib: Manage Vendor Libraries)
+    registerVendordep = { Project p, String name, String uuid, List requires ->
+        def out = p.layout.buildDirectory.file("vendordep/${name}.json")
+        def task = p.tasks.register('vendordepJson') {
+            inputs.property('mavenUrl', mavenUrl)
+            inputs.property('jsonUrl', jsonUrl)
+            inputs.property('version', p.version)
+            outputs.file(out)
+            doLast {
+                def json = [
+                    fileName        : "${name}.json",
+                    name            : name,
+                    version         : p.version,
+                    uuid            : uuid,
+                    frcYear         : '2026',
+                    mavenUrls       : [mavenUrl],
+                    jsonUrl         : jsonUrl,
+                    javaDependencies: [[groupId: p.group, artifactId: p.publishing.publications.maven.artifactId, version: p.version]],
+                    jniDependencies : [],
+                    cppDependencies : [],
+                    requires        : requires.collect { it + [errorMessage: "${name} needs ${it.offlineFileName.replace('.json', '')}"] },
+                ]
+                out.get().asFile.parentFile.mkdirs()
+                out.get().asFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json)).replaceAll(/(?m)[ \t]+$/, '') + '\n'
+            }
+        }
+        p.tasks.named('build') { dependsOn task }
+    }
+}
+
+subprojects {
+    apply plugin: 'java-library'
+    apply plugin: 'maven-publish'
+
+    group = 'com.frc8033.hindsight'
+    version = '2026.1.0'
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        withSourcesJar()
+    }
+
+    repositories {
+        mavenCentral()
+        maven { url 'https://frcmaven.wpi.edu/artifactory/release/' }
+        maven { url 'https://frcmaven.wpi.edu/artifactory/littletonrobotics-mvn-release/' }
+    }
+
+    ext.provided = [
+        "edu.wpi.first.wpilibj:wpilibj-java:$wpilibVersion",
+        "edu.wpi.first.wpiutil:wpiutil-java:$wpilibVersion",
+        "edu.wpi.first.ntcore:ntcore-java:$wpilibVersion",
+        "edu.wpi.first.hal:hal-java:$wpilibVersion",
+        "edu.wpi.first.wpimath:wpimath-java:$wpilibVersion",
+        "edu.wpi.first.wpiunits:wpiunits-java:$wpilibVersion",
+        "us.hebi.quickbuf:quickbuf-runtime:1.4",
+        "org.littletonrobotics.akit:akit-java:$akitVersion",
+    ]
+
+    dependencies {
+        provided.each {
+            compileOnly it
+            testImplementation it
+        }
+        annotationProcessor "org.littletonrobotics.akit:akit-autolog:$akitVersion"
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+        testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    test {
+        useJUnitPlatform()
+        // The key list both sides test against (tests/companion-keys.test.ts reads it too)
+        systemProperty 'hindsight.keys', rootProject.file('keys.json').absolutePath
+        inputs.file(rootProject.file('keys.json'))
+    }
+
+    publishing {
+        repositories {
+            maven { url = rootProject.layout.buildDirectory.dir('repo') }
+        }
+    }
+}
