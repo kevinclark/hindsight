@@ -7,6 +7,8 @@
  * pack bytes of the objects it opens (a commit, the trees on the way to a file, the file, and their delta bases).
  */
 
+import { filesNamed, type CodeFileEntry, type CodeSource } from './source.ts'
+
 /** The files of a .git folder. The browser (a chosen folder) and Node (scripts) each supply one. */
 export interface GitDir {
   /** The bytes of a file, by its path inside .git ("objects/pack/x.idx"): all of it, or [start, end). Null if missing. */
@@ -19,6 +21,8 @@ export interface GitDir {
 
 /** Why a commit or file can't be read: shown to people as the reason a comparison couldn't be made. */
 export class GitUnreadable extends Error {}
+/** The commit isn't there at all (not fetched, not pushed, or another repo): the most common GitUnreadable. */
+export class CommitMissing extends GitUnreadable {}
 
 export type ObjectKind = 'commit' | 'tree' | 'blob' | 'tag'
 export interface GitObject { kind: ObjectKind; data: Uint8Array }
@@ -30,7 +34,8 @@ const REF_DELTA = 7
 /** Objects kept in memory once inflated (trees and delta bases are read again and again). */
 const KEEP_OBJECTS = 256
 
-export class GitRepo {
+export class GitRepo implements CodeSource {
+  readonly where = 'this code folder'
   private packs: Promise<Pack[]> | null = null
   private kept = new Map<string, GitObject>()
   readonly dir: GitDir
@@ -57,7 +62,7 @@ export class GitRepo {
     }
     if (candidates.length > 1) throw new GitUnreadable(`${hex} names ${candidates.length} commits in this .git`)
     const [sha] = candidates
-    if (!sha) throw new GitUnreadable(`commit ${hex.slice(0, 7)} isn't in this code folder${await this.whyMissing()}`)
+    if (!sha) throw new CommitMissing(`commit ${hex.slice(0, 7)} isn't in this code folder${await this.whyMissing()}`)
     return sha
   }
 
@@ -86,17 +91,36 @@ export class GitRepo {
     return parseTree(object.data)
   }
 
-  /** Every file in a commit with this file name (any folder), with its blob hash. */
-  async filesNamed(commit: string, name: string): Promise<{ path: string; sha: string }[]> {
-    const found: { path: string; sha: string }[] = []
+  /** Every file in a commit, with its blob hash. Submodules are left out. */
+  async files(commit: string): Promise<CodeFileEntry[]> {
+    const found: CodeFileEntry[] = []
     const walk = async (tree: string, folder: string) => {
       for (const e of await this.tree(tree)) {
         if (e.mode === '40000') await walk(e.sha, `${folder}${e.name}/`)
-        else if (e.name === name && e.mode !== '160000') found.push({ path: folder + e.name, sha: e.sha })
+        else if (e.mode !== '160000') found.push({ path: folder + e.name, sha: e.sha })
       }
     }
     await walk(await this.treeOf(commit), '')
     return found
+  }
+
+  /** Every file in a commit with this file name (any folder), with its blob hash. */
+  filesNamed(commit: string, name: string): Promise<CodeFileEntry[]> {
+    return filesNamed(this, commit, name)
+  }
+
+  /** The commit HEAD is on, and its branch (null when detached). Throws GitUnreadable when it can't tell. */
+  async head(): Promise<{ sha: string; branch: string | null }> {
+    const head = (await this.readText('HEAD')).trim()
+    if (/^[0-9a-f]{40}$/.test(head)) return { sha: head, branch: null }
+    const ref = /^ref:\s*(\S+)$/.exec(head)?.[1]
+    if (!ref) throw new GitUnreadable('.git/HEAD isn\'t readable')
+    const branch = ref.replace(/^refs\/heads\//, '')
+    const loose = (await this.readText(ref)).trim()
+    if (/^[0-9a-f]{40}$/.test(loose)) return { sha: loose, branch }
+    const packed = (await this.readText('packed-refs')).split('\n').map((l) => l.trim().split(' ')).find(([, r]) => r === ref)?.[0]
+    if (packed && /^[0-9a-f]{40}$/.test(packed)) return { sha: packed, branch }
+    throw new GitUnreadable(`couldn't find the commit of branch ${branch} in .git`)
   }
 
   /** A file's text at a commit, by its path from the top of the repo. */
@@ -110,6 +134,11 @@ export class GitRepo {
       else return new TextDecoder().decode((await this.object(entry.sha)).data)
     }
     throw new GitUnreadable(`no path given`)
+  }
+
+  /** A file in .git as text, or '' when it isn't there. */
+  private async readText(path: string): Promise<string> {
+    return new TextDecoder().decode((await this.dir.read(path)) ?? new Uint8Array())
   }
 
   /** A loose object (objects/ab/cdef…), or null if there is none. */

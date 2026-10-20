@@ -2,7 +2,10 @@
 // hints, and (when the real logs are on this computer) the backtest against the hand profiles and a team with no
 // profile. Synthetic logs and snapshots are made up here; real logs are read in place and never copied.
 import { describe, expect, it } from 'vitest'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { openWpilog } from '../src/readers/wpilog.ts'
 import { chooseProfile } from '../src/profiles/choose.ts'
@@ -17,7 +20,9 @@ import { matchByName } from '../src/builder/snapshot.ts'
 import { allMotors, applySnapshot, carryConfirmations, draftProfile, draftWarnings, setDevice } from '../src/builder/draft.ts'
 import { keepProfile, keptId, keptProfiles, storedProfiles } from '../src/builder/store.ts'
 import { PROFILES, profileId } from '../src/profiles/index.ts'
-import { codeHints, shaWarning } from '../src/builder/code-hints.ts'
+import { codeHead, codeHints, shaWarning, type CodeFile } from '../src/builder/code-hints.ts'
+import { GitRepo } from '../src/code/git.ts'
+import { nodeGitDir } from '../src/code/node-git-dir.ts'
 import { backtestLog } from '../src/builder/backtest.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
 import type { Finding } from '../src/rules/types.ts'
@@ -213,16 +218,47 @@ describe('code hints', () => {
     { path: '.git/HEAD', text: 'ref: refs/heads/event\n' },
     { path: '.git/packed-refs', text: '# pack-refs\n1111111111111111111111111111111111111111 refs/heads/event\n' },
   ]
-  it('lists each new TalonFX with its ID, constant and line, and leaves a parameter unresolved', () => {
-    const h = codeHints(files)
+  /** The .git files among `files`, read as a GitRepo: what the builder does with a chosen folder. */
+  const headIn = (all: CodeFile[]) => {
+    const git = new Map(all.filter((f) => f.path.startsWith('.git/')).map((f) => [f.path.slice(5), new TextEncoder().encode(f.text)]))
+    return codeHead(new GitRepo({ read: async (p) => git.get(p) ?? null, size: async (p) => git.get(p)?.length ?? null, list: async () => [] }))
+  }
+  it('lists each new TalonFX with its ID, constant and line, and leaves a parameter unresolved', async () => {
+    const h = codeHints(files, await headIn(files))
     expect(h.sites.map((s) => [s.id, s.expr, s.line, s.bus])).toEqual([[10, 'LEADER_ID', 3, '"canivore"'], [11, '11', 4, null], [null, 'motorId', 5, null]])
     expect(h.sha).toBe('1111111111111111111111111111111111111111')
     expect(h.branch).toBe('event')
   })
-  it('warns when the folder is not the commit the log ran', () => {
-    const h = codeHints(files)
+  it('warns when the folder is not the commit the log ran', async () => {
+    const h = codeHints(files, await headIn(files))
     expect(shaWarning(h, '1111111')).toBeNull()
     expect(shaWarning(h, '2222222')).toMatch(/log ran 2222222/)
+  })
+  it('reads a real folder\'s commit and branch from .git: a loose ref, a packed one, a detached HEAD, no .git', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hindsight-hints-'))
+    try {
+      const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
+      git('init', '-q', '-b', 'event')
+      mkdirSync(join(dir, 'src'))
+      writeFileSync(join(dir, 'src/Shooter.java'), files[0].text)
+      git('add', '-A')
+      git('-c', 'user.email=test@example.com', '-c', 'user.name=Test', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'c')
+      const sha = git('rev-parse', 'HEAD')
+      const java = [{ path: 'src/Shooter.java', text: files[0].text }]
+      const hints = async () => codeHints(java, await codeHead(new GitRepo(nodeGitDir(dir)!)))
+      expect(await hints()).toMatchObject({ sha, branch: 'event', notes: [] })
+      git('pack-refs', '--all')
+      expect(existsSync(join(dir, '.git/refs/heads/event'))).toBe(false)
+      expect(await hints()).toMatchObject({ sha, branch: 'event', notes: [] })
+      git('checkout', '-q', '--detach')
+      expect(await hints()).toMatchObject({ sha, branch: null, notes: [] })
+      git('checkout', '-q', '--orphan', 'unborn-test')
+      expect(await hints()).toMatchObject({ sha: null, notes: ["Couldn't find the commit of branch unborn-test in .git."] })
+      expect(codeHints(java, await codeHead(null))).toMatchObject({ sha: null, branch: null, notes: ["No .git folder: can't tell which commit this code is."] })
+      expect((await hints()).sites).toEqual(codeHints(files, { why: '' }).sites.map((s) => ({ ...s, file: 'src/Shooter.java' })))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -264,8 +300,8 @@ describe('review fixes', () => {
     expect(allMotors(next).find(({ motor }) => motor.logPath === '/Drive/Module0/Drive')!.motor).toMatchObject({ statorCurrent: '/Drive/Module0/DriveCurrentAmps', canId: 3, canIdFrom: 'you' })
   })
 
-  it('reads Kotlin constructors (no `new`) as code hints', () => {
-    const h = codeHints([{ path: 'Shooter.kt', text: 'object Ids { const val LEADER = 10 }\nval a = TalonFX(Ids.LEADER, "rio")\nval b = getTalonFX(3)\n' }])
+  it('reads Kotlin constructors (no `new`) as code hints', async () => {
+    const h = codeHints([{ path: 'Shooter.kt', text: 'object Ids { const val LEADER = 10 }\nval a = TalonFX(Ids.LEADER, "rio")\nval b = getTalonFX(3)\n' }], await codeHead(null))
     expect(h.sites.map((s) => [s.id, s.expr])).toEqual([[10, 'Ids.LEADER']])
   })
 })

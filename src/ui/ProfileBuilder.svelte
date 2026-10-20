@@ -9,7 +9,8 @@
   import { allMotors, applySnapshot, carryConfirmations, draftProfile, draftWarnings, NOT_INFERRED, refreshLimits, setDevice, type DraftLog } from '../builder/draft.ts'
   import { parseProfileJson, type GroupJson, type MotorJson, type ProfileJson } from '../builder/json.ts'
   import { forgetProfile, keepProfile, keptId, keptProfiles } from '../builder/store.ts'
-  import { codeHints, shaWarning, siteLabel, type CodeFile, type CodeHints } from '../builder/code-hints.ts'
+  import { codeHead, codeHints, shaWarning, siteLabel, type CodeFile, type CodeHints } from '../builder/code-hints.ts'
+  import { gitRepoOfFiles } from '../code/browser-code-folder.ts'
   import { deviceLabel } from '../builder/snapshot.ts'
   import { downloadText } from './download.ts'
   import { changed } from './kept-profiles.svelte.ts'
@@ -116,13 +117,12 @@
     const files = Array.from(list ?? [])
     if (files.length === 0) return
     busy = true
-    const wanted = (p: string) => /\.(java|kt)$/.test(p) || /(^|\/)\.git\/(HEAD|packed-refs)$/.test(p) || /(^|\/)\.git\/refs\/heads\//.test(p)
     const read: CodeFile[] = []
     for (const f of files) {
       const path = f.webkitRelativePath || f.name
-      if (wanted(path)) read.push({ path, text: await f.text() })
+      if (/\.(java|kt)$/.test(path)) read.push({ path, text: await f.text() })
     }
-    hints = codeHints(read)
+    hints = codeHints(read, await codeHead(gitRepoOfFiles(files)))
     if (json) json.builtFrom = { ...json.builtFrom, at: json.builtFrom?.at ?? new Date().toISOString(), code: hints.sha ?? 'unknown commit' }
     busy = false
   }

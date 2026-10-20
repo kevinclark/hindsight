@@ -3,8 +3,10 @@
  * the ID usually reaches the subsystem that logs the motor through two or three files, so no single line proves which
  * log key a constructor is. They label the CAN ID choices in the builder ("15: Shooter.java:45, FLYWHEEL_LEADER_ID").
  *
- * Read only, in the browser: the folder's files are never changed or uploaded.
+ * Read only, in the browser: the folder's files are never changed or uploaded. The text comes from the folder's
+ * working tree (uncommitted edits count) or from GitHub at one commit; the commit and branch from `codeHead`.
  */
+import { GitUnreadable, type GitRepo } from '../code/git.ts'
 
 export interface CodeFile { path: string; text: string }
 
@@ -34,7 +36,10 @@ const INT_CONST = /\b(?:(?:static\s+)?final\s+(?:static\s+)?(?:int|Integer)|cons
 
 const fileName = (p: string) => p.split('/').pop() ?? p
 
-export function codeHints(files: CodeFile[]): CodeHints {
+/** The commit the code is on and its branch (null when detached), or why that can't be told. */
+export type CodeHead = { sha: string; branch: string | null } | { why: string }
+
+export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
   const notes: string[] = []
   const sources = files.filter((f) => /\.(java|kt)$/.test(f.path))
   // Integer constants by simple name. A name defined with two values can't be resolved.
@@ -56,24 +61,19 @@ export function codeHints(files: CodeFile[]): CodeHints {
     }
   }
   if (sources.length && sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java or Kotlin files.')
-  const git = gitHead(files)
+  const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
   return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), ...git, notes: [...notes, ...git.notes] }
 }
 
-/** The commit .git/HEAD points at: a loose ref, or a line of packed-refs. */
-function gitHead(files: CodeFile[]): { sha: string | null; branch: string | null; notes: string[] } {
-  const find = (suffix: string) => files.find((f) => f.path === suffix || f.path.endsWith(`/${suffix}`))
-  const head = find('.git/HEAD')?.text.trim()
-  if (!head) return { sha: null, branch: null, notes: ['No .git folder: can\'t tell which commit this code is.'] }
-  if (/^[0-9a-f]{40}$/.test(head)) return { sha: head, branch: null, notes: [] }
-  const ref = /^ref:\s*(\S+)$/.exec(head)?.[1]
-  if (!ref) return { sha: null, branch: null, notes: ['.git/HEAD isn\'t readable.'] }
-  const branch = ref.replace(/^refs\/heads\//, '')
-  const loose = find(`.git/${ref}`)?.text.trim()
-  if (loose && /^[0-9a-f]{40}$/.test(loose)) return { sha: loose, branch, notes: [] }
-  const packed = find('.git/packed-refs')?.text.split('\n').map((l) => l.trim().split(' ')).find(([, r]) => r === ref)?.[0]
-  if (packed && /^[0-9a-f]{40}$/.test(packed)) return { sha: packed, branch, notes: [] }
-  return { sha: null, branch, notes: [`Couldn't find the commit of branch ${branch} in .git.`] }
+/** The commit a code folder's .git is on (null: the folder has no .git). */
+export async function codeHead(repo: GitRepo | null): Promise<CodeHead> {
+  if (!repo) return { why: 'No .git folder: can\'t tell which commit this code is.' }
+  try {
+    return await repo.head()
+  } catch (error) {
+    if (!(error instanceof GitUnreadable)) throw error
+    return { why: `${error.message[0].toUpperCase()}${error.message.slice(1)}.` }
+  }
 }
 
 /** A warning when the code folder isn't the commit the log ran (the log's GitSHA may be short). */
