@@ -11,8 +11,9 @@
   import { plotModel } from './plot-data.ts'
   import FindingRow from './FindingRow.svelte'
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
+  import { keyNumber } from '../report/review-model.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, statusOf }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, statusOf, startOpen = true }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -28,6 +29,8 @@
     /** For the rows under this one: their known-issue state. */
     issues?: Map<string, IssueEvent>
     statusOf?: (f: Finding) => string | undefined
+    /** Whether an unresolved error starts open; the list passes true for the first one only. "Came back" rows always start open. */
+    startOpen?: boolean
   } = $props()
   const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
   const rule = $derived(ruleById(finding.rule))
@@ -35,9 +38,10 @@
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
   const ICON = { error: '●', warning: '▲', info: '○' } as const
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
-  // Errors start open; the reader can open or close any row after that.
+  const key = $derived(keyNumber(finding))
+  // Only the list's first active error starts open (startOpen), and anything that came back after a fix; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
-  let open = $state(!nested && ((finding.severity === 'error' && !issue) || (issue?.status === 'fixed' && !fixedLater)))
+  let open = $state(!nested && ((startOpen && finding.severity === 'error' && !issue) || (issue?.status === 'fixed' && !fixedLater)))
 
   function mark(status: IssueStatus) {
     const ask = status === 'known' ? 'What do we know about it? (e.g. "belt slipping on 17/18, new belt before elims")'
@@ -60,6 +64,7 @@
         {finding.title}
         {#if nested && finding.explainedBy}<span class="why">↳ {finding.explainedBy.why}</span>{/if}
         {#if note}<span class="why">↳ {note}</span>{/if}
+        {#if !key.inTitle && key.value}<span class="key" title={key.label}>{key.value}{key.label ? ` ${key.label}` : ''}</span>{/if}
       </span>
       <span class="rule">{finding.rule}</span>
     </summary>
@@ -129,6 +134,7 @@
   .badge { font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.4rem; border-radius: 4px; margin-right: 0.35rem; white-space: nowrap; }
   .back { background: var(--error); color: var(--bg); }
   .known-badge { border: 1px solid var(--muted); color: var(--muted); }
+  .key { margin-left: 0.5rem; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
   .rule { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
   .body { padding: 0 0.25rem 0.9rem 7.25rem; }
   .issue-note { font-size: 0.85rem; margin: 0 0 0.5rem; padding: 0.25rem 0.6rem; border-left: 3px solid var(--muted); }

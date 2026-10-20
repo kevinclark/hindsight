@@ -36,6 +36,8 @@
   // Every known issue, whichever audience is picked, so a hidden one still reads "explained by a known issue".
   const allKnown = $derived(all.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
   const activeTree = $derived(nest(active, all, allKnown, cameBack))
+  // Only the first active error starts open (a "came back" one opens itself).
+  const firstOpen = $derived(activeTree.find((n) => n.finding.severity === 'error' && !issues.get(n.finding.key))?.finding)
   const knownTree = $derived(nest(known, all))
   const firing = $derived(new Set(all.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
@@ -80,7 +82,7 @@
 {:else}
   <ul class="findings">
     {#each activeTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} startOpen={n.finding === firstOpen} {onMark} />
     {/each}
   </ul>
 {/if}

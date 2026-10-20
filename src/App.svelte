@@ -162,9 +162,10 @@
 
 <svelte:window ondragover={(e) => { e.preventDefault(); dragging = mode === 'review' }} ondragleave={(e) => { if (e.relatedTarget === null) dragging = false }} ondrop={onDrop} />
 
+<div class="top" class:compact={mode === 'review' && !!current}>
 <header class:screen-only={reportable}>
   <h1>Hindsight</h1>
-  <p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>
+  {#if !(mode === 'review' && current)}<p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>{/if}
 </header>
 
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
@@ -175,6 +176,7 @@
   <button class:active={mode === 'profile'} onclick={() => (mode = 'profile')}>Robot profile</button>
   <button class:active={mode === 'foresight'} onclick={() => (mode = 'foresight')}>Foresight</button>
 </nav>
+</div>
 
 <!-- All the views stay mounted and only the active one shows, so switching never loses a loaded session,
      the matches in review, the wizard's progress, or a snapshot. -->
@@ -187,12 +189,16 @@
 </div>
 <div hidden={mode !== 'session'} class:screen-only={reportable}><SessionView {issues} onOpen={openFromSession} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
-<section class="drop" class:dragging aria-busy={busy}>
+<section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
   <label class="button">
     <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }} />
     Choose logs…
   </label>
-  <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>, and the team's <code>{HISTORY_FILE_NAME}</code>) anywhere on the page.</span>
+  {#if current}
+    <span>or drop files</span>
+  {:else}
+    <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>, and the team's <code>{HISTORY_FILE_NAME}</code>) anywhere on the page.</span>
+  {/if}
   {#if busy}<span class="busy">Reading…</span>{/if}
   {#if analyses.length}<button class="link" onclick={clearAll}>Clear all</button>{/if}
 </section>
@@ -220,27 +226,30 @@
 
 {#if current}
   <section class="match-head">
-    <div>
-      <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
+    <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
+    <span class="actions">
+      <button class="button" onclick={downloadForClaude} title="Saves findings.json: findings, evidence and short data windows, for analysis with Claude">Download for Claude</button>
+      <button class="button" onclick={saveForSlackReview} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
+    </span>
+    <div class="rest">
       <p class="meta">
         <code>{current.match.fileName}</code>{#each current.match.ds as d (d.fileName)}{' + '}<code>{d.fileName}</code>{/each} ·
         {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}
         {#if /uncommitted/i.test(current.match.build.dirty)}<strong class="dirty">(uncommitted changes)</strong>{/if}
       </p>
-      <p class="meta">
-        Robot: <strong>{current.match.profile.name}</strong>, code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>
-        ({HOW_WORDS[current.match.profileChoice.how]}) ·
-        <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
-          <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>
-          {#each [...PROFILES, ...stored] as p (profileId(p))}<option value={profileId(p)} selected={current.match.profileChoice.how === 'chosen by you' && profileId(p) === profileId(current.match.profile)}>{profileId(p)}</option>{/each}
-        </select></label>
-      </p>
+      <details class="more">
+        <summary>Robot: <strong>{current.match.profile.name}</strong></summary>
+        <p class="meta">
+          Robot: <strong>{current.match.profile.name}</strong>, code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>
+          ({HOW_WORDS[current.match.profileChoice.how]}) ·
+          <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
+            <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>
+            {#each [...PROFILES, ...stored] as p (profileId(p))}<option value={profileId(p)} selected={current.match.profileChoice.how === 'chosen by you' && profileId(p) === profileId(current.match.profile)}>{profileId(p)}</option>{/each}
+          </select></label>
+        </p>
+      </details>
       {#if current.match.profileChoice.note}<p class="meta dirty">{current.match.profileChoice.note}</p>{/if}
     </div>
-    <span class="actions">
-      <button class="button" onclick={downloadForClaude} title="Saves findings.json: findings, evidence and short data windows, for analysis with Claude">Download for Claude</button>
-      <button class="button" onclick={saveForSlackReview} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
-    </span>
     {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   </section>
 
@@ -308,9 +317,13 @@
   :global(body) { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
   :global(#app) { max-width: 980px; margin: 0 auto; padding: 1rem 16px 3rem; }
   :global(code) { font-family: var(--mono); font-size: 0.85em; overflow-wrap: anywhere; }
+  .top.compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1.25rem; }
+  .top.compact .modes { margin-bottom: 0.5rem; }
   header h1 { margin: 0; font-size: 1.5rem; }
   .tag { margin: 0.1rem 0 1rem; color: var(--muted); }
   .drop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.9rem 1rem; border: 1.5px dashed var(--border); border-radius: 8px; }
+  .drop.compact { padding: 0.25rem 0.75rem; gap: 0.25rem 0.75rem; }
+  .drop.compact .button { padding: 0.15rem 0.75rem; }
   .drop.dragging { border-color: var(--focus); background: var(--hover); }
   .button { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
   .button:hover { border-color: var(--muted); }
@@ -319,22 +332,30 @@
   .busy { color: var(--muted); }
   .history { font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
   .history strong { color: var(--warning); }
-  .link { margin-left: auto; border: none; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }
+  .link { margin-left: auto; min-height: 24px; padding: 0.2rem 0.4rem; border: none; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }
   .problem { color: var(--error); }
   .matches { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
   .matches button { display: flex; flex-direction: column; align-items: flex-start; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
   .matches button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
   .matches small { color: var(--muted); }
-  .match-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 0.5rem 1rem; margin-top: 1.25rem; }
+  .match-head { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.25rem 1rem; margin-top: 0.4rem; }
+  .match-head .rest, .match-head .problem { grid-column: 1 / -1; }
+  .rest { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6rem; }
+  .rest .meta, .rest .more > summary { font-size: 0.8rem; }
+  .rest > .meta:last-child:not(:first-child) { flex-basis: 100%; }
+  .more[open] { flex-basis: 100%; }
+  .match-head .problem { margin: 0; }
   .match-head h2 { margin: 0; font-size: 1.25rem; }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
   .dirty { color: var(--warning); }
+  .more { margin-top: 0; }
+  .more > summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; min-height: 24px; }
   .meta select { width: auto; max-width: 100%; font: inherit; font-size: 0.8rem; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }
   .modes { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.75rem; }
   .modes button { padding: 0.3rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .modes button.active { color: var(--fg); border-color: var(--focus); font-weight: 600; }
-  .tabs { display: flex; gap: 0.25rem; margin: 1rem 0 0.75rem; border-bottom: 1px solid var(--border); }
+  .tabs { display: flex; gap: 0.25rem; margin: 0.25rem 0 0.5rem; border-bottom: 1px solid var(--border); }
   .tabs button { padding: 0.45rem 1rem; border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .tabs button.active { color: var(--fg); border-bottom-color: var(--focus); font-weight: 600; }
   footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
