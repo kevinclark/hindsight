@@ -12,9 +12,8 @@
  * Why: the main breaker cuts power to the whole robot and has to be reset by hand. Teams trip it most when pushed
  * for a long time, or with supply limits off; a warm breaker, or loose lugs, trip it sooner.
  */
-import { maxOf } from '../../match/series.ts'
-import { rule, round } from '../rule.ts'
-import { DT } from '../../power/battery-model.ts'
+import { rule, round, type PlotRequest } from '../rule.ts'
+import { DT, type PowerGrid } from '../../power/battery-model.ts'
 import type { MatchView, Signal } from '../view.ts'
 
 const MAIN_BREAKER_A = 120 // FRC rule R609: one 120 A main breaker
@@ -25,15 +24,51 @@ const TAU_SECONDS = 90 // see "Thresholds" above
 function heating(amps: Float64Array, tau: number): Float64Array {
   const out = new Float64Array(amps.length)
   let h = 0
-  for (let i = 0; i < amps.length; i++) { h += (amps[i] * amps[i] - h) * (DT / tau); out[i] = Math.sqrt(h) }
+  for (let i = 0; i < amps.length; i++) {
+    h += (amps[i] * amps[i] - h) * (DT / tau)
+    out[i] = Math.sqrt(h)
+  }
   return out
 }
 
 /** Only the highest load, without keeping the series (for trying many time constants). */
 function peakHeating(amps: Float64Array, tau: number): number {
-  let h = 0, peak = 0
-  for (let i = 0; i < amps.length; i++) { h += (amps[i] * amps[i] - h) * (DT / tau); if (h > peak) peak = h }
+  let h = 0
+  let peak = 0
+  for (let i = 0; i < amps.length; i++) {
+    h += (amps[i] * amps[i] - h) * (DT / tau)
+    if (h > peak) peak = h
+  }
   return Math.sqrt(peak)
+}
+
+/** The index of the highest value (the first, if several tie). */
+function indexOfHighest(values: Float64Array): number {
+  let highest = 0
+  for (let i = 1; i < values.length; i++) if (values[i] > values[highest]) highest = i
+  return highest
+}
+
+/** The lowest time constant under which this match stays below the band's slow edge (null: none up to 300 s). */
+function lowestSafeTau(amps: Float64Array): number | null {
+  for (let tau = 10; tau <= 300; tau += 5) {
+    if (peakHeating(amps, tau) / MAIN_BREAKER_A <= TRIP_BAND[1]) return tau
+  }
+  return null
+}
+
+/** The sum of a series from index `from` to `to`, both included. */
+function sumBetween(values: Float64Array, from: number, to: number): number {
+  let sum = 0
+  for (let i = from; i <= to; i++) sum += values[i]
+  return sum
+}
+
+/** The group that carried the most current from index `from` to `to` (current adds up by group; heating doesn't). */
+function busiestGroup(grid: PowerGrid, from: number, to: number) {
+  const groups = grid.groups.map((g) => ({ name: g.name, charge: sumBetween(g.amps, from, to) }))
+  groups.sort((a, b) => b.charge - a.charge)
+  return groups[0]
 }
 
 export default rule({
@@ -56,43 +91,51 @@ export default rule({
     // Heating needs current only, so this runs on a log with motor currents and no battery voltage too.
     const grid = match.currents()
     const load = heating(grid.amps, TAU_SECONDS)
-    let peakAt = 0
-    for (let i = 1; i < load.length; i++) if (load[i] > load[peakAt]) peakAt = i
+    const peakAt = indexOfHighest(load)
     const share = load[peakAt] / MAIN_BREAKER_A
     if (share < TRIP_BAND[0]) return
-    // The lowest time constant under which this match stays below the band's slow edge (true if it didn't trip).
-    let tauMin: number | null = null
-    for (let tau = 10; tau <= 300 && tauMin === null; tau += 5) {
-      if (peakHeating(grid.amps, tau) / MAIN_BREAKER_A <= TRIP_BAND[1]) tauMin = tau
-    }
-    // Which group carried the most current in the minute before the peak (current adds up by group; heating doesn't).
-    const from = Math.max(0, peakAt - Math.round(60 / DT))
-    const charge = (a: Float64Array) => { let s = 0; for (let i = from; i <= peakAt; i++) s += a[i]; return s }
-    const groups = grid.groups.map((g) => ({ name: g.name, e: charge(g.amps) })).sort((a, b) => b.e - a.e)
-    const total = charge(grid.amps)
-    const top = groups[0]
-    let sq = 0
-    for (let i = from; i <= peakAt; i++) sq += grid.amps[i] * grid.amps[i]
-    const rms60 = Math.sqrt(sq / (peakAt - from + 1))
+
     const t = grid.t[peakAt]
+    const tauMin = lowestSafeTau(grid.amps)
+    const fasterPercent = Math.round(100 * peakHeating(grid.amps, 30) / MAIN_BREAKER_A)
+    const slowerPercent = Math.round(100 * peakHeating(grid.amps, 180) / MAIN_BREAKER_A)
+    // The minute before the peak: which group carried the most current, and the total's RMS.
+    const from = Math.max(0, peakAt - Math.round(60 / DT))
+    const top = busiestGroup(grid, from, peakAt)
+    const total = sumBetween(grid.amps, from, peakAt)
+    let squares = 0
+    for (let i = from; i <= peakAt; i++) squares += grid.amps[i] * grid.amps[i]
+    const rms60 = Math.sqrt(squares / (peakAt - from + 1))
+    const topPercent = top && total > 0 ? Math.round((100 * top.charge) / total) : undefined
+
+    let nextStep: string | undefined
+    if (top && topPercent !== undefined) {
+      nextStep = `${top.name} carried ${topPercent} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the sum of the sustained limits at or under about 120 A.`
+    }
+    // Battery voltage if logged; otherwise the supply current of the group that carried most of it.
+    const battery = match.signalIfLogged('batteryVoltage')
+    let plot: PlotRequest
+    if (battery) {
+      plot = { signals: [battery], unit: 'V', from: t - 60, to: t + 10, marks: [t] }
+    } else {
+      plot = { signals: topGroupSupply(match, top?.name), unit: 'A', from: t - 60, to: t + 10, marks: [t] }
+    }
+
     return {
       message: `Main breaker load reached ${Math.round(100 * share)} % of its ${MAIN_BREAKER_A} A rating at ${match.when(t)}, ${share >= TRIP_BAND[1] ? 'above' : 'inside'} the ${100 * TRIP_BAND[0]}–${100 * TRIP_BAND[1]} % band where it can trip`,
       at: t,
       severity: share >= TRIP_BAND[1] ? 'error' : undefined,
       evidence: {
         [`breaker load, heating averaged over ~${TAU_SECONDS} s (% of ${MAIN_BREAKER_A} A)`]: Math.round(100 * share),
-        'same, if the breaker heats faster (30 s; closer for short hard pushes) (%)': Math.round(100 * peakHeating(grid.amps, 30) / MAIN_BREAKER_A),
-        'same, if it heats slower (180 s) (%)': Math.round(100 * peakHeating(grid.amps, 180) / MAIN_BREAKER_A),
+        'same, if the breaker heats faster (30 s; closer for short hard pushes) (%)': fasterPercent,
+        'same, if it heats slower (180 s) (%)': slowerPercent,
         'total current, RMS over the minute before (A)': round(rms60, 0),
-        'carried most of it': top && total > 0 ? `${top.name} (${Math.round((100 * top.e) / total)} % of the current)` : 'unknown',
+        'carried most of it': top && topPercent !== undefined ? `${top.name} (${topPercent} % of the current)` : 'unknown',
         'if it did not trip, under this model its time constant is at least (s)': tauMin ?? 'over 300',
       },
       measured: [{ label: `main breaker load (~${TAU_SECONDS} s)`, value: Math.round(100 * share), unit: '%', threshold: 100 * TRIP_BAND[0] }],
-      nextStep: top && total > 0 ? `${top.name} carried ${Math.round((100 * top.e) / total)} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the sum of the sustained limits at or under about 120 A.` : undefined,
-      // Battery voltage if logged; otherwise the supply current of the group that carried most of it.
-      ...(match.has('batteryVoltage')
-        ? { plot: { signals: [match.signal('batteryVoltage')], unit: 'V', from: t - 60, to: t + 10, marks: [t] } }
-        : { plot: { signals: topGroupSupply(match, top?.name), unit: 'A', from: t - 60, to: t + 10, marks: [t] } }),
+      nextStep,
+      plot,
     }
   },
 })

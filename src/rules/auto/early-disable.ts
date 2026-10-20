@@ -13,47 +13,100 @@
  * uncommitted changes can't be told apart.
  */
 import { rule, round, type Problem } from '../rule.ts'
-import type { MatchView } from '../view.ts'
+import type { MatchView, Signal, Window } from '../view.ts'
+
+type Evidence = Record<string, string | number | undefined>
 
 const TILTED_DEGREES = 15 // the same line as collision/tilt
 const FULL_AUTO_SLACK = 1 // an auto run within 1 s of the auto length counts as run to the end (assumed)
 
+/** One run of an auto period in a log. */
+interface Run {
+  log: MatchView
+  start: number
+  seconds: number
+  sha: string
+  dirty: boolean
+  onField: boolean
+}
+
 /** Every auto period run with this auto chosen, in a log, before robot time `until`. */
-function runsOf(log: MatchView, name: string, until: number) {
+function runsOf(log: MatchView, name: string, until: number): Run[] {
   if (!log.has('autoChoice')) return []
   const choice = log.text('autoChoice')
   const dirty = /uncommitted/i.test(log.build.dirty)
   return log.auto.filter((iv) => iv.start < until && choice.at(iv.start) === name).map((iv) => ({
-    log, start: iv.start, seconds: iv.end - iv.start, sha: log.build.sha, dirty, onField: log.has('fmsAttached') && log.signal('fmsAttached').at(iv.start) > 0.5,
+    log,
+    start: iv.start,
+    seconds: iv.end - iv.start,
+    sha: log.build.sha,
+    dirty,
+    onField: log.has('fmsAttached') && log.signal('fmsAttached').at(iv.start) > 0.5,
   }))
 }
 
+/** Runs of this auto in the other loaded logs that began earlier, by the robot's wall clock, oldest first. */
+function earlierRunsInOtherLogs(match: MatchView, name: string, myClock: number | null): Run[] {
+  // Logs with no clock can't be placed.
+  if (myClock === null) return []
+  return match.otherLogs()
+    .flatMap((o) => runsOf(o, name, Infinity).map((run) => ({ run, clock: o.wallClock(run.start) ?? Infinity })))
+    .filter((r) => r.clock < myClock)
+    .sort((a, b) => a.clock - b.clock)
+    .map((r) => r.run)
+}
+
+/** How the last earlier run ended: it ran to the end of auto (within a second), or was cut off. */
+function describeLastRun(last: Run, match: MatchView): string {
+  const where = last.log === match ? 'this log' : last.log.raw.fileName
+  const field = last.onField ? 'on the field' : 'off the field'
+  const dirty = last.dirty ? ' with uncommitted changes' : ''
+  const ran = last.seconds >= last.log.profile.game.autoSeconds - FULL_AUTO_SLACK
+  const ended = ran ? 'ran the whole auto' : `ended after ${last.seconds.toFixed(1)} s`
+  return `${where}, ${field}, build ${last.sha.slice(0, 7) || 'unknown'}${dirty}: ${ended}`
+}
+
 /** What this log says about the chosen auto's history (empty if it doesn't log the chooser). */
-function autoHistory(match: MatchView, start: number): { evidence: Record<string, string | number>; firstOnBuild: boolean } {
+function autoHistory(match: MatchView, start: number): { evidence: Evidence; firstOnBuild: boolean } {
   if (!match.has('autoChoice')) return { evidence: {}, firstOnBuild: false }
   const name = match.text('autoChoice').at(start)
   // No auto chosen: an empty name would match every log's auto before its chooser was logged.
   if (!name) return { evidence: { auto: '(none chosen)' }, firstOnBuild: false }
+
   const here = runsOf(match, name, start)
   const myClock = match.wallClock(start)
-  // Other loaded logs, earlier by the robot's wall clock (logs with no clock can't be placed).
-  const others = myClock === null ? [] : match.otherLogs().flatMap((o) => runsOf(o, name, Infinity).filter((r) => (o.wallClock(r.start) ?? Infinity) < myClock))
-  others.sort((a, b) => a.log.wallClock(a.start)! - b.log.wallClock(b.start)!)
+  const others = earlierRunsInOtherLogs(match, name, myClock)
+  const onlyThisLog = match.otherLogs().length === 0
   const sha = match.build.sha.slice(0, 7)
   const runs = [...others, ...here]
-  const onBuild = runs.filter((r) => r.sha === match.build.sha && r.dirty === /uncommitted/i.test(match.build.dirty)).length
+  const buildIsDirty = /uncommitted/i.test(match.build.dirty)
+  const onBuild = runs.filter((r) => r.sha === match.build.sha && r.dirty === buildIsDirty).length
   const last = runs.at(-1)
-  const ended = (r: NonNullable<typeof last>) => (r.seconds >= r.log.profile.game.autoSeconds - FULL_AUTO_SLACK ? 'ran the whole auto' : `ended after ${r.seconds.toFixed(1)} s`)
-  const evidence: Record<string, string | number> = {
+
+  let othersCount: string | number = others.length
+  if (onlyThisLog) {
+    othersCount = 'not known (only this log is loaded)'
+  } else if (myClock === null) {
+    othersCount = 'not known (the robot clock was not set)'
+  }
+  // With no other logs loaded, the count would only cover this log.
+  const onBuildCount = onlyThisLog && here.length === 0 ? 'not known (only this log is loaded)' : onBuild
+
+  const evidence: Evidence = {
     auto: name,
     'runs of it earlier in this log': here.length,
-    'runs of it in the other logs loaded, earlier': match.otherLogs().length === 0 ? 'not known (only this log is loaded)' : myClock === null ? 'not known (the robot clock was not set)' : others.length,
-    // With no other logs loaded, the count would only cover this log.
-    [`runs of it on this build (${sha || 'unknown'}), in the logs loaded`]: match.otherLogs().length === 0 && here.length === 0 ? 'not known (only this log is loaded)' : onBuild,
-    ...(last ? { 'its last earlier run': `${last.log === match ? 'this log' : last.log.raw.fileName}, ${last.onField ? 'on the field' : 'off the field'}, build ${last.sha.slice(0, 7) || 'unknown'}${last.dirty ? ' with uncommitted changes' : ''}: ${ended(last)}` } : {}),
+    'runs of it in the other logs loaded, earlier': othersCount,
+    [`runs of it on this build (${sha || 'unknown'}), in the logs loaded`]: onBuildCount,
+    'its last earlier run': last ? describeLastRun(last, match) : undefined,
   }
   // Only when an earlier run on another build was seen: loaded logs that are all later prove nothing.
   return { evidence, firstOnBuild: onBuild === 0 && others.length > 0 }
+}
+
+/** How far the robot tilted (degrees, either way, any axis) within the window; 0 with no gyro. */
+function tiltIn(gyro: Signal[], window: Window): number {
+  const swings = gyro.map((axis) => Math.max(Math.abs(axis.lowest(window).value), Math.abs(axis.highest(window).value)))
+  return Math.max(0, ...swings)
 }
 
 export default rule({
@@ -73,29 +126,51 @@ export default rule({
   incident: 'CalGames 2026 Q13: disabled at 282.7 s with 7.4 s of auto left after the hood hit the trench (2026-10-17-calgames-q13-log-analysis.md §1)',
 
   check(match) {
-    if (!match.onField || match.autoStart === null) return
+    const autoStart = match.autoStart
+    if (!match.onField || autoStart === null) return
     const attached = match.signal('dsAttached')
-    const autoPeriods = match.auto.filter((a) => a.start >= match.autoStart! && a.start < match.autoStart! + match.profile.game.autoSeconds)
+    const autoEnd = autoStart + match.profile.game.autoSeconds
+    const autoPeriods = match.auto.filter((a) => a.start >= autoStart && a.start < autoEnd)
     const early = autoPeriods.filter((a) => match.timeLeft(a.end) > 1 && attached.at(a.end + 0.05) > 0.5)
     // The plot is a bonus: draw the gyro if the log has it, but don't let a missing gyro stop the rule.
-    const gyro = match.has('gyroPitch') && match.has('gyroRoll')
-      ? [match.signal('gyroPitch').times(180 / Math.PI, 'Pitch'), match.signal('gyroRoll').times(180 / Math.PI, 'Roll')] : []
+    const pitch = match.signalIfLogged('gyroPitch')
+    const roll = match.signalIfLogged('gyroRoll')
+    const gyro = pitch && roll ? [pitch.inDegrees('Pitch'), roll.inDegrees('Roll')] : []
+
     return early.map((a): Problem => {
+      const timeLeft = match.timeLeft(a.end)
       // How far did it tilt in the 3 s before the disable? Past the collision/tilt line, it probably hit something.
-      const lastSeconds = match.before(a.end, 3)
-      const tilt = Math.max(0, ...gyro.map((axis) => Math.max(Math.abs(axis.lowest(lastSeconds).value), Math.abs(axis.highest(lastSeconds).value))))
+      const tilt = tiltIn(gyro, match.before(a.end, 3))
       const wedged = tilt > TILTED_DEGREES
       const history = autoHistory(match, a.start)
+
+      let likely: string[] | undefined
+      if (wedged) {
+        likely = ['wedged']
+      } else if (history.firstOnBuild) {
+        likely = ['new-auto']
+      }
+      let nextStep: string | undefined
+      if (wedged) {
+        nextStep = `The robot tilted ${tilt.toFixed(0)}° in the 3 s before the disable: watch the video for what it hit, and add a guard in code near that spot.`
+      }
+
       return {
         // The last instant of auto: at a.end itself the robot already reads as disabled.
-        message: `Disabled in auto at ${match.when(a.end - 0.001)} with ${match.timeLeft(a.end).toFixed(1)} s of auto left`,
+        message: `Disabled in auto at ${match.when(a.end - 0.001)} with ${timeLeft.toFixed(1)} s of auto left`,
         at: a.end - 0.001,
-        likely: wedged ? ['wedged'] : history.firstOnBuild ? ['new-auto'] : undefined,
-        nextStep: wedged ? `The robot tilted ${tilt.toFixed(0)}° in the 3 s before the disable: watch the video for what it hit, and add a guard in code near that spot.` : undefined,
+        likely,
+        nextStep,
         // Context only: how much auto was left when it was disabled ("× the line" would read as how bad it was).
-        measured: [{ label: 'left in auto when disabled', value: round(match.timeLeft(a.end), 1), unit: 's' }],
-        evidence: { 'auto enabled (robot time, s)': round(match.autoStart!), 'disabled (robot time, s)': round(a.end), 'auto time left (s)': round(match.timeLeft(a.end), 1), 'DS still attached': 'yes', ...history.evidence },
-        plot: { signals: gyro, unit: '°', from: match.autoStart! - 1, to: a.end + 4, marks: [a.end] },
+        measured: [{ label: 'left in auto when disabled', value: round(timeLeft, 1), unit: 's' }],
+        evidence: {
+          'auto enabled (robot time, s)': round(autoStart),
+          'disabled (robot time, s)': round(a.end),
+          'auto time left (s)': round(timeLeft, 1),
+          'DS still attached': 'yes',
+          ...history.evidence,
+        },
+        plot: { signals: gyro, unit: '°', from: autoStart - 1, to: a.end + 4, marks: [a.end] },
       }
     })
   },
