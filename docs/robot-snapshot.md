@@ -84,8 +84,8 @@ offsets correct and unchanged*, *Swerve ratio unchanged*, and *Current limits as
 talks to the diagnostic server itself; you give it the snapshot.
 
 1. Connect Foresight to the robot and wait until it shows a verdict (GO, NO-GO or NOT CHECKED).
-2. Run `python3 tools/robot-snapshot.py`, on the same laptop or a second one. Teams whose drive laptop takes no
-   installs (8033 among them) run it from a pit laptop and copy `snapshot.json` across; both clocks must be set
+2. Run `python3 tools/robot-snapshot.py` on the same laptop: the one you run checks from, which need not be (and for
+   8033 never is) the drive laptop. If you must use a second laptop, copy `snapshot.json` across and set both clocks
    automatically. Don't press Clear Faults or blink anything first.
 3. Click **Robot snapshot…** under the Connect button, or drop `snapshot.json` on that box.
 

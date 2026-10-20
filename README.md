@@ -10,7 +10,8 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
 
 ## Use it
 
-- **Offline (events):** copy `hindsight.html` to the DS laptop and double-click it. Works from `file://`.
+- **Offline (events):** copy `hindsight.html` to the laptop you review and check from (a pit laptop; teams that keep
+  the drive laptop for driving only, as 8033 does, copy the `.dslog` off it) and double-click it. Works from `file://`.
 - Drop one or more `.wpilog` files, plus `.dslog` files. A DS log is matched to the robot log it overlaps on the wall
   clock; one from another match is reported and ignored.
 - **Match** tab: findings, worst first. Each shows its evidence numbers, a plot of the moment, what it might mean,

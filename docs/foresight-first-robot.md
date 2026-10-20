@@ -1,29 +1,28 @@
 # Foresight on the robot for the first time (about 6 minutes, in the pit)
 
 Everything about Foresight so far ran against replayed logs and a desktop copy of ntcore (pyntcore 2025.3.2), never a
-roboRIO. This run checks the parts only a real robot can: that the page connects from the DS laptop, that the robot
+roboRIO. This run checks the parts only a real robot can: that the page connects from the onchecks laptop, that the robot
 publishes what Foresight reads under `/AdvantageKit`, and that the robot's clock and start time come through.
 
-**Where:** the pit, robot on its cart, tethered to the DS laptop by USB (or Ethernet). Later it runs in the queue too,
+**Where:** the pit, robot on its cart, tethered by USB (or Ethernet) to the **onchecks laptop**, the laptop the team
+runs onchecks from. Never the drive (DS) laptop: it only controls the robot at the field. Later it runs in the queue too,
 as part of the team's onchecks; this first run is in the pit. **Never on the field.** Nothing here moves the robot or
 writes to it: Foresight only subscribes.
 
 ## Before you start
 
 - `hindsight.html` built from the commit that added Foresight or later (`npm run build` in the Hindsight repo),
-  copied to the DS laptop.
+  copied to the onchecks laptop.
 - Robot on, robot code running, Driver Station open and showing Communications green, robot **disabled**.
-- Both controllers plugged into the DS laptop.
+- The onchecks laptop's controllers plugged in (Foresight's controller check reads this laptop's Driver Station,
+  not the drive team's).
 - A printed AprilTag (36h11, the field's family; one tag is enough), for step 7.
-- For step 8, a **second laptop** (the pit laptop) with `tools/robot-snapshot.py` and Python 3.8 or newer. The
-  collector never runs on the drive laptop, which takes no installs (Kevin, 2026-10-19). Carry `snapshot.json` to the
-  drive laptop on a USB stick. Both laptops' clocks must be set automatically: Foresight compares the snapshot's time
-  with when the robot code started, by the drive laptop's clock. Note how the pit laptop reached the robot (USB to
-  the roboRIO while the drive laptop is on Ethernet, or the reverse); two tethers at once is untested.
+- For step 8, `tools/robot-snapshot.py` and Python 3.8 or newer on the same onchecks laptop. Never the drive
+  laptop, which takes no installs.
 
 ## Steps
 
-1. **Open the page from a file.** Double-click `hindsight.html` on the DS laptop (its address bar shows `file://`).
+1. **Open the page from a file.** Double-click `hindsight.html` on the onchecks laptop (its address bar shows `file://`).
    Click **Foresight** at the top.
 2. **Connect.** Robot: `172.22.11.2` for USB, `10.80.33.2` for Ethernet. Click **Connect**. Within about 5 s the line
    next to the button should say `Connected. Robot: 2026 offseason robot (<branch>); reading 105 signals.`
