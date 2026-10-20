@@ -64,6 +64,15 @@ export const LINKS: Link[] = [
     when: (dropout, alert) => alertNames(alert, dropout.about) && within(dropout, alert, 1),
     why: 'the robot code saw the same device drop off CAN',
   }),
+  // CalGames 2026 Q2: 25 devices dropped within 0.3 s. The rule writes 'dropped with' on every device but the first of
+  // a cluster, naming the first (earliest, ties by profile order), so the cluster is one headline and nothing loops.
+  // This is the net for drops the bus finding does not claim: a profile that maps no bus, or a device already down.
+  link({
+    cause: 'can/device-dropout',
+    explains: 'can/device-dropout',
+    when: (first, later) => later.evidence['dropped with'] === first.about,
+    why: 'dropped off CAN within 1 s of the first device to drop: one event, not separate faults',
+  }),
   // CalGames 2026 Q21: two Back_Right camera alerts came on at the moment the camera dropped out.
   link({
     cause: 'vision/stale',
@@ -120,8 +129,14 @@ const POSITIONS = ['front', 'back', 'left', 'right']
  */
 function namesAKindOfDeviceOn(bus: Finding, alert: Finding): boolean {
   const kinds = wordsOf(String(bus.evidence[BUS_DEVICES] ?? '')).filter((w) => !POSITIONS.includes(w))
-  return wordsOf(alert.about ?? '').some((w) => kinds.includes(w))
+  return wordsOf(alert.about ?? '').flatMap((w) => [w, ...(ALERT_WORDS[w] ?? [])]).some((w) => kinds.includes(w))
 }
+
+/**
+ * Words an alert uses for a kind of device that the profile names differently (CalGames 2026 Q2: "Disconnected turn
+ * motor on Back Left module!" is the device the profile calls "Back Left steer"; "turn encoder" is its CANcoder).
+ */
+const ALERT_WORDS: Record<string, string[]> = { turn: ['steer'], encoder: ['cancoder'], module: ['steer'] }
 
 /** The words in a text, in lower case: "Gyro (Pigeon)" → ['gyro', 'pigeon']. */
 function wordsOf(text: string): string[] {
