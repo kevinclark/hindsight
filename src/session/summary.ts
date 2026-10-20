@@ -13,6 +13,7 @@ import type { Pose2d } from '../readers/wpilog.ts'
 import type { CodePin, RobotProfile } from '../profiles/types.ts'
 import { profileFit, type ProfileChoice } from '../profiles/choose.ts'
 import { profileId } from '../profiles/index.ts'
+import { coverage, worstAcross, type LoggedState } from '../coverage/coverage.ts'
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
@@ -61,6 +62,8 @@ export interface MatchSummary {
   robot: { profileId: string; name: string; code: CodePin; how: ProfileChoice['how']; note: string | null; present: number; total: number }
   /** When one match was recorded in several logs (the robot program restarted mid-match): every log's file name. */
   pieces?: string[]
+  /** Each signal the robot profile expects and its state in this log (the Logging tab). Absent in older summaries. */
+  logging?: LoggedState[]
 }
 
 export interface MatchMetrics {
@@ -120,6 +123,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
     build: { sha: match.build.sha.slice(0, 7), branch: match.build.branch, uncommitted: /uncommitted/i.test(match.build.dirty) },
     rules, metrics: metrics(match), timing, problems: [],
     robot: robotOf(match),
+    logging: coverage(match, report).lines.map((l) => ({ what: l.what, key: l.key, state: l.state })),
   }
 }
 
@@ -176,6 +180,7 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
     problems: pieces.flatMap((p) => p.problems),
     robot: pieces.reduce((a, b) => (b.robot.present / b.robot.total < a.robot.present / a.robot.total ? b : a)).robot,
     pieces: pieces.map((p) => p.fileName),
+    logging: worstAcross(pieces.map((p) => p.logging)),
   }
 }
 

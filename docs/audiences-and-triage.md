@@ -25,6 +25,7 @@ A rule can have two: the fix for a brownout is partly battery handling (pit) and
 | can/device-dropout | | ✓ | | connector, wire, terminator, power path |
 | comms/loss, comms/ds-log-truncated | | | ✓ | DS laptop, field; the CSA if it repeats |
 | auto/early-disable | ✓ | | ✓ | why the drive team stopped it; what auto did |
+| auto/none-at-enable | | | ✓ | pick the auto after the field connects |
 | mech/zero-not-completed | ✓ | | | command sequencing |
 | mech/follower-mismatch | | ✓ | | belt, pulley, set screw |
 | collision/tilt, collision/impact | ✓ | ✓ | ✓ | inspect for damage; guard in code; driving |

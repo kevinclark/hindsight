@@ -11,6 +11,7 @@ import commsLoss from './comms/loss.ts'
 import restartMidMatch from './loop/restart-mid-match.ts'
 import emergencyStop from './comms/emergency-stop.ts'
 import earlyDisable from './auto/early-disable.ts'
+import noneAtEnable from './auto/none-at-enable.ts'
 import tilt from './collision/tilt.ts'
 import zeroNotCompleted from './mech/zero-not-completed.ts'
 import stuckState from './mech/stuck-state.ts'
@@ -42,7 +43,7 @@ import valuesUpdating from './foresight/values-updating.ts'
 import cameraSeesTag from './foresight/camera-sees-tag.ts'
 
 export const RULES: Rule[] = [
-  brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, stuckState, tilt, zeroNotCompleted, deviceDropout, busDropout, dsLogTruncated,
+  brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, noneAtEnable, stuckState, tilt, zeroNotCompleted, deviceDropout, busDropout, dsLogTruncated,
   limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, impact, overrun,
   visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough,
 ]

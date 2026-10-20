@@ -12,8 +12,10 @@ import { SCHEMA, findingsFileName } from './findings-json.ts'
 import type { CardModel, Tone } from './card.ts'
 import { descendants, nest, severityWords, type FindingNode } from './finding-tree.ts'
 import { cardTitle, shortTitle } from './titles.ts'
+import { stripRepoPaths } from './repo-paths.ts'
 
 export { cardTitle, shortTitle } from './titles.ts'
+export { stripRepoPaths } from './repo-paths.ts'
 
 export type FindingStatus = 'known' | 'came back' | 'fixed later'
 
@@ -176,15 +178,6 @@ export function keyNumber(f: Finding): { label: string; value: string; text: str
 /** "2:25 into the match" from "2:25 into the match (teleop; robot time 532.8 s)", for tight places. */
 export function shortWhen(when: string | null): string {
   return when ? when.replace(/\s*\(.*$/, '') : ''
-}
-
-/** Drops the repo-path citations in a rule's `incident` text: "(…q13-log-analysis.md §1)" means nothing to a student. */
-export function stripRepoPaths(text: string): string {
-  return text
-    .replace(/\s*\([^()]*\.md[^()]*\)/g, '')
-    .replace(/\s*\((?:P0|Q13) analysis[^()]*\)/g, '')
-    .replace(/\s+([.,;:])/g, '$1')
-    .trim()
 }
 
 export function incidentFor(f: Finding): string {
