@@ -16,6 +16,7 @@ import { stripRepoPaths } from '../report/repo-paths.ts'
 import type { Severity } from '../rules/rule.ts'
 import type { MatchSummary } from '../session/summary.ts'
 import { sampleRate, SLOW_HZ, words } from '../rules/view.ts'
+import { companionIn, DEVICES_ROOT, hootLine, profileDevices, watchedIn, type HootLine } from '../match/companion.ts'
 
 export type CoverageState = 'logged' | 'slow' | 'never changes' | 'not logged' | 'profile gap'
 
@@ -60,6 +61,8 @@ export interface Coverage {
   lines: CoverageLine[]
   /** Set when the robot profile doesn't fit the log: most rules about the robot were not run at all. */
   misfit: string | null
+  /** Whether Phoenix's hoot was recording, from the Hindsight companion (context, not a check); null without it. */
+  hoot: HootLine | null
 }
 
 /**
@@ -168,9 +171,37 @@ function dedupe(slots: CoverageKey[]): CoverageKey[] {
 export function coverage(match: Match, report: Report): Coverage {
   const reasons = report.skipped.map((s) => ({ rule: s.rule, partly: s.reason.startsWith('partly'), parts: parts(s.reason) }))
   const lines = coverageKeys(match.profile).map((slot) => lineFor(slot, match, reasons))
-  lines.push(...unlistedLines(lines, reasons))
+  lines.push(...unlistedLines(lines, reasons), ...watchLines(match))
   const misfit = match.profileChoice.misfit ? match.profileChoice.note : null
-  return { lines: lines.sort(byUrgency), misfit }
+  return { lines: lines.sort(byUrgency), misfit, hoot: hootContext(match) }
+}
+
+/**
+ * On a robot that runs the Hindsight companion: one line per CTRE device the profile names with a CAN ID (each motor,
+ * and the CANcoders and gyro of foresight.snapshot), saying whether the robot code watches it (HindsightDevices.watch).
+ * Matched by model and CAN ID only: the profile names no bus. A robot without the companion gets none of these lines.
+ */
+function watchLines(match: Match): CoverageLine[] {
+  if (!companionIn(match.log)) return []
+  const watched = watchedIn(match.log)
+  return profileDevices(match.profile).map((d) => {
+    const twin = watched.find((w) => w.id === d.id && d.models.includes(w.model))
+    const what = `${d.name} watched by the Hindsight companion`
+    const key = `${DEVICES_ROOT}…/${d.models.join(' or ')}/${d.id}`
+    if (twin) return { what, key, state: 'logged', found: twin.prefix, dark: [], todo: '' }
+    return {
+      what, key, state: 'not logged', dark: [darkCheck('can/device-rebooted', false)],
+      todo: `Watch ${d.name} (CAN ID ${d.id}): HindsightDevices.watch on the line after the robot code makes it (companion/README.md, step 3).`,
+    }
+  })
+}
+
+/** Hoot recording over the match (or, with no match, while enabled, or the whole log). */
+function hootContext(match: Match): HootLine | null {
+  if (match.matchStart !== null && match.matchEnd !== null) return hootLine(match, { start: match.matchStart, end: match.matchEnd }, 'during the match')
+  const [first, last] = [match.enabled[0], match.enabled.at(-1)]
+  if (first && last) return hootLine(match, { start: first.start, end: last.end }, 'while enabled')
+  return hootLine(match, { start: match.logStart, end: match.logEnd }, 'in this log')
 }
 
 interface Reason { rule: string; partly: boolean; parts: string[] }

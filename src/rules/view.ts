@@ -19,6 +19,7 @@ import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
 import { photonTargetCount } from '../readers/photon.ts'
+import { profileDevices, twinOf, watchedIn, watchedName, type ProfileDevice, type WatchedEntry } from '../match/companion.ts'
 
 /** A stretch of time made of one or more intervals, e.g. "while enabled" or "during auto". */
 export type Window = Interval[]
@@ -279,6 +280,36 @@ export interface GroupView {
 export interface DeviceView {
   name: string
   connected(): Signal
+  /**
+   * Set for a device only the Hindsight companion watches (the profile has no Connected flag for it). Its flag is read
+   * once a second, so a drop shows up to DEVICE_LATE_SECONDS (src/match/companion.ts) after it began.
+   */
+  watched?: WatchedDeviceView
+}
+
+/**
+ * A CTRE device the robot code gave to the Hindsight companion's HindsightDevices.watch (src/match/companion.ts),
+ * read once a second. Named as the profile names it when the profile has it (same model and CAN ID), else
+ * "TalonFX 15 on Any".
+ */
+export interface WatchedDeviceView {
+  name: string
+  bus: string
+  model: string
+  id: number
+  /** The Connected flag the profile already reads for this device, if the log has it. */
+  profileFlag?: string
+  connected(): Signal
+  /** Times it rebooted while the robot code ran (counted only while it was already answering). */
+  resets(): Signal
+  /** Every live fault, one bit each (the bits differ by model). */
+  faults(): Signal
+  /** Every fault since someone last cleared them, one bit each. */
+  stickyFaults(): Signal
+  /** Firmware, packed (versionText in src/match/companion.ts reads it). */
+  version(): Signal
+  /** Phoenix's status code for the read: "OK", or why the signals couldn't be read. */
+  status(): TextSignal
 }
 
 export interface CameraView {
@@ -375,7 +406,34 @@ export class MatchView {
   connectedDevices(): { name: string; key: string }[] {
     const motors = this.profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => (m.connected ? [{ name: m.name, key: m.connected }] : [])))
     const others = this.profile.otherDevices.map((d) => ({ name: d.name, key: d.connected }))
-    return [...motors, ...others]
+    const watchedOnly = this.watchedDevices().filter((w) => !w.profileFlag).map((w) => ({ name: w.name, key: w.connected().key }))
+    return [...motors, ...others, ...watchedOnly]
+  }
+
+  private watchedList: WatchedDeviceView[] | null = null
+
+  /** Every device the Hindsight companion watches in this log (none when the robot doesn't use it). */
+  watchedDevices(): WatchedDeviceView[] {
+    if (!this.watchedList) {
+      const named = profileDevices(this.profile)
+      this.watchedList = watchedIn(this.raw.log).map((w) => this.watchedView(w, twinOf(named, w)))
+    }
+    return this.watchedList
+  }
+
+  private watchedView(w: WatchedEntry, twin: ProfileDevice | undefined): WatchedDeviceView {
+    const name = twin ? `${twin.name} (${w.model} ${w.id})` : watchedName(w)
+    const field = (key: string, label: string) => () => this.signal(`${w.prefix}/${key}`, `${name} ${label}`)
+    return {
+      name, bus: w.bus, model: w.model, id: w.id,
+      profileFlag: twin?.connected && has(this.raw, twin.connected) ? twin.connected : undefined,
+      connected: field('Connected', 'answering'),
+      resets: field('Resets', 'reboots'),
+      faults: field('FaultField', 'faults'),
+      stickyFaults: field('StickyFaultField', 'sticky faults'),
+      version: field('Version', 'firmware'),
+      status: () => this.text(`${w.prefix}/Status`),
+    }
   }
 
   /** The stretch a rule counts alerts and dropouts in: the match, or (Foresight) the disabled stretch. */

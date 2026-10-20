@@ -18,7 +18,9 @@ import type { RobotProfile } from '../profiles/types.ts'
 import { KEEP_SECONDS, type RecordStore } from './records.ts'
 import { verdictFor, type Verdict } from './verdict.ts'
 import { PROVEN } from './proven.ts'
-import { addSnapshotChecks, SNAPSHOT_PROOF, SNAPSHOT_RULES, type SnapshotInput } from './snapshot-checks.ts'
+import { addSnapshotChecks, joinWatched, SNAPSHOT_PROOF, SNAPSHOT_RULES, type SnapshotInput } from './snapshot-checks.ts'
+import { MatchView } from '../rules/view.ts'
+import { hootLine, type HootLine } from '../match/companion.ts'
 
 export const SETTLE_SECONDS = 30
 /** After a disable, battery voltage recovers from the load; wait this long before judging rest voltage. Assumed. */
@@ -41,7 +43,7 @@ export interface ForesightInput {
 export type ForesightResult =
   | { state: 'settling'; secondsLeft: number; reason: string }
   | { state: 'enabled'; reason: string }
-  | { state: 'checked'; start: number; end: number; match: Match; report: Report; verdict: Verdict; snapshotUsed: boolean }
+  | { state: 'checked'; start: number; end: number; match: Match; report: Report; verdict: Verdict; snapshotUsed: boolean; hoot: HootLine | null }
 
 /**
  * Foresight reads only the keys its checks need, so whether the profile fits is judged on those keys (the profile's
@@ -79,9 +81,12 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   match.foresight = { start, end: now, lastPassingSha: input.lastPassingSha, words }
   const report = runRules(match, input.rules ?? FORESIGHT_RULES)
   const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS)
+  if (snapshotUsed) joinWatched(report, input.snapshot!.snapshot!, new MatchView(match).watchedDevices())
   // The backtest only proved checks on stretches before any enable. After a drive the battery is still recovering
   // (CalGames: 11.7–12.1 V 10 s after the match, 12.3 V after 160 s), so rest voltage stays amber then.
   const unproven: Record<string, string> = Object.fromEntries(SNAPSHOT_RULES.map((r) => [r, SNAPSHOT_PROOF]))
   if (lastEnable) unproven['power/rest-voltage'] = `amber: the robot was driven ${Math.round(now - lastEnable.end)} s ago and the battery is still recovering; proven only before any enable`
-  return { state: 'checked', start, end: now, match, report, verdict: verdictFor(report, PROVEN, unproven), snapshotUsed }
+  // Context only, never in the verdict: whether Phoenix's hoot is recording (from the Hindsight companion).
+  const hoot = hootLine(match, { start, end: now }, words)
+  return { state: 'checked', start, end: now, match, report, verdict: verdictFor(report, PROVEN, unproven), snapshotUsed, hoot }
 }

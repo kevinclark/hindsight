@@ -19,7 +19,7 @@ import type { RobotProfile } from '../profiles/types.ts'
 import type { Snapshot } from '../snapshot/snapshot.ts'
 import { RecordStore } from './records.ts'
 import { evaluateForesight, type ForesightResult } from './engine.ts'
-import { foresightKeys, keyFor, METADATA_KEYS, topicFor, wpilogType } from './keys.ts'
+import { FORESIGHT_PREFIXES, foresightKeys, keyFor, METADATA_KEYS, topicFor, wpilogType } from './keys.ts'
 import { isFieldLocked, Nt4Client, nt4Url, type SocketLike, type TopicValue } from './nt4-client.ts'
 
 /** Batch interval asked of the robot (s). With `all`, every change still arrives; this only sets how often. */
@@ -154,6 +154,8 @@ export class ForesightLive {
     const { profile } = chooseProfile(openWpilog(this.store.windowLog(-Infinity, end)), PROFILES)
     const keys = foresightKeys(profile).filter((k) => !this.status.subscribed.includes(k))
     this.client.subscribe(keys.map(topicFor), { all: true, periodic: PERIODIC })
+    // The companion's keys name each watched device, so they are asked for by prefix (read-only, like every subscribe).
+    this.client.subscribe(FORESIGHT_PREFIXES.map(topicFor), { all: true, periodic: PERIODIC, prefix: true })
     this.status.profile = profile
     this.status.subscribed = [...this.status.subscribed, ...keys]
     this.connectedMessage = `Connected. Robot: ${profile.name} (${profile.code.branch}); reading ${this.status.subscribed.length} signals.`

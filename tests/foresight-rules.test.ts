@@ -7,7 +7,7 @@ import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { openWpilog, readNumbers, readRaw } from '../src/readers/wpilog.ts'
 import { RecordStore } from '../src/foresight/records.ts'
 import { evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/foresight/engine.ts'
-import { foresightKeys, LOG_DRIVE_KEYS, RECENT_SECONDS } from '../src/foresight/keys.ts'
+import { foresightKeys, foresightKeysIn, LOG_DRIVE_KEYS, RECENT_SECONDS } from '../src/foresight/keys.ts'
 import { PROVEN } from '../src/foresight/proven.ts'
 import { FORESIGHT_RULES } from '../src/rules/index.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
@@ -17,7 +17,7 @@ import { photonTargetCount } from '../src/readers/photon.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 import { CALGAMES, haveCalGames } from './helpers/load.ts'
 import { makeDevicesSnapshot, profileSnapshot } from './helpers/make-snapshot.ts'
-import type { SnapshotInput } from '../src/foresight/snapshot-checks.ts'
+import { sameModel, snapshotBusFor, snapshotDeviceFor, type SnapshotInput } from '../src/foresight/snapshot-checks.ts'
 
 const START = 10
 const NOW = 100
@@ -445,7 +445,7 @@ describe.skipIf(!haveCalGames)('the keys Foresight subscribes to are enough', ()
         if (r.state !== 'checked') throw new Error(r.state)
         return { findings: r.report.findings.filter((f) => f.rule !== 'meta/not-checked').map((f) => `${f.rule}: ${f.title}`), skipped: r.report.skipped.map((s) => s.rule).sort() }
       }
-      const subscribed = summary(RecordStore.fromWpilog(log, foresightKeys(offseason2026)))
+      const subscribed = summary(RecordStore.fromWpilog(log, foresightKeysIn(log, offseason2026)))
       const whole = summary(RecordStore.fromWpilog(log, null))
       expect(subscribed).toEqual(whole)
       expect(foresightKeys(offseason2026).length).toBeLessThan(120) // 109: the robot publishes ~455
@@ -475,4 +475,108 @@ describe.skipIf(!haveCalGames)('CalGames logs: what a camera result and an accep
       }
     })
   }
+})
+
+// The Hindsight companion's device readings (HindsightDevices.watch), live: sticky faults, firmware per model,
+// reboots and devices not answering, joined to a robot snapshot by bus, model and ID. Synthetic, in companion/keys.json's shapes.
+describe('Foresight over the companion\'s device readings', () => {
+  /** A value read once a second from START to NOW, changing at each [time, value]. */
+  const perSecond = (first: number | boolean, change: [number, number | boolean][] = []) => {
+    const out: [number, number | boolean][] = []
+    for (let t = START; t <= NOW; t++) out.push([t, [...change].reverse().find(([at]) => t >= at)?.[1] ?? first])
+    return out
+  }
+  const device = (bus: string, model: string, id: number, r: { connected?: [number, number | boolean][]; resets?: [number, number | boolean][]; sticky?: number; version?: number } = {}): FixtureEntry[] => {
+    const at = `/Hindsight/Devices/${bus}/${model}/${id}`
+    return [
+      { name: `${at}/Connected`, type: 'boolean', records: r.connected ?? perSecond(true) },
+      { name: `${at}/Resets`, type: 'int64', records: r.resets ?? perSecond(0) },
+      { name: `${at}/Version`, type: 'int64', records: steady(r.version ?? 0x1a010000) },
+      { name: `${at}/FaultField`, type: 'int64', records: steady(0) },
+      { name: `${at}/StickyFaultField`, type: 'int64', records: steady(r.sticky ?? 0) },
+      { name: `${at}/ProLicensed`, type: 'boolean', records: steady(true) },
+      { name: `${at}/Status`, type: 'string', records: steady('OK') },
+    ]
+  }
+  const healthLine = (r: ReturnType<typeof check>) => markOnchecks(r).find((l) => l.line === 'CTRE devices healthy')!
+  const item = (r: ReturnType<typeof check>, rule: string) => r.verdict.items.find((i) => i.finding.rule === rule)
+
+  it('a robot without the companion: the checks say why, the line is "not checked", and the verdict is untouched', () => {
+    const r = check([])
+    for (const rule of ['can/device-rebooted', 'foresight/sticky-faults']) expect(r.report.skipped.find((s) => s.rule === rule)?.reason).toMatch(/watches no CTRE device/)
+    expect(r.report.skipped.find((s) => s.rule === 'foresight/firmware-mismatch')?.reason).toMatch(/no watched device is answering/)
+    expect(healthLine(r).state).toBe('not checked')
+    expect(r.verdict.verdict).toBe('GO')
+    expect(r.hoot).toBeNull()
+  })
+
+  it('healthy watched devices: the line is OK and nothing is flagged', () => {
+    const r = check([...device('Any', 'TalonFX', 15), ...device('Any', 'CANcoder', 4)])
+    expect(flagged(r)).toEqual([])
+    expect(healthLine(r).state).toBe('ok')
+  })
+
+  it('a sticky fault is amber, with the raw field and no decoding', () => {
+    const r = check([...device('Any', 'TalonFX', 15), ...device('Any', 'CANcoder', 4, { sticky: 0x104 })])
+    const i = item(r, 'foresight/sticky-faults')!
+    expect(i.level).toBe('amber')
+    expect(i.finding.title).toBe('Intake CANcoder (CANcoder 4) has sticky faults set (field 0x00000104)')
+    expect(i.finding.evidence['which faults']).toMatch(/not decoded/)
+    expect(healthLine(r).state).toBe('amber')
+  })
+
+  it('a device not answering now: its sticky faults are not checked, and a companion-only one drops off CAN', () => {
+    const r = check(device('Any', 'TalonFX', 40, { sticky: 1, connected: perSecond(true, [[60, false]]) }))
+    expect(item(r, 'foresight/sticky-faults')).toBeUndefined()
+    expect(r.report.skipped.find((s) => s.rule === 'foresight/sticky-faults')?.reason).toMatch(/TalonFX 40 on Any: not answering now/)
+    expect(item(r, 'can/device-dropout')?.finding.about).toBe('TalonFX 40 on Any')
+  })
+
+  it('firmware differing within a model is amber; different models may differ', () => {
+    const mixed = check([...device('Any', 'TalonFX', 15), ...device('Any', 'TalonFX', 16, { version: 0x19020000 }), ...device('Any', 'CANcoder', 4, { version: 0x19000000 })])
+    const i = item(mixed, 'foresight/firmware-mismatch')!
+    expect(i.level).toBe('amber')
+    expect(i.finding.title).toBe('Firmware differs within TalonFX (2 versions)')
+    expect(i.finding.evidence).toEqual({ 'TalonFX 26.1.0.0': 'Flywheel leader (TalonFX 15)', 'TalonFX 25.2.0.0': 'Flywheel follower 16 (TalonFX 16)' })
+  })
+
+  it('a reboot in the pit is amber (never proven, so never red)', () => {
+    const r = check(device('Any', 'TalonFX', 15, { resets: perSecond(0, [[70, 1]]) }))
+    expect(item(r, 'can/device-rebooted')?.level).toBe('amber')
+  })
+
+  it('with a snapshot from this run, each device finding says what the snapshot saw (Any = its one CANivore)', () => {
+    const codeStartWallMs = Date.parse('2026-10-20T17:00:00Z')
+    const taken = new Date(codeStartWallMs + (SETTLE_SECONDS + 20) * 1000).toISOString()
+    const snapshot = makeDevicesSnapshot(profileSnapshot(offseason2026), taken)
+    const r = check([...device('Any', 'CANcoder', 4, { sticky: 2 }), ...device('Any', 'TalonFX', 40, { sticky: 2 })], null, { snapshot, codeStartWallMs })
+    const evidence = (about: string) => r.report.findings.find((f) => f.rule === 'foresight/sticky-faults' && f.about === about)?.evidence['in the robot snapshot']
+    expect(evidence('Intake CANcoder (CANcoder 4)')).toMatch(/^CANCoder vers\. H 4 on the canivore1 \("CANCoder vers\. H \(Device ID 4\)"\), serial SIM-\d+-0, firmware 26\.3\.0\.0/)
+    expect(evidence('TalonFX 40 on Any')).toBe("not on the snapshot's canivore1")
+  })
+
+  it('reports whether hoot is recording, as context only', () => {
+    const r = check([{ name: '/Hindsight/Hoot/Recording', type: 'boolean', records: perSecond(true) }, { name: '/Hindsight/Hoot/Status', type: 'string', records: steady('ok') }])
+    expect(r.hoot).toMatchObject({ state: 'whole', text: expect.stringMatching(/^Phoenix hoot was recording since start-up settled/) })
+    expect(r.verdict.verdict).toBe('GO')
+  })
+})
+
+describe('joining a watched device to the snapshot', () => {
+  it('matches the server\'s model names by prefix, never Talon FX to Talon FXS', () => {
+    expect(sameModel('Talon FX vers. C', 'TalonFX')).toBe(true)
+    expect(sameModel('Talon FXS vers. A', 'TalonFX')).toBe(false)
+    expect(sameModel('Talon FXS vers. A', 'TalonFXS')).toBe(true)
+    expect(sameModel('CANCoder vers. H', 'CANcoder')).toBe(true)
+    expect(sameModel('Pigeon 2', 'Pigeon2')).toBe(true)
+  })
+  it('maps rio to the roboRIO bus and Any to the one CANivore, or to nothing with two', () => {
+    const one = makeDevicesSnapshot([{ model: 'Talon FX vers. C', id: 1, bus: 'canivore1' }, { model: 'Pigeon 2', id: 0, bus: '' }], '2026-10-20T17:01:00Z')
+    const two = makeDevicesSnapshot([{ model: 'Talon FX vers. C', id: 1, bus: 'a' }, { model: 'Talon FX vers. C', id: 1, bus: 'b' }], '2026-10-20T17:01:00Z')
+    expect(snapshotBusFor(one, 'rio')).toBe('')
+    expect(snapshotBusFor(one, 'Any')).toBe('canivore1')
+    expect(snapshotBusFor(two, 'Any')).toBeNull()
+    expect(snapshotDeviceFor(two, { bus: 'Any', model: 'TalonFX', id: 1 })).toMatch(/can't tell which bus/)
+    expect(snapshotDeviceFor(one, { bus: 'rio', model: 'Pigeon2', id: 0 })).toMatchObject({ model: 'Pigeon 2', bus: '' })
+  })
 })

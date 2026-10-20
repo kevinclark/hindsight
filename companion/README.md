@@ -41,8 +41,8 @@ A team without battery fuel gauges installs only the first.
 
    That's all: the companion then logs whether the device is answering, its firmware, its live and sticky faults,
    and its reboots. It reads its own copies of the signals, so it never changes a rate, a config or your code's
-   signal objects. A device you don't watch isn't logged, and nothing warns you in the robot code (a Hindsight
-   check that lists motors with a logged CAN id but no watch entry is planned, not built).
+   signal objects. A device you don't watch isn't logged, and nothing warns you in the robot code: Hindsight's
+   Logging tab lists each motor, CANcoder and gyro the robot profile names with a CAN ID that has no watch entry.
 
 ## What it logs
 

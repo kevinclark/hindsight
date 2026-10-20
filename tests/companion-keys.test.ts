@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { PROFILES } from '../src/profiles/index.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { LOG_DRIVE_KEYS } from '../src/foresight/keys.ts'
+import { DEVICE_FIELDS, DEVICES_ROOT, HOOT_KEYS } from '../src/match/companion.ts'
 
 interface CompanionKey { key: string; type: string; module: string }
 
@@ -42,6 +43,12 @@ describe('companion key list', () => {
       .filter((key) => key.startsWith('/BatteryGauge/') || key.startsWith('/RealOutputs/Battery/'))
     expect(trackerKeys.length).toBeGreaterThan(0)
     for (const key of trackerKeys) expect(listed, key).toContain(key)
+  })
+
+  it('has the device and hoot keys Hindsight and Foresight read, with their types', () => {
+    const types = Object.fromEntries(keys.map((k) => [k.key, k.type]))
+    expect(DEVICE_FIELDS.map((f) => types[`${DEVICES_ROOT}{bus}/{model}/{id}/${f}`])).toEqual(['boolean', 'int64', 'int64', 'int64', 'boolean', 'int64', 'string'])
+    expect(Object.values(HOOT_KEYS).map((key) => types[key])).toEqual(['boolean', 'int64', 'string', 'int64', 'double', 'string'])
   })
 
   it('has the log-drive keys Foresight reads, with their types', () => {

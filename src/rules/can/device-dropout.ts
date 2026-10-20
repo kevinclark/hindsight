@@ -8,10 +8,16 @@
  * Why: CalGames 2026 P0: flywheel follower 16 alone dropped off CAN 7 times, each at 5.85–6.31 V.
  *
  * Drops that took the whole bus down at once are left to can/bus-dropout.
+ *
+ * Devices the robot code watches with the Hindsight companion (HindsightDevices.watch) are checked too, from the
+ * companion's Connected flag, when the profile has no Connected flag of its own for them (same model and CAN ID).
+ * The companion reads once a second, so a drop shorter than about a second may not show, and the battery is read
+ * over the 1.5 s before. No log of ours has the companion's keys yet.
  */
 import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
 import type { DeviceView, Episode, MatchView } from '../view.ts'
-import { busOf, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, watched, windowStart } from './bus.ts'
+import { busOf, DROP_LOOK_BACK, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, watched, windowStart } from './bus.ts'
+import { DEVICE_LATE_SECONDS } from '../../match/companion.ts'
 
 
 export default rule({
@@ -48,7 +54,9 @@ export default rule({
 function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): Problem {
   const battery = match.signal('batteryVoltage')
   // A drop already under way when the watched window began is timed from that start. It says nothing about sag.
-  const { timed, alreadyOff, voltages, text: voltageText, everyDrop } = readDrops(match, battery, drops)
+  // A device only the companion watches is read once a second, so its drop began up to 1.5 s before the flag fell.
+  const lookBack = device.watched ? DEVICE_LATE_SECONDS : DROP_LOOK_BACK
+  const { timed, alreadyOff, voltages, text: voltageText, everyDrop } = readDrops(match, battery, drops, lookBack)
   const first = timed[0]
   const firstWhen = alreadyOff[0]
     ? `already off when ${windowStart(match)} ${match.whenAt(first.start)}`
@@ -70,6 +78,8 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   } else if (voltages.length > 0 && lowOnes === 0 && !closeCall && !unknownVolts) {
     ruledOut['battery-sag'] = `the battery stayed above 7 V ${everyDrop}`
   }
+  // A companion reading that never once answered may be status signals turned off, not a device off the bus.
+  const neverAnswered = !!device.watched && device.connected().highest().value < 0.5
   if (together.length) {
     likely.push('shared-wiring')
     ruledOut['device-fault'] = `${plural(together.length, 'other device')} dropped at the same moment`
@@ -85,14 +95,17 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
       drops: drops.length,
       'seconds missing while enabled': round(secondsMissing),
       'came back': cameBack,
-      'lowest battery voltage in the 0.5 s before each drop (V)': voltageText.join(', '),
+      [`lowest battery voltage in the ${lookBack} s before each drop (V)`]: voltageText.join(', '),
+      'read by': device.watched ? 'the Hindsight companion (HindsightDevices.watch), once a second' : undefined,
       'other devices dropped at the same moment': othersDropped(together, others.length),
     },
-    likely, ruledOut, nextStep: dropNextStep(allLow, everyDrop, together),
+    likely, ruledOut, nextStep: neverAnswered ? NEVER_ANSWERED : dropNextStep(allLow, everyDrop, together),
     measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
     plot: plotDrops(battery, timed, 3, drops[drops.length - 1].end + 2),
   }
 }
+
+const NEVER_ANSWERED = 'It never answered the Hindsight companion in this log. If Phoenix Tuner X shows it on the bus, the robot code has turned its status signals off (optimizeBusUtilization), so the companion can\'t read it; if not, check its power and CAN wiring.'
 
 /** When each other device dropped off CAN while enabled (every motor with a Connected flag, and the other devices). */
 function otherDevices(match: MatchView, except: string) {

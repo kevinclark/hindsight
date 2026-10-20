@@ -184,6 +184,7 @@
     <p>{why}</p>
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
     {#if result?.state === 'settling'}<p class="small">Nothing is judged until {SETTLE_SECONDS} s after the robot code starts: start-up camera and time-sync alerts clear in that time.</p>{/if}
+    {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
   </section>
 
   {#if checked}

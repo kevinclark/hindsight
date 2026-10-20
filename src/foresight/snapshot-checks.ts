@@ -285,3 +285,51 @@ export function addSnapshotChecks(report: Report, input: SnapshotInput | undefin
   for (const check of checks) report.findings.push(...check.done(report.skipped, `nothing to check${incomplete}`))
   return true
 }
+
+/** The Foresight checks whose findings are about one watched device (named as WatchedDeviceView names it). */
+const WATCHED_DEVICE_RULES = new Set(['can/device-dropout', 'can/device-rebooted', 'foresight/sticky-faults'])
+
+/**
+ * The snapshot's bus for a bus name the companion logs: "rio" is the snapshot's "" (the roboRIO's bus); "Any"
+ * (CANBus("*")) is the snapshot's one CANivore when it has exactly one, else it can't be told. Other names as they are.
+ */
+export function snapshotBusFor(snapshot: Snapshot, bus: string): string | null {
+  if (bus === 'rio') return ''
+  if (bus !== 'Any') return bus
+  const canivores = [...new Set(snapshot.devices.map((d) => d.bus).filter((b) => b !== ''))]
+  return canivores.length === 1 ? canivores[0] : null
+}
+
+/**
+ * Is this server model (snapshot.ts: "Talon FX vers. C", "CANCoder vers. H", "Pigeon 2") the companion's model
+ * (TalonFX, CANcoder, Pigeon2)? The model name, spaces dropped and case ignored, must start the server's, followed by
+ * nothing or its "vers." suffix, so TalonFX is not Talon FXS.
+ */
+export function sameModel(serverModel: string, companionModel: string): boolean {
+  const server = serverModel.replace(/\s+/g, '').toLowerCase()
+  const model = companionModel.toLowerCase()
+  return server.startsWith(model) && /^(vers\..*)?$/.test(server.slice(model.length))
+}
+
+/** The snapshot's device for a watched device (same bus, model and ID), or why there isn't one. */
+export function snapshotDeviceFor(snapshot: Snapshot, w: { bus: string; model: string; id: number }): Device | string {
+  const bus = snapshotBusFor(snapshot, w.bus)
+  if (bus === null) return `can't tell which bus: the robot code logs it on CANBus("*") and the snapshot has ${snapshot.devices.some((d) => d.bus !== '') ? 'more than one CANivore' : 'no CANivore'}`
+  const found = snapshot.devices.find((d) => d.bus === bus && d.id === w.id && sameModel(d.model, w.model))
+  return found ?? `not on the snapshot's ${busLabel(bus)}`
+}
+
+/**
+ * Adds what the snapshot says about each watched device a finding is about (its name, serial and firmware, or that
+ * the diagnostic server didn't see it), in place. A device the companion can't hear that the server sees is on the bus.
+ */
+export function joinWatched(report: Report, snapshot: Snapshot, watched: { name: string; bus: string; model: string; id: number }[]): void {
+  for (const f of report.findings) {
+    const w = WATCHED_DEVICE_RULES.has(f.rule) ? watched.find((d) => d.name === f.about) : undefined
+    if (!w) continue
+    const d = snapshotDeviceFor(snapshot, w)
+    f.evidence['in the robot snapshot'] = typeof d === 'string'
+      ? d
+      : `${d.model} ${d.id} on the ${busLabel(d.bus)}${d.name ? ` ("${d.name}")` : ''}, serial ${d.serial || '?'}, firmware ${d.firmware || '?'}`
+  }
+}
