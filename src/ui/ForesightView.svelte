@@ -14,7 +14,7 @@
   import { profileId } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
-  import { ASSISTED_RULES, markOnchecks, wantedLines, type MarkedLine } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, checklistLines, wantedLines, type ChecklistLine } from '../foresight/onchecks.ts'
   import { SNAPSHOT_RULES } from '../foresight/snapshot-checks.ts'
   import { parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import type { VerdictItem } from '../foresight/verdict.ts'
@@ -112,7 +112,7 @@
   }
   type ReadingItem = { level: string; rule: string; title: string; explains?: ReadingItem[] }
   const readingItem = (i: VerdictItem): ReadingItem => ({ level: i.level, rule: i.finding.rule, title: i.finding.title, ...(i.explains.length ? { explains: i.explains.map(readingItem) } : {}) })
-  const onchecks = $derived(markOnchecks(checked))
+  const onchecks = $derived(checklistLines(checked))
   // Problems no check can see yet (rules/wanted.ts): grey context, never in the verdict.
   const wanted = $derived(wantedLines(checked))
   // Only red and amber items decide GO/NO-GO; grey ones (context, or a step for a person) sit in their own short list.
@@ -122,10 +122,10 @@
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
   const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
   const unrun = $derived(checked ? didNotRun(checked.verdict.notChecked.length + checked.verdict.crashed.length, totalChecks) : null)
-  // Lines the tool can never judge (a person's) fold away; the rest are live, in the team's order.
-  const inert = (l: { state: string }) => l.state === 'by eye'
-  const liveLines = $derived(onchecks.filter((l) => !inert(l)))
-  const inertLines = $derived(onchecks.filter(inert))
+  // The checklist keeps the team's order.
+  // Lines the tool can never judge (a person's) and context that is never a fault (the gyro) fold away; the rest are live.
+  const liveLines = $derived(onchecks.filter((l) => !l.folded))
+  const inertLines = $derived(onchecks.filter((l) => l.folded))
   const snapshotWhy = $derived(checked && !checked.snapshotUsed ? checked.report.skipped.find((s) => s.rule === SNAPSHOT_RULES[0])?.reason ?? null : null)
   let reportView = $state<{ save: () => Promise<string | null> }>()
   let saveProblem = $state<string | null>(null)
@@ -133,7 +133,7 @@
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
 
-{#snippet checkLine(l: MarkedLine)}
+{#snippet checkLine(l: ChecklistLine)}
   <li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.detail}</span></li>
 {/snippet}
 
@@ -229,12 +229,12 @@
         {#each liveLines as l (l.line)}{@render checkLine(l)}{/each}
       </ul>
       <details class="inert">
-        <summary>{inertLines.length} lines for a person</summary>
+        <summary>{inertLines.length} lines for a person or context</summary>
         <ul>
           {#each inertLines as l (l.line)}{@render checkLine(l)}{/each}
         </ul>
       </details>
-      <p class="small">In the team's 2026 checklist order. A line is marked only from the check on screen now; "By eye" lines are for a person and never count toward GO.</p>
+      <p class="small">In the team's 2026 checklist order. A line is marked only from the check on screen now; "By eye" lines are for a person and never count toward GO. A merged line shows the worst of its parts and names each one that is not OK.</p>
       {#if wanted.length}
         <details class="inert">
           <summary>{wanted.length} wanted checks: problems no check can see yet (context, never changes the verdict)</summary>
