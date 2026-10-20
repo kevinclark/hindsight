@@ -11,6 +11,7 @@
  * CANivore found) and passes it to every subsystem, so no ID needs a bus to tell it apart.
  */
 
+import { ADVANTAGEKIT_SIGNALS } from './advantagekit.ts'
 import type { MotorGroup, RobotProfile } from './types.ts'
 
 const swerveModules = ['Front Left', 'Front Right', 'Back Left', 'Back Right']
@@ -33,31 +34,7 @@ export const offseason2026: RobotProfile = {
   game: { name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 140, field: { length: 16.518, width: 8.043 } },
 
   signals: {
-    enabled: '/DriverStation/Enabled',
-    autonomous: '/DriverStation/Autonomous',
-    fmsAttached: '/DriverStation/FMSAttached',
-    dsAttached: '/DriverStation/DSAttached',
-    eventName: '/DriverStation/EventName',
-    matchType: '/DriverStation/MatchType',
-    matchNumber: '/DriverStation/MatchNumber',
-    replayNumber: '/DriverStation/ReplayNumber',
-    allianceStation: '/DriverStation/AllianceStation',
-
-    gitSha: '/RealMetadata/GitSHA',
-    gitBranch: '/RealMetadata/GitBranch',
-    gitDate: '/RealMetadata/GitDate',
-    gitDirty: '/RealMetadata/GitDirty',
-
-    epochMicros: '/SystemStats/EpochTimeMicros',
-    systemTimeValid: '/SystemStats/SystemTimeValid',
-    batteryVoltage: '/SystemStats/BatteryVoltage',
-    brownedOut: '/SystemStats/BrownedOut',
-    brownoutVoltage: '/SystemStats/BrownoutVoltage',
-    commsDisableCount: '/SystemStats/CommsDisableCount',
-    systemActive: '/SystemStats/SystemActive',
-
-    loopCycleMs: '/RealOutputs/LoggedRobot/FullCycleMS',
-    console: '/RealOutputs/Console',
+    ...ADVANTAGEKIT_SIGNALS,
     alertGroups: ['/RealOutputs/Alerts', '/RealOutputs/PhotonAlerts', '/RealOutputs/Choreo Alerts'],
 
     gyroPitch: '/Swerve/Gyro/Pitch',
@@ -66,10 +43,7 @@ export const offseason2026: RobotProfile = {
     accelY: '/Swerve/Gyro/AYMetersPerSecondSq',
     odometryPose: '/RealOutputs/Odometry/Robot',
 
-    emergencyStop: '/DriverStation/EmergencyStop',
-    matchTimeLeft: '/DriverStation/MatchTime',
     autoChoice: '/NetworkInputs/SmartDashboard/Autos',
-    joystickButtonCounts: [0, 1, 2, 3, 4, 5].map((n) => `/DriverStation/Joystick${n}/ButtonCount`),
   },
 
   // FRC8033BatteryTracker (kevinclark/8033-battery-tracker). Outputs are under /RealOutputs; the gauge is logged

@@ -21,7 +21,8 @@ what you already confirmed.
 
 Hindsight finds a motor when the log has a `struct:TalonFX` entry for it, or a current key (`…SupplyCurrentAmps`,
 `…StatorCurrentAmps`, `…CurrentAmps`) with the same motor's velocity, voltage, temperature or connected key beside
-it. It does not use `/RealOutputs` (computed values), dashboard tables (`SmartDashboard`, `Elastic`), or currents
+it. A bare `Current` with no unit (`/Arm/Position/Current`) is often a present value, so a velocity beside it isn't
+enough: it needs a voltage, temperature or connected key. It does not use `/RealOutputs` (computed values), dashboard tables (`SmartDashboard`, `Elastic`), or currents
 logged as arrays; those are listed under **Seen, not used**.
 
 ## 2. Confirm
@@ -38,7 +39,8 @@ Everything Hindsight guessed is marked. Check, top to bottom:
    Tuner X with the same words as the log ("Shooter Leader"), or when it is the only one left. Code hints are shown
    next to each ID. Naming your devices in Tuner X makes this step fill itself next time.
 5. **Groups.** Swerve modules and a leader with its followers are grouped for you. Merge, split or rename the rest:
-   one group per set of motors that share a current limit. Tick **these motors run one control loop** only when they
+   one group per set of motors that share a current limit. Each group needs its own name: findings name a group by it,
+   and a warning says when two groups are called the same. Tick **these motors run one control loop** only when they
    are a leader and followers that should spin at the same speed (leader/follower groups come ticked: confirm).
 6. **Limits** come from the snapshot, labelled "as running on the robot". If a group's motors run different limits,
    it says so: split the group or fix the motors.
@@ -48,7 +50,8 @@ under "Not checked".
 
 ## 3. Where it's kept
 
-- **Keep in this browser** stores it in this browser on this computer. Logs you drop after that are matched to it by
+- **Keep in this browser** stores it in this browser on this computer, listed as "<name> @ <branch> (kept in this
+  browser)" wherever a robot is chosen. Keeping a profile you opened from the kept list replaces it, even after a rename. Logs you drop after that are matched to it by
   the code name in the log (`Codebase` or `ProjectName`) in Match review and the Session view. Logs already loaded keep
   their old choice: drop them again, or choose it with **use…** / **Robot for this session**.
 - **Save profile.json** downloads it. Commit it next to your robot code, or share it; dropping it here loads it again.

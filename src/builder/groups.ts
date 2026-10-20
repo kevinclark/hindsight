@@ -127,5 +127,13 @@ export function groupMotors(motors: LogMotor[]): DraftGroup[] {
     const same = groups.filter((o) => o.name === g.name)
     if (same.length > 1) for (const o of same) o.name = humanize(`${segments(o.motors[0].motor.path).slice(-3, -1).join(' ')} ${o.name}`)
   }
+  // The folder may not tell them apart either: number what is still repeated.
+  const seen = new Set<string>()
+  for (const g of groups) {
+    let name = g.name
+    for (let n = 2; seen.has(name.toLowerCase()); n++) name = `${g.name} ${n}`
+    g.name = name
+    seen.add(name.toLowerCase())
+  }
   return groups
 }

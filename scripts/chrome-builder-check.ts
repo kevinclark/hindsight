@@ -126,6 +126,18 @@ for (let i = 0; i < 25; i++) { saved = readdirSync(downloads).filter((f) => !f.e
 let savedMotors = -1, savedError = ''
 try { savedMotors = parseProfileJson(readFileSync(`${downloads}/${saved[0]}`, 'utf8')).motorGroups.reduce((n, g) => n + g.motors.length, 0) } catch (e) { savedError = String(e) }
 
+// Rename the opened profile and keep it: it replaces itself. Then name a group like another: a warning says so.
+const setInput = (selector: string, value: string) => evalIn(sessionId, `(() => { const i = document.querySelector(${JSON.stringify(selector)}); i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+await setInput('label:has(> input[type=text]) input', 'Renamed Robot')
+await sleep(200)
+await evalIn(sessionId, `[...document.querySelectorAll('button')].find(b => b.innerText === 'Keep in this browser').click()`)
+await sleep(300)
+const renamedNote = await evalIn(sessionId, `document.querySelector('.actions [role=status]')?.innerText`)
+const renamedList = await evalIn(sessionId, `[...document.querySelectorAll('.kept li')].map(li => li.innerText.replace(/\\s+/g, ' ').trim())`)
+await setInput('section.group[data-group="Turn"] label input[type=text]', 'drive')
+await sleep(200)
+const duplicateWarning = await evalIn(sessionId, `[...document.querySelectorAll('.warn')].map(w => w.innerText).find(t => /Two groups are called/.test(t)) ?? null`)
+
 const allSelected = seen.canIds.every((c: any) => c.value && c.value !== '')
 const checks: Record<string, boolean> = {
   'motor rows: 10': seen.rows === 10,
@@ -140,10 +152,12 @@ const checks: Record<string, boolean> = {
   'saved file is example-robot.profile.json': saved.length === 1 && saved[0] === 'example-robot.profile.json',
   'saved file parses with parseProfileJson': savedError === '',
   'saved file has 10 motors': savedMotors === 10,
+  'renamed then kept: replaces the old one': renamedList.length === 1 && /Renamed Robot/.test(renamedList[0]) && /in place of "Example Robot"/.test(renamedNote ?? ''),
+  'two groups named alike: warned': /"Drive"/.test(duplicateWarning ?? ''),
   'no page errors': consoleErrors.length === 0,
 }
 for (const [name, ok] of Object.entries(checks)) console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`)
-console.log(JSON.stringify({ chrome: execSync(`"${CHROME}" --version`).toString().trim(), page, seen, keptNote, keptList, saved, savedError, consoleErrors }, null, 1))
+console.log(JSON.stringify({ chrome: execSync(`"${CHROME}" --version`).toString().trim(), page, seen, keptNote, keptList, renamedNote, renamedList, duplicateWarning, saved, savedError, consoleErrors }, null, 1))
 console.log(`${Object.values(checks).filter(Boolean).length} of ${Object.keys(checks).length} checks passed`)
 ws.close()
 chrome.kill()

@@ -33,6 +33,11 @@ export function draftWarnings(groups: { name: string; groupedBy?: string; motors
   if (motors === 0) out.push('No motors found in this log: rules about motors and currents will be "not checked".')
   else if (motors < 4) out.push(`Only ${motors} motor${motors === 1 ? '' : 's'} found. If the robot has more, the total current (battery model, main breaker) will read too low.`)
   if (motors > 0 && !groups.some((g) => g.groupedBy === 'swerve')) out.push('No drive motors recognised (no swerve modules). If the drive motors log their currents, check their names below.')
+  // Rules and findings name a group by its name, so two groups with one name would read as one.
+  const names = groups.map((g) => g.name.trim().toLowerCase())
+  const repeated = [...new Set(names.filter((n, i) => n && names.indexOf(n) !== i).map((n) => groups[names.indexOf(n)].name.trim()))]
+  for (const n of repeated) out.push(`Two groups are called "${n}": give each group its own name, or move the motors into one group.`)
+  if (groups.some((g) => !g.name.trim())) out.push('A group has no name: findings name a group by it.')
   return out
 }
 

@@ -16,17 +16,24 @@ export function keptProfiles(): ProfileJson[] {
   return raw.flatMap((p) => { try { return [parseProfileJson(JSON.stringify(p))] } catch { return [] } })
 }
 
-/** The kept profiles as RobotProfiles, for chooseProfile and the "use…" lists. */
-export function storedProfiles(): RobotProfile[] {
-  return keptProfiles().map(toProfile)
-}
-
 /** The name a kept profile is known by: unique among kept ones and distinct from the built-in profiles' ids. */
 export const keptId = (json: Pick<ProfileJson, 'name' | 'code'>) => `${json.name} @ ${json.code?.branch || 'any branch'} (kept in this browser)`
 
-/** Keep (or replace, by name and branch) a profile. False when the browser wouldn't store it. */
-export function keepProfile(json: ProfileJson): boolean {
-  const all = keptProfiles().filter((p) => keptId(p) !== keptId(json))
+/** A kept profile as a RobotProfile, carrying its keptId (profiles/index.ts profileId reads it). */
+export const keptProfile = (json: ProfileJson): RobotProfile => ({ ...toProfile(json), keptAs: keptId(json) })
+
+/** The kept profiles as RobotProfiles, for chooseProfile and the "use…" lists. */
+export function storedProfiles(): RobotProfile[] {
+  return keptProfiles().map(keptProfile)
+}
+
+/**
+ * Keep a profile, replacing the kept one with its name and branch, and `replaces` (the keptId it was opened or last
+ * kept as, so a renamed profile replaces itself instead of leaving its old name behind). False when the browser
+ * wouldn't store it.
+ */
+export function keepProfile(json: ProfileJson, replaces?: string | null): boolean {
+  const all = keptProfiles().filter((p) => keptId(p) !== keptId(json) && keptId(p) !== replaces)
   try { localStorage.setItem(KEY, JSON.stringify([json, ...all])); return true } catch { return false }
 }
 

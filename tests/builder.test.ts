@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { openWpilog } from '../src/readers/wpilog.ts'
-import { PROFILES } from '../src/profiles/index.ts'
 import { chooseProfile } from '../src/profiles/choose.ts'
 import { ADVANTAGEKIT_SIGNALS } from '../src/profiles/advantagekit.ts'
 import { offseason2025 } from '../src/profiles/2025-offseason.ts'
@@ -15,7 +14,9 @@ import { fromProfile, parseProfileJson, toProfile } from '../src/builder/json.ts
 import { motorsFromLog } from '../src/builder/motors.ts'
 import { groupMotors } from '../src/builder/groups.ts'
 import { matchByName } from '../src/builder/snapshot.ts'
-import { allMotors, applySnapshot, carryConfirmations, draftProfile, setDevice } from '../src/builder/draft.ts'
+import { allMotors, applySnapshot, carryConfirmations, draftProfile, draftWarnings, setDevice } from '../src/builder/draft.ts'
+import { keepProfile, keptId, keptProfiles, storedProfiles } from '../src/builder/store.ts'
+import { PROFILES, profileId } from '../src/profiles/index.ts'
 import { codeHints, shaWarning } from '../src/builder/code-hints.ts'
 import { backtestLog } from '../src/builder/backtest.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
@@ -266,6 +267,55 @@ describe('review fixes', () => {
   it('reads Kotlin constructors (no `new`) as code hints', () => {
     const h = codeHints([{ path: 'Shooter.kt', text: 'object Ids { const val LEADER = 10 }\nval a = TalonFX(Ids.LEADER, "rio")\nval b = getTalonFX(3)\n' }])
     expect(h.sites.map((s) => [s.id, s.expr])).toEqual([[10, 'Ids.LEADER']])
+  })
+})
+
+describe('deferred review fixes', () => {
+  it('reads a bare "Current" beside only a velocity as a value, not a motor; with a connected flag it is one', () => {
+    const { motors, notUsed } = motorsFromLog(openWpilog(writeWpilog([
+      ...DS,
+      d('/Arm/Position/Current'), d('/Arm/Position/Velocity'), d('/Arm/Position/Goal'),
+      d('/Wrist/Current'), d('/Wrist/Velocity'), b('/Wrist/Connected'),
+      d('/Roller/CurrentAmps'), d('/Roller/VelocityRPS'),
+    ])))
+    expect(motors.map((m) => m.path)).toEqual(['/Roller', '/Wrist'])
+    expect(notUsed.find((n) => n.key === '/Arm/Position/Current')?.why).toMatch(/only a velocity/)
+  })
+
+  it('gives every group its own name, even when the folders don\'t tell them apart', () => {
+    const m = (path: string) => ({ path, from: 'keys' as const, supplyCurrent: `${path}/SupplyCurrentAmps` })
+    const names = groupMotors([m('/A/X/Roller'), m('/B/X/Roller'), m('/A/Y/X/Roller')]).map((g) => g.name)
+    expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(3)
+  })
+
+  it('warns when the student names two groups alike', () => {
+    const g = (name: string) => ({ name, motors: [{}, {}, {}, {}] })
+    expect(draftWarnings([g('Shooter'), g('shooter '), g('Intake')]).join(' ')).toMatch(/Two groups are called "Shooter"/)
+    expect(draftWarnings([g('Shooter'), g('Intake')]).join(' ')).not.toMatch(/Two groups/)
+  })
+
+  describe('kept profiles', () => {
+    const store = new Map<string, string>()
+    globalThis.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v) } } as Storage
+    const json = { ...fromProfile(offseason2026), motorGroups: [] }
+
+    it('use one id everywhere, never a built-in profile\'s', () => {
+      store.clear()
+      keepProfile(json)
+      const [p] = storedProfiles()
+      expect(profileId(p)).toBe(keptId(json))
+      expect(PROFILES.map(profileId)).not.toContain(profileId(p))
+      expect((fromProfile(p) as { keptAs?: string }).keptAs).toBeUndefined()
+      expect(toProfile({ ...json, keptAs: 'x' } as typeof json).keptAs).toBeUndefined()
+    })
+
+    it('replace the one they were opened as when renamed, and leave others alone', () => {
+      store.clear()
+      keepProfile({ ...json, name: 'Other' })
+      keepProfile(json)
+      keepProfile({ ...json, name: 'Renamed' }, keptId(json))
+      expect(keptProfiles().map((p) => p.name).sort()).toEqual(['Other', 'Renamed'])
+    })
   })
 })
 

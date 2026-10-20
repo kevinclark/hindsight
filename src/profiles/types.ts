@@ -88,6 +88,11 @@ export interface RobotProfile {
   /** The robot, as people call it: "2026 offseason robot". */
   name: string
   /**
+   * Set only on a profile kept in this browser (src/builder/store.ts keptId): the id every page knows it by, so a
+   * kept profile never shares an id with a built-in one of the same name and branch.
+   */
+  keptAs?: string
+  /**
    * How a log says it came from this robot: the code's /RealMetadata/Codebase value (an AdvantageKit metadata entry
    * the robot code sets). Several profiles may share one codebase, each pinned to a different branch.
    */

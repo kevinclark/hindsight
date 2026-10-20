@@ -8,15 +8,14 @@
   import { busLabel, parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import { chooseProfile, fieldText, inventory, LIMIT_FIELDS, limitsReport, POWER_FAULTS, stickyFaults, type InventoryStatus, type SnapshotProfile } from '../snapshot/report.ts'
   import { diffSnapshots } from '../snapshot/diff.ts'
-  import { keptId } from '../builder/store.ts'
-  import { toProfile } from '../builder/json.ts'
+  import { keptProfile } from '../builder/store.ts'
   import { keptNow } from './kept-profiles.svelte.ts'
 
   /** `limitsFrom`: the snapshot (its takenAt) a kept profile's limits were read from. */
   type Choice = { id: string; profile: SnapshotProfile; limitsFrom?: string }
   const builtIn: Choice[] = $derived([
     ...PROFILES.map((p) => ({ id: profileId(p), profile: p })),
-    ...keptNow().map((j) => ({ id: keptId(j), profile: toProfile(j) as SnapshotProfile, limitsFrom: j.limitsFrom?.snapshotTakenAt })),
+    ...keptNow().map((j) => { const p = keptProfile(j); return { id: profileId(p), profile: p as SnapshotProfile, limitsFrom: j.limitsFrom?.snapshotTakenAt } }),
   ])
 
   let snapshots = $state<Snapshot[]>([])

@@ -15,6 +15,7 @@
  *   - no gyro acceleration (the keys below are the AdvantageKit-style guess, copied from the 2026 profile).
  */
 
+import { ADVANTAGEKIT_SIGNALS } from './advantagekit.ts'
 import type { RobotProfile } from './types.ts'
 
 const swerveModules = ['Front Left', 'Front Right', 'Back Left', 'Back Right']
@@ -35,31 +36,7 @@ export const offseason2025: RobotProfile = {
   game: { name: '2025 REEFSCAPE', autoSeconds: 15, teleopSeconds: 135, field: { length: 17.548, width: 8.052 } },
 
   signals: {
-    enabled: '/DriverStation/Enabled',
-    autonomous: '/DriverStation/Autonomous',
-    fmsAttached: '/DriverStation/FMSAttached',
-    dsAttached: '/DriverStation/DSAttached',
-    eventName: '/DriverStation/EventName',
-    matchType: '/DriverStation/MatchType',
-    matchNumber: '/DriverStation/MatchNumber',
-    replayNumber: '/DriverStation/ReplayNumber',
-    allianceStation: '/DriverStation/AllianceStation',
-
-    gitSha: '/RealMetadata/GitSHA',
-    gitBranch: '/RealMetadata/GitBranch',
-    gitDate: '/RealMetadata/GitDate',
-    gitDirty: '/RealMetadata/GitDirty',
-
-    epochMicros: '/SystemStats/EpochTimeMicros',
-    systemTimeValid: '/SystemStats/SystemTimeValid',
-    batteryVoltage: '/SystemStats/BatteryVoltage',
-    brownedOut: '/SystemStats/BrownedOut',
-    brownoutVoltage: '/SystemStats/BrownoutVoltage',
-    commsDisableCount: '/SystemStats/CommsDisableCount',
-    systemActive: '/SystemStats/SystemActive',
-
-    loopCycleMs: '/RealOutputs/LoggedRobot/FullCycleMS',
-    console: '/RealOutputs/Console',
+    ...ADVANTAGEKIT_SIGNALS,
     alertGroups: ['/RealOutputs/Alerts', '/RealOutputs/PhotonAlerts', '/RealOutputs/Choreo Alerts'],
 
     // GyroIO logs Pitch, Roll, Yaw (all Rotation2d), YawVelocityRadPerSec and IsConnected, and no acceleration.
@@ -70,10 +47,7 @@ export const offseason2025: RobotProfile = {
     accelY: '/Swerve/Gyro/AYMetersPerSecondSq',
     odometryPose: '/RealOutputs/Odometry/Robot',
 
-    emergencyStop: '/DriverStation/EmergencyStop',
-    matchTimeLeft: '/DriverStation/MatchTime',
     autoChoice: '/NetworkInputs/SmartDashboard/Autos',
-    joystickButtonCounts: [0, 1, 2, 3, 4, 5].map((n) => `/DriverStation/Joystick${n}/ButtonCount`),
   },
 
   // This robot has no battery tracker. These are the 2026 keys (FRC8033BatteryTracker), kept so the code that

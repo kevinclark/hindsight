@@ -26,6 +26,8 @@
   let keptNote = $state('')
   let draftWarningsAtDraft = $state<string[]>([])
   let kept = $state<ProfileJson[]>(keptProfiles())
+  // The keptId of the kept profile being edited (opened from the list, or kept since): keeping replaces it, renamed or not.
+  let keptAs = $state<string | null>(null)
 
   const SOURCE_WORDS: Record<string, string> = { log: 'log', snapshot: 'snapshot', you: 'you', 'code hint': 'code hint' }
   const talons = $derived((snapshot?.devices ?? []).filter((d) => d.isMotor))
@@ -46,8 +48,9 @@
   const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'robot'
   const startsWithWpilog = (b: Uint8Array) => b.length >= 6 && String.fromCharCode(...b.subarray(0, 6)) === 'WPILOG'
 
-  /** A profile.json that leaves out the game or code fields still shows editable ones. */
-  function open(p: ProfileJson) {
+  /** A profile.json that leaves out the game or code fields still shows editable ones. `fromKept`: opened from the kept list. */
+  function open(p: ProfileJson, fromKept = false) {
+    keptAs = fromKept ? keptId(p) : null
     const copy = structuredClone($state.snapshot(p)) as ProfileJson
     copy.game ??= { name: '', autoSeconds: 15, teleopSeconds: 135 }
     copy.code ??= { repo: '', branch: '', sha: '' }
@@ -156,7 +159,7 @@
     let target: GroupJson | undefined
     if (to === 'new') {
       let name = motor.name, n = 2
-      while (json.motorGroups.some((g) => g.name === name)) name = `${motor.name} ${n++}`
+      while (json.motorGroups.some((g) => g.name.trim().toLowerCase() === name.toLowerCase())) name = `${motor.name} ${n++}`
       json.motorGroups.push({ name, groupedBy: 'you', motors: [] })
       target = json.motorGroups[json.motorGroups.length - 1]
     } else target = json.motorGroups[Number(to)]
@@ -178,7 +181,12 @@
 
   function keep() {
     if (!json) return
-    keptNote = keepProfile($state.snapshot(json) as ProfileJson) ? 'kept' : "this browser didn't keep it: save the file"
+    const now = $state.snapshot(json) as ProfileJson
+    const replaced = keptAs && keptAs !== keptId(now) && kept.some((p) => keptId(p) === keptAs) ? kept.find((p) => keptId(p) === keptAs)!.name : null
+    if (keepProfile(now, keptAs)) {
+      keptNote = replaced ? `kept, in place of "${replaced}"` : 'kept'
+      keptAs = keptId(now)
+    } else keptNote = "this browser didn't keep it: save the file"
     kept = keptProfiles()
     changed()
   }
@@ -188,6 +196,7 @@
   }
   function forget(p: ProfileJson) {
     forgetProfile(keptId(p))
+    if (keptAs === keptId(p)) keptAs = null
     kept = keptProfiles()
     changed()
   }
@@ -350,7 +359,7 @@
     <ul>
       {#each kept as p (keptId(p))}
         <li data-kept={keptId(p)}>{p.name} <small class="muted">{p.code?.branch || 'any branch'} · {p.motorGroups.reduce((n, g) => n + g.motors.length, 0)} motors</small>
-          <button class="link" onclick={() => open(p)} aria-label="Open {keptId(p)}">open</button>
+          <button class="link" onclick={() => open(p, true)} aria-label="Open {keptId(p)}">open</button>
           <button class="link" onclick={() => forget(p)} aria-label="Forget {keptId(p)}">forget</button>
         </li>
       {/each}

@@ -39,7 +39,7 @@ export interface GroupJson extends Omit<MotorGroup, 'motors' | 'limits'> {
 
 export type ZeroingJson = Omit<ZeroingMechanism, 'doneMessage'> & { doneMessage: { source: string; flags: string } }
 
-export interface ProfileJson extends Partial<Omit<RobotProfile, 'motorGroups' | 'zeroing' | 'signals' | 'battery'>> {
+export interface ProfileJson extends Partial<Omit<RobotProfile, 'motorGroups' | 'zeroing' | 'signals' | 'battery' | 'keptAs'>> {
   schema?: typeof PROFILE_SCHEMA
   name: string
   motorGroups: GroupJson[]
@@ -65,9 +65,12 @@ export const DEFAULT_POWER: RobotProfile['power'] = { otherLoadsAmps: 3, restVol
 
 const NO_LIMITS: CurrentLimits = { where: 'not known: drop a robot snapshot, or set them in the profile' }
 
-/** A RobotProfile from a profile.json. Fields the file leaves out get their empty value; builder-only fields are dropped. */
+/**
+ * A RobotProfile from a profile.json. Fields the file leaves out get their empty value; builder-only fields are
+ * dropped, and so is keptAs: only the browser's store gives a profile that id.
+ */
 export function toProfile(json: ProfileJson): RobotProfile {
-  const { schema: _s, limitsFrom: _l, builtFrom: _b, motorGroups, signals, battery, zeroing, ...rest } = json
+  const { schema: _s, limitsFrom: _l, builtFrom: _b, keptAs: _k, motorGroups, signals, battery, zeroing, ...rest } = json as ProfileJson & { keptAs?: unknown }
   return {
     codebase: '',
     code: { repo: '', branch: '', sha: '' },
@@ -90,7 +93,7 @@ export function toProfile(json: ProfileJson): RobotProfile {
 
 /** A profile.json from a RobotProfile (a built-in one, or one toProfile made). */
 export function fromProfile(profile: RobotProfile): ProfileJson {
-  const { zeroing, ...rest } = profile
+  const { zeroing, keptAs: _k, ...rest } = profile
   return {
     schema: PROFILE_SCHEMA,
     ...structuredClone(rest),

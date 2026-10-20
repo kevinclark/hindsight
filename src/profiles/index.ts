@@ -11,7 +11,7 @@ import type { RobotProfile } from './types.ts'
 /** 8033's robots, then other teams' robots read from their public logs (worked examples of non-AdvantageKit logs). */
 export const PROFILES: RobotProfile[] = [offseason2026, offseason2026Event, offseason2025, frc340Nyro2026, frc340Daly2026, frc3602_2026]
 
-/** A short, stable name for a profile: the robot and the branch its code is pinned to. */
+/** A short, stable name for a profile: the robot and the branch its code is pinned to (a kept profile: its keptAs). */
 export function profileId(p: RobotProfile): string {
-  return `${p.name} @ ${p.code.branch}`
+  return p.keptAs ?? `${p.name} @ ${p.code.branch}`
 }
