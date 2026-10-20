@@ -8,7 +8,7 @@
  * whatever the lines show (verdict.ts).
  */
 import type { Report } from '../rules/index.ts'
-import type { Verdict } from './verdict.ts'
+import { allItems, type Verdict } from './verdict.ts'
 import { SNAPSHOT_RULES, TAKE_SNAPSHOT } from './snapshot-checks.ts'
 import { WANTED_CHECKS } from '../rules/wanted.ts'
 
@@ -67,7 +67,8 @@ export function markOnchecks(current: { verdict: Verdict; report: Report; snapsh
     if (l.byEye) return { ...l, state: 'by eye', detail: 'check by eye' }
     if (!current) return { ...l, state: 'not checked', detail: 'no current check' }
     const rules = l.rules ?? []
-    const items = current.verdict.items.filter((i) => rules.includes(i.finding.rule))
+    // Items under another count too: "No alerts on Elastic" is not OK while Elastic shows one, whatever explains it.
+    const items = allItems(current.verdict).filter((i) => rules.includes(i.finding.rule))
     const worst = items.find((i) => i.level === 'red') ?? items.find((i) => i.level === 'amber')
     if (worst) return { ...l, state: worst.level as 'red' | 'amber', detail: worst.finding.title }
     const steps = items.filter((i) => i.level === 'grey' && l.assisted?.includes(i.finding.rule))
