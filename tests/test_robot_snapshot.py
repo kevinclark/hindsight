@@ -12,6 +12,7 @@ import ast
 import json
 import os
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -23,8 +24,6 @@ import robot_snapshot_fixtures as fx  # noqa: E402
 
 tool = fx.load_tool()
 QUIET = lambda *_: None  # noqa: E731
-# The fake owlets are #! scripts, which Windows can't run.
-POSIX_ONLY = unittest.skipUnless(os.name == "posix", "the fake owlet is a #! script")
 NEVER = ("blink", "controlv2", "setconfigv2", "setid", "setname", "setupdatefrequency", "plotpro", "getcontrols",
          "getsignalvalue", "fieldupgrade", "setconfig", "selftest", "getconfig")
 
@@ -457,16 +456,47 @@ def hoot_bytes(compliancy, size=200):
     return bytes(data)
 
 
-def fake_owlet(folder: Path, name: str, log: Path):
-    """A stand-in owlet: logs its argv and writes the output file when asked to convert."""
-    path = folder / name
-    path.write_text("#!%s\nimport sys, json\nopen(%r, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
-                    "args = sys.argv[1:]\n"
-                    "if '--scan' in args: print('RobotEnable: 1ff00\\nRobotMode:   2ff00')\n"
-                    "elif '--check-pro' in args: print('hoot file is NOT Pro-licensed')\n"
-                    "elif '-f' in args: open(args[1], 'wb').write(b'WPILOG')\n" % (sys.executable, str(log)))
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+LAUNCHER = """using System;
+using System.Diagnostics;
+using System.IO;
+class Owlet {
+    static int Main(string[] args) {
+        string script = Path.ChangeExtension(Process.GetCurrentProcess().MainModule.FileName, ".py");
+        string python = File.ReadAllLines(script)[0].Substring(2);
+        var start = new ProcessStartInfo(python, "\\"" + script + "\\"") { UseShellExecute = false };
+        foreach (string a in args) start.Arguments += " \\"" + a.Replace("\\"", "\\\\\\"") + "\\"";
+        using (var p = Process.Start(start)) { p.WaitForExit(); return p.ExitCode; }
+    }
+}
+"""
+
+
+def script_owlet(folder: Path, name: str, source: str) -> Path:
+    """A stand-in owlet running `source` with this Python. The real one is an executable the tool starts directly: on POSIX
+    that is a #! script, on Windows (where owlet is owlet-*.exe) a small .exe, built with the csc that ships with Windows,
+    that runs the sibling .py script."""
+    script = "#!%s\n%s" % (sys.executable, source)
+    if os.name == "posix":
+        path = folder / name
+        path.write_text(script)
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+        return path
+    path = folder / (name + ".exe")
+    (folder / (name + ".py")).write_text(script, newline="\n")
+    csc = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe"
+    (folder / "launcher.cs").write_text(LAUNCHER)
+    subprocess.run([str(csc), "/nologo", "/out:" + str(path), str(folder / "launcher.cs")], check=True, capture_output=True)
+    (folder / "launcher.cs").unlink()
     return path
+
+
+def fake_owlet(folder: Path, name: str, log: Path) -> Path:
+    """A stand-in owlet: logs its argv and writes the output file when asked to convert."""
+    return script_owlet(folder, name, "import sys, json\nopen(%r, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+                        "args = sys.argv[1:]\n"
+                        "if '--scan' in args: print('RobotEnable: 1ff00\\nRobotMode:   2ff00')\n"
+                        "elif '--check-pro' in args: print('hoot file is NOT Pro-licensed')\n"
+                        "elif '-f' in args: open(args[1], 'wb').write(b'WPILOG')\n" % str(log))
 
 
 class Hoot(unittest.TestCase):
@@ -492,12 +522,11 @@ class Hoot(unittest.TestCase):
         (self.dir / "short.hoot").write_bytes(b"x" * 70)
         self.assertIsNone(tool.hoot_compliancy(self.dir / "short.hoot"))
 
-    @POSIX_ONLY
     def test_local_hoot_converted_with_cached_owlet(self):
         cache = self.dir / "owlet"
         cache.mkdir()
         log = self.dir / "owlet-calls.jsonl"
-        fake_owlet(cache, "owlet-26.3.0-C19", log)
+        owlet = fake_owlet(cache, "owlet-26.3.0-C19", log)
         fake_owlet(cache, "owlet-25.4.1-C13", self.dir / "wrong-owlet.jsonl")
         hoot = self.dir / "in" / "_Q1_rio_x.hoot"
         hoot.parent.mkdir()
@@ -513,7 +542,7 @@ class Hoot(unittest.TestCase):
         s = json.loads((out / "snapshot.json").read_text(encoding="utf-8"))
         self.assertIsNone(s["address"])
         record = s["hoot"]["files"][0]
-        self.assertEqual((record["compliancy"], record["owlet"], record["wpilog"]), (19, "owlet-26.3.0-C19", "_Q1_rio_x.wpilog"))
+        self.assertEqual((record["compliancy"], record["owlet"], record["wpilog"]), (19, owlet.name, "_Q1_rio_x.wpilog"))
         self.assertIn("NOT Pro-licensed", record["checkPro"]["stdout"])
         self.assertEqual(hoot.read_bytes(), original)  # the original is untouched
         # owlet is never copied anywhere
@@ -536,11 +565,10 @@ class Hoot(unittest.TestCase):
             {"path": "/home/lvuser/logs/run1/_P3_rio_2026-01-10_09-05-00.hoot", "bytes": 400000},
         ])
 
-    @POSIX_ONLY
     def test_list_and_copy_from_robot(self):
         cache = self.dir / "owlet"
         cache.mkdir()
-        fake_owlet(cache, "owlet-26.3.0-C19", self.dir / "calls.jsonl")
+        owlet = fake_owlet(cache, "owlet-26.3.0-C19", self.dir / "calls.jsonl")
         calls = []
 
         def runner(argv, timeout=10):
@@ -554,7 +582,8 @@ class Hoot(unittest.TestCase):
                 return {"rc": 0, "stdout": "", "stderr": ""}
             return tool.run_local(argv, timeout)  # the fake owlet
 
-        run = Run(extra=["--hoot-copy", "*_Q28_*", "--owlet-dir", str(cache)], runner=runner)
+        with mock.patch.object(tool.platform, "system", return_value="Darwin"):  # the route check is skipped on Windows
+            run = Run(extra=["--hoot-copy", "*_Q28_*", "--owlet-dir", str(cache)], runner=runner)
         self.assertEqual(run.code, 0)
         ssh = [c for c in calls if c[0] == "ssh"]
         scp = [c for c in calls if c[0] == "scp"]
@@ -562,7 +591,7 @@ class Hoot(unittest.TestCase):
         self.assertEqual(ssh[0][-1], tool.HOOT_LIST_COMMAND)
         self.assertEqual(sorted(c[-2].rsplit("/", 1)[-1] for c in scp), ["_Q28_ABCDEF0123_2026-01-10_10-05-00.hoot", "_Q28_rio_2026-01-10_10-05-00.hoot"])
         self.assertTrue(all(c[-2].startswith("lvuser@127.0.0.1:/") for c in scp))
-        self.assertEqual({c[0] for c in calls}, {"route", "ssh", "scp", str(cache / "owlet-26.3.0-C19")})
+        self.assertEqual({c[0] for c in calls}, {"route", "ssh", "scp", str(owlet)})
         hoot = run.snapshot["hoot"]
         self.assertEqual(len(hoot["listed"]), 3)
         self.assertEqual(sorted(f["wpilog"] for f in hoot["files"]), ["_Q28_ABCDEF0123_2026-01-10_10-05-00.wpilog", "_Q28_rio_2026-01-10_10-05-00.wpilog"])
@@ -588,13 +617,10 @@ class Hoot(unittest.TestCase):
         run = Run(extra=["--hoot-list"], runner=runner)
         self.assertIn("Listing failed (ssh 255)", run.snapshot["hoot"]["notes"][0])
 
-    @POSIX_ONLY
     def test_failed_conversion_not_reported_as_converted(self):
         cache = self.dir / "owlet"
         cache.mkdir()
-        owlet = cache / "owlet-26.3.0-C19"
-        owlet.write_text("#!%s\nimport sys\nargs = sys.argv[1:]\nif '-f' in args:\n    open(args[1], 'wb').write(b'partial')\n    sys.exit(3)\n" % sys.executable)
-        owlet.chmod(owlet.stat().st_mode | stat.S_IXUSR)
+        script_owlet(cache, "owlet-26.3.0-C19", "import sys\nargs = sys.argv[1:]\nif '-f' in args:\n    open(args[1], 'wb').write(b'partial')\n    sys.exit(3)\n")
         hoot = self.dir / "a.hoot"
         hoot.write_bytes(hoot_bytes(19))
         out = self.dir / "snap"

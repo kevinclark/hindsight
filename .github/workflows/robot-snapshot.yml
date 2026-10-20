@@ -29,7 +29,7 @@ jobs:
       # Every build dependency is pinned by hash, for both runners: scripts/requirements-build.in says how to regenerate it.
       # Wheels only (no build step runs), and reinstalled even if the runner's Python already has one, so each is checked.
       - run: 'python -m pip install --require-hashes --only-binary=:all: --ignore-installed -r scripts/requirements-build.txt'
-      # The few tests that need POSIX (the fake owlets are #! scripts) skip themselves on Windows.
+      # The fake owlets are #! scripts on macOS and small compiled .exe launchers on Windows, so the owlet tests run on both.
       - run: python -m unittest discover -s tests -p "test_*.py"
       - name: Build
         shell: bash
