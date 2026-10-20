@@ -145,14 +145,16 @@ export function sessionWithMarks(session: Session, t: Triage): Session {
 function summaryWithMarks(m: MatchSummary, t: Triage): MatchSummary {
   const here = matchRef(m, m.playedAt)
   const wrong = wrongHere(here, t)
+  let changed = false
   const mark = (f: SummaryFinding): SummaryFinding => {
     const w = wrong.get(f.key)
+    const by = w ? undefined : demotion(f, here, t)
+    if (w || by) changed = true
     if (w) return { ...f, wrongMark: { reason: w.note, when: w.when } }
-    const by = demotion(f, here, t)
     return by ? { ...f, severity: 'warning', demoted: { match: shortMatch(by), reason: by.note, when: by.when } } : f
   }
   const rules = Object.fromEntries(Object.entries(m.rules).map(([id, r]) => [id, { ...r, findings: r.findings.map(mark) }]))
-  return { ...m, rules }
+  return changed ? { ...m, rules } : m
 }
 
 /** The wrong marks standing on this match, by issue key. */

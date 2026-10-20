@@ -24,7 +24,7 @@
   import SessionReport from './SessionReport.svelte'
   import { buildCard } from '../report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
-  import { crashedNote, marksText, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
+  import { allMarked, crashedNote, gridCells, marksText, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks).
   let { marks, onOpen, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
@@ -105,25 +105,21 @@
   // "Once" rows (one match only, low confidence) fold under one summary; the rest stay listed. Same order inside each.
   // A row that came back after a fix stays listed whatever its confidence: it is the news, never folded away.
   const folds = (f: (typeof merged)[number]) => f.confidence === 'once' && cameBack(f.key, f.matches).length === 0
-  const listed = $derived(merged.filter((f) => !folds(f)))
-  const onceRows = $derived(merged.filter(folds))
+  // Marked "not a real problem" in every match it fired in: listed apart, like Match review's known issues.
+  const filedRows = $derived(merged.filter(allMarked))
+  const unfiled = $derived(merged.filter((f) => !allMarked(f)))
+  const listed = $derived(unfiled.filter((f) => !folds(f)))
+  const onceRows = $derived(unfiled.filter(folds))
   // What the fold holds, counted from its rows: "43 errors, 4 warnings".
   const onceHolds = $derived((['error', 'warning', 'info'] as const).map((sev) => [sev, onceRows.filter((f) => f.severity === sev).length] as const).filter(([, n]) => n > 0).map(([sev, n]) => (sev === 'info' ? `${n} info` : `${n} ${sev}${n === 1 ? '' : 's'}`)).join(', '))
   // Rule × match rows: most matches fired first, then the worse severity, then the rules' own order.
   const SEV_RANK = { error: 0, warning: 1, info: 2 } as const
   const gridRows = $derived.by(() => {
     const rows = grid.map((r, row) => {
-      const all = r.cells.map((c, i) => (c === 'fired' ? shown!.matches[i].rules[r.rule]?.findings ?? [] : null))
-      // A match where every warning and error was marked not a real problem: its cell is muted, its shape kept.
-      const filed = all.map((fs) => !!fs?.length && fs.every((f) => f.severity === 'info' || f.wrongMark))
-      const sevs = all.map((found, i) => {
-        if (!found) return null
-        const fs = filed[i] ? found : found.filter((f) => !f.wrongMark)
-        // Fired with no finding listed: shown as the worst, never quietly grey.
-        return fs.length ? fs.reduce((a, b) => (SEV_RANK[b.severity] < SEV_RANK[a] ? b.severity : a), fs[0].severity) : 'error'
-      })
-      const worst = Math.min(3, ...sevs.map((v, i) => (v && !filed[i] ? SEV_RANK[v] : 3)))
-      return { ...r, sevs, filed, worst, row }
+      // A cell marked not a real problem keeps its severity's shape, greyed, and doesn't sort the row up.
+      const cells = gridCells(shown!, r.rule)
+      const worst = Math.min(3, ...cells.map((c) => (c.severity && !c.marked ? SEV_RANK[c.severity] : 3)))
+      return { ...r, gridCells: cells, worst, row }
     })
     return rows.sort((a, b) => b.fired - a.fired || a.worst - b.worst || a.row - b.row)
   })
@@ -241,13 +237,14 @@
     downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(shown!, issues, typedBatteries), null, 1))
   }
   // "Save for Slack": the phone card as a PNG, then the print dialog (Save as PDF; the title names the file).
-  const cardOf = (s: Session) => buildCard(sessionCard(sessionModel(sessionWithMarks(s, marks), issues, typedBatteries)))
+  // `s` as the team's marks show it (`shown`).
+  const cardOf = (s: Session) => buildCard(sessionCard(sessionModel(s, issues, typedBatteries)))
   let saveProblem = $state<string | null>(null)
   async function saveForSlackSession() {
     saveProblem = null
     if (!session) return
     const base = sessionBase(session.label)
-    try { saveProblem = await saveForSlack(`${base}.session-report`, `${base}.session-card.png`, cardOf(session)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
+    try { saveProblem = await saveForSlack(`${base}.session-report`, `${base}.session-card.png`, cardOf(shown!)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   // Tells App.svelte that a session is selected, so print shows the session report instead of the app.
   $effect(() => { hasSession = !!session })
@@ -262,7 +259,7 @@
     api.sessionFile = () => (session ? `${sessionBase(session.label)}.session-findings.json` : null)
     api.sessionBase = () => (session ? sessionBase(session.label) : null)
     api.sessionFindingsJson = () => (session ? JSON.stringify(buildSessionJson(shown!, issues, typedBatteries), null, 1) : null)
-    api.sessionCardPng = async () => (session ? await cardToPngDataUrl(cardOf(session)) : null)
+    api.sessionCardPng = async () => (shown ? await cardToPngDataUrl(cardOf(shown)) : null)
     api.sessionReport = () => (shown ? sessionModel(shown, issues, typedBatteries) : null)
   })
   function newSessionFor(fileName: string) {
@@ -300,7 +297,7 @@
 {#snippet row(f: (typeof merged)[number])}
   {@const back = cameBack(f.key, f.matches)}
   {@const marked = marksText(shown!, f)}
-  <li class={f.severity} class:filed={f.wrong?.length === f.matches.length}>
+  <li class={f.severity} class:filed={allMarked(f)}>
     <span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span>
     <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
     {#if f.measured.length}
@@ -381,7 +378,7 @@
           <tr>
             <th scope="row"><code>{r.rule}</code></th>
             {#each r.cells as c, i (i)}
-              {#if c === 'fired'}{@const sev = r.sevs[i] ?? 'error'}{@const filed = r.filed[i] ? ', marked not a real problem' : ''}<td class={`cell fired ${sev}`} class:filed={!!filed} title={`${SEV_WORD[sev]}: fired${filed}`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}{filed}</span></td>
+              {#if c === 'fired'}{@const cell = r.gridCells[i]}{@const sev = cell.severity ?? 'error'}{@const markedNote = cell.marked ? ', marked not a real problem' : ''}<td class={`cell fired ${sev}`} class:filed={cell.marked} title={`${SEV_WORD[sev]}: fired${markedNote}`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}{markedNote}</span></td>
               {:else}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/if}
             {/each}
             <td class="rate">{r.checkable ? `${CONFIDENCE_WORDS[r.confidence]}: ${r.fired} of ${r.checkable}` : 'not checked'}</td>
@@ -429,6 +426,16 @@
       <summary>{onceRows.length} seen {CONFIDENCE_WORDS.once.toLowerCase()} · {onceHolds}</summary>
       <ul class="merged">
         {#each onceRows as f (f.key)}
+          {@render row(f)}
+        {/each}
+      </ul>
+    </details>
+  {/if}
+  {#if filedRows.length}
+    <details class="once-fold filed-fold">
+      <summary>{filedRows.length} marked not a real problem in every match {filedRows.length === 1 ? 'it' : 'they'} fired in</summary>
+      <ul class="merged">
+        {#each filedRows as f (f.key)}
           {@render row(f)}
         {/each}
       </ul>

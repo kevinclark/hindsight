@@ -6,7 +6,10 @@
  * browser), and load the saved history file: the Session view should say the same as it did right after the mark.
  *
  *   npm run build
- *   node --experimental-strip-types scripts/chrome-session-wrong-mark-check.ts <out-dir> <rule> <match to mark, e.g. "Qualification 13"> <log> [<log> ...]
+ *   node --experimental-strip-types scripts/chrome-session-wrong-mark-check.ts <out-dir> <rule> <matches to mark, e.g. "Qualification 13" or "Qualification 13,Qualification 21"> <log> [<log> ...]
+ *
+ * Marking every match the check fired in should move its row out of the findings, the bottom line and the card, into
+ * the "marked not a real problem in every match" list.
  *
  * Writes check.json, the history file it made, the card and screenshots to <out-dir>. The reason it types is a made-up
  * test string; nothing here is a real label.
@@ -86,8 +89,12 @@ const sessionState = () => evalIn(`(() => {
   const cells = tr ? [...tr.querySelectorAll('td.cell')].map((td, i) => ({ match: columns[i], className: td.className, title: td.title, color: getComputedStyle(td).color })) : null
   const printed = [...document.querySelectorAll('article.report li.sr-find')].filter(li => li.querySelector('code')?.innerText.startsWith(${JSON.stringify(RULE)})).map(li => li.innerText.replace(/\\s+/g, ' '))
   const json = JSON.parse(window.hindsight.sessionFindingsJson()).findings.filter(f => f.rule === ${JSON.stringify(RULE)}).map(f => ({ key: f.key, severity: f.severity, matches: f.matches, wrong: f.wrong, demoted: f.demoted, issue: f.issue }))
-  const model = window.hindsight.sessionReport().findings.filter(f => f.rule === ${JSON.stringify(RULE)}).map(f => ({ sevWord: f.sevWord, ratio: f.ratio, marks: f.marks, wrongIn: f.wrongIn }))
-  return { rows, cells, printed, json, model }
+  const report = window.hindsight.sessionReport()
+  const model = [...report.findings, ...report.filed].filter(f => f.rule === ${JSON.stringify(RULE)}).map(f => ({ filed: report.filed.includes(f), sevWord: f.sevWord, ratio: f.ratio, marks: f.marks, wrongIn: f.wrongIn }))
+  const filedFold = view.querySelector('details.filed-fold summary')?.innerText ?? null
+  const printedFiled = [...document.querySelectorAll('article.report p.once')].map(p => p.innerText).filter(t => t.startsWith('Marked not a real problem'))
+  const printedGrid = [...document.querySelectorAll('article.report table.grid tbody tr')].find(tr => tr.querySelector('code')?.innerText === ${JSON.stringify(RULE)})?.innerText.replace(/\s+/g, ' ') ?? null
+  return { rows, cells, printed, printedFiled, printedGrid, filedFold, json, model, bottomLine: report.bottomLine }
 })()`)
 async function card(name: string) {
   const url: string | null = await evalIn(`window.hindsight.sessionCardPng()`)
@@ -108,17 +115,21 @@ result.noHistory = await sessionState()
 await mode('Match review')
 await dropInReview(logs, MATCHES)
 result.matches = await labels()
-await pick(MARK_ON)
-await sleep(300)
 await evalIn(`window.prompt = () => ${JSON.stringify(REASON)}`)
-result.clicked = await evalIn(`(() => {
-  for (const d of document.querySelectorAll('main details')) d.open = true
-  const li = [...document.querySelectorAll('li.finding')].find(li => li.querySelector(':scope > details > summary .rule')?.textContent === ${JSON.stringify(RULE)} && li.classList.contains('error'))
-  const b = li && [...li.querySelectorAll(':scope > details > .body .actions button')].find(b => b.innerText.startsWith('Not a real problem'))
-  if (!b) return 'missing'
-  b.click(); return 'clicked'
-})()`)
-await sleep(400)
+result.clicked = []
+// After the first mark, the check's reds on the other matches are amber: click the check's open row, whatever colour.
+for (const label of MARK_ON.split(',')) {
+  await pick(label)
+  await sleep(300)
+  ;(result.clicked as unknown[]).push(await evalIn(`(() => {
+    for (const d of document.querySelectorAll('main details')) d.open = true
+    const li = [...document.querySelectorAll('li.finding')].find(li => li.querySelector(':scope > details > summary .rule')?.textContent === ${JSON.stringify(RULE)} && !li.closest('details.known-section'))
+    const b = li && [...li.querySelectorAll(':scope > details > .body .actions button')].find(b => b.innerText.startsWith('Not a real problem'))
+    if (!b) return 'missing'
+    b.click(); return 'clicked'
+  })()`))
+  await sleep(400)
+}
 result.review = {}
 for (const label of (await labels()) as string[]) {
   await pick(label)
