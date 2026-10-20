@@ -12,7 +12,7 @@
  * never has to check for missing signals itself.
  */
 
-import { has, matchSeconds, matchTimeLeft, matchWhen, num, phaseAt, values, type Match } from '../match/match.ts'
+import { has, matchSeconds, matchTimeLeft, matchWhen, matchWhenAt, num, phaseAt, values, type Match } from '../match/match.ts'
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
 import type { CurrentLimits, RobotProfile } from '../profiles/types.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
@@ -78,24 +78,38 @@ export class Signal {
     return out
   }
 
-  /** The lowest value inside the window, and when. */
+  /** The lowest value inside the window, and when. The value held at the start of a window counts (see heldAtStarts). */
   lowest(during?: Window): { value: number; at: number } {
     let best = { value: NaN, at: NaN }
     for (let i = this.firstIndex(during); i < this.series.t.length; i++) {
       if (during && !inside(during, this.series.t[i])) continue
       if (Number.isNaN(best.value) || this.series.v[i] < best.value) best = { value: this.series.v[i], at: this.series.t[i] }
     }
+    for (const held of this.heldAtStarts(during)) if (Number.isNaN(best.value) || held.value < best.value) best = held
     return best
   }
 
-  /** The highest value inside the window, and when. */
+  /** The highest value inside the window, and when. The value held at the start of a window counts too. */
   highest(during?: Window): { value: number; at: number } {
     let best = { value: NaN, at: NaN }
     for (let i = this.firstIndex(during); i < this.series.t.length; i++) {
       if (during && !inside(during, this.series.t[i])) continue
       if (Number.isNaN(best.value) || this.series.v[i] > best.value) best = { value: this.series.v[i], at: this.series.t[i] }
     }
+    for (const held of this.heldAtStarts(during)) if (Number.isNaN(best.value) || held.value > best.value) best = held
     return best
+  }
+
+  /**
+   * The value in force at the start of each window (the last record before it), with the window start as its time.
+   * Logs record on change, so a window with no record at its start still has a real reading. Nothing for a window
+   * with no record at or before its start.
+   */
+  private heldAtStarts(during?: Window): { value: number; at: number }[] {
+    return (during ?? []).flatMap((w) => {
+      const value = this.at(w.start)
+      return Number.isFinite(value) ? [{ value, at: w.start }] : []
+    })
   }
 
   median(during?: Window): number {
@@ -532,6 +546,11 @@ export class MatchView {
   /** "1:47 into the match (teleop; robot time 532.8 s)": the standard way to say when something happened. */
   when(t: number): string {
     return matchWhen(this.raw, t)
+  }
+
+  /** Like when(), for the middle of a sentence: "at 1:47 into the match (...)", "before the match (...)". */
+  whenAt(t: number): string {
+    return matchWhenAt(this.raw, t)
   }
 
   /** Seconds into the match (from the start of auto) at robot time t, or null when the log has no match. */

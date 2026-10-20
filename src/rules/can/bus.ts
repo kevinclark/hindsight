@@ -46,6 +46,26 @@ export function watched(match: MatchView) {
   return [...match.enabled, ...match.beforeEnable]
 }
 
+/**
+ * When the watched window began, if this drop was already under way then (a device off from boot, or off since
+ * before the robot enabled); null for a drop that began inside a watched window.
+ */
+export function alreadyOffAt(match: MatchView, drop: Episode): number | null {
+  const touched = watched(match).filter((w) => drop.start < w.end && drop.end > w.start)
+  const first = touched.sort((a, b) => a.start - b.start)[0]
+  return first && drop.start < first.start ? first.start : null
+}
+
+/** How long this drop lasted inside the watched windows (s): time off CAN while disabled doesn't count. */
+export function secondsWatched(match: MatchView, drop: Episode): number {
+  return watched(match).reduce((sum, w) => sum + Math.max(0, Math.min(drop.end, w.end) - Math.max(drop.start, w.start)), 0)
+}
+
+/** Battery voltages for the evidence, two decimals, "not logged" where there was no reading. */
+export function voltageList(voltages: number[]): string {
+  return voltages.map((v) => (Number.isNaN(v) ? 'not logged' : v.toFixed(2))).join(', ')
+}
+
 /** The battery voltage from `before` s ahead of the first drop to time `to`, marking each drop, with the 7 V line. */
 export function plotDrops(battery: Signal, drops: Episode[], before: number, to: number) {
   return {

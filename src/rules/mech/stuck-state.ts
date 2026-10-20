@@ -95,7 +95,7 @@ function enabledPart(match: MatchView, stretch: { start: number; end: number }):
 function cameText(match: MatchView, came: number | null, during: Window): string {
   if (came === null) return 'never happened'
   if (came === during[0].start) return 'was already so when the stretch began, but it stayed'
-  return `happened at ${match.when(came)}, but it stayed`
+  return `happened ${match.whenAt(came)}, but it stayed`
 }
 
 /** When the learned trigger happened during the stretch (null if it never did). */

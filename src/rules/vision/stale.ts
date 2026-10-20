@@ -80,5 +80,5 @@ function dropoutsBeforeEnable(camera: CameraView, match: MatchView): Problem | u
 /** "Back_Right dropped out 2 times during the match (first at 1:23 for 6.0 s)". */
 function dropoutMessage(camera: string, drops: Episode[], when: string, match: MatchView): string {
   const first = drops[0]
-  return `${camera} dropped out ${plural(drops.length, 'time')} ${when} (first at ${match.when(first.start)} for ${secs(first.seconds)})`
+  return `${camera} dropped out ${plural(drops.length, 'time')} ${when} (first ${match.whenAt(first.start)} for ${secs(first.seconds)})`
 }

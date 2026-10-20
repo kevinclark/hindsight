@@ -65,12 +65,12 @@ export default rule({
     let lostWords = `Lost comms ${plural(losses.length, 'time')}`
     if (allBlips && losses.length === 1) lostWords = `Comms blipped (outputs back on ${within})`
     else if (allBlips) lostWords += `, all blips (outputs back on ${within})`
-    const first = losses.length === 1 ? 'at' : 'first at'
+    const first = losses.length === 1 ? '' : 'first '
 
     let radioReach = 'not logged'
     if (radio) radioReach = radioLost ? 'no, it lost the radio during the match' : 'yes, the whole match'
     return {
-      message: `${lostWords}, ${first} ${match.when(losses[0])}`,
+      message: `${lostWords}, ${first}${match.whenAt(losses[0])}`,
       severity,
       at: losses[0],
       likely, ruledOut, nextStep: ds?.nextStep,
@@ -123,7 +123,7 @@ function dsLogsAround(match: MatchView, losses: number[]): { evidence: Record<st
     'DS log, 3 s before the first loss: DS laptop CPU (%)': `${round(Math.min(...cpu), 0)}–${round(Math.max(...cpu), 0)}`,
   }
   if (cut) {
-    return { evidence, points: 'ds-laptop', nextStep: `The DS log stops at ${match.when(cut.endTime)}, during the loss: check the DS laptop (plugged in, high-performance power plan, nothing else running) and its Windows Event Viewer for a Driver Station crash.` }
+    return { evidence, points: 'ds-laptop', nextStep: `The DS log stops ${match.whenAt(cut.endTime)}, during the loss: check the DS laptop (plugged in, high-performance power plan, nothing else running) and its Windows Event Viewer for a Driver Station crash.` }
   }
   if (lostPct !== null && lostPct > 10) {
     return { evidence, points: 'wireless', nextStep: `The DS log shows up to ${lostPct.toFixed(0)} % lost packets in the 3 s before the loss: check where the radio is mounted and ask the FTA about the field's wireless.` }

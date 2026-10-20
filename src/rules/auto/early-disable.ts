@@ -62,7 +62,7 @@ export default rule({
 
       return {
         // The last instant of auto: at a.end itself the robot already reads as disabled.
-        message: `Disabled in auto at ${match.when(a.end - 0.001)} with ${secs(timeLeft)} of auto left`,
+        message: `Disabled in auto ${match.whenAt(a.end - 0.001)} with ${secs(timeLeft)} of auto left`,
         at: a.end - 0.001,
         likely,
         nextStep: wedged ? `The robot tilted ${tilt.toFixed(0)}° in the 3 s before the disable: watch the video for what it hit, and add a guard in code near that spot.` : undefined,

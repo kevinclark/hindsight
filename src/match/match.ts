@@ -279,6 +279,15 @@ export function matchWhen(match: Match, t: number): string {
   return `${clock(s)} into the match (${phaseAt(match, t)}; ${robot})`
 }
 
+/**
+ * matchWhen for the middle of a sentence: "at 1:47 into the match (...)", but "before the match (...)" and
+ * "after the match (...)" with no "at" (never "at before the match").
+ */
+export function matchWhenAt(match: Match, t: number): string {
+  const when = matchWhen(match, t)
+  return when.startsWith('before the match') || when.startsWith('after the match') ? when : `at ${when}`
+}
+
 /** Phase name at time t, for evidence text. */
 export function phaseAt(match: Match, t: number): 'auto' | 'teleop' | 'disabled' {
   if (match.auto.some((iv) => t >= iv.start && t < iv.end)) return 'auto'

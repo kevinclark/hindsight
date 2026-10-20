@@ -9,9 +9,9 @@
  *
  * Drops that took the whole bus down at once are left to can/bus-dropout.
  */
-import { isFalse, plural, round, rule, totalSeconds, type Problem } from '../rule.ts'
+import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
 import type { DeviceView, Episode, MatchView } from '../view.ts'
-import { busOf, isBusWide, LOW_VOLTS, plotDrops, watched } from './bus.ts'
+import { alreadyOffAt, busOf, isBusWide, LOW_VOLTS, plotDrops, secondsWatched, voltageList, watched } from './bus.ts'
 
 
 export default rule({
@@ -47,10 +47,23 @@ export default rule({
 /** The finding for one device's own drops (not part of a whole-bus drop). */
 function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): Problem {
   const battery = match.signal('batteryVoltage')
+  // A drop already under way when the watched window began is timed from that start. It says nothing about sag.
+  const offAtStart = drops.map((d) => alreadyOffAt(match, d))
+  const timed = drops.map((d, i) => ({ ...d, start: offAtStart[i] ?? d.start }))
+  const first = timed[0]
+  const pit = match.beforeEnable.length > 0
+  const firstWhen = offAtStart[0] === null
+    ? match.whenAt(first.start)
+    : `already off when ${pit ? 'the check started' : 'the robot enabled'} ${match.whenAt(first.start)}`
+  const secondsMissing = drops.reduce((sum, d) => sum + secondsWatched(match, d), 0)
   // The flag goes false only after the device misses its status frames, so look at the 0.5 s before it.
-  const voltages = drops.map((d) => battery.lowest(match.before(d.start, 0.5)).value)
+  // null for a drop already under way: it has no voltage to read.
+  const readings = timed.map((d, i) => (offAtStart[i] === null ? battery.lowest(match.before(d.start, 0.5)).value : null))
+  const voltages = readings.filter((v): v is number => v !== null)
+  const alreadyOff = `already off when ${pit ? 'the check started' : 'enabled'}`
+  const voltageText = readings.map((v) => (v === null ? alreadyOff : voltageList([v])))
   const lowOnes = voltages.filter((v) => v < LOW_VOLTS).length
-  const allLow = lowOnes === drops.length
+  const allLow = voltages.length > 0 && lowOnes === voltages.length
   const closeCall = voltages.some((v) => Math.abs(v - LOW_VOLTS) < 0.5)
   // No battery voltage logged just before a drop (e.g. Foresight: a device already off at the start of the stretch).
   const unknownVolts = voltages.some((v) => Number.isNaN(v))
@@ -61,7 +74,7 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   const ruledOut: Record<string, string> = {}
   if (allLow) {
     likely.push('battery-sag')
-  } else if (lowOnes === 0 && !closeCall && !unknownVolts) {
+  } else if (voltages.length > 0 && lowOnes === 0 && !closeCall && !unknownVolts) {
     ruledOut['battery-sag'] = 'the battery stayed above 7 V at every drop'
   }
   if (together.length) {
@@ -73,17 +86,17 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   }
 
   return {
-    message: `${device.name} dropped off CAN ${plural(drops.length, 'time')}, first at ${match.when(drops[0].start)}`,
-    at: drops[0].start,
+    message: `${device.name} dropped off CAN ${plural(drops.length, 'time')}, first ${firstWhen}`,
+    at: first.start,
     evidence: {
       drops: drops.length,
-      'seconds missing': round(totalSeconds(drops)),
-      'lowest battery voltage in the 0.5 s before each drop (V)': voltages.map((v) => (Number.isNaN(v) ? 'not logged' : v.toFixed(2))).join(', '),
+      'seconds missing': round(secondsMissing),
+      'lowest battery voltage in the 0.5 s before each drop (V)': voltageText.join(', '),
       'other devices dropped at the same moment': othersDropped(together, others.length),
     },
     likely, ruledOut, nextStep: dropNextStep(allLow, together),
     measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
-    plot: plotDrops(battery, drops, 3, drops[drops.length - 1].end + 2),
+    plot: plotDrops(battery, timed, 3, drops[drops.length - 1].end + 2),
   }
 }
 

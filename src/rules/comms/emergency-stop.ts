@@ -38,7 +38,7 @@ export default rule({
       let message: string
       if (onField) {
         const timeLeftWords = knowsTimeLeft ? ` with ${secs(left)} of ${match.phaseAt(t - 0.001)} left` : ''
-        message = `E-stopped at ${match.when(t - 0.001)}${timeLeftWords}`
+        message = `E-stopped ${match.whenAt(t - 0.001)}${timeLeftWords}`
       } else {
         const enabledWords = sinceEnable === null ? ' while disabled' : ` ${sinceEnable.toFixed(2)} s after the robot was enabled`
         message = `E-stopped off the field${enabledWords} (robot time ${t.toFixed(1)} s)`

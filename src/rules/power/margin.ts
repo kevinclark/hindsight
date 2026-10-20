@@ -48,7 +48,7 @@ export default rule({
 
     return {
       likely, ruledOut,
-      message: `Battery fell to ${volts(low.value)} at ${match.when(low.at)}, ${volts(Math.abs(margin))} ${margin >= 0 ? 'above' : 'below'} the ${setting} V brownout setting`,
+      message: `Battery fell to ${volts(low.value)} ${match.whenAt(low.at)}, ${volts(Math.abs(margin))} ${margin >= 0 ? 'above' : 'below'} the ${setting} V brownout setting`,
       at: low.at,
       evidence: {
         'lowest voltage while enabled (V)': round(low.value),

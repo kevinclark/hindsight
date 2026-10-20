@@ -72,6 +72,7 @@ export default rule({
    | when a true/false signal turned on | `.turnsOn()` |
    | windows | `match.enabled`, `match.auto`, `match.teleop`, `match.wholeMatch`, `match.before(t, 2)` |
    | "1:47 into the match (teleop; robot time 532.8 s)" | `match.when(t)` |
+   | the same inside a sentence: "at 1:47 into the match (...)", "before the match (...)" | `match.whenAt(t)` |
    | the Driver Station logs loaded with this match | `match.dsLogs` (empty if only the `.wpilog` was dropped) |
    | text (console, git) | `match.text('console').firstMatch(/Rezeroed hood/)` |
    | a signal you can do without (extra evidence) | `match.signalIfLogged('brownoutVoltage')` → the signal, or `null` |
@@ -185,7 +186,8 @@ look at each finding that gained `explainedBy`: a wrong link hides a real proble
 - `/SystemStats/BatteryCurrent` is the roboRIO's own current (~0.5 A), not the battery's. For total current use
   `match.power()` (the sum of the motor supply currents, `src/power/battery-model.ts`).
 - Log times are seconds since the robot program started (robot time), not match time. Always say a time with
-  `match.when(t)`: it puts match time first and robot time in parentheses, so people can find it in AdvantageScope.
+  `match.when(t)`: it puts match time first and robot time in parentheses, so people can find it in AdvantageScope. In a sentence use `match.whenAt(t)` and write no "at" of your own: a time
+  before or after the match reads "before the match (...)", never "at before the match".
 - Values are logged only when they change, so the value at a time is the last one logged before it. `.at(t)`,
   `.episodes()` and `.onGrid()` already do this; don't average between records.
 - A problem's identity across matches is the rule plus what it is about (the motor, camera or device for

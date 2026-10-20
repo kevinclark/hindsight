@@ -37,7 +37,7 @@ export default rule({
           ? 'It tilted during auto, so the auto path drove into something: watch the video, and check the path near this spot and what was raised.'
           : undefined
         problems.push({
-          message: `${axis.label} ${angle.toFixed(0)}° for ${secs(e.seconds)} at ${match.when(e.start)}`,
+          message: `${axis.label} ${angle.toFixed(0)}° for ${secs(e.seconds)} ${match.whenAt(e.start)}`,
           at: e.start,
           about: axis.label,
           severity: phase === 'auto' ? 'error' : 'warning',

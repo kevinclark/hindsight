@@ -56,7 +56,7 @@ export default rule({
     if (health.wiringFine) ruledOut.wiring = `battery + wiring resistance was only ${health.milliohms} mΩ`
 
     return {
-      message: `Browned out ${plural(onsets.length, 'time')}, first at ${match.when(first)}`,
+      message: `Browned out ${plural(onsets.length, 'time')}, first ${match.whenAt(first)}`,
       at: first,
       likely, ruledOut, nextStep,
       evidence: {

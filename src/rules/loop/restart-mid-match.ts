@@ -92,7 +92,7 @@ export default rule({
 function whatHappened(match: MatchView, startsMid: boolean, endsMid: boolean): string {
   if (startsMid && endsMid) return 'restarted mid-match and stopped again: this log starts and ends while enabled on the field'
   if (startsMid) return 'restarted mid-match: this log starts already enabled on the field'
-  return `stopped at ${match.when(match.logEnd - 0.001)}: the log ends while enabled on the field`
+  return `stopped ${match.whenAt(match.logEnd - 0.001)}: the log ends while enabled on the field`
 }
 
 /** Each gap between a log that ended enabled and the next one that started enabled: no program, or one starting up. */

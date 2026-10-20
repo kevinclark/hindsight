@@ -52,7 +52,7 @@ export default rule({
     return {
       // The log can't tell a cancelled zero from a late one, so only rule out "never ran" when it did finish.
       ruledOut: zeroed ? { 'zero-never-ran': `the zero did complete, ${secs(secondsLater)} after the first move` } : undefined,
-      message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed${zeroed ? `, ${secs(secondsLater)} later` : ' (it never did)'}`,
+      message: `${mechanism.name} moved ${match.whenAt(movedAt)} before its zero completed${zeroed ? `, ${secs(secondsLater)} later` : ' (it never did)'}`,
       at: movedAt,
       evidence: {
         'first move while enabled (robot time, s)': round(movedAt),

@@ -44,7 +44,7 @@ export default rule({
         ? `The robot ${after.join(' and ')} within 2 s of this hit: check the battery leads, the main breaker and the radio\'s power and Ethernet cables first.`
         : undefined
       return {
-        message: `${hit.g.toFixed(1)} g hit at ${match.when(hit.at)}`,
+        message: `${hit.g.toFixed(1)} g hit ${match.whenAt(hit.at)}`,
         at: hit.at,
         evidence: { 'sideways acceleration (g)': round(hit.g), 'threshold (g)': LIMIT_G },
         measured: [{ label: 'sideways acceleration', value: round(hit.g), unit: 'g', threshold: LIMIT_G }],

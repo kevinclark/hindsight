@@ -34,7 +34,7 @@ export default rule({
       const lastHeard = [...log.file.records].reverse().find((r) => r.voltage !== null)
       const lastSaw = lastHeard && match.epochOffset !== null ? match.when(lastHeard.epochSeconds - match.epochOffset) : 'never'
       return {
-        message: `Driver Station log ends at ${match.when(log.endTime)}, ${secs(secondsEarly)} before the match ended`,
+        message: `Driver Station log ends ${match.whenAt(log.endTime)}, ${secs(secondsEarly)} before the match ended`,
         at: log.endTime,
         evidence: {
           'DS log ends': match.when(log.endTime),

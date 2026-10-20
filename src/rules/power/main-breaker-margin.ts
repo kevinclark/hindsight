@@ -58,7 +58,7 @@ export default rule({
     const plot = peakPlot(match, t, top?.name)
 
     return {
-      message: `Main breaker load reached ${Math.round(100 * share)} % of its ${MAIN_BREAKER_A} A rating at ${match.when(t)}, ${share >= TRIP_BAND[1] ? 'above' : 'inside'} the ${100 * TRIP_BAND[0]}–${100 * TRIP_BAND[1]} % band where it can trip`,
+      message: `Main breaker load reached ${Math.round(100 * share)} % of its ${MAIN_BREAKER_A} A rating ${match.whenAt(t)}, ${share >= TRIP_BAND[1] ? 'above' : 'inside'} the ${100 * TRIP_BAND[0]}–${100 * TRIP_BAND[1]} % band where it can trip`,
       at: t,
       severity: share >= TRIP_BAND[1] ? 'error' : undefined,
       evidence: {

@@ -9,7 +9,7 @@
  */
 import { isFalse, round, rule, type Problem } from '../rule.ts'
 import type { Episode, MatchView, Signal } from '../view.ts'
-import { canBuses, dropAround, isBusWide, LOW_VOLTS, plotDrops, TOGETHER_SECONDS, watched, type CanBus } from './bus.ts'
+import { canBuses, dropAround, isBusWide, LOW_VOLTS, voltageList, plotDrops, TOGETHER_SECONDS, watched, type CanBus } from './bus.ts'
 
 /** The evidence line that names the bus's devices (links.ts reads it to tell which alerts are about the bus). */
 export const BUS_DEVICES = 'devices that report their health on this bus'
@@ -66,7 +66,7 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
   if (voltages.every((v) => v >= LOW_VOLTS + 0.5)) ruledOut['battery-sag'] = 'the battery stayed above 7.5 V at every drop'
 
   return {
-    message: `Every device on the ${bus.name} bus that reports its health (${bus.members.length}) stopped reporting at once${times} at ${match.when(first)}, for ${gone[0].toFixed(0)} s${pastEnd}`,
+    message: `Every device on the ${bus.name} bus that reports its health (${bus.members.length}) stopped reporting at once${times} ${match.whenAt(first)}, for ${gone[0].toFixed(0)} s${pastEnd}`,
     at: first,
     about: `${bus.name} bus`,
     likely,
@@ -77,7 +77,7 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
       drops: drops.length,
       'seconds until every device was back': gone.map((g) => g.toFixed(1)).join(', '),
       'status the devices reported': statuses.length ? statuses.join(', ') : undefined,
-      'lowest battery voltage in the 0.5 s before each drop (V)': voltages.map((v) => v.toFixed(2)).join(', '),
+      'lowest battery voltage in the 0.5 s before each drop (V)': voltageList(voltages),
       'lowest battery voltage earlier while enabled, with no bus drop (V)': Number.isFinite(earlier) ? round(earlier) : undefined,
     },
     measured: [{ label: 'whole-bus drops', value: drops.length, unit: '' }],

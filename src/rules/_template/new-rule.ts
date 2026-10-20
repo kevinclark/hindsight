@@ -37,7 +37,7 @@ export default rule({
     const firstDip = dips[0]
     const lowest = round(battery.lowest(match.enabled).value)
     return {
-      message: `Battery dipped under ${LIMIT} V, first at ${match.when(firstDip.start)}`,
+      message: `Battery dipped under ${LIMIT} V, first ${match.whenAt(firstDip.start)}`,
       at: firstDip.start,
       evidence: { 'times under the limit': dips.length, 'lowest (V)': lowest },
       measured: [{ label: 'lowest battery voltage', value: lowest, unit: 'V', threshold: LIMIT }],
