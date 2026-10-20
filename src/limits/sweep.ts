@@ -8,7 +8,6 @@
  * a tighter band measures the ripple, not the spin-up. With 10 %, Q13's spin-ups take ~0.7 s, as in the P0 analysis.)
  */
 
-import { keysOf } from '../profiles/sources.ts'
 import { has, num, values, type Match } from '../match/match.ts'
 import { indexAt, median, valueAt, type NumberSeries } from '../match/series.ts'
 import type { MotorGroup } from '../profiles/types.ts'
@@ -100,7 +99,7 @@ function measure(match: Match, group: MotorGroup, v: NumberSeries, setpoint: Num
     startVolts = before.length ? median(before) : valueAt(battery, start)
     for (let i = Math.max(0, indexAt(battery.t, start)); i < battery.t.length && battery.t[i] <= end; i++) if (!(battery.v[i] >= low)) low = battery.v[i]
   }
-  const idKey = keysOf(match.profile.battery.id).find((k) => has(match, k))
+  const idKey = has(match, match.profile.battery.id) ? match.profile.battery.id : null
   // The battery in the robot at this run (held value at the start), so a swap between runs shows.
   const ids = idKey ? values<string>(match, idKey)! : null
   const idAtStart = ids ? ids.v[indexAt(ids.t, start)] : undefined

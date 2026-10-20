@@ -13,10 +13,10 @@
 import type { LimitLines } from '../code/limit-lines.ts'
 import { hasEntry, readNumbers, readValues, type WpilogFile } from '../readers/wpilog.ts'
 import { dslogEndEpoch, type DslogFile, type DslogRecord } from '../readers/dslog.ts'
-import type { ResolvedProfile, RobotProfile, SignalSources } from '../profiles/types.ts'
+import type { ResolvedProfile, RobotProfile } from '../profiles/types.ts'
 import type { ProfileChoice } from '../profiles/choose.ts'
 import { withNtAlertGroups } from '../profiles/datalogmanager.ts'
-import { DSLOG, isDslogKey, resolveSignals } from '../profiles/sources.ts'
+import { DSLOG, isDslogKey, resolveBattery, resolveSignals } from '../profiles/sources.ts'
 import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } from './series.ts'
 
 export interface Match {
@@ -24,8 +24,8 @@ export interface Match {
   log: WpilogFile
   /** The profile with one log key per signal, picked for this match's logs (see `sources`). */
   profile: ResolvedProfile
-  /** The profile's signals as written: every place each one may be, so a Driver Station log loaded later is used. */
-  sources: SignalSources
+  /** The profile as written: every place each key may be, so a Driver Station log loaded later is used. */
+  sources: RobotProfile
   /** How the profile was picked for this log, and anything the student should know about it. */
   profileChoice: ProfileChoice
   /** First and last record time in the log, seconds. */
@@ -123,7 +123,7 @@ const MATCH_TYPES = ['', 'Practice', 'Qualification', 'Elimination']
 
 export function buildMatch(fileName: string, log: WpilogFile, givenProfile: RobotProfile, profileChoice: ProfileChoice = { how: 'given', note: null, fit: null }): Match {
   // No Driver Station log yet: attachDslog picks again.
-  const resolved = { ...givenProfile, signals: resolveSignals(givenProfile.signals, (key) => hasEntry(log, key)) }
+  const resolved = resolveProfile(givenProfile, (key) => hasEntry(log, key))
   const profile = withNtAlertGroups(log, resolved)
   const s = profile.signals
   let logStart = Infinity
@@ -135,7 +135,7 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
   if (!Number.isFinite(logStart)) { logStart = log.firstTime; logEnd = log.lastTime }
 
   const match: Match = {
-    fileName, log, profile, sources: givenProfile.signals, profileChoice, logStart, logEnd,
+    fileName, log, profile, sources: givenProfile, profileChoice, logStart, logEnd,
     enabled: [], auto: [], teleop: [], matchStart: null, teleopStart: null, matchEnd: null,
     fms: false, event: '', matchLabel: '', build: { sha: '', branch: '', date: '', dirty: '' },
     epochOffset: null, ds: [], others: [], cache: new Map(),
@@ -276,8 +276,13 @@ export function attachDslog(match: Match, file: DslogFile, fileName: string): vo
   match.ds.push({ file, fileName, startTime: file.startEpochSeconds - offset, endTime: dslogEndEpoch(file) - offset })
   match.ds.sort((a, b) => a.startTime - b.startTime)
   for (const key of match.cache.keys()) if (isDslogKey(key)) match.cache.delete(key)
-  const signals = resolveSignals(match.sources, (key) => has(match, key))
-  match.profile = { ...match.profile, signals: { ...signals, alertGroups: match.profile.signals.alertGroups } }
+  const { signals, battery } = resolveProfile(match.sources, (key) => has(match, key))
+  match.profile = { ...match.profile, battery, signals: { ...signals, alertGroups: match.profile.signals.alertGroups } }
+}
+
+/** The profile with one key per signal and battery key: the first of its sources that `present` says the logs have. */
+function resolveProfile(profile: RobotProfile, present: (key: string) => boolean): ResolvedProfile {
+  return { ...profile, signals: resolveSignals(profile.signals, present), battery: resolveBattery(profile.battery, present) }
 }
 
 /** Seconds of the current phase left at time t (auto or teleop), from the game's phase lengths. */

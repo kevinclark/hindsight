@@ -185,13 +185,27 @@ export interface SignalKeys {
   totalCurrent: string
 }
 
+/** The battery tracker's signals, each a key once a match has picked one ('' when the profile has none). */
+export interface BatteryKeys {
+  id: string
+  idSource: string
+  gaugeValid: string
+  effectiveCapacityAh: string
+  ratedCapacityAh: string
+  remainingChargePct: string
+  numCycles: string
+}
+
+export type BatterySources = { [K in keyof BatteryKeys]: Source }
+
 /** The signals as a profile or a log type writes them: each single signal's Source (the lists stay lists). */
 export type SignalSources = { [K in keyof SignalKeys]: SignalKeys[K] extends string ? Source : SignalKeys[K] }
 
 /**
- * A robot profile. `Signals` is SignalSources as written; a match's profile has one key per signal (ResolvedProfile).
+ * A robot profile, as written: every signal and battery key a Source. A match's profile has one key each
+ * (ResolvedProfile).
  */
-export interface RobotProfile<Signals = SignalSources> {
+export interface RobotProfile<Signals = SignalSources, Battery = BatterySources> {
   /** The robot, as people call it: "2026 offseason robot". */
   name: string
   /**
@@ -208,16 +222,8 @@ export interface RobotProfile<Signals = SignalSources> {
   /** `field`: the field's length (x) and width (y) in meters, from the season's AprilTag layout, for "is this pose on the field". */
   game: { name: string; autoSeconds: number; teleopSeconds: number; field?: { length: number; width: number } }
   signals: Signals
-  /** Battery tracker keys. Each lists the places the key may be; the first one present is used. */
-  battery: {
-    id: Source
-    idSource: Source
-    gaugeValid: Source
-    effectiveCapacityAh: Source
-    ratedCapacityAh: Source
-    remainingChargePct: Source
-    numCycles: Source
-  }
+  /** Battery tracker keys. Each lists the places the key may be (the tracker's keys moved between versions). */
+  battery: Battery
   power: {
     otherLoadsAmps: number
     restVoltageMin: number
@@ -307,4 +313,4 @@ export type ZeroCheck =
   | { mechanism: string; notCheckable: string }
 
 /** A profile as a match uses it: one log key per signal, picked for that match's logs. */
-export type ResolvedProfile = RobotProfile<SignalKeys>
+export type ResolvedProfile = RobotProfile<SignalKeys, BatteryKeys>

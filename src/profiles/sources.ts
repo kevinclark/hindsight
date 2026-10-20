@@ -7,7 +7,7 @@
  * The Driver Station log is a source like any other, written `dslog:<field>` with a field of its records
  * (readers/dslog.ts), e.g. `dslog:brownout`.
  */
-import type { SignalKeys, SignalSources, Source } from './types.ts'
+import type { BatteryKeys, BatterySources, SignalKeys, SignalSources, Source } from './types.ts'
 
 export const DSLOG = 'dslog:'
 
@@ -21,6 +21,13 @@ export function resolveSignals(signals: SignalSources, present: (key: string) =>
   const out: Record<string, unknown> = {}
   for (const [name, source] of Object.entries(signals)) out[name] = LISTS.has(name) ? source : pick(source as Source, present)
   return out as unknown as SignalKeys
+}
+
+/** Each battery key's first source the logs have. */
+export function resolveBattery(battery: BatterySources, present: (key: string) => boolean): BatteryKeys {
+  const out: Record<string, string> = {}
+  for (const [name, source] of Object.entries(battery)) out[name] = pick(source, present)
+  return out as unknown as BatteryKeys
 }
 
 /**

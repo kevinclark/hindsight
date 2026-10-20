@@ -151,7 +151,7 @@ const BATTERY_WORDS: Record<keyof RobotProfile['battery'], string> = {
 
 function batterySlots(battery: RobotProfile['battery']): CoverageKey[] {
   return (Object.keys(BATTERY_WORDS) as (keyof RobotProfile['battery'])[]).map((name) => {
-    const [key = null, ...alternatives] = keysOf(battery[name])
+    const [key = null, ...alternatives] = keysOf(battery[name]).filter((k) => k !== '')
     return { what: BATTERY_WORDS[name], key, alternatives: alternatives.length ? alternatives : undefined }
   })
 }
