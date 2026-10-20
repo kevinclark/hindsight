@@ -18,6 +18,7 @@ import type { RobotProfile } from '../profiles/types.ts'
 import { KEEP_SECONDS, type RecordStore } from './records.ts'
 import { verdictFor, type Verdict } from './verdict.ts'
 import { PROVEN } from './proven.ts'
+import { addSnapshotChecks, SNAPSHOT_PROOF, SNAPSHOT_RULES, type SnapshotInput } from './snapshot-checks.ts'
 
 export const SETTLE_SECONDS = 30
 /** After a disable, battery voltage recovers from the load; wait this long before judging rest voltage. Assumed. */
@@ -33,12 +34,14 @@ export interface ForesightInput {
   /** A profile to use as is (the backtest pins one per log); otherwise chosen from what the robot says it is. */
   profile?: RobotProfile
   rules?: Rule[]
+  /** The robot snapshot dropped on the page, if any (snapshot-checks.ts). Without one, its checks say "not checked". */
+  snapshot?: SnapshotInput
 }
 
 export type ForesightResult =
   | { state: 'settling'; secondsLeft: number; reason: string }
   | { state: 'enabled'; reason: string }
-  | { state: 'checked'; start: number; end: number; match: Match; report: Report; verdict: Verdict }
+  | { state: 'checked'; start: number; end: number; match: Match; report: Report; verdict: Verdict; snapshotUsed: boolean }
 
 /**
  * Foresight reads only the keys its checks need, so whether the profile fits is judged on those keys (the profile's
@@ -75,8 +78,10 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   const match = buildMatch('foresight', openWpilog(store.windowLog(start, now)), picked.profile, picked.choice)
   match.foresight = { start, end: now, lastPassingSha: input.lastPassingSha, words }
   const report = runRules(match, input.rules ?? FORESIGHT_RULES)
+  const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS)
   // The backtest only proved checks on stretches before any enable. After a drive the battery is still recovering
   // (CalGames: 11.7–12.1 V 10 s after the match, 12.3 V after 160 s), so rest voltage stays amber then.
-  const unproven: Record<string, string> = lastEnable ? { 'power/rest-voltage': `amber: the robot was driven ${Math.round(now - lastEnable.end)} s ago and the battery is still recovering; proven only before any enable` } : {}
-  return { state: 'checked', start, end: now, match, report, verdict: verdictFor(report, PROVEN, unproven) }
+  const unproven: Record<string, string> = Object.fromEntries(SNAPSHOT_RULES.map((r) => [r, SNAPSHOT_PROOF]))
+  if (lastEnable) unproven['power/rest-voltage'] = `amber: the robot was driven ${Math.round(now - lastEnable.end)} s ago and the battery is still recovering; proven only before any enable`
+  return { state: 'checked', start, end: now, match, report, verdict: verdictFor(report, PROVEN, unproven), snapshotUsed }
 }

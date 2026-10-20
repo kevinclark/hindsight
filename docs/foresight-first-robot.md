@@ -1,4 +1,4 @@
-# Foresight on the robot for the first time (about 5 minutes, in the pit)
+# Foresight on the robot for the first time (about 6 minutes, in the pit)
 
 Everything about Foresight so far ran against replayed logs and a desktop copy of ntcore (pyntcore 2025.3.2), never a
 roboRIO. This run checks the parts only a real robot can: that the page connects from the DS laptop, that the robot
@@ -15,6 +15,10 @@ writes to it: Foresight only subscribes.
 - Robot on, robot code running, Driver Station open and showing Communications green, robot **disabled**.
 - Both controllers plugged into the DS laptop.
 - A printed AprilTag (36h11, the field's family; one tag is enough), for step 7.
+- For step 8, `tools/robot-snapshot.py` and Python 3.8 or newer on the laptop that runs Foresight. The drive team
+  doesn't install software on the DS laptop, so ask the software lead first; without Python there, skip step 8.
+  (A snapshot from another laptop works too if both laptops' clocks are set automatically: Foresight compares the
+  snapshot's time with when the robot code started, by the clock of the laptop Foresight runs on.)
 
 ## Steps
 
@@ -22,7 +26,7 @@ writes to it: Foresight only subscribes.
    Click **Foresight** at the top.
 2. **Connect.** Robot: `172.22.11.2` for USB, `10.80.33.2` for Ethernet. Click **Connect**. Within about 5 s the line
    next to the button should say `Connected. Robot: 2026 offseason robot (<branch>); reading 105 signals.`
-   If it says it cannot tell the robot is in the pit, or the connection closes: go to step 9 and note the message.
+   If it says it cannot tell the robot is in the pit, or the connection closes: go to step 10 and note the message.
 3. **Check the counts** under **Readings**: *Topics announced / signals asked for*. Replaying the CalGames logs gives
    94 / 105: 93 of the 105 signals are in those logs (the 12 missing are the battery tracker's, which the robot code
    doesn't log yet), plus WPILib's `/FMSInfo/FMSControlData` for the field guard. Note both numbers. *Values received* should climb every second.
@@ -44,12 +48,20 @@ writes to it: Foresight only subscribes.
    the robot isn't publishing the camera's raw result (`/Apriltag Vision<camera>/Result`): note it.
    The pass lasts until the robot is next driven, or for 15 min: after either the two items come back, so show the
    tag again before the match.
-8. **Note the versions:** the browser (Chrome: menu → Help → About; Edge: Settings → About) and the roboRIO image
+8. **Take a robot snapshot** (about 1 minute; see `docs/robot-snapshot.md`). Don't press Clear Faults or blink
+   anything first. With Foresight still connected, run `python3 tools/robot-snapshot.py` in a terminal on the same
+   laptop, then click **Robot snapshot…** and choose the `snapshot.json` it saved. The box should say *Used for
+   this check*, and four checklist lines (*All CAN devices licensed and ID'd*, *CANcoder offsets correct and
+   unchanged*, *Swerve ratio unchanged*, *Current limits as the code sets them*) should change from *Not checked* to
+   **OK** or **Look**. Note each line's mark and text. A line that says *partly checked* or *Not checked* with a
+   reason about a name or a value that wasn't read means the real robot answers differently from CTRE's simulator:
+   note it, and keep the snapshot folder for Claude (it holds no names, only device serial numbers).
+9. **Note the versions:** the browser (Chrome: menu → Help → About; Edge: Settings → About) and the roboRIO image
    (Driver Station → Diagnostics tab, or the roboRIO's web page).
-9. **Save the record.** Click **Download for Claude** under Readings. It saves `foresight-readings-<time>.json`: the
+10. **Save the record.** Click **Download for Claude** under Readings. It saves `foresight-readings-<time>.json`: the
    counts, clock, verdict, browser, and the list of signals the robot never sent. Add the roboRIO image version from
-   step 8 in a note next to it.
-10. **Disconnect and close the page.** Click **Disconnect**, then close the tab.
+   step 9 in a note next to it.
+11. **Disconnect and close the page.** Click **Disconnect**, then close the tab.
 
 ## What can't be checked in the pit
 

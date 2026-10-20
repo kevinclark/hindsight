@@ -9,6 +9,7 @@
  */
 import type { Report } from '../rules/index.ts'
 import type { Verdict } from './verdict.ts'
+import { SNAPSHOT_RULES, TAKE_SNAPSHOT } from './snapshot-checks.ts'
 
 export interface OncheckLine {
   section: string
@@ -38,9 +39,10 @@ export const ONCHECKS: OncheckLine[] = [
   { section: 'Software', line: 'Other windows closed on the DS laptop', byEye: true },
   { section: 'Software', line: 'No alerts on Elastic', rules: ['alerts/passthrough'] },
   { section: 'Software', line: 'Mechanisms zeroed', rules: ['foresight/zero-sanity'], note: 'the intake pivot against its CANcoder; the hood has no absolute encoder' },
-  { section: 'Software', line: 'CANcoder offsets correct and unchanged', notYet: 'needs the diagnostic server (phase 2): the offset (MagnetOffset) is in the CANcoder\'s config, not in the log' },
-  { section: 'Software', line: 'Swerve ratio unchanged', notYet: 'needs the motors\' configuration read back (phase 2)' },
-  { section: 'Software', line: 'All CAN devices licensed and ID\'d', notYet: 'needs the diagnostic server (phase 2)' },
+  { section: 'Software', line: 'CANcoder offsets correct and unchanged', rules: ['snapshot/cancoder-offsets'], note: 'from the robot snapshot: each CANcoder runs the code\'s offset and is read by its own motor; whether the code\'s offsets are right (wheels straight) is by eye' },
+  { section: 'Software', line: 'Swerve ratio unchanged', rules: ['snapshot/swerve-ratio'], note: 'from the robot snapshot: every drive and steer motor runs the code\'s gear ratio' },
+  { section: 'Software', line: 'All CAN devices licensed and ID\'d', rules: ['snapshot/devices', 'snapshot/licensed'], note: 'from the robot snapshot: every motor, CANcoder and the gyro on its own ID, and no Pro feature used without a licence' },
+  { section: 'Software', line: 'Current limits as the code sets them', rules: ['snapshot/current-limits'], note: 'Foresight\'s line, not on the team\'s list: from the robot snapshot, every motor\'s six current-limit settings, followers included' },
   { section: 'Software', line: 'All device values updating', rules: ['can/device-dropout', 'foresight/values-updating'], note: 'devices connected and their readings changing; not the CANcoders or flywheel motors (nothing of theirs changes at rest)' },
   { section: 'Software', line: 'Log stick in', notYet: 'needs the robot code to publish it (students, phase 1b)' },
   { section: 'Software', line: 'Gyro seems normal', rules: ['foresight/gyro-still-drift'], note: 'heading drift while still, as context: no line yet' },
@@ -55,8 +57,13 @@ export type LineState = 'ok' | 'red' | 'amber' | 'to do' | 'context' | 'not chec
 
 export interface MarkedLine extends OncheckLine { state: LineState; detail: string }
 
-/** Mark each line from the current check (null: nothing current, e.g. settling, closed or stale). */
-export function markOnchecks(current: { verdict: Verdict; report: Report } | null): MarkedLine[] {
+const FROM_SNAPSHOT = new Set<string>(SNAPSHOT_RULES)
+
+/**
+ * Mark each line from the current check (null: nothing current, e.g. settling, closed or stale). `snapshotUsed`: the
+ * check ran over a robot snapshot (engine.ts); without one, the snapshot lines are never OK, even if nothing says so.
+ */
+export function markOnchecks(current: { verdict: Verdict; report: Report; snapshotUsed?: boolean } | null): MarkedLine[] {
   return ONCHECKS.map((l) => {
     if (l.byEye) return { ...l, state: 'by eye', detail: 'check by eye' }
     if (l.notYet) return { ...l, state: 'not yet', detail: `not checked yet: ${l.notYet}` }
@@ -68,8 +75,15 @@ export function markOnchecks(current: { verdict: Verdict; report: Report } | nul
     const steps = items.filter((i) => i.level === 'grey' && l.assisted?.includes(i.finding.rule))
     if (steps.length) return { ...l, state: 'to do', detail: steps.map((i) => i.finding.title).join('; ') }
     const blind = new Set([...current.report.skipped.filter((s) => !s.reason.startsWith('partly')), ...current.report.crashed].map((s) => s.rule))
-    const ran = rules.filter((r) => !blind.has(r))
-    if (ran.length === 0) return { ...l, state: 'not checked', detail: 'its checks could not read their signals' }
+    const ran = rules.filter((r) => !blind.has(r) && (current.snapshotUsed || !FROM_SNAPSHOT.has(r)))
+    if (ran.length === 0) {
+      const why = [...current.report.skipped, ...current.report.crashed].find((s) => rules.includes(s.rule))?.reason
+      return { ...l, state: 'not checked', detail: why ?? (rules.some((r) => FROM_SNAPSHOT.has(r)) ? `no robot snapshot: ${TAKE_SNAPSHOT}` : 'its checks could not read their signals') }
+    }
+    // A snapshot check that skipped any part (an offset or a licence fault unread) can't vouch for the line either:
+    // what it did read may be the lesser half (remote sensor IDs read, every offset not).
+    const skippedSnapshot = [...current.report.skipped, ...current.report.crashed].find((s) => FROM_SNAPSHOT.has(s.rule) && rules.includes(s.rule))
+    if (skippedSnapshot) return { ...l, state: 'not checked', detail: `${skippedSnapshot.rule}: ${skippedSnapshot.reason}` }
     // An assisted check that skipped any part (one camera unread) can't vouch for the line.
     const skippedStep = current.report.skipped.find((s) => l.assisted?.includes(s.rule)) ?? current.report.crashed.find((s) => l.assisted?.includes(s.rule))
     if (skippedStep) return { ...l, state: 'not checked', detail: `${skippedStep.rule}: ${skippedStep.reason}` }

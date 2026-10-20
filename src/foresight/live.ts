@@ -16,6 +16,7 @@ import { PROFILES } from '../profiles/index.ts'
 import { chooseProfile } from '../profiles/choose.ts'
 import { openWpilog } from '../readers/wpilog.ts'
 import type { RobotProfile } from '../profiles/types.ts'
+import type { Snapshot } from '../snapshot/snapshot.ts'
 import { RecordStore } from './records.ts'
 import { evaluateForesight, type ForesightResult } from './engine.ts'
 import { foresightKeys, keyFor, METADATA_KEYS, topicFor, wpilogType } from './keys.ts'
@@ -65,6 +66,7 @@ export class ForesightLive {
   private metadataAt: number | null = null
   private profileChosen = false
   private lastValueWallMs: number | null = null
+  private snapshot: Snapshot | null = null
   /** The "Connected. Robot: …" line, restored after a stale or failed check. */
   private connectedMessage = ''
   readonly status: LiveStatus
@@ -101,6 +103,11 @@ export class ForesightLive {
       return
     }
     this.emit()
+  }
+
+  /** A robot snapshot dropped on the page (null: none), used from the next check on. */
+  setSnapshot(snapshot: Snapshot | null): void {
+    this.snapshot = snapshot
   }
 
   /** The user clicked Disconnect. */
@@ -166,13 +173,15 @@ export class ForesightLive {
     }
     const codeStart = this.metadataAt ?? this.firstValueAt
     if (codeStart === null) return this.emit()
+    // The code start on the laptop's clock (the clock the snapshot's time is on): the latest value arrived just now.
+    const codeStartWallMs = this.lastValueWallMs! - (this.store.latest - codeStart) * 1000
     this.status.codeStart = codeStart
     this.status.codeStartFrom = this.metadataAt !== null ? 'metadata' : 'first value'
     this.status.robotTime = this.store.latest
     this.store.prune()
     this.status.message = this.connectedMessage
     try {
-      this.status.result = evaluateForesight({ store: this.store, codeStart, now: this.store.latest, lastPassingSha: this.options.lastPassingSha, profile: this.status.profile ?? undefined })
+      this.status.result = evaluateForesight({ store: this.store, codeStart, now: this.store.latest, lastPassingSha: this.options.lastPassingSha, profile: this.status.profile ?? undefined, snapshot: { snapshot: this.snapshot, codeStartWallMs, codeStartFrom: this.status.codeStartFrom } })
     } catch (error) {
       this.status.result = null // never leave an earlier verdict up
       this.status.message = `The check failed: ${error instanceof Error ? error.message : String(error)}`

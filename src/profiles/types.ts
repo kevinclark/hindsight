@@ -200,6 +200,25 @@ export interface ForesightProfile {
   gyroYaw: string
   /** Mechanisms whose motor position can be checked against an absolute encoder, and those that can't (and why). */
   zeroChecks: ZeroCheck[]
+  /** What a robot snapshot should show beyond the motor groups (src/foresight/snapshot-checks.ts). */
+  snapshot?: SnapshotExpectations
+}
+
+/** The robot code's settings that only the devices themselves can confirm, read back through a robot snapshot. */
+export interface SnapshotExpectations {
+  /** CTRE devices besides the motors (the motors come from motorGroups), each by model and CAN ID. */
+  devices: {
+    name: string
+    model: 'CANcoder' | 'Pigeon 2'
+    canId: number
+    /** A CANcoder's MagnetOffset as the code applies it (rotations). */
+    magnetOffset?: number
+    /** The CAN ID of the motor that reads this CANcoder: that motor's FeedbackRemoteSensorID must be this CANcoder's ID. */
+    readBy?: number
+    where?: string
+  }[]
+  /** Feedback ratios the code applies to every motor of a motor group (Phoenix SensorToMechanismRatio, RotorToSensorRatio). */
+  ratios: { group: string; sensorToMechanism?: number; rotorToSensor?: number; where: string }[]
 }
 
 export type ZeroCheck =
