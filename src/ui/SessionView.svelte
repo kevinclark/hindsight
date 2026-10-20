@@ -4,7 +4,9 @@
   summary of each is kept, so a whole event's folder fits in memory.
 -->
 <script lang="ts">
-  import { summarizeLog, type MatchSummary } from '../session/summary.ts'
+  import { summarizeLogWithCode, type MatchSummary } from '../session/summary.ts'
+  import CodeFolderControl from './CodeFolderControl.svelte'
+  import { codeFolder } from './code-folder.svelte.ts'
   import { PROFILE_FIT_MIN } from '../profiles/choose.ts'
   import { PROFILES, profileId } from '../profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
@@ -54,7 +56,7 @@
       const prev = newest.get(c.summary.fileName)
       if (!prev || c.savedAt > prev.savedAt) newest.set(c.summary.fileName, c)
     }
-    const usable = [...newest.values()].filter((c) => reusable(c.summary, c.summary.fileName))
+    const usable = [...newest.values()].filter((c) => sameRobot(c.summary, c.summary.fileName))
     for (const c of usable) {
       cache.set(c.key, c.summary)
       if (!collected.some((s) => s.fileName === c.summary.fileName)) collected.push(c.summary)
@@ -73,8 +75,15 @@
     savedCount = 0
     restored = null
   }
-  /** A saved summary is reusable only if it was read with the robot the student picks now. */
+  /**
+   * A saved summary is reusable for a log chosen now only if it was read with the robot the student picks now and the
+   * code folder chosen now. (After a reload, summaries are restored whatever folder they were read with: each is right
+   * for the folder it names, and the remembered folder may not be readable yet.)
+   */
   function reusable(s: MatchSummary | undefined, fileName: string): s is MatchSummary {
+    return sameRobot(s, fileName) && (s.codeFolder ?? null) === (codeFolder.chosen?.name ?? null)
+  }
+  function sameRobot(s: MatchSummary | undefined, fileName: string): s is MatchSummary {
     if (!s) return false
     const chosen = chosenRobot(fileName)
     return chosen ? s.robot.how === 'chosen by you' && s.robot.profileId === profileId(chosen) : s.robot.how !== 'chosen by you'
@@ -148,7 +157,7 @@
       try {
         const key = fileKey(file)
         const saved = cache.get(key)
-        const summary = reusable(saved, file.name) ? saved : summarizeLog({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, chosenRobot(file.name), [...PROFILES, ...stored])
+        const summary = reusable(saved, file.name) ? saved : await summarizeLogWithCode({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored])
         if (summary && summary !== saved) {
           cache.set(key, summary)
           saveCached(key, $state.snapshot(summary) as MatchSummary).then((ok) => { if (ok) savedCount++; else saveFailed = true })
@@ -179,6 +188,15 @@
     if (have.length < names.length) problems = ['To read these logs again with that robot, choose them again ("Choose logs…"): between visits this page keeps summaries, not logs.']
     if (have.length) await load(have)
   }
+
+  // A code folder chosen (or forgotten): read again the logs this page has, so the limit findings use it.
+  let seenFolder = codeFolder.version
+  $effect(() => {
+    if (codeFolder.version === seenFolder) return
+    seenFolder = codeFolder.version
+    const have = [...files.values()]
+    if (have.length) load(have)
+  })
 
   /** Open a match in Match review. A summary restored after a reload has no file: ask for it again. */
   function open(m: MatchSummary) {
@@ -280,6 +298,7 @@
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
   <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
+  <CodeFolderControl />
   {#if progress}
     <span class="progress" role="status">
       {progress.done} of {progress.total} logs{progress.done < progress.total ? ` · reading ${progress.current}` : ''} ·
