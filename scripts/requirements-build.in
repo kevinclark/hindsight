@@ -1,0 +1,4 @@
+# What the robot snapshot build installs. Regenerate the hashed lock beside it after changing this, with a cutoff
+# two weeks before the day you run it so nothing days old gets in:
+#   uv pip compile --universal --python-version 3.12 --generate-hashes --exclude-newer YYYY-MM-DD scripts/requirements-build.in -o scripts/requirements-build.txt
+pyinstaller==6.22.3

@@ -29,6 +29,18 @@ export const FMS_ATTACHED_BIT = 16
 /** What the robot says about itself, read first so the right profile can be chosen. */
 export const METADATA_KEYS = ['/RealMetadata/Codebase', '/RealMetadata/GitBranch', '/RealMetadata/GitSHA', '/RealMetadata/GitDirty', '/RealMetadata/GitDate']
 
+/**
+ * Where the robot's log is going, from the Hindsight companion library (companion/keys.json). The same keys on every
+ * robot that uses it, so they are not in the profile; a robot without the companion never sends them, and the check
+ * that reads them says "not checked".
+ */
+export const LOG_DRIVE_KEYS = {
+  onUsb: '/Hindsight/LogDrive/OnUsb',
+  status: '/Hindsight/LogDrive/Status',
+  path: '/Hindsight/LogDrive/Path',
+  device: '/Hindsight/LogDrive/Device',
+} as const
+
 /** Every log key Foresight's checks read for this robot profile. */
 export function foresightKeys(profile: RobotProfile): string[] {
   const s = profile.signals
@@ -43,6 +55,7 @@ export function foresightKeys(profile: RobotProfile): string[] {
     ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.connected, m.temperature, m.updating])),
     ...profile.otherDevices.flatMap((d) => [d.connected, d.updating]),
     ...profile.cameras.flatMap((c) => [c.connected, c.stale, c.acceptedPose, c.result]),
+    ...Object.values(LOG_DRIVE_KEYS),
   ]
   const fp = profile.foresight
   if (fp) {

@@ -26,11 +26,11 @@ writes to it: Foresight only subscribes.
 1. **Open the page from a file.** Double-click `hindsight.html` on the onchecks laptop (its address bar shows `file://`).
    Click **Foresight** at the top.
 2. **Connect.** Robot: `172.22.11.2` for USB, `10.80.33.2` for Ethernet. Click **Connect**. Within about 5 s the line
-   next to the button should say `Connected. Robot: 2026 offseason robot (<branch>); reading 105 signals.`
-   If it says it cannot tell the robot is in the pit, or the connection closes: go to step 10 and note the message.
+   next to the button should say `Connected. Robot: 2026 offseason robot (<branch>); reading 109 signals.`
+   If it says it cannot tell the robot is in the pit, or the connection closes: go to step 11 and note the message.
 3. **Check the counts** under **Readings**: *Topics announced / signals asked for*. Replaying the CalGames logs gives
-   94 / 105: 93 of the 105 signals are in those logs (the 12 missing are the battery tracker's, which the robot code
-   doesn't log yet), plus WPILib's `/FMSInfo/FMSControlData` for the field guard. Note both numbers. *Values received* should climb every second.
+   94 / 109: 93 of the 109 signals are in those logs (the 16 missing are the battery tracker's 12 and the companion
+   library's 4 log-drive keys, which the robot code doesn't log yet), plus WPILib's `/FMSInfo/FMSControlData` for the field guard. Note both numbers. *Values received* should climb every second.
 4. **Check the clock.** *Robot time* should read `… s · code started at … s (from the metadata)`. Note whether it says
    *from the metadata* or *from the first value*, and whether the code-start time looks right (just after a reboot
    the CalGames logs started at 11.8–12.2 s). From the metadata, a robot already on for 30 s skips the countdown.
@@ -57,14 +57,24 @@ writes to it: Foresight only subscribes.
    **OK** or **Look**. Note each line's mark and text. A line that says *partly checked* or *Not checked* with a
    reason about a name or a value that wasn't read means the real robot answers differently from CTRE's simulator:
    note it, and keep the snapshot folder for Claude (it holds no names, only device serial numbers).
-9. **Note the versions:** the browser (Chrome: menu → Help → About; Edge: Settings → About) and the roboRIO image
+9. **Check the "Log stick in" line.** Until the robot code uses the Hindsight companion library (the students'
+   work), it says *Not checked*: the robot doesn't send `/Hindsight/LogDrive/OnUsb`. That is expected; check the stick
+   by hand. Once it does, the line reads **OK** with the stick in, or **Look** ("The robot log (/U or /U/logs) is not on a USB
+   stick: it is on …") without it: note which, and whether the stick was really in. The companion reads the drive once, when the
+   robot code starts, so after moving the stick restart the robot code before looking again. Under the checklist,
+   *wanted checks* fold away in grey: problems no check sees yet. They never change the verdict; nothing to do.
+10. **Note the versions:** the browser (Chrome: menu → Help → About; Edge: Settings → About) and the roboRIO image
    (Driver Station → Diagnostics tab, or the roboRIO's web page).
-10. **Save the record.** Click **Download for Claude** under Readings. It saves `foresight-readings-<time>.json`: the
+11. **Save the record.** Click **Download for Claude** under Readings. It saves `foresight-readings-<time>.json`: the
    counts, clock, verdict, browser, and the list of signals the robot never sent. Add the roboRIO image version from
-   step 9 in a note next to it.
-11. **Disconnect and close the page.** Click **Disconnect**, then close the tab.
+   step 10 in a note next to it.
+12. **Disconnect and close the page.** Click **Disconnect**, then close the tab.
 
 ## What can't be checked in the pit
+
+- **The log-stick reading** is untested on a roboRIO: that a USB stick mounts from a `/dev/sd…` device and `/U` links
+  to it is the companion library's assumption (`companion/README.md`), and our robot code doesn't use it yet. The
+  check stays amber until a log of ours shows it fire for real.
 
 - **The field guard** needs the field: the Driver Station's practice mode does not set FMS attached. It is tested
   against replayed CalGames logs (it closes at the attach, 27.3–28.5 s robot time) and against ntcore, but not

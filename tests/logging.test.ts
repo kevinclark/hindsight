@@ -171,7 +171,7 @@ describe('wanted checks', () => {
     expect(new Set(WANTED_CHECKS.map((w) => w.id)).size).toBe(WANTED_CHECKS.length)
   })
   it('the USB stick is a live-only check, never a gap in a log', () => {
-    expect(WANTED_CHECKS.find((w) => w.id === 'wanted/log-usb-stick')?.liveOnly).toMatch(/only a check of the robot in the pit/)
+    expect(WANTED_CHECKS.find((w) => w.id === 'wanted/log-usb-stick')?.liveOnly).toMatch(/a missing stick never shows in a log$/)
   })
   it('accel X/Y is a profile key, not a wanted check', () => {
     expect(WANTED_CHECKS.some((w) => /accel/i.test(w.question + w.needs))).toBe(false)

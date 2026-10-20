@@ -178,6 +178,24 @@ class Robot:
         return {"GeneralReturn": general(action, model, device_id, canbus, -1, "unknown action")}
 
 
+READ_PARAMETERS = {"action", "model", "id", "canbus"}
+
+
+def read_only_problem(request, allowed_actions):
+    """What makes one logged stub request more than a single allowed read, or None if it is one."""
+    if request["method"] != "GET" or request["path"] != "/":
+        return "not a plain GET /: %s %s" % (request["method"], request["raw"])
+    action = request["query"].get("action")
+    if request["actions"] != [action] or action not in allowed_actions:
+        return "action not allowed: %s" % request["raw"]
+    if not set(request["query"]) <= READ_PARAMETERS:
+        return "unexpected parameter: %s" % request["raw"]
+    names = [name for name, _ in parse_qsl(urlsplit(request["raw"]).query, keep_blank_values=True)]
+    if len(names) != len(set(names)):  # the logged query is a dict, which keeps only the last of a repeated name
+        return "repeated parameter: %s" % request["raw"]
+    return None
+
+
 class StubServer:
     """A local diagnostic-server stand-in on 127.0.0.1. Logs every request it receives."""
 
@@ -230,7 +248,7 @@ class StubServer:
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     self.wfile.write(data)
-                except (BrokenPipeError, ConnectionResetError):
+                except ConnectionError:  # the client gave up first (a timeout test); Windows says ConnectionAbortedError
                     pass
 
             do_GET = do_POST = do_PUT = do_DELETE = _any
@@ -296,7 +314,7 @@ def make_snapshot(after, taken_at):
         out = os.path.join(tmp, "snap")
         code = tool.main(["--address", "127.0.0.1", "--port", str(stub.port), "--out", out], runner=local_route, say=lambda *_: None)
         assert code == 0, code
-        snapshot = json.loads(Path(out, "snapshot.json").read_text())
+        snapshot = json.loads(Path(out, "snapshot.json").read_text(encoding="utf-8"))
     return pin(snapshot, taken_at)
 
 

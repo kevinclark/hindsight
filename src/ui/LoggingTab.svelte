@@ -68,6 +68,7 @@
         <p class="todo">What happened: {w.incident}.</p>
         {#if w.liveOnly}
           <p class="sub">Not a gap in this log: {w.liveOnly}.</p>
+          {#if w.coveredBy}<p class="sub">Foresight checks it on a robot with the Hindsight companion library (<code>{w.coveredBy}</code>).</p>{/if}
         {:else}
           <p class="sub">The robot would need to log {w.needs}.</p>
         {/if}

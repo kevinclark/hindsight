@@ -44,10 +44,9 @@
   const steps = $derived(input.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule)))
   const greys = $derived(input.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)))
   // Lines the tool can never judge are listed by name under the table, not as rows.
-  const liveLines = $derived(onchecks.filter((l) => l.state !== 'by eye' && l.state !== 'not yet'))
+  const liveLines = $derived(onchecks.filter((l) => l.state !== 'by eye'))
   const byEyeLines = $derived(onchecks.filter((l) => l.state === 'by eye'))
-  const notYetLines = $derived(onchecks.filter((l) => l.state === 'not yet'))
-  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': '– Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
+  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': '– Not checked', 'by eye': 'By eye' } as const
 
   /** Print as PDF (the title names the file), then save the phone card. */
   export async function save(): Promise<string | null> {
@@ -100,7 +99,6 @@
     </tbody>
   </table>
   {#if byEyeLines.length}<p class="small"><strong>By eye (a person checks):</strong> {byEyeLines.map((l) => l.line).join(' · ')}</p>{/if}
-  {#if notYetLines.length}<p class="small"><strong>Not built yet:</strong> {notYetLines.map((l) => l.line).join(' · ')}</p>{/if}
 
   <h2>Readings</h2>
   <p>Battery {battery === null ? '—' : `${battery.toFixed(2)} V`} · Controllers {controllers.map((c, i) => `${i}: ${c}`).join(' · ') || '—'}</p>
@@ -134,13 +132,13 @@
   .sev.red { color: var(--error); }
   .sev.amber { color: var(--warning); }
   table { border-collapse: collapse; width: 100%; font-size: 8.5pt; }
-  th { vertical-align: top; text-align: left; font-weight: normal; padding: 0.08rem 0.5rem 0.08rem 0; border-bottom: 1px solid var(--border); width: 33%; }
-  td { padding: 0.08rem 0.4rem 0.08rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { vertical-align: top; text-align: left; font-weight: normal; padding: 0.06rem 0.5rem 0.06rem 0; border-bottom: 1px solid var(--border); width: 33%; }
+  td { padding: 0.06rem 0.4rem 0.06rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
   td.mark { font-weight: 700; width: 5rem; white-space: nowrap; }
   td.d { color: var(--muted); font-size: 8pt; }
   tr.ok .mark { color: var(--muted); font-weight: 400; }
   tr.red .mark { color: var(--error); }
   tr.amber .mark { color: var(--warning); }
   tr.not-checked .mark { color: var(--fg); }
-  tr.not-yet .mark, tr.context .mark, tr.by-eye .mark { color: var(--muted); }
+  tr.context .mark, tr.by-eye .mark { color: var(--muted); }
 </style>

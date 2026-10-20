@@ -9,7 +9,9 @@
  *
  * Every request the page makes is recorded: it must be the page itself (file://) or the NT4 socket, nothing else.
  * The pit cases also drop a synthetic robot snapshot on the page once it has a verdict (healthy, one CANcoder offset
- * off, or one taken an hour before the robot code started) and record the checklist's snapshot lines.
+ * off, or one taken an hour before the robot code started) and record the checklist's snapshot lines, the "Log stick
+ * in" line (the CalGames logs have no companion keys, so "not checked") and the wanted checks (grey: their mark's
+ * colour is the "By eye" lines').
  */
 import { spawn, execSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -72,12 +74,12 @@ async function scenario(name: string, address: string, seconds: number, done: (s
   await sleep(200)
   await evalIn(sessionId, `(() => { const i = document.querySelector('.connect input'); i.value = ${JSON.stringify(address)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await evalIn(sessionId, `[...document.querySelectorAll('.connect button')].find(b => b.innerText === 'Connect').click()`)
-  const samples: { t: number; verdict: string; why: string; items: string[]; field: boolean; snapshotLines: string[]; snapshotStatus: string }[] = []
+  const samples: { t: number; verdict: string; why: string; items: string[]; field: boolean; snapshotLines: string[]; snapshotStatus: string; logStickLine: string; wanted: { text: string; markColor: string }[]; byEyeColor: string }[] = []
   let droppedAt: number | null = null
   const started = Date.now()
   while (Date.now() - started < seconds * 1000) {
     await sleep(500)
-    const s = await evalIn(sessionId, `({ verdict: document.querySelector('.verdict .big')?.innerText ?? '', why: document.querySelector('.verdict p:nth-child(2)')?.innerText ?? '', items: [...document.querySelectorAll('.item')].map(li => li.querySelector('.chip').innerText + ': ' + li.querySelector('.title').innerText), field: !!document.querySelector('.field'), status: document.querySelector('.status')?.innerText ?? '', readings: document.querySelector('.readings')?.innerText ?? '', snapshotStatus: document.querySelector('section[aria-label="Robot snapshot"] .status')?.innerText ?? '', snapshotLines: [...document.querySelectorAll('.oc')].map(li => li.innerText.replace(/\\s+/g, ' ')).filter(t => /CANcoder offsets|Swerve ratio|licensed and ID|Current limits/.test(t)) })`)
+    const s = await evalIn(sessionId, `({ verdict: document.querySelector('.verdict .big')?.innerText ?? '', why: document.querySelector('.verdict p:nth-child(2)')?.innerText ?? '', items: [...document.querySelectorAll('.item')].map(li => li.querySelector('.chip').innerText + ': ' + li.querySelector('.title').innerText), field: !!document.querySelector('.field'), status: document.querySelector('.status')?.innerText ?? '', readings: document.querySelector('.readings')?.innerText ?? '', snapshotStatus: document.querySelector('section[aria-label="Robot snapshot"] .status')?.innerText ?? '', snapshotLines: [...document.querySelectorAll('.oc')].map(li => li.innerText.replace(/\\s+/g, ' ')).filter(t => /CANcoder offsets|Swerve ratio|licensed and ID|Current limits/.test(t)), logStickLine: [...document.querySelectorAll('.oc')].map(li => li.innerText.replace(/\\s+/g, ' ')).find(t => /Log stick in/.test(t)) ?? '', wanted: [...document.querySelectorAll('.oc.wanted')].map(li => { const m = getComputedStyle(li.querySelector('.mark')).color; return { text: li.textContent.replace(/\\s+/g, ' '), markColor: m } }), byEyeColor: (() => { const m = document.querySelector('.oc.by-eye .mark'); return m ? getComputedStyle(m).color : '' })() })`)
     samples.push({ t: (Date.now() - started) / 1000, ...s })
     // Once there is a verdict, drop the snapshot, as a student would after the page settles.
     if (snapshot && droppedAt === null && /^(NO-)?GO$/.test(s.verdict)) {
@@ -92,7 +94,7 @@ async function scenario(name: string, address: string, seconds: number, done: (s
   writeFileSync(`${outDir}/foresight-${name}.png`, Buffer.from(result.data, 'base64'))
   const last = samples.at(-1)!
   await send('Target.closeTarget', { targetId })
-  return { name, snapshot, snapshotStatus: last.snapshotStatus, snapshotLines: last.snapshotLines, last: { ...last, snapshotLines: undefined, snapshotStatus: undefined }, verdicts: [...new Set(samples.map((s) => `${s.verdict} (${s.why.replace(/\d+ s$/, 'n s')})`))], everItems: [...new Set(samples.flatMap((s) => s.items))] }
+  return { name, snapshot, snapshotStatus: last.snapshotStatus, snapshotLines: last.snapshotLines, logStickLine: last.logStickLine, wanted: last.wanted, wantedGrey: last.wanted.length > 0 && last.wanted.every((w: { markColor: string }) => w.markColor === last.byEyeColor), last: { ...last, snapshotLines: undefined, snapshotStatus: undefined, logStickLine: undefined, wanted: undefined, byEyeColor: undefined }, verdicts: [...new Set(samples.map((s) => `${s.verdict} (${s.why.replace(/\d+ s$/, 'n s')})`))], everItems: [...new Set(samples.flatMap((s) => s.items))] }
 }
 
 const results: object[] = []

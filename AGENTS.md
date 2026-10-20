@@ -66,7 +66,8 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
   PhotonVision already logs.
 - **Every key it logs is in `companion/keys.json`.** Java tests (`KeysTest` in each module) check the library logs
   exactly those keys; `tests/companion-keys.test.ts` checks the keys Hindsight reads are on the list. Change a key in
-  all three places or not at all: Hindsight's profiles read the battery keys.
+  all three places or not at all: Hindsight's profiles read the battery keys, and Foresight reads the log-drive keys
+  (`LOG_DRIVE_KEYS` in `src/foresight/keys.ts`, for `foresight/log-usb-stick`).
 - Hardware is read only on a real robot, and every read is an AdvantageKit input, so a replay reads it back. A failed
   read is logged, never thrown: the library runs inside someone else's robot code.
 - The `/proc` fixtures in `core/src/test/resources/proc` are synthetic.

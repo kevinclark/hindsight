@@ -1,8 +1,9 @@
 /**
  * Wanted checks: rules Hindsight would run if the robot logged one more thing. Each is a problem that has happened,
- * and the signal the robot would need to publish for a rule to catch it. They never run and always read "not
- * covered": the Logging tab lists them so students can see what the robot code could add. When a robot logs the
- * signal, write the rule (CONTRIBUTING.md) and remove its entry here.
+ * and the signal the robot would need to publish for a rule to catch it. They never run: the Logging tab lists them
+ * so students can see what the robot code could add, and Foresight shows them as grey context. An entry stays until a
+ * robot of ours logs the signal; one whose check exists (`coveredBy`) is dropped from Foresight only while that check
+ * could run, and removed here once our robot logs it. A new signal: write the rule (CONTRIBUTING.md) and set `coveredBy`.
  *
  * Worded as the problem, never as code: how to log it is the students' call.
  */
@@ -18,6 +19,11 @@ export interface WantedCheck {
   needs: string
   /** Set when no log can show it, only a check of the robot itself (Foresight, in the pit): why. */
   liveOnly?: string
+  /**
+   * The check that already reads the signal, for a robot that sends it (e.g. one using the Hindsight companion
+   * library). Until a robot of ours does, the entry stays: Foresight drops it only while that check could run.
+   */
+  coveredBy?: string
 }
 
 export const WANTED_CHECKS: WantedCheck[] = [
@@ -44,6 +50,7 @@ export const WANTED_CHECKS: WantedCheck[] = [
     question: 'Is the log USB stick in the roboRIO?',
     incident: 'Team pit checklist 2026 §10 checks for the log USB stick by hand',
     needs: 'a flag saying whether the log is being written to the USB stick',
-    liveOnly: 'a log that exists was written somewhere, so a missing stick never shows in a log; only a check of the robot in the pit can see it',
+    liveOnly: 'a log that exists was written somewhere, so a missing stick never shows in a log',
+    coveredBy: 'foresight/log-usb-stick',
   },
 ]

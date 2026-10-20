@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { PROFILES } from '../src/profiles/index.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
+import { LOG_DRIVE_KEYS } from '../src/foresight/keys.ts'
 
 interface CompanionKey { key: string; type: string; module: string }
 
@@ -41,5 +42,10 @@ describe('companion key list', () => {
       .filter((key) => key.startsWith('/BatteryGauge/') || key.startsWith('/RealOutputs/Battery/'))
     expect(trackerKeys.length).toBeGreaterThan(0)
     for (const key of trackerKeys) expect(listed, key).toContain(key)
+  })
+
+  it('has the log-drive keys Foresight reads, with their types', () => {
+    const types = Object.fromEntries(keys.map((k) => [k.key, k.type]))
+    expect(Object.values(LOG_DRIVE_KEYS).map((key) => types[key])).toEqual(['boolean', 'string', 'string', 'string'])
   })
 })

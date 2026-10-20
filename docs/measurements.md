@@ -52,6 +52,7 @@ over 138–345 s of disabled robot on the field. 91 s for all 11 on the M5 Max.
 | `alerts/passthrough` | 8 | one public 2026 log (QM36): "limelight name … is invalid" and "Vision Camera 0 Disconnected" | the Limelight-name alert is an always-on config nag: **false** | amber |
 | `battery/identity`, `battery/gauge-capacity` | 0 | no log has the battery tracker's keys yet | — | amber |
 | `foresight/commit-matches` | 0 | needs a passing pit check on record | — | amber |
+| `foresight/log-usb-stick` (2026-10-20) | 0 | no log has the companion library's `/Hindsight/LogDrive/*` keys yet (none of the three CalGames logs) | — | amber |
 | `foresight/gyro-still-drift` | 3 | context only (grey): no line | — | grey |
 | `foresight/motor-temperature` (2026-10-19) | 5 (CalGames, 340 ×2) | none: the hottest motor before any enable was 31 °C (line 60 °C) | — | amber: no real fire on our logs yet |
 | `foresight/values-updating` (2026-10-19) | 3 | none: all 16 readings changed in every 5 s window | — | amber: no real fire on our logs yet |
