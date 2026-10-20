@@ -41,6 +41,7 @@ import commitMatches from './foresight/commit-matches.ts'
 import motorTemperature from './foresight/motor-temperature.ts'
 import valuesUpdating from './foresight/values-updating.ts'
 import cameraSeesTag from './foresight/camera-sees-tag.ts'
+import logUsbStick from './foresight/log-usb-stick.ts'
 
 export const RULES: Rule[] = [
   brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, noneAtEnable, stuckState, tilt, zeroNotCompleted, deviceDropout, busDropout, dsLogTruncated,
@@ -55,7 +56,7 @@ export const RULES: Rule[] = [
  */
 export const FORESIGHT_RULES: Rule[] = [
   restVoltage, deviceDropout, busDropout, valuesUpdating, controllers, zeroSanity, motorTemperature, dirty, visionStale, visionTimeSync,
-  identity, gaugeCapacity, commitMatches, passthrough, cameraSeesTag, gyroStillDrift,
+  identity, gaugeCapacity, commitMatches, logUsbStick, passthrough, cameraSeesTag, gyroStillDrift,
 ]
 
 export type { Report, SkippedRule } from './run.ts'

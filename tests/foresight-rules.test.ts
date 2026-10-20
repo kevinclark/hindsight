@@ -7,7 +7,9 @@ import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { openWpilog, readNumbers, readRaw } from '../src/readers/wpilog.ts'
 import { RecordStore } from '../src/foresight/records.ts'
 import { evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/foresight/engine.ts'
-import { foresightKeys, RECENT_SECONDS } from '../src/foresight/keys.ts'
+import { foresightKeys, LOG_DRIVE_KEYS, RECENT_SECONDS } from '../src/foresight/keys.ts'
+import { PROVEN } from '../src/foresight/proven.ts'
+import { FORESIGHT_RULES } from '../src/rules/index.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
 import { markOnchecks } from '../src/foresight/onchecks.ts'
 import { KEEP_SECONDS } from '../src/foresight/records.ts'
@@ -293,6 +295,66 @@ describe('Foresight checks on a robot in the pit', () => {
   })
 })
 
+describe('Foresight: the log USB stick, from the companion library\'s log-drive reading', () => {
+  const drive = (onUsb: boolean, status = 'ok', path = '/U', device = '/dev/sda1'): FixtureEntry[] => [
+    { name: LOG_DRIVE_KEYS.onUsb, type: 'boolean', records: steady(onUsb) },
+    { name: LOG_DRIVE_KEYS.status, type: 'string', records: steady(status) },
+    { name: LOG_DRIVE_KEYS.path, type: 'string', records: steady(path) },
+    { name: LOG_DRIVE_KEYS.device, type: 'string', records: steady(device) },
+  ]
+  const line = (r: ReturnType<typeof check>) => markOnchecks(r).find((l) => l.line === 'Log stick in')!
+
+  it('Foresight asks the robot for the companion\'s log-drive keys (tests/companion-keys.test.ts checks them against its list)', () => {
+    expect(foresightKeys(offseason2026)).toEqual(expect.arrayContaining(Object.values(LOG_DRIVE_KEYS)))
+  })
+
+  it('a robot without the companion: not checked, with why; never OK, and the verdict is untouched', () => {
+    const r = check([])
+    expect(r.report.skipped.find((s) => s.rule === 'foresight/log-usb-stick')?.reason).toMatch(/doesn't send \/Hindsight\/LogDrive\/OnUsb/)
+    expect(line(r)).toMatchObject({ state: 'not checked' })
+    expect(line(r).detail).toBe("the robot doesn't send /Hindsight/LogDrive/OnUsb: check by hand")
+    expect(r.verdict.verdict).toBe('GO')
+    expect(r.verdict.reason).toBe('nothing found')
+  })
+
+  it('the log on the stick: OK, saying it is the reading from code start', () => {
+    const r = check(drive(true))
+    expect(r.report.skipped.map((s) => s.rule)).not.toContain('foresight/log-usb-stick')
+    expect(line(r)).toMatchObject({ state: 'ok' })
+    expect(line(r).detail).toMatch(/when its code started.*Restart the robot code/)
+  })
+
+  it('the log not on a stick: amber (never red: no log of ours has it), GO with one to look at', () => {
+    const r = check(drive(false, 'ok', '/U', '/dev/mmcblk0p1'))
+    const item = r.verdict.items.find((i) => i.finding.rule === 'foresight/log-usb-stick')!
+    expect(item.level).toBe('amber')
+    expect(item.finding.title).toBe('The robot log (/U) is not on a USB stick: it is on /dev/mmcblk0p1')
+    expect(PROVEN['foresight/log-usb-stick']).toBeUndefined()
+    expect(r.verdict.verdict).toBe('GO')
+    expect(line(r)).toMatchObject({ state: 'amber' })
+  })
+
+  it('OnUsb alone (no status, path or device): OK when on the stick; amber with no path or device when not', () => {
+    const only = (onUsb: boolean): FixtureEntry[] => [{ name: LOG_DRIVE_KEYS.onUsb, type: 'boolean', records: steady(onUsb) }]
+    expect(line(check(only(true)))).toMatchObject({ state: 'ok' })
+    const item = check(only(false)).verdict.items.find((i) => i.finding.rule === 'foresight/log-usb-stick')!
+    expect(item).toMatchObject({ level: 'amber' })
+    expect(item.finding.title).toBe('The robot log is not on a USB stick')
+    expect(item.finding.evidence).toEqual({})
+  })
+
+  it('a reading the robot could not take (simulation, a failed read): not checked, with its status', () => {
+    const r = check(drive(false, 'not read'))
+    expect(r.report.skipped.find((s) => s.rule === 'foresight/log-usb-stick')?.reason).toMatch(/could not read where its log goes \(not read\)/)
+    expect(r.verdict.items.map((i) => i.finding.rule)).not.toContain('foresight/log-usb-stick')
+    expect(line(r)).toMatchObject({ state: 'not checked' })
+  })
+
+  it('is a Foresight check', () => {
+    expect(FORESIGHT_RULES.map((rule) => rule.id)).toContain('foresight/log-usb-stick')
+  })
+})
+
 describe('Foresight with a robot snapshot dropped on the page', () => {
   const codeStartWallMs = Date.parse('2026-10-20T17:00:00Z')
   const taken = new Date(codeStartWallMs + (SETTLE_SECONDS + 20) * 1000).toISOString()
@@ -386,7 +448,7 @@ describe.skipIf(!haveCalGames)('the keys Foresight subscribes to are enough', ()
       const subscribed = summary(RecordStore.fromWpilog(log, foresightKeys(offseason2026)))
       const whole = summary(RecordStore.fromWpilog(log, null))
       expect(subscribed).toEqual(whole)
-      expect(foresightKeys(offseason2026).length).toBeLessThan(120) // 105: the robot publishes ~455
+      expect(foresightKeys(offseason2026).length).toBeLessThan(120) // 109: the robot publishes ~455
     })
   }
 })

@@ -9,7 +9,8 @@
  * The proof covers a robot sitting disabled before any enable; after a drive, rest voltage stays amber (engine.ts).
  * Not here: foresight/camera-sees-tag (a step for a person, grey, never a verdict),
  * alerts/passthrough (one false red: another team's always-on "limelight name is invalid" alert),
- * the battery tracker checks and commit-matches (no log to judge them on yet), gyro-still-drift (context, no line),
+ * the battery tracker checks, commit-matches and log-usb-stick (no log to judge them on yet: no log of ours has the
+ * companion library's log-drive reading), gyro-still-drift (context, no line),
  * and the snapshot/* checks (snapshot-checks.ts: no snapshot of our robot yet; the engine holds them amber regardless).
  */
 export interface Proof {

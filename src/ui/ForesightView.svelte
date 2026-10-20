@@ -14,7 +14,7 @@
   import { profileId } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
-  import { ASSISTED_RULES, markOnchecks, type MarkedLine } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, markOnchecks, wantedLines, type MarkedLine } from '../foresight/onchecks.ts'
   import { SNAPSHOT_RULES } from '../foresight/snapshot-checks.ts'
   import { parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import type { VerdictItem } from '../foresight/verdict.ts'
@@ -111,6 +111,8 @@
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
   }
   const onchecks = $derived(markOnchecks(checked))
+  // Problems no check can see yet (rules/wanted.ts): grey context, never in the verdict.
+  const wanted = $derived(wantedLines(checked))
   // Only red and amber items decide GO/NO-GO; grey ones (context, or a step for a person) sit in their own short list.
   const decisive = $derived(checked ? checked.verdict.items.filter((i) => i.level !== 'grey') : [])
   // Grey items that ask a person to do something (hold a tag up to a camera) are steps; the other greys are context.
@@ -118,14 +120,14 @@
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
   const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
   const unrun = $derived(checked ? didNotRun(checked.verdict.notChecked.length + checked.verdict.crashed.length, totalChecks) : null)
-  // Lines the tool can never judge (a person's, or not built yet) fold away; the rest are live, in the team's order.
-  const inert = (l: { state: string }) => l.state === 'by eye' || l.state === 'not yet'
+  // Lines the tool can never judge (a person's) fold away; the rest are live, in the team's order.
+  const inert = (l: { state: string }) => l.state === 'by eye'
   const liveLines = $derived(onchecks.filter((l) => !inert(l)))
   const inertLines = $derived(onchecks.filter(inert))
   const snapshotWhy = $derived(checked && !checked.snapshotUsed ? checked.report.skipped.find((s) => s.rule === SNAPSHOT_RULES[0])?.reason ?? null : null)
   let reportView = $state<{ save: () => Promise<string | null> }>()
   let saveProblem = $state<string | null>(null)
-  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': '– Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
+  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': '– Not checked', 'by eye': 'By eye' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
 
@@ -218,12 +220,20 @@
         {#each liveLines as l (l.line)}{@render checkLine(l)}{/each}
       </ul>
       <details class="inert">
-        <summary>{inertLines.length} lines for a person or not built yet</summary>
+        <summary>{inertLines.length} lines for a person</summary>
         <ul>
           {#each inertLines as l (l.line)}{@render checkLine(l)}{/each}
         </ul>
       </details>
       <p class="small">In the team's 2026 checklist order. A line is marked only from the check on screen now; "By eye" lines are for a person and never count toward GO.</p>
+      {#if wanted.length}
+        <details class="inert">
+          <summary>{wanted.length} wanted checks: problems no check can see yet (context, never changes the verdict)</summary>
+          <ul aria-label="Wanted checks: context, never changes the verdict">
+            {#each wanted as w (w.id)}<li class="oc wanted"><span class="mark">Wanted</span><span class="line">{w.question}</span><span class="detail-text">{w.detail}</span></li>{/each}
+          </ul>
+        </details>
+      {/if}
     </section>
   {/if}
 
@@ -298,7 +308,7 @@
   .oc.red .mark { color: var(--error); }
   .oc.amber .mark { color: var(--warning); }
   .oc.to-do .mark { color: var(--fg); }
-  .oc.not-yet .mark, .oc.context .mark, .oc.by-eye .mark { color: var(--muted); }
+  .oc.context .mark, .oc.by-eye .mark, .oc.wanted .mark { color: var(--muted); }
   .oc .detail-text { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
   @media (max-width: 600px) { .oc { grid-template-columns: 5.5rem 1fr; } .oc .detail-text { grid-column: 2; } }
   .field { margin: 2rem 0; padding: 2rem 1rem; text-align: center; border: 3px solid var(--error); border-radius: 10px; color: var(--error); }

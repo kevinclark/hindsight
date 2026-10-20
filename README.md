@@ -210,7 +210,7 @@ instead of after it. One verdict, readable at arm's length: **GO**, **NO-GO** or
 worst first, each red with the one thing to do before the robot goes on the field (swap the battery, redeploy from a
 commit, reseat a controller).
 
-- **Read-only.** It only subscribes (`src/foresight/nt4-client.ts` refuses anything else, tested), to the ~105 signals
+- **Read-only.** It only subscribes (`src/foresight/nt4-client.ts` refuses anything else, tested), to the ~109 signals
   its checks read for this robot, never the whole tree.
 - **Never on the field.** The moment `/DriverStation/FMSAttached` (or WPILib's `/FMSInfo/FMSControlData`) says the
   field is attached it disconnects, shows "On the field: close Foresight.", and won't connect again until the page is
@@ -221,9 +221,12 @@ commit, reseat a controller).
   frozen 5 s while others change), `foresight/controllers`, `foresight/zero-sanity`, `foresight/motor-temperature`
   (above 60 °C), `build/dirty`, `vision/stale` (drop-outs only, while disabled), `vision/time-sync`, the battery
   tracker's two, `foresight/commit-matches` (code changed since the last GO, kept in `hindsight-history.jsonl`),
-  `alerts/passthrough`, `foresight/camera-sees-tag` (a step: "hold an AprilTag up to Back_Left" until each camera has
+  `foresight/log-usb-stick` (the companion library's `/Hindsight/LogDrive/OnUsb`; "not checked" on a robot without
+  it), `alerts/passthrough`, `foresight/camera-sees-tag` (a step: "hold an AprilTag up to Back_Left" until each camera has
   seen one; never moves the verdict), and `foresight/gyro-still-drift` as context. Not here: the auto choice and
   alliance (they reset on the field).
+- **Wanted checks** (`src/rules/wanted.ts`) fold away under the pit checklist as grey context: problems no check can
+  see yet, never a finding and never in the verdict. One whose covering check could run drops off the list.
 - **Red is earned:** every check is amber until `scripts/foresight-backtest.ts` finds no false reds on field logs;
   the screen says how many logs each red was proven on (`src/foresight/proven.ts`, `docs/measurements.md`).
 - **Download for Claude** (under Readings) saves the counts, clock, verdict and which signals never came.

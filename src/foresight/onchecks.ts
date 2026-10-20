@@ -1,7 +1,7 @@
 /**
  * The team's own pit checklist (2026 Pit Checklist, sections 6, 9 and 10), in its order and words, with each line
- * marked from Foresight's checks: OK, a problem (red or amber), not checked, "check by eye" (nothing on the robot can
- * tell), or not yet (a check Foresight doesn't have yet).
+ * marked from Foresight's checks: OK, a problem (red or amber), not checked, or "check by eye" (nothing on the robot
+ * can tell).
  *
  * It is a view of the verdict, never an input to it: a line is marked only from the current check's results, a
  * "by eye" line never counts toward GO, and a proven check that could not run still makes the verdict NOT CHECKED
@@ -10,6 +10,7 @@
 import type { Report } from '../rules/index.ts'
 import type { Verdict } from './verdict.ts'
 import { SNAPSHOT_RULES, TAKE_SNAPSHOT } from './snapshot-checks.ts'
+import { WANTED_CHECKS } from '../rules/wanted.ts'
 
 export interface OncheckLine {
   section: string
@@ -18,8 +19,6 @@ export interface OncheckLine {
   rules?: string[]
   /** Nothing on the robot can tell: a person checks it. */
   byEye?: boolean
-  /** Not covered yet, and why. */
-  notYet?: string
   /** What the checks cover of the line, when it is only part of it. */
   note?: string
   /**
@@ -44,7 +43,7 @@ export const ONCHECKS: OncheckLine[] = [
   { section: 'Software', line: 'All CAN devices licensed and ID\'d', rules: ['snapshot/devices', 'snapshot/licensed'], note: 'from the robot snapshot: every motor, CANcoder and the gyro on its own ID, and no Pro feature used without a licence' },
   { section: 'Software', line: 'Current limits as the code sets them', rules: ['snapshot/current-limits'], note: 'Foresight\'s line, not on the team\'s list: from the robot snapshot, every motor\'s six current-limit settings, followers included' },
   { section: 'Software', line: 'All device values updating', rules: ['can/device-dropout', 'foresight/values-updating'], note: 'devices connected and their readings changing; not the CANcoders or flywheel motors (nothing of theirs changes at rest)' },
-  { section: 'Software', line: 'Log stick in', notYet: 'needs the robot code to publish it (students, phase 1b)' },
+  { section: 'Software', line: 'Log stick in', rules: ['foresight/log-usb-stick'], note: 'the robot\'s own reading when its code started (Hindsight companion library). Touched the stick since? Restart the robot code: neither this reading nor the log itself survives a pull' },
   { section: 'Software', line: 'Gyro seems normal', rules: ['foresight/gyro-still-drift'], note: 'heading drift while still, as context: no line yet' },
   { section: 'Software', line: 'No undeployed changes', rules: ['build/dirty', 'foresight/commit-matches'] },
   { section: 'Software', line: 'No motors overheating', rules: ['foresight/motor-temperature'], note: 'every motor at or under 60 °C (hotter than any ended a CalGames match)' },
@@ -53,7 +52,7 @@ export const ONCHECKS: OncheckLine[] = [
 /** Every check that asks a person to do something (its grey findings are a step, not context). */
 export const ASSISTED_RULES = new Set(ONCHECKS.flatMap((l) => l.assisted ?? []))
 
-export type LineState = 'ok' | 'red' | 'amber' | 'to do' | 'context' | 'not checked' | 'by eye' | 'not yet'
+export type LineState = 'ok' | 'red' | 'amber' | 'to do' | 'context' | 'not checked' | 'by eye'
 
 export interface MarkedLine extends OncheckLine { state: LineState; detail: string }
 
@@ -66,7 +65,6 @@ const FROM_SNAPSHOT = new Set<string>(SNAPSHOT_RULES)
 export function markOnchecks(current: { verdict: Verdict; report: Report; snapshotUsed?: boolean } | null): MarkedLine[] {
   return ONCHECKS.map((l) => {
     if (l.byEye) return { ...l, state: 'by eye', detail: 'check by eye' }
-    if (l.notYet) return { ...l, state: 'not yet', detail: `not checked yet: ${l.notYet}` }
     if (!current) return { ...l, state: 'not checked', detail: 'no current check' }
     const rules = l.rules ?? []
     const items = current.verdict.items.filter((i) => rules.includes(i.finding.rule))
@@ -90,5 +88,19 @@ export function markOnchecks(current: { verdict: Verdict; report: Report; snapsh
     const context = items.find((i) => i.level === 'grey')
     if (context && items.every((i) => i.level === 'grey') && rules.every((r) => r === context.finding.rule)) return { ...l, state: 'context', detail: context.finding.title }
     return { ...l, state: 'ok', detail: l.note ?? 'OK' }
+  })
+}
+
+export interface WantedLine { id: string; question: string; detail: string }
+
+/**
+ * The wanted checks (rules/wanted.ts) as Foresight shows them: grey context, never a fault, never an input to the
+ * verdict. An entry whose covering check ran in the current check is left out: that check's own line says it now.
+ */
+export function wantedLines(current: { report: Report } | null): WantedLine[] {
+  const ran = (rule: string) => !!current && ![...current.report.skipped, ...current.report.crashed].some((s) => s.rule === rule)
+  return WANTED_CHECKS.filter((w) => !(w.coveredBy && ran(w.coveredBy))).map((w) => {
+    const why = w.liveOnly ? `only this pit check could see it (${w.liveOnly}), once the robot sends ${w.needs}` : `no check can see it yet: the robot would need to send ${w.needs}`
+    return { id: w.id, question: w.question, detail: `${why}. What happened: ${w.incident}.` }
   })
 }
