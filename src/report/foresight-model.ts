@@ -24,6 +24,12 @@ export interface ForesightReportInput {
   notChecked: { rule: string; reason: string }[]
 }
 
+/** A 40-hex git sha in a line of text shortened to the 7 characters the card and the printed report show. */
+export const shortShas = (text: string) => text.replace(/\b[0-9a-f]{40}\b/g, (sha) => sha.slice(0, 7))
+
+/** The verdict box's sub-line: how many of the checks did not run (the same count as the "Not checked or partly checked" line). */
+export const didNotRun = (n: number, total: number) => (n > 0 ? `${n} of ${total} checks did not run` : null)
+
 const p2 = (n: number) => String(n).padStart(2, '0')
 export const stamp = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`
 export const fileStamp = (d: Date) => stamp(d).replace(/[ :]/g, '-')
@@ -38,7 +44,7 @@ export function foresightCard(i: ForesightReportInput): CardModel {
   const reds = i.items.filter((x) => x.level === 'red')
   const ambers = i.items.filter((x) => x.level === 'amber')
   const build = foresightBuild(i)
-  const item = (x: VerdictItem, word: string, tone: Tone) => { const n = keyNumber(x.finding); return { word, tone, title: cardTitle(x.finding.title), number: n.inTitle ? '' : n.text.replace(/\b[0-9a-f]{40}\b/g, (sha) => sha.slice(0, 7)) } }
+  const item = (x: VerdictItem, word: string, tone: Tone) => { const n = keyNumber(x.finding); return { word, tone, title: cardTitle(x.finding.title), number: n.inTitle ? '' : shortShas(n.text) } }
   return {
     context: 'Foresight pit check',
     heading: i.verdict,

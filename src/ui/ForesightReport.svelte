@@ -11,11 +11,11 @@
   import { profileId } from '../profiles/index.ts'
   import { buildCard, type Card } from '../report/card.ts'
   import { saveForSlack } from '../report/card-png.ts'
-  import { fileStamp, foresightBuild, foresightCard, stamp, type ForesightReportInput } from '../report/foresight-model.ts'
+  import { fileStamp, foresightBuild, foresightCard, didNotRun, shortShas, stamp, type ForesightReportInput } from '../report/foresight-model.ts'
   import { keyNumber } from '../report/review-model.ts'
   import { VERSION } from '../version.ts'
 
-  let { status, checked, verdict, why, onchecks, battery, controllers }: {
+  let { status, checked, verdict, why, onchecks, battery, controllers, totalChecks }: {
     status: LiveStatus | null
     checked: Extract<ForesightResult, { state: 'checked' }> | null
     verdict: 'GO' | 'NO-GO' | 'NOT CHECKED'
@@ -23,6 +23,7 @@
     onchecks: MarkedLine[]
     battery: number | null
     controllers: string[]
+    totalChecks: number
   } = $props()
 
   // The screen updates about once a second; the time of the latest update is the time the readings were taken.
@@ -34,6 +35,7 @@
     robot: status?.profile ? profileId(status.profile) : null, items: checked?.verdict.items ?? [], onchecks, battery, controllers,
     build: checked?.match.build ?? null, notChecked: [...(checked?.verdict.notChecked ?? []), ...(checked?.verdict.crashed ?? [])],
   })
+  const unrun = $derived(didNotRun(input.notChecked.length, totalChecks))
   const card = $derived<Card>(buildCard(foresightCard(input)))
   const build = $derived(foresightBuild(input))
   const reds = $derived(input.items.filter((i) => i.level === 'red'))
@@ -45,7 +47,7 @@
   const liveLines = $derived(onchecks.filter((l) => l.state !== 'by eye' && l.state !== 'not yet'))
   const byEyeLines = $derived(onchecks.filter((l) => l.state === 'by eye'))
   const notYetLines = $derived(onchecks.filter((l) => l.state === 'not yet'))
-  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
+  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': '– Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
 
   /** Print as PDF (the title names the file), then save the phone card. */
   export async function save(): Promise<string | null> {
@@ -66,16 +68,17 @@
   <section class={`verdict v-${verdict.replace(' ', '-').toLowerCase()}`}>
     <p class="big">{verdict}</p>
     <p class="why">{why}</p>
+    {#if unrun}<p class="unrun">{unrun}</p>{/if}
   </section>
 
-  <p class="meta">Read {stamp(readAt)} · connection: {input.state}{input.url ? ` (${input.url})` : ''} · {input.message}</p>
+  <p class="meta">Read {stamp(readAt)} · connection: {input.state} · {input.message}</p>
   <p class="meta">{input.robot ?? 'robot not identified'} · Hindsight {VERSION}</p>
 
   {#if build}<p class={`build ${build.uncommitted ? 'dirty' : ''}`}><strong>Code:</strong> {build.text}</p>{/if}
 
   {#if reds.length}
     <h2>Fix before the field ({reds.length})</h2>
-    <ul class="items">{#each reds as i (i.finding.key)}<li class="red"><p class="title"><span class="sev red">Fix</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p><p class="small">{i.finding.rule} · {keyNumber(i.finding).label}: {keyNumber(i.finding).value}</p></li>{/each}</ul>
+    <ul class="items">{#each reds as i (i.finding.key)}<li class="red"><p class="title"><span class="sev red">Fix</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p><p class="small">{i.finding.rule} · {keyNumber(i.finding).label}: {shortShas(keyNumber(i.finding).value)}</p></li>{/each}</ul>
   {/if}
   {#if ambers.length}
     <h2>Look at ({ambers.length})</h2>
@@ -117,6 +120,7 @@
   .verdict { margin: 0.7rem 0 0.4rem; padding: 0.7rem 1rem; border: 3px solid var(--border); text-align: center; break-inside: avoid; }
   .big { font-size: 48pt; font-weight: 800; line-height: 1.05; margin: 0; letter-spacing: 0.02em; }
   .why { font-size: 12pt; margin: 0.2rem 0 0; }
+  .unrun { font-size: 10.5pt; margin: 0.1rem 0 0; }
   .v-go { border-color: var(--go); color: var(--go); }
   .v-no-go { border-color: var(--error); color: var(--error); }
   .v-not-checked { color: var(--muted); }
@@ -130,12 +134,13 @@
   .sev.red { color: var(--error); }
   .sev.amber { color: var(--warning); }
   table { border-collapse: collapse; width: 100%; font-size: 8.5pt; }
-  th { vertical-align: top; text-align: left; font-weight: normal; padding: 0.08rem 0.5rem 0.08rem 0; border-bottom: 1px solid var(--border); width: 38%; }
+  th { vertical-align: top; text-align: left; font-weight: normal; padding: 0.08rem 0.5rem 0.08rem 0; border-bottom: 1px solid var(--border); width: 33%; }
   td { padding: 0.08rem 0.4rem 0.08rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
   td.mark { font-weight: 700; width: 5rem; white-space: nowrap; }
   td.d { color: var(--muted); font-size: 8pt; }
-  tr.ok .mark { color: var(--muted); }
+  tr.ok .mark { color: var(--muted); font-weight: 400; }
   tr.red .mark { color: var(--error); }
   tr.amber .mark { color: var(--warning); }
-  tr.not-checked .mark, tr.not-yet .mark, tr.context .mark, tr.by-eye .mark { color: var(--muted); }
+  tr.not-checked .mark { color: var(--fg); }
+  tr.not-yet .mark, tr.context .mark, tr.by-eye .mark { color: var(--muted); }
 </style>
