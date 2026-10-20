@@ -38,13 +38,17 @@ export default rule({
     const hasPose = match.has(camera.acceptedPoseKey)
     if (!hasResult && !hasPose) return match.couldNotCheck(`${camera.name} sends neither its camera result nor a pose`)
     const tags = hasResult ? camera.tagsSeen().samples(during) : []
-    const poses = hasPose ? camera.acceptedPose().series.t.filter((t) => t > during[0].start && t <= stretch.end).length : 0
+    const isDuringCheck = (t: number) => t > during[0].start && t <= stretch.end
+    const poses = hasPose ? camera.acceptedPose().series.t.filter(isDuringCheck).length : 0
     if (tags.some((n) => n >= 1) || poses > 0) return
-    return {
-      // With only the pose to go on, one tag may not be enough (this robot's code makes a pose only from two).
-      message: hasResult ? `Hold an AprilTag up to ${camera.name}` : `Hold two AprilTags up to ${camera.name} (it reports only poses)`,
-      at: stretch.end,
-      evidence: (hasResult ? { 'camera results since the check started': tags.length, 'results with a tag': 0 } : { 'poses since the check started': 0 }) as Record<string, number>,
+
+    // With only the pose to go on, one tag may not be enough (this robot's code makes a pose only from two).
+    let message = `Hold two AprilTags up to ${camera.name} (it reports only poses)`
+    let evidence: Record<string, number> = { 'poses since the check started': 0 }
+    if (hasResult) {
+      message = `Hold an AprilTag up to ${camera.name}`
+      evidence = { 'camera results since the check started': tags.length, 'results with a tag': 0 }
     }
+    return { message, at: stretch.end, evidence }
   },
 })

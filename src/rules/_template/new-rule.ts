@@ -28,13 +28,19 @@ export default rule({
   incident: '<what it catches, where it was seen>',
 
   check(match) {
+    // Guard first: return as soon as there is nothing wrong.
     const battery = match.signal('batteryVoltage')
     const dips = battery.episodes(below(LIMIT), { during: match.enabled })
     if (dips.length === 0) return
+
+    // Name each number once, then use it in the message, the evidence and `measured`.
+    const firstDip = dips[0]
+    const lowest = round(battery.lowest(match.enabled).value)
     return {
-      message: `Battery dipped under ${LIMIT} V, first at ${match.when(dips[0].start)}`,
-      at: dips[0].start,
-      evidence: { 'times under the limit': dips.length, 'lowest (V)': round(battery.lowest(match.enabled).value) },
+      message: `Battery dipped under ${LIMIT} V, first at ${match.when(firstDip.start)}`,
+      at: firstDip.start,
+      evidence: { 'times under the limit': dips.length, 'lowest (V)': lowest },
+      measured: [{ label: 'lowest battery voltage', value: lowest, unit: 'V', threshold: LIMIT }],
       plot: { signals: [battery], unit: 'V' },
       // Optional: when the evidence points at a cause, name it (by id) so it is listed first.
       // likely: ['<short-name>'],

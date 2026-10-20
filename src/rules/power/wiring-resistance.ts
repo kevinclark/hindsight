@@ -29,10 +29,13 @@ export default rule({
     const ohms = match.power().report.resistanceOhms
     if (ohms === null) return match.couldNotCheck('too few current steps over 100 A to measure resistance')
     if (ohms <= MOST_OHMS) return
+
+    const milliohms = ohms * 1000
+    const mostMilliohms = MOST_OHMS * 1000
     return {
-      message: `Battery + wiring resistance ${(ohms * 1000).toFixed(1)} mΩ (want under ${MOST_OHMS * 1000} mΩ)`,
-      evidence: { 'resistance (mΩ)': round(ohms * 1000, 1), 'most OK (mΩ)': MOST_OHMS * 1000 },
-      measured: [{ label: 'battery + wiring resistance', value: round(ohms * 1000, 1), unit: 'mΩ', threshold: MOST_OHMS * 1000 }],
+      message: `Battery + wiring resistance ${milliohms.toFixed(1)} mΩ (want under ${mostMilliohms} mΩ)`,
+      evidence: { 'resistance (mΩ)': round(milliohms, 1), 'most OK (mΩ)': mostMilliohms },
+      measured: [{ label: 'battery + wiring resistance', value: round(milliohms, 1), unit: 'mΩ', threshold: mostMilliohms }],
     }
   },
 })

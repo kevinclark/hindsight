@@ -31,16 +31,17 @@ export default rule({
     const fp = match.profile.foresight
     if (!fp) return match.couldNotCheck('the robot profile does not name the gyro')
     if (stretch.end - stretch.start < STILL_SECONDS - 0.01) return match.couldNotCheck(`less than ${STILL_SECONDS} s to measure over yet`)
-    const yaw = match.signal(fp.gyroYaw).times(180 / Math.PI, 'gyro yaw (°)')
+    const yaw = match.signal(fp.gyroYaw).inDegrees('gyro yaw (°)')
     // Never before the stretch starts (a rounding hair before it reads as "no value yet").
     const from = Math.max(stretch.start, stretch.end - STILL_SECONDS)
     let moved = yaw.at(stretch.end) - yaw.at(from)
     if (!Number.isFinite(moved)) return match.couldNotCheck('the gyro sent no heading in the last 20 s')
     moved -= 360 * Math.round(moved / 360) // across ±180°
+    const degreesMoved = Math.abs(moved)
     return {
-      message: `Gyro heading moved ${Math.abs(moved).toFixed(2)}° in the last ${STILL_SECONDS} s with the robot disabled`,
+      message: `Gyro heading moved ${degreesMoved.toFixed(2)}° in the last ${STILL_SECONDS} s with the robot disabled`,
       at: stretch.end,
-      measured: [{ label: `yaw change in ${STILL_SECONDS} s`, value: round(Math.abs(moved), 3), unit: '°' }],
+      measured: [{ label: `yaw change in ${STILL_SECONDS} s`, value: round(degreesMoved, 3), unit: '°' }],
       evidence: {
         [`yaw change in the last ${STILL_SECONDS} s (°)`]: round(moved, 3),
         'CalGames, disabled on the field (°)': '0.005–0.044 before enable; 0.3–4.4 in the first 1–2 min after boot',

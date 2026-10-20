@@ -7,6 +7,7 @@
  * Threshold: assumed. Q21 and P0 peaked at 2.6 and 2.8 g with no known collision; backtest before trusting it.
  */
 import { rule, round, type Problem } from '../rule.ts'
+import type { MatchView } from '../view.ts'
 
 const LIMIT_G = 3
 
@@ -25,10 +26,6 @@ export default rule({
   incident: '#in-hindsight: controller drops after touching field metal (≥ 8 episodes, hindsight-research/issue-catalog-slack.md)',
 
   check(match) {
-    const trouble = (from: number, to: number) => [
-      match.has('brownedOut') && match.signal('brownedOut').turnsOn(match.between(from, to)).length > 0 ? 'browned out' : '',
-      match.has('commsDisableCount') && match.signal('commsDisableCount').increases(match.between(from, to)).length > 0 ? 'lost comms' : '',
-    ].filter(Boolean)
     const grid = match.grid()
     const ax = match.signal('accelX').onGrid(grid)
     const ay = match.signal('accelY').onGrid(grid)
@@ -36,19 +33,36 @@ export default rule({
     for (let i = 0; i < grid.length; i++) {
       const g = Math.hypot(ax[i], ay[i]) / 9.81
       const lastHit = hits[hits.length - 1]
-      if (g > LIMIT_G && (!lastHit || grid[i] - lastHit.at > 1)) hits.push({ at: grid[i], g })
+      const isNewHit = !lastHit || grid[i] - lastHit.at > 1
+      if (g > LIMIT_G && isNewHit) hits.push({ at: grid[i], g })
     }
-    return hits.map((h): Problem => {
+
+    return hits.map((hit): Problem => {
       // Did the robot brown out or lose comms in the 2 s after the hit? Then something was probably knocked loose.
-      const after = trouble(h.at, h.at + 2)
+      const after = troubleBetween(match, hit.at, hit.at + 2)
+      let nextStep: string | undefined
+      if (after.length > 0) {
+        nextStep = `The robot ${after.join(' and ')} within 2 s of this hit: check the battery leads, the main breaker and the radio\'s power and Ethernet cables first.`
+      }
       return {
-      message: `${h.g.toFixed(1)} g hit at ${match.when(h.at)}`,
-      at: h.at,
-      evidence: { 'sideways acceleration (g)': round(h.g), 'threshold (g)': LIMIT_G },
-      measured: [{ label: 'sideways acceleration', value: round(h.g), unit: 'g', threshold: LIMIT_G }],
-      plot: { signals: ['accelX', 'accelY'], unit: 'm/s²', from: h.at - 2, to: h.at + 2 },
-      nextStep: after.length ? `The robot ${after.join(' and ')} within 2 s of this hit: check the battery leads, the main breaker and the radio\'s power and Ethernet cables first.` : undefined,
+        message: `${hit.g.toFixed(1)} g hit at ${match.when(hit.at)}`,
+        at: hit.at,
+        evidence: { 'sideways acceleration (g)': round(hit.g), 'threshold (g)': LIMIT_G },
+        measured: [{ label: 'sideways acceleration', value: round(hit.g), unit: 'g', threshold: LIMIT_G }],
+        plot: { signals: ['accelX', 'accelY'], unit: 'm/s²', from: hit.at - 2, to: hit.at + 2 },
+        nextStep,
       }
     })
   },
 })
+
+/** What went wrong between two times: 'browned out' and/or 'lost comms' (each only if the log has that signal). */
+function troubleBetween(match: MatchView, from: number, to: number): string[] {
+  const window = match.between(from, to)
+  const brownedOut = match.signalIfLogged('brownedOut')
+  const commsDisables = match.signalIfLogged('commsDisableCount')
+  const trouble: string[] = []
+  if (brownedOut && brownedOut.turnsOn(window).length > 0) trouble.push('browned out')
+  if (commsDisables && commsDisables.increases(window).length > 0) trouble.push('lost comms')
+  return trouble
+}

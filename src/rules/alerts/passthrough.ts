@@ -28,15 +28,20 @@ export default rule({
   check(alert, match) {
     if (TIME_SYNC_ALERTS.some((pattern) => pattern.test(alert.text))) return
     const during = alert.onsetsInMatch.length
+    const firstTimes = alert.onsetsInMatch.slice(0, 6).map((t) => match.when(t)).join('; ')
+    const window = match.windowWords
+
+    let message = `Alert "${alert.text}" only before or after the match (${alert.onsetsOutsideMatch}×)`
+    if (during > 0) message = `Alert "${alert.text}" ${during}× ${window}`
     return {
-      message: during ? `Alert "${alert.text}" ${during}× ${match.windowWords}` : `Alert "${alert.text}" only before or after the match (${alert.onsetsOutsideMatch}×)`,
+      message,
       at: alert.onsetsInMatch[0] ?? null,
-      severity: during ? alert.kind : 'info',
+      severity: during > 0 ? alert.kind : 'info',
       evidence: {
         group: alert.group,
-        [`times ${match.windowWords}`]: during,
-        [`first times ${match.windowWords}`]: alert.onsetsInMatch.slice(0, 6).map((t) => match.when(t)).join('; ') || '—',
-        [`seconds on ${match.windowWords}`]: round(alert.secondsInMatch, 1),
+        [`times ${window}`]: during,
+        [`first times ${window}`]: firstTimes || '—',
+        [`seconds on ${window}`]: round(alert.secondsInMatch, 1),
         'times before or after the match': alert.onsetsOutsideMatch,
       },
     }

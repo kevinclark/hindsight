@@ -15,10 +15,12 @@
  * Why: a reading that stops changing while the device still says it is connected (a status signal the code stopped
  * refreshing, a device that stopped sending) leaves the robot acting on old values.
  */
-import { rule, round } from '../rule.ts'
+import { plural, rule, round } from '../rule.ts'
 import type { Problem } from '../rule.ts'
+import type { MatchView } from '../view.ts'
 
 const STILL_SECONDS = 5
+const AT_REST_NOTE = 'changed 41–49 times a second; never still longer than 0.16 s'
 
 export default rule({
   id: 'foresight/values-updating',
@@ -38,46 +40,66 @@ export default rule({
     const stretch = match.beforeEnable.at(-1)
     if (!stretch) return // a match log: this is a pit check
     if (stretch.end - stretch.start < STILL_SECONDS) return match.couldNotCheck(`less than ${STILL_SECONDS} s to measure over yet`)
-    const recent = [{ start: stretch.end - STILL_SECONDS, end: stretch.end + 1e-6 }]
-    const p = match.profile
-    const devices = [...p.motorGroups.flatMap((g) => g.motors), ...p.otherDevices]
-    const unchecked = devices.filter((d) => !d.updating).map((d) => d.name)
-    if (unchecked.length === devices.length) return match.couldNotCheck('the robot profile names no reading that changes at rest for any device')
-    if (unchecked.length) match.checkedOnlyPart(`no reading that changes at rest for ${unchecked.join(', ')}`)
-    const still: { name: string; key: string; value: number }[] = []
-    let moving = 0
-    for (const d of devices) {
-      if (!d.updating) continue
-      // Not announced, or announced with no value yet (the reader has no entry either way).
-      if (!match.has(d.updating)) { match.checkedOnlyPart(`${d.name}: the robot does not send ${d.updating}`); continue }
-      if (d.connected && match.has(d.connected) && match.signal(d.connected).at(stretch.end) < 0.5) continue // can/device-dropout says it
-      const s = match.signal(d.updating, `${d.name} reading`)
-      const held = s.at(recent[0].start)
-      if (s.samples(recent).some((v) => v !== held && !(Number.isNaN(v) && Number.isNaN(held)))) moving++
-      else still.push({ name: d.name, key: d.updating, value: held })
+
+    const devices = [...match.profile.motorGroups.flatMap((g) => g.motors), ...match.profile.otherDevices]
+    const withoutReading = devices.filter((d) => !d.updating).map((d) => d.name)
+    if (withoutReading.length === devices.length) {
+      return match.couldNotCheck('the robot profile names no reading that changes at rest for any device')
     }
+    if (withoutReading.length > 0) match.checkedOnlyPart(`no reading that changes at rest for ${withoutReading.join(', ')}`)
+
+    const { still, movingCount } = watchReadings(match, devices, stretch.end)
     if (still.length === 0) return
+
     // Every reading frozen while the robot still sends (its clock and battery keep coming, or the page would say
     // "no data"): the devices' side stopped, the very fault this line is for.
-    if (moving === 0) {
+    if (movingCount === 0) {
       return {
         about: 'all devices',
         message: `No device reading changed in the last ${STILL_SECONDS} s (${still.length} watched): the robot may have stopped reading its devices`,
         at: stretch.end,
-        evidence: { 'readings watched': still.map((d) => d.name).join(', '), 'CalGames 2026, at rest': 'changed 41–49 times a second; never still longer than 0.16 s' },
+        evidence: { 'readings watched': still.map((d) => d.name).join(', '), 'CalGames 2026, at rest': AT_REST_NOTE },
       }
     }
     return still.map((d): Problem => ({
       about: d.name,
-      message: `${d.name}: its readings have not changed for ${STILL_SECONDS} s while ${moving} other device reading${moving === 1 ? '' : 's'} did`,
+      message: `${d.name}: its readings have not changed for ${STILL_SECONDS} s while ${plural(movingCount, 'other device reading')} did`,
       at: stretch.end,
       measured: [{ label: 'seconds unchanged', value: STILL_SECONDS, unit: 's', threshold: STILL_SECONDS }],
       evidence: {
         signal: d.key,
         'value, unchanged': Number.isFinite(d.value) ? round(d.value, 3) : 'no value yet',
-        'CalGames 2026, at rest': 'changed 41–49 times a second; never still longer than 0.16 s',
+        'CalGames 2026, at rest': AT_REST_NOTE,
       },
       plot: { signals: [d.key], from: stretch.end - 2 * STILL_SECONDS, to: stretch.end },
     }))
   },
 })
+
+interface StillReading { name: string; key: string; value: number }
+
+/** Which devices' readings did not change at all in the last STILL_SECONDS, and how many others did. */
+function watchReadings(match: MatchView, devices: { name: string; updating?: string; connected?: string }[], now: number) {
+  const recent = [{ start: now - STILL_SECONDS, end: now + 1e-6 }]
+  const still: StillReading[] = []
+  let movingCount = 0
+  for (const device of devices) {
+    const key = device.updating
+    if (!key) continue
+    // Not announced, or announced with no value yet (the reader has no entry either way).
+    if (!match.has(key)) {
+      match.checkedOnlyPart(`${device.name}: the robot does not send ${key}`)
+      continue
+    }
+    // can/device-dropout reports a device that is not connected.
+    const connectedKey = device.connected
+    if (connectedKey && match.has(connectedKey) && match.signal(connectedKey).at(now) < 0.5) continue
+
+    const reading = match.signal(key, `${device.name} reading`)
+    const held = reading.at(recent[0].start)
+    const changed = reading.samples(recent).some((v) => v !== held && !(Number.isNaN(v) && Number.isNaN(held)))
+    if (changed) movingCount++
+    else still.push({ name: device.name, key, value: held })
+  }
+  return { still, movingCount }
+}
