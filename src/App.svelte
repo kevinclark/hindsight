@@ -279,7 +279,7 @@
   {:else}
     <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>, and the team's <code>{HISTORY_FILE_NAME}</code>) anywhere on the page.</span>
   {/if}
-  <CodeFolderControl />
+  <CodeFolderControl suggest={current?.match.profile?.code} />
   {#if busy}<span class="busy">Reading…</span>{/if}
   {#if analyses.length}<button class="link" onclick={clearAll}>Clear all</button>{/if}
 </section>

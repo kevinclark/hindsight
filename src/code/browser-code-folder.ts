@@ -1,15 +1,22 @@
 /**
  * The robot-code folder in the browser: its .git read from a chosen folder, either a folder handle (Chrome and Edge,
  * `showDirectoryPicker`, which this browser can remember) or the files of a folder input (any browser, forgotten on
- * reload). Nothing is changed or uploaded; only the .git files needed are read, a slice at a time.
+ * reload). Nothing is changed or uploaded; only the .git files needed are read, a slice at a time. Or, instead of a
+ * folder, a public GitHub repo (src/code/github.ts).
  *
- * Limit-line answers are kept in localStorage, and the folder handle in IndexedDB. Every storage call is wrapped: a
- * private window or blocked storage just means nothing is remembered.
+ * Limit-line answers, GitHub's file lists and the GitHub repo chosen are kept in localStorage, and the folder handle in
+ * IndexedDB. Every storage call is wrapped: a private window or blocked storage just means nothing is remembered.
  */
 import { GitRepo, GitUnreadable, type GitDir } from './git.ts'
-import type { CodeFolder, LimitLines, LimitLinesCache } from './limit-lines.ts'
+import { GitHubRepo } from './github.ts'
+import type { CodeFolder, LimitLines } from './limit-lines.ts'
+import type { CodeFileEntry, Kept } from './source.ts'
 
 const ANSWERS = 'hindsight.limitLines'
+const GITHUB_FILES = 'hindsight.githubFiles'
+const GITHUB_CHOSEN = 'hindsight.codeGitHub'
+/** GitHub file lists (about 10 KB each) and short hashes kept: the oldest go first, well inside localStorage's 5 MB. */
+const KEEP_GITHUB = 100
 const DB = 'hindsight-code'
 const STORE = 'folders'
 
@@ -21,7 +28,7 @@ export function folderFromFiles(files: File[]): ChosenFolder {
   const name = files[0]?.webkitRelativePath.split('/')[0] || 'the folder'
   const repo = gitRepoOfFiles(files)
   if (!repo) return { name, code: null, problem: noGit(name, files.some((f) => /^[^/]+\/\.git$/.test(f.webkitRelativePath))) }
-  return { name, code: { repo, cache: browserCache() }, problem: null }
+  return { name, code: { repo, cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
 }
 
 /** The .git among a folder input's files, or null when the folder has none. */
@@ -88,7 +95,36 @@ export async function folderFromHandle(handle: FileSystemDirectoryHandle): Promi
       }
     },
   }
-  return { name: handle.name, code: { repo: new GitRepo(dir), cache: browserCache() }, problem: null }
+  return { name: handle.name, code: { repo: new GitRepo(dir), cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
+}
+
+/** A public GitHub repo ("owner/name"). Its name says GitHub, so a log read with a folder of the same name isn't
+ * taken for one read with this; it leaves out the branch, which the comparison never reads. */
+export function githubSource(repo: string): ChosenFolder {
+  return { name: `${repo} (GitHub)`, code: { repo: browserGitHub(repo), cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
+}
+
+/** A GitHub repo whose file lists are kept in this browser (the newest KEEP_GITHUB of them). */
+export function browserGitHub(repo: string): GitHubRepo {
+  return new GitHubRepo(repo, browserKept<CodeFileEntry[] | string>(GITHUB_FILES, KEEP_GITHUB))
+}
+
+/** The GitHub repo and ref chosen last visit ("owner/name@ref"), or null. Choosing a folder forgets it. */
+export function rememberedGitHub(): string | null {
+  try {
+    return localStorage.getItem(GITHUB_CHOSEN)
+  } catch {
+    return null
+  }
+}
+
+export function rememberGitHub(spec: string | null): void {
+  try {
+    if (spec) localStorage.setItem(GITHUB_CHOSEN, spec)
+    else localStorage.removeItem(GITHUB_CHOSEN)
+  } catch {
+    // Not remembered: a private window.
+  }
 }
 
 function noGit(name: string, gitIsFile: boolean): string {
@@ -165,22 +201,23 @@ function withStore<T>(mode: IDBTransactionMode, body: (store: IDBObjectStore) =>
   })
 }
 
-/** Limit-line answers kept in this browser's localStorage. */
-function browserCache(): LimitLinesCache {
-  const read = (): Record<string, LimitLines> => {
+/** Answers kept in this browser's localStorage under one key: limit-line answers, GitHub's file lists (`atMost`). */
+function browserKept<T>(storageKey: string, atMost = Infinity): Kept<T> {
+  const read = (): Record<string, T> => {
     try {
-      return JSON.parse(localStorage.getItem(ANSWERS) ?? '{}')
+      return JSON.parse(localStorage.getItem(storageKey) ?? '{}')
     } catch {
       return {}
     }
   }
   return {
     get: (key) => read()[key],
-    set: (key, answer) => {
+    set: (key, value) => {
       try {
-        localStorage.setItem(ANSWERS, JSON.stringify({ ...read(), [key]: answer }))
+        const entries = Object.entries(read()).filter(([k]) => k !== key)
+        localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries([...entries.slice(-(atMost - 1)), [key, value]])))
       } catch {
-        // Not remembered: a private window, or storage blocked for pages opened from disk.
+        // Not remembered: a private window, storage blocked for pages opened from disk, or full.
       }
     },
   }

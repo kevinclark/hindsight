@@ -10,7 +10,7 @@
  */
 import type { Match } from '../match/match.ts'
 import type { MotorGroup } from '../profiles/types.ts'
-import { CommitMissing, GitUnreadable } from './git.ts'
+import { CommitMissing, GitUnreadable, TryAgain } from './git.ts'
 import { filesNamed, type CodeSource, type Kept } from './source.ts'
 
 export type LimitLines =
@@ -18,8 +18,8 @@ export type LimitLines =
   | { verdict: 'same'; files: string[] }
   /** Some differ: each differing line, "- " at the pinned commit only, "+ " in the log's commit only. */
   | { verdict: 'different'; files: string[]; lines: string[] }
-  /** Couldn't compare, and why. Never kept: choosing a fuller clone may answer it. */
-  | { verdict: 'unknown'; why: string }
+  /** Couldn't compare, and why. Never kept: choosing a fuller clone may answer it. `tryAgain`: GitHub couldn't answer now. */
+  | { verdict: 'unknown'; why: string; tryAgain?: true }
 
 /** Kept answers, by `limitLinesKey`. */
 export type LimitLinesCache = Kept<LimitLines>
@@ -56,13 +56,15 @@ export function limitLinesKey(repo: string, pin: string, logSha: string, files: 
 export async function compareMatchLimits(match: Match, code: CodeFolder): Promise<void> {
   if (ranPinnedCommit(match)) return
   const pin = match.profile.code
+  // A profile read from a public log pins no commit ('unknown'): nothing to compare against, and nothing to ask.
+  const pinned = /^[0-9a-f]{7,40}$/i.test(pin.sha)
   const logSha = match.build.sha.trim()
   const answers = new Map<string, LimitLines>()
   for (const group of match.profile.motorGroups) {
     const files = limitFiles(group)
     if (files.length === 0) continue
     const key = limitLinesKey(pin.repo, pin.sha, logSha, files)
-    let answer = code.cache.get(key)
+    let answer = pinned ? code.cache.get(key) : { verdict: 'unknown' as const, why: 'the robot profile pins no commit to compare with' }
     if (!answer) {
       answer = await compareLimitLines(code.repo, pin.sha, logSha, files, pin.repo)
       if (answer.verdict !== 'unknown') code.cache.set(key, answer)
@@ -85,6 +87,7 @@ export async function compareLimitLines(repo: CodeSource, pin: string, logSha: s
     for (const name of files) lines.push(...(await differingLines(repo, pinned, ran, name)))
     return lines.length ? { verdict: 'different', files, lines } : { verdict: 'same', files }
   } catch (error) {
+    if (error instanceof TryAgain) return { verdict: 'unknown', why: error.message, tryAgain: true }
     if (error instanceof GitUnreadable) return { verdict: 'unknown', why: error.message }
     return { verdict: 'unknown', why: `the code folder's .git couldn't be read (${error instanceof Error ? error.message : error})` }
   }

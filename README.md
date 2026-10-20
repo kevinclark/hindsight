@@ -98,6 +98,17 @@ lines in the files a group's `where` names are compared: a limit set through a n
 (`= Constants.KICKER_LIMIT`) isn't followed, so a change there reads as "the same" (every CurrentLimit line in the
 2026 competition code is a literal).
 
+**Use GitHub…** (beside it, and in Robot profile) reads the same code from a public GitHub repo instead of a folder:
+type `owner/repo@branch` (pre-filled from the robot profile's repo). The comparison still reads the profile's pinned
+commit and each log's own commit; the branch only says where Robot profile starts. Public repos only: nothing is signed
+in and no token is sent, so a private repo answers "no public repo" and the folder is the way. GitHub allows **60
+lookups an hour per network** without signing in, and a venue's Wi-Fi may share them: each commit costs about one (its
+file list, kept in this browser by commit, so a second visit costs none), a branch name one more; file text comes from
+`raw.githubusercontent.com` and doesn't count. The 8 CalGames logs took 9 lookups the first time, 0 after. When the
+hour's lookups are used up, or the laptop is offline, the finding says so (with the time it resets) and stays red: choose
+the folder. One source is in use at a time; choosing either replaces the other. The scripts take `--github
+owner/repo[@ref]` (`golden.ts`, `report.ts`), keeping GitHub's file lists in the same cache file.
+
 To add a robot: **Robot profile** drafts one from your logs, a robot snapshot and (optionally) your code folder, and keeps it in the browser or saves a `profile.json` (`docs/robot-profile.md`; code in `src/builder/`). A built-in profile is a TypeScript file in `src/profiles/`, listed in `src/profiles/index.ts`.
 
 ### Robots without AdvantageKit
@@ -276,7 +287,7 @@ skips with a message when they aren't there; `fixtures/*.json` are small cuts th
 | `src/profiles/` | one file per robot (log keys, motor groups, current limits, the code they were read from); `index.ts` lists them, `choose.ts` picks one per log |
 | `src/rules/<area>/` | one rule per file, 25–55 lines; the list is `src/rules/index.ts` |
 | `src/rules/rule.ts`, `view.ts`, `run.ts` | how a rule is written, what it can ask about a match, and the runner |
-| `src/code/` | reading a commit's files from a code folder's `.git` (loose objects and packs), and the limit-line comparison |
+| `src/code/` | code at a commit (`source.ts`): from a code folder's `.git` (loose objects and packs, `git.ts`) or a public GitHub repo (`github.ts`), and the limit-line comparison |
 | `src/triage/` | known issues and the history file |
 | `src/power/` | battery model, resistance from current steps, open-circuit curve, what-ifs, fleet reference |
 | `src/report/` | `findings.json`, the Match review, Foresight and Session report models, the phone card |
@@ -319,6 +330,11 @@ from the page and drop it in with the logs next time. Design and what's next (th
 - **The remembered code folder is not exercised.** Chrome's folder picker (`showDirectoryPicker`) and the "Use … again"
   permission after a reload need a person to click; only the folder input path was driven (headless Chrome from
   `file://`, through `scripts/report.ts --code`).
+- **GitHub from `file://` was driven headless; the pane drove it from localhost.** `scripts/report.ts --github` (headless
+  Chrome, `file://`) and the browser pane (localhost: the pane can't open `file://`) both read Q21's limit lines from
+  GitHub and matched the folder. A real 403 for a used-up hour was never fetched (it would spend the hour): its message
+  is tested on a scripted answer, and that GitHub sends CORS headers on it is assumed. raw.githubusercontent.com's own
+  limits are undocumented and not measured.
 - **Windows and Chromebook are not verified.** Only Chrome 155 and Safari on macOS were checked.
 - **Safari's file picker is not exercised.** Safari rendered both tabs for all three logs, but through a test copy of
   the page with the log embedded (Safari's WebDriver is off on this Mac). Chrome was driven through the real file input.
