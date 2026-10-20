@@ -156,7 +156,7 @@
   .incident { color: var(--muted); }
   .why { display: block; font-size: 0.8rem; color: var(--muted); }
   .explains { margin: 0 0 0.25rem 7.25rem; }
-  .explains > summary { display: block; padding: 0.1rem 0.25rem; font-size: 0.85rem; color: var(--muted); }
+  .explains > summary { display: block; min-height: 24px; box-sizing: border-box; padding: 0.1rem 0.25rem; font-size: 0.85rem; color: var(--muted); }
   .explains > summary::before { content: '▸ '; }
   .explains[open] > summary::before { content: '▾ '; }
   .explains > ul { padding: 0; margin: 0; border-left: 2px solid var(--border); }

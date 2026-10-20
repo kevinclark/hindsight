@@ -15,6 +15,7 @@
   import type { IssueEvent } from '../triage/history.ts'
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
+  import { shortMatchLabel } from './match-label.ts'
   import SessionReport from './SessionReport.svelte'
   import { buildCard } from '../report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
@@ -85,8 +86,12 @@
   const grid = $derived(session ? ruleGrid(session) : [])
   const merged = $derived(session ? mergeFindings(session) : [])
   // "Once" rows (one match only, low confidence) fold under one summary; the rest stay listed. Same order inside each.
-  const listed = $derived(merged.filter((f) => f.confidence !== 'once'))
-  const onceRows = $derived(merged.filter((f) => f.confidence === 'once'))
+  // A row that came back after a fix stays listed whatever its confidence: it is the news, never folded away.
+  const folds = (f: (typeof merged)[number]) => f.confidence === 'once' && cameBack(f.key, f.matches).length === 0
+  const listed = $derived(merged.filter((f) => !folds(f)))
+  const onceRows = $derived(merged.filter(folds))
+  // What the fold holds, counted from its rows: "43 errors, 4 warnings".
+  const onceHolds = $derived((['error', 'warning', 'info'] as const).map((sev) => [sev, onceRows.filter((f) => f.severity === sev).length] as const).filter(([, n]) => n > 0).map(([sev, n]) => (sev === 'info' ? `${n} info` : `${n} ${sev}${n === 1 ? '' : 's'}`)).join(', '))
   // Rule × match rows: most matches fired first, then the worse severity, then the rules' own order.
   const SEV_RANK = { error: 0, warning: 1, info: 2 } as const
   const gridRows = $derived.by(() => {
@@ -238,8 +243,8 @@
   // The same glyphs and words as the findings list (FindingRow): shape and word carry severity when colour can't.
   const SEV_ICON = { error: '●', warning: '▲', info: '○' } as const
   const SEV_WORD = { error: 'Error', warning: 'Warning', info: 'Info' } as const
-  // "Qualification 13" -> "Q13" for chart axes; a log with no match label gets its number in the list.
-  const shortLabel = (m: MatchSummary, i: number) => (m.matchLabel ? m.matchLabel.replace(/^(\w)\w*\s+(\d+)$/, '$1$2') : `#${i + 1}`)
+  // "Qualification 13" -> "Q13" for column headers and chart axes (full label in the title); no match label -> "#3".
+  const shortLabel = (m: MatchSummary, i: number) => shortMatchLabel(m.matchLabel, i)
   // At most 2 decimals, without trailing zeros: 7.4, 1.2–2.1, 53.
   const fmt = (x: number) => String(+x.toFixed(Math.abs(x) >= 100 ? 0 : 2))
 </script>
@@ -318,7 +323,7 @@
   <div class="grid-wrap">
     <table class="grid">
       <thead>
-        <tr><th>rule</th>{#each session.matches as m (m.fileName)}<th class="match"><button class="link" title={m.fileName} onclick={() => open(m)}>{label(m)}</button></th>{/each}<th>across the session</th></tr>
+        <tr><th>rule</th>{#each session.matches as m, i (m.fileName)}<th class="match"><button class="link" title={`${label(m)} · ${m.fileName}`} aria-label={label(m)} onclick={() => open(m)}>{shortLabel(m, i)}</button></th>{/each}<th>across the session</th></tr>
       </thead>
       <tbody>
         {#each gridRows as r (r.rule)}
@@ -348,7 +353,7 @@
   </ul>
   {#if onceRows.length}
     <details class="once-fold">
-      <summary>{onceRows.length} seen {CONFIDENCE_WORDS.once.toLowerCase()}</summary>
+      <summary>{onceRows.length} seen {CONFIDENCE_WORDS.once.toLowerCase()} · {onceHolds}</summary>
       <ul class="merged">
         {#each onceRows as f (f.key)}
           {@render row(f)}
@@ -422,7 +427,7 @@
   .cell.fired.info { color: var(--muted); }
   .cell.not-checked { color: var(--muted); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .grid th.match { white-space: normal; min-width: 4.5rem; }
+  .grid th.match { padding-left: 0.2rem; padding-right: 0.2rem; }
   .once-fold { margin-top: 0.5rem; }
   .once-fold summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); min-height: 24px; display: flex; align-items: center; }
   .rate { text-align: left !important; color: var(--muted); }

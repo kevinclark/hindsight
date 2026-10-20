@@ -24,7 +24,7 @@
     let lo = Math.min(...nums, line ?? Infinity), hi = Math.max(...nums, line ?? -Infinity)
     if (hi - lo < 1e-9) { lo -= 1; hi += 1 }
     const x = (i: number) => PX + (matches.length === 1 ? (W - 2 * PX) / 2 : (i * (W - 2 * PX)) / (matches.length - 1))
-    const y = (v: number) => H - P - AXIS - ((v - lo) / (hi - lo)) * (H - 2 * P)
+    const y = (v: number) => H - P - AXIS - ((v - lo) / (hi - lo)) * (H - 2 * P - AXIS)
     return { vals, x, y, lo, hi }
   }
 </script>
