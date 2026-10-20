@@ -140,8 +140,11 @@ export function keyNumber(f: Finding): { label: string; value: string; text: str
     const value = `${m.value}${unit}${m.threshold !== undefined ? ` (line ${m.threshold}${unit})` : ''}`
     return { label: m.label, value, text: `${value} ${m.label}`, inTitle: titleHasValue(f.title, m.value) }
   }
-  const first = Object.entries(f.evidence)[0]
-  return first ? { label: first[0], value: String(first[1]), text: `${first[0]}: ${first[1]}`, inTitle: false } : { label: '', value: '', text: '', inTitle: false }
+  // Fallback: the first evidence line that holds a number ("group: Alerts" says nothing on a card).
+  const first = Object.entries(f.evidence).find(([, v]) => /\d/.test(String(v)))
+  if (!first) return { label: '', value: '', text: '', inTitle: false }
+  const value = String(first[1])
+  return { label: first[0], value, text: `${first[0]}: ${value}`, inTitle: titleHasValue(f.title, value) }
 }
 
 /** "2:25 into the match" from "2:25 into the match (teleop; robot time 532.8 s)", for tight places. */

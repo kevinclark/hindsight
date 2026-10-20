@@ -4,6 +4,7 @@ import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE, CARD_WIDTH, wrap, type CardM
 import { bottomLine, cardTitle, keyNumber, reviewCard, reviewModel, shortTitle, stripRepoPaths, titleHasValue } from '../src/report/review-model.ts'
 import { foresightCard, type ForesightReportInput } from '../src/report/foresight-model.ts'
 import { RULES } from '../src/rules/index.ts'
+import type { Finding } from '../src/rules/types.ts'
 import { analyzeFixture } from './helpers/load.ts'
 
 const model = (n: number, over: Partial<CardModel> = {}): CardModel => ({
@@ -217,5 +218,17 @@ describe('printed report component', () => {
     expect(html).not.toContain('every rule ran')
     const clean = render(ReviewReport, { props: { analysis: { ...a, report: { ...a.report, skipped: [], crashed: [] } }, issues: new Map() } }).body
     expect(clean).toContain('every rule ran')
+  })
+})
+
+describe('keyNumber fallback (no measured value)', () => {
+  const base = { rule: 'alerts/passthrough', severity: 'error', key: 'k', time: 0 } as unknown as Finding
+  it('skips evidence lines without a number', () => {
+    const f = { ...base, title: 'Alert "X" during the match', evidence: { group: 'Alerts', 'seconds during the match': 4.4 } } as Finding
+    expect(keyNumber(f).text).toBe('seconds during the match: 4.4')
+  })
+  it('marks the number as already in the title', () => {
+    const f = { ...base, title: 'Alert "X" 7× during the match', evidence: { group: 'Alerts', 'times during the match': 7 } } as Finding
+    expect(keyNumber(f).inTitle).toBe(true)
   })
 })
