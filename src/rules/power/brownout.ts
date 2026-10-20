@@ -1,8 +1,9 @@
 /**
  * Did the roboRIO brown out?
  *
- * Checks: every time /SystemStats/BrownedOut turns on. Below the brownout setting the roboRIO switches every
- * motor off until the voltage recovers: the robot goes limp.
+ * Checks: every time /SystemStats/BrownedOut turns on (in a robot log without it, the Driver Station log's brownout
+ * flag). Below the brownout setting the roboRIO switches every motor off until the voltage recovers: the robot goes
+ * limp.
  * Why: CalGames 2026 P0 browned out 53 times in the last 18 s; nine shots in a row failed.
  */
 import { plural, rule, round } from '../rule.ts'
@@ -25,11 +26,15 @@ export default rule({
   incident: 'CalGames 2026 P0: brownouts from 532.8 s, battery collapse after ~3.5 Ah (8033/robot/2026-10-17-calgames-q13-log-analysis.md, P0 section)',
 
   check(match) {
-    const onsets = match.signal('brownedOut').turnsOn()
+    // The robot log's flag; without one, the Driver Station log's (which also has the battery voltage).
+    const dsFlag = match.has('brownedOut') ? null : match.dsLogSignal('brownout', 'brownout')
+    const fromDs = dsFlag !== null
+    const flag = dsFlag ?? match.signal('brownedOut')
+    const onsets = flag.turnsOn()
     if (onsets.length === 0) return
     const first = onsets[0]
     const last = onsets[onsets.length - 1]
-    const battery = match.signal('batteryVoltage')
+    const battery = match.signalIfLogged('batteryVoltage') ?? (fromDs ? match.dsLogSignal('voltage', 'battery voltage (Driver Station log)')! : match.signal('batteryVoltage'))
     const lowest = round(battery.lowest(match.between(first - 1, first + 1)).value)
     // Context only: a log without the setting or the motor currents still gets its brownouts reported.
     const setting = match.signalIfLogged('brownoutVoltage')?.last() ?? NaN
@@ -60,9 +65,10 @@ export default rule({
       at: first,
       likely, ruledOut, nextStep,
       evidence: {
+        ...(fromDs ? { 'brownouts counted from': 'the Driver Station log (the robot log has no brownout flag)' } : {}),
         'brownout onsets': onsets.length,
         'last brownout': match.when(last),
-        'total motor current at the first brownout (A)': load ? round(load.amps, 0) : 'not logged',
+        [power?.grid.totalCurrentShift === undefined ? 'total motor current at the first brownout (A)' : 'total current at the first brownout (A)']: load ? round(load.amps, 0) : 'not logged',
         'battery + wiring resistance (mΩ)': health.milliohms ?? 'not measured',
         'lowest voltage around the first (V)': lowest,
         'brownout setting (V)': Number.isNaN(setting) ? 'not logged' : setting,

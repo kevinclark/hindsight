@@ -479,7 +479,7 @@ export class MatchView {
 
   /** Battery voltage and the motors' current and speed: things that change fast and can be under-sampled. */
   private isMeasured(key: string): boolean {
-    if (key === this.profile.signals.batteryVoltage) return true
+    if (key === this.profile.signals.batteryVoltage || key === this.profile.power.totalCurrent) return true
     return this.profile.motorGroups.some((g) => g.motors.some((m) => [m.supplyCurrent, m.statorCurrent, m.velocity].includes(key)))
   }
 
@@ -674,13 +674,21 @@ export class MatchView {
     return grid
   }
 
-  /** The power model reads battery voltage and every supply current: count them as read, for slowSignals(). */
+  /**
+   * The power model reads battery voltage and every supply current (or, with none, the measured total): count them as
+   * read, for slowSignals().
+   */
   private markPowerSignals(): void {
     const s = this.profile.signals
     if (s.batteryVoltage && has(this.raw, s.batteryVoltage)) this.sampled.set(s.batteryVoltage, 'battery voltage')
+    let motorCurrents = false
     for (const g of this.profile.motorGroups) {
-      for (const m of g.motors) if (m.supplyCurrent && has(this.raw, m.supplyCurrent)) this.sampled.set(m.supplyCurrent, `${m.name} supply`)
+      for (const m of g.motors) {
+        if (m.supplyCurrent && has(this.raw, m.supplyCurrent)) { this.sampled.set(m.supplyCurrent, `${m.name} supply`); motorCurrents = true }
+      }
     }
+    const total = this.profile.power.totalCurrent
+    if (!motorCurrents && total && has(this.raw, total)) this.sampled.set(total, 'total current')
   }
 
   /** Like power(), but null instead of "not checked" when the log has no motor currents: for extra evidence. */
@@ -701,6 +709,21 @@ export class MatchView {
 
   get dsLogs() {
     return this.raw.ds
+  }
+
+  /**
+   * The Driver Station logs' brownout flag or battery voltage as a signal on the robot's clock (50 records a second),
+   * for a robot log that lacks it. Null without a DS log, or when the roboRIO clock was never set (nothing lines the
+   * two up). Records where the DS saw no robot are left out.
+   */
+  dsLogSignal(field: 'brownout' | 'voltage', label: string): Signal | null {
+    const offset = this.raw.epochOffset
+    if (offset === null) return null
+    const records = this.raw.ds.flatMap((d) => d.file.records).filter((r) => r.voltage !== null)
+    if (!records.length) return null
+    const t = Float64Array.from(records, (r) => r.epochSeconds - offset)
+    const v = Float64Array.from(records, (r) => (field === 'brownout' ? Number(r.brownout) : r.voltage!))
+    return new Signal(label, `${field} (Driver Station log)`, { name: label, t, v }, this.raw.logEnd)
   }
 
   /** The first and last record of the log (robot time). */

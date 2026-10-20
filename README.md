@@ -125,9 +125,12 @@ kinds of key reach inside an entry:
 
 A profile leaves a key it can't fill as `''`, and rules that need it say so under "Not checked". A measured signal
 (battery voltage, motor current or speed) logged slower than 30 times a second while enabled gets a note on each
-finding that read it, since a short dip can fall between samples. The worked examples are two other teams' 2026
-robots, read from their public logs: `frc340-2026.ts` (a TalonFX status struct per motor, no battery voltage) and
-`frc3602-2026.ts` (dashboard battery voltage at ~17 Hz, no motor currents).
+finding that read it, since a short dip can fall between samples. The worked examples are three other teams' 2026
+robots, read from their public logs: `frc340-2026.ts` (a TalonFX status struct per motor, no battery voltage),
+`frc3602-2026.ts` (dashboard battery voltage at ~17 Hz, no motor currents) and `frc334-2026.ts` (a DogLog log,
+`doglog.ts`: the roboRIO's readings and a REV PDH under `/Robot/SystemStats`; the PDH's total current stands in for
+the motors', lined up with the voltage first). With no brownout flag in the robot log, the brownout rule counts the
+Driver Station log's.
 
 ## Session view: many matches at once
 

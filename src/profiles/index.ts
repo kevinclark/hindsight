@@ -7,10 +7,11 @@ import { offseason2025 } from './2025-offseason.ts'
 import { competition2026 } from './2026-competition.ts'
 import { frc340Daly2026, frc340Nyro2026 } from './frc340-2026.ts'
 import { frc3602_2026 } from './frc3602-2026.ts'
+import { frc334_2026 } from './frc334-2026.ts'
 import type { RobotProfile } from './types.ts'
 
 /** 8033's robots, then other teams' robots read from their public logs (worked examples of non-AdvantageKit logs). */
-export const PROFILES: RobotProfile[] = [offseason2026, offseason2026Event, competition2026, offseason2025, frc340Nyro2026, frc340Daly2026, frc3602_2026]
+export const PROFILES: RobotProfile[] = [offseason2026, offseason2026Event, competition2026, offseason2025, frc340Nyro2026, frc340Daly2026, frc3602_2026, frc334_2026]
 
 /** A short, stable name for a profile: the robot and the branch its code is pinned to (a kept profile: its keptAs). */
 export function profileId(p: RobotProfile): string {

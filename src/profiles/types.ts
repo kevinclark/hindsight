@@ -192,6 +192,11 @@ export interface RobotProfile {
     restVoltageMin: number
     marginVolts: number
     healthyResistanceMaxOhms: number
+    /**
+     * A measured total robot current (e.g. a REV PDH's TotalCurrent), used as the robot's current only when the log
+     * has no motor supply currents. Leave out otherwise: the power model adds up the motors (src/power/).
+     */
+    totalCurrent?: string
   }
   motorGroups: MotorGroup[]
   /** `updating`: as for a motor (Motor.updating). */
@@ -224,6 +229,8 @@ export interface RobotProfile {
    * over CAN; a CTRE PDP 2.0 has no current telemetry at all.
    */
   powerDistribution?: 'rev-pdh' | 'ctre-pdp' | 'ctre-pdp-2'
+  /** Where the log keeps the board's entries (ChannelCurrent, Voltage, ChannelCount). Default: AdvantageKit's /PowerDistribution. */
+  powerDistributionFolder?: string
   zeroing: ZeroingMechanism[]
   /** Mechanisms with both a motor position and an absolute angle in the log, for mech/slip. */
   slipChecks?: SlipCheck[]
