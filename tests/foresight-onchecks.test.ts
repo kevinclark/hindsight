@@ -88,14 +88,14 @@ describe('the merged checklist (round-5-checklist.md): 9 live lines, worst state
   const run = (report: Report, snapshotUsed = true) => checklistLines({ verdict: verdictFor(report, proven), report, snapshotUsed })
   const get = (lines: ReturnType<typeof run>, name: string) => lines.find((l) => l.line === name)!
 
-  it('10 live lines (the 9 Kevin approved + CTRE devices healthy, added on main the same day) and 5 folded (4 by eye + the gyro), in the team\'s order', () => {
+  it('9 live lines and 5 folded (4 by eye + the gyro), in the team\'s order (Kevin, 2026-10-20: CTRE devices healthy folds into the devices line)', () => {
     const lines = run(none)
     expect(lines.filter((l) => !l.folded).map((l) => l.line)).toEqual([
       'Fresh battery installed', 'Controllers plugged into the DS and working', 'All cameras on and detecting AprilTags', 'No alerts on Elastic',
-      'Mechanisms zeroed', SNAP, DEV, 'CTRE devices healthy', 'Log stick in', 'No undeployed changes'])
+      'Mechanisms zeroed', SNAP, DEV, 'Log stick in', 'No undeployed changes'])
     expect(lines.filter((l) => l.folded).map((l) => l.line)).toEqual(['Backup controller', 'Elastic open with the correct layout', 'Correct auto selected in Elastic', 'Other windows closed on the DS laptop', 'Gyro seems normal'])
     expect(get(lines, SNAP).parts.map((p) => p.line)).toHaveLength(4)
-    expect(get(lines, DEV).parts.map((p) => p.line)).toEqual(['All device values updating', 'No motors overheating'])
+    expect(get(lines, DEV).parts.map((p) => p.line)).toEqual(['All device values updating', 'CTRE devices healthy', 'No motors overheating'])
   })
 
   it('the gyro is folded, and its drift stays in the verdict\'s context list', () => {
