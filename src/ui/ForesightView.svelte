@@ -101,15 +101,17 @@
     const store = live?.store
     const neverSent = status.subscribed.filter((k) => !store?.entries.get(k)?.t.length)
     const report = {
-      schema: 'hindsight.foresight-readings/1', when: new Date().toISOString(), browser: navigator.userAgent, page: location.href.startsWith('file:') ? 'file://' : location.origin,
+      schema: 'hindsight.foresight-readings/2', when: new Date().toISOString(), browser: navigator.userAgent, page: location.href.startsWith('file:') ? 'file://' : location.origin,
       url: status.url, state: status.state, message: status.message, topicsAnnounced: status.topicsAnnounced, signalsAskedFor: status.subscribed.length,
       valuesReceived: status.valuesReceived, robotTime: status.robotTime, codeStart: status.codeStart, codeStartFrom: status.codeStartFrom,
       robot: status.profile ? profileId(status.profile) : null, neverSent, battery, controllers,
       snapshot: snapshot && { file: snapshot.fileName, takenAt: snapshot.takenAt, devices: snapshot.devices.length, stopped: snapshot.stopped, responseShapes: snapshot.responseShapes, used: checked?.snapshotUsed ?? null },
-      verdict: checked ? { verdict: checked.verdict.verdict, reason: checked.verdict.reason, items: checked.verdict.items.map((i) => ({ level: i.level, rule: i.finding.rule, title: i.finding.title })), notChecked: checked.verdict.notChecked, crashed: checked.verdict.crashed, build: checked.match.build } : result,
+      verdict: checked ? { verdict: checked.verdict.verdict, reason: checked.verdict.reason, items: checked.verdict.items.map(readingItem), notChecked: checked.verdict.notChecked, crashed: checked.verdict.crashed, build: checked.match.build } : result,
     }
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
   }
+  type ReadingItem = { level: string; rule: string; title: string; explains?: ReadingItem[] }
+  const readingItem = (i: VerdictItem): ReadingItem => ({ level: i.level, rule: i.finding.rule, title: i.finding.title, ...(i.explains.length ? { explains: i.explains.map(readingItem) } : {}) })
   const onchecks = $derived(markOnchecks(checked))
   // Problems no check can see yet (rules/wanted.ts): grey context, never in the verdict.
   const wanted = $derived(wantedLines(checked))
@@ -135,13 +137,15 @@
   <li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.detail}</span></li>
 {/snippet}
 
-{#snippet itemRow(item: VerdictItem)}
+{#snippet itemRow(item: VerdictItem, nested = false)}
   <li class={`item ${item.level}`}>
     <button class="row" onclick={() => (open = { ...open, [item.finding.key]: !open[item.finding.key] })} aria-expanded={!!open[item.finding.key]}>
       <span class="chip">{ASSISTED_RULES.has(item.finding.rule) && item.level === 'grey' ? 'Do' : LEVEL_WORD[item.level]}</span>
       <span class="title">{item.finding.title}</span>
     </button>
-    {#if item.level !== 'grey' || ASSISTED_RULES.has(item.finding.rule)}<p class="action"><strong>Do:</strong> {item.action}</p>{/if}
+    {#if nested}<p class="action">↳ {item.finding.explainedBy?.why}</p>
+    {:else if item.level !== 'grey' || ASSISTED_RULES.has(item.finding.rule)}<p class="action"><strong>Do:</strong> {item.action}</p>{/if}
+    {#if !nested && item.finding.explainedBy}<p class="proof">explained by {item.finding.explainedBy.rule}: {item.finding.explainedBy.why}</p>{/if}
     <p class="proof">{item.finding.rule} · {item.proof}</p>
     {#if open[item.finding.key]}
       <div class="detail">
@@ -149,6 +153,11 @@
         <dl>{#each Object.entries(item.finding.evidence) as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}</dl>
         <p class="small">Could be: {item.finding.causes.map((c) => `${c.cause} (${c.look})`).join('; ')}</p>
       </div>
+    {/if}
+    {#if item.explains.length}
+      <ol class="items under" aria-label="The same problem, seen by other checks">
+        {#each item.explains as under (under.finding.key + under.finding.title)}{@render itemRow(under, true)}{/each}
+      </ol>
     {/if}
   </li>
 {/snippet}
@@ -281,6 +290,8 @@
   .item { border-left: 4px solid var(--border); padding: 0.4rem 0.75rem; margin: 0 0 0.5rem; }
   .item.red { border-left-color: var(--error); }
   .item.amber { border-left-color: var(--warning); }
+  .items.under { margin: 0.4rem 0 0; }
+  .under .item { margin-bottom: 0; }
   .row { display: flex; gap: 0.6rem; align-items: baseline; width: 100%; text-align: left; border: none; background: none; color: var(--fg); font: inherit; cursor: pointer; padding: 0; }
   .chip { font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
   .red .chip { color: var(--error); }

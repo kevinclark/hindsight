@@ -4,23 +4,30 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Predicate;
 
 /**
- * Finds the drive the log folder is on, and its free space. A USB stick on a roboRIO is a SCSI disk
- * ("/dev/sd..."); the roboRIO's own storage is not. If the stick is missing, the folder doesn't
- * exist, so the nearest folder that does (usually "/") is what's reported: not on USB.
+ * Finds the drive the log folder is on, and its free space. If the stick is missing, the folder doesn't
+ * exist, so the nearest folder that does (usually "/") is what's reported: not on USB. A stick
+ * pulled while its mount lingers is caught by its device file being gone.
  */
 public class LogDriveIOReal implements LogDriveIO {
   private final String logDirectory;
   private final Path procMounts;
+  private final Predicate<String> devicePresent;
 
   public LogDriveIOReal(String logDirectory) {
     this(logDirectory, Path.of("/proc/mounts"));
   }
 
   LogDriveIOReal(String logDirectory, Path procMounts) {
+    this(logDirectory, procMounts, device -> Files.exists(Path.of(device)));
+  }
+
+  LogDriveIOReal(String logDirectory, Path procMounts, Predicate<String> devicePresent) {
     this.logDirectory = logDirectory;
     this.procMounts = procMounts;
+    this.devicePresent = devicePresent;
   }
 
   @Override
@@ -34,7 +41,9 @@ public class LogDriveIOReal implements LogDriveIO {
     try {
       inputs.resolvedPath = existing.getCanonicalPath();
     } catch (IOException e) {
-      inputs.resolvedPath = existing.getAbsolutePath();
+      // Not following /U's link would read as the roboRIO's own storage: off the stick
+      inputs.status = "unavailable: can't resolve " + existing;
+      return;
     }
     inputs.freeBytes = existing.getUsableSpace();
     inputs.totalBytes = existing.getTotalSpace();
@@ -47,7 +56,7 @@ public class LogDriveIOReal implements LogDriveIO {
       return;
     }
     inputs.device = deviceFor(mounts, inputs.resolvedPath);
-    inputs.onUsb = isUsb(inputs.device);
+    inputs.onUsb = LogDriveIO.isUsb(inputs.device) && devicePresent.test(inputs.device);
     inputs.status = "ok";
   }
 
@@ -80,9 +89,5 @@ public class LogDriveIOReal implements LogDriveIO {
       }
     }
     return best;
-  }
-
-  static boolean isUsb(String device) {
-    return device.startsWith("/dev/sd");
   }
 }

@@ -29,7 +29,7 @@ const alert = (text: string, time: number | null, severity: Severity = 'error') 
 
 describe('links.ts', () => {
   it('names only rules and parents that exist, never links a rule to itself, and has no cycle', () => {
-    const ids = new Set([...RULES.map((r) => r.id), ...PARENTS.map((p) => p.id)])
+    const ids = new Set([...[...RULES, ...FORESIGHT_RULES].map((r) => r.id), ...PARENTS.map((p) => p.id)])
     for (const l of LINKS) {
       expect(ids.has(l.cause), l.cause).toBe(true)
       expect(ids.has(l.explains), l.explains).toBe(true)

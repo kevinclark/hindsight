@@ -493,6 +493,7 @@
   .cell.not-checked { color: var(--muted); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .grid th.match { padding-left: 0.2rem; padding-right: 0.2rem; }
+  .grid th.match .link { min-width: 24px; }
   .once-fold { margin-top: 0.5rem; }
   .once-fold summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); min-height: 24px; display: flex; align-items: center; }
   .rate { text-align: left !important; color: var(--muted); }

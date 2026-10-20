@@ -129,5 +129,8 @@
   .hl { background: var(--hover); }
   .warn-box { border-left: 3px solid var(--warning); padding: 0.25rem 0.75rem; font-size: 0.85rem; max-width: 75ch; }
   .slider { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; margin: 0.5rem 0; font-size: 0.9rem; }
-  input[type='range'] { vertical-align: middle; width: 10rem; }
+  .slider label { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 24px; }
+  /* Controls at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, minimum). */
+  input[type='range'] { vertical-align: middle; width: 10rem; height: 24px; margin: 0; }
+  input[type='radio'] { width: 24px; height: 24px; margin: 0; }
 </style>

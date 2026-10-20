@@ -5,12 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.frc8033.hindsight.CanivoreIO.CanivoreIOInputs;
+import com.frc8033.hindsight.DeviceIO.DeviceIOInputs;
 import com.frc8033.hindsight.LogDriveIO.LogDriveIOInputs;
 import com.frc8033.hindsight.SystemIO.SystemIOInputs;
 import edu.wpi.first.wpilibj.Alert.AlertType;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class HindsightCompanionTest {
@@ -52,8 +54,12 @@ class HindsightCompanionTest {
     @Override
     public void updateInputs(LogDriveIOInputs inputs) {
       logDriveReads++;
+      if (throwOnRead) {
+        throw new IllegalStateException("boom");
+      }
       inputs.status = drive.status;
       inputs.path = drive.path;
+      inputs.device = drive.device;
       inputs.onUsb = drive.onUsb;
       inputs.freeBytes = drive.freeBytes;
     }
@@ -72,6 +78,33 @@ class HindsightCompanionTest {
     }
   }
 
+  /** A watched device whose answers the test sets. */
+  static final class FakeDevice implements DeviceIO {
+    int reads = 0;
+    DeviceIOInputs answer = new DeviceIOInputs();
+
+    FakeDevice() {
+      answer.status = "OK";
+      answer.connected = true;
+      answer.version = 0x1A000000;
+    }
+
+    @Override
+    public void updateInputs(DeviceIOInputs inputs) {
+      reads++;
+      inputs.status = answer.status;
+      inputs.connected = answer.connected;
+      inputs.version = answer.version;
+      inputs.stickyFaultField = answer.stickyFaultField;
+      inputs.resets = answer.resets;
+    }
+  }
+
+  @AfterEach
+  void forgetDevices() {
+    HindsightDevices.reset();
+  }
+
   final FakeHardware hardware = new FakeHardware();
   final List<ShownAlert> alerts = new ArrayList<>();
 
@@ -80,6 +113,7 @@ class HindsightCompanionTest {
         real,
         hardware,
         hardware,
+        new HootIO() {},
         Map.of("Any", hardware),
         type -> {
           ShownAlert alert = new ShownAlert(type);
@@ -108,12 +142,12 @@ class HindsightCompanionTest {
   }
 
   @Test
-  void readsOnceASecondAndTheLogDriveOnlyAtBoot() {
+  void readsOnceASecond() {
     HindsightCompanion companion = companion(true);
     runSeconds(companion, 3);
     assertEquals(3, hardware.systemReads);
     assertEquals(3, hardware.canivoreReads);
-    assertEquals(1, hardware.logDriveReads);
+    assertEquals(3, hardware.logDriveReads);
   }
 
   @Test
@@ -131,6 +165,44 @@ class HindsightCompanionTest {
         });
     assertTrue(statuses.contains("Hindsight/System unavailable: IllegalStateException"), statuses.toString());
     assertTrue(statuses.contains("Hindsight/CANivore/Any unavailable: IllegalStateException"));
+    assertTrue(statuses.contains("Hindsight/LogDrive unavailable: IllegalStateException"));
+  }
+
+  @Test
+  void aStickOutAtAnyReadStaysOffUsbAfterItGoesBackInButAFailedReadDoesNot() {
+    hardware.drive.status = "ok";
+    hardware.drive.device = "/dev/sda1";
+    hardware.drive.onUsb = true;
+    hardware.drive.freeBytes = 10_000_000_000L;
+    HindsightCompanion companion = companion(true);
+    runSeconds(companion, 1);
+    hardware.drive.status = "unavailable: /proc/mounts";
+    hardware.drive.onUsb = false;
+    runSeconds(companion, 1);
+    hardware.drive.status = "ok";
+    hardware.drive.onUsb = true;
+    runSeconds(companion, 1);
+    assertTrue(loggedOnUsb(companion));
+    assertEquals(List.of(), shown());
+
+    hardware.drive.onUsb = false;
+    hardware.drive.device = "ubi0:rootfs";
+    runSeconds(companion, 1);
+    hardware.drive.onUsb = true;
+    hardware.drive.device = "/dev/sda1";
+    runSeconds(companion, 1);
+    assertFalse(loggedOnUsb(companion));
+    assertEquals(
+        List.of(
+            "kError: Robot log isn't going to the USB stick: it wasn't in the whole time since the"
+                + " robot code started (restart the robot code)"),
+        shown());
+  }
+
+  private static boolean loggedOnUsb(HindsightCompanion companion) {
+    org.littletonrobotics.junction.LogTable table = new org.littletonrobotics.junction.LogTable(0);
+    companion.forEachInputs((key, inputs) -> inputs.toLog(table.getSubtable(key)));
+    return table.get("Hindsight/LogDrive/OnUsb", false);
   }
 
   @Test
@@ -204,7 +276,19 @@ class HindsightCompanionTest {
     hardware.drive.onUsb = false;
     HindsightCompanion offUsb = companion(true);
     offUsb.periodic();
-    assertEquals(List.of("kError: Robot log isn't going to a USB stick: /U is on the roboRIO"), shown());
+    assertEquals(
+        List.of("kError: Robot log isn't going to a USB stick: /U is on the roboRIO, or nowhere"),
+        shown());
+
+    alerts.clear();
+    hardware.drive.device = "/dev/sda1";
+    HindsightCompanion stickWasOut = companion(true);
+    stickWasOut.periodic();
+    assertEquals(
+        List.of(
+            "kError: Robot log isn't going to the USB stick: it wasn't in the whole time since the"
+                + " robot code started (restart the robot code)"),
+        shown());
 
     alerts.clear();
     hardware.drive.onUsb = true;
@@ -213,6 +297,70 @@ class HindsightCompanionTest {
     low.periodic();
     assertEquals(
         List.of("kWarning: Log drive has 450 MB free (want 600 MB, about ten matches)"), shown());
+  }
+
+  @Test
+  void watchedDevicesAreReadOnceASecondOnARealRobotOnly() {
+    FakeDevice motor = new FakeDevice();
+    HindsightDevices.add("*", "TalonFX", 15, () -> motor);
+    runSeconds(companion(false), 3);
+    assertEquals(0, motor.reads);
+    runSeconds(companion(true), 3);
+    assertEquals(3, motor.reads);
+  }
+
+  @Test
+  void deviceAlertsNameEveryDeviceTheyApplyTo() {
+    FakeDevice ok = new FakeDevice();
+    FakeDevice silent = new FakeDevice();
+    FakeDevice rebooted = new FakeDevice();
+    FakeDevice faulted = new FakeDevice();
+    HindsightDevices.add("*", "TalonFX", 15, () -> ok);
+    HindsightDevices.add("*", "TalonFX", 16, () -> silent);
+    HindsightDevices.add("*", "TalonFX", 17, () -> rebooted);
+    HindsightDevices.add("*", "CANcoder", 4, () -> faulted);
+    HindsightCompanion companion = companion(true);
+    runSeconds(companion, 1);
+    assertEquals(List.of(), shown());
+
+    silent.answer.connected = false;
+    silent.answer.status = "RxTimeout";
+    rebooted.answer.resets = 2;
+    faulted.answer.stickyFaultField = 0b100;
+    rebooted.answer.version = 0x1A010000;
+    runSeconds(companion, 2);
+    assertEquals(
+        List.of(
+            "kError: Not answering (or its status signals are turned off): TalonFX 16 on Any",
+            "kWarning: Rebooted while the code ran: TalonFX 17 on Any (2x)",
+            "kWarning: Sticky faults set (see Tuner X, clear after the log is pulled): CANcoder 4 on Any",
+            "kWarning: Different firmware on devices of one model: TalonFX"),
+        shown());
+  }
+
+  @Test
+  void devicesGetTwoReadsBeforeOneCountsAsNotAnswering() {
+    FakeDevice slow = new FakeDevice();
+    slow.answer.connected = false;
+    HindsightDevices.add("*", "TalonFX", 15, () -> slow);
+    HindsightCompanion companion = companion(true);
+    runSeconds(companion, 2);
+    assertEquals(List.of(), shown());
+    runSeconds(companion, 1);
+    assertEquals(List.of("kError: Not answering (or its status signals are turned off): TalonFX 15 on Any"), shown());
+  }
+
+  @Test
+  void aDeviceThatThrowsIsLoggedNotThrown() {
+    HindsightDevices.add("*", "TalonFX", 15, () -> new DeviceIO() {
+      @Override
+      public void updateInputs(DeviceIOInputs inputs) {
+        throw new IllegalStateException("boom");
+      }
+    });
+    companion(true).periodic();
+    assertEquals(
+        "unavailable: IllegalStateException", HindsightDevices.all().get(0).inputs().status);
   }
 
   @Test

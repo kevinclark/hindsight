@@ -32,6 +32,18 @@ A team without battery fuel gauges installs only the first.
 
    Pass every CANivore's `CANBus`. A robot with no CANivore passes none and still gets CPU, memory and the log drive.
 
+3. On the line right after you make each CTRE device (Talon FX or FXS, CANcoder, Pigeon 2, CANdi, CANrange, CANdle):
+
+   ```java
+   motor = new TalonFX(15, canBus);
+   HindsightDevices.watch(motor);
+   ```
+
+   That's all: the companion then logs whether the device is answering, its firmware, its live and sticky faults,
+   and its reboots. It reads its own copies of the signals, so it never changes a rate, a config or your code's
+   signal objects. A device you don't watch isn't logged, and nothing warns you in the robot code (a Hindsight
+   check that lists motors with a logged CAN id but no watch entry is planned, not built).
+
 ## What it logs
 
 Every key and its type is in `keys.json`. Everything is an AdvantageKit input, so a replay reads it back. The
@@ -41,9 +53,11 @@ hardware is read once a second, and only on a real robot; in simulation the valu
 |---|---|---|
 | `/Hindsight/CANivore/<bus>/` `UtilizationPercent`, `Status`, `BusOffCount`, `TxFullCount`, `Rec`, `Tec` | the CANivore's own bus status (`CANBus.getStatus()`). `<bus>` is the bus name; `CANBus("*")` logs as `Any` | once a second |
 | `/Hindsight/System/` `CpuPercent`, `MemAvailableBytes`, `MemTotalBytes`, `HeapUsedBytes`, `HeapMaxBytes`, `Status` | roboRIO CPU (from two reads of `/proc/stat`), memory (`/proc/meminfo`), and the robot program's Java heap | once a second |
-| `/Hindsight/LogDrive/` `Path`, `ResolvedPath`, `Device`, `OnUsb`, `FreeBytes`, `TotalBytes`, `Status` | the drive the log folder is on, from `/proc/mounts` | once, at boot |
+| `/Hindsight/LogDrive/` `Path`, `ResolvedPath`, `Device`, `OnUsb`, `FreeBytes`, `TotalBytes`, `Status` | the drive the log folder is on, from `/proc/mounts`. `OnUsb` is true only while every read since the robot code started found it on a USB stick whose device is still there: AdvantageKit opens its log file once, so a stick pulled (to copy logs off, say) and put back has lost the log until the code restarts | once a second |
+| `/Hindsight/Devices/<bus>/<model>/<id>/` `Connected`, `Version`, `FaultField`, `StickyFaultField`, `ProLicensed`, `Resets`, `Status` | each device given to `HindsightDevices.watch`. `<model>` is the class name (`TalonFX`, `CANcoder`, ...); the fault fields hold every fault as a bit | once a second |
+| `/Hindsight/Hoot/` `Recording`, `FilesWriting`, `NewestFile`, `NewestSizeBytes`, `SecondsSinceWritten`, `Status` | whether Phoenix's hoot recording is on. Phoenix has no call that says so, so it's a `.hoot` file in `/U/logs` or `/home/lvuser/logs` written in the last 5 s | once a second |
 
-`Status` is `ok` (or Phoenix's `OK` for a CANivore) when the values were read. Otherwise it says why: `not read`,
+`Status` is `ok` (or Phoenix's `OK` for a CANivore or a device) when the values were read. Otherwise it says why: `not read`,
 `first CPU sample`, or `unavailable: ...`. On a computer without `/proc`, it says `unavailable` and never throws.
 
 ## Alerts
@@ -53,16 +67,30 @@ hardware is read once a second, and only on a real robot; in simulation the valu
 | CANivore busy | warning above 80 %, error above 90 % | CTRE: keep a bus under 90 %; its own example warns at 80 % |
 | CANivore errors | error | the bus turned off since boot, or it can't be read (`Status` isn't `OK`) |
 | CANivore error counters rising | warning, shown for 10 s | `Rec` or `Tec` went up since the last read |
-| Log drive | warning below 600 MB free (about ten matches); error if the log isn't on a USB stick | at boot |
+| Log drive | warning below 600 MB free (about ten matches); error if the log isn't on a USB stick, or the stick wasn't in the whole time since the code started | the read after it happens (within a second) |
+| Devices not answering | error | a watched device didn't answer in the last half second, or its status signals are turned off (`optimizeBusUtilization(0)`) |
+| Devices rebooted | warning | a watched device rebooted while the code ran |
+| Sticky faults | warning | a watched device has a sticky fault set: see Tuner X, and clear it only after the log is pulled |
+| Firmware mismatch | warning | watched devices of one model run different firmware |
 
 The battery module adds its own ("Battery ID unknown" and the others in `battery/README.md`).
 
 ## Not checked on a robot yet
 
 - `/proc/stat`, `/proc/meminfo` and `/proc/mounts` on a roboRIO 2: readable, and cheap to read? The unit tests use
-  synthetic files in the Linux format.
+  synthetic files in the Linux format. One log-drive read (`LogDriveIOReal`) took 40 µs median, 57 µs p99 and
+  1.2 ms the first time on an Apple M5 Max desktop, against a 24-line mounts file; a roboRIO 2 is slower, by how
+  much is unmeasured.
 - That a USB stick on a roboRIO mounts from a `/dev/sd...` device, and that `/U` links to it.
+- That pulling the stick removes its mount, or at least its `/dev/sd...` file, so `OnUsb` goes false at the next
+  read. Both are covered, with synthetic files; which one a roboRIO does is unseen.
+- That a stick in at power-up is mounted before the robot program's `robotInit`, where AdvantageKit opens its log.
+- That AdvantageKit's log doesn't carry on onto a stick put back. From the source (AdvantageKit 26.0.2
+  `WPILOGWriter` opens its file once, in `start()`, and has no reopen path), not tried on a robot.
 - Whether `getStatus()` utilization on CAN FD is on the same scale as CTRE's 90 % guidance.
+- Where hoot files go on a roboRIO 2, and how often they're written (sets the 5 s).
+- The CPU cost of reading every watched device once a second (100 signal reads a second for 25 devices: 4 per device).
+- In replay, a device's values are read back only if the replayed code watches it too.
 
 ## Building and publishing
 
