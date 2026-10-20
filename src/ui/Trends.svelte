@@ -2,7 +2,7 @@
   Per-match trends as a verdict table (Tufte's sparkline table: word-sized graphics beside the numbers; NN/g "answer
   first"). One row per number, worst first: what is the verdict, the shape across matches, the latest value, the worst
   match, and what to do. Every verdict, order and worst match comes from trendRows (src/session/trends.ts), the same
-  model the printed report uses. Grey dots; the line is a hairline; one amber dot marks the worst match; in a row where
+  model the printed report uses. Grey dots; the line is a hairline; one amber dot marks the worst match when it is past the line; in a row where
   only some matches are past the line, those dots also get an amber ring. No red, and no trend call: it flipped in
   4 of 5 metrics when one match was left out.
 -->
@@ -46,7 +46,7 @@
         <th scope="row" class="metric">{row.metric.label} <span class="muted">({row.metric.unit})</span>{#if row.metric.sub}<div class="muted sub">{row.metric.sub}</div>{/if}</th>
         <td class="verdict">
           {row.verdict}
-          {#if row.verdict2}<div class="latest-worst">{row.verdict2}</div>{/if}
+          {#if row.verdict2}<div class={row.pastCount > 0 ? 'latest-worst' : 'muted'}>{row.verdict2}</div>{/if}
         </td>
         <td class="spark">
           {#if row.n > 0}
@@ -57,7 +57,7 @@
                 {@const v = row.values[i]}
                 {#if v !== null}
                   {#if mixed(row) && row.past[i]}<circle class="ring" cx={p.x(i)} cy={p.y(v)} r="4" />{/if}
-                  <circle cx={p.x(i)} cy={p.y(v)} r={i === w ? 3 : 2.2} fill={i === w ? 'var(--warning)' : colour(m)}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
+                  <circle cx={p.x(i)} cy={p.y(v)} r={i === w ? 3 : 2.2} fill={i === w && row.pastCount > 0 ? 'var(--warning)' : colour(m)}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
                 {/if}
               {/each}
             </svg>
@@ -79,9 +79,9 @@
   </tbody>
 </table>
 {#if batteries.length}
-  <p class="key">{#each batteries as b, i (b)}<span><span class="dot" style={`background:${COLORS[i % COLORS.length]}`}></span>{batteries.length > COLORS.length ? `${i + 1} ` : ''}{b}</span>{/each}<span><span class="dot" style="background:var(--muted)"></span>no battery ID</span><span><span class="dot" style="background:var(--warning)"></span>worst match</span></p>
+  <p class="key">{#each batteries as b, i (b)}<span><span class="dot" style={`background:${COLORS[i % COLORS.length]}`}></span>{batteries.length > COLORS.length ? `${i + 1} ` : ''}{b}</span>{/each}<span><span class="dot" style="background:var(--muted)"></span>no battery ID</span><span><span class="dot" style="background:var(--warning)"></span>worst match past the line</span><span><span class="ring"></span>past the line, where only some matches are</span></p>
 {:else}
-  <p class="key">No battery IDs yet: type them in the list below to colour the points by battery.</p>
+  <p class="key"><span><span class="dot" style="background:var(--warning)"></span>worst match past the line</span><span><span class="ring"></span>past the line, where only some matches are</span><span>No battery IDs yet: type them in the list below to colour the points by battery.</span></p>
 {/if}
 
 <style>
@@ -101,6 +101,7 @@
   q { quotes: "\201C" "\201D"; }
   .ref { stroke: var(--muted); stroke-width: 0.75; opacity: 0.8; }
   .ring { fill: none; stroke: var(--warning); stroke-width: 1.2; }
+  span.ring { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.2px solid var(--warning); margin-right: 4px; vertical-align: middle; }
   .key { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
 
