@@ -53,7 +53,7 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   Foresight's report is one page stamped with the time read, so a withdrawn verdict prints as NOT CHECKED, never GO.
   The Session view has the same button: page 1 is the match count, a bottom line, the merged findings with their
   confidence in words ("Consistent", "3 of 3 where it could be checked", the measured range and its line), the trends
-  as small multiples (battery identity is a letter, not just a colour) and the notes; page 2 is the rule × match grid.
+  as small multiples with each number's verdict (battery identity is a letter, not just a colour) and the notes; page 2 is the rule × match grid.
   The card is `<label>.session-card.png`, the PDF `<label>.session-report.pdf`.
 - **From the command line**, for Claude or a script: `node --experimental-strip-types scripts/report.ts <out-dir> <log>
   [<dslog>] [-- <log> …]` builds first (`--no-build` skips), drives headless Chrome on `hindsight.html` and writes
@@ -160,8 +160,10 @@ M5 Max (147 ms per log); the page never stopped responding for more than about 0
   or **not enough data** (under 2 matches checked). A fixed known issue that fires in a later match shows as "came
   back after a fix".
 - **Rule × match grid**: fired, quiet or not checked, per match. Click a match to open it in Match review.
-- **Per match** small multiples on one scale per number: lowest voltage, time under 7 V, charge, battery + wiring
-  resistance, slowest follower, auto loop overruns, vision outliers; coloured by battery ID (logged, or typed in).
+- **Per match** a verdict table, one row per number, worst first: lowest voltage, time under 7 V, charge, battery +
+  wiring resistance, seconds a follower ran more than 15 % off its leader, auto loop overruns, vision outliers. Each
+  row says the verdict ("Under 7 V in 8 of 8 matches"), draws a sparkline (the line as a hairline, one amber dot on the
+  worst match), and quotes the rule's own next step. Dots are coloured by battery ID when there are any (logged, or typed in).
 - **Download for Claude** saves `<session>.session-findings.json` (grid, confidence, per-match numbers).
 
 Not used in the session view: Driver Station logs (match review only).
