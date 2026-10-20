@@ -57,12 +57,9 @@ def main() -> int:
     if not requests:
         return fail("the program sent no requests")
     for r in requests:
-        if r["method"] != "GET" or r["path"] != "/":
-            return fail("not a plain GET /: %s %s" % (r["method"], r["raw"]))
-        if r["actions"] != [r["query"].get("action")] or r["query"].get("action") not in tool.ALLOWED_ACTIONS:
-            return fail("action not allowed: %s" % r["raw"])
-        if not set(r["query"]) <= {"action", "model", "id", "canbus"}:
-            return fail("unexpected parameter: %s" % r["raw"])
+        problem = fx.read_only_problem(r, tool.ALLOWED_ACTIONS)
+        if problem:
+            return fail(problem)
     expected = len(fx.device_array())
     found = len(snapshot["getdevices"]["body"]["DeviceArray"])
     if found != expected:
