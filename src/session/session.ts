@@ -203,6 +203,15 @@ export function mergeFindings(session: Session): MergedFinding[] {
   return out.sort((a, b) => order[a.severity] - order[b.severity] || b.matches.length - a.matches.length || place(a.rule) - place(b.rule))
 }
 
+/**
+ * Issue keys that fired in EVERY match of the session where they could be checked, with at least 3 such matches:
+ * stricter than "consistent" (more than half), so "in every match this event" is literally true. A rule that ran only
+ * partly counts as checkable (the same test as mergeFindings and the grid). Grey (info) findings never count.
+ */
+export function standingKeys(session: Session): Set<string> {
+  return new Set(mergeFindings(session).filter((f) => f.checkable >= 3 && f.matches.length === f.checkable).map((f) => f.key))
+}
+
 /** "fired in 5 of 7 matches where it could be checked" */
 export function rateText(fired: number, checkable: number): string {
   return `fired in ${fired} of ${checkable} match${checkable === 1 ? '' : 'es'} where it could be checked`

@@ -23,7 +23,7 @@
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
   import { crashedNote, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
 
-  let { issues, onOpen, hasSession = $bindable(false) }: { issues: Map<string, IssueEvent>; onOpen: (files: File[]) => void; hasSession?: boolean } = $props()
+  let { issues, onOpen, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { issues: Map<string, IssueEvent>; onOpen: (files: File[]) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
 
   let summaries = $state<MatchSummary[]>([])
   // File handles only (not their contents), so a match can be reopened in Match review.
@@ -216,6 +216,8 @@
   }
   // Tells App.svelte that a session is selected, so print shows the session report instead of the app.
   $effect(() => { hasSession = !!session })
+  // Bound out to App, which finds the open match's session to fold the findings that fire in every match.
+  $effect(() => { sessionsOut = sessions })
   // For scripts/report.ts --session: the same builders the buttons use.
   $effect(() => {
     const api = (window as unknown as { hindsight?: Record<string, unknown> }).hindsight

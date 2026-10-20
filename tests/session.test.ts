@@ -1,6 +1,6 @@
 // The event view: grouping, confidence, the merged findings and the session file.
 import { describe, expect, it } from 'vitest'
-import { confidence, dateText, groupSessions, mergeFindings, ruleGrid, wilson } from '../src/session/session.ts'
+import { confidence, dateText, groupSessions, mergeFindings, ruleGrid, standingKeys, wilson } from '../src/session/session.ts'
 import { dateFromFileName, summarizeLog, type MatchSummary } from '../src/session/summary.ts'
 import { buildSessionJson } from '../src/session/export.ts'
 import { writeWpilog } from './helpers/fixture-format.ts'
@@ -106,5 +106,56 @@ describe.skipIf(!haveCalGames)('the three CalGames logs as one session', () => {
     const text = JSON.stringify(buildSessionJson(sessions[0]))
     expect(text.length).toBeLessThan(500_000)
     expect(text).not.toMatch(/RadioStatus/)
+  })
+})
+
+describe('standingKeys: issues that fired in every match where they could be checked', () => {
+  type St = 'fired' | 'quiet' | 'not checked'
+  const fnd = (key: string, rule: string, severity = 'warning') => ({ key, rule, severity, title: key })
+  /** One match: per rule, a status and the keys that fired (an info finding when the key is prefixed "info:"). */
+  const match = (name: string, rules: Record<string, [St, string[]]>) => ({
+    fileName: name, playedAt: 1,
+    rules: Object.fromEntries(Object.entries(rules).map(([rule, [status, keys]]) => [rule, {
+      status, findings: keys.map((k) => (k.startsWith('info:') ? fnd(k.slice(5), rule, 'info') : fnd(k, rule))),
+    }])),
+  }) as unknown as MatchSummary
+  const session = (matches: MatchSummary[]) => ({ id: 's', label: 's', kind: 'event' as const, matches })
+  const fired = (n: string) => match(n, { 'loop/overrun': ['fired', ['loop/overrun']] })
+
+  it('every match, not most: fired in 3 of 4 checkable is consistent but not standing', () => {
+    const s = session([
+      match('a', { 'loop/overrun': ['fired', ['loop/overrun']], 'comms/loss': ['fired', ['comms/loss']] }),
+      match('b', { 'loop/overrun': ['fired', ['loop/overrun']], 'comms/loss': ['fired', ['comms/loss']] }),
+      match('c', { 'loop/overrun': ['fired', ['loop/overrun']], 'comms/loss': ['fired', ['comms/loss']] }),
+      match('d', { 'loop/overrun': ['fired', ['loop/overrun']], 'comms/loss': ['quiet', []] }),
+    ])
+    expect(mergeFindings(s).find((f) => f.key === 'comms/loss')!.confidence).toBe('consistent')
+    expect([...standingKeys(s)]).toEqual(['loop/overrun'])
+  })
+  it('fewer than 3 checkable matches: none, even when it fired in all of them', () => {
+    expect(standingKeys(session([fired('a'), fired('b')])).size).toBe(0)
+    // Three matches, but the rule could be checked in only two of them.
+    expect(standingKeys(session([fired('a'), fired('b'), match('c', { 'loop/overrun': ['not checked', []] })])).size).toBe(0)
+  })
+  it('a match where the rule could not be checked is left out of "every match"; one where it ran and was quiet breaks it', () => {
+    expect([...standingKeys(session([fired('a'), fired('b'), fired('c'), match('d', { 'loop/overrun': ['not checked', []] })]))]).toEqual(['loop/overrun'])
+    expect(standingKeys(session([fired('a'), fired('b'), fired('c'), match('d', { 'loop/overrun': ['quiet', []] })])).size).toBe(0)
+  })
+  it('a rule that ran only partly counts as checkable (summary.ts keeps it quiet/fired, not "not checked")', () => {
+    // Two matches fired; the third ran the rule partly and saw nothing: checkable (3), fired in 2, so not standing.
+    const partly = match('c', { 'loop/overrun': ['quiet', []] })
+    expect(mergeFindings(session([fired('a'), fired('b'), partly]))[0].checkable).toBe(3)
+    expect(standingKeys(session([fired('a'), fired('b'), partly])).size).toBe(0)
+  })
+  it('the same rule firing about something else does not count for this key; info findings never count', () => {
+    const s = session([
+      match('a', { 'vision/stale': ['fired', ['vision/stale · A']] }),
+      match('b', { 'vision/stale': ['fired', ['vision/stale · B']] }),
+      match('c', { 'vision/stale': ['fired', ['vision/stale · A']] }),
+      match('d', { 'power/margin': ['quiet', ['info:power/margin']] }),
+      match('e', { 'power/margin': ['quiet', ['info:power/margin']] }),
+      match('f', { 'power/margin': ['quiet', ['info:power/margin']] }),
+    ])
+    expect(standingKeys(s).size).toBe(0)
   })
 })

@@ -10,11 +10,14 @@
   import type { Audience, Finding } from '../rules/types.ts'
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import { findingStatus, playedAt } from '../report/review-model.ts'
-  import { nest } from '../report/finding-tree.ts'
+  import { nest, descendants, type FindingNode } from '../report/finding-tree.ts'
+  import { cardTitle } from '../report/titles.ts'
 
-  let { analysis, issues, onMark }: {
+  let { analysis, issues, standing = new Set<string>(), onMark }: {
     analysis: Analysis
     issues: Map<string, IssueEvent>
+    /** Issue keys that fired in every match of this match's session (session.ts standingKeys); empty when no loaded session holds it. */
+    standing?: Set<string>
     onMark: (finding: Finding, status: IssueStatus, note: string) => void
   } = $props()
 
@@ -35,9 +38,20 @@
   const active = $derived([...cameBack, ...fresh])
   // Every known issue, whichever audience is picked, so a hidden one still reads "explained by a known issue".
   const allKnown = $derived(all.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
-  const activeTree = $derived(nest(active, all, allKnown, cameBack))
+  const fullTree = $derived(nest(active, all, allKnown, cameBack))
+  // A headline whose issue fires in every match of the session moves, with what it explains, into a closed fold after
+  // the list. A standing finding under a headline that isn't standing stays under it; one that came back stays listed.
+  const folded = (n: FindingNode) => standing.has(n.finding.key) && !cameBack.includes(n.finding)
+  const activeTree = $derived(fullTree.filter((n) => !folded(n)))
+  const standingTree = $derived(fullTree.filter(folded))
+  const standingAll = $derived(standingTree.flatMap((n) => [n.finding, ...descendants(n)]))
+  const standingErrors = $derived(standingAll.filter((f) => f.severity === 'error'))
+  const standingWarnings = $derived(standingAll.filter((f) => f.severity === 'warning').length)
   // The first active error's closed row carries its next step; derived, so it moves when that error is marked known or the audience changes.
+  // It is the first error not in the fold; when every error is folded it falls back to the first folded one, whose next
+  // step is then shown in the fold's summary (the rows inside a closed fold can't show it).
   const firstError = $derived(activeTree.find((n) => n.finding.severity === 'error' && !issues.get(n.finding.key))?.finding)
+  const fallbackError = $derived(!firstError && standingTree.length ? standingTree.find((n) => n.finding.severity === 'error')?.finding : undefined)
   const knownTree = $derived(nest(known, all))
   const firing = $derived(new Set(all.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
@@ -79,12 +93,29 @@
 
 {#if active.length === 0}
   <p>No new findings{audience === 'all' ? '' : ' for this group'}. Every rule not listed under "Not checked" looked and found nothing new.</p>
-{:else}
+{:else if activeTree.length}
   <ul class="findings">
     {#each activeTree as n (n.finding.key + n.finding.time)}
       <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} showNext={n.finding === firstError} {onMark} />
     {/each}
   </ul>
+{/if}
+
+{#if standingTree.length}
+  <details class="standing">
+    <summary>
+      <h3>In every match this event ({standingAll.length})</h3>
+      <span class="sum">
+        {#if standingErrors.length}<span class="e">{standingErrors.length} error{standingErrors.length === 1 ? '' : 's'}</span>: {standingErrors.map((f) => cardTitle(f.title)).join('; ')}{#if standingWarnings}{', '}{/if}{/if}{#if standingWarnings}<span class="w">{standingWarnings} warning{standingWarnings === 1 ? '' : 's'}</span>{/if}
+      </span>
+      {#if fallbackError}<span class="sum next"><strong>Next step:</strong> {fallbackError.nextStep}</span>{/if}
+    </summary>
+    <ul class="findings">
+      {#each standingTree as n (n.finding.key + n.finding.time)}
+        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} {onMark} />
+      {/each}
+    </ul>
+  </details>
 {/if}
 
 {#if known.length}
@@ -135,7 +166,10 @@
   .audience .n { color: var(--muted); }
   .findings { padding: 0; margin: 0; border-top: 1px solid var(--border); }
   .known-section, .quiet, .not-checked { margin-top: 1.5rem; }
-  .known-section summary { cursor: pointer; }
+  .known-section summary, .standing summary { cursor: pointer; }
+  .standing { margin-top: 1rem; }
+  .standing h3 { display: inline; }
+  .standing .sum { display: block; margin-top: 0.15rem; font-size: 0.85rem; color: var(--muted); }
   .known-section h3 { display: inline; }
   h3 { font-size: 1rem; margin: 0 0 0.25rem; }
   .quiet ul { margin: 0.25rem 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--muted); }

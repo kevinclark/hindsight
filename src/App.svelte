@@ -11,6 +11,7 @@
   import LoggingTab from './ui/LoggingTab.svelte'
   import Wizard from './ui/Wizard.svelte'
   import SessionView from './ui/SessionView.svelte'
+  import { standingKeys, type Session } from './session/session.ts'
   import SnapshotView from './ui/SnapshotView.svelte'
   import ForesightView from './ui/ForesightView.svelte'
   import ReviewReport from './ui/ReviewReport.svelte'
@@ -48,6 +49,17 @@
   let lastLoad = $state<{ files: number; readMs: number; analyzeMs: number; heapMB: number | null } | null>(null)
 
   const current = $derived(analyses[selected] as Analysis | undefined)
+
+  // The sessions the Session view holds, and the issues that fired in every match of the current match's session
+  // (Match review folds them; no loaded session holding this match means nothing folds). A match joined from several
+  // logs is listed under its first log's name, with every piece in `pieces` (summary.ts joinPieces).
+  let sessions = $state.raw<Session[]>([])
+  const standing = $derived.by(() => {
+    if (!current) return new Set<string>()
+    const name = current.match.fileName
+    const own = sessions.find((s) => s.matches.some((m) => m.fileName === name || m.pieces?.includes(name)))
+    return own ? standingKeys(own) : new Set<string>()
+  })
 
   // Known issues: kept in this browser between visits, and saved to / loaded from hindsight-history.jsonl.
   const STORE = 'hindsight.history'
@@ -190,7 +202,7 @@
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">A pit check was added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
-<div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} bind:hasSession={sessionShown} /></div>
+<div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
   <label class="button">
@@ -264,7 +276,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={current} {issues} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={current} {issues} {standing} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>
