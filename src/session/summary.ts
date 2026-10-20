@@ -16,6 +16,13 @@ import { profileFit, type ProfileChoice } from '../profiles/choose.ts'
 import { profileId } from '../profiles/index.ts'
 import { coverage, worstAcross, type LoggedState } from '../coverage/coverage.ts'
 
+/**
+ * The shape of a saved MatchSummary. Summaries saved in the browser by an older Hindsight are still shown while their
+ * shape is the same as this one's. Bump it whenever MatchSummary changes in a way old code can't be drawn from
+ * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it.
+ */
+export const SUMMARY_SHAPE = 1
+
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
 /**
