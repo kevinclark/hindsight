@@ -84,6 +84,24 @@
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
   const grid = $derived(session ? ruleGrid(session) : [])
   const merged = $derived(session ? mergeFindings(session) : [])
+  // "Once" rows (one match only, low confidence) fold under one summary; the rest stay listed. Same order inside each.
+  const listed = $derived(merged.filter((f) => f.confidence !== 'once'))
+  const onceRows = $derived(merged.filter((f) => f.confidence === 'once'))
+  // Rule × match rows: most matches fired first, then the worse severity, then the rules' own order.
+  const SEV_RANK = { error: 0, warning: 1, info: 2 } as const
+  const gridRows = $derived.by(() => {
+    const rows = grid.map((r, row) => {
+      const sevs = r.cells.map((c, i) => {
+        if (c !== 'fired') return null
+        const fs = session!.matches[i].rules[r.rule]?.findings ?? []
+        // Fired with no finding listed: shown as the worst, never quietly grey.
+        return fs.length ? fs.reduce((a, b) => (SEV_RANK[b.severity] < SEV_RANK[a] ? b.severity : a), fs[0].severity) : 'error'
+      })
+      const worst = Math.min(3, ...sevs.map((v) => (v ? SEV_RANK[v] : 3)))
+      return { ...r, sevs, worst, row }
+    })
+    return rows.sort((a, b) => b.fired - a.fired || a.worst - b.worst || a.row - b.row)
+  })
   // The robots (profiles) this session's logs were read with, and how many matches each.
   const robots = $derived.by(() => {
     const by = new Map<string, MatchSummary[]>()
@@ -216,10 +234,27 @@
   const pct = (x: number) => `${Math.round(100 * x)} %`
   // How far past the line, in words: "12 % past it", or "7× the line" when it is far past.
   const past = (margin: number) => (margin < 1 ? `${pct(margin)} past it` : `${(1 + margin).toFixed(1)}× the line`)
-  const CELL = { fired: '●', quiet: '·', 'not checked': '–' } as const
+  const CELL = { quiet: '·', 'not checked': '–' } as const
+  // The same glyphs and words as the findings list (FindingRow): shape and word carry severity when colour can't.
+  const SEV_ICON = { error: '●', warning: '▲', info: '○' } as const
+  const SEV_WORD = { error: 'Error', warning: 'Warning', info: 'Info' } as const
+  // "Qualification 13" -> "Q13" for chart axes; a log with no match label gets its number in the list.
+  const shortLabel = (m: MatchSummary, i: number) => (m.matchLabel ? m.matchLabel.replace(/^(\w)\w*\s+(\d+)$/, '$1$2') : `#${i + 1}`)
   // At most 2 decimals, without trailing zeros: 7.4, 1.2–2.1, 53.
   const fmt = (x: number) => String(+x.toFixed(Math.abs(x) >= 100 ? 0 : 2))
 </script>
+
+{#snippet row(f: (typeof merged)[number])}
+  {@const back = cameBack(f.key, f.matches)}
+  <li class={f.severity}>
+    <span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span>
+    <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
+    {#if f.measured.length}
+      <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
+    {/if}
+    <span class="latest">Latest: {f.title}</span>
+  </li>
+{/snippet}
 
 <div class:screen-only={!!session} data-session-view>
 <p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
@@ -279,22 +314,6 @@
     <p class="note warn">{label(m)}: {m.clockNote}</p>
   {/each}
 
-  <h3>Findings across the session</h3>
-  <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some, or in every match of only 2 checked (too few to call consistent). Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
-  <ul class="merged">
-    {#each merged as f (f.key)}
-      {@const back = cameBack(f.key, f.matches)}
-      <li class={f.severity}>
-        <span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span>
-        <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
-        {#if f.measured.length}
-          <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
-        {/if}
-        <span class="latest">Latest: {f.title}</span>
-      </li>
-    {/each}
-  </ul>
-
   <h3>Rule × match</h3>
   <div class="grid-wrap">
     <table class="grid">
@@ -302,20 +321,41 @@
         <tr><th>rule</th>{#each session.matches as m (m.fileName)}<th class="match"><button class="link" title={m.fileName} onclick={() => open(m)}>{label(m)}</button></th>{/each}<th>across the session</th></tr>
       </thead>
       <tbody>
-        {#each grid as r (r.rule)}
+        {#each gridRows as r (r.rule)}
           <tr>
             <th scope="row"><code>{r.rule}</code></th>
-            {#each r.cells as c, i (i)}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/each}
+            {#each r.cells as c, i (i)}
+              {#if c === 'fired'}{@const sev = r.sevs[i] ?? 'error'}<td class={`cell fired ${sev}`} title={`${SEV_WORD[sev]}: fired`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}</span></td>
+              {:else}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/if}
+            {/each}
             <td class="rate">{r.checkable ? `${CONFIDENCE_WORDS[r.confidence]}: ${r.fired} of ${r.checkable}` : 'not checked'}</td>
           </tr>
         {/each}
       </tbody>
     </table>
   </div>
-  <p class="hint">● fired · quiet – not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
+  <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
 
   <h3>Per match</h3>
-  <Trends matches={session.matches} {typedBatteries} />
+  <Trends matches={session.matches} {typedBatteries} labels={session.matches.map(shortLabel)} />
+
+  <h3>Findings across the session</h3>
+  <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some, or in every match of only 2 checked (too few to call consistent). Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
+  <ul class="merged">
+    {#each listed as f (f.key)}
+      {@render row(f)}
+    {/each}
+  </ul>
+  {#if onceRows.length}
+    <details class="once-fold">
+      <summary>{onceRows.length} seen {CONFIDENCE_WORDS.once.toLowerCase()}</summary>
+      <ul class="merged">
+        {#each onceRows as f (f.key)}
+          {@render row(f)}
+        {/each}
+      </ul>
+    </details>
+  {/if}
 
   <h3>Matches in this session</h3>
   <div class="grid-wrap"><table class="list">
@@ -346,19 +386,19 @@
   .intro, .hint, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
   .warn { color: var(--warning); }
   .drop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.9rem 1rem; border: 1.5px dashed var(--border); border-radius: 8px; }
-  .button { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
+  .button { display: inline-block; min-height: 24px; box-sizing: border-box; padding: 0.4rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
   .button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .progress { font-size: 0.85rem; color: var(--muted); }
   .problem { color: var(--error); font-size: 0.85rem; }
   .sessions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
-  .sessions button { padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
+  .sessions button { min-height: 24px; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
   .sessions button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
   .sessions small { color: var(--muted); }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   h2 { font-size: 1.2rem; margin: 0; }
   h3 { font-size: 1rem; margin: 1.5rem 0 0.25rem; }
-  .link { border: none; background: none; color: var(--focus); font: inherit; font-size: 0.85rem; cursor: pointer; padding: 0; }
+  .link { border: none; background: none; color: var(--focus); font: inherit; font-size: 0.85rem; cursor: pointer; padding: 0.2rem 0.25rem; min-height: 24px; box-sizing: border-box; }
   .merged { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--border); }
   .merged li { display: grid; grid-template-columns: 8rem 1fr; gap: 0.1rem 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
   .merged .measured, .merged .latest { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
@@ -375,11 +415,20 @@
   .grid th, .grid td { padding: 0.1rem 0.5rem; text-align: center; white-space: nowrap; }
   .grid th[scope='row'], .grid thead th:first-child { text-align: left; }
   .grid thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
-  .cell.fired { color: var(--error); font-weight: 700; }
+  /* Severity colour, plus a different glyph and a word for greyscale and screen readers (WCAG 1.4.1). */
+  .cell.fired { font-weight: 700; }
+  .cell.fired.error { color: var(--error); }
+  .cell.fired.warning { color: var(--warning); }
+  .cell.fired.info { color: var(--muted); }
   .cell.not-checked { color: var(--muted); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .grid th.match { white-space: normal; min-width: 4.5rem; }
+  .once-fold { margin-top: 0.5rem; }
+  .once-fold summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); min-height: 24px; display: flex; align-items: center; }
   .rate { text-align: left !important; color: var(--muted); }
   .list th, .list td { text-align: left; padding: 0.15rem 1rem 0.15rem 0; }
   .list thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
+  input:not([type='file']), select { min-height: 24px; box-sizing: border-box; }
   input, select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; max-width: 100%; }
   @media (max-width: 640px) { .merged li { grid-template-columns: 1fr; } .merged .measured, .merged .latest { grid-column: 1; } }
 </style>
