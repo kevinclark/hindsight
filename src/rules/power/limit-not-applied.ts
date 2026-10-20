@@ -7,7 +7,8 @@
  * Why: CalGames 2026: the flywheel's 40 A supply limit is configured but switched off (DrumSubsystem.java:310), so
  * four motors pulled 78–94 A each during spin-up.
  */
-import { amps, beyond, rule, round, type Problem } from '../rule.ts'
+import { amps, beyond, rule, round, totalSeconds, type Problem } from '../rule.ts'
+import type { GroupView, MatchView, MotorView } from '../view.ts'
 
 export default rule({
   id: 'power/limit-not-applied',
@@ -26,41 +27,43 @@ export default rule({
   forEach: 'motorGroup',
 
   check(group, match) {
-    const problems: Problem[] = []
     if (group.limits.supplyA === undefined && group.limits.statorA === undefined) {
       return match.couldNotCheck(`the robot profile has no current limits for ${group.name} (${group.limits.where})`)
     }
     const kinds = [
       { kind: 'supply', limit: group.limits.supplyA, isOn: group.limits.supplyEnabled },
       { kind: 'stator', limit: group.limits.statorA, isOn: group.limits.statorEnabled },
-    ]
+    ] as const
+
+    // The profile copies the limits from one commit of the robot code; say so when this log ran other code.
+    const pin = match.profile.code
+    const sameCode = match.build.sha.startsWith(pin.sha)
+    const asOf = sameCode ? '' : ` (as of ${pin.branch} ${pin.sha}; this log ran ${match.build.sha.slice(0, 7) || 'unknown code'})`
+
+    const problems: Problem[] = []
     for (const { kind, limit, isOn } of kinds) {
       if (limit === undefined) continue
-      // Find the motor whose current went highest while over the limit for more than 0.2 s.
-      let worst = { motor: '', peak: 0, start: 0, secondsOver: 0 }
-      for (const motor of group.motors) {
-        const current = kind === 'supply' ? motor.supply() : motor.stator()
-        const over = current.episodes(beyond(limit * 1.2), { during: match.enabled, longerThan: 0.2 })
-        for (const e of over) {
-          if (e.peak > worst.peak) {
-            const secondsOver = over.reduce((sum, x) => sum + x.seconds, 0)
-            worst = { motor: motor.name, peak: e.peak, start: e.start, secondsOver }
-          }
-        }
+      const worst = worstOverLimit(group, kind, limit, match)
+      if (worst === null) continue
+
+      // Switched off in code: that is the cause. Switched on (in the code the profile came from): the config likely
+      // didn't reach the motor.
+      let likely: string[] | undefined
+      let nextStep: string | undefined
+      const ruledOut: Record<string, string> = {}
+      if (!isOn) {
+        likely = ['limit-off']
+        nextStep = `Switch the ${kind} limit on in ${group.limits.where}, then measure the mechanism before and after.`
+      } else if (sameCode) {
+        likely = ['not-saved', 'default-limit']
+        ruledOut['limit-off'] = 'the limit is switched on in the code'
       }
-      if (worst.motor === '') continue
-      // The profile copies the limits from one commit of the robot code; say so when this log ran other code.
-      const pin = match.profile.code
-      const sameCode = match.build.sha.startsWith(pin.sha)
-      const asOf = sameCode ? '' : ` (as of ${pin.branch} ${pin.sha}; this log ran ${match.build.sha.slice(0, 7) || 'unknown code'})`
-      // Switched off in code: that is the cause. Switched on (in the code the profile came from): the config likely didn't reach the motor.
-      const off = !isOn
-      const onInThisCode = isOn && sameCode
+      const switchedOff = isOn ? '' : ' that is switched off in code'
       problems.push({
-        likely: off ? ['limit-off'] : onInThisCode ? ['not-saved', 'default-limit'] : undefined,
-        ruledOut: onInThisCode ? { 'limit-off': 'the limit is switched on in the code' } : undefined,
-        nextStep: off ? `Switch the ${kind} limit on in ${group.limits.where}, then measure the mechanism before and after.` : undefined,
-        message: `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${isOn ? '' : ' that is switched off in code'}${asOf}`,
+        likely,
+        ruledOut,
+        nextStep,
+        message: `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${switchedOff}${asOf}`,
         at: worst.start,
         about: `${group.name} ${kind}`,
         evidence: {
@@ -73,7 +76,7 @@ export default rule({
         },
         measured: [{ label: `peak ${kind} current`, value: round(worst.peak, 0), unit: 'A', threshold: round(limit * 1.2, 0) }],
         plot: {
-          signals: group.motors.map((m) => (kind === 'supply' ? m.supply() : m.stator())), unit: 'A',
+          signals: group.motors.map((m) => currentOf(m, kind)), unit: 'A',
           from: worst.start - 2, to: worst.start + 4, line: { value: limit, label: `${limit} A limit` },
         },
       })
@@ -81,3 +84,21 @@ export default rule({
     return problems
   },
 })
+
+/** The supply or stator current of a motor. */
+function currentOf(motor: MotorView, kind: 'supply' | 'stator') {
+  return kind === 'supply' ? motor.supply() : motor.stator()
+}
+
+/** The motor whose current went highest while over 120 % of the limit for more than 0.2 s (null if none did). */
+function worstOverLimit(group: GroupView, kind: 'supply' | 'stator', limit: number, match: MatchView) {
+  let worst = { motor: '', peak: 0, start: 0, secondsOver: 0 }
+  for (const motor of group.motors) {
+    const over = currentOf(motor, kind).episodes(beyond(limit * 1.2), { during: match.enabled, longerThan: 0.2 })
+    for (const e of over) {
+      if (e.peak <= worst.peak) continue
+      worst = { motor: motor.name, peak: e.peak, start: e.start, secondsOver: totalSeconds(over) }
+    }
+  }
+  return worst.motor === '' ? null : worst
+}

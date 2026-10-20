@@ -13,7 +13,7 @@
  * 24.5 s READY_CORAL_INTAKE and two pit holds for one Q33). 20 s is assumed: Q51's 9 s carry-over stays under it.
  * The exits are learned across every loaded log of this robot, whatever build each ran.
  */
-import { isTrue, rule, round } from '../rule.ts'
+import { isTrue, rule, round, type Problem } from '../rule.ts'
 import { inside, lengthOf, type MatchView, type Window } from '../view.ts'
 import { exitTrigger, stateStretches, type Trigger } from './state-exits.ts'
 
@@ -38,38 +38,68 @@ export default rule({
     const machine = match.profile.stateMachine
     if (!machine) return match.couldNotCheck('the robot profile names no state machine')
     const waiting = new Set([...machine.idle, ...machine.waitsOnPurpose])
-    const requests = machine.requests.filter((r) => match.has(r.key)).map((r) => ({ name: r.name, on: match.signal(r.key) }))
-    if (requests.length === 0) return match.couldNotCheck(`none of the driver request keys is in this log (${machine.requests.map((r) => r.key).join(', ')})`)
-    return stateStretches(match, machine.state).flatMap((s) => {
-      if (waiting.has(s.state)) return []
-      const during: Window = match.enabled.flatMap((iv) => (iv.end > s.start && iv.start < s.end ? [{ start: Math.max(iv.start, s.start), end: Math.min(iv.end, s.end) }] : []))
+    const logged = machine.requests.filter((r) => match.has(r.key))
+    const requests = logged.map((r) => ({ name: r.name, on: match.signal(r.key) }))
+    if (requests.length === 0) {
+      return match.couldNotCheck(`none of the driver request keys is in this log (${machine.requests.map((r) => r.key).join(', ')})`)
+    }
+
+    const problems: Problem[] = []
+    for (const stretch of stateStretches(match, machine.state)) {
+      const state = stretch.state
+      if (waiting.has(state)) continue
+      const during = enabledPart(match, stretch)
       const seconds = lengthOf(during)
       const presses = requests.map((r) => ({ name: r.name, n: r.on.turnsOn(during).length })).filter((r) => r.n > 0)
-      if (seconds < STUCK_SECONDS || presses.length === 0) return []
-      const trigger = exitTrigger(match, s.state)
-      const came = trigger.named ? cameDuring(match, trigger, during) : null
-      return [{
-        message: `${machine.name} stayed in ${s.state} for ${seconds.toFixed(0)} s while enabled, from ${match.when(during[0].start)}, through ${presses.reduce((a, r) => a + r.n, 0)} driver requests`
-          + (trigger.named ? `; it usually leaves when ${trigger.words}, which ${cameText(match, came, during)}` : ''),
+      if (seconds < STUCK_SECONDS || presses.length === 0) continue
+
+      const pressCount = presses.reduce((sum, r) => sum + r.n, 0)
+      const trigger = exitTrigger(match, state)
+      let message = `${machine.name} stayed in ${state} for ${seconds.toFixed(0)} s while enabled, from ${match.when(during[0].start)}, through ${pressCount} driver requests`
+      let likely: string[] | undefined
+      let triggerCame: string | undefined
+      if (trigger.named) {
+        const came = cameDuring(match, trigger, during)
+        triggerCame = cameText(match, came, during)
+        message += `; it usually leaves when ${trigger.words}, which ${triggerCame}`
+        // What it waits for did happen and the state stayed anyway: the code has no way out.
+        if (came !== null) likely = ['no-exit']
+      }
+      problems.push({
+        message,
         at: during[0].start,
-        about: s.state,
-        likely: came !== null && came !== undefined ? ['no-exit'] : undefined,
-        measured: [{ label: `in ${s.state} while enabled`, value: round(seconds, 1), unit: 's', threshold: STUCK_SECONDS }],
+        about: state,
+        likely,
+        measured: [{ label: `in ${state} while enabled`, value: round(seconds, 1), unit: 's', threshold: STUCK_SECONDS }],
         evidence: {
-          state: s.state,
+          state,
           'seconds in it while enabled': round(seconds, 1),
           'driver requests during it': presses.map((r) => `${r.name} ×${r.n}`).join(', '),
           'what it usually waits for (learned from its exits)': trigger.text,
-          ...(trigger.named ? { [`${trigger.words}, during this stretch`]: cameText(match, came, during) } : {}),
+          [`${trigger.words}, during this stretch`]: triggerCame,
         },
-      }]
-    })
+      })
+    }
+    return problems
   },
 })
 
+/** The part of a stretch that the robot was enabled for. */
+function enabledPart(match: MatchView, stretch: { start: number; end: number }): Window {
+  const during: Window = []
+  for (const interval of match.enabled) {
+    if (interval.end > stretch.start && interval.start < stretch.end) {
+      during.push({ start: Math.max(interval.start, stretch.start), end: Math.min(interval.end, stretch.end) })
+    }
+  }
+  return during
+}
+
 /** The trigger during the stretch, in words. */
 function cameText(match: MatchView, came: number | null, during: Window): string {
-  return came === null ? 'never happened' : came === during[0].start ? 'was already so when the stretch began, but it stayed' : `happened at ${match.when(came)}, but it stayed`
+  if (came === null) return 'never happened'
+  if (came === during[0].start) return 'was already so when the stretch began, but it stayed'
+  return `happened at ${match.when(came)}, but it stayed`
 }
 
 /** When the learned trigger happened during the stretch (null if it never did). */
@@ -78,6 +108,8 @@ function cameDuring(match: MatchView, trigger: Trigger, during: Window): number 
   const want = trigger.to
   // Already in the wanted value when the stretch began counts as "came" at its start.
   if (isTrue(s.at(during[0].start)) === want) return during[0].start
-  for (let i = 0; i < s.series.t.length; i++) if (inside(during, s.series.t[i]) && isTrue(s.series.v[i]) === want) return s.series.t[i]
+  for (let i = 0; i < s.series.t.length; i++) {
+    if (inside(during, s.series.t[i]) && isTrue(s.series.v[i]) === want) return s.series.t[i]
+  }
   return null
 }

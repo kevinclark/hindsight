@@ -34,47 +34,66 @@ export default rule({
   incident: 'Two robots\' logs had two records of 24 channels, all 0 A, while the robot drew hundreds of amps.',
 
   check(match) {
-    if (!match.has(`${PD}/ChannelCurrent`)) return match.couldNotCheck('the log has no /PowerDistribution entries (the robot code doesn\'t log the board)')
+    if (!match.has(`${PD}/ChannelCurrent`)) {
+      return match.couldNotCheck('the log has no /PowerDistribution entries (the robot code doesn\'t log the board)')
+    }
     const power = match.powerIfLogged()
     const motorPeak = power ? maxOf(power.grid.amps) : NaN
     if (!(motorPeak > MOTORS_DRAWING_AMPS)) return match.couldNotCheck('no motor current to compare with')
+
     const channels = match.lists(`${PD}/ChannelCurrent`)
     let highestChannel = 0
-    for (const record of channels.v) highestChannel = Math.max(highestChannel, maxOf(record.filter(Number.isFinite)) || 0)
-    const volts = match.has(`${PD}/Voltage`) ? match.signal(`${PD}/Voltage`).highest().value : NaN
-    const count = match.has(`${PD}/ChannelCount`) ? match.signal(`${PD}/ChannelCount`).last() : (channels.v[0]?.length ?? 0)
-    const silent = channels.t.length <= 2 || highestChannel < 0.5 || (Number.isFinite(volts) && volts <= 1)
+    for (const record of channels.v) {
+      highestChannel = Math.max(highestChannel, maxOf(record.filter(Number.isFinite)) || 0)
+    }
+    const boardVolts = match.has(`${PD}/Voltage`) ? match.signal(`${PD}/Voltage`).highest().value : NaN
+    const countLogged = match.has(`${PD}/ChannelCount`)
+    const count = countLogged ? match.signal(`${PD}/ChannelCount`).last() : (channels.v[0]?.length ?? 0)
+    const silent = channels.t.length <= 2 || highestChannel < 0.5 || (Number.isFinite(boardVolts) && boardVolts <= 1)
     if (!silent) return
+
     const claimed = CLAIMED[count] ?? `a board with ${count} channels`
     // A profile that doesn't fit this log may name another robot's board: then the board is unknown. A log claiming
     // 16 channels means the code built a CTRE PDP (v1) reader, a board that reports; 24 is also what automatic
     // detection falls back to, so it says nothing about the board.
-    const board = !match.profileFits ? undefined : match.profile.powerDistribution ?? (count === 16 ? 'ctre-pdp' : undefined)
-    const canReport = board === 'rev-pdh' || board === 'ctre-pdp'
+    let board = match.profile.powerDistribution
+    if (!board && count === 16) board = 'ctre-pdp'
+    if (!match.profileFits) board = undefined
+    const boardSource = match.profile.powerDistribution ? ' (robot profile)' : ' (the log claims 16 channels)'
     const evidence = {
-      'board on the robot': board ? `${BOARD[board]}${match.profile.powerDistribution ? ' (robot profile)' : ' (the log claims 16 channels)'}` : 'unknown',
+      'board on the robot': board ? `${BOARD[board]}${boardSource}` : 'unknown',
       'the log claims': claimed,
       'channel-current records': channels.t.length,
       'highest channel current (A)': round(highestChannel, 1),
-      'board voltage, highest (V)': Number.isFinite(volts) ? round(volts, 1) : 'not logged',
+      'board voltage, highest (V)': Number.isFinite(boardVolts) ? round(boardVolts, 1) : 'not logged',
       'motors drew, total, peak (A)': round(motorPeak, 0),
     }
+
     if (board === 'ctre-pdp-2') {
       return {
         message: `The power board (a CTRE PDP 2.0) doesn't report per-channel current; Hindsight adds up the motor controllers' supply currents instead (plus an assumed ${match.profile.power.otherLoadsAmps} A for everything else)`,
-        severity: 'info', evidence, likely: ['cannot-report'],
+        severity: 'info',
+        evidence,
+        likely: ['cannot-report'],
         nextStep: 'Nothing to fix on the board. To see a non-motor load, log its current another way, or move to a board that reports (a REV PDH).',
       }
     }
+
+    const message = `The power distribution board reported nothing while the motors drew up to ${round(motorPeak, 0)} A (the log claims ${claimed})`
+    if (board === 'rev-pdh' || board === 'ctre-pdp') {
+      return {
+        message,
+        evidence,
+        ruledOut: { 'cannot-report': `the robot has ${BOARD[board]}, which reports over CAN` },
+        nextStep: `The robot has ${BOARD[board]} and the log claims ${claimed}: check the code asks for that type (not automatic detection) and that the board's CAN ID matches the code.`,
+      }
+    }
+    // The profile doesn't say which board it is, so it may be one that can't report: context only.
     return {
-      message: `The power distribution board reported nothing while the motors drew up to ${round(motorPeak, 0)} A (the log claims ${claimed})`,
-      // Context when the profile doesn't say which board it is: it may be one that can't report.
-      severity: canReport ? undefined : 'info',
+      message,
+      severity: 'info',
       evidence,
-      ruledOut: canReport ? { 'cannot-report': `the robot has ${BOARD[board!]}, which reports over CAN` } : undefined,
-      nextStep: canReport
-        ? `The robot has ${BOARD[board!]} and the log claims ${claimed}: check the code asks for that type (not automatic detection) and that the board's CAN ID matches the code.`
-        : `First check which board the robot has (then name it in the robot profile): a CTRE PDP 2.0 can't report. For a REV PDH or a CTRE PDP, the log claims ${claimed}: check the code asks for that type and the board's CAN ID.`,
+      nextStep: `First check which board the robot has (then name it in the robot profile): a CTRE PDP 2.0 can't report. For a REV PDH or a CTRE PDP, the log claims ${claimed}: check the code asks for that type and the board's CAN ID.`,
     }
   },
 })

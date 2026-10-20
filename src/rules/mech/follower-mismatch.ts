@@ -12,7 +12,7 @@
  */
 import { indexAt, median } from '../../match/series.ts'
 import { rule, round } from '../rule.ts'
-import { SLOW_HZ, sampleRate } from '../view.ts'
+import { SLOW_HZ, sampleRate, type MatchView, type MotorView } from '../view.ts'
 
 const DT = 0.02 // compare every 20 ms
 
@@ -37,50 +37,38 @@ export default rule({
     const grid = match.grid(DT)
     const leader = group.motors[0].velocity().onGrid(grid)
     const halfSecondAgo = Math.round(0.5 / DT)
+    const motors = group.motors.map((m) => motorTrace(m, match, grid))
 
-    // For each motor: its speed as a fraction of the leader's, at every steady moment (a slowly logged motor: only
-    // just after its own records, each standing for its typical gap).
-    const motors = group.motors.map((m) => {
-      const velocity = m.velocity()
-      const rate = sampleRate(velocity.series, match.enabled)
-      const slow = !!rate && rate.fastHz < SLOW_HZ
-      return { name: m.name, speed: velocity.onGrid(grid), recordTimes: velocity.series.t, slow, weight: slow ? 1 / rate!.typicalHz : DT, ratios: [] as number[], times: [] as number[] }
-    })
-    const fresh = (m: (typeof motors)[0], t: number) => !m.slow || t - m.recordTimes[indexAt(m.recordTimes, t)] < DT
+    // At every steady moment of the leader, note each motor's speed as a fraction of the leader's.
     for (let i = halfSecondAgo; i < grid.length; i++) {
       const now = Math.abs(leader[i])
       const before = Math.abs(leader[i - halfSecondAgo])
       const steady = now > 20 && Math.abs(now - before) <= 0.03 * now
       if (!steady) continue
       for (const m of motors) {
-        if (!fresh(m, grid[i])) continue
+        if (!hasFreshRecord(m, grid[i])) continue
         m.ratios.push(Math.abs(m.speed[i]) / now)
         m.times.push(grid[i])
       }
     }
 
-    // The motor that spent longest more than 15 % off the leader, and its furthest moment.
-    let worst = { name: '', secondsOff: 0, steadyShare: 0, median: 1, furthest: 1, at: 0 }
-    for (const m of motors) {
-      const secondsOff = m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * m.weight
-      if (secondsOff <= worst.secondsOff) continue
-      let furthest = 0
-      for (let k = 1; k < m.ratios.length; k++) if (Math.abs(1 - m.ratios[k]) > Math.abs(1 - m.ratios[furthest])) furthest = k
-      worst = { name: m.name, secondsOff, steadyShare: secondsOff / (m.ratios.length * m.weight), median: median(m.ratios), furthest: m.ratios[furthest], at: m.times[furthest] }
-    }
+    const worst = mostOffLeader(motors)
     if (worst.secondsOff < 1) return
 
-    const evidence: Record<string, number> = { 'steady seconds compared': round(motors[0].ratios.length * motors[0].weight, 1) }
+    const steadySeconds = motors[0].ratios.length * motors[0].weight
+    const evidence: Record<string, number> = { 'steady seconds compared': round(steadySeconds, 1) }
     for (const m of motors) {
       evidence[`${m.name}: median speed vs leader (%)`] = round(100 * median(m.ratios), 0)
-      evidence[`${m.name}: seconds > 15 % off`] = round(m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * m.weight, 1)
+      evidence[`${m.name}: seconds > 15 % off`] = round(secondsOffLeader(m), 1)
     }
     evidence[`${worst.name}: share of steady time > 15 % off (%)`] = round(100 * worst.steadyShare, 0)
     evidence[`${worst.name} at its furthest (% of leader)`] = round(100 * worst.furthest, 0)
+
     // Off for most of the steady time: a constant offset, so slip or a wrong setup. Off only now and then: something loose.
     const constant = worst.steadyShare > 0.5
+    const likely = constant ? ['slip', 'config'] : ['loose', 'motor-fault']
     return {
-      likely: constant ? ['slip', 'config'] : ['loose', 'motor-fault'],
+      likely,
       message: `${worst.name} ran more than 15 % off ${motors[0].name} for ${worst.secondsOff.toFixed(1)} s at steady speed (median ${(100 * worst.median).toFixed(0)} %)`,
       at: worst.at,
       evidence,
@@ -92,3 +80,62 @@ export default rule({
     }
   },
 })
+
+/** One motor's speed on the grid, plus its speed as a fraction of the leader's at each steady moment (filled in by check). */
+interface MotorTrace {
+  name: string
+  speed: Float64Array
+  recordTimes: Float64Array
+  /** Logged slower than SLOW_HZ: compared only just after its own records. */
+  slow: boolean
+  /** Seconds one comparison stands for: 20 ms, or a slow motor's typical gap between records. */
+  weight: number
+  ratios: number[]
+  times: number[]
+}
+
+/** A motor's speed on the grid, with empty lists for the ratios. A slowly logged motor counts each record for its typical gap. */
+function motorTrace(motor: MotorView, match: MatchView, grid: Float64Array): MotorTrace {
+  const velocity = motor.velocity()
+  const rate = sampleRate(velocity.series, match.enabled)
+  let slow = false
+  let weight = DT
+  if (rate && rate.fastHz < SLOW_HZ) {
+    slow = true
+    weight = 1 / rate.typicalHz
+  }
+  const speed = velocity.onGrid(grid)
+  return { name: motor.name, speed, recordTimes: velocity.series.t, slow, weight, ratios: [], times: [] }
+}
+
+/** Is this moment just after one of the motor's own records? A slow motor's value between records is stale. */
+function hasFreshRecord(m: MotorTrace, t: number): boolean {
+  return !m.slow || t - m.recordTimes[indexAt(m.recordTimes, t)] < DT
+}
+
+/** How long the motor ran more than 15 % off the leader (s). */
+function secondsOffLeader(m: MotorTrace): number {
+  return m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * m.weight
+}
+
+/** The motor that spent longest more than 15 % off the leader, and its furthest moment. */
+function mostOffLeader(motors: MotorTrace[]) {
+  let worst = { name: '', secondsOff: 0, steadyShare: 0, median: 1, furthest: 1, at: 0 }
+  for (const m of motors) {
+    const secondsOff = secondsOffLeader(m)
+    if (secondsOff <= worst.secondsOff) continue
+    let furthest = 0
+    for (let k = 1; k < m.ratios.length; k++) {
+      if (Math.abs(1 - m.ratios[k]) > Math.abs(1 - m.ratios[furthest])) furthest = k
+    }
+    worst = {
+      name: m.name,
+      secondsOff,
+      steadyShare: secondsOff / (m.ratios.length * m.weight),
+      median: median(m.ratios),
+      furthest: m.ratios[furthest],
+      at: m.times[furthest],
+    }
+  }
+  return worst
+}
