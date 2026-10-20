@@ -21,6 +21,8 @@ class LogDriveIORealTest {
     assertEquals("ubi0:rootfs", LogDriveIOReal.deviceFor(MOUNTS, "/home/lvuser/logs"));
     assertEquals("ubi0:rootfs", LogDriveIOReal.deviceFor(MOUNTS, "/media/sda10"));
     assertEquals("/dev/sdb1", LogDriveIOReal.deviceFor(MOUNTS, "/media/my stick/logs"));
+    // Two mounts at one point: the later one is on top
+    assertEquals("ubi0:rootfs", LogDriveIOReal.deviceFor("rootfs / rootfs rw 0 0\nubi0:rootfs / ubifs rw 0 0\n", "/home"));
   }
 
   @Test

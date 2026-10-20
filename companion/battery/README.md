@@ -2,7 +2,7 @@
 
 The battery half of the Hindsight companion library (`../README.md`). It was the standalone `FRC8033BatteryTracker`;
 its log keys haven't changed. A WPILib vendor library that logs which battery is in the robot, so log analysis can follow each battery across
-matches and spot a weak one (CalGames 2026 P0 browned out on a battery that read fully charged but had low capacity).
+matches and spot a weak one (a battery that read fully charged but had low capacity has caused a brownout in a match).
 
 It reads the battery's Playing With Fusion Battery Fuel Gauge. If there is no gauge, it falls back to a label typed on
 the dashboard. Everything is logged through AdvantageKit, so it works in replay.

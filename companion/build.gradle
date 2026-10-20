@@ -19,6 +19,9 @@ ext {
     registerVendordep = { Project p, String name, String uuid, List requires ->
         def out = p.layout.buildDirectory.file("vendordep/${name}.json")
         def task = p.tasks.register('vendordepJson') {
+            inputs.property('mavenUrl', mavenUrl)
+            inputs.property('jsonUrl', jsonUrl)
+            inputs.property('version', p.version)
             outputs.file(out)
             doLast {
                 def json = [

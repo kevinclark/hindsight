@@ -143,11 +143,11 @@ class HindsightCompanionTest {
 
     hardware.bus.utilizationPercent = 85;
     runSeconds(companion, 1);
-    assertEquals(List.of("kWarning: CANivore Any bus 85% busy (warning above 80%)"), shown());
+    assertEquals(List.of("kWarning: CANivore Any bus 85.0% busy (warning above 80%)"), shown());
 
     hardware.bus.utilizationPercent = 95;
     runSeconds(companion, 1);
-    assertEquals(List.of("kError: CANivore Any bus 95% busy (CTRE: keep under 90%)"), shown());
+    assertEquals(List.of("kError: CANivore Any bus 95.0% busy (CTRE: keep under 90%)"), shown());
   }
 
   @Test
@@ -165,6 +165,20 @@ class HindsightCompanionTest {
     hardware.bus.status = "InvalidNetwork";
     runSeconds(companion, 1);
     assertEquals(List.of("kError: CANivore Any can't be read: InvalidNetwork"), shown());
+  }
+
+  @Test
+  void busOffsStillCountAfterTheCanivoreRestarts() {
+    hardware.bus.status = "OK";
+    hardware.bus.busOffCount = 4;
+    HindsightCompanion companion = companion(true);
+    runSeconds(companion, 1);
+    hardware.bus.busOffCount = 0; // the CANivore restarted
+    runSeconds(companion, 1);
+    assertEquals(List.of(), shown());
+    hardware.bus.busOffCount = 1;
+    runSeconds(companion, 1);
+    assertEquals(List.of("kError: CANivore Any bus turned off 1 times since boot"), shown());
   }
 
   @Test

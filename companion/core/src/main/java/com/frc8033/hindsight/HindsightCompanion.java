@@ -197,13 +197,14 @@ public class HindsightCompanion {
       boolean read = !inputs.status.equals("not read");
       boolean ok = inputs.status.equals("OK");
       double percent = inputs.utilizationPercent;
-      String busyText = String.format("CANivore %s bus %.0f%% busy", label, percent);
+      String busyText = String.format("CANivore %s bus %.1f%% busy", label, percent);
       tooBusy.set(ok && percent > TOO_BUSY_PERCENT, busyText + " (CTRE: keep under 90%)");
       busy.set(
           ok && percent > BUSY_PERCENT && percent <= TOO_BUSY_PERCENT,
           busyText + " (warning above 80%)");
 
-      if (ok && busOffCountAtStart < 0) {
+      // A restarted CANivore counts from 0 again, so start counting from there
+      if (ok && (busOffCountAtStart < 0 || inputs.busOffCount < busOffCountAtStart)) {
         busOffCountAtStart = inputs.busOffCount;
       }
       int busOffs = busOffCountAtStart < 0 ? 0 : inputs.busOffCount - busOffCountAtStart;

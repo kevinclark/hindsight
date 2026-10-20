@@ -60,7 +60,8 @@ public class LogDriveIOReal implements LogDriveIO {
 
   /**
    * The device of the mount point that holds the path: the longest mount point the path starts
-   * with. /proc/mounts lines are "device mountpoint type options 0 0", with spaces written "\040".
+   * with; of two mounts at one point, the later one is on top. /proc/mounts lines are "device
+   * mountpoint type options 0 0", with spaces written "\040".
    */
   static String deviceFor(String procMounts, String path) {
     String best = "";
@@ -73,7 +74,7 @@ public class LogDriveIOReal implements LogDriveIO {
       String mountPoint = fields[1].replace("\\040", " ");
       boolean holdsPath =
           mountPoint.equals("/") || path.equals(mountPoint) || path.startsWith(mountPoint + "/");
-      if (holdsPath && mountPoint.length() > bestLength) {
+      if (holdsPath && mountPoint.length() >= bestLength) {
         best = fields[0];
         bestLength = mountPoint.length();
       }
