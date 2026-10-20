@@ -85,12 +85,12 @@ export function firstSentence(text: string): string {
 
 /**
  * A match's short label for the Trends table. A log with no match number is labelled from /DriverStation/MatchType
- * (practice: "Pr"; none: "No type"), never from its file name; with no such signal it keeps its position, "#3".
+ * (practice: "Pr"; none: "On field", on the field outside a scheduled match), never from its file name; with no such signal it keeps its position, "#3".
  */
 export function trendLabel(m: MatchSummary, index: number): string {
   if (m.matchLabel.trim()) return shortMatchLabel(m.matchLabel, index)
   if (m.matchType === 1) return 'Pr'
-  if (m.matchType === 0) return 'No type'
+  if (m.matchType === 0) return 'On field'
   return shortMatchLabel('', index)
 }
 
@@ -98,7 +98,7 @@ export function trendLabel(m: MatchSummary, index: number): string {
 export function trendLabelLong(m: MatchSummary, index: number): string {
   if (m.matchLabel.trim()) return m.matchLabel
   if (m.matchType === 1) return 'Practice (no match number logged)'
-  if (m.matchType === 0) return 'No match type logged (DriverStation MatchType is None)'
+  if (m.matchType === 0) return 'On the field outside a scheduled match (FMS sent no match type)'
   return `Log ${index + 1} (${m.fileName})`
 }
 
@@ -178,9 +178,11 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
       const w = values[worstIndex]!, l = lines[worstIndex]!
       pastRatio = metric.bad === 'below' ? (w > 0 ? l / w : 999) : l > 0 ? w / l : 999
     }
-    // Tiers: past the line in any match (by how far past, biggest first), within the line, no line, absent.
+    // Tiers: past the line in any match (lowest voltage first, the brownout row; then by how far past, biggest
+    // first: a ratio to the line would put volts last, 7/5.69 = 1.23 against 8.7 for vision), within the line, no
+    // line, absent. Kevin, 2026-10-20.
     const tier = n === 0 ? 3 : !hasLine ? 2 : pastCount > 0 ? 0 : 1
-    const sortKey = tier * 1000 - (tier === 0 ? Math.min(pastRatio ?? 0, 999) : 0)
+    const sortKey = tier * 1000 - (tier === 0 ? (metric.key === 'minVolts' ? 999 : Math.min(pastRatio ?? 0, 998)) : 0)
     return { metric, values, lines, line, lineVaries, labels, n, total, past, pastCount, worstIndex, worstWord, latest, latestIsWorst, verdict, verdict2, next, pastRatio, sortKey }
   })
   // Stable: equal keys keep the metric order above.

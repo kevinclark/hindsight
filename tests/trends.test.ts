@@ -69,14 +69,18 @@ describe('trendRows verdicts', () => {
 })
 
 describe('trendRows order', () => {
-  it('puts rows past the line first, by how far past, then within the line, then no-line rows, then absent ones', () => {
+  it('puts rows past the line first, lowest voltage leading, then by how far past, then within the line, then no-line rows, then absent ones', () => {
     const rs = trendRows([
       m(1, { minVolts: 6.5, secondsUnder7: 3, chargeAh: 5, resistanceMilliohms: 11, followerSecondsOff: 2.5, loopOverrunPct: 26.7, visionOutlierPct: 43.5 }),
       m(2, { minVolts: 5.69, secondsUnder7: 12, chargeAh: 6, resistanceMilliohms: 10, followerSecondsOff: 1.2, loopOverrunPct: 12, visionOutlierPct: 8 }),
     ])
-    expect(rs.map((r) => r.metric.key)).toEqual(['visionOutlierPct', 'loopOverrunPct', 'followerSecondsOff', 'minVolts', 'resistanceMilliohms', 'secondsUnder7', 'chargeAh'])
+    expect(rs.map((r) => r.metric.key)).toEqual(['minVolts', 'visionOutlierPct', 'loopOverrunPct', 'followerSecondsOff', 'resistanceMilliohms', 'secondsUnder7', 'chargeAh'])
     expect(row(rs, 'visionOutlierPct').pastRatio).toBeCloseTo(8.7)
     expect(row(rs, 'minVolts').pastRatio).toBeCloseTo(7 / 5.69)
+  })
+  it('puts lowest voltage with the rows within the line when no match is under it', () => {
+    const rs = trendRows([m(1, { minVolts: 7.5, visionOutlierPct: 8, resistanceMilliohms: 11 })])
+    expect(rs.map((r) => r.metric.key).slice(0, 3)).toEqual(['visionOutlierPct', 'minVolts', 'resistanceMilliohms'])
   })
 })
 
@@ -104,7 +108,7 @@ describe('trend labels', () => {
   it('keeps a labelled match\'s short label, labels an unnumbered log from its MatchType, and never from its file name', () => {
     expect(trendLabel(m(13, {}), 0)).toBe('Q13')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 1 }), 0)).toBe('Pr')
-    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, fileName: 'akit_q13.wpilog' }), 0)).toBe('No type')
+    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, fileName: 'akit_q13.wpilog' }), 0)).toBe('On field')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: null, fileName: 'akit_q13.wpilog' }), 2)).toBe('#3')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: undefined }), 0)).toBe('#1')
   })
