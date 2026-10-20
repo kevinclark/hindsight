@@ -7,9 +7,9 @@
  * Why: MTTD 2025 Q41: at 745 s every CAN device stopped reporting for 58 s while the loop ran on; the swerve modules'
  * refresh status went CanMessageStale and the Pigeon's flag false. Only the Pigeon was reported, as if alone.
  */
-import { isFalse, round, rule, type Problem } from '../rule.ts'
+import { isFalse, round, rule, voltageList, type Problem } from '../rule.ts'
 import type { Episode, MatchView, Signal } from '../view.ts'
-import { canBuses, dropAround, isBusWide, LOW_VOLTS, voltageList, plotDrops, TOGETHER_SECONDS, watched, type CanBus } from './bus.ts'
+import { canBuses, dropAround, isBusWide, LOW_VOLTS, plotDrops, TOGETHER_SECONDS, watched, type CanBus } from './bus.ts'
 
 /** The evidence line that names the bus's devices (links.ts reads it to tell which alerts are about the bus). */
 export const BUS_DEVICES = 'devices that report their health on this bus'

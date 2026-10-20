@@ -9,9 +9,9 @@
  *
  * Drops that took the whole bus down at once are left to can/bus-dropout.
  */
-import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
+import { isFalse, plural, round, rule, voltageList, type Problem } from '../rule.ts'
 import type { DeviceView, Episode, MatchView } from '../view.ts'
-import { alreadyOffAt, busOf, isBusWide, LOW_VOLTS, plotDrops, secondsWatched, voltageList, watched } from './bus.ts'
+import { alreadyOffAt, busOf, isBusWide, LOW_VOLTS, plotDrops, secondsWatched, watched } from './bus.ts'
 
 
 export default rule({
@@ -65,8 +65,11 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   const lowOnes = voltages.filter((v) => v < LOW_VOLTS).length
   const allLow = voltages.length > 0 && lowOnes === voltages.length
   const closeCall = voltages.some((v) => Math.abs(v - LOW_VOLTS) < 0.5)
-  // No battery voltage logged just before a drop (e.g. Foresight: a device already off at the start of the stretch).
+  // No battery voltage logged just before a drop that began while enabled.
   const unknownVolts = voltages.some((v) => Number.isNaN(v))
+  // The battery verdicts below rest only on drops that began while enabled (in Foresight, while the check ran).
+  const everyDrop = voltages.length < drops.length ? `at every drop that began ${pit ? 'while the check ran' : 'while enabled'}` : 'at every drop'
+  const cameBack = timed[timed.length - 1].end >= match.logEnd ? 'no, still off at the end of the log' : 'yes'
   const others = otherDevices(match, device.name)
   const together = devicesDroppedWith(others, drops)
 
@@ -75,7 +78,7 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   if (allLow) {
     likely.push('battery-sag')
   } else if (voltages.length > 0 && lowOnes === 0 && !closeCall && !unknownVolts) {
-    ruledOut['battery-sag'] = 'the battery stayed above 7 V at every drop'
+    ruledOut['battery-sag'] = `the battery stayed above 7 V ${everyDrop}`
   }
   if (together.length) {
     likely.push('shared-wiring')
@@ -90,11 +93,12 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
     at: first.start,
     evidence: {
       drops: drops.length,
-      'seconds missing': round(secondsMissing),
+      'seconds missing while enabled': round(secondsMissing),
+      'came back': cameBack,
       'lowest battery voltage in the 0.5 s before each drop (V)': voltageText.join(', '),
       'other devices dropped at the same moment': othersDropped(together, others.length),
     },
-    likely, ruledOut, nextStep: dropNextStep(allLow, together),
+    likely, ruledOut, nextStep: dropNextStep(allLow, everyDrop, together),
     measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
     plot: plotDrops(battery, timed, 3, drops[drops.length - 1].end + 2),
   }
@@ -121,8 +125,8 @@ function devicesDroppedWith(others: { name: string; drops: number[] }[], drops: 
 }
 
 /** The next step when the battery was low at every drop, or other devices dropped with this one. */
-function dropNextStep(allLow: boolean, together: string[]): string | undefined {
-  if (allLow) return 'The battery was low at every drop: fix the voltage sag first (Power tab), then wiggle-test the power connector on that device.'
+function dropNextStep(allLow: boolean, everyDrop: string, together: string[]): string | undefined {
+  if (allLow) return `The battery was low ${everyDrop}: fix the voltage sag first (Power tab), then wiggle-test the power connector on that device.`
   if (together.length) return `${together.join(', ')} dropped at the same moment: check what they share (the same CAN branch or splice, the same power channel).`
   return undefined
 }

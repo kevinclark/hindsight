@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { matchWhenAt, type Match } from '../src/match/match.ts'
-import { voltageList } from '../src/rules/can/bus.ts'
+import { voltageList } from '../src/rules/rule.ts'
 import { Signal } from '../src/rules/view.ts'
 import { offseason2025 } from '../src/profiles/2025-offseason.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
@@ -36,7 +36,7 @@ describe('can/device-dropout: a device already off when the robot enabled', () =
     expect(f.title).toMatch(/^Gyro \(Pigeon\) dropped off CAN 2 times, first already off when the robot enabled at 0:00 into the match/)
     expect(f.title).not.toMatch(/before the match|NaN/)
     expect(f.time).toBe(20)
-    expect(f.evidence['seconds missing']).toBe(7)
+    expect(f.evidence['seconds missing while enabled']).toBe(7)
     expect(f.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('already off when enabled, 12.50')
     // The one drop that began while enabled still decides: the battery stayed up.
     expect(f.causes.find((c) => c.id === 'battery-sag')?.ruledOut).toMatch(/stayed above 7 V/)
@@ -47,7 +47,7 @@ describe('can/device-dropout: a device already off when the robot enabled', () =
     expect(f.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('already off when enabled')
     expect(f.causes.find((c) => c.id === 'battery-sag')?.ruledOut).toBeUndefined()
     expect(f.causes.find((c) => c.id === 'battery-sag')?.likely).toBeUndefined()
-    expect(f.evidence['seconds missing']).toBe(55) // 20–40 and 45–80
+    expect(f.evidence['seconds missing while enabled']).toBe(55) // 20–40 and 45–80
   })
 
   it('a drop that begins while enabled is dated where it began, with its own voltage', () => {
@@ -119,6 +119,6 @@ describe('can/device-dropout: a drop that began between two enables', () => {
     expect(f.title).not.toMatch(/already off/)
     expect(f.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('6.50')
     expect(f.causes.find((c) => c.id === 'battery-sag')?.likely).toBe(true)
-    expect(f.evidence['seconds missing']).toBe(15) // 45-60 only: the gap is not watched
+    expect(f.evidence['seconds missing while enabled']).toBe(15) // 45-60 only: the gap is not watched
   })
 })

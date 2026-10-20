@@ -53,17 +53,12 @@ export function watched(match: MatchView) {
  */
 export function alreadyOffAt(match: MatchView, drop: Episode): number | null {
   const firstStart = Math.min(...watched(match).map((w) => w.start))
-  return drop.start < firstStart ? firstStart : null
+  return drop.start <= firstStart ? firstStart : null
 }
 
 /** How long this drop lasted inside the watched windows (s): time off CAN while disabled doesn't count. */
 export function secondsWatched(match: MatchView, drop: Episode): number {
   return watched(match).reduce((sum, w) => sum + Math.max(0, Math.min(drop.end, w.end) - Math.max(drop.start, w.start)), 0)
-}
-
-/** Battery voltages for the evidence, two decimals, "not logged" where there was no reading. */
-export function voltageList(voltages: number[]): string {
-  return voltages.map((v) => (Number.isNaN(v) ? 'not logged' : v.toFixed(2))).join(', ')
 }
 
 /** The battery voltage from `before` s ahead of the first drop to time `to`, marking each drop, with the 7 V line. */

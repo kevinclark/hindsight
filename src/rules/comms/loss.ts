@@ -11,7 +11,7 @@
  * stayed off for 15 s or more (a radio boots in 20–40 s); a DS log that stops during the loss points to the DS laptop;
  * lost packets or a long trip time in the DS log just before point to the wireless link.
  */
-import { isFalse, plural, rule, round, type Severity } from '../rule.ts'
+import { isFalse, plural, rule, round, voltageList, type Severity } from '../rule.ts'
 import type { MatchView } from '../view.ts'
 
 const RADIO = '/RadioStatus/Connected' // AdvantageKit's radio logger: can the roboRIO reach the radio?
@@ -78,7 +78,7 @@ export default rule({
         losses: losses.length,
         'loss times': losses.map((t) => match.when(t)).join('; '),
         'seconds with outputs off after each': deadSeconds.map((d) => (Number.isFinite(d) ? d.toFixed(1) : '?')).join(', '),
-        'lowest battery voltage in the 0.5 s before each (V)': battery ? losses.map((t) => battery.lowest(match.before(t, 0.5)).value.toFixed(2)).join(', ') : 'not logged',
+        'lowest battery voltage in the 0.5 s before each (V)': battery ? voltageList(losses.map((t) => battery.lowest(match.before(t, 0.5)).value)) : 'not logged',
         'roboRIO could reach the radio': radioReach,
         'DS log loaded': ds ? 'yes' : 'no',
         ...ds?.evidence,

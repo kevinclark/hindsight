@@ -183,6 +183,8 @@ export { maxOf, median, percentile } from '../match/series.ts'
 
 // Formatting numbers for messages, so every rule says them the same way.
 export const volts = (v: number) => `${v.toFixed(2)} V`
+/** Battery voltages for the evidence, two decimals each, "not logged" where there was no reading. */
+export const voltageList = (vs: number[]) => vs.map((v) => (Number.isNaN(v) ? 'not logged' : v.toFixed(2))).join(', ')
 export const amps = (a: number) => `${a.toFixed(0)} A`
 export const secs = (s: number) => `${s.toFixed(1)} s`
 export const pct = (fraction: number) => `${(100 * fraction).toFixed(1)} %`
