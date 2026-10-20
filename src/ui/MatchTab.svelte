@@ -44,9 +44,10 @@
   const partition = $derived(partitionStanding(fullTree, standing, cameBack))
   const activeTree = $derived(partition.listed)
   const standingTree = $derived(partition.folded)
-  // Info rows are listed after the fold so the fold's summary (and the named error) sits near the top.
-  const mainTree = $derived(activeTree.filter((n) => n.finding.severity !== 'info'))
-  const infoTree = $derived(activeTree.filter((n) => n.finding.severity === 'info'))
+  // New errors first, then the fold, then new warnings and info, so the fold's summary (which names a standing error)
+  // sits near the top: after the info rows it was off-screen at 1366×768 in 8 of 8 session-opened CalGames matches.
+  const mainTree = $derived(activeTree.filter((n) => n.finding.severity === 'error'))
+  const infoTree = $derived(activeTree.filter((n) => n.finding.severity !== 'error'))
   const standingErrors = $derived(standingTree.filter((n) => n.finding.severity === 'error').map((n) => n.finding))
   const standingWarnings = $derived(standingTree.filter((n) => n.finding.severity === 'warning').length)
   // The first active error's closed row carries its next step; derived, so it moves when that error is marked known or the audience changes.
