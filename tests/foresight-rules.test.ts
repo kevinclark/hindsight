@@ -14,6 +14,8 @@ import { KEEP_SECONDS } from '../src/foresight/records.ts'
 import { photonTargetCount } from '../src/readers/photon.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 import { CALGAMES, haveCalGames } from './helpers/load.ts'
+import { makeDevicesSnapshot, profileSnapshot } from './helpers/make-snapshot.ts'
+import type { SnapshotInput } from '../src/foresight/snapshot-checks.ts'
 
 const START = 10
 const NOW = 100
@@ -66,9 +68,9 @@ function robot(changes: FixtureEntry[]): Uint8Array {
   return writeWpilog([...byName.values()])
 }
 
-function check(changes: FixtureEntry[], lastPassingSha: string | null = null): Extract<ForesightResult, { state: 'checked' }> {
+function check(changes: FixtureEntry[], lastPassingSha: string | null = null, snapshot?: SnapshotInput): Extract<ForesightResult, { state: 'checked' }> {
   const store = RecordStore.fromWpilog(openWpilog(robot(changes)), null)
-  const r = evaluateForesight({ store, codeStart: START, now: NOW, lastPassingSha, profile: offseason2026 })
+  const r = evaluateForesight({ store, codeStart: START, now: NOW, lastPassingSha, profile: offseason2026, snapshot })
   if (r.state !== 'checked') throw new Error(`not checked: ${r.state}`)
   return r
 }
@@ -278,6 +280,36 @@ describe('Foresight checks on a robot in the pit', () => {
     const r = check([{ name: '/Intake/Pivot/PositionRotations', type: 'double', records: [[START, 0.3677], [99, 0.3677 + 5 / 360], [99.5, 0.6536]] }])
     expect(flagged(r)).toEqual([])
     expect(r.report.skipped.find((s) => s.rule === 'foresight/zero-sanity')?.reason).toMatch(/Intake pivot not checked: it is moving/)
+  })
+})
+
+describe('Foresight with a robot snapshot dropped on the page', () => {
+  const codeStartWallMs = Date.parse('2026-10-20T17:00:00Z')
+  const taken = new Date(codeStartWallMs + (SETTLE_SECONDS + 20) * 1000).toISOString()
+  const SNAPSHOT_LINES = ['CANcoder offsets correct and unchanged', 'Swerve ratio unchanged', 'All CAN devices licensed and ID\'d', 'Current limits as the code sets them']
+  const lines = (r: ReturnType<typeof check>) => SNAPSHOT_LINES.map((l) => markOnchecks(r).find((m) => m.line === l)!.state)
+
+  it('a healthy robot and a healthy snapshot from this run: GO, and the snapshot lines OK', () => {
+    const r = check([], null, { snapshot: makeDevicesSnapshot(profileSnapshot(offseason2026), taken), codeStartWallMs })
+    expect(r.snapshotUsed).toBe(true)
+    expect(r.verdict.verdict).toBe('GO')
+    expect(flagged(r)).toEqual([])
+    expect(lines(r)).toEqual(['ok', 'ok', 'ok', 'ok'])
+  })
+
+  it('no snapshot: still GO (the snapshot checks can\'t go red), the snapshot lines "not checked"', () => {
+    const r = check([])
+    expect(r.snapshotUsed).toBe(false)
+    expect(r.verdict.verdict).toBe('GO')
+    expect(lines(r)).toEqual(Array(4).fill('not checked'))
+  })
+
+  it('a snapshot fault is amber with the snapshot proof, and its line says "Look"', () => {
+    const devices = profileSnapshot(offseason2026)
+    devices.find((d) => d.model.startsWith('CANCoder') && d.id === 1)!.configs!.CANCoder_MagnetOffset = 0.3
+    const r = check([], null, { snapshot: makeDevicesSnapshot(devices, taken), codeStartWallMs })
+    expect(r.verdict.items.filter((i) => i.level !== 'grey').map((i) => [i.level, i.finding.rule, i.proof])).toEqual([['amber', 'snapshot/cancoder-offsets', expect.stringMatching(/^amber: no snapshot of our robot/)]])
+    expect(lines(r)[0]).toBe('amber')
   })
 })
 

@@ -8,12 +8,27 @@
  *   node --experimental-strip-types scripts/chrome-foresight-check.ts <out-dir> --address 127.0.0.1:5810 --seconds 40
  *
  * Every request the page makes is recorded: it must be the page itself (file://) or the NT4 socket, nothing else.
+ * The pit cases also drop a synthetic robot snapshot on the page once it has a verdict (healthy, one CANcoder offset
+ * off, or one taken an hour before the robot code started) and record the checklist's snapshot lines.
  */
 import { spawn, execSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { startReplayServer } from '../tests/helpers/nt4-replay-server.ts'
+import { makeDevicesSnapshotJson, profileSnapshot } from '../tests/helpers/make-snapshot.ts'
+import { offseason2026Event } from '../src/profiles/2026-offseason.ts'
+
+type SnapshotCase = 'healthy' | 'offset-off' | 'stale'
+/** Write the snapshot file at the moment it is dropped, so a fresh one is from after the robot code started. */
+function snapshotFile(kind: SnapshotCase): string {
+  const devices = profileSnapshot(offseason2026Event)
+  if (kind === 'offset-off') devices.find((d) => d.model.startsWith('CANCoder') && d.id === 1)!.configs!.CANCoder_MagnetOffset = 0.3
+  const taken = kind === 'stale' ? Date.now() - 3600_000 : Date.now()
+  const path = `${outDir}/snapshot-${kind}.json`
+  writeFileSync(path, makeDevicesSnapshotJson(devices, new Date(taken).toISOString()))
+  return resolve(path)
+}
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const [outDir, ...rest] = process.argv.slice(2)
@@ -46,7 +61,7 @@ const send = (method: string, params: object = {}, sessionId?: string): Promise<
 const evalIn = async (sessionId: string, expression: string) => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)).result?.result?.value
 
 /** Open the page, switch to Foresight, connect to `address`, and sample the verdict until `done` or `seconds`. */
-async function scenario(name: string, address: string, seconds: number, done: (s: { verdict: string; items: string[]; field: boolean }) => boolean) {
+async function scenario(name: string, address: string, seconds: number, done: (s: { verdict: string; items: string[]; field: boolean }) => boolean, snapshot?: SnapshotCase) {
   const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
   const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
   await send('Network.enable', {}, sessionId)
@@ -57,19 +72,27 @@ async function scenario(name: string, address: string, seconds: number, done: (s
   await sleep(200)
   await evalIn(sessionId, `(() => { const i = document.querySelector('.connect input'); i.value = ${JSON.stringify(address)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await evalIn(sessionId, `[...document.querySelectorAll('.connect button')].find(b => b.innerText === 'Connect').click()`)
-  const samples: { t: number; verdict: string; why: string; items: string[]; field: boolean }[] = []
+  const samples: { t: number; verdict: string; why: string; items: string[]; field: boolean; snapshotLines: string[]; snapshotStatus: string }[] = []
+  let droppedAt: number | null = null
   const started = Date.now()
   while (Date.now() - started < seconds * 1000) {
     await sleep(500)
-    const s = await evalIn(sessionId, `({ verdict: document.querySelector('.verdict .big')?.innerText ?? '', why: document.querySelector('.verdict p:nth-child(2)')?.innerText ?? '', items: [...document.querySelectorAll('.item')].map(li => li.querySelector('.chip').innerText + ': ' + li.querySelector('.title').innerText), field: !!document.querySelector('.field'), status: document.querySelector('.status')?.innerText ?? '', readings: document.querySelector('.readings')?.innerText ?? '' })`)
+    const s = await evalIn(sessionId, `({ verdict: document.querySelector('.verdict .big')?.innerText ?? '', why: document.querySelector('.verdict p:nth-child(2)')?.innerText ?? '', items: [...document.querySelectorAll('.item')].map(li => li.querySelector('.chip').innerText + ': ' + li.querySelector('.title').innerText), field: !!document.querySelector('.field'), status: document.querySelector('.status')?.innerText ?? '', readings: document.querySelector('.readings')?.innerText ?? '', snapshotStatus: document.querySelector('section[aria-label="Robot snapshot"] .status')?.innerText ?? '', snapshotLines: [...document.querySelectorAll('.oc')].map(li => li.innerText.replace(/\\s+/g, ' ')).filter(t => /CANcoder offsets|Swerve ratio|licensed and ID|Current limits/.test(t)) })`)
     samples.push({ t: (Date.now() - started) / 1000, ...s })
-    if (done(s)) break
+    // Once there is a verdict, drop the snapshot, as a student would after the page settles.
+    if (snapshot && droppedAt === null && /^(NO-)?GO$/.test(s.verdict)) {
+      droppedAt = Date.now()
+      const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
+      const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'section[aria-label="Robot snapshot"] input[type=file]' }, sessionId)
+      await send('DOM.setFileInputFiles', { files: [snapshotFile(snapshot)], nodeId }, sessionId)
+    }
+    if (done(s) || (droppedAt !== null && Date.now() - droppedAt > 2500)) break
   }
   const { result } = await send('Page.captureScreenshot', { format: 'png' }, sessionId)
   writeFileSync(`${outDir}/foresight-${name}.png`, Buffer.from(result.data, 'base64'))
   const last = samples.at(-1)!
   await send('Target.closeTarget', { targetId })
-  return { name, last, verdicts: [...new Set(samples.map((s) => `${s.verdict} (${s.why.replace(/\d+ s$/, 'n s')})`))], everItems: [...new Set(samples.flatMap((s) => s.items))] }
+  return { name, snapshot, snapshotStatus: last.snapshotStatus, snapshotLines: last.snapshotLines, last: { ...last, snapshotLines: undefined, snapshotStatus: undefined }, verdicts: [...new Set(samples.map((s) => `${s.verdict} (${s.why.replace(/\d+ s$/, 'n s')})`))], everItems: [...new Set(samples.flatMap((s) => s.items))] }
 }
 
 const results: object[] = []
@@ -78,14 +101,14 @@ if (address) {
   results.push(await scenario('ntcore', address, Number(flag('--seconds') ?? 40), () => false))
 } else {
   const cases = [
-    { name: 'p0-pit', file: 'akit_26-10-18_16-31-52_cacg_p0.wpilog', pit: true, speed: 10, seconds: 20 },
-    { name: 'q21-pit', file: 'akit_26-10-17_21-24-40_cacg_q21.wpilog', pit: true, speed: 10, seconds: 20 },
-    { name: 'q13-pit', file: 'akit_26-10-17_20-07-34_cacg_q13.wpilog', pit: true, speed: 30, seconds: 25 },
+    { name: 'p0-pit', file: 'akit_26-10-18_16-31-52_cacg_p0.wpilog', pit: true, speed: 10, seconds: 20, snapshot: 'healthy' as const },
+    { name: 'q21-pit', file: 'akit_26-10-17_21-24-40_cacg_q21.wpilog', pit: true, speed: 10, seconds: 20, snapshot: 'offset-off' as const },
+    { name: 'q13-pit', file: 'akit_26-10-17_20-07-34_cacg_q13.wpilog', pit: true, speed: 30, seconds: 25, snapshot: 'stale' as const },
     { name: 'q21-field', file: 'akit_26-10-17_21-24-40_cacg_q21.wpilog', pit: false, speed: 5, seconds: 15 },
   ]
   for (const c of cases) {
     const server = await startReplayServer({ bytes: new Uint8Array(readFileSync(log(c.file))), pit: c.pit, speed: c.speed })
-    results.push({ ...(await scenario(c.name, `127.0.0.1:${server.port}`, c.seconds, (s) => s.field)), framesFromPage: server.received.map((f) => (f.kind === 'binary' ? 'BINARY' : (f.data as { method: string }[]).map((m) => m.method).join('+'))) })
+    results.push({ ...(await scenario(c.name, `127.0.0.1:${server.port}`, c.seconds, (s) => s.field, 'snapshot' in c ? c.snapshot : undefined)), framesFromPage: server.received.map((f) => (f.kind === 'binary' ? 'BINARY' : (f.data as { method: string }[]).map((m) => m.method).join('+'))) })
     await server.close()
   }
 }

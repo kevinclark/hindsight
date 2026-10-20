@@ -77,6 +77,43 @@ changed: devices, firmware, settings, sticky faults. Live readings like voltage 
 **Limits wizard:** each step's "Check it" card also takes a `snapshot.json`. Take one after you set the limit in
 Phoenix Tuner X. It proves the setting reached every motor in the group, followers included.
 
+## Use it in Foresight (the pit check)
+
+Foresight's pit checklist has four lines only a snapshot can tick: *All CAN devices licensed and ID'd*, *CANcoder
+offsets correct and unchanged*, *Swerve ratio unchanged*, and *Current limits as the code sets them*. Foresight never
+talks to the diagnostic server itself; you give it the snapshot.
+
+1. Connect Foresight to the robot and wait until it shows a verdict (GO, NO-GO or NOT CHECKED).
+2. Run `python3 tools/robot-snapshot.py` on the same laptop. Don't press Clear Faults or blink anything first.
+3. Click **Robot snapshot…** under the Connect button, or drop `snapshot.json` on that box.
+
+The box then says whether the snapshot was used. Foresight uses a snapshot only when it was taken at least 30 s
+after the robot code last started, by the laptop's clock: the code sets every device's offsets, ratios and limits
+when it starts, so an older snapshot says nothing about what the devices run now. Restart the robot code or deploy,
+or change anything in Phoenix Tuner X, and you need a new snapshot: Foresight can catch the first two but not a Tuner
+X change. The snapshot's time is when the program started reading, so a slow run is judged by its start. Until a
+snapshot is used, those four lines say "Not checked" and why. A line whose check could read only part of what it
+needs (one CANcoder's offset, say) also says "Not checked", with what was missing.
+
+What each line checks:
+
+- **Licensed and ID'd:** every motor in the profile, every CANcoder and the gyro answer on their own CAN ID, nothing
+  shares an ID, no motor is on the bus that the profile doesn't list, and none of those devices reports using a
+  Phoenix Pro feature without a licence (for example a steer motor fused with its CANcoder). A sticky licence fault
+  is shown as one: it happened since faults were last cleared, and stays until a mentor clears it. Other CTRE
+  devices the profile doesn't list (a CANdle) are mentioned as context and not checked for licences.
+- **CANcoder offsets:** each CANcoder runs the magnet offset the code sets (within 0.001 rotation, 0.36°), and each
+  swerve steer motor (and the intake pivot) reads its own CANcoder. Whether the code's offsets are *right*, with
+  the wheels pointing straight, is still for a person to look at.
+- **Swerve ratio:** every drive and steer motor runs the code's gear ratio (within 0.1 %, so a wheel radius 1 % off
+  shows).
+- **Current limits:** the same comparison as the Current limits section above, every motor, followers included.
+
+Everything found here is amber ("look at"), never red: no snapshot of our robot has been taken yet, so none of
+these checks has caught a real fault. The expected values live in the robot profile
+(`foresight.snapshot` in `src/profiles/2026-offseason.ts`), copied from the robot code with the line each came from.
+When the code changes an offset, ratio or ID, update the profile too.
+
 ## Phoenix hoot logs (optional)
 
 Phoenix can record every device signal in `.hoot` log files on the roboRIO. The program can list them, copy the
@@ -125,7 +162,12 @@ python3 tools/robot-snapshot.py --hoot-file path/to/file.hoot
 
 ## Not confirmed yet
 
-So far the program has only been checked against CTRE's simulator, not a real robot. The first real run will show
-whether a real robot answers the same way. Anything Hindsight marks as "unreadable" is a sign it doesn't.
+So far the program has only been checked against CTRE's simulator, not a real robot. For Foresight's checks, the
+config and fault names it looks for come from Phoenix 6 (26.3.0) itself, not from a real robot's answers:
+`CANCoder_MagnetOffset` (the simulator fixture spells it `Config_MagnetOffset`; both are read),
+`Config_SensorToMechanismRatio`, `Config_RotorToSensorRatio`, `Config_FeedbackRemoteSensorID`, and any
+`Fault_…`/`StickyFault_…` with `Unlicensed` in its name. The model names `CANcoder…` and `Pigeon 2` are assumed too. If
+a real robot names them differently, those lines say "Not checked" with what wasn't read, never OK. The first real
+run will show whether a real robot answers the same way. Anything Hindsight marks as "unreadable" is a sign it doesn't.
 Hindsight also can't yet tell whether the robot allows a web page to read the diagnostic server directly. The
 snapshot records that (the CORS line). If it does, a later version may collect from the page itself.

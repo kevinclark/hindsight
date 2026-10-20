@@ -30,6 +30,13 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   response shapes of CTRE's 26.3.0 simulator. `fixtures/robot-snapshot/snapshot-*.json` are generated with
   `python3 scripts/make-snapshot-fixtures.py`; a test fails when they are stale. No real serial numbers, team
   names or paths. Real robot answers may become fixtures only with serial numbers stripped.
+- **Foresight uses a snapshot, it never reads the diagnostic server itself** (`src/foresight/snapshot-checks.ts`).
+  A person drops `snapshot.json` on the Foresight page; the page makes no request to port 1250. A snapshot counts
+  only when taken at least 30 s after this run of the robot code started (the code applies its configs at start-up),
+  on the laptop's clock; otherwise all five `snapshot/*` checks say "not checked" and the checklist lines never read
+  OK. They stay amber whatever the proof table says, until a snapshot of our robot has been backtested and caught
+  a real fault. `tests/foresight-snapshot.test.ts` also fails if any Foresight, snapshot or UI source names a write,
+  blink or clear action.
 - `responseShapes` in a snapshot says what the parsing was checked against (`"simulator"` until a real robot's
   answers have been compared). Until then, booleans are parsed leniently, and anything unparseable is shown as
   "unreadable", never read as false.
@@ -40,5 +47,6 @@ Tests:
 python3 -m unittest discover -s tests -p 'test_*.py'             # collector (stub server, no robot)
 HINDSIGHT_HOOT_DIR=<folder of .hoot files> python3 -m unittest tests.test_robot_snapshot.RealHootFiles
 npx vitest run tests/snapshot.test.ts                            # Hindsight side
+npx vitest run tests/foresight-snapshot.test.ts                  # Foresight's snapshot checks
 npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.ts <out-dir>   # rendered check
 ```
