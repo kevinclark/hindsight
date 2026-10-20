@@ -329,6 +329,7 @@ export function sessionCard(m: SessionModel): CardModel {
       tone: (f.severity === 'error' ? 'error' : 'warning') as Tone,
       title: f.title,
       number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured].filter(Boolean).join(' · '),
+      short: `${f.ruleTitle} (${f.matchLabels.join(', ')})`,
     })),
     emptyText: 'Nothing to fix from these logs.',
     footer: [m.robots.map((r) => r.name).join('; '), ranText(m).replace(/^logs ran code/, 'Code ran').replace(/ \(\d+ matches\)/g, ''), `Hindsight ${m.version}`].filter(Boolean),

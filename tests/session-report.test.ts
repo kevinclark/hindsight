@@ -236,3 +236,19 @@ describe.skipIf(!haveCalGames)('the three CalGames logs as a session report', ()
     expect(c.items.find((i) => i.title.includes('Browned out'))!.word).toBe('ERROR · ONCE')
   })
 })
+
+describe('session card: errors that do not fit are still named', () => {
+  // Six consistent warnings fill the card; the once-only brownout error must still appear by name.
+  const loop = (i: number): Fire => ({ key: `loop/overrun · ${i}`, rule: 'loop/overrun', title: `Loop overrun number ${i} took far longer than it should have in auto` })
+  const fills = Array.from({ length: 6 }, (_, i) => loop(i))
+  const s = groupSessions([match(1, [...fills, BROWN]), match(2, fills), match(3, fills)])[0]
+  const card = buildCard(sessionCard(sessionModel(s)))
+  it('lists the hidden error with its match in an "Also N errors" line, without hiding another item for it', () => {
+    expect(buildCard({ ...sessionCard(sessionModel(s)), items: sessionCard(sessionModel(s)).items.filter((i) => i.tone !== 'error') }).shown).toBe(card.shown)
+    expect(card.hidden).toBeGreaterThan(0)
+    expect(card.svg).toMatch(/Also 1 error: [^<]*\(Qualification 1\)/)
+  })
+  it('says nothing extra when every error is shown', () => {
+    expect(buildCard(sessionCard(sessionModel(three()))).svg).not.toMatch(/Also \d+ error/)
+  })
+})
