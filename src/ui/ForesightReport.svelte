@@ -13,6 +13,7 @@
   import { saveForSlack } from '../report/card-png.ts'
   import { fileStamp, foresightBuild, foresightCard, didNotRun, shortShas, stamp, type ForesightReportInput } from '../report/foresight-model.ts'
   import { keyNumber } from '../report/review-model.ts'
+  import { allItems, type VerdictItem } from '../foresight/verdict.ts'
   import { VERSION } from '../version.ts'
 
   let { status, checked, verdict, why, onchecks, battery, controllers, totalChecks }: {
@@ -59,6 +60,10 @@
   })
 </script>
 
+{#snippet under(i: VerdictItem)}
+  {#each allItems({ items: i.explains }) as u (u.finding.key + u.finding.title)}<p class="small">↳ {u.finding.title} ({u.finding.explainedBy?.why})</p>{/each}
+{/snippet}
+
 <article class="print-only report" aria-hidden="true">
   <header>
     <h1>Foresight pit check</h1>
@@ -77,11 +82,11 @@
 
   {#if reds.length}
     <h2>Fix before the field ({reds.length})</h2>
-    <ul class="items">{#each reds as i (i.finding.key)}<li class="red"><p class="title"><span class="sev red">Fix</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p><p class="small">{i.finding.rule} · {keyNumber(i.finding).label}: {shortShas(keyNumber(i.finding).value)}</p></li>{/each}</ul>
+    <ul class="items">{#each reds as i (i.finding.key)}<li class="red"><p class="title"><span class="sev red">Fix</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p><p class="small">{i.finding.rule} · {keyNumber(i.finding).label}: {shortShas(keyNumber(i.finding).value)}</p>{@render under(i)}</li>{/each}</ul>
   {/if}
   {#if ambers.length}
     <h2>Look at ({ambers.length})</h2>
-    <ul class="items">{#each ambers as i (i.finding.key)}<li class="amber"><p class="title"><span class="sev amber">Look</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p></li>{/each}</ul>
+    <ul class="items">{#each ambers as i (i.finding.key)}<li class="amber"><p class="title"><span class="sev amber">Look</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p>{@render under(i)}</li>{/each}</ul>
   {/if}
   {#if steps.length}
     <p class="small"><strong>To do:</strong> {steps.map((i) => i.finding.title).join(' · ')}</p>
