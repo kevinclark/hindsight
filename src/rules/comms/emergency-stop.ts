@@ -6,7 +6,7 @@
  * Why: MTTD 2025 Q24 was e-stopped 1.5 s before the end, and on Friday three program runs in a row were e-stopped
  * 0.02 s after their first enable (the team's Slack PSA blamed the DS space bar). No rule read the flag.
  */
-import { rule, round } from '../rule.ts'
+import { rule, round, secs, type Problem } from '../rule.ts'
 
 const ONE_LOOP_SLACK = 0.1 // s: a disable logged up to a few loops before the e-stop flag is the same event (assumed)
 
@@ -27,28 +27,40 @@ export default rule({
   check(match) {
     const estop = match.signal('emergencyStop')
     const fms = match.signal('fmsAttached')
-    return estop.turnsOn().map((t) => {
+    return estop.turnsOn().map((t): Problem => {
       const onField = fms.at(t) > 0.5
       // The enable it ended (the robot reads as disabled at t itself, and the disable can be logged a loop earlier).
       const enable = match.enabled.find((iv) => iv.start <= t && iv.end >= t - ONE_LOOP_SLACK)
       const sinceEnable = enable ? t - enable.start : null
       const left = onField && match.inMatch(t) ? match.timeLeft(t) : NaN
+      const knowsTimeLeft = Number.isFinite(left)
+
+      let message: string
+      if (onField) {
+        const timeLeftWords = knowsTimeLeft ? ` with ${secs(left)} of ${match.phaseAt(t - 0.001)} left` : ''
+        message = `E-stopped at ${match.when(t - 0.001)}${timeLeftWords}`
+      } else {
+        const enabledWords = sinceEnable === null ? ' while disabled' : ` ${sinceEnable.toFixed(2)} s after the robot was enabled`
+        message = `E-stopped off the field${enabledWords} (robot time ${t.toFixed(1)} s)`
+      }
+
+      // Pressed in the same instant as the enable: not a reaction to what the robot did.
+      let nextStep: string | undefined
+      if (sinceEnable !== null && sinceEnable < 0.5) {
+        nextStep = `The e-stop came ${sinceEnable.toFixed(2)} s after the enable, before the robot could have done anything to react to: look for a key pressed at enable (the DS space bar).`
+      }
+
       return {
-        message: onField
-          ? `E-stopped at ${match.when(t - 0.001)}${Number.isFinite(left) ? ` with ${left.toFixed(1)} s of ${match.phaseAt(t - 0.001)} left` : ''}`
-          : `E-stopped off the field${sinceEnable === null ? ' while disabled' : ` ${sinceEnable.toFixed(2)} s after the robot was enabled`} (robot time ${t.toFixed(1)} s)`,
+        message,
         at: t,
-        severity: onField ? 'error' as const : 'warning' as const,
+        severity: onField ? 'error' : 'warning',
         evidence: {
           'e-stopped (robot time, s)': round(t),
           'on the field': onField ? 'yes' : 'no',
           'enabled for, before the e-stop (s)': sinceEnable === null ? 'not enabled' : round(sinceEnable),
-          ...(Number.isFinite(left) ? { 'left in the period (s)': round(left, 1) } : {}),
+          'left in the period (s)': knowsTimeLeft ? round(left, 1) : undefined,
         },
-        // Pressed in the same instant as the enable: not a reaction to what the robot did.
-        nextStep: sinceEnable !== null && sinceEnable < 0.5
-          ? `The e-stop came ${sinceEnable.toFixed(2)} s after the enable, before the robot could have done anything to react to: look for a key pressed at enable (the DS space bar).`
-          : undefined,
+        nextStep,
       }
     })
   },

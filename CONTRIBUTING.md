@@ -31,7 +31,7 @@ export default rule({
   incident: 'CalGames 2026 Q21: 12.44 V before auto',
 
   check(match) {
-    if (match.autoStart === null) return
+    if (match.autoStart === null) return              // never enabled: nothing to check
     const rest = match.signal('batteryVoltage').median(match.before(match.autoStart, 2))
     if (rest >= LOWEST_REST_VOLTAGE) return          // all good: return nothing
     return {                                          // something's wrong: say what, with the numbers
@@ -87,7 +87,7 @@ export default rule({
    check(device, match) {
      const drops = device.connected().episodes(isFalse, { touching: match.enabled })
      if (drops.length === 0) return
-     return { message: `${device.name} dropped off CAN ${drops.length} times`, at: drops[0].start }
+     return { message: `${device.name} dropped off CAN ${plural(drops.length, 'time')}`, at: drops[0].start }
    },
    ```
 

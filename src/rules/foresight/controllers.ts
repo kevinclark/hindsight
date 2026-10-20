@@ -32,9 +32,14 @@ export default rule({
     const names = fp.controllerNames.map((key) => match.text(key).at(now))
     const missing = names.flatMap((name, port) => (name ? [] : [port]))
     if (missing.length === 0) return
+
+    // Every port empty points at the hub or laptop; only some, at a controller on the wrong port as well.
+    const likely = ['unplugged']
+    if (missing.length < names.length) likely.push('wrong-port')
+    const portWord = missing.length === 1 ? 'port' : 'ports'
     return {
-      likely: missing.length === names.length ? ['unplugged'] : ['unplugged', 'wrong-port'],
-      message: `No controller on Driver Station port${missing.length === 1 ? '' : 's'} ${missing.join(' and ')} (the code reads ports 0 to ${names.length - 1})`,
+      likely,
+      message: `No controller on Driver Station ${portWord} ${missing.join(' and ')} (the code reads ports 0 to ${names.length - 1})`,
       at: now,
       evidence: Object.fromEntries(names.map((name, port) => [`port ${port}`, name || '(nothing)'])),
       measured: [{ label: 'controllers missing', value: missing.length, unit: '' }],

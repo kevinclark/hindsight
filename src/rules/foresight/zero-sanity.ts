@@ -38,31 +38,44 @@ export default rule({
     if (!fp) return match.couldNotCheck('the robot profile names no mechanisms with absolute encoders')
     const recent = match.before(stretch.end, AVERAGE_SECONDS)
     const problems: Problem[] = []
-    for (const z of fp.zeroChecks) {
-      if ('notCheckable' in z) { match.checkedOnlyPart(`${z.mechanism} not checked: ${z.notCheckable}`); continue }
-      const encoderRot = match.signal(z.absolute).median(recent) / (z.absoluteUnit === 'radians' ? 2 * Math.PI : 1)
-      const motor = match.signal(z.motor)
-      const motorRot = motor.median(recent)
+    for (const zero of fp.zeroChecks) {
+      if ('notCheckable' in zero) {
+        match.checkedOnlyPart(`${zero.mechanism} not checked: ${zero.notCheckable}`)
+        continue
+      }
+      const encoderRotations = match.signal(zero.absolute).median(recent) / (zero.absoluteUnit === 'radians' ? 2 * Math.PI : 1)
+      const motor = match.signal(zero.motor)
+      const motorRotations = motor.median(recent)
+
       // Being moved by hand: the two signals are sampled at different moments, so skip until it is still.
-      const travel = (motor.highest(recent).value - motor.lowest(recent).value) * 360
-      if (travel > MOVING_DEGREES) { match.checkedOnlyPart(`${z.mechanism} not checked: it is moving (${travel.toFixed(1)}° in ${AVERAGE_SECONDS} s)`); continue }
-      let off = encoderRot - motorRot * z.sensorToMechanism
-      off -= Math.round(off) // the absolute encoder wraps once per rotation
-      const degrees = (Math.abs(off) / z.sensorToMechanism) * 360
-      if (degrees <= MAX_OFF_DEGREES) continue
+      const travelDegrees = (motor.highest(recent).value - motor.lowest(recent).value) * 360
+      if (travelDegrees > MOVING_DEGREES) {
+        match.checkedOnlyPart(`${zero.mechanism} not checked: it is moving (${travelDegrees.toFixed(1)}° in ${AVERAGE_SECONDS} s)`)
+        continue
+      }
+
+      const degreesOff = degreesApart(encoderRotations, motorRotations, zero.sensorToMechanism)
+      if (degreesOff <= MAX_OFF_DEGREES) continue
       problems.push({
-        about: z.mechanism,
-        message: `${z.mechanism}: the motor's position is ${degrees.toFixed(1)}° off its absolute encoder (more than ${MAX_OFF_DEGREES}°)`,
+        about: zero.mechanism,
+        message: `${zero.mechanism}: the motor's position is ${degreesOff.toFixed(1)}° off its absolute encoder (more than ${MAX_OFF_DEGREES}°)`,
         at: stretch.end,
-        measured: [{ label: 'motor vs absolute encoder', value: round(degrees, 1), unit: '°', threshold: MAX_OFF_DEGREES }],
+        measured: [{ label: 'motor vs absolute encoder', value: round(degreesOff, 1), unit: '°', threshold: MAX_OFF_DEGREES }],
         evidence: {
-          'absolute encoder (rotations)': round(encoderRot, 4),
-          'motor (mechanism rotations)': round(motorRot, 4),
-          'encoder rotations per mechanism rotation': z.sensorToMechanism,
-          'set in': z.where,
+          'absolute encoder (rotations)': round(encoderRotations, 4),
+          'motor (mechanism rotations)': round(motorRotations, 4),
+          'encoder rotations per mechanism rotation': zero.sensorToMechanism,
+          'set in': zero.where,
         },
       })
     }
     return problems
   },
 })
+
+/** How far apart the motor and the absolute encoder put the mechanism, in degrees of the mechanism. */
+function degreesApart(encoderRotations: number, motorRotations: number, sensorToMechanism: number): number {
+  let off = encoderRotations - motorRotations * sensorToMechanism
+  off -= Math.round(off) // the absolute encoder wraps once per rotation
+  return (Math.abs(off) / sensorToMechanism) * 360
+}

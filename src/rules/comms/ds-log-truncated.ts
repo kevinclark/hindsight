@@ -5,7 +5,7 @@
  * closes, so one that stops mid-match means the DS app crashed or was closed.
  * Why: CalGames 2026 Q13: the DS log ended at 420.5 s, 3 s into the first comms loss; the match ran to 433 s.
  */
-import { rule, round } from '../rule.ts'
+import { rule, round, secs } from '../rule.ts'
 
 export default rule({
   id: 'comms/ds-log-truncated',
@@ -23,24 +23,27 @@ export default rule({
 
   check(match) {
     if (match.dsLogs.length === 0) return match.couldNotCheck('no .dslog loaded for this match (drop the .dslog together with the .wpilog)')
-    if (match.autoStart === null || match.matchEnd === null) return
-    const end = match.matchEnd
+    const { autoStart, matchEnd } = match
+    if (autoStart === null || matchEnd === null) return
+
     // Every DS log that stops inside the match counts, including the first of two when the DS app restarted.
-    const cut = match.dsLogs.filter((d) => d.endTime > match.autoStart! && d.endTime < end - 1)
-    return cut.map((d) => {
+    const cutLogs = match.dsLogs.filter((log) => log.endTime > autoStart && log.endTime < matchEnd - 1)
+    return cutLogs.map((log) => {
+      const secondsEarly = matchEnd - log.endTime
       // The DS's last record with a robot voltage: when the DS last heard from the robot.
-      const lastHeard = [...d.file.records].reverse().find((r) => r.voltage !== null)
+      const lastHeard = [...log.file.records].reverse().find((r) => r.voltage !== null)
+      const lastSaw = lastHeard && match.epochOffset !== null ? match.when(lastHeard.epochSeconds - match.epochOffset) : 'never'
       return {
-        message: `Driver Station log ends at ${match.when(d.endTime)}, ${(end - d.endTime).toFixed(1)} s before the match ended`,
-        at: d.endTime,
+        message: `Driver Station log ends at ${match.when(log.endTime)}, ${secs(secondsEarly)} before the match ended`,
+        at: log.endTime,
         evidence: {
-          'DS log ends': match.when(d.endTime),
-          'match ends': match.when(end - 0.001),
-          'DS last saw the robot': lastHeard && match.epochOffset !== null ? match.when(lastHeard.epochSeconds - match.epochOffset) : 'never',
-          'DS log file': d.fileName,
+          'DS log ends': match.when(log.endTime),
+          'match ends': match.when(matchEnd - 0.001),
+          'DS last saw the robot': lastSaw,
+          'DS log file': log.fileName,
           'DS logs for this match': match.dsLogs.length,
         },
-        measured: [{ label: 'DS log ended before the match did', value: round(end - d.endTime, 1), unit: 's', threshold: 1 }],
+        measured: [{ label: 'DS log ended before the match did', value: round(secondsEarly, 1), unit: 's', threshold: 1 }],
       }
     })
   },
