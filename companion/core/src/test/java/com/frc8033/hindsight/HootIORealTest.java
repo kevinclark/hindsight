@@ -36,6 +36,8 @@ class HootIORealTest {
     hoot(session, "rio_2026-10-20_14-02-11.hoot", 1000, 1);
     File newest = hoot(session, "canivore_2026-10-20_14-02-11.hoot", 5000, 0);
     hoot(logs.resolve("2026-10-19_09-00-00"), "old.hoot", 9000, 86_400);
+    assertTrue(logs.resolve("2026-10-19_09-00-00").toFile().setLastModified(NOW - 86_400_000));
+    assertTrue(session.toFile().setLastModified(NOW));
 
     HootIOInputs inputs = read(logs);
     assertEquals("ok", inputs.status);
@@ -52,6 +54,15 @@ class HootIORealTest {
     HootIOInputs inputs = read(logs);
     assertFalse(inputs.recording);
     assertEquals(600.0, inputs.secondsSinceWritten);
+  }
+
+  @Test
+  void onlyTheNewestSessionFolderIsSearched(@TempDir Path logs) throws IOException {
+    hoot(logs.resolve("old-session"), "rio.hoot", 100, 0);
+    assertTrue(logs.resolve("old-session").toFile().setLastModified(NOW - 3_600_000));
+    Files.createDirectories(logs.resolve("new-session"));
+    assertTrue(logs.resolve("new-session").toFile().setLastModified(NOW));
+    assertEquals("no hoot files", read(logs).status);
   }
 
   @Test

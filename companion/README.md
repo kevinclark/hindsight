@@ -41,8 +41,8 @@ A team without battery fuel gauges installs only the first.
 
    That's all: the companion then logs whether the device is answering, its firmware, its live and sticky faults,
    and its reboots. It reads its own copies of the signals, so it never changes a rate, a config or your code's
-   signal objects. A device you don't watch isn't logged, and nothing warns you in the robot code; Hindsight's
-   Logging tab lists motors that log a CAN id but aren't watched.
+   signal objects. A device you don't watch isn't logged, and nothing warns you in the robot code (a Hindsight
+   check that lists motors with a logged CAN id but no watch entry is planned, not built).
 
 ## What it logs
 
@@ -57,7 +57,7 @@ hardware is read once a second, and only on a real robot; in simulation the valu
 | `/Hindsight/Devices/<bus>/<model>/<id>/` `Connected`, `Version`, `FaultField`, `StickyFaultField`, `ProLicensed`, `Resets`, `Status` | each device given to `HindsightDevices.watch`. `<model>` is the class name (`TalonFX`, `CANcoder`, ...); the fault fields hold every fault as a bit | once a second |
 | `/Hindsight/Hoot/` `Recording`, `FilesWriting`, `NewestFile`, `NewestSizeBytes`, `SecondsSinceWritten`, `Status` | whether Phoenix's hoot recording is on. Phoenix has no call that says so, so it's a `.hoot` file in `/U/logs` or `/home/lvuser/logs` written in the last 5 s | once a second |
 
-`Status` is `ok` (or Phoenix's `OK` for a CANivore) when the values were read. Otherwise it says why: `not read`,
+`Status` is `ok` (or Phoenix's `OK` for a CANivore or a device) when the values were read. Otherwise it says why: `not read`,
 `first CPU sample`, or `unavailable: ...`. On a computer without `/proc`, it says `unavailable` and never throws.
 
 ## Alerts

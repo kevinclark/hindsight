@@ -1,6 +1,5 @@
 package com.frc8033.hindsight;
 
-import com.ctre.phoenix6.BaseStatusSignal;
 import com.ctre.phoenix6.StatusCode;
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.hardware.CANcoder;
@@ -10,6 +9,7 @@ import com.ctre.phoenix6.hardware.CANrange;
 import com.ctre.phoenix6.hardware.Pigeon2;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.hardware.TalonFXS;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -26,7 +26,7 @@ public class DeviceIOReal implements DeviceIO {
   private final StatusSignal<Integer> stickyFaultField;
   private final StatusSignal<Boolean> proLicensed;
   private final BooleanSupplier resetOccurred;
-  private boolean firstRead = true;
+  private boolean wasConnected = false;
 
   DeviceIOReal(
       StatusSignal<Integer> version,
@@ -79,7 +79,15 @@ public class DeviceIOReal implements DeviceIO {
 
   @Override
   public void updateInputs(DeviceIOInputs inputs) {
-    StatusCode code = BaseStatusSignal.refreshAll(version, faultField, stickyFaultField, proLicensed);
+    // refresh(false): a device that isn't answering is logged here, not printed to the driver
+    // station console every second (refreshAll prints an error for each missing signal)
+    StatusCode code = StatusCode.OK;
+    for (StatusSignal<?> signal : List.of(version, faultField, stickyFaultField, proLicensed)) {
+      StatusCode signalCode = signal.refresh(false).getStatus();
+      if (code.isOK() && !signalCode.isOK()) {
+        code = signalCode;
+      }
+    }
     inputs.status = code.name();
     inputs.connected = code.isOK() && version.getTimestamp().getLatency() <= MAX_AGE_SECONDS;
     inputs.version = orZero(version.getValue());
@@ -87,13 +95,14 @@ public class DeviceIOReal implements DeviceIO {
     inputs.stickyFaultField = orZero(stickyFaultField.getValue());
     inputs.proLicensed = Boolean.TRUE.equals(proLicensed.getValue());
 
-    // The first answer after start-up counts as a "reset"; only later ones are reboots
+    // Phoenix's reset flag also turns up with the device's first answer after start-up, so only a
+    // flag seen while the device was already answering counts as a reboot. A reboot longer than a
+    // second shows as "not answering" first.
     boolean reset = resetOccurred.getAsBoolean();
-    if (firstRead) {
-      firstRead = false;
-    } else if (reset) {
+    if (wasConnected && reset) {
       inputs.resets++;
     }
+    wasConnected = inputs.connected;
   }
 
   private static int orZero(Integer value) {

@@ -6,8 +6,9 @@ import java.util.List;
 import java.util.function.LongSupplier;
 
 /**
- * Looks for .hoot files in the log folders, and in their date-time subfolders (Phoenix puts each
- * session's files in one). Read-only: it never starts, stops or moves Phoenix's logging.
+ * Looks for .hoot files in the log folders, and in the newest of their subfolders (Phoenix puts
+ * each session's files in a date-time folder, so only the newest can be recording). Read-only: it
+ * never starts, stops or moves Phoenix's logging.
  */
 public class HootIOReal implements HootIO {
   /** A file written within this long counts as being recorded now. A guess: check on a robot. */
@@ -37,7 +38,11 @@ public class HootIOReal implements HootIO {
     for (File folder : folders) {
       if (folder.isDirectory()) {
         anyFolder = true;
-        collectHootFiles(folder, 2, hootFiles);
+        collectHootFiles(folder, hootFiles);
+        File newestSubfolder = newestSubfolder(folder);
+        if (newestSubfolder != null) {
+          collectHootFiles(newestSubfolder, hootFiles);
+        }
       }
     }
     long now = nowMillis.getAsLong();
@@ -70,18 +75,22 @@ public class HootIOReal implements HootIO {
     return Math.max(0, nowMillis - file.lastModified()) / 1000.0;
   }
 
-  /** Adds the .hoot files in a folder and its subfolders, down to the given depth. */
-  private static void collectHootFiles(File folder, int depth, List<File> found) {
-    File[] children = folder.listFiles();
-    if (children == null) {
-      return;
+  /** Adds the .hoot files directly in a folder. The name is checked first: it costs no disk read. */
+  private static void collectHootFiles(File folder, List<File> found) {
+    File[] hootFiles = folder.listFiles((dir, name) -> name.endsWith(".hoot"));
+    if (hootFiles != null) {
+      found.addAll(List.of(hootFiles));
     }
-    for (File child : children) {
-      if (child.isFile() && child.getName().endsWith(".hoot")) {
-        found.add(child);
-      } else if (child.isDirectory() && depth > 0) {
-        collectHootFiles(child, depth - 1, found);
+  }
+
+  private static File newestSubfolder(File folder) {
+    File[] subfolders = folder.listFiles(File::isDirectory);
+    File newest = null;
+    for (File subfolder : subfolders == null ? new File[0] : subfolders) {
+      if (newest == null || subfolder.lastModified() > newest.lastModified()) {
+        newest = subfolder;
       }
     }
+    return newest;
   }
 }

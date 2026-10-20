@@ -274,7 +274,7 @@ class HindsightCompanionTest {
     rebooted.answer.resets = 2;
     faulted.answer.stickyFaultField = 0b100;
     rebooted.answer.version = 0x1A010000;
-    runSeconds(companion, 1);
+    runSeconds(companion, 2);
     assertEquals(
         List.of(
             "kError: Not answering (or its status signals are turned off): TalonFX 16 on Any",
@@ -282,6 +282,18 @@ class HindsightCompanionTest {
             "kWarning: Sticky faults set (see Tuner X, clear after the log is pulled): CANcoder 4 on Any",
             "kWarning: Different firmware on devices of one model: TalonFX"),
         shown());
+  }
+
+  @Test
+  void devicesGetTwoReadsBeforeOneCountsAsNotAnswering() {
+    FakeDevice slow = new FakeDevice();
+    slow.answer.connected = false;
+    HindsightDevices.add("*", "TalonFX", 15, () -> slow);
+    HindsightCompanion companion = companion(true);
+    runSeconds(companion, 2);
+    assertEquals(List.of(), shown());
+    runSeconds(companion, 1);
+    assertEquals(List.of("kError: Not answering (or its status signals are turned off): TalonFX 15 on Any"), shown());
   }
 
   @Test

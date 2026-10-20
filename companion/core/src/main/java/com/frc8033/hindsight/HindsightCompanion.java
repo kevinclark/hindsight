@@ -36,6 +36,9 @@ public class HindsightCompanion {
   /** Ten matches at about 55 MB each (measured on our 2026 logs), so an event day fits. */
   static final long LOW_LOG_DRIVE_BYTES = 600_000_000L;
 
+  /** Devices get two reads before one counts as not answering: their first frames may still be on their way. */
+  static final int DEVICE_GRACE_LOOPS = 2 * READ_PERIOD_LOOPS;
+
   /** A rising error counter stays shown this long, so it's seen in the pit (a guess, 10 s). */
   static final int ERROR_COUNTERS_SHOWN_LOOPS = 10 * 50;
 
@@ -207,7 +210,9 @@ public class HindsightCompanion {
         continue;
       }
       if (!in.connected) {
-        notAnswering.add(device.name());
+        if (loopCount > DEVICE_GRACE_LOOPS) {
+          notAnswering.add(device.name());
+        }
         continue;
       }
       if (in.resets > 0) {
