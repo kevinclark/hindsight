@@ -209,7 +209,7 @@ describe('Foresight card', () => {
   it('shows a 40-character sha as 7 characters in an item\'s number line', () => {
     const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
     const finding = { rule: 'build/dirty', title: `Robot ran uncommitted changes on top of ${sha.slice(0, 7)}`, evidence: { 'git sha': sha } }
-    const item = { finding, level: 'red', proof: '', action: 'x' } as unknown as ForesightReportInput['items'][number]
+    const item = { finding, level: 'red', proof: '', action: 'x', explains: [] } as unknown as ForesightReportInput['items'][number]
     const text = JSON.stringify(foresightCard({ ...base, items: [item] }).items)
     expect(text).not.toContain(sha)
   })
@@ -249,7 +249,7 @@ describe('Foresight printed report component', () => {
     const { default: ForesightReport } = await import('../src/ui/ForesightReport.svelte')
     const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
     const finding = { rule: 'build/dirty', key: 'k', title: 'Robot ran uncommitted changes', evidence: { 'git sha': sha } }
-    const checked = { verdict: { verdict: 'NO-GO', items: [{ finding, level: 'red', proof: '', action: 'x' }], notChecked: [{ rule: 'a/b', reason: 'r' }], crashed: [] }, match: { build: { sha, branch: 'b', dirty: 'clean' } } }
+    const checked = { verdict: { verdict: 'NO-GO', items: [{ finding, level: 'red', proof: '', action: 'x', explains: [] }], notChecked: [{ rule: 'a/b', reason: 'r' }], crashed: [] }, match: { build: { sha, branch: 'b', dirty: 'clean' } } }
     const onchecks = [{ line: 'Line A', state: 'ok', detail: '' }, { line: 'Line B', state: 'not checked', detail: '' }]
     const props = { status: { state: 'connected', message: 'Connected', url: 'ws://secret-host:5810/nt' }, checked, verdict: 'NO-GO', why: 'x', onchecks, battery: 12.6, controllers: [], totalChecks: 21 }
     const html = render(ForesightReport, { props: props as never }).body

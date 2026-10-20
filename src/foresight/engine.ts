@@ -9,7 +9,7 @@
  */
 import { hasEntry, openWpilog, type WpilogFile } from '../readers/wpilog.ts'
 import { buildMatch, num, type Match } from '../match/match.ts'
-import { FORESIGHT_RULES, runRules, type Report } from '../rules/index.ts'
+import { FORESIGHT_RULES, LINKS, runRules, type Report } from '../rules/index.ts'
 import type { Rule } from '../rules/rule.ts'
 import { PROFILES } from '../profiles/index.ts'
 import { chooseProfile, PROFILE_FIT_MIN, profileKeys, type ProfileChoice } from '../profiles/choose.ts'
@@ -77,7 +77,9 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   const words = pruned ? `in the last ${Math.round(KEEP_SECONDS / 60)} min` : lastEnable ? 'since the robot was last driven' : 'since start-up settled'
   const match = buildMatch('foresight', openWpilog(store.windowLog(start, now)), picked.profile, picked.choice)
   match.foresight = { start, end: now, lastPassingSha: input.lastPassingSha, words }
-  const report = runRules(match, input.rules ?? FORESIGHT_RULES)
+  // The Match tab's links (not its parents, which would add findings), so one problem two checks see is one item in
+  // the verdict (verdict.ts).
+  const report = runRules(match, input.rules ?? FORESIGHT_RULES, { links: LINKS })
   const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS)
   // The backtest only proved checks on stretches before any enable. After a drive the battery is still recovering
   // (CalGames: 11.7–12.1 V 10 s after the match, 12.3 V after 160 s), so rest voltage stays amber then.
