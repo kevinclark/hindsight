@@ -81,7 +81,8 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   match.foresight = { start, end: now, lastPassingSha: input.lastPassingSha, words }
   const report = runRules(match, input.rules ?? FORESIGHT_RULES)
   const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS)
-  if (snapshotUsed) joinWatched(report, input.snapshot!.snapshot!, new MatchView(match).watchedDevices())
+  const snapshot = input.snapshot?.snapshot
+  if (snapshotUsed && snapshot) joinWatched(report, snapshot, new MatchView(match).watchedDevices())
   // The backtest only proved checks on stretches before any enable. After a drive the battery is still recovering
   // (CalGames: 11.7–12.1 V 10 s after the match, 12.3 V after 160 s), so rest voltage stays amber then.
   const unproven: Record<string, string> = Object.fromEntries(SNAPSHOT_RULES.map((r) => [r, SNAPSHOT_PROOF]))

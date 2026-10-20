@@ -22,8 +22,9 @@ export const PARENTS: Parent[] = [
     id: 'can/devices-dropped-together',
     title: 'CAN devices dropped together',
     over: 'can/device-dropout',
-    // The device's first drop started no more than 1 s after the first device's.
-    together: (first, other) => isBetween(secondsAfter(first, other), 0, 1),
+    // The device's first drop started no more than 1 s after the first device's (2 s when either is read by the
+    // Hindsight companion, once a second: its flag can fall a read later).
+    together: (first, other) => isBetween(secondsAfter(first, other), 0, readByCompanion(first) || readByCompanion(other) ? 2 : 1),
     atLeast: 3,
     name: (devices) => `${devices.length} CAN devices dropped within ${spreadOf(devices).toFixed(2)} s`,
     why: 'it dropped off CAN with the others: one event, not separate faults',
@@ -62,4 +63,9 @@ export const PARENTS: Parent[] = [
 /** Seconds from the first finding's time to the last one's (the findings are in time order). */
 function spreadOf(findings: Finding[]): number {
   return Math.round(secondsAfter(findings[0], findings[findings.length - 1]) * 100) / 100
+}
+
+/** A can/device-dropout finding read from the Hindsight companion's once-a-second flag. */
+function readByCompanion(f: Finding): boolean {
+  return f.evidence['read by'] !== undefined
 }

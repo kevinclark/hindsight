@@ -10,7 +10,7 @@
  */
 import { plural, rule } from '../rule.ts'
 import type { MatchView, WatchedDeviceView } from '../view.ts'
-import { versionText } from '../../match/companion.ts'
+import { hex32, versionText } from '../../match/companion.ts'
 
 export default rule({
   id: 'foresight/firmware-mismatch',
@@ -49,7 +49,9 @@ function versionsByModel(match: MatchView): Map<string, Map<string, string[]>> {
   const now = match.pitStretch.end
   const byModel = new Map<string, Map<string, string[]>>()
   for (const device of match.watchedDevices().filter((d) => answering(d, now))) {
-    const version = versionText(device.version().at(now))
+    // Shown with the raw value: the byte order is the companion's reading of Phoenix's docs, not checked on a device.
+    const packed = device.version().at(now)
+    const version = `${versionText(packed)} (${hex32(packed)})`
     const versions = byModel.get(device.model) ?? new Map<string, string[]>()
     versions.set(version, [...(versions.get(version) ?? []), device.name])
     byModel.set(device.model, versions)

@@ -7,7 +7,7 @@
  * tracker, each camera's stale flag and raw result, other devices, zeroing, the state machine, CAN bus members, alert
  * groups and three AdvantageKit keys rules read (e-stop, match clock, auto chooser).
  */
-import { firstPresent, num, type Match } from '../match/match.ts'
+import { firstPresent, has, num, type Match } from '../match/match.ts'
 import type { NumberSeries } from '../match/series.ts'
 import { profileKeys } from '../profiles/choose.ts'
 import type { RobotProfile } from '../profiles/types.ts'
@@ -16,7 +16,7 @@ import { stripRepoPaths } from '../report/repo-paths.ts'
 import type { Severity } from '../rules/rule.ts'
 import type { MatchSummary } from '../session/summary.ts'
 import { sampleRate, SLOW_HZ, words } from '../rules/view.ts'
-import { companionIn, DEVICES_ROOT, hootLine, profileDevices, watchedIn, type HootLine } from '../match/companion.ts'
+import { companionIn, hootLine, motorDeviceKey, type HootLine } from '../match/companion.ts'
 
 export type CoverageState = 'logged' | 'slow' | 'never changes' | 'not logged' | 'profile gap'
 
@@ -55,6 +55,8 @@ export interface CoverageLine extends CoverageKey {
   dark: DarkCheck[]
   /** What to do about it, in words: the signal and the key, never the code. Empty when it is logged. */
   todo: string
+  /** Listed after every other line: a gap that costs one device's reboot check, not a check that guards the match. */
+  last?: boolean
 }
 
 export interface Coverage {
@@ -177,22 +179,22 @@ export function coverage(match: Match, report: Report): Coverage {
 }
 
 /**
- * On a robot that runs the Hindsight companion: one line per CTRE device the profile names with a CAN ID (each motor,
- * and the CANcoders and gyro of foresight.snapshot), saying whether the robot code watches it (HindsightDevices.watch).
- * Matched by model and CAN ID only: the profile names no bus. A robot without the companion gets none of these lines.
+ * On a robot that runs the Hindsight companion: one line per motor in the profile, saying whether its IO logs the key
+ * HindsightDevices.watch returned (<motor key>/Device, companion/README.md step 3). A Device key always has a
+ * /Hindsight/Devices entry, so a motor without one is not watched, or not tied to its watch entry. A robot without
+ * the companion gets none of these lines.
  */
 function watchLines(match: Match): CoverageLine[] {
   if (!companionIn(match.log)) return []
-  const watched = watchedIn(match.log)
-  return profileDevices(match.profile).map((d) => {
-    const twin = watched.find((w) => w.id === d.id && d.models.includes(w.model))
-    const what = `${d.name} watched by the Hindsight companion`
-    const key = `${DEVICES_ROOT}…/${d.models.join(' or ')}/${d.id}`
-    if (twin) return { what, key, state: 'logged', found: twin.prefix, dark: [], todo: '' }
-    return {
-      what, key, state: 'not logged', dark: [darkCheck('can/device-rebooted', false)],
-      todo: `Watch ${d.name} (CAN ID ${d.id}): HindsightDevices.watch on the line after the robot code makes it (companion/README.md, step 3).`,
-    }
+  return match.profile.motorGroups.flatMap((g) => g.motors).flatMap((m): CoverageLine[] => {
+    const key = motorDeviceKey(m)
+    if (!key) return []
+    const what = `${m.name} Device key (Hindsight companion)`
+    if (has(match, key)) return [{ what, key, state: 'logged', found: key, dark: [], todo: '' }]
+    return [{
+      what, key, state: 'not logged', dark: [darkCheck('can/device-rebooted', false)], last: true,
+      todo: `Watch ${m.name} with HindsightDevices.watch and log the key it returns as ${key} (companion/README.md, step 3).`,
+    }]
   })
 }
 
@@ -310,7 +312,7 @@ const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2
 
 /** Lines behind the checks that guard the match first (worst severity, then the rule's place in RULES), then by state. */
 function byUrgency(a: CoverageLine, b: CoverageLine): number {
-  return urgency(a) - urgency(b) || STATE_ORDER[a.state] - STATE_ORDER[b.state]
+  return Number(!!a.last) - Number(!!b.last) || urgency(a) - urgency(b) || STATE_ORDER[a.state] - STATE_ORDER[b.state]
 }
 
 function urgency(line: CoverageLine): number {

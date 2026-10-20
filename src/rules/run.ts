@@ -45,7 +45,9 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
   const crashed: SkippedRule[] = []
   const misfit = match.profileChoice.misfit ? match.profileChoice.fit : null
   for (const rule of rules) {
-    if (misfit && (rule.needsProfile ?? ROBOT_ITEMS.includes(rule.forEach ?? 'match'))) {
+    // Devices only the Hindsight companion watches need no profile: can/device-dropout still checks those.
+    const watchedOnly = rule.forEach === 'device' && view.watchedDevices().some((w) => !w.profileFlag)
+    if (misfit && !watchedOnly && (rule.needsProfile ?? ROBOT_ITEMS.includes(rule.forEach ?? 'match'))) {
       skipped.push({ rule: rule.id, reason: `the robot profile doesn't fit this log (${misfit.present} of ${misfit.total} of its signals are in it)` })
       continue
     }
@@ -254,9 +256,11 @@ function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: ()
         return { name: g.name, check: () => rule.check(group, view) }
       })
     case 'device': {
+      // On a log the profile doesn't fit, only the companion's devices (runRules lets this rule through for them).
+      const fits = !view.raw.profileChoice.misfit
       const devices: DeviceView[] = [
-        ...p.motorGroups.flatMap((g) => g.motors.filter((m) => m.connected).map((m) => motor(m, g.name))),
-        ...p.otherDevices.map((d) => ({ name: d.name, connected: () => view.signal(d.connected, `${d.name} connected`) })),
+        ...(fits ? p.motorGroups.flatMap((g) => g.motors.filter((m) => m.connected).map((m) => motor(m, g.name))) : []),
+        ...(fits ? p.otherDevices.map((d) => ({ name: d.name, connected: () => view.signal(d.connected, `${d.name} connected`) })) : []),
         // Devices only the Hindsight companion watches: one the profile reads a Connected flag for is checked from that.
         ...view.watchedDevices().filter((w) => !w.profileFlag).map((w) => ({ name: w.name, connected: w.connected, watched: w })),
       ]

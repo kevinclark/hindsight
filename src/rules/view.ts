@@ -19,7 +19,7 @@ import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
 import { photonTargetCount } from '../readers/photon.ts'
-import { profileDevices, twinOf, watchedIn, watchedName, type ProfileDevice, type WatchedEntry } from '../match/companion.ts'
+import { profileDevices, twinsOf, watchedIn, watchedName, type DeviceField, type ProfileDevice, type WatchedEntry } from '../match/companion.ts'
 
 /** A stretch of time made of one or more intervals, e.g. "while enabled" or "during auto". */
 export type Window = Interval[]
@@ -297,6 +297,8 @@ export interface WatchedDeviceView {
   bus: string
   model: string
   id: number
+  /** The profile's name for this device, when the profile has it (findings from its own flag use this name). */
+  profileName?: string
   /** The Connected flag the profile already reads for this device, if the log has it. */
   profileFlag?: string
   connected(): Signal
@@ -402,11 +404,14 @@ export class MatchView {
     return stretch
   }
 
-  /** Every device with a Connected flag in the profile: each motor that has one, then the other devices. */
-  connectedDevices(): { name: string; key: string }[] {
+  /**
+   * Every device with a Connected flag in the profile: each motor that has one, then the other devices, then the
+   * devices only the Hindsight companion watches (`watched`: read once a second, so a drop shows up to 1.5 s late).
+   */
+  connectedDevices(): { name: string; key: string; watched?: boolean }[] {
     const motors = this.profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => (m.connected ? [{ name: m.name, key: m.connected }] : [])))
     const others = this.profile.otherDevices.map((d) => ({ name: d.name, key: d.connected }))
-    const watchedOnly = this.watchedDevices().filter((w) => !w.profileFlag).map((w) => ({ name: w.name, key: w.connected().key }))
+    const watchedOnly = this.watchedDevices().filter((w) => !w.profileFlag).map((w) => ({ name: w.name, key: w.connected().key, watched: true }))
     return [...motors, ...others, ...watchedOnly]
   }
 
@@ -415,17 +420,18 @@ export class MatchView {
   /** Every device the Hindsight companion watches in this log (none when the robot doesn't use it). */
   watchedDevices(): WatchedDeviceView[] {
     if (!this.watchedList) {
-      const named = profileDevices(this.profile)
-      this.watchedList = watchedIn(this.raw.log).map((w) => this.watchedView(w, twinOf(named, w)))
+      const watched = watchedIn(this.raw.log)
+      const twins = twinsOf(this.raw, profileDevices(this.profile), watched)
+      this.watchedList = watched.map((w) => this.watchedView(w, twins.get(w.prefix)))
     }
     return this.watchedList
   }
 
   private watchedView(w: WatchedEntry, twin: ProfileDevice | undefined): WatchedDeviceView {
     const name = twin ? `${twin.name} (${w.model} ${w.id})` : watchedName(w)
-    const field = (key: string, label: string) => () => this.signal(`${w.prefix}/${key}`, `${name} ${label}`)
+    const field = (key: DeviceField, label: string) => () => this.signal(`${w.prefix}/${key}`, `${name} ${label}`)
     return {
-      name, bus: w.bus, model: w.model, id: w.id,
+      name, bus: w.bus, model: w.model, id: w.id, profileName: twin?.name,
       profileFlag: twin?.connected && has(this.raw, twin.connected) ? twin.connected : undefined,
       connected: field('Connected', 'answering'),
       resets: field('Resets', 'reboots'),

@@ -537,7 +537,7 @@ describe('Foresight over the companion\'s device readings', () => {
     const i = item(mixed, 'foresight/firmware-mismatch')!
     expect(i.level).toBe('amber')
     expect(i.finding.title).toBe('Firmware differs within TalonFX (2 versions)')
-    expect(i.finding.evidence).toEqual({ 'TalonFX 26.1.0.0': 'Flywheel leader (TalonFX 15)', 'TalonFX 25.2.0.0': 'Flywheel follower 16 (TalonFX 16)' })
+    expect(i.finding.evidence).toEqual({ 'TalonFX 26.1.0.0 (0x1A010000)': 'Flywheel leader (TalonFX 15)', 'TalonFX 25.2.0.0 (0x19020000)': 'Flywheel follower 16 (TalonFX 16)' })
   })
 
   it('a reboot in the pit is amber (never proven, so never red)', () => {

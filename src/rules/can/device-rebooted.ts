@@ -5,7 +5,8 @@
  * (/Hindsight/Devices/<bus>/<model>/<id>/Resets) going up while enabled (in Foresight, the live pit check: while
  * disabled since start-up settled), and the lowest battery voltage in the 1.5 s before (the companion reads each
  * device once a second, so the reboot happened up to 1.5 s before the count went up).
- * A reboot longer than about a second shows as "not answering" instead (can/device-dropout), never here.
+ * A reboot longer than about a second shows as "not answering" instead (can/device-dropout); a count that rose at a
+ * read where the device wasn't answering is left to that drop too.
  * Why: a device that reboots mid-match stops driving its mechanism until it is back, and the robot code is not told.
  * Phoenix keeps the flag (hasResetOccurred) but nothing logged it until the companion did. No log of ours has these
  * keys yet: the rule has never fired on a real robot.
@@ -32,7 +33,8 @@ export default rule({
   forEach: 'watchedDevice',
 
   check(device, match) {
-    const reboots = device.resets().increases(watched(match))
+    // A count that rose at a read where the device wasn't answering belongs to that drop (can/device-dropout).
+    const reboots = device.resets().increases(watched(match)).filter((t) => device.connected().at(t) >= 0.5)
     if (reboots.length === 0) return
     return rebootProblem(device, reboots, match)
   },

@@ -26,6 +26,7 @@ export const DEVICE_LATE_SECONDS = DEVICE_READ_SECONDS + 0.5
 
 /** Each device's keys, after /Hindsight/Devices/<bus>/<model>/<id>/. */
 export const DEVICE_FIELDS = ['Connected', 'Version', 'FaultField', 'StickyFaultField', 'ProLicensed', 'Resets', 'Status'] as const
+export type DeviceField = (typeof DEVICE_FIELDS)[number]
 
 export const HOOT_KEYS = {
   recording: '/Hindsight/Hoot/Recording',
@@ -70,16 +71,23 @@ export const MOTOR_MODELS = ['TalonFX', 'TalonFXS']
 /** The profile's model names for the other CTRE devices it lists (foresight.snapshot.devices), as the companion logs them. */
 const PROFILE_MODELS: Record<string, string> = { CANcoder: 'CANcoder', 'Pigeon 2': 'Pigeon2' }
 
-/** A device the robot profile names, by model and CAN ID: its name and the Connected flag the profile reads, if any. */
-export interface ProfileDevice { name: string; models: string[]; id: number; connected?: string }
+/** A device the robot profile names, by model and CAN ID: its name, the Connected flag the profile reads, and its Device key. */
+export interface ProfileDevice {
+  name: string
+  models: string[]
+  id: number
+  connected?: string
+  /** Where the motor's IO logs the key HindsightDevices.watch returned ("Any/TalonFX/15"), if it does (motors only). */
+  deviceKey?: string
+}
 
 /**
  * Every CTRE device the profile names with a CAN ID: each motor (a Talon FX or FXS), then the CANcoders and gyro of
- * foresight.snapshot. The profile names no bus, so a device is known by model and ID only.
+ * foresight.snapshot. The profile names no bus, so without a Device key a device is known by model and ID only.
  */
 export function profileDevices(profile: RobotProfile): ProfileDevice[] {
   const motors = profile.motorGroups.flatMap((g) => g.motors).flatMap((m) =>
-    m.canId === undefined ? [] : [{ name: m.name, models: MOTOR_MODELS, id: m.canId, connected: m.connected }])
+    m.canId === undefined ? [] : [{ name: m.name, models: MOTOR_MODELS, id: m.canId, connected: m.connected, deviceKey: motorDeviceKey(m) }])
   const others = (profile.foresight?.snapshot?.devices ?? []).map((d) => ({
     name: d.name, models: [PROFILE_MODELS[d.model]], id: d.canId,
     connected: profile.otherDevices.find((o) => o.name === d.name)?.connected,
@@ -87,9 +95,47 @@ export function profileDevices(profile: RobotProfile): ProfileDevice[] {
   return [...motors, ...others]
 }
 
-/** The profile's device that is this watched device (same model and CAN ID), if any. */
-export function twinOf(devices: ProfileDevice[], w: { model: string; id: number }): ProfileDevice | undefined {
-  return devices.find((d) => d.id === w.id && d.models.includes(w.model))
+/** The end of a current key (as the builder reads them, builder/motors.ts), or of a Connected flag. */
+const MOTOR_FIELD = /((Supply|Stator)?Current(Amps?|A)?|Connected)$/
+
+/**
+ * Where a motor's IO logs its Device key: beside its other keys, named like them. /Drum/Hood/SupplyCurrentAmps gives
+ * /Drum/Hood/Device; /Swerve/Front Left Module/DriveConnected gives /Swerve/Front Left Module/DriveDevice.
+ */
+export function motorDeviceKey(m: { supplyCurrent?: string; statorCurrent?: string; connected?: string }): string | undefined {
+  const key = [m.supplyCurrent, m.statorCurrent, m.connected].find((k) => k && MOTOR_FIELD.test(k))
+  return key ? key.replace(MOTOR_FIELD, 'Device') : undefined
+}
+
+/** The CAN ID in a Device key's value ("Any/TalonFX/15" → 15), or undefined. */
+export function idFromDeviceKey(value: string): number | undefined {
+  const id = value.split('/').pop() ?? ''
+  return /^\d+$/.test(id) ? Number(id) : undefined
+}
+
+/** A watched device's own key, as HindsightDevices.watch returns it: "Any/TalonFX/15". */
+export const deviceKeyOf = (w: WatchedEntry) => w.prefix.slice(DEVICES_ROOT.length)
+
+/**
+ * Which profile device each watched device is (by its prefix). Exact first: a motor whose IO logs a Device key naming
+ * it. Then, for a profile device with no Device key in the log, the one watched device of its model and CAN ID; two
+ * watched devices of one model and ID (on two buses) can't be told apart, so neither gets the profile's name.
+ */
+export function twinsOf(match: Match, devices: ProfileDevice[], watched: WatchedEntry[]): Map<string, ProfileDevice> {
+  const twins = new Map<string, ProfileDevice>()
+  const logged = new Map(devices.flatMap((d) => {
+    const v = d.deviceKey ? values<string>(match, d.deviceKey) : null
+    return v && v.v.length ? [[d, String(v.v[v.v.length - 1])] as const] : []
+  }))
+  for (const w of watched) {
+    const exact = devices.find((d) => logged.get(d) === deviceKeyOf(w))
+    if (exact) twins.set(w.prefix, exact)
+  }
+  for (const d of devices.filter((x) => !logged.has(x))) {
+    const same = watched.filter((w) => !twins.has(w.prefix) && w.id === d.id && d.models.includes(w.model))
+    if (same.length === 1) twins.set(same[0].prefix, d)
+  }
+  return twins
 }
 
 /** "TalonFX 15 on Any": a watched device's name when the profile doesn't name it. */
@@ -104,8 +150,8 @@ export function versionText(packed: number): string {
   return [v >>> 24, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff].join('.')
 }
 
-/** A fault field as hex, e.g. 0x00000104. Phoenix calls the bits device-specific and publishes no layout. */
-export const faultFieldText = (field: number) => `0x${(field >>> 0).toString(16).toUpperCase().padStart(8, '0')}`
+/** A 32-bit field as hex, e.g. 0x00000104 (fault fields: Phoenix calls the bits device-specific and publishes no layout). */
+export const hex32 = (field: number) => `0x${(field >>> 0).toString(16).toUpperCase().padStart(8, '0')}`
 
 /** Whether Phoenix's hoot recording was on, from the companion's /Hindsight/Hoot keys, for one stretch of the log. */
 export interface HootLine {

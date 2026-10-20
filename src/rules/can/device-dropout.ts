@@ -15,9 +15,9 @@
  * over the 1.5 s before. No log of ours has the companion's keys yet.
  */
 import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
-import type { DeviceView, Episode, MatchView } from '../view.ts'
+import type { DeviceView, Episode, MatchView, WatchedDeviceView } from '../view.ts'
 import { busOf, DROP_LOOK_BACK, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, watched, windowStart } from './bus.ts'
-import { DEVICE_LATE_SECONDS } from '../../match/companion.ts'
+import { DEVICE_LATE_SECONDS, DEVICE_READ_SECONDS } from '../../match/companion.ts'
 
 
 export default rule({
@@ -46,6 +46,9 @@ export default rule({
     const bus = busOf(match, device.name)
     const own = drops.filter((d) => !isBusWide(bus, d))
     if (own.length === 0) return
+    // A companion reading in simulation or replay, or one that failed, says nothing about the device.
+    const unread = device.watched ? unreadStatus(device.watched, own) : null
+    if (unread) return match.couldNotCheck(`the Hindsight companion didn't read it (${unread})`)
     return deviceProblem(device, own, match)
   },
 })
@@ -69,7 +72,7 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   const unknownVolts = voltages.some((v) => Number.isNaN(v))
   const cameBack = timed[timed.length - 1].end >= match.logEnd ? 'no, still off at the end of the log' : 'yes'
   const others = otherDevices(match, device.name)
-  const together = devicesDroppedWith(others, drops)
+  const together = devicesDroppedWith(others, drops, !!device.watched)
 
   const likely: string[] = []
   const ruledOut: Record<string, string> = {}
@@ -107,23 +110,31 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
 
 const NEVER_ANSWERED = 'It never answered the Hindsight companion in this log. If Phoenix Tuner X shows it on the bus, the robot code has turned its status signals off (optimizeBusUtilization), so the companion can\'t read it; if not, check its power and CAN wiring.'
 
+/** The companion's status at the drops when it never read the device then ("not read", "unavailable: ..."), or null. */
+function unreadStatus(device: WatchedDeviceView, drops: Episode[]): string | null {
+  const statuses = drops.map((d) => device.status().at(d.start))
+  return statuses.every((s) => s === 'not read' || s.startsWith('unavailable')) ? statuses[0] : null
+}
+
 /** When each other device dropped off CAN while enabled (every motor with a Connected flag, and the other devices). */
 function otherDevices(match: MatchView, except: string) {
   return match.connectedDevices()
     .filter((d) => d.name !== except && match.has(d.key))
     .map((d) => {
       const episodes = match.signal(d.key).episodes(isFalse, { touching: watched(match) })
-      return { name: d.name, drops: episodes.map((e) => e.start) }
+      return { name: d.name, drops: episodes.map((e) => e.start), watched: !!d.watched }
     })
 }
 
 /**
  * Names of the other devices that dropped within 1 s of any of these drops: a shared cause (power or the CAN trunk).
- * Strictly under 1 s here, while dropAround counts exactly TOGETHER_SECONDS apart as together: kept as it was.
+ * Strictly under 1 s here, while dropAround counts exactly TOGETHER_SECONDS apart as together: kept as it was. When
+ * either device is read by the companion (once a second), its flag can fall a read later, so 2 s.
  */
-function devicesDroppedWith(others: { name: string; drops: number[] }[], drops: Episode[]): string[] {
+function devicesDroppedWith(others: { name: string; drops: number[]; watched: boolean }[], drops: Episode[], late: boolean): string[] {
+  const within = (o: { watched: boolean }) => (late || o.watched ? 1 + DEVICE_READ_SECONDS : 1)
   return others
-    .filter((o) => o.drops.some((t) => drops.some((own) => Math.abs(t - own.start) < 1)))
+    .filter((o) => o.drops.some((t) => drops.some((own) => Math.abs(t - own.start) < within(o))))
     .map((o) => o.name)
 }
 

@@ -11,7 +11,7 @@
  * Amber only: no log of ours has this reading yet, so it has never fired for real (proven.ts).
  */
 import { rule } from '../rule.ts'
-import { faultFieldText } from '../../match/companion.ts'
+import { hex32 } from '../../match/companion.ts'
 
 export default rule({
   id: 'foresight/sticky-faults',
@@ -39,11 +39,11 @@ export default rule({
     if (sticky === 0) return
     const live = device.faults().at(now)
     return {
-      message: `${device.name} has sticky faults set (field ${faultFieldText(sticky)})${live ? ', and a live fault now' : ''}`,
+      message: `${device.name} has sticky faults set (field ${hex32(sticky)})${live ? ', and a live fault now' : ''}`,
       at: now,
       evidence: {
-        'sticky fault field': faultFieldText(sticky),
-        'live fault field': faultFieldText(live),
+        'sticky fault field': hex32(sticky),
+        'live fault field': hex32(live),
         'which faults': 'not decoded: the bits differ by model and Phoenix publishes no layout; Phoenix Tuner X names them',
       },
     }

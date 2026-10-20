@@ -46,7 +46,7 @@ A team without battery fuel gauges installs only the first.
    real name so Foresight can match it to the right bus), the device's class name and its CAN id. The companion then logs whether the device is answering, its firmware, its live and sticky faults,
    and its reboots. It reads its own copies of the signals, so it never changes a rate, a config or your code's
    signal objects. A device you don't watch isn't logged, and nothing warns you in the robot code: Hindsight's
-   Logging tab lists each motor, CANcoder and gyro the robot profile names with a CAN ID that has no watch entry.
+   Logging tab lists each motor in the robot profile whose IO logs no `Device` key.
 
 ## What it logs
 

@@ -316,16 +316,19 @@ export function snapshotDeviceFor(snapshot: Snapshot, w: { bus: string; model: s
   const bus = snapshotBusFor(snapshot, w.bus)
   if (bus === null) return `can't tell which bus: the robot code logs it on CANBus("*") and the snapshot has ${snapshot.devices.some((d) => d.bus !== '') ? 'more than one CANivore' : 'no CANivore'}`
   const found = snapshot.devices.find((d) => d.bus === bus && d.id === w.id && sameModel(d.model, w.model))
-  return found ?? `not on the snapshot's ${busLabel(bus)}`
+  if (!found) return `not on the snapshot's ${busLabel(bus)}`
+  if (found.count > 1) return `${found.count} devices share this ID on the snapshot's ${busLabel(bus)} (serials ${found.serials.join(', ')})`
+  return found
 }
 
 /**
  * Adds what the snapshot says about each watched device a finding is about (its name, serial and firmware, or that
  * the diagnostic server didn't see it), in place. A device the companion can't hear that the server sees is on the bus.
  */
-export function joinWatched(report: Report, snapshot: Snapshot, watched: { name: string; bus: string; model: string; id: number }[]): void {
+export function joinWatched(report: Report, snapshot: Snapshot, watched: { name: string; profileName?: string; bus: string; model: string; id: number }[]): void {
   for (const f of report.findings) {
-    const w = WATCHED_DEVICE_RULES.has(f.rule) ? watched.find((d) => d.name === f.about) : undefined
+    // A dropout read from the profile's own flag is named as the profile names the device.
+    const w = WATCHED_DEVICE_RULES.has(f.rule) ? watched.find((d) => d.name === f.about || d.profileName === f.about) : undefined
     if (!w) continue
     const d = snapshotDeviceFor(snapshot, w)
     f.evidence['in the robot snapshot'] = typeof d === 'string'
