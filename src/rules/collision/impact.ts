@@ -46,7 +46,7 @@ export default rule({
       return {
         message: `${hit.g.toFixed(1)} g hit at ${match.when(hit.at)}`,
         at: hit.at,
-        evidence: { 'sideways acceleration (g)': round(hit.g), 'threshold (g)': LIMIT_G, phase: match.phaseAt(hit.at) },
+        evidence: { 'sideways acceleration (g)': round(hit.g), 'threshold (g)': LIMIT_G },
         measured: [{ label: 'sideways acceleration', value: round(hit.g), unit: 'g', threshold: LIMIT_G }],
         plot: { signals: ['accelX', 'accelY'], unit: 'm/s²', from: hit.at - 2, to: hit.at + 2 },
         nextStep,

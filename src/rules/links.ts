@@ -43,14 +43,6 @@ export const LINKS: Link[] = [
     when: (zero, tilt) => duringWrongFrame(zero, tilt),
     why: 'the mechanism was moving from the wrong zero, so it went somewhere it should not have',
   }),
-  // The same hit can show as a jolt instead of a tilt (CalGames Q13's trench hit would have, had the accelerometer
-  // been logged then). Not yet seen in a log: collision/impact could not run on 87 of the 89 logs we have.
-  link({
-    cause: 'mech/zero-not-completed',
-    explains: 'collision/impact',
-    when: (zero, hit) => duringWrongFrame(zero, hit),
-    why: 'the mechanism was moving from the wrong zero, so it hit something',
-  }),
   // CalGames 2026 Q13: wedged at −24° for 0.8 s, then disabled 0.8 s after the tilt began.
   link({
     cause: 'collision/tilt',
@@ -137,13 +129,13 @@ function wordsOf(text: string): string[] {
 }
 
 /**
- * Did the tilt or hit happen while the mechanism was moving from the wrong zero (from its first move until its zero)?
- * When the zero never finished, only one in auto counts.
+ * Did the tilt start while the mechanism was moving from the wrong zero (from its first move until its zero)? When
+ * the zero never finished, only a tilt in auto counts.
  */
-function duringWrongFrame(zero: Finding, symptom: Finding): boolean {
+function duringWrongFrame(zero: Finding, tilt: Finding): boolean {
   const zeroDone = zero.evidence['zero completed (robot time, s)']
-  const at = symptom.time ?? NaN
-  const afterTheMove = at >= (zero.time ?? NaN)
-  if (typeof zeroDone === 'number') return afterTheMove && at <= zeroDone
-  return afterTheMove && symptom.evidence.phase === 'auto'
+  const tiltAt = tilt.time ?? NaN
+  const afterTheMove = tiltAt >= (zero.time ?? NaN)
+  if (typeof zeroDone === 'number') return afterTheMove && tiltAt <= zeroDone
+  return afterTheMove && tilt.evidence.phase === 'auto'
 }
