@@ -1,7 +1,7 @@
 // The team's pit checklist as Foresight marks it: from the current check only, "by eye" never OK, and the verdict
 // itself untouched by the list.
 import { describe, expect, it } from 'vitest'
-import { markOnchecks, ONCHECKS, wantedLines } from '../src/foresight/onchecks.ts'
+import { checklistLines, markOnchecks, mergeLines, ONCHECKS, wantedLines } from '../src/foresight/onchecks.ts'
 import { WANTED_CHECKS } from '../src/rules/wanted.ts'
 import { FORESIGHT_RULES } from '../src/rules/index.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
@@ -78,5 +78,66 @@ describe('wanted checks in Foresight: grey context, never in the verdict', () =>
     const ids = new Set(FORESIGHT_RULES.map((r) => r.id))
     expect(WANTED_CHECKS.some((w) => ids.has(w.id))).toBe(false)
     expect(verdictFor(noStick, proven).verdict).toBe('GO')
+  })
+})
+
+describe('the merged checklist (round-5-checklist.md): 9 live lines, worst state of the parts, nothing hidden', () => {
+  const SNAP = 'Robot snapshot matches the code'
+  const DEV = 'Devices connected, motors cool'
+  const none = { findings: [], skipped: [], crashed: [] }
+  const run = (report: Report, snapshotUsed = true) => checklistLines({ verdict: verdictFor(report, proven), report, snapshotUsed })
+  const get = (lines: ReturnType<typeof run>, name: string) => lines.find((l) => l.line === name)!
+
+  it('10 live lines (the 9 Kevin approved + CTRE devices healthy, added on main the same day) and 5 folded (4 by eye + the gyro), in the team\'s order', () => {
+    const lines = run(none)
+    expect(lines.filter((l) => !l.folded).map((l) => l.line)).toEqual([
+      'Fresh battery installed', 'Controllers plugged into the DS and working', 'All cameras on and detecting AprilTags', 'No alerts on Elastic',
+      'Mechanisms zeroed', SNAP, DEV, 'CTRE devices healthy', 'Log stick in', 'No undeployed changes'])
+    expect(lines.filter((l) => l.folded).map((l) => l.line)).toEqual(['Backup controller', 'Elastic open with the correct layout', 'Correct auto selected in Elastic', 'Other windows closed on the DS laptop', 'Gyro seems normal'])
+    expect(get(lines, SNAP).parts.map((p) => p.line)).toHaveLength(4)
+    expect(get(lines, DEV).parts.map((p) => p.line)).toEqual(['All device values updating', 'No motors overheating'])
+  })
+
+  it('the gyro is folded, and its drift stays in the verdict\'s context list', () => {
+    const r: Report = { findings: [finding('foresight/gyro-still-drift', 'info', 'Gyro moved 0.02°')], skipped: [], crashed: [] }
+    const v = verdictFor(r, proven)
+    expect(get(run(r), 'Gyro seems normal')).toMatchObject({ folded: true, state: 'context' })
+    expect(v.items.filter((i) => i.level === 'grey').map((i) => i.finding.rule)).toEqual(['foresight/gyro-still-drift'])
+  })
+
+  it('OK + not checked is not checked; the detail names the part that was not checked', () => {
+    const r: Report = { findings: [], skipped: [{ rule: 'foresight/motor-temperature', reason: 'missing /Hood/Temp' }], crashed: [] }
+    expect(get(run(r), DEV)).toMatchObject({ state: 'not checked', detail: 'No motors overheating: missing /Hood/Temp' })
+    // Without a snapshot all four say the same thing: named together, once.
+    const l = get(run(none, false), SNAP)
+    expect(l.state).toBe('not checked')
+    expect(l.detail).toMatch(/^CANcoder offsets correct and unchanged, Swerve ratio unchanged, All CAN devices licensed and ID'd, Current limits as the code sets them: no robot snapshot/)
+    expect(l.detail.split(';')).toHaveLength(1)
+  })
+
+  it('all parts OK: OK', () => {
+    expect(get(run(none), SNAP).state).toBe('ok')
+    expect(get(run(none), DEV).state).toBe('ok')
+  })
+
+  it('amber beats OK and not checked; red beats amber; the detail names the failing part', () => {
+    const amber: Report = { findings: [finding('snapshot/swerve-ratio', 'warning', 'Front Left drive ratio is 6.1')], skipped: [{ rule: 'snapshot/current-limits', reason: 'no limits read' }], crashed: [] }
+    const a = get(run(amber), SNAP)
+    expect(a.state).toBe('amber')
+    expect(a.detail).toMatch(/^Swerve ratio unchanged: Front Left drive ratio is 6.1; Current limits as the code sets them: no limits read/)
+    const red: Report = { findings: [finding('can/device-dropout', 'warning', 'Intake roller follower dropped off CAN'), finding('foresight/motor-temperature', 'warning', 'Back Left drive at 61 C')], skipped: [], crashed: [] }
+    const proven2 = { ...proven }
+    const v = verdictFor(red, proven2)
+    const l = checklistLines({ verdict: v, report: red, snapshotUsed: true }).find((x) => x.line === DEV)!
+    expect(l.state).toBe(markOnchecks({ verdict: v, report: red, snapshotUsed: true }).filter((x) => x.group === 'devices').some((x) => x.state === 'red') ? 'red' : 'amber')
+    expect(l.detail).toMatch(/Intake roller follower dropped off CAN/)
+    expect(l.detail).toMatch(/Back Left drive at 61 C/)
+  })
+
+  it('mergeLines: worst state by rank, red over amber over to do over not checked over ok', () => {
+    const mk = (state: any) => ({ section: 's', line: state, state, detail: state, group: 'devices' })
+    for (const [states, want] of [[['ok', 'not checked'], 'not checked'], [['ok', 'amber'], 'amber'], [['amber', 'red'], 'red'], [['not checked', 'amber'], 'amber'], [['ok', 'ok'], 'ok']] as const) {
+      expect(mergeLines(states.map(mk))[0].state).toBe(want)
+    }
   })
 })
