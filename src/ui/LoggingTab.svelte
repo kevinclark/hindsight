@@ -24,6 +24,7 @@
   <span class:e={count('not logged') > 0}>{count('not logged')} not logged</span> · {count('profile gap')} with no key in the robot profile
 </p>
 {#if cov.misfit}<p class="warn">{cov.misfit}</p>{/if}
+{#if cov.hoot}<p class={`hoot ${cov.hoot.state}`}>{cov.hoot.text}</p>{/if}
 
 <section>
   <h3>To do ({todo.length})</h3>
@@ -93,6 +94,7 @@
   .e { color: var(--error); font-weight: 600; }
   .w { color: var(--warning); font-weight: 600; }
   .warn { color: var(--warning); font-size: 0.85rem; }
+  .hoot { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.5rem; }
   section, details { margin-top: 1.25rem; }
   h3 { font-size: 1rem; margin: 0 0 0.25rem; }
   details summary { cursor: pointer; }
