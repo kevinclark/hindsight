@@ -38,6 +38,7 @@
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
   const ICON = { error: '●', warning: '▲', info: '○' } as const
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
+  // The headline shows only the rule's judged measurement: the evidence fallback reads oddly beside a title ("0 times during the match" next to "(1×)").
   const key = $derived(keyNumber(finding))
   // Only the list's first active error starts open (startOpen), and anything that came back after a fix; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
@@ -64,7 +65,7 @@
         {finding.title}
         {#if nested && finding.explainedBy}<span class="why">↳ {finding.explainedBy.why}</span>{/if}
         {#if note}<span class="why">↳ {note}</span>{/if}
-        {#if !key.inTitle && key.value}<span class="key" title={key.label}>{key.value}{key.label ? ` ${key.label}` : ''}</span>{/if}
+        {#if finding.measured?.length && !key.inTitle}<span class="key" title={key.label}>{key.value}{key.label ? ` ${key.label}` : ''}</span>{/if}
       </span>
       <span class="rule">{finding.rule}</span>
     </summary>
