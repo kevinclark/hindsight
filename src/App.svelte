@@ -413,6 +413,8 @@
   .tag { margin: 0.1rem 0 1rem; color: var(--muted); }
   .drop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.9rem 1rem; border: 1.5px dashed var(--border); border-radius: 8px; }
   .drop.compact { padding: 0.25rem 0.75rem; gap: 0.25rem 0.75rem; }
+  /* With a log loaded the drop row shows only while a file is dragged: float it over the page so nothing moves under the pointer. */
+  .drop.compact.dragging { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 30; padding: 0.75rem 1.25rem; pointer-events: none; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); }
   .drop.compact .button { padding: 0.15rem 0.75rem; }
   .drop.dragging { border-color: var(--focus); background: var(--hover); }
   .button { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
