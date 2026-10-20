@@ -78,7 +78,7 @@
   .menu-button:hover, .menu-button.open { border-color: var(--muted); }
   .menu-button:focus-visible, .list button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
   .caret { margin-left: 0.35rem; font-size: 0.8em; color: var(--muted); }
-  .list { position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; display: flex; flex-direction: column; min-width: 100%; width: max-content; max-width: min(22rem, calc(100vw - 2rem)); padding: 0.25rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); }
+  .list { position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; display: flex; flex-direction: column; min-width: 100%; width: max-content; max-width: min(22rem, calc(100vw - 3rem)); padding: 0.25rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); }
   .right .list { left: auto; right: 0; }
   .list button { display: flex; flex-direction: column; align-items: flex-start; min-height: 28px; padding: 0.2rem 0.7rem; border: none; border-radius: 4px; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
   .list button:hover { background: var(--hover); }

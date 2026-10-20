@@ -13,14 +13,12 @@
   import { nest, partitionStanding, withParents } from '../report/finding-tree.ts'
   import { cardTitle } from '../report/titles.ts'
 
-  let { analysis, issues, standing = new Set<string>(), onMark, audienceSelect = false }: {
+  let { analysis, issues, standing = new Set<string>(), onMark }: {
     analysis: Analysis
     issues: Map<string, IssueEvent>
     /** Issue keys that fired in every match of this match's session (session.ts standingKeys); empty when no loaded session holds it. */
     standing?: Set<string>
     onMark: (finding: Finding, status: IssueStatus, note: string) => void
-    /** Audience as one select ("Showing: Everyone · 6 red") on the counts line, instead of four chips. */
-    audienceSelect?: boolean
   } = $props()
 
   // Who is reading: the software team, the pit crew or the drive team see the findings they can act on.
@@ -81,22 +79,6 @@
   }
 </script>
 
-{#if audienceSelect}
-  <div class="line">
-    <label class="showing">Showing:
-      <select aria-label="Show findings for" onchange={(e) => choose((e.currentTarget as HTMLSelectElement).value as Audience | 'all')}>
-        {#each AUDIENCES as a (a.id)}
-          {@const errors = red(a.id)}
-          <option value={a.id} selected={audience === a.id}>{a.label}{errors ? ` · ${errors} red` : ''}</option>
-        {/each}
-      </select>
-    </label>
-    <p class="counts">
-      <span class="e">{count('error')} errors</span> · <span class="w">{count('warning')} warnings</span> · {count('info')} info ·
-      {known.length} known · {analysis.report.skipped.length} rules not checked
-    </p>
-  </div>
-{:else}
 <div class="audience" role="radiogroup" aria-label="Show findings for">
   {#each AUDIENCES as a (a.id)}
     {@const errors = red(a.id)}
@@ -110,7 +92,6 @@
   <span class="e">{count('error')} errors</span> · <span class="w">{count('warning')} warnings</span> · {count('info')} info ·
   {known.length} known · {analysis.report.skipped.length} rules not checked
 </p>
-{/if}
 
 {#if analysis.report.crashed.length}
   <div class="crashed" role="alert">
@@ -196,10 +177,6 @@
   .counts { color: var(--muted); margin: 0 0 0.35rem; }
   .e { color: var(--error); font-weight: 600; }
   .w { color: var(--warning); font-weight: 600; }
-  .line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 1rem; margin: 0 0 0.35rem; }
-  .line .counts { margin: 0; }
-  .showing { color: var(--muted); font-size: 0.85rem; }
-  .showing select { min-height: 28px; margin-left: 0.25rem; padding: 0 0.3rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; font-size: 0.85rem; }
   .audience { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.5rem; }
   .audience button { padding: 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg); font: inherit; font-size: 0.85rem; cursor: pointer; }
   .audience button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }

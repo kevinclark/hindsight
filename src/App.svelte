@@ -49,8 +49,7 @@
     { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'wizard', label: 'Limits wizard' },
     { id: 'snapshot', label: 'Robot snapshot' }, { id: 'profile', label: 'Robot profile' }, { id: 'foresight', label: 'Foresight' },
   ] as const
-  // With a log loaded the six modes are one menu button and the file actions another ("File"): fewer controls above the first finding.
-  let fileInput = $state<HTMLInputElement>()
+  // With a log loaded the dashed drop row is gone (dropping anywhere still works): Choose logs… stays beside the File menu.
   function chosen(e: Event) { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }
   let busy = $state(false)
   let dragging = $state(false)
@@ -192,11 +191,7 @@
 </header>
 
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
-  {#if current}
-    <Menu name="Mode" choice label={MODES.find((m) => m.id === mode)?.label ?? ''} items={MODES.map((m) => ({ id: m.id, label: m.label, checked: m.id === mode, onselect: () => (mode = m.id) }))} />
-  {:else}
-    {#each MODES as m (m.id)}<button class:active={mode === m.id} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
-  {/if}
+  {#each MODES as m (m.id)}<button class:active={mode === m.id} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
 </nav>
 </div>
 
@@ -253,9 +248,11 @@
     <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
     <span class="actions">
       {#if busy}<span class="busy">Reading…</span>{/if}
-      <input class="file-hidden" type="file" multiple accept=".wpilog,.dslog,.jsonl" bind:this={fileInput} onchange={chosen} tabindex="-1" aria-hidden="true" />
+      <label class="button choose">
+        <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={chosen} />
+        Choose logs…
+      </label>
       <Menu label="File" align="right" items={[
-        { id: 'choose', label: 'Choose logs…', hint: 'or drop .wpilog, .dslog or history files anywhere on the page', onselect: () => fileInput?.click() },
         { id: 'claude', label: 'Download for Claude', hint: 'findings.json: findings, evidence and short data windows', onselect: downloadForClaude },
         { id: 'slack', label: 'Save for Slack', hint: 'print dialog (choose Save as PDF) and a phone-sized card (PNG)', onselect: saveForSlackReview },
         { id: 'clear', label: 'Clear all', hint: 'forget the loaded logs', onselect: clearAll },
@@ -291,7 +288,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={current} {issues} {standing} onMark={mark} audienceSelect />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={current} {issues} {standing} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>
@@ -377,7 +374,7 @@
   .match-head .problem { margin: 0; }
   .match-head h2 { margin: 0; font-size: 1.25rem; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-  .file-hidden { display: none; }
+  .choose { min-height: 28px; padding: 0.15rem 0.7rem; box-sizing: border-box; }
   .meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
   .dirty { color: var(--warning); }
   .more > summary { cursor: pointer; color: var(--muted); min-height: 24px; }
