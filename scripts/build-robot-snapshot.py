@@ -3,8 +3,9 @@
 
     python scripts/build-robot-snapshot.py [--out dist-snapshot] [--allow-dirty]
 
-Needs PyInstaller, pinned by hash: python -m pip install --require-hashes -r scripts/requirements-build.txt. Builds
-tools/robot-snapshot.py as committed, with its BUILD line set to the git commit. Release files come only from
+Needs PyInstaller, pinned by hash:
+    python -m pip install --require-hashes --only-binary=:all: --ignore-installed -r scripts/requirements-build.txt
+Builds tools/robot-snapshot.py as committed, with its BUILD line set to the git commit. Release files come only from
 .github/workflows/robot-snapshot.yml; this script is what that workflow runs. Writes robot-snapshot-mac.zip (macOS)
 or robot-snapshot-windows.zip (Windows) in --out.
 Standard library only."""
