@@ -286,7 +286,7 @@ async function sessionView() {
     await tab.waitFor(`/^${files.length} of ${files.length} logs/.test(document.querySelector('.progress')?.innerText ?? '')`, 300, 'every log to be read')
     await sleep(800)
     await shootBoth(tab, 14, 'session', `Session view, ${files.length} logs`, 'all-logs')
-    await shootBoth(tab, 15, 'session-trends', 'Session view: Per match trends', 'all-logs', '.multiples')
+    await shootBoth(tab, 15, 'session-trends', 'Session view: Per match trends', 'all-logs', 'table.trends')
   } finally { await tab.close() }
 }
 

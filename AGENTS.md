@@ -15,6 +15,13 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 - A cleanup that must not change what a rule finds is proved, not argued: `npm run golden -- <out.json> <log
   folder> ...` before and after, then `cmp`. It records every finding, evidence value, plot and not-checked
   reason. Rules that never fire on the logs you have are covered only by the unit tests.
+- A new rule adds a "not checked" entry, and one to meta/not-checked's count and evidence, on every log that
+  lacks its keys, so golden can't stay byte-identical. Prove it adds nothing else: strip those from both runs and
+  require zero residual differences per log (2026-10-20: 264 logs, can/device-rebooted).
+
+## Plain-node scripts
+
+- `src/version.ts` imports `package.json`, which plain node (`--experimental-strip-types`: golden, check, scripts) can't load without a JSON import attribute. Code those scripts reach (rules, coverage, session) must not import it, even through `src/report/review-model.ts`; shared report helpers go in their own file (`src/report/repo-paths.ts`).
 
 ## Session summaries (`src/session/`)
 
@@ -80,6 +87,15 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
 - Hardware is read only on a real robot, and every read is an AdvantageKit input, so a replay reads it back. A failed
   read is logged, never thrown: the library runs inside someone else's robot code.
 - The `/proc` fixtures in `core/src/test/resources/proc` are synthetic.
+- Reading a team's CTRE device: get each signal with `getX(false)` and `.clone()` it. A plain `getX()` looks the
+  signal up again with errors reported and refreshes the team's own cached object. Read clones with
+  `refresh(false)`: `BaseStatusSignal.refreshAll` prints "CAN frame not received" to the DS console for every
+  missing signal (9 lines per device at boot, seen in CTRE's simulator).
+- Phoenix's reset flag (`getResetOccurredChecker()`) also fires with a device's first answer after start-up
+  (`hasUpdated()` is true on the first valid timestamp): count a reboot only when the device was already answering.
+- Phoenix code can't run in companion's own tests (no natives). To exercise it, put a test in package
+  `com.frc8033.hindsight` inside a WPILib robot project (GradleRIO sets up the simulator) built against the
+  published companion jar; `HAL.initialize(500, 0)` first.
 
 Tests:
 

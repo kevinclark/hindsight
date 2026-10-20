@@ -16,7 +16,7 @@ import {
 import { SESSION_FINDINGS_SCHEMA } from '../session/export.ts'
 import type { MatchSummary, RuleStatus } from '../session/summary.ts'
 import type { Severity } from '../rules/types.ts'
-import { TREND_METRICS } from '../session/trends.ts'
+import { trendRows } from '../session/trends.ts'
 import { titleHasValue } from './review-model.ts'
 import type { CardModel, Tone } from './card.ts'
 import { ruleById } from '../rules/index.ts'
@@ -67,9 +67,11 @@ export interface ReportFinding {
   wrongIn: string[]
 }
 
-export interface TrendPoint { /** The file name: unique even when two matches share a label (a replay). */ id: string; match: string; value: number; x: number; y: number; letter: string }
+export interface TrendPoint { /** The file name: unique even when two matches share a label (a replay). */ id: string; match: string; value: number; x: number; y: number; letter: string; worst: boolean }
 export interface TrendPanel {
   key: string; label: string; unit: string
+  /** The Session view's verdict for this number ("Under 7 V in 8 of 8 matches"). */
+  verdict: string
   /** y of the rule's line, when it has one. */
   lineY: number | null
   points: TrendPoint[]
@@ -78,6 +80,8 @@ export interface TrendPanel {
 }
 export interface Trends {
   width: number; height: number
+  /** Space kept clear round the plot: the dots and the dashed line stay this far from the edge. */
+  pad: number
   panels: TrendPanel[]
   /** One letter per battery, so identity never rests on colour. */
   batteries: { letter: string; id: string }[]
@@ -223,25 +227,28 @@ export function sessionNotes(session: Session): string[] {
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const letter = (i: number) => (i < LETTERS.length ? LETTERS[i] : String(i + 1))
 
-export function trendsModel(matches: MatchSummary[], typedBatteries: Record<string, string> = {}, width = 100, height = 34, pad = 5): Trends {
+export function trendsModel(matches: MatchSummary[], typedBatteries: Record<string, string> = {}, width = 100, height = 16, pad = 3): Trends {
   const battery = (m: MatchSummary) => m.batteryId ?? typedBatteries[m.fileName] ?? ''
   const ids = [...new Set(matches.map(battery).filter(Boolean))]
-  const panels = TREND_METRICS.map((metric): TrendPanel => {
-    const vals = matches.map((m) => m.metrics[metric.key])
-    const nums = vals.filter((v): v is number => v !== null && Number.isFinite(v))
-    if (nums.length === 0) return { key: metric.key, label: metric.label, unit: metric.unit, lineY: null, points: [], range: 'not in these logs' }
-    let lo = Math.min(...nums, metric.line ?? Infinity), hi = Math.max(...nums, metric.line ?? -Infinity)
+  // The rows, verdicts and order are the Session view's (trendRows): the printed numbers cannot disagree with the screen.
+  const panels = trendRows(matches).map((row): TrendPanel => {
+    const metric = row.metric
+    const base = { key: metric.key, label: metric.label, unit: metric.unit, verdict: row.verdict }
+    const w = row.worstIndex
+    const nums = row.values.filter((v): v is number => v !== null)
+    if (nums.length === 0) return { ...base, lineY: null, points: [], range: 'not in these logs' }
+    let lo = Math.min(...nums, row.line ?? Infinity), hi = Math.max(...nums, row.line ?? -Infinity)
     if (hi - lo < 1e-9) { lo -= 1; hi += 1 }
     const x = (i: number) => pad + (matches.length === 1 ? (width - 2 * pad) / 2 : (i * (width - 2 * pad)) / (matches.length - 1))
     const y = (v: number) => height - pad - ((v - lo) / (hi - lo)) * (height - 2 * pad)
     const points: TrendPoint[] = []
-    vals.forEach((v, i) => { if (v !== null && Number.isFinite(v)) points.push({ id: matches[i].fileName, match: matchLabel(matches[i]), value: v, x: x(i), y: y(v), letter: battery(matches[i]) ? letter(ids.indexOf(battery(matches[i]))) : '' }) })
+    row.values.forEach((v, i) => { if (v !== null) points.push({ id: matches[i].fileName, match: matchLabel(matches[i]), value: v, x: x(i), y: y(v), letter: battery(matches[i]) ? letter(ids.indexOf(battery(matches[i]))) : '', worst: i === w }) })
     return {
-      key: metric.key, label: metric.label, unit: metric.unit, lineY: metric.line !== undefined ? y(metric.line) : null, points,
+      ...base, lineY: row.line !== null ? y(row.line) : null, points,
       range: `${Math.min(...nums).toFixed(metric.digits)}–${Math.max(...nums).toFixed(metric.digits)}`,
     }
   })
-  return { width, height, panels, batteries: ids.map((id, i) => ({ letter: letter(i), id })), order: matches.map(matchLabel), anyUnlabelled: matches.some((m) => !battery(m)) }
+  return { width, height, pad, panels, batteries: ids.map((id, i) => ({ letter: letter(i), id })), order: matches.map(matchLabel), anyUnlabelled: matches.some((m) => !battery(m)) }
 }
 
 export function gridModel(session: Session): GridModel {
