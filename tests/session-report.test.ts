@@ -1,11 +1,15 @@
 // The Session report: the model behind the printed report and the phone card.
 import { describe, expect, it } from 'vitest'
 import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE } from '../src/report/card.ts'
-import { bottomLine, buildText, cameBack, gridModel, sessionBase, sessionCard, sessionModel, trendsModel, TREND_METRICS } from '../src/report/session-model.ts'
+import { bottomLine, buildText, cameBack, gridModel, sessionBase, sessionCard, sessionModel, trendsModel } from '../src/report/session-model.ts'
+import { TREND_METRICS } from '../src/session/trends.ts'
 import { groupSessions, mergeFindings, type Session } from '../src/session/session.ts'
 import { summarizeLog, type MatchSummary } from '../src/session/summary.ts'
 import type { IssueEvent } from '../src/triage/history.ts'
-import { CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
+import { joinPieces, summarizeMatch } from '../src/session/summary.ts'
+import { buildSessionJson } from '../src/session/export.ts'
+import { ONCE_FOLD_ABOVE, crashedNote } from '../src/report/session-model.ts'
+import { analyzeFixture, CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
 
 const METRICS = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSpeedPct: 90, loopOverrunPct: 5, visionOutlierPct: null }
 const fit = { profileId: 'p @ main', name: 'Test robot', code: { repo: 'r', branch: 'main', sha: 'abc1234def' }, how: 'signals', note: null, present: 40, total: 40 }
@@ -42,8 +46,9 @@ describe('session report model', () => {
   })
   it('lists exactly the view\'s merged findings (never info), worst first, count equal', () => {
     const merged = mergeFindings(s)
-    expect(m.findings.map((f) => f.key)).toEqual(merged.map((f) => f.key))
-    expect(m.findings[0].severity).toBe('error')
+    expect(m.findings.map((f) => f.key).sort()).toEqual(merged.map((f) => f.key).sort())
+    // The report's own order: confidence first, so the consistent warning comes before the once-only error.
+    expect(m.findings.map((f) => f.confidence)).toEqual(['consistent', 'once'])
   })
   it('titles lose the per-match robot-time aside; the range uses "line", never "limit"', () => {
     const follow = m.findings.find((f) => f.key === FOLLOW.key)!
@@ -60,7 +65,8 @@ describe('session report model', () => {
   })
   it('the grid has a column per match, rules that fired anywhere first, one symbol-able state per cell', () => {
     const g = gridModel(s)
-    expect(g.columns).toEqual(['Qualification 1', 'Qualification 2', 'Qualification 3'])
+    expect(g.columns.map((c) => c.label)).toEqual(['Qualification 1', 'Qualification 2', 'Qualification 3'])
+    expect(new Set(g.columns.map((c) => c.id)).size).toBe(3)
     expect(g.rows[0]).toMatchObject({ rule: 'mech/follower-mismatch', cells: ['fired', 'fired', 'fired'], rate: 'Consistent: 3 of 3', firedAnywhere: true })
     const firstQuiet = g.rows.findIndex((r) => !r.firedAnywhere)
     expect(g.rows.slice(firstQuiet).every((r) => !r.firedAnywhere)).toBe(true)
@@ -121,9 +127,9 @@ describe('session phone card', () => {
   })
   it('items are the report\'s merged findings in the same order, as "SEVERITY · CONFIDENCE" with "N of M"', () => {
     const c = sessionCard(m)
-    expect(c.items.map((i) => i.word)).toEqual(['ERROR · ONCE', 'WARNING · CONSISTENT'])
-    expect(c.items[0].number).toBe('1 of 3 matches')
-    expect(c.items[1].number).toBe('3 of 3 matches · slowest follower 70–80 % (line 85 %, 18 % past it)')
+    expect(c.items.map((i) => i.word)).toEqual(['WARNING · CONSISTENT', 'ERROR · ONCE'])
+    expect(c.items[1].number).toBe('1 of 3 matches')
+    expect(c.items[0].number).toBe('3 of 3 matches · slowest follower 70–80 % (line 85 %, 18 % past it)')
     expect(card.svg).toContain('ERROR · ONCE')
     expect(card.svg).toContain('3 of 3 matches')
     expect(card.height).toBeLessThanOrEqual(CARD_MAX_HEIGHT)
@@ -143,13 +149,87 @@ describe('session phone card', () => {
   })
 })
 
+describe('review fixes', () => {
+  it('two matches with one label (a replay) have distinct column and point ids, and the component renders', async () => {
+    const s = groupSessions([match(1, [FOLLOW]), { ...match(1, [FOLLOW]), fileName: 'q1-replay.wpilog', playedAt: Date.UTC(2026, 9, 17, 22, 30) }, match(2, [])])[0]
+    const m = sessionModel(s, new Map(), { 'q1.wpilog': 'B-1' })
+    expect(m.grid.columns.map((c) => c.label).sort()).toEqual(['Qualification 1', 'Qualification 1', 'Qualification 2'])
+    expect(new Set(m.grid.columns.map((c) => c.id)).size).toBe(3)
+    for (const p of m.trends.panels) expect(new Set(p.points.map((x) => x.id)).size).toBe(p.points.length)
+    const { render } = await import('svelte/server')
+    const { default: SessionReport } = await import('../src/ui/SessionReport.svelte')
+    const html = render(SessionReport, { props: { session: s, issues: new Map(), typedBatteries: {} } }).body
+    expect(html).toContain('Hindsight session report')
+    expect(html.match(/Qualification 1/g)!.length).toBeGreaterThan(2)
+  })
+  it('summarizing a match: a rule that crashed is "not checked" with the reason, never quiet', () => {
+    const a = analyzeFixture('p0-brownout').analyses[0]
+    const report = { ...a.report, findings: a.report.findings.filter((f) => f.rule !== 'loop/overrun'), skipped: a.report.skipped.filter((x) => x.rule !== 'loop/overrun'), crashed: [{ rule: 'loop/overrun', reason: 'Error: boom' }] }
+    const r = summarizeMatch(a.match, report, 1).rules['loop/overrun']
+    expect(r).toMatchObject({ status: 'not checked', reason: 'crashed: Error: boom' })
+  })
+  it('the downloaded file, the PDF footer and the CLI name the same file', () => {
+    const s = three()
+    expect(sessionModel(s).jsonFile).toBe(`${sessionBase(s.label)}.session-findings.json`)
+  })
+  it('session-findings.json carries each match\'s build (additive, schema stays /1)', () => {
+    const j = buildSessionJson(three()) as { schema: string; matches: { build: unknown }[] }
+    expect(j.schema).toBe('hindsight.session-findings/1')
+    expect(j.matches[0].build).toEqual({ sha: 'abc1234', branch: 'main', uncommitted: false })
+    expect(buildSessionJson(groupSessions([match(1, [], { build: undefined })])[0]) as { matches: { build: unknown }[] }).toMatchObject({ matches: [{ build: null }] })
+  })
+  it('a consistent warning outranks a once-only error on the card, then severity, then match count', () => {
+    const c = sessionCard(sessionModel(three()))
+    expect(c.items[0]).toMatchObject({ word: 'WARNING · CONSISTENT' })
+    expect(c.items[1]).toMatchObject({ word: 'ERROR · ONCE' })
+  })
+  it('the card leaves out a measured number the title already says', () => {
+    const brown = { ...BROWN, title: 'Browned out 53 times' }
+    const s = groupSessions([match(1, [{ ...brown }]), match(2, []), match(3, [])])[0]
+    ;(s.matches[0].rules['power/brownout'].findings[0] as { measured?: unknown }).measured = [{ label: 'brownouts', value: 53, unit: '', threshold: undefined }]
+    expect(sessionCard(sessionModel(s)).items[0].number).toBe('1 of 3 matches')
+    ;(s.matches[0].rules['power/brownout'].findings[0] as { measured?: unknown }).measured = [{ label: 'lowest voltage', value: 5.99, unit: 'V', threshold: undefined }]
+    expect(sessionCard(sessionModel(s)).items[0].number).toBe('1 of 3 matches · lowest voltage 5.99 V')
+  })
+  it('folds the once-only findings into one line when there are more than 8; repeated ones keep their rows', () => {
+    const once = (i: number): Fire => ({ key: `loop/overrun · ${i}`, rule: i % 2 ? 'loop/overrun' : 'power/brownout', severity: i % 3 ? 'warning' : 'error', title: `Thing ${i}` })
+    const many = Array.from({ length: 60 }, (_, i) => once(i))
+    const s = groupSessions([match(1, many), match(2, [FOLLOW]), match(3, [FOLLOW])])[0]
+    const m = sessionModel(s)
+    expect(m.findings.length).toBe(61)
+    expect(m.rows.length).toBeLessThanOrEqual(25)
+    expect(m.rows.map((r) => r.key)).toEqual([FOLLOW.key])
+    expect(m.onceFold).toMatchObject({ count: 60, rules: 2 })
+    expect(m.onceFold!.text).toMatch(/^power\/brownout ×30 \(Qualification 1\); loop\/overrun ×30 \(Qualification 1\)$/)
+    // 8 or fewer: no fold.
+    const few = sessionModel(groupSessions([match(1, many.slice(0, ONCE_FOLD_ABOVE)), match(2, []), match(3, [])])[0])
+    expect(few.onceFold).toBeNull()
+    expect(few.rows.length).toBe(ONCE_FOLD_ABOVE)
+    // The card still lists every finding, not the fold.
+    expect(sessionCard(m).items.length).toBe(61)
+  })
+  it('joining the pieces of a split match: uncommitted if any piece ran uncommitted code', () => {
+    const j = joinPieces([match(1, []), match(1, [], { fileName: 'q1b.wpilog', build: { sha: 'abc1234', branch: 'main', uncommitted: true } })])
+    expect(j.build).toEqual({ sha: 'abc1234', branch: 'main', uncommitted: true })
+    expect(joinPieces([match(1, []), match(1, [], { fileName: 'q1b.wpilog' })]).build!.uncommitted).toBe(false)
+  })
+  it('a crashed rule counts as not checked, with a note in the report', async () => {
+    const crashed = match(1, [], {})
+    crashed.rules['loop/overrun'] = { status: 'not checked', reason: 'crashed: boom', findings: [] }
+    const s = groupSessions([crashed, match(2, [])])[0]
+    expect(crashedNote(s)).toMatch(/^1 rule crashed in 1 match .*loop\/overrun/)
+    expect(sessionModel(s).notes.some((n) => /crashed in 1 match/.test(n))).toBe(true)
+    expect(gridModel(s).rows.find((r) => r.rule === 'loop/overrun')!.cells).toEqual(['not checked', 'quiet'])
+  })
+})
+
 describe.skipIf(!haveCalGames)('the three CalGames logs as a session report', () => {
   const session = haveCalGames ? groupSessions([CALGAMES.q13, CALGAMES.q21, CALGAMES.p0].map((p) => summarizeLog(readInput(p))!))[0] : undefined
   it('follower mismatch is "Consistent" 3 of 3 and brownout "Once" 1 of 3, on the report and the card, from one model', () => {
     const m = sessionModel(session!)
     expect(m.findings.find((f) => f.rule === 'mech/follower-mismatch')).toMatchObject({ confidenceWord: 'Consistent', ratio: '3 of 3' })
     expect(m.findings.find((f) => f.rule === 'power/brownout')).toMatchObject({ confidenceWord: 'Once', ratio: '1 of 3' })
-    expect(m.findings.map((f) => f.key)).toEqual(mergeFindings(session!).map((f) => f.key))
+    expect(m.findings.map((f) => f.key).sort()).toEqual(mergeFindings(session!).map((f) => f.key).sort())
     expect(m.uncommitted).toBe(1)
     const c = sessionCard(m)
     expect(c.items.length).toBe(m.findings.length)

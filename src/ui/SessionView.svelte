@@ -18,7 +18,7 @@
   import SessionReport from './SessionReport.svelte'
   import { buildCard } from '../report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
-  import { sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
+  import { crashedNote, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
 
   let { issues, onOpen, hasSession = $bindable(false) }: { issues: Map<string, IssueEvent>; onOpen: (files: File[]) => void; hasSession?: boolean } = $props()
 
@@ -174,8 +174,7 @@
   }
   function download() {
     if (!session) return
-    const name = session.label.replace(/[^\w-]+/g, '-').toLowerCase()
-    downloadText(`${name}.session-findings.json`, JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1))
+    downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1))
   }
   // "Save for Slack": the phone card as a PNG, then the print dialog (Save as PDF; the title names the file).
   const cardOf = (s: Session) => buildCard(sessionCard(sessionModel(s, issues, typedBatteries)))
@@ -222,7 +221,7 @@
   const fmt = (x: number) => String(+x.toFixed(Math.abs(x) >= 100 ? 0 : 2))
 </script>
 
-<div class:screen-only={!!session}>
+<div class:screen-only={!!session} data-session-view>
 <p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
 
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
@@ -269,6 +268,7 @@
     {#each [...PROFILES, ...stored] as p (profileId(p))}<option value={profileId(p)} selected={profileId(p) === chosenId}>{profileId(p)}</option>{/each}
   </select></label></p>
   {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
+  {#if crashedNote(session)}<p class="note warn">{crashedNote(session)}</p>{/if}
   {#if misfits.length}
     <p class="note warn"><strong>{misfits.length} of {session.matches.length} matches don't fit their robot profile</strong>: as few as {Math.min(...misfits.map((m) => m.robot.present))} of its {misfits[0].robot.total} signals are in them. The rules about specific motors, devices, cameras and mechanisms were not run on them, and their auto and teleop lengths were measured from the logs. Add a profile for this robot, or choose one above.</p>
   {/if}
@@ -312,7 +312,7 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">● fired · quiet – not checked (signals missing, or no robot profile fits the log). Click a match to open it in Match review.</p>
+  <p class="hint">● fired · quiet – not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
 
   <h3>Per match</h3>
   <Trends matches={session.matches} {typedBatteries} />

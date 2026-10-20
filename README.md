@@ -48,7 +48,7 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   The Session view has the same button: page 1 is the match count, a bottom line, the merged findings with their
   confidence in words ("Consistent", "3 of 3 where it could be checked", the measured range and its line), the trends
   as small multiples (battery identity is a letter, not just a colour) and the notes; page 2 is the rule × match grid.
-  The card is `<label>.session-card.png`, the PDF `<label>.session-report`.
+  The card is `<label>.session-card.png`, the PDF `<label>.session-report.pdf`.
 - **From the command line**, for Claude or a script: `node --experimental-strip-types scripts/report.ts <out-dir> <log>
   [<dslog>] [-- <log> …]` builds first (`--no-build` skips), drives headless Chrome on `hindsight.html` and writes
   `<log>.report.pdf`, `<log>.card.png` and `<log>.findings.json`. `scripts/chrome-foresight-report-check.ts <out-dir>`

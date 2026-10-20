@@ -4,11 +4,10 @@
 -->
 <script lang="ts">
   import type { MatchSummary, MatchMetrics } from '../session/summary.ts'
-  import { TREND_METRICS } from '../report/session-model.ts'
+  import { TREND_METRICS } from '../session/trends.ts'
 
   let { matches, typedBatteries }: { matches: MatchSummary[]; typedBatteries: Record<string, string> } = $props()
 
-  const METRICS = TREND_METRICS
   // Five colours; batteries beyond five also get a letter on the point so none can be confused.
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
   const battery = (m: MatchSummary) => m.batteryId ?? typedBatteries[m.fileName] ?? ''
@@ -29,7 +28,7 @@
 </script>
 
 <div class="multiples">
-  {#each METRICS as metric (metric.key)}
+  {#each TREND_METRICS as metric (metric.key)}
     {@const p = points(metric.key, metric.line)}
     <figure>
       <figcaption>{metric.label} <span>({metric.unit})</span></figcaption>

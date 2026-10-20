@@ -18,7 +18,7 @@ export function buildSessionJson(session: Session, issues: Map<string, IssueEven
       file: m.fileName, ...(m.pieces ? { pieces: m.pieces } : {}), robot: m.robot, playedAt: m.playedAt === null ? null : new Date(m.playedAt).toISOString(), playedAtSource: m.playedAtSource,
       clockNote: m.clockNote, event: m.event, match: m.matchLabel, onField: m.onField,
       battery: m.batteryId ?? typedBatteries[m.fileName] ?? null, batterySource: m.batteryId ? 'logged' : typedBatteries[m.fileName] ? 'typed' : null,
-      metrics: m.metrics,
+      build: m.build ?? null, metrics: m.metrics,
     })),
     grid: ruleGrid(session).map((r) => ({ rule: r.rule, cells: r.cells, fired: r.fired, checkable: r.checkable, confidence: r.confidence, wilson95: r.interval })),
     findings: mergeFindings(session).map((f) => ({

@@ -14,21 +14,12 @@ import {
   type Confidence, type MergedFinding, type RuleRow, type Session,
 } from '../session/session.ts'
 import { SESSION_FINDINGS_SCHEMA } from '../session/export.ts'
-import type { MatchMetrics, MatchSummary, RuleStatus } from '../session/summary.ts'
+import type { MatchSummary, RuleStatus } from '../session/summary.ts'
+import { TREND_METRICS } from '../session/trends.ts'
+import { titleHasValue } from './review-model.ts'
 import type { CardModel, Tone } from './card.ts'
 import { ruleById } from '../rules/index.ts'
 import { cardTitle } from './titles.ts'
-
-/** The numbers the Trends small multiples draw, with the rule's line where there is one. Shared with Trends.svelte. */
-export const TREND_METRICS: { key: keyof MatchMetrics; label: string; unit: string; digits: number; line?: number }[] = [
-  { key: 'minVolts', label: 'Lowest voltage', unit: 'V', digits: 2, line: 7 },
-  { key: 'secondsUnder7', label: 'Time under 7 V', unit: 's', digits: 1 },
-  { key: 'chargeAh', label: 'Charge drawn', unit: 'Ah', digits: 2 },
-  { key: 'resistanceMilliohms', label: 'Battery + wiring', unit: 'mΩ', digits: 1, line: 20 },
-  { key: 'followerSpeedPct', label: 'Slowest follower vs leader', unit: '%', digits: 0, line: 85 },
-  { key: 'loopOverrunPct', label: 'Auto loops over 20 ms', unit: '%', digits: 1, line: 10 },
-  { key: 'visionOutlierPct', label: 'Vision poses > 0.5 m off', unit: '%', digits: 1, line: 5 },
-]
 
 const plural = (n: number, one: string, many = `${one}es`) => `${n} ${n === 1 ? one : many}`
 export const pct = (x: number) => `${Math.round(100 * x)} %`
@@ -64,9 +55,13 @@ export interface ReportFinding {
   measured: string
   /** Matches played after a fix was recorded, where it fired again. */
   cameBack: string[]
+  /** Labels of the matches it fired in. */
+  matchLabels: string[]
+  /** The first measured quantity, for the card; empty when the title already says its number. */
+  cardMeasured: string
 }
 
-export interface TrendPoint { match: string; value: number; x: number; y: number; letter: string }
+export interface TrendPoint { /** The file name: unique even when two matches share a label (a replay). */ id: string; match: string; value: number; x: number; y: number; letter: string }
 export interface TrendPanel {
   key: string; label: string; unit: string
   /** y of the rule's line, when it has one. */
@@ -87,7 +82,8 @@ export interface Trends {
 }
 
 export interface GridModel {
-  columns: string[]
+  /** One per match; `id` is the file name, since two matches can share a label. */
+  columns: { id: string; label: string }[]
   rows: { rule: string; title: string; cells: RuleStatus[]; rate: string; firedAnywhere: boolean }[]
 }
 
@@ -104,7 +100,11 @@ export interface SessionModel {
   uncommitted: number
   buildUnknown: number
   bottomLine: string
+  /** Every merged error and warning, in the report's order (the card, the grid page and the JSON use all of them). */
   findings: ReportFinding[]
+  /** Page 1's rows: `findings`, with the once-only ones folded into `onceFold` when there are more than ONCE_FOLD_ABOVE. */
+  rows: ReportFinding[]
+  onceFold: { count: number; rules: number; text: string } | null
   notes: string[]
   trends: Trends
   grid: GridModel
@@ -139,7 +139,16 @@ export function measuredText(f: Pick<MergedFinding, 'measured'>): string {
     .join('; ')
 }
 
-/** The notes the Session view shows under the header: profile notes, misfits, split matches, clock notes. */
+/** "2 rules crashed in 1 match: …" when a rule crashed (a bug in Hindsight): its silence says nothing about the robot. */
+export function crashedNote(session: Session): string | null {
+  const hit = session.matches.map((m) => Object.entries(m.rules).filter(([, r]) => r.reason?.startsWith('crashed:')).map(([id]) => id))
+  const inMatches = hit.filter((h) => h.length).length
+  if (!inMatches) return null
+  const rules = [...new Set(hit.flat())]
+  return `${plural(rules.length, 'rule', 'rules')} crashed in ${plural(inMatches, 'match', 'matches')} (a bug in Hindsight, not the robot): ${rules.join(', ')}. They count as not checked there, so their silence means nothing.`
+}
+
+/** The notes the Session view shows under the header: profile notes, misfits, split matches, clock notes, crashed rules. */
 export function sessionNotes(session: Session): string[] {
   const out: string[] = []
   out.push(...new Set(session.matches.map((m) => m.robot.note).filter((n): n is string => !!n)))
@@ -149,6 +158,8 @@ export function sessionNotes(session: Session): string[] {
   }
   for (const m of session.matches.filter((x) => x.pieces)) out.push(`${m.matchLabel} is in ${m.pieces!.length} logs: the robot program restarted during the match. They count as one match here.`)
   for (const m of session.matches.filter((x) => x.clockNote)) out.push(`${matchLabel(m)}: ${m.clockNote}`)
+  const crashed = crashedNote(session)
+  if (crashed) out.push(crashed)
   return out
 }
 
@@ -167,7 +178,7 @@ export function trendsModel(matches: MatchSummary[], typedBatteries: Record<stri
     const x = (i: number) => pad + (matches.length === 1 ? (width - 2 * pad) / 2 : (i * (width - 2 * pad)) / (matches.length - 1))
     const y = (v: number) => height - pad - ((v - lo) / (hi - lo)) * (height - 2 * pad)
     const points: TrendPoint[] = []
-    vals.forEach((v, i) => { if (v !== null && Number.isFinite(v)) points.push({ match: matchLabel(matches[i]), value: v, x: x(i), y: y(v), letter: battery(matches[i]) ? letter(ids.indexOf(battery(matches[i]))) : '' }) })
+    vals.forEach((v, i) => { if (v !== null && Number.isFinite(v)) points.push({ id: matches[i].fileName, match: matchLabel(matches[i]), value: v, x: x(i), y: y(v), letter: battery(matches[i]) ? letter(ids.indexOf(battery(matches[i]))) : '' }) })
     return {
       key: metric.key, label: metric.label, unit: metric.unit, lineY: metric.line !== undefined ? y(metric.line) : null, points,
       range: `${Math.min(...nums).toFixed(metric.digits)}–${Math.max(...nums).toFixed(metric.digits)}`,
@@ -183,7 +194,35 @@ export function gridModel(session: Session): GridModel {
   }))
   // Rules that fired anywhere first (most matches first), then the rest in the rules' own order.
   const fired = rows.filter((r) => r.firedAnywhere).sort((a, b) => b.cells.filter((c) => c === 'fired').length - a.cells.filter((c) => c === 'fired').length)
-  return { columns: session.matches.map(matchLabel), rows: [...fired, ...rows.filter((r) => !r.firedAnywhere)] }
+  return { columns: session.matches.map((m) => ({ id: m.fileName, label: matchLabel(m) })), rows: [...fired, ...rows.filter((r) => !r.firedAnywhere)] }
+}
+
+/** More once-only findings than this fold into one line on page 1. */
+export const ONCE_FOLD_ABOVE = 8
+
+/**
+ * Page 1 keeps a full row for every finding that repeated; the ones seen in a single match fold into one line grouped by
+ * rule, errors first: "Once (47 in 6 rules): can/device-dropout ×30 (Qualification 2); …". The full rows stay in the JSON.
+ */
+export function fold(findings: ReportFinding[]): { rows: ReportFinding[]; onceFold: SessionModel['onceFold'] } {
+  const once = findings.filter((f) => f.confidence === 'once')
+  if (once.length <= ONCE_FOLD_ABOVE) return { rows: findings, onceFold: null }
+  const groups = new Map<string, { n: number; errors: number; labels: Set<string> }>()
+  for (const f of once) {
+    const g = groups.get(f.rule) ?? { n: 0, errors: 0, labels: new Set<string>() }
+    g.n++
+    if (f.severity === 'error') g.errors++
+    f.matchLabels.forEach((l) => g.labels.add(l))
+    groups.set(f.rule, g)
+  }
+  const sorted = [...groups].sort((a, b) => (b[1].errors > 0 ? 1 : 0) - (a[1].errors > 0 ? 1 : 0) || b[1].n - a[1].n)
+  const part = ([rule, g]: (typeof sorted)[number]) => {
+    const l = [...g.labels]
+    return `${rule} ×${g.n} (${l.slice(0, 3).join(', ')}${l.length > 3 ? ` +${l.length - 3}` : ''})`
+  }
+  const shown = sorted.slice(0, 10).map(part).join('; ')
+  const more = sorted.length > 10 ? `; +${sorted.length - 10} more rules` : ''
+  return { rows: findings.filter((f) => f.confidence !== 'once'), onceFold: { count: once.length, rules: groups.size, text: `${shown}${more}` } }
 }
 
 const ORDER: Confidence[] = ['consistent', 'intermittent', 'once', 'not enough data']
@@ -204,7 +243,12 @@ export function bottomLine(matchCount: number, findings: ReportFinding[]): strin
 }
 
 export function sessionModel(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}): SessionModel {
-  const findings = mergeFindings(session).filter((f): f is MergedFinding & { severity: 'error' | 'warning' } => f.severity !== 'info').map((f): ReportFinding => {
+  // The report's order (not the view's): how sure we are first, then how serious, then in how many matches.
+  const rank = (c: Confidence) => ORDER.indexOf(c)
+  const sev = { error: 0, warning: 1 }
+  const ordered = mergeFindings(session).filter((f): f is MergedFinding & { severity: 'error' | 'warning' } => f.severity !== 'info')
+    .sort((a, b) => rank(a.confidence) - rank(b.confidence) || sev[a.severity] - sev[b.severity] || b.matches.length - a.matches.length)
+  const findings = ordered.map((f): ReportFinding => {
     const ratio = `${f.matches.length} of ${f.checkable}`
     return {
       key: f.key, rule: f.rule, severity: f.severity, sevWord: f.severity === 'error' ? 'Error' : 'Warning',
@@ -212,6 +256,8 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
       ratio,
       rateText: `fired in ${ratio} where it could be checked (${interval(f.interval)})`,
       measured: measuredText(f), cameBack: cameBack(session, issues, f.key, f.matches),
+      matchLabels: f.matches.map((i) => matchLabel(session.matches[i])),
+      cardMeasured: f.measured[0] && !(f.measured[0].min === f.measured[0].max && titleHasValue(cardTitle(f.title), f.measured[0].min)) ? measuredText({ measured: [f.measured[0]] }) : '',
     }
   })
   const byRobot = new Map<string, { m: MatchSummary; n: number }>()
@@ -223,7 +269,7 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
     uncommitted: session.matches.filter((m) => m.build?.uncommitted).length,
     buildUnknown: session.matches.filter((m) => !m.build || (!m.build.sha && !m.build.branch)).length,
     bottomLine: bottomLine(session.matches.length, findings),
-    findings, notes: sessionNotes(session), trends: trendsModel(session.matches, typedBatteries), grid: gridModel(session),
+    findings, ...fold(findings), notes: sessionNotes(session), trends: trendsModel(session.matches, typedBatteries), grid: gridModel(session),
     jsonFile: `${sessionBase(session.label)}.session-findings.json`, schema: SESSION_FINDINGS_SCHEMA, version: VERSION,
   }
   return model
@@ -279,7 +325,7 @@ export function sessionCard(m: SessionModel): CardModel {
       word: `${f.sevWord.toUpperCase()}${f.confidence === 'quiet' ? '' : ` · ${f.confidenceWord.toUpperCase()}`}${f.cameBack.length ? ' · CAME BACK' : ''}`,
       tone: (f.severity === 'error' ? 'error' : 'warning') as Tone,
       title: f.title,
-      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.measured.split('; ')[0]].filter(Boolean).join(' · '),
+      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured].filter(Boolean).join(' · '),
     })),
     emptyText: 'Nothing to fix from these logs.',
     footer: [m.robots.map((r) => r.name).join('; '), ranText(m).replace(/^logs ran code/, 'Code ran').replace(/ \(\d+ matches\)/g, ''), `Hindsight ${m.version}`].filter(Boolean),

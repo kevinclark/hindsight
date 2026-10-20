@@ -12,7 +12,7 @@
  *
  *   node --experimental-strip-types scripts/report.ts --session <out-dir> <log|folder> [<log|folder> …] [--no-build] [--dark]
  *
- * loads all of them into the Session view (input[type=file][multiple][accept=".wpilog"]) and, for each session found, writes
+ * loads all of them into the Session view (`[data-session-view] input[type=file][multiple][accept=".wpilog"]`) and, for each session found, writes
  *   <label>.session-report.pdf, <label>.session-card.png, <label>.session-findings.json   (the label made file-safe)
  * and prints what the view itself lists, so the PDF can be checked against the screen.
  * --dark emulates a dark colour scheme first, to check that print stays light.
@@ -80,7 +80,7 @@ try {
     await sleep(1000)
     await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText.trim() === 'Session').click()`)
     const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
-    const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][multiple][accept=".wpilog"]' }, sessionId)
+    const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '[data-session-view] input[type=file][multiple][accept=".wpilog"]' }, sessionId)
     if (!nodeId) throw new Error('the Session view log input was not found in hindsight.html')
     await send('DOM.setFileInputFiles', { nodeId, files }, sessionId)
     // Done when the progress line says "N of N logs" and a session is listed.
@@ -105,7 +105,7 @@ try {
       const listed: string[] = await evalIn(sessionId, `[...document.querySelectorAll('ul.merged > li')].map(li => li.querySelector('.title').innerText.trim())`)
       const reported: number = await evalIn(sessionId, `document.querySelectorAll('.sr-find').length`)
       const model = await evalIn(sessionId, 'hindsight.sessionReport()')
-      summaries.push({ base, matches: s.matches, viewMerged: listed.length, reportInfoFree: reported, reportFindings: model.findings.length, bottomLine: model.bottomLine })
+      summaries.push({ base, matches: s.matches, viewMerged: listed.length, reportRows: reported, foldedOnce: model.onceFold?.count ?? 0, reportFindings: model.findings.length, bottomLine: model.bottomLine })
       written.push(`${base}.session-report.pdf`, `${base}.session-card.png`, `${base}.session-findings.json`)
     }
     await send('Target.closeTarget', { targetId })

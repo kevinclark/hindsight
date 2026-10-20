@@ -13,9 +13,8 @@
   let { session, issues, typedBatteries }: { session: Session; issues: Map<string, IssueEvent>; typedBatteries: Record<string, string> } = $props()
   const m = $derived(sessionModel(session, issues, typedBatteries))
   const t = $derived(m.trends)
-  // Letters on the points are legible up to this many matches; past it the points are colour only (the JSON has the rest).
-  const LETTERS_UP_TO = 24
-  const letters = $derived(m.matchCount <= LETTERS_UP_TO)
+  // Every point with a battery carries its letter (smaller past 24 matches, where they crowd): never colour alone.
+  const crowded = $derived(m.matchCount > 24)
   const SYMBOL = { fired: '●', quiet: '·', 'not checked': '–' } as const
   const WORD = { fired: 'fired', quiet: 'quiet', 'not checked': 'not checked' } as const
   const turned = $derived(m.matchCount > 6)
@@ -31,12 +30,12 @@
   <p class="bottom">{m.bottomLine}</p>
 
   <section>
-    <h2>Findings across the session ({m.findings.length})</h2>
+    <h2>Findings across the session ({m.findings.length}{m.onceFold ? `: ${m.rows.length} repeated, ${m.onceFold.count} seen once` : ''})</h2>
     {#if m.findings.length === 0}
       <p class="small">No errors or warnings in any match.</p>
     {:else}
       <ul class="finds">
-        {#each m.findings as f (f.key)}
+        {#each m.rows as f (f.key)}
           <li class="sr-find">
             <span class={`sev ${f.severity}`}>{f.sevWord}</span>
             <span class={`conf ${f.confidence.replace(/ /g, '-')}`}>{f.confidenceWord}</span>
@@ -45,12 +44,13 @@
           </li>
         {/each}
       </ul>
+      {#if m.onceFold}<p class="once"><strong>Once ({m.onceFold.count} in {m.onceFold.rules} {m.onceFold.rules === 1 ? 'rule' : 'rules'}):</strong> {m.onceFold.text}. Each one is a row in <code>{m.jsonFile}</code> and a cell in the grid on the next page.</p>{/if}
     {/if}
   </section>
 
   <section class="trends">
     <h2>Per match, one scale per number</h2>
-    <p class="small">Matches left to right: {t.order.join(', ')}.{t.batteries.length ? (letters ? ' Letters mark the battery: ' : ' Batteries (letters left off past 24 matches): ') : ''}{#each t.batteries as b (b.letter)}<span class="bk"><strong>{b.letter}</strong> = {b.id}</span>{/each}{#if t.batteries.length && t.anyUnlabelled}<span class="bk">no letter = no battery ID</span>{/if}{#if !t.batteries.length}{' '}No battery IDs in these logs.{/if} Dashed line: the rule's line.</p>
+    <p class="small">Matches left to right: {t.order.join(', ')}.{t.batteries.length ? ' Letters mark the battery: ' : ''}{#each t.batteries as b (b.letter)}<span class="bk"><strong>{b.letter}</strong> = {b.id}</span>{/each}{#if t.batteries.length && t.anyUnlabelled}<span class="bk">no letter = no battery ID</span>{/if}{#if !t.batteries.length}{' '}No battery IDs in these logs.{/if} Dashed line: the rule's line.</p>
     <div class="multiples">
       {#each t.panels as p (p.key)}
         <figure>
@@ -58,9 +58,9 @@
           {#if p.points.length}
             <svg viewBox={`0 0 ${t.width} ${t.height}`} role="img" aria-label={`${p.label} per match`}>
               {#if p.lineY !== null}<line class="ref" x1="6" x2={t.width - 6} y1={p.lineY} y2={p.lineY} />{/if}
-              {#each p.points as pt (pt.match)}
+              {#each p.points as pt (pt.id)}
                 <circle cx={pt.x} cy={pt.y} r="3.2" class="pt" />
-                {#if letters && pt.letter}<text x={pt.x + 4.5} y={pt.y - 3.5} class="lt">{pt.letter}</text>{/if}
+                {#if pt.letter}<text x={pt.x + 4.5} y={pt.y - 3.5} class={`lt ${crowded ? 'small' : ''}`}>{pt.letter}</text>{/if}
               {/each}
             </svg>
             <div class="range">{p.range}</div>
@@ -81,10 +81,10 @@
 
   <section class="gridpage">
     <h1 class="h1b">Rule × match</h1>
-    <p class="small">● fired · quiet – not checked (signals missing, or no robot profile fits the log). Rules that fired in any match come first.</p>
+    <p class="small">● fired · quiet – not checked (signals missing, no robot profile fits the log, or the rule crashed). Rules that fired in any match come first.</p>
     <table class="grid">
       <thead>
-        <tr><th class="r">rule</th>{#each m.grid.columns as c (c)}<th class="c"><span class:turn={turned}>{c}</span></th>{/each}<th class="r">across the session</th></tr>
+        <tr><th class="r">rule</th>{#each m.grid.columns as c (c.id)}<th class="c"><span class:turn={turned}>{c.label}</span></th>{/each}<th class="r">across the session</th></tr>
       </thead>
       <tbody>
         {#each m.grid.rows as r (r.rule)}
@@ -132,11 +132,13 @@
   figcaption span, .range { color: var(--muted); font-size: 6.5pt; }
   .multiples svg { width: 100%; height: auto; display: block; overflow: visible; border-bottom: 1px solid var(--border); }
   .pt { fill: var(--fg); }
+  .lt.small { font-size: 5px; }
   .lt { font-size: 9px; font-weight: 700; fill: var(--fg); }
   .ref { stroke: var(--muted); stroke-dasharray: 3 3; stroke-width: 0.8; }
   .foot { margin-top: 0.3rem; }
   .bk { margin-right: 0.6rem; }
   .bk:first-of-type { margin-left: 0.2rem; }
+  .once { font-size: 8pt; margin: 0.1rem 0; }
   .gridpage { break-before: page; }
   .h1b { font-size: 12pt; }
   .grid { border-collapse: collapse; font-size: 7.5pt; margin-top: 0.2rem; }

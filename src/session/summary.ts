@@ -97,13 +97,15 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
   const rules: MatchSummary['rules'] = {}
   for (const rule of RULES) {
     const skipped = report.skipped.find((s) => s.rule === rule.id)
+    // A rule that crashed is a Hindsight bug and says nothing about the log: not checked, never quiet.
+    const crashed = report.crashed.find((s) => s.rule === rule.id)
     const findings = report.findings.filter((f) => f.rule === rule.id)
     const fullySkipped = skipped && !skipped.reason.startsWith('partly')
     // Grey (info) findings are context, e.g. an alert seen only before the match: they don't count as "fired".
     const fired = findings.some((f) => f.severity !== 'info')
     rules[rule.id] = {
-      status: fired ? 'fired' : fullySkipped ? 'not checked' : 'quiet',
-      reason: skipped?.reason,
+      status: fired ? 'fired' : fullySkipped || crashed ? 'not checked' : 'quiet',
+      reason: crashed ? `crashed: ${crashed.reason}` : skipped?.reason,
       // Plots hold whole series; a session keeps only the words and numbers.
       findings: findings.map((f) => toSummaryFinding(f, rule.nextStep)),
     }
