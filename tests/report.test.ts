@@ -1,4 +1,5 @@
 // The report export: the phone card (pure SVG), the model behind it and behind the printed report.
+import { descendants } from '../src/report/finding-tree.ts'
 import { describe, expect, it } from 'vitest'
 import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE, CARD_WIDTH, wrap, type CardModel } from '../src/report/card.ts'
 import { bottomLine, cardTitle, keyNumber, reviewCard, reviewModel, shortTitle, stripRepoPaths, titleHasValue } from '../src/report/review-model.ts'
@@ -136,6 +137,34 @@ describe('report model, from the real CalGames fixtures', () => {
     expect(m.cameBack.has(first.key)).toBe(true)
     expect(reviewCard(m).items.some((i) => i.word === 'ERROR · CAME BACK')).toBe(true)
   })
+  it('folds standing headlines out of the report lists and the card, and changes nothing without a session', () => {
+    const none = reviewModel(p0, new Map())
+    expect(none.standing).toEqual([])
+    expect(reviewModel(p0, new Map(), new Set())).toEqual(none)
+    expect(reviewCard(none).standingNote).toBeUndefined()
+    const keys = new Set(none.headlines.map((n) => n.finding.key))
+    const all = reviewModel(p0, new Map(), keys)
+    expect(all.headlines.length + all.standing.length).toBe(none.headlines.length)
+    expect(all.standing.length).toBeGreaterThan(0)
+    // Counts still count every finding; the card names how many it left off.
+    expect(all.errors).toEqual(none.errors)
+    expect(all.bottomLine).toBe(none.bottomLine)
+    const card = reviewCard(all)
+    expect(card.standingNote).toBe(`+ ${all.standing.length} in every match this session`)
+    expect(card.heading).toBe(reviewCard(none).heading)
+    expect(card.items.length).toBe(all.headlines.filter((n) => n.finding.severity === 'error').length)
+    expect(buildCard(card).svg).toContain('in every match this session')
+  })
+  it('says "no new errors", never "nothing new", when only the error headlines fold and new warnings stay', () => {
+    const none = reviewModel(p0, new Map())
+    const errorKeys = new Set(none.headlines.filter((n) => n.finding.severity === 'error').flatMap((n) => [n.finding, ...descendants(n)]).map((f) => f.key))
+    const m = reviewModel(p0, new Map(), errorKeys)
+    const card = reviewCard(m)
+    expect(card.items.length).toBe(0)
+    expect(m.headlines.some((n) => n.finding.severity === 'warning')).toBe(true)
+    expect(card.emptyText).toBe('No new errors in this match.')
+    expect(card.standingNote).toContain(', including ')
+  })
   it('says a crashed rule on the card and in the report model, and a clean run says none', () => {
     const crashed = { ...p0, report: { ...p0.report, crashed: [{ rule: 'x/boom', reason: 'it threw' }] } }
     const m = reviewModel(crashed, new Map())
@@ -209,7 +238,7 @@ describe('Foresight card', () => {
   it('shows a 40-character sha as 7 characters in an item\'s number line', () => {
     const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
     const finding = { rule: 'build/dirty', title: `Robot ran uncommitted changes on top of ${sha.slice(0, 7)}`, evidence: { 'git sha': sha } }
-    const item = { finding, level: 'red', proof: '', action: 'x' } as unknown as ForesightReportInput['items'][number]
+    const item = { finding, level: 'red', proof: '', action: 'x', explains: [] } as unknown as ForesightReportInput['items'][number]
     const text = JSON.stringify(foresightCard({ ...base, items: [item] }).items)
     expect(text).not.toContain(sha)
   })
@@ -249,7 +278,7 @@ describe('Foresight printed report component', () => {
     const { default: ForesightReport } = await import('../src/ui/ForesightReport.svelte')
     const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
     const finding = { rule: 'build/dirty', key: 'k', title: 'Robot ran uncommitted changes', evidence: { 'git sha': sha } }
-    const checked = { verdict: { verdict: 'NO-GO', items: [{ finding, level: 'red', proof: '', action: 'x' }], notChecked: [{ rule: 'a/b', reason: 'r' }], crashed: [] }, match: { build: { sha, branch: 'b', dirty: 'clean' } } }
+    const checked = { verdict: { verdict: 'NO-GO', items: [{ finding, level: 'red', proof: '', action: 'x', explains: [] }], notChecked: [{ rule: 'a/b', reason: 'r' }], crashed: [] }, match: { build: { sha, branch: 'b', dirty: 'clean' } } }
     const onchecks = [{ line: 'Line A', state: 'ok', detail: '' }, { line: 'Line B', state: 'not checked', detail: '' }]
     const props = { status: { state: 'connected', message: 'Connected', url: 'ws://secret-host:5810/nt' }, checked, verdict: 'NO-GO', why: 'x', onchecks, battery: 12.6, controllers: [], totalChecks: 21 }
     const html = render(ForesightReport, { props: props as never }).body

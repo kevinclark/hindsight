@@ -13,6 +13,7 @@
   import { saveForSlack } from '../report/card-png.ts'
   import { fileStamp, foresightBuild, foresightCard, didNotRun, shortShas, stamp, type ForesightReportInput } from '../report/foresight-model.ts'
   import { keyNumber } from '../report/review-model.ts'
+  import { allItems, type VerdictItem } from '../foresight/verdict.ts'
   import { VERSION } from '../version.ts'
 
   let { status, checked, verdict, why, onchecks, battery, controllers, totalChecks }: {
@@ -59,6 +60,10 @@
   })
 </script>
 
+{#snippet under(i: VerdictItem)}
+  {#each allItems({ items: i.explains }) as u (u.finding.key + u.finding.title)}<p class="small">↳ {u.finding.title} ({u.finding.explainedBy?.why})</p>{/each}
+{/snippet}
+
 <article class="print-only report" aria-hidden="true">
   <header>
     <h1>Foresight pit check</h1>
@@ -77,11 +82,11 @@
 
   {#if reds.length}
     <h2>Fix before the field ({reds.length})</h2>
-    <ul class="items">{#each reds as i (i.finding.key)}<li class="red"><p class="title"><span class="sev red">Fix</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p><p class="small">{i.finding.rule} · {keyNumber(i.finding).label}: {shortShas(keyNumber(i.finding).value)}</p></li>{/each}</ul>
+    <ul class="items">{#each reds as i (i.finding.key)}<li class="red"><p class="title"><span class="sev red">Fix</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p><p class="small">{i.finding.rule} · {keyNumber(i.finding).label}: {shortShas(keyNumber(i.finding).value)}</p>{@render under(i)}</li>{/each}</ul>
   {/if}
   {#if ambers.length}
     <h2>Look at ({ambers.length})</h2>
-    <ul class="items">{#each ambers as i (i.finding.key)}<li class="amber"><p class="title"><span class="sev amber">Look</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p></li>{/each}</ul>
+    <ul class="items">{#each ambers as i (i.finding.key)}<li class="amber"><p class="title"><span class="sev amber">Look</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p>{@render under(i)}</li>{/each}</ul>
   {/if}
   {#if steps.length}
     <p class="small"><strong>To do:</strong> {steps.map((i) => i.finding.title).join(' · ')}</p>
@@ -110,7 +115,7 @@
 
 <style>
   .print-only { display: none; }
-  @media print { .print-only { display: block; font-size: 9.5pt; line-height: 1.3; color: var(--fg); } }
+  @media print { .print-only { display: block; font-size: 9.5pt; line-height: 1.22; color: var(--fg); } }
   h1 { font-size: 15pt; margin: 0; }
   h2 { font-size: 10.5pt; margin: 0.6rem 0 0.2rem; padding-bottom: 0.1rem; border-bottom: 1px solid var(--border); }
   p { margin: 0.12rem 0; }
@@ -124,7 +129,7 @@
   .v-not-checked { color: var(--muted); }
   .build.dirty { color: var(--warning); font-weight: 600; }
   .items { list-style: none; margin: 0; padding: 0; }
-  .items li { padding: 0.2rem 0 0.2rem 0.5rem; border-left: 4px solid var(--border); margin-bottom: 0.3rem; break-inside: avoid; }
+  .items li { padding: 0.2rem 0 0.2rem 0.5rem; border-left: 4px solid var(--border); margin-bottom: 0.2rem; break-inside: avoid; }
   .items li.red { border-left-color: var(--error); }
   .items li.amber { border-left-color: var(--warning); }
   .title { font-weight: 700; font-size: 10.5pt; }

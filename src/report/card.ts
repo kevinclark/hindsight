@@ -42,6 +42,8 @@ export interface CardModel {
   emptyText: string
   /** Footer lines (build, version), each wrapped. */
   footer: string[]
+  /** One line under the items (or under the empty text): what the standing fold left off. Absent without a session. */
+  standingNote?: string
   /** Draws a boxed warning above the footer. */
   uncommitted: boolean
   /** The words in that box. */
@@ -147,7 +149,8 @@ export function buildCard(model: CardModel): Card {
     return wrap(`Also ${n} error${n === 1 ? '' : 's'}: ${parts.join('; ')}`, 32, INNER, 2)
   }
   // The line adds height rather than taking an item's place: the card may run up to two lines past 4:5.
-  const shown = fit(CARD_MAX_HEIGHT - y - footerHeight)
+  const noteHeight = model.standingNote ? 14 + 36 * 1.25 : 0
+  const shown = fit(CARD_MAX_HEIGHT - y - footerHeight - noteHeight)
   const also = alsoLines(shown)
   if (itemBlocks.length === 0) {
     add(block(wrap(model.emptyText, 36, INNER, 3), MARGIN, y, 36, COLOR.muted))
@@ -162,6 +165,11 @@ export function buildCard(model: CardModel): Card {
     }
   }
 
+  if (model.standingNote) {
+    parts.push(`<rect x="${MARGIN}" y="${y}" width="${INNER}" height="2" fill="${COLOR.line}"/>`)
+    add(block(wrap(model.standingNote, 36, INNER, 2), MARGIN, y + 14, 36, COLOR.muted))
+    y += 14
+  }
   y += 24
   if (flagLines.length) {
     const h = flagHeight

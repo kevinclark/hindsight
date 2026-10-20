@@ -85,6 +85,19 @@ The page shows which profile each log used and why, and **use…** (Match review
 commit they read ("as of event-x d339f29; this log ran 45e3eba"): a log run before the branch's last commit may have
 had different limits.
 
+**Choose code folder…** (Match review and Session view) takes your clone of the robot code. For a log that ran another
+commit than its profile's, power/limit-not-applied then reads each motor group's limit file at both commits straight
+from `.git` and compares the lines that mention `CurrentLimit` (as `git diff -G'CurrentLimit'` would; values are never
+parsed). The same lines: the log counts as the profile's code (a limit switched off in code is amber). Different: it
+stays red, and the evidence lists the lines. Can't tell (a shallow clone, a commit you haven't fetched, a worktree's
+`.git` file): red, with the reason. Without a folder nothing changes. Only the `.git` files needed are read; nothing is
+changed or uploaded. Chrome and Edge remember the folder between visits (a click allows it again); other browsers ask
+each visit. Each answer is kept per (repo, profile commit, log commit, files): in this browser, and for the scripts in
+`~/.cache/hindsight/limit-lines.json` (`scripts/golden.ts` and `scripts/report.ts` take `--code <folder>`). Only the
+lines in the files a group's `where` names are compared: a limit set through a name defined in another file
+(`= Constants.KICKER_LIMIT`) isn't followed, so a change there reads as "the same" (every CurrentLimit line in the
+2026 competition code is a literal).
+
 To add a robot: **Robot profile** drafts one from your logs, a robot snapshot and (optionally) your code folder, and keeps it in the browser or saves a `profile.json` (`docs/robot-profile.md`; code in `src/builder/`). A built-in profile is a TypeScript file in `src/profiles/`, listed in `src/profiles/index.ts`.
 
 ### Robots without AdvantageKit
@@ -263,6 +276,7 @@ skips with a message when they aren't there; `fixtures/*.json` are small cuts th
 | `src/profiles/` | one file per robot (log keys, motor groups, current limits, the code they were read from); `index.ts` lists them, `choose.ts` picks one per log |
 | `src/rules/<area>/` | one rule per file, 25–55 lines; the list is `src/rules/index.ts` |
 | `src/rules/rule.ts`, `view.ts`, `run.ts` | how a rule is written, what it can ask about a match, and the runner |
+| `src/code/` | reading a commit's files from a code folder's `.git` (loose objects and packs), and the limit-line comparison |
 | `src/triage/` | known issues and the history file |
 | `src/power/` | battery model, resistance from current steps, open-circuit curve, what-ifs, fleet reference |
 | `src/report/` | `findings.json`, the Match review, Foresight and Session report models, the phone card |
@@ -297,6 +311,12 @@ from the page and drop it in with the logs next time. Design and what's next (th
 
 ## Not verified
 
+- **The Session view keys its saved summaries by the code folder's name.** A summary read when a commit couldn't be
+  compared (a shallow clone, say) is reused after choosing a fuller clone with the same name, until the logs are added
+  again or "Clear saved copies". Kept limit-line answers (about 150 bytes each) are never pruned.
+- **The remembered code folder is not exercised.** Chrome's folder picker (`showDirectoryPicker`) and the "Use … again"
+  permission after a reload need a person to click; only the folder input path was driven (headless Chrome from
+  `file://`, through `scripts/report.ts --code`).
 - **Windows and Chromebook are not verified.** Only Chrome 155 and Safari on macOS were checked.
 - **Safari's file picker is not exercised.** Safari rendered both tabs for all three logs, but through a test copy of
   the page with the log embedded (Safari's WebDriver is off on this Mac). Chrome was driven through the real file input.

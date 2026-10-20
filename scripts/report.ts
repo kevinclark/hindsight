@@ -16,18 +16,34 @@
  *   <label>.session-report.pdf, <label>.session-card.png, <label>.session-findings.json   (the label made file-safe)
  * and prints what the view itself lists, so the PDF can be checked against the screen.
  * --dark emulates a dark colour scheme first, to check that print stays light.
+ * --code <robot-code folder> chooses that folder on the page ("Choose code folder…"), so power/limit-not-applied can
+ * compare each log's commit with its profile's (src/code/limit-lines.ts). The page's kept answers are seeded from and
+ * saved back to --code-cache (default ~/.cache/hindsight/limit-lines.json), as golden.ts keeps them.
  * The log input is selected by its accept list: input[type=file] alone also matches the Snapshot view's .json input.
  */
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { DEFAULT_CACHE } from '../src/code/node-git-dir.ts'
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const args = process.argv.slice(2)
+const option = (name: string) => {
+  const i = args.indexOf(name)
+  if (i < 0) return undefined
+  const [, value] = args.splice(i, 2)
+  if (!value || value.startsWith('--')) throw new Error(`${name} needs a value`)
+  return value
+}
+const codeDir = option('--code')
+const cacheFile = option('--code-cache') ?? DEFAULT_CACHE
+const ANSWERS = 'hindsight.limitLines'
+let answers: Record<string, unknown> = {}
+try { answers = JSON.parse(readFileSync(cacheFile, 'utf8')).answers ?? {} } catch { /* no cache file yet */ }
 const flags = new Set<string>(args.filter((a) => a === '--no-build' || a === '--dark' || a === '--session'))
 const [outDir, ...rest] = args.filter((a) => !flags.has(a))
-if (!outDir || rest.length === 0) { console.error('usage: report.ts [--session] <out-dir> <log> [<dslog>] [-- <log> …] [--no-build] [--dark]'); process.exit(2) }
+if (!outDir || rest.length === 0) { console.error('usage: report.ts [--session] <out-dir> <log> [<dslog>] [-- <log> …] [--no-build] [--dark] [--code <folder>] [--code-cache <file>]'); process.exit(2) }
 const groups: string[][] = [[]]
 for (const a of rest) { if (a === '--') groups.push([]); else groups.at(-1)!.push(resolve(a)) }
 /** A folder given to --session stands for the .wpilog files in it. */
@@ -64,6 +80,24 @@ const evalIn = async (sessionId: string, expression: string) => {
   return r?.result?.value
 }
 
+/** --code: seed the page's kept limit-line answers, choose the folder, and wait until the page shows it. */
+async function useCodeFolder(sessionId: string) {
+  if (!codeDir) return
+  await evalIn(sessionId, `localStorage.setItem(${JSON.stringify(ANSWERS)}, ${JSON.stringify(JSON.stringify(answers))})`)
+  const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
+  const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[data-code-folder]' }, sessionId)
+  if (!nodeId) throw new Error('the code folder input was not found in hindsight.html')
+  await send('DOM.setFileInputFiles', { nodeId, files: [resolve(codeDir)] }, sessionId)
+  let shown = ''
+  for (let i = 0; i < 300 && !shown; i++) { await sleep(100); shown = await evalIn(sessionId, `[...document.querySelectorAll('.code-folder .chip, .code-folder ~ .problem')].map(e => e.innerText).join(' ')`) }
+  if (!shown.startsWith('code: ')) throw new Error(`the page did not take the code folder: ${shown || 'timed out'}`)
+}
+/** --code: keep what the page worked out, for the next run. */
+async function keepAnswers(sessionId: string) {
+  if (!codeDir) return
+  answers = { ...answers, ...JSON.parse((await evalIn(sessionId, `localStorage.getItem(${JSON.stringify(ANSWERS)})`)) ?? '{}') }
+}
+
 const written: string[] = []
 const summaries: object[] = []
 try {
@@ -79,6 +113,7 @@ try {
     await send('Page.navigate', { url: page }, sessionId)
     await sleep(1000)
     await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText.trim() === 'Session').click()`)
+    await useCodeFolder(sessionId)
     const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
     const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '[data-session-view] input[type=file][multiple][accept=".wpilog"]' }, sessionId)
     if (!nodeId) throw new Error('the Session view log input was not found in hindsight.html')
@@ -108,6 +143,7 @@ try {
       summaries.push({ base, matches: s.matches, viewMerged: listed.length, reportRows: reported, foldedOnce: model.onceFold?.count ?? 0, reportFindings: model.findings.length, bottomLine: model.bottomLine })
       written.push(`${base}.session-report.pdf`, `${base}.session-card.png`, `${base}.session-findings.json`)
     }
+    await keepAnswers(sessionId)
     await send('Target.closeTarget', { targetId })
   } else for (const files of groups) {
     const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
@@ -118,6 +154,7 @@ try {
     if (flags.has('--dark')) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, sessionId)
     await send('Page.navigate', { url: page }, sessionId)
     await sleep(1000)
+    await useCodeFolder(sessionId)
     const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
     const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog,.dslog,.jsonl"]' }, sessionId)
     if (!nodeId) throw new Error('the log file input was not found in hindsight.html')
@@ -137,7 +174,12 @@ try {
     const listed: string[] = await evalIn(sessionId, `[...document.querySelectorAll('.findings > li.finding')].filter(li => !li.closest('.known-section')).map(li => li.querySelector('.title').innerText.trim())`)
     summaries.push({ base, listed: listed.length, titles: listed })
     written.push(`${base}.report.pdf`, `${base}.card.png`, jsonName)
+    await keepAnswers(sessionId)
     await send('Target.closeTarget', { targetId })
+  }
+  if (codeDir) {
+    mkdirSync(dirname(cacheFile), { recursive: true })
+    writeFileSync(cacheFile, JSON.stringify({ version: 1, answers }, null, 1))
   }
   console.log(written.map((w) => `${outDir}/${w}`).join('\n'))
   console.log(JSON.stringify(summaries))

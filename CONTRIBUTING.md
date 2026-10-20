@@ -207,6 +207,10 @@ cause (`can/devices-dropped-together` explains the robot code's "Disconnected ..
 already explains is never grouped: the specific explanation wins. Give the parent the same `who` as the rule it
 groups. As with a link, run `npm run golden` before and after and look at every finding that changed.
 
+Foresight applies the same links: its verdict lists an explained finding under the one that explains it when that one
+is at least as serious there (red, amber, grey), and the checklist still marks every line from both. Golden covers
+match logs only, so a link that involves a Foresight check needs a case in `tests/foresight-rules.test.ts`.
+
 ## Things that trip people up
 
 - `/SystemStats/BatteryCurrent` is the roboRIO's own current (~0.5 A), not the battery's. For total current use

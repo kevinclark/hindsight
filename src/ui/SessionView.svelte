@@ -4,7 +4,9 @@
   summary of each is kept, so a whole event's folder fits in memory.
 -->
 <script lang="ts">
-  import { summarizeLog, type MatchSummary } from '../session/summary.ts'
+  import { summarizeLogWithCode, type MatchSummary } from '../session/summary.ts'
+  import CodeFolderControl from './CodeFolderControl.svelte'
+  import { codeFolder } from './code-folder.svelte.ts'
   import { PROFILE_FIT_MIN } from '../profiles/choose.ts'
   import { PROFILES, profileId } from '../profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
@@ -62,7 +64,7 @@
       const prev = newest.get(c.summary.fileName)
       if (!prev || c.savedAt > prev.savedAt) newest.set(c.summary.fileName, c)
     }
-    const usable = [...newest.values()].filter((c) => reusable(c.summary, c.summary.fileName))
+    const usable = [...newest.values()].filter((c) => sameRobot(c.summary, c.summary.fileName))
     const oldRead = new Set(saved.stale.map((c) => c.key))
     for (const c of usable) {
       if (oldRead.has(c.key)) stale[c.summary.fileName] = { version: c.version, savedAt: c.savedAt }
@@ -85,8 +87,15 @@
     savedCount = 0
     restored = null
   }
-  /** A saved summary is reusable only if it was read with the robot the student picks now. */
+  /**
+   * A saved summary is reusable for a log chosen now only if it was read with the robot the student picks now and the
+   * code folder chosen now. (After a reload, summaries are restored whatever folder they were read with: each is right
+   * for the folder it names, and the remembered folder may not be readable yet.)
+   */
   function reusable(s: MatchSummary | undefined, fileName: string): s is MatchSummary {
+    return sameRobot(s, fileName) && (s.codeFolder ?? null) === (codeFolder.chosen?.name ?? null)
+  }
+  function sameRobot(s: MatchSummary | undefined, fileName: string): s is MatchSummary {
     if (!s) return false
     const chosen = chosenRobot(fileName)
     return chosen ? s.robot.how === 'chosen by you' && s.robot.profileId === profileId(chosen) : s.robot.how !== 'chosen by you'
@@ -150,10 +159,19 @@
     try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* private window: not remembered */ }
   }
 
-  // Each load takes a number; New session bumps it, and a load that finds its number out of date stops quietly.
+  // Loads run one after another, so a re-read for a new code folder starts once the logs being read have all landed.
+  // Each load keeps the number current when it was asked for; New session bumps it, so loads running or still
+  // queued then stop quietly.
   let loadGen = 0
-  async function load(list: FileList | File[] | null, { fresh = false }: { fresh?: boolean } = {}) {
-    const gen = ++loadGen
+  let queue: Promise<void> = Promise.resolve()
+  function load(list: FileList | File[] | null, opts: { fresh?: boolean } = {}): Promise<void> {
+    const picked = Array.from(list ?? [])
+    const gen = loadGen
+    queue = queue.then(() => loadNow(picked, gen, opts)).catch((error) => { problems = [...problems, String(error)] })
+    return queue
+  }
+
+  async function loadNow(list: File[], gen: number, { fresh = false }: { fresh?: boolean } = {}) {
     await ready
     if (gen !== loadGen) return
     const chosen = Array.from(list ?? []).filter((f) => /\.wpilog$/i.test(f.name))
@@ -175,7 +193,8 @@
         const reuse = !fresh && reusable(saved, file.name)
         const bytes = reuse ? null : new Uint8Array(await file.arrayBuffer())
         if (gen !== loadGen) return
-        const summary = reuse ? saved : summarizeLog({ name: file.name, bytes: bytes! }, chosenRobot(file.name), [...PROFILES, ...stored])
+        const summary = reuse ? saved : await summarizeLogWithCode({ name: file.name, bytes: bytes! }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored])
+        if (gen !== loadGen) return
         if (summary && summary !== saved) {
           cache.set(key, summary)
           saving.push(saveCached(key, $state.snapshot(summary) as MatchSummary).then((ok) => { if (!ok) saveFailed = true }))
@@ -284,6 +303,15 @@
     if (have.length) await load(have)
   }
 
+  // A code folder chosen (or forgotten): read again the logs this page has, so the limit findings use it.
+  let seenFolder = codeFolder.version
+  $effect(() => {
+    if (codeFolder.version === seenFolder) return
+    seenFolder = codeFolder.version
+    const have = [...files.values()]
+    if (have.length) load(have)
+  })
+
   /** Open a match in Match review. A summary restored after a reload has no file: ask for it again. */
   function open(m: MatchSummary) {
     const fs = (m.pieces ?? [m.fileName]).map((n) => files.get(n)).filter((f): f is File => !!f)
@@ -385,6 +413,7 @@
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
   <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
+  <CodeFolderControl />
   {#if summaries.length}<button class="button" disabled={loading} onclick={newSession} title="Clears the log summaries on this page and saved in this browser. Moved logs, session names, battery ids and known-issue marks are kept.">New session</button>{/if}
   <input type="file" webkitdirectory multiple hidden data-reread-input bind:this={rereadInput} onchange={(e) => rereadChosen((e.currentTarget as HTMLInputElement).files)} />
   {#if progress}
@@ -595,6 +624,7 @@
   .cell.not-checked { color: var(--muted); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .grid th.match { padding-left: 0.2rem; padding-right: 0.2rem; }
+  .grid th.match .link { min-width: 24px; }
   .once-fold { margin-top: 0.5rem; }
   .once-fold summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); min-height: 24px; display: flex; align-items: center; }
   .rate { text-align: left !important; color: var(--muted); }

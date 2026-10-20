@@ -90,7 +90,19 @@ export const LINKS: Link[] = [
     when: (group, alert) => namesAKindOfDevice(group.evidence[GROUP_DEVICES], alert) && within(group, alert, 2),
     why: 'the robot code saw the devices go missing',
   }),
+  // Foresight only, and from code, not a match: no log of ours has the companion library's log-drive reading yet. The
+  // companion raises "Robot log isn't going to a (or the) USB stick: ..." from the same /Hindsight/LogDrive/OnUsb
+  // reading this check reads (HindsightCompanion.updateAlerts).
+  link({
+    cause: 'foresight/log-usb-stick',
+    explains: 'alerts/passthrough',
+    when: (stick, alert) => COMPANION_NOT_USB.test(alert.about ?? ''),
+    why: 'the robot code saw the same log folder off the USB stick',
+  }),
 ]
+
+/** The companion library's alerts for a log off the USB stick (tests/foresight-rules.test.ts checks them against the Java). */
+export const COMPANION_NOT_USB = /^Robot log isn't going to (a|the) USB stick: /
 
 /**
  * Does the alert's text name this thing? A trailing CAN id may be left out: "Flywheel Follower Disconnected" names
