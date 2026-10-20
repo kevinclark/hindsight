@@ -8,7 +8,7 @@ import { summarizeLog, type MatchSummary } from '../src/session/summary.ts'
 import type { IssueEvent } from '../src/triage/history.ts'
 import { joinPieces, summarizeMatch } from '../src/session/summary.ts'
 import { buildSessionJson } from '../src/session/export.ts'
-import { ONCE_FOLD_ABOVE, crashedNote } from '../src/report/session-model.ts'
+import { PAGE1_ROWS, crashedNote } from '../src/report/session-model.ts'
 import { analyzeFixture, CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
 
 const METRICS = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSpeedPct: 90, loopOverrunPct: 5, visionOutlierPct: null }
@@ -191,7 +191,7 @@ describe('review fixes', () => {
     ;(s.matches[0].rules['power/brownout'].findings[0] as { measured?: unknown }).measured = [{ label: 'lowest voltage', value: 5.99, unit: 'V', threshold: undefined }]
     expect(sessionCard(sessionModel(s)).items[0].number).toBe('1 of 3 matches · lowest voltage 5.99 V')
   })
-  it('folds the once-only findings into one line when there are more than 8; repeated ones keep their rows', () => {
+  it('folds the once-only findings into one line only when the list would not fit page 1; repeated ones keep their rows', () => {
     const once = (i: number): Fire => ({ key: `loop/overrun · ${i}`, rule: i % 2 ? 'loop/overrun' : 'power/brownout', severity: i % 3 ? 'warning' : 'error', title: `Thing ${i}` })
     const many = Array.from({ length: 60 }, (_, i) => once(i))
     const s = groupSessions([match(1, many), match(2, [FOLLOW]), match(3, [FOLLOW])])[0]
@@ -201,10 +201,10 @@ describe('review fixes', () => {
     expect(m.rows.map((r) => r.key)).toEqual([FOLLOW.key])
     expect(m.onceFold).toMatchObject({ count: 60, rules: 2 })
     expect(m.onceFold!.text).toMatch(/^power\/brownout ×30 \(Qualification 1\); loop\/overrun ×30 \(Qualification 1\)$/)
-    // 8 or fewer: no fold.
-    const few = sessionModel(groupSessions([match(1, many.slice(0, ONCE_FOLD_ABOVE)), match(2, []), match(3, [])])[0])
+    // A list that fits page 1 keeps every row, once-only errors included (a one-off brownout must stay visible).
+    const few = sessionModel(groupSessions([match(1, many.slice(0, PAGE1_ROWS - 1)), match(2, [FOLLOW]), match(3, [FOLLOW])])[0])
     expect(few.onceFold).toBeNull()
-    expect(few.rows.length).toBe(ONCE_FOLD_ABOVE)
+    expect(few.rows.length).toBe(PAGE1_ROWS)
     // The card still lists every finding, not the fold.
     expect(sessionCard(m).items.length).toBe(61)
   })

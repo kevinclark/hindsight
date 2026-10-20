@@ -102,7 +102,7 @@ export interface SessionModel {
   bottomLine: string
   /** Every merged error and warning, in the report's order (the card, the grid page and the JSON use all of them). */
   findings: ReportFinding[]
-  /** Page 1's rows: `findings`, with the once-only ones folded into `onceFold` when there are more than ONCE_FOLD_ABOVE. */
+  /** Page 1's rows: `findings`, with the once-only ones folded into `onceFold` when all of them would not fit on page 1 (PAGE1_ROWS). */
   rows: ReportFinding[]
   onceFold: { count: number; rules: number; text: string } | null
   notes: string[]
@@ -197,16 +197,19 @@ export function gridModel(session: Session): GridModel {
   return { columns: session.matches.map((m) => ({ id: m.fileName, label: matchLabel(m) })), rows: [...fired, ...rows.filter((r) => !r.firedAnywhere)] }
 }
 
-/** More once-only findings than this fold into one line on page 1. */
-export const ONCE_FOLD_ABOVE = 8
+/**
+ * Page 1 holds this many finding rows with the trends below them (22 rows fit with room to spare on the 3-match
+ * CalGames session). Past it, the once-only findings fold into one line.
+ */
+export const PAGE1_ROWS = 24
 
 /**
- * Page 1 keeps a full row for every finding that repeated; the ones seen in a single match fold into one line grouped by
+ * When the list is too long for page 1, it keeps a full row for every finding that repeated; the ones seen in a single match fold into one line grouped by
  * rule, errors first: "Once (47 in 6 rules): can/device-dropout ×30 (Qualification 2); …". The full rows stay in the JSON.
  */
 export function fold(findings: ReportFinding[]): { rows: ReportFinding[]; onceFold: SessionModel['onceFold'] } {
   const once = findings.filter((f) => f.confidence === 'once')
-  if (once.length <= ONCE_FOLD_ABOVE) return { rows: findings, onceFold: null }
+  if (findings.length <= PAGE1_ROWS || once.length === 0) return { rows: findings, onceFold: null }
   const groups = new Map<string, { n: number; errors: number; labels: Set<string> }>()
   for (const f of once) {
     const g = groups.get(f.rule) ?? { n: 0, errors: 0, labels: new Set<string>() }
