@@ -23,7 +23,7 @@ export interface TrendMetric {
   atLinePasses?: boolean
 }
 
-/** The brownout setting + 1.0 V that power/margin judges against. 6.0 V is the roboRIO 2 default, used only for the row's headline line. */
+/** The brownout setting + 1.0 V that power/margin judges against. The 6 V roboRIO 2 default only gives the voltage row a line to have: the drawn line is each log's own setting + 1 V, and a log with no setting is not judged. */
 export const MARGIN_VOLTS = 1
 export const DEFAULT_BROWNOUT = 6
 
@@ -134,6 +134,8 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
       return metric.bad === 'below' ? v < l : metric.atLinePasses ? v >= l : v > l
     })
     const pastCount = past.filter(Boolean).length
+    // Matches with a value that no line judged (the voltage row, a log with no brownout setting).
+    const unjudged = hasLine ? values.filter((v, i) => v !== null && lines[i] === null).length : 0
     // Furthest on the bad side (lowest for 'below', highest otherwise); the highest where there is no line.
     let worstIndex: number | null = null
     values.forEach((v, i) => {
@@ -145,7 +147,7 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
     const lastIndex = matches.length - 1
     const latest = lastIndex >= 0 ? values[lastIndex] : null
     const strictlyWorst = worstIndex === lastIndex && latest !== null && values.every((v, i) => v === null || i === lastIndex || sign * v < sign * latest)
-    const latestIsWorst = n > 1 && strictlyWorst && (!hasLine || pastCount > 0)
+    const latestIsWorst = n > 1 && strictlyWorst && (!hasLine || (pastCount > 0 && lines[lastIndex] !== null))
     const worstWord = hasLine ? 'worst' : 'highest'
 
     const total = matches.length
@@ -159,6 +161,7 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
       verdict = missing === 0
         ? `${side} ${lineText} in ${pastCount} of ${total} matches`
         : `${side} ${lineText} in ${pastCount} of ${n} measured (${missing} not logged)`
+      if (unjudged > 0) verdict += `; ${unjudged} not judged (no brownout setting)`
     }
     const verdict2 = latestIsWorst ? `Latest is the ${worstWord} (${labels[lastIndex]})` : ''
 
@@ -167,6 +170,7 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
     let next: TrendRow['next']
     if (n === 0) next = { text: '', source: 'none', ruleId: null }
     else if (!hasLine) next = { text: 'No rule for this number', source: 'no-rule', ruleId: null }
+    else if (pastCount === 0 && unjudged > 0) next = { text: 'Nothing found; some matches not judged (no brownout setting)', source: 'none', ruleId: null }
     else if (pastCount === 0) next = { text: 'Nothing: within the line', source: 'within', ruleId: metric.rule ?? null }
     else {
       const own = worstIndex === null ? undefined : matches[worstIndex].rules[metric.rule!]?.findings.find((f) => f.nextStep && f.severity !== 'info')?.nextStep

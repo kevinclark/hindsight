@@ -44,10 +44,20 @@ describe('trendRows verdicts', () => {
     expect(r.lines).toEqual([null, 5.5, 7])
     expect(r.past).toEqual([false, false, true])
     expect(r.pastCount).toBe(1)
-    expect(r.verdict).toBe('Under its brownout setting + 1 V in 1 of 3 matches')
+    expect(r.verdict).toBe('Under its brownout setting + 1 V in 1 of 3 matches; 1 not judged (no brownout setting)')
     // Every log without a setting: the row has no line at all, and says why.
     const none = row(trendRows([m(1, { minVolts: 5.5, brownoutVolts: null })]), 'minVolts')
     expect(none).toMatchObject({ line: null, pastCount: 0, verdict: 'No line (brownout setting not logged): 5.50 to 5.50 V' })
+  })
+  it('says how many matches no line judged, and does not call a row clear or the unjudged worst "past the line"', () => {
+    const mixed = row(trendRows([m(1, { minVolts: 5.5, brownoutVolts: null }), m(2, { minVolts: 8, brownoutVolts: 6 })]), 'minVolts')
+    expect(mixed.verdict).toBe('Under 7 V in 0 of 2 matches; 1 not judged (no brownout setting)')
+    expect(mixed.next.text).toMatch(/not judged/)
+    expect(mixed.next.source).toBe('none')
+    // The lowest voltage, but not judged: not past, and so not the "latest is the worst" call either.
+    const latest = row(trendRows([m(1, { minVolts: 5.5, brownoutVolts: 6 }), m(2, { minVolts: 5.0, brownoutVolts: null })]), 'minVolts')
+    expect(latest).toMatchObject({ pastCount: 1, latestIsWorst: false, worstIndex: 1 })
+    expect(latest.past).toEqual([true, false])
   })
   it('makes no trend call', () => {
     for (const r of rows) expect(`${r.verdict} ${r.verdict2}`).not.toMatch(/worse|better|trend|improv/i)

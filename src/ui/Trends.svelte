@@ -57,7 +57,7 @@
                 {@const v = row.values[i]}
                 {#if v !== null}
                   {#if mixed(row) && row.past[i]}<circle class="ring" cx={p.x(i)} cy={p.y(v)} r="4" />{/if}
-                  <circle cx={p.x(i)} cy={p.y(v)} r={i === w ? 3 : 2.2} fill={i === w && row.pastCount > 0 ? 'var(--warning)' : colour(m)}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
+                  <circle cx={p.x(i)} cy={p.y(v)} r={i === w ? 3 : 2.2} fill={i === w && row.past[i] ? 'var(--warning)' : colour(m)}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
                 {/if}
               {/each}
             </svg>
