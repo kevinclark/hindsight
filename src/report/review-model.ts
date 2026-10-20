@@ -13,6 +13,7 @@ import type { CardModel, Tone } from './card.ts'
 import { descendants, nest, partitionStanding, severityWords, withParents, type FindingNode } from './finding-tree.ts'
 import { cardTitle, shortTitle } from './titles.ts'
 import { stripRepoPaths } from './repo-paths.ts'
+import { playedAt as summaryPlayedAt } from '../session/summary.ts'
 
 export { cardTitle, shortTitle } from './titles.ts'
 export { stripRepoPaths } from './repo-paths.ts'
@@ -20,14 +21,17 @@ export { stripRepoPaths } from './repo-paths.ts'
 /** `wrong`: marked "not a real problem" on this match; it is listed with the known issues. */
 export type FindingStatus = 'known' | 'came back' | 'fixed later' | 'wrong'
 
-/** When this match was played (wall clock, ms), so a fix recorded after it doesn't make it "came back". */
+/**
+ * When this match was played (wall clock, ms), so a fix recorded after it doesn't make it "came back" and a wrong mark
+ * finds the other matches of its event. The Session view's definition (session/summary.ts), so the two views agree:
+ * the robot clock, else the file name's date.
+ */
 export function playedAt(analysis: Analysis): number | null {
-  const m = analysis.match
-  return m.epochOffset !== null && m.matchStart !== null ? (m.epochOffset + m.matchStart) * 1000 : null
+  return summaryPlayedAt(analysis.match).playedAt
 }
 
 /** `wrong`: this match's wrong marks, by issue key (track-record.ts wrongHere). */
-export function findingStatus(f: Finding, issues: Map<string, IssueEvent>, played: number | null, wrong: Map<string, IssueEvent> = new Map()): FindingStatus | undefined {
+export function findingStatus(f: Pick<Finding, 'key'>, issues: Map<string, IssueEvent>, played: number | null, wrong: Map<string, IssueEvent> = new Map()): FindingStatus | undefined {
   if (wrong.has(f.key)) return 'wrong'
   const issue = issues.get(f.key)
   if (!issue) return undefined
@@ -88,7 +92,8 @@ export function buildLine(b: { sha: string; branch: string; dirty: string }): Bu
 
 /** "2026-10-18", from the robot's clock when it was set; empty when it never was. */
 export function matchDate(analysis: Analysis): string {
-  const t = playedAt(analysis)
+  const m = analysis.match
+  const t = m.epochOffset !== null && m.matchStart !== null ? (m.epochOffset + m.matchStart) * 1000 : null
   if (t === null) return ''
   const d = new Date(t)
   const p = (n: number) => String(n).padStart(2, '0')

@@ -14,7 +14,11 @@
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
   import { clearCached, fileKey, loadCached, saveCached } from '../session/cache.ts'
-  import type { IssueEvent } from '../triage/history.ts'
+  import { staleNote } from '../session/stale.ts'
+  import { changeText, diffFindings, snapshotFindings, type FindingChange, type FindingSnapshot } from '../session/changes.ts'
+  import { VERSION } from '../version.ts'
+  import type { Triage } from '../triage/history.ts'
+  import { sessionWithMarks } from '../triage/track-record.ts'
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
   import { shortMatchLabel } from './match-label.ts'
@@ -23,9 +27,11 @@
   import SessionReport from './SessionReport.svelte'
   import { buildCard } from '../report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
-  import { crashedNote, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
+  import { allMarked, crashedNote, gridCells, marksText, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
 
-  let { issues, onOpen, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { issues: Map<string, IssueEvent>; onOpen: (files: File[]) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
+  // `marks`: the team's history (known, fixed and "not a real problem" marks).
+  let { marks, onOpen, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
+  const issues = $derived(marks.issues)
 
   let summaries = $state<MatchSummary[]>([])
   // File handles only (not their contents), so a match can be reopened in Match review.
@@ -48,20 +54,28 @@
   // How many summaries this browser holds, and whether saving works here (a private window or Safari from disk may refuse).
   let savedCount = $state(0)
   let saveFailed = $state(false)
+  // Summaries on the page that an older Hindsight read (restored after an update), by log file name: shown, but
+  // not reused as if current. "Read again" replaces them.
+  let stale = $state<Record<string, { version?: string; savedAt: string }>>({})
+  // Saved summaries too old to draw (another shape): only counted.
+  let hiddenOld = $state<Set<string>>(new Set())
   // Restoring finishes before any load reads the cache, so a folder chosen right after a reload reuses it.
   const ready = loadCached().then((saved) => {
     // One per file name (the newest), and only those read with the robot picked for that log now.
-    const newest = new Map<string, (typeof saved)[number]>()
-    for (const c of saved) {
+    const newest = new Map<string, (typeof saved.current)[number]>()
+    for (const c of [...saved.current, ...saved.stale]) {
       const prev = newest.get(c.summary.fileName)
       if (!prev || c.savedAt > prev.savedAt) newest.set(c.summary.fileName, c)
     }
     const usable = [...newest.values()].filter((c) => sameRobot(c.summary, c.summary.fileName))
+    const oldRead = new Set(saved.stale.map((c) => c.key))
     for (const c of usable) {
-      cache.set(c.key, c.summary)
+      if (oldRead.has(c.key)) stale[c.summary.fileName] = { version: c.version, savedAt: c.savedAt }
+      else cache.set(c.key, c.summary)
       if (!collected.some((s) => s.fileName === c.summary.fileName)) collected.push(c.summary)
     }
-    savedCount = saved.length
+    savedCount = saved.current.length + saved.stale.length
+    hiddenOld = new Set(saved.otherShape.map((c) => c.summary.fileName))
     if (usable.length) {
       summaries = [...collected]
       restored = { count: usable.length, savedAt: usable.map((c) => c.savedAt).sort()[0] }
@@ -70,6 +84,7 @@
   })
   /** Remove the copies saved in this browser; what is on the page stays. */
   async function forget() {
+    loadGen++
     await clearCached()
     cache.clear()
     savedCount = 0
@@ -94,27 +109,29 @@
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
   // Until one is picked, show the event (the matches that count), else the first session.
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
+  // The session as the team's marks show it (Match review shows the same): a red that a "not a real problem" mark on
+  // another match of the event demotes is amber, with the reason. Findings, the grid's colours and the exports use it.
+  const shown = $derived(session ? sessionWithMarks(session, marks) : undefined)
   const grid = $derived(session ? ruleGrid(session) : [])
-  const merged = $derived(session ? mergeFindings(session) : [])
+  const merged = $derived(shown ? mergeFindings(shown) : [])
   // "Once" rows (one match only, low confidence) fold under one summary; the rest stay listed. Same order inside each.
   // A row that came back after a fix stays listed whatever its confidence: it is the news, never folded away.
   const folds = (f: (typeof merged)[number]) => f.confidence === 'once' && cameBack(f.key, f.matches).length === 0
-  const listed = $derived(merged.filter((f) => !folds(f)))
-  const onceRows = $derived(merged.filter(folds))
+  // Marked "not a real problem" in every match it fired in: listed apart, like Match review's known issues.
+  const filedRows = $derived(merged.filter(allMarked))
+  const unfiled = $derived(merged.filter((f) => !allMarked(f)))
+  const listed = $derived(unfiled.filter((f) => !folds(f)))
+  const onceRows = $derived(unfiled.filter(folds))
   // What the fold holds, counted from its rows: "43 errors, 4 warnings".
   const onceHolds = $derived((['error', 'warning', 'info'] as const).map((sev) => [sev, onceRows.filter((f) => f.severity === sev).length] as const).filter(([, n]) => n > 0).map(([sev, n]) => (sev === 'info' ? `${n} info` : `${n} ${sev}${n === 1 ? '' : 's'}`)).join(', '))
   // Rule × match rows: most matches fired first, then the worse severity, then the rules' own order.
   const SEV_RANK = { error: 0, warning: 1, info: 2 } as const
   const gridRows = $derived.by(() => {
     const rows = grid.map((r, row) => {
-      const sevs = r.cells.map((c, i) => {
-        if (c !== 'fired') return null
-        const fs = session!.matches[i].rules[r.rule]?.findings ?? []
-        // Fired with no finding listed: shown as the worst, never quietly grey.
-        return fs.length ? fs.reduce((a, b) => (SEV_RANK[b.severity] < SEV_RANK[a] ? b.severity : a), fs[0].severity) : 'error'
-      })
-      const worst = Math.min(3, ...sevs.map((v) => (v ? SEV_RANK[v] : 3)))
-      return { ...r, sevs, worst, row }
+      // A cell marked not a real problem keeps its severity's shape, greyed, and doesn't sort the row up.
+      const cells = gridCells(shown!, r.rule)
+      const worst = Math.min(3, ...cells.map((c) => (c.severity && !c.marked ? SEV_RANK[c.severity] : 3)))
+      return { ...r, gridCells: cells, worst, row }
     })
     return rows.sort((a, b) => b.fired - a.fired || a.worst - b.worst || a.row - b.row)
   })
@@ -134,6 +151,12 @@
   const chosenId = $derived(session && session.matches.every((m) => m.robot.how === 'chosen by you') && robots.length === 1 ? robots[0].robot.profileId : null)
   const notes = $derived([...new Set(session ? session.matches.map((m) => m.robot.note).filter((n): n is string => !!n) : [])])
 
+  /** Every log file in a session, counting the pieces of a match recorded in several logs. */
+  const logsOf = (s: Session) => s.matches.flatMap((m) => m.pieces ?? [m.fileName])
+  const staleShown = $derived(summaries.filter((m) => stale[m.fileName]).map((m) => stale[m.fileName]))
+  const sessionIsStale = $derived(!!session && logsOf(session).some((n) => stale[n]))
+  const staleText = $derived(staleNote(staleShown, hiddenOld.size))
+
   function readStore(key: string): Record<string, string> {
     try { return JSON.parse(localStorage.getItem(key) ?? '{}') } catch { return {} }
   }
@@ -142,15 +165,20 @@
   }
 
   // Loads run one after another, so a re-read for a new code folder starts once the logs being read have all landed.
-  let loading: Promise<void> = Promise.resolve()
-  function load(list: FileList | File[] | null): Promise<void> {
+  // Each load keeps the number current when it was asked for; New session bumps it, so loads running or still
+  // queued then stop quietly.
+  let loadGen = 0
+  let queue: Promise<void> = Promise.resolve()
+  function load(list: FileList | File[] | null, opts: { fresh?: boolean } = {}): Promise<void> {
     const picked = Array.from(list ?? [])
-    loading = loading.then(() => loadNow(picked)).catch((error) => { problems = [...problems, String(error)] })
-    return loading
+    const gen = loadGen
+    queue = queue.then(() => loadNow(picked, gen, opts)).catch((error) => { problems = [...problems, String(error)] })
+    return queue
   }
 
-  async function loadNow(list: File[]) {
+  async function loadNow(list: File[], gen: number, { fresh = false }: { fresh?: boolean } = {}) {
     await ready
+    if (gen !== loadGen) return
     const chosen = Array.from(list ?? []).filter((f) => /\.wpilog$/i.test(f.name))
     if (chosen.length === 0) { problems = ['No .wpilog files in what you chose. To load a folder, use "Choose a folder…" (dragging a folder in only works for the files themselves).']; return }
     problems = []
@@ -159,18 +187,26 @@
     // Collect summaries in a plain list and show them every 10 logs: redrawing the whole session after every log
     // made a 160-log folder take minutes.
     const publish = () => { summaries = [...collected] }
+    const saving: Promise<void>[] = []
     for (const file of chosen) {
       progress = { ...progress, current: file.name }
       await new Promise((r) => setTimeout(r, 0)) // let the page paint between logs
+      if (gen !== loadGen) return
       try {
         const key = fileKey(file)
         const saved = cache.get(key)
-        const summary = reusable(saved, file.name) ? saved : await summarizeLogWithCode({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored])
+        const reuse = !fresh && reusable(saved, file.name)
+        const bytes = reuse ? null : new Uint8Array(await file.arrayBuffer())
+        if (gen !== loadGen) return
+        const summary = reuse ? saved : await summarizeLogWithCode({ name: file.name, bytes: bytes! }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored])
+        if (gen !== loadGen) return
         if (summary && summary !== saved) {
           cache.set(key, summary)
-          saveCached(key, $state.snapshot(summary) as MatchSummary).then((ok) => { if (ok) savedCount++; else saveFailed = true })
+          saving.push(saveCached(key, $state.snapshot(summary) as MatchSummary).then((ok) => { if (!ok) saveFailed = true }))
         }
         if (summary) {
+          delete stale[summary.fileName]
+          if (hiddenOld.has(summary.fileName)) hiddenOld = new Set([...hiddenOld].filter((n) => n !== summary.fileName))
           const old = collected.findIndex((s) => s.fileName === summary.fileName)
           if (old >= 0) collected.splice(old, 1)
           collected.push(summary)
@@ -186,11 +222,86 @@
     }
     publish()
     withoutFile = collected.filter((s) => !files.has(s.fileName)).length
+    await Promise.all(saving)
+    if (gen !== loadGen) return
+    await recountSaved()
+  }
+
+  /** How many summaries this browser holds that a reload brings back (not the too-old ones), read from the store. */
+  async function recountSaved() {
+    const saved = await loadCached()
+    savedCount = saved.current.length + saved.stale.length
+  }
+  /** A load is running: New session and Read again wait for it. */
+  const loading = $derived(!!progress && progress.done < progress.total)
+
+  /** Start over: clear the summaries on the page and saved in this browser. What the student wrote down stays. */
+  async function newSession() {
+    if (loading) return
+    const n = summaries.length
+    if (!window.confirm(`Start a new session? This clears the ${n} log summar${n === 1 ? 'y' : 'ies'} on this page and saved in this browser. Moved logs, session names, battery ids and known-issue marks are kept.`)) return
+    await clearCached()
+    cache.clear()
+    files.clear()
+    collected.length = 0
+    summaries = []
+    selectedId = null
+    progress = null
+    problems = []
+    restored = null
+    withoutFile = 0
+    savedCount = 0
+    saveFailed = false
+    heapMB = null
+    stale = {}
+    hiddenOld = new Set()
+    reread = null
+    pendingReread = null
+  }
+
+  // What the last "Read again" changed, for the session it was run on (until dismissed or a new session starts).
+  let reread = $state<{ sessionId: string; changes: FindingChange[]; dismissed: boolean; note: string | null } | null>(null)
+  // A "Read again" waiting for the student to choose the folder, with the findings as they stood when it was pressed.
+  let pendingReread: { names: string[]; before: FindingSnapshot[]; count: number } | null = null
+  let rereadInput: HTMLInputElement | undefined = $state()
+
+  /** Read every log of this session again with this Hindsight, ignoring the saved summaries, and see what changed. */
+  function readAgain(s: Session) {
+    if (loading) return
+    const names = logsOf(s)
+    const before = snapshotFindings(mergeFindings(s))
+    if (names.every((n) => files.has(n))) void rereadLogs(names, before, s.matches.length, [])
+    else {
+      // The button press is the click the browser needs to open the folder chooser.
+      pendingReread = { names, before, count: s.matches.length }
+      rereadInput?.click()
+    }
+  }
+  async function rereadChosen(list: FileList | null) {
+    const pending = pendingReread
+    pendingReread = null
+    if (pending) await rereadLogs(pending.names, pending.before, pending.count, Array.from(list ?? []))
+    if (rereadInput) rereadInput.value = ''
+  }
+  async function rereadLogs(names: string[], before: FindingSnapshot[], matchCount: number, chosen: File[]) {
+    const picked = new Map(chosen.map((f) => [f.name, f]))
+    const use = names.map((n) => picked.get(n) ?? files.get(n)).filter((f): f is File => !!f)
+    if (use.length === 0) { problems = ["None of this session's logs were in what you chose, so nothing was read again."]; return }
+    restored = null
+    await load(use, { fresh: true })
+    const missing = names.filter((n) => !picked.has(n) && !files.has(n))
+    if (missing.length) problems = [...problems, `${missing.length} of this session's logs were not in what you chose, so they were not read again: ${missing.join(', ')}.`]
+    const holds = (x: Session) => logsOf(x).filter((n) => names.includes(n)).length
+    const after = sessions.reduce<Session | undefined>((best, x) => (holds(x) > (best ? holds(best) : 0) ? x : best), undefined)
+    if (!after) return
+    selectedId = after.id
+    const note = after.matches.length === matchCount ? null : `These logs are now in ${after.label}; the comparison covers that whole session.`
+    reread = { sessionId: after.id, changes: diffFindings(before, snapshotFindings(mergeFindings(after))), dismissed: false, note }
   }
 
   // The student picked the robot for every log in this session: read them again with that profile.
   async function setRobot(s: Session, id: string) {
-    const names = s.matches.flatMap((m) => m.pieces ?? [m.fileName])
+    const names = logsOf(s)
     chooseRobot(names, id === 'auto' ? null : id)
     const have = names.map((n) => files.get(n)).filter((f): f is File => !!f)
     if (have.length < names.length) problems = ['To read these logs again with that robot, choose them again ("Choose logs…"): between visits this page keeps summaries, not logs.']
@@ -227,18 +338,20 @@
     typedBatteries = { ...typedBatteries, [fileName]: id.trim() }
     writeStore('hindsight.typedBatteries', typedBatteries)
   }
+  const changesFor = (s: Session) => (reread && reread.sessionId === s.id ? reread.changes : undefined)
   function download() {
     if (!session) return
-    downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1))
+    downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(shown!, issues, typedBatteries, changesFor(session)), null, 1))
   }
   // "Save for Slack": the phone card as a PNG, then the print dialog (Save as PDF; the title names the file).
+  // `s` as the team's marks show it (`shown`).
   const cardOf = (s: Session) => buildCard(sessionCard(sessionModel(s, issues, typedBatteries)))
   let saveProblem = $state<string | null>(null)
   async function saveForSlackSession() {
     saveProblem = null
     if (!session) return
     const base = sessionBase(session.label)
-    try { saveProblem = await saveForSlack(`${base}.session-report`, `${base}.session-card.png`, cardOf(session)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
+    try { saveProblem = await saveForSlack(`${base}.session-report`, `${base}.session-card.png`, cardOf(shown!)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   // Tells App.svelte that a session is selected, so print shows the session report instead of the app.
   $effect(() => { hasSession = !!session })
@@ -252,9 +365,9 @@
     api.selectSession = (id: string) => { selectedId = id }
     api.sessionFile = () => (session ? `${sessionBase(session.label)}.session-findings.json` : null)
     api.sessionBase = () => (session ? sessionBase(session.label) : null)
-    api.sessionFindingsJson = () => (session ? JSON.stringify(buildSessionJson(session, issues, typedBatteries), null, 1) : null)
-    api.sessionCardPng = async () => (session ? await cardToPngDataUrl(cardOf(session)) : null)
-    api.sessionReport = () => (session ? sessionModel(session, issues, typedBatteries) : null)
+    api.sessionFindingsJson = () => (session ? JSON.stringify(buildSessionJson(shown!, issues, typedBatteries, changesFor(session)), null, 1) : null)
+    api.sessionCardPng = async () => (shown ? await cardToPngDataUrl(cardOf(shown)) : null)
+    api.sessionReport = () => (shown ? sessionModel(shown, issues, typedBatteries) : null)
   })
   function newSessionFor(fileName: string) {
     const label = window.prompt('Move this log to the session named:', '')
@@ -290,12 +403,14 @@
 
 {#snippet row(f: (typeof merged)[number])}
   {@const back = cameBack(f.key, f.matches)}
-  <li class={f.severity}>
+  {@const marked = marksText(shown!, f)}
+  <li class={f.severity} class:filed={allMarked(f)}>
     <span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span>
     <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
     {#if f.measured.length}
       <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
     {/if}
+    {#if marked}<span class="marked">↳ {marked}</span>{/if}
     <span class="latest">Latest: {f.title}</span>
   </li>
 {/snippet}
@@ -307,6 +422,8 @@
   <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <CodeFolderControl suggest={[...PROFILES, ...stored].find((p) => profileId(p) === robots[0]?.robot.profileId)?.code} />
+  {#if summaries.length}<button class="button" disabled={loading} onclick={newSession} title="Clears the log summaries on this page and saved in this browser. Moved logs, session names, battery ids and known-issue marks are kept.">New session</button>{/if}
+  <input type="file" webkitdirectory multiple hidden data-reread-input bind:this={rereadInput} onchange={(e) => rereadChosen((e.currentTarget as HTMLInputElement).files)} />
   {#if progress}
     <span class="progress" role="status">
       {progress.done} of {progress.total} logs{progress.done < progress.total ? ` · reading ${progress.current}` : ''} ·
@@ -323,6 +440,8 @@
   </p>
 {/if}
 
+{#if staleText}<p class="note warn" data-stale-note>{staleText}</p>{/if}
+
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
@@ -335,11 +454,27 @@
   <section class="head">
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
     <span class="actions">
+      <button class="button" disabled={loading} class:prominent={sessionIsStale} onclick={() => readAgain(session)} title="Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, it asks for the folder.">Read again</button>
       <button class="button" onclick={download}>Download for Claude</button>
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
   </section>
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
+  {#if reread && reread.sessionId === session.id && !reread.dismissed}
+    <section class="changed" data-reread-changes>
+      {#if reread.note}<p class="note">{reread.note}</p>{/if}
+      {#if reread.changes.length === 0}
+        <p class="note">Read again with Hindsight {VERSION}: no finding changed. <button class="link" onclick={() => (reread!.dismissed = true)}>Dismiss</button></p>
+      {:else}
+        <h3>What changed when these logs were read again (Hindsight {VERSION}) <button class="link" onclick={() => (reread!.dismissed = true)}>Dismiss</button></h3>
+        <ul class="changes">
+          {#each reread.changes as c (c.key)}
+            <li class={c.severity}><span aria-hidden="true">{SEV_ICON[c.severity]}</span> <span class="sr">{SEV_WORD[c.severity]}: </span>{changeText(c)}</li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
   {#each robots as r (r.robot.profileId)}
     <p class="note">Robot: <strong>{r.robot.name}</strong>, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
   {/each}
@@ -370,7 +505,7 @@
           <tr>
             <th scope="row"><code>{r.rule}</code></th>
             {#each r.cells as c, i (i)}
-              {#if c === 'fired'}{@const sev = r.sevs[i] ?? 'error'}<td class={`cell fired ${sev}`} title={`${SEV_WORD[sev]}: fired`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}</span></td>
+              {#if c === 'fired'}{@const cell = r.gridCells[i]}{@const sev = cell.severity ?? 'error'}{@const markedNote = cell.marked ? ', marked not a real problem' : ''}<td class={`cell fired ${sev}`} class:filed={cell.marked} title={`${SEV_WORD[sev]}: fired${markedNote}`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}{markedNote}</span></td>
               {:else}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/if}
             {/each}
             <td class="rate">{r.checkable ? `${CONFIDENCE_WORDS[r.confidence]}: ${r.fired} of ${r.checkable}` : 'not checked'}</td>
@@ -379,7 +514,7 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
+  <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
 
   <h3>Logging across the session</h3>
   {#if withLogging === 0}
@@ -423,6 +558,16 @@
       </ul>
     </details>
   {/if}
+  {#if filedRows.length}
+    <details class="once-fold filed-fold">
+      <summary>{filedRows.length} marked not a real problem in every match {filedRows.length === 1 ? 'it' : 'they'} fired in</summary>
+      <ul class="merged">
+        {#each filedRows as f (f.key)}
+          {@render row(f)}
+        {/each}
+      </ul>
+    </details>
+  {/if}
 
   <h3>Matches in this session</h3>
   <div class="grid-wrap"><table class="list">
@@ -447,7 +592,7 @@
   </table></div>
 {/if}
 </div>
-{#if session}<SessionReport {session} {issues} {typedBatteries} />{/if}
+{#if shown}<SessionReport session={shown} {issues} {typedBatteries} />{/if}
 
 <style>
   .intro, .hint, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
@@ -461,6 +606,10 @@
   .sessions button { min-height: 24px; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
   .sessions button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
   .sessions small { color: var(--muted); }
+  .button.prominent { border-color: var(--warning); color: var(--warning); font-weight: 600; }
+  .changed h3 { margin-top: 1rem; }
+  .changed .error { color: var(--error); }
+  .changed .warning { color: var(--warning); }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   h2 { font-size: 1.2rem; margin: 0; }
@@ -468,7 +617,9 @@
   .link { border: none; background: none; color: var(--focus); font: inherit; font-size: 0.85rem; cursor: pointer; padding: 0.2rem 0.25rem; min-height: 24px; box-sizing: border-box; }
   .merged { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--border); }
   .merged li { display: grid; grid-template-columns: 8rem 1fr; gap: 0.1rem 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
-  .merged .measured, .merged .latest { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
+  .merged .measured, .merged .latest, .merged .marked { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
+  /* Marked not a real problem in every match it fired in: muted like Match review's known issues; the words still say its severity. */
+  .merged li.filed .title code { color: var(--muted); }
   .merged .title { overflow-wrap: anywhere; }
   .error .title code { color: var(--error); }
   .warning .title code { color: var(--warning); }
@@ -490,7 +641,7 @@
   .cell.fired.error { color: var(--error); }
   .cell.fired.warning { color: var(--warning); }
   .cell.fired.info { color: var(--muted); }
-  .cell.not-checked { color: var(--muted); }
+  .cell.not-checked, .cell.fired.filed { color: var(--muted); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .grid th.match { padding-left: 0.2rem; padding-right: 0.2rem; }
   .grid th.match .link { min-width: 24px; }
@@ -501,5 +652,5 @@
   .list thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   input:not([type='file']), select { min-height: 24px; box-sizing: border-box; }
   input, select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; max-width: 100%; }
-  @media (max-width: 640px) { .merged li { grid-template-columns: 1fr; } .merged .measured, .merged .latest { grid-column: 1; } }
+  @media (max-width: 640px) { .merged li { grid-template-columns: 1fr; } .merged .measured, .merged .latest, .merged .marked { grid-column: 1; } }
 </style>

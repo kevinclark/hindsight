@@ -16,6 +16,10 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   folder> ...` before and after, then `cmp`. It records every finding, evidence value, plot and not-checked
   reason. Rules that never fire on the logs you have are covered only by the unit tests.
 
+## Session summaries (`src/session/`)
+
+- Summaries are saved in the browser and shown after an update while their `SUMMARY_SHAPE` matches. Change `MatchSummary` so old copies can't be drawn: bump `SUMMARY_SHAPE` in `summary.ts` and update the key list in `tests/reread.test.ts`.
+
 ## Robot snapshot (`tools/robot-snapshot.py`, `src/snapshot/`, `src/ui/SnapshotView.svelte`)
 
 - **The collector is read-only by construction, and the tests enforce it.** `_get()` is the only network call.

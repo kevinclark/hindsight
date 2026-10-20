@@ -4,11 +4,13 @@
  */
 import { VERSION } from '../version.ts'
 import { mergeFindings, ruleGrid, type Session } from './session.ts'
+import type { FindingChange } from './changes.ts'
 import type { IssueEvent } from '../triage/history.ts'
 
 export const SESSION_FINDINGS_SCHEMA = 'hindsight.session-findings/1'
 
-export function buildSessionJson(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}): object {
+/** Pass the session as the team's marks show it (triage/track-record.ts sessionWithMarks): findings then carry `wrong` and `demoted`. */
+export function buildSessionJson(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}, changedOnReread?: FindingChange[]): object {
   return {
     schema: SESSION_FINDINGS_SCHEMA,
     tool: { name: 'hindsight', version: VERSION },
@@ -24,7 +26,10 @@ export function buildSessionJson(session: Session, issues: Map<string, IssueEven
     findings: mergeFindings(session).map((f) => ({
       ...f,
       matches: f.matches.map((i) => session.matches[i].fileName),
+      ...(f.wrong ? { wrong: f.wrong.map((w) => ({ match: session.matches[w.match].fileName, note: w.reason, since: w.when })) } : {}),
       issue: issues.get(f.key) ? { status: issues.get(f.key)!.status, note: issues.get(f.key)!.note, since: issues.get(f.key)!.when } : null,
     })),
+    // Only after "Read again": what that changed in the findings (additive; the schema id stays /1).
+    ...(changedOnReread ? { changedOnReread: { hindsightVersion: VERSION, changes: changedOnReread } } : {}),
   }
 }
