@@ -216,7 +216,7 @@ describe('Foresight card', () => {
   it('shortens shas with one helper and counts the checks that did not run only when there are some', () => {
     const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
     expect(shortShas(`${sha} and ${sha.slice(0, 7)}`)).toBe('123eec6 and 123eec6')
-    expect(didNotRun(11, 21)).toBe('11 of 21 checks did not run')
+    expect(didNotRun(11, 21)).toBe('11 of 21 checks not fully run')
     expect(didNotRun(0, 21)).toBeNull()
   })
   it('a withdrawn verdict prints as NOT CHECKED, never GO', () => {
@@ -253,11 +253,11 @@ describe('Foresight printed report component', () => {
     const onchecks = [{ line: 'Line A', state: 'ok', detail: '' }, { line: 'Line B', state: 'not checked', detail: '' }]
     const props = { status: { state: 'connected', message: 'Connected', url: 'ws://secret-host:5810/nt' }, checked, verdict: 'NO-GO', why: 'x', onchecks, battery: 12.6, controllers: [], totalChecks: 21 }
     const html = render(ForesightReport, { props: props as never }).body
-    expect(html).toContain('1 of 21 checks did not run')
+    expect(html).toContain('1 of 21 checks not fully run')
     expect(html).toContain('– Not checked')
     expect(html).not.toContain('secret-host')
     expect(html).not.toContain(sha)
-    expect(render(ForesightReport, { props: { ...props, checked: { ...checked, verdict: { ...checked.verdict, notChecked: [] } } } as never }).body).not.toContain('did not run')
+    expect(render(ForesightReport, { props: { ...props, checked: { ...checked, verdict: { ...checked.verdict, notChecked: [] } } } as never }).body).not.toContain('not fully run')
   })
 })
 

@@ -120,7 +120,7 @@
   .verdict { margin: 0.7rem 0 0.4rem; padding: 0.7rem 1rem; border: 3px solid var(--border); text-align: center; break-inside: avoid; }
   .big { font-size: 48pt; font-weight: 800; line-height: 1.05; margin: 0; letter-spacing: 0.02em; }
   .why { font-size: 12pt; margin: 0.2rem 0 0; }
-  .unrun { font-size: 10.5pt; margin: 0.1rem 0 0; }
+  .unrun { font-size: 10.5pt; margin: 0.1rem 0 0; color: var(--muted); }
   .v-go { border-color: var(--go); color: var(--go); }
   .v-no-go { border-color: var(--error); color: var(--error); }
   .v-not-checked { color: var(--muted); }

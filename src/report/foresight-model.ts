@@ -27,8 +27,8 @@ export interface ForesightReportInput {
 /** A 40-hex git sha in a line of text shortened to the 7 characters the card and the printed report show. */
 export const shortShas = (text: string) => text.replace(/\b[0-9a-f]{40}\b/g, (sha) => sha.slice(0, 7))
 
-/** The verdict box's sub-line: how many of the checks did not run (the same count as the "Not checked or partly checked" line). */
-export const didNotRun = (n: number, total: number) => (n > 0 ? `${n} of ${total} checks did not run` : null)
+/** The verdict box's sub-line: how many of the checks did not run in full (the same count as the "Not checked or partly checked" line). */
+export const didNotRun = (n: number, total: number) => (n > 0 ? `${n} of ${total} checks not fully run` : null)
 
 const p2 = (n: number) => String(n).padStart(2, '0')
 export const stamp = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`

@@ -262,7 +262,7 @@
   .big { font-size: clamp(2rem, 9vw, 4rem); font-weight: 800; margin: 0; letter-spacing: 0.02em; }
   .verdict p { margin: 0.25rem 0; }
   .small { font-size: 0.8rem; color: var(--muted); }
-  .verdict .unrun { font-size: 1rem; }
+  .verdict .unrun { font-size: 1rem; color: var(--muted); }
   details > summary { min-height: 24px; box-sizing: border-box; }
   .v-go { border-color: var(--go, #188038); color: var(--go, #188038); }
   .v-no-go { border-color: var(--error); color: var(--error); }

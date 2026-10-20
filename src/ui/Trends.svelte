@@ -36,7 +36,7 @@
       <figcaption>{metric.label} <span>({metric.unit})</span></figcaption>
       {#if p}
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${metric.label} per match`}>
-          {#if metric.line !== undefined}<line class="ref" x1={P} x2={W - P} y1={p.y(metric.line)} y2={p.y(metric.line)} />{/if}
+          {#if metric.line !== undefined}<line class="ref" x1={PX} x2={W - PX} y1={p.y(metric.line)} y2={p.y(metric.line)} />{/if}
           {#each matches as m, i (m.fileName)}
             {@const v = p.vals[i]}
             {#if v !== null && Number.isFinite(v)}
