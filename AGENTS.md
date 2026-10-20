@@ -22,6 +22,14 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 - **No retries, no variations.** The first `GeneralReturn.Error ≠ 0`, timeout or bad answer stops the run. The
   partial snapshot is still written, and the exit code is 2.
 - **Stdlib only, Python ≥ 3.8** (macOS ships 3.9). Students run it with no install.
+- **Built files (Mac and Windows, Python bundled by PyInstaller) come only from
+  `.github/workflows/robot-snapshot.yml`**, from committed source that passed the tests, with `BUILD` replaced by the
+  git commit (`scripts/build-robot-snapshot.py`). `scripts/smoke-robot-snapshot.py` runs the built binary against
+  the stub and fails unless every request is an allowed read and the build stamp matches. Never commit a built binary
+  or zip (`dist-snapshot/` is ignored). Double-click mode (the team-number prompt and the "Press Enter" pause) runs
+  only when frozen, with no arguments, on a terminal; `python3 tools/robot-snapshot.py` and tests behave as before.
+  To cut a release: get Kevin's go, then push a tag `robot-snapshot-vX.Y.Z` on a tested commit; the workflow
+  publishes both zips with their sha256.
 - **owlet (CTRE's hoot converter) must never be downloaded, bundled, copied or committed** (CTRE EULA). The
   collector runs it in place from AdvantageScope's cache, picked by the hoot file's compliancy byte (offset 70).
 - **Signal ids change between Phoenix versions.** Resolve sticky faults by name from `getsignals`, and configs by

@@ -17,8 +17,9 @@ writes to it: Foresight only subscribes.
 - The onchecks laptop's controllers plugged in (Foresight's controller check reads this laptop's Driver Station,
   not the drive team's).
 - A printed AprilTag (36h11, the field's family; one tag is enough), for step 7.
-- For step 8, `tools/robot-snapshot.py` and Python 3.8 or newer on the same onchecks laptop. Never the drive
-  laptop, which takes no installs.
+- For step 8, the downloaded robot-snapshot program (Releases page, see `docs/robot-snapshot.md`) or
+  `tools/robot-snapshot.py` with Python 3.8 or newer, on the same onchecks laptop. Never the drive laptop, which
+  takes no installs.
 
 ## Steps
 
@@ -49,8 +50,8 @@ writes to it: Foresight only subscribes.
    The pass lasts until the robot is next driven, or for 15 min: after either the two items come back, so show the
    tag again before the match.
 8. **Take a robot snapshot** (about 1 minute; see `docs/robot-snapshot.md`). Don't press Clear Faults or blink
-   anything first. With Foresight still connected, run `python3 tools/robot-snapshot.py` in a terminal on the same
-   laptop, then click **Robot snapshot…** and choose the `snapshot.json` it saved. The box should say *Used for
+   anything first. With Foresight still connected, double-click the downloaded robot-snapshot program (or run `python3 tools/robot-snapshot.py` in a
+   terminal) on the same laptop, then click **Robot snapshot…** and choose the `snapshot.json` it saved. The box should say *Used for
    this check*, and four checklist lines (*All CAN devices licensed and ID'd*, *CANcoder offsets correct and
    unchanged*, *Swerve ratio unchanged*, *Current limits as the code sets them*) should change from *Not checked* to
    **OK** or **Look**. Note each line's mark and text. A line that says *partly checked* or *Not checked* with a
