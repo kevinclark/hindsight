@@ -11,7 +11,7 @@
  * 30 A and 0.2 rot/s lines come from that jam; for any other motor they are assumed.
  * Why: 2026-02-21 practice: a screw jammed the turret, and no rule caught it.
  */
-import { above, plural, round, rule, secs, totalSeconds, within } from '../rule.ts'
+import { above, nearZero, plural, round, rule, secs, totalSeconds } from '../rule.ts'
 import type { Problem } from '../rule.ts'
 import type { MatchView, MotorView } from '../view.ts'
 
@@ -63,5 +63,5 @@ export default rule({
 /** Stretches while enabled when the motor drew more than STALL_AMPS without turning, longer than LONGER_THAN_SECONDS. */
 function stalls(motor: MotorView, match: MatchView) {
   const pushing = motor.stator().episodes(above(STALL_AMPS), { during: match.enabled })
-  return motor.velocity().episodes(within(STILL_ROT_PER_S), { during: pushing, longerThan: LONGER_THAN_SECONDS })
+  return motor.velocity().episodes(nearZero(STILL_ROT_PER_S), { during: pushing, longerThan: LONGER_THAN_SECONDS })
 }
