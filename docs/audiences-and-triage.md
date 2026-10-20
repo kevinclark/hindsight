@@ -72,9 +72,15 @@ the same problem in five matches is one issue with five sightings, not five rows
   the card, as Match review files it with the known issues. Its report, card and session-findings.json (`wrong`,
   `demoted`) say the same. Both views date a match the same way (`session/summary.ts playedAt`: the robot clock, else
   the file name's date).
+- **Real problem…** (2026-10-20) says a finding was real on that match, with an optional note (what happened, a link
+  to the report). It is about one match only and changes nothing else on the page: the finding stays in its list, red
+  stays red, and a wrong mark elsewhere no longer demotes it. It says nothing about the event's other matches: a wrong
+  mark on Q2 still turns Q7's red amber, and How sure shows both marks. It is what *How sure* counts as confirmed. Known and
+  fixed still count too, but a known mark files every later fire of the issue as known, which for a check with no
+  subject (`comms/loss`, `power/brownout`) hides the next real red. *Undo* writes `unmark`; older builds skip both.
 - **How sure:** with any marks in the history, each finding says how its check has done on our matches, counted once
-  per issue per match over the open logs plus every match named in the history: *marked real* (known or fixed on that
-  very match), *a known issue* (another fire of a known issue, or one before its fix; nobody looked), *marked not a
+  per issue per match over the open logs plus every match named in the history: *marked real* (a real mark, or known or
+  fixed, on that very match), *a known issue* (another fire of a known issue, or one before its fix; nobody looked), *marked not a
   real problem*, and *not marked yet* (including a fire after a fix). With no marks it says nothing.
 - **Known** issues leave the red list and sit under "Known issues seen this match", with the note.
 - **Fixed** issues that fire again in a match played *after* the fix show at the top as **"Came back after a fix"**:

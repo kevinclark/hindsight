@@ -43,6 +43,8 @@ describe('track record', () => {
     expect(howSure(r({ fired: 3, untriaged: 3 }), true)).toBe('New check: never confirmed on our matches (fired 3 times: 3 not marked yet)')
     expect(howSure(r({}), true)).toBe('New check: never confirmed on our matches')
     expect(howSure(r({ fired: 6, real: 5, wrong: 1 }), true)).toBe('marked real on 5 of the 6 times it fired on our matches; 1 marked not a real problem')
+    expect(howSure(r({ fired: 1, real: 1 }), true)).toBe('marked real the one time it fired on our matches')
+    expect(howSure(r({ fired: 2, real: 1, wrong: 1 }), true)).toBe('marked real on 1 of the 2 times it fired on our matches; 1 marked not a real problem')
     expect(howSure(r({ fired: 5, real: 1, known: 3, untriaged: 1 }), true)).toBe('marked real on 1 of the 5 times it fired on our matches; a known issue on 3 more; 1 not marked yet')
   })
   it('names the match short, without the event; a log with no match label is named by its file', () => {
@@ -50,6 +52,23 @@ describe('track record', () => {
     expect(shortMatch({ ...q2wrong, event: undefined, match: 'akit_26-10-17_p0.wpilog' })).toBe('akit_26-10-17_p0.wpilog')
     expect(matchRef({ event: 'TEST', matchLabel: '', fileName: 'a.wpilog' }, null).id).toBe('a.wpilog')
     expect(matchRef({ event: 'TEST', matchLabel: 'Qualification 7', fileName: 'a.wpilog' }, null).id).toBe(q(7))
+  })
+})
+
+describe('real marks', () => {
+  it('count as real on their match, without a known mark, and are not counted as known elsewhere', () => {
+    const events = [mark('real', q(13)), mark('real', q(9), { key: `${RULE} · x` })]
+    const fires = [fire(RULE, q(13)), fire(RULE, q(37))]
+    expect(trackRecord(RULE, triage(events), events, fires)).toEqual({ fired: 3, real: 2, known: 0, wrong: 0, untriaged: 1 })
+  })
+  it('a real mark on this match keeps its red red, whatever was marked wrong elsewhere', () => {
+    expect(demotion(finding(RULE), q7, triage([q2wrong, mark('real', q(7))]))).toBeUndefined()
+    // A real mark on a third match doesn't overrule the wrong mark for this one.
+    expect(demotion(finding(RULE), q7, triage([q2wrong, mark('real', q(13))]))).toEqual(q2wrong)
+  })
+  it('an undone real mark counts as not marked', () => {
+    const events = [mark('real', q(13)), mark('unmark', q(13), { when: '2026-10-21T00:00:00Z' })]
+    expect(trackRecord(RULE, triage(events), events, [])).toEqual({ fired: 1, real: 0, known: 0, wrong: 0, untriaged: 1 })
   })
 })
 

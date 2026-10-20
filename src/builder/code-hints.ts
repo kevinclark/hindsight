@@ -7,6 +7,7 @@
  * working tree (uncommitted edits count) or from GitHub at one commit; the commit and branch from `codeHead`.
  */
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
+import type { CodeSource } from '../code/source.ts'
 
 export interface CodeFile { path: string; text: string }
 
@@ -35,13 +36,14 @@ const NEW_TALON = /\b(?:new\s+)?TalonFX\s*\(\s*([A-Za-z_][\w.]*(?:\(\))?|\d+)\s*
 const INT_CONST = /\b(?:(?:static\s+)?final\s+(?:static\s+)?(?:int|Integer)|const\s+val|val)\s+([A-Za-z_]\w*)\s*(?::\s*Int\s*)?=\s*(\d+)(?![\w.])/g
 
 const fileName = (p: string) => p.split('/').pop() ?? p
+const SOURCE_FILE = /\.(java|kt)$/
 
 /** The commit the code is on and its branch (null when detached), or why that can't be told. */
 export type CodeHead = { sha: string; branch: string | null } | { why: string }
 
 export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
   const notes: string[] = []
-  const sources = files.filter((f) => /\.(java|kt)$/.test(f.path))
+  const sources = files.filter((f) => SOURCE_FILE.test(f.path))
   // Integer constants by simple name. A name defined with two values can't be resolved.
   const constants = new Map<string, number | null>()
   for (const f of sources) {
@@ -65,6 +67,30 @@ export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
   return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), ...git, notes: [...notes, ...git.notes] }
 }
 
+/** Hints from the code at a branch or commit (GitHub): every Java and Kotlin file's text at that commit. */
+export async function hintsAt(source: CodeSource, ref: string): Promise<CodeHints> {
+  const sha = await source.resolve(ref)
+  const paths = (await source.files(sha)).map((f) => f.path).filter((path) => SOURCE_FILE.test(path))
+  const files = await Promise.all(paths.map(async (path) => ({ path, text: await source.textAt(sha, path) })))
+  return codeHints(files, { sha, branch: branchOf(sha, ref) })
+}
+
+/** The commit a branch or hash names (GitHub), or why it can't be told. */
+export async function headAt(source: CodeSource, ref: string): Promise<CodeHead> {
+  try {
+    const sha = await source.resolve(ref)
+    return { sha, branch: branchOf(sha, ref) }
+  } catch (error) {
+    if (!(error instanceof GitUnreadable)) throw error
+    return { why: sentence(error.message) }
+  }
+}
+
+/** The branch typed, or null when a hash was typed. */
+const branchOf = (sha: string, ref: string) => (sha.startsWith(ref.trim().toLowerCase()) ? null : ref.trim())
+/** "couldn't find x" → "Couldn't find x.", as the builder's notes read. */
+const sentence = (message: string) => `${message[0].toUpperCase()}${message.slice(1)}.`
+
 /** The commit a code folder's .git is on (null: the folder has no .git). */
 export async function codeHead(repo: GitRepo | null): Promise<CodeHead> {
   if (!repo) return { why: 'No .git folder: can\'t tell which commit this code is.' }
@@ -72,7 +98,7 @@ export async function codeHead(repo: GitRepo | null): Promise<CodeHead> {
     return await repo.head()
   } catch (error) {
     if (!(error instanceof GitUnreadable)) throw error
-    return { why: `${error.message[0].toUpperCase()}${error.message.slice(1)}.` }
+    return { why: sentence(error.message) }
   }
 }
 
@@ -81,7 +107,7 @@ export function shaWarning(hints: CodeHints, logSha: string): string | null {
   if (!hints.sha || !logSha) return null
   const a = hints.sha.toLowerCase(), b = logSha.toLowerCase().replace(/[^0-9a-f]/g, '')
   if (b.length >= 7 && (a.startsWith(b) || b.startsWith(a))) return null
-  return `This code folder is on ${hints.branch ?? 'a detached commit'} ${hints.sha.slice(0, 7)}, but the log ran ${logSha.slice(0, 7)}: CAN IDs may have changed.`
+  return `This code is on ${hints.branch ?? 'a detached commit'} ${hints.sha.slice(0, 7)}, but the log ran ${logSha.slice(0, 7)}: CAN IDs may have changed.`
 }
 
 export const siteLabel = (s: TalonSite) => `${fileName(s.file)}:${s.line}${/^\d+$/.test(s.expr) ? '' : ` (${s.expr})`}`

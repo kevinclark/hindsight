@@ -2,7 +2,8 @@
  * The "not a real problem" mark, rendered: headless Chrome on the built hindsight.html (file://). Load several matches
  * of one event, mark one check "not a real problem" on the first, save the history, then start over with an empty
  * browser and load the logs again with that history file. The check's reds on the other matches should be amber with
- * the reason, and every finding of a marked check should carry a "How sure" line.
+ * the reason, and every finding of a marked check should carry a "How sure" line. Last, mark it a real problem on one of
+ * them: that red comes back and How sure counts it.
  *
  *   npm run build
  *   node --experimental-strip-types scripts/chrome-wrong-mark-check.ts <out-dir> <rule> <match to mark, e.g. "Qualification 13"> <log> [<log> ...]
@@ -124,6 +125,22 @@ await pick(MARK_ON)
 await sleep(300)
 result.markedMatchAfterReload = { head: await head(), rows: await rows() }
 await shot('3-marked-match-after-reload.png')
+
+// 4. Mark the check a real problem on the next match: it goes back to red there (a look beats a wrong mark elsewhere),
+// stays in the list, and How sure counts it.
+await pick(others[0])
+await sleep(300)
+await evalIn(`window.prompt = () => 'test note'`)
+result.clickedReal = await evalIn(`(() => {
+  const li = [...document.querySelectorAll('li.finding')].find(li => li.querySelector(':scope > details > summary .rule')?.innerText === ${JSON.stringify(RULE)})
+  if (li) li.querySelector(':scope > details').open = true // a closed row's buttons have no innerText
+  const b = li && [...li.querySelectorAll(':scope > details > .body .actions button')].find(b => b.innerText.startsWith('Real problem'))
+  if (!b) return 'missing'
+  b.click(); return 'clicked'
+})()`)
+await sleep(400)
+result.afterReal = { match: others[0], head: await head(), rows: await rows() }
+await shot('4-real.png')
 
 writeFileSync(join(out, 'check.json'), JSON.stringify(result, null, 1))
 console.log(JSON.stringify(result, null, 1))

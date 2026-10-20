@@ -16,6 +16,13 @@ import { profileFit, type ProfileChoice } from '../profiles/choose.ts'
 import { profileId } from '../profiles/index.ts'
 import { coverage, worstAcross, type LoggedState } from '../coverage/coverage.ts'
 
+/**
+ * The shape of a saved MatchSummary. Summaries saved in the browser by an older Hindsight are still shown while their
+ * shape is the same as this one's. Bump it whenever MatchSummary changes in a way old code can't be drawn from
+ * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it.
+ */
+export const SUMMARY_SHAPE = 1
+
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
 /**
@@ -95,10 +102,16 @@ export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?:
   return summaryOf(analyzeFiles([file], profile ? () => profile : undefined, profiles), file)
 }
 
-/** The same, with the robot-code folder (src/code/limit-lines.ts); `codeName` names it in the summary. */
+/**
+ * The same, with the robot code (src/code/limit-lines.ts); `codeName` names it in the summary. A summary where GitHub
+ * couldn't answer (offline, its hour used up) isn't stamped with the code's name, so it is read again next time rather
+ * than reused.
+ */
 export async function summarizeLogWithCode(file: InputFile, code: CodeFolder | null, codeName: string | null, profile?: RobotProfile, profiles?: RobotProfile[]): Promise<MatchSummary | null> {
-  const s = summaryOf(await analyzeFilesWithCode([file], code, profile ? () => profile : undefined, profiles), file)
-  if (s && code) s.codeFolder = codeName
+  const result = await analyzeFilesWithCode([file], code, profile ? () => profile : undefined, profiles)
+  const s = summaryOf(result, file)
+  const askAgain = [...(result.analyses[0]?.match.limitLines?.values() ?? [])].some((a) => a.verdict === 'unknown' && a.tryAgain)
+  if (s && code && !askAgain) s.codeFolder = codeName
   return s
 }
 

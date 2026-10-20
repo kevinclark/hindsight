@@ -19,6 +19,8 @@
  * --code <robot-code folder> chooses that folder on the page ("Choose code folder…"), so power/limit-not-applied can
  * compare each log's commit with its profile's (src/code/limit-lines.ts). The page's kept answers are seeded from and
  * saved back to --code-cache (default ~/.cache/hindsight/limit-lines.json), as golden.ts keeps them.
+ * --github <owner/repo>[@ref] uses that public GitHub repo instead ("Use GitHub…", input[data-code-github]); GitHub's
+ * file lists are seeded from and saved back to --code-cache too, as golden.ts --github keeps them.
  * The log input is selected by its accept list: input[type=file] alone also matches the Snapshot view's .json input.
  */
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
@@ -37,13 +39,16 @@ const option = (name: string) => {
   return value
 }
 const codeDir = option('--code')
+const github = option('--github')
 const cacheFile = option('--code-cache') ?? DEFAULT_CACHE
 const ANSWERS = 'hindsight.limitLines'
+const GITHUB_FILES = 'hindsight.githubFiles'
 let answers: Record<string, unknown> = {}
-try { answers = JSON.parse(readFileSync(cacheFile, 'utf8')).answers ?? {} } catch { /* no cache file yet */ }
+let githubFiles: Record<string, unknown> = {}
+try { ({ answers = {}, github: githubFiles = {} } = JSON.parse(readFileSync(cacheFile, 'utf8'))) } catch { /* no cache file yet */ }
 const flags = new Set<string>(args.filter((a) => a === '--no-build' || a === '--dark' || a === '--session'))
 const [outDir, ...rest] = args.filter((a) => !flags.has(a))
-if (!outDir || rest.length === 0) { console.error('usage: report.ts [--session] <out-dir> <log> [<dslog>] [-- <log> …] [--no-build] [--dark] [--code <folder>] [--code-cache <file>]'); process.exit(2) }
+if (!outDir || rest.length === 0) { console.error('usage: report.ts [--session] <out-dir> <log> [<dslog>] [-- <log> …] [--no-build] [--dark] [--code <folder> | --github <owner/repo>[@ref]] [--code-cache <file>]'); process.exit(2) }
 const groups: string[][] = [[]]
 for (const a of rest) { if (a === '--') groups.push([]); else groups.at(-1)!.push(resolve(a)) }
 /** A folder given to --session stands for the .wpilog files in it. */
@@ -80,10 +85,13 @@ const evalIn = async (sessionId: string, expression: string) => {
   return r?.result?.value
 }
 
-/** --code: seed the page's kept limit-line answers, choose the folder, and wait until the page shows it. */
+/** --code or --github: seed the page's kept answers, choose the code, and wait until the page shows it. */
 async function useCodeFolder(sessionId: string) {
-  if (!codeDir) return
+  if (!codeDir && !github) return
   await evalIn(sessionId, `localStorage.setItem(${JSON.stringify(ANSWERS)}, ${JSON.stringify(JSON.stringify(answers))})`)
+  await evalIn(sessionId, `localStorage.setItem(${JSON.stringify(GITHUB_FILES)}, ${JSON.stringify(JSON.stringify(githubFiles))})`)
+  if (github) return useGitHub(sessionId, github)
+  if (!codeDir) return
   const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
   const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[data-code-folder]' }, sessionId)
   if (!nodeId) throw new Error('the code folder input was not found in hindsight.html')
@@ -92,10 +100,21 @@ async function useCodeFolder(sessionId: string) {
   for (let i = 0; i < 300 && !shown; i++) { await sleep(100); shown = await evalIn(sessionId, `[...document.querySelectorAll('.code-folder .chip, .code-folder ~ .problem')].map(e => e.innerText).join(' ')`) }
   if (!shown.startsWith('code: ')) throw new Error(`the page did not take the code folder: ${shown || 'timed out'}`)
 }
-/** --code: keep what the page worked out, for the next run. */
+/** --github: "Use GitHub…", type the repo, and wait until the page shows it. */
+async function useGitHub(sessionId: string, spec: string) {
+  await evalIn(sessionId, `[...document.querySelectorAll('.code-folder button')].find(b => b.innerText.trim() === 'Use GitHub…').click()`)
+  await sleep(100)
+  await evalIn(sessionId, `(() => { const i = document.querySelector('input[data-code-github]'); i.value = ${JSON.stringify(spec)}; i.dispatchEvent(new Event('input', { bubbles: true })); i.form.requestSubmit() })()`)
+  await sleep(100)
+  const shown: string = await evalIn(sessionId, `[...document.querySelectorAll('.code-folder .chip, .code-folder ~ .problem')].map(e => e.innerText).join(' ')`)
+  if (!shown.endsWith('(GitHub)')) throw new Error(`the page did not take --github ${spec}: ${shown || 'nothing shown'}`)
+}
+/** --code or --github: keep what the page worked out, for the next run. */
 async function keepAnswers(sessionId: string) {
-  if (!codeDir) return
-  answers = { ...answers, ...JSON.parse((await evalIn(sessionId, `localStorage.getItem(${JSON.stringify(ANSWERS)})`)) ?? '{}') }
+  if (!codeDir && !github) return
+  const kept = async (key: string) => JSON.parse((await evalIn(sessionId, `localStorage.getItem(${JSON.stringify(key)})`)) ?? '{}')
+  answers = { ...answers, ...(await kept(ANSWERS)) }
+  githubFiles = { ...githubFiles, ...(await kept(GITHUB_FILES)) }
 }
 
 const written: string[] = []
@@ -177,9 +196,9 @@ try {
     await keepAnswers(sessionId)
     await send('Target.closeTarget', { targetId })
   }
-  if (codeDir) {
+  if (codeDir || github) {
     mkdirSync(dirname(cacheFile), { recursive: true })
-    writeFileSync(cacheFile, JSON.stringify({ version: 1, answers }, null, 1))
+    writeFileSync(cacheFile, JSON.stringify({ version: 1, answers, ...(Object.keys(githubFiles).length ? { github: githubFiles } : {}) }, null, 1))
   }
   console.log(written.map((w) => `${outDir}/${w}`).join('\n'))
   console.log(JSON.stringify(summaries))

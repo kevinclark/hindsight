@@ -24,8 +24,11 @@ const MAX_POINTS = 300
 
 export interface WindowSeries { label: string; key: string | null; t: number[]; v: number[] }
 
-/** `wrong`: this match's "not a real problem" marks, by issue key; one stands in for the issue's known or fixed mark. */
-export function buildFindingsJson(match: Match, report: Report, issues: Map<string, IssueEvent> = new Map(), wrong: Map<string, IssueEvent> = new Map()): object {
+/**
+ * `wrong`: this match's "not a real problem" marks, by issue key; one stands in for the issue's known or fixed mark.
+ * `real`: this match's "real problem" marks, given beside the issue's own status (a real mark files nothing away).
+ */
+export function buildFindingsJson(match: Match, report: Report, issues: Map<string, IssueEvent> = new Map(), wrong: Map<string, IssueEvent> = new Map(), real: Map<string, IssueEvent> = new Map()): object {
   const power = powerReport(match)
   const issue = (f: Finding) => wrong.get(f.key) ?? issues.get(f.key)
   // The match rules (as before parents) or the parent that made the finding.
@@ -34,6 +37,8 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
     ...f,
     plot: undefined,
     issue: issue(f) ? { status: issue(f)!.status, note: issue(f)!.note, since: issue(f)!.when } : null,
+    // Only when marked, so findings.json without a history is unchanged.
+    ...(real.get(f.key) ? { real: { note: real.get(f.key)!.note, since: real.get(f.key)!.when } } : {}),
     who: maker(f)?.who ?? [],
     incident: maker(f)?.incident ?? null,
     window: f.plot ? windowFor(match, f.plot) : null,

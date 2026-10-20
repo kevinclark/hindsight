@@ -14,12 +14,14 @@
   import { cardTitle } from '../report/titles.ts'
   import { ruleOf } from '../triage/track-record.ts'
 
-  let { analysis, issues, wrong = new Map(), sure = () => null, standing = new Set<string>(), onMark }: {
+  let { analysis, issues, wrong = new Map(), real = new Map(), sure = () => null, standing = new Set<string>(), onMark }: {
     /** As the team's marks show it (track-record.ts withMarks): a red another match's wrong mark demotes is amber. */
     analysis: Analysis
     issues: Map<string, IssueEvent>
     /** This match's "not a real problem" marks, by issue key. */
     wrong?: Map<string, IssueEvent>
+    /** This match's "real problem" marks, by issue key (they change nothing here but the row's note). */
+    real?: Map<string, IssueEvent>
     /** A check's "How sure" line from the team's marks, or null with no marks to go on. */
     sure?: (rule: string) => string | null
     /** Issue keys that fired in every match of this match's session (session.ts standingKeys); empty when no loaded session holds it. */
@@ -112,7 +114,7 @@
 {:else if mainTree.length}
   <ul class="findings">
     {#each mainTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} />
     {/each}
   </ul>
 {/if}
@@ -128,7 +130,7 @@
     </summary>
     <ul class="findings">
       {#each standingTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {sure} statusOf={status} {onMark} />
+        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} {onMark} />
       {/each}
     </ul>
   </details>
@@ -137,7 +139,7 @@
 {#if infoTree.length}
   <ul class="findings">
     {#each infoTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} />
     {/each}
   </ul>
 {/if}
@@ -147,7 +149,7 @@
     <summary><h3>{falseAlarms ? 'Known issues and false alarms' : 'Known issues'} seen this match ({known.length})</h3></summary>
     <ul class="findings">
       {#each knownTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} {wrong} {sure} statusOf={status} {onMark} />
+        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} {wrong} {real} {sure} statusOf={status} {onMark} />
       {/each}
     </ul>
   </details>

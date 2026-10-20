@@ -8,7 +8,7 @@
  * fires on four motors in one match counts four times:
  *   fired     — every open log (Match review and Session) where it gave a warning or an error, plus every match named
  *               on a mark of it in the history, since the history outlives the logs
- *   real      — someone marked the issue known or fixed on that very match (and it still is)
+ *   real      — marked a real problem on that very match, or the issue marked known or fixed there (and it still is)
  *   known     — another match of an issue that is marked known, or fixed after that match was played: nobody looked at
  *               this one, so it is not counted as confirmed
  *   wrong     — marked "not a real problem" on that match
@@ -67,7 +67,7 @@ export function trackRecord(rule: string, t: Triage, events: HistoryEvent[], fir
   for (const [mk, f] of seen) {
     const issue = t.issues.get(f.key)
     if (t.wrong.has(mk)) r.wrong++
-    else if (issue && markedReal.has(mk)) r.real++
+    else if (t.real.has(mk) || (issue && markedReal.has(mk))) r.real++
     else if (issue && (issue.status === 'known' || f.played === null || f.played < Date.parse(issue.when))) r.known++
     else r.untriaged++
   }
@@ -84,7 +84,8 @@ export function howSure(r: TrackRecord, anyMarks: boolean): string | null {
   ].filter(Boolean).join('; ')
   const times = (n: number) => `${n} time${n === 1 ? '' : 's'}`
   if (r.real === 0 && r.wrong === 0) return `New check: never confirmed on our matches${r.fired ? ` (fired ${times(r.fired)}${rest ? `: ${rest}` : ''})` : ''}`
-  return `marked real on ${r.real} of the ${times(r.fired)} it fired on our matches${rest ? `; ${rest}` : ''}`
+  const head = r.fired === 1 && r.real === 1 ? 'marked real the one time it fired on our matches' : `marked real on ${r.real} of the ${times(r.fired)} it fired on our matches`
+  return `${head}${rest ? `; ${rest}` : ''}`
 }
 
 const DAY = 86400e3
@@ -97,6 +98,8 @@ const DAY = 86400e3
  */
 export function demotion(f: Pick<Finding, 'key' | 'rule' | 'severity'>, here: MatchRef, t: Triage): IssueEvent | undefined {
   if (f.severity !== 'error' || !here.event || here.played === null) return undefined
+  // Marked a real problem on this match: someone looked, and a wrong mark elsewhere doesn't overrule them.
+  if (t.real.has(matchKey(f.key, here.id))) return undefined
   const filed = findingStatus(f, t.issues, here.played, wrongHere(here, t))
   if (filed && filed !== 'came back') return undefined
   const sameEvent = (e: IssueEvent) => {
@@ -159,5 +162,12 @@ function summaryWithMarks(m: MatchSummary, t: Triage): MatchSummary {
 
 /** The wrong marks standing on this match, by issue key. */
 export function wrongHere(here: MatchRef, t: Triage): Map<string, IssueEvent> {
-  return new Map([...t.wrong.values()].filter((e) => e.match === here.id).map((e) => [e.key, e]))
+  return marksHere(t.wrong, here)
 }
+
+/** The real marks standing on this match, by issue key. */
+export function realHere(here: MatchRef, t: Triage): Map<string, IssueEvent> {
+  return marksHere(t.real, here)
+}
+
+const marksHere = (marks: Map<string, IssueEvent>, here: MatchRef) => new Map([...marks.values()].filter((e) => e.match === here.id).map((e) => [e.key, e]))
