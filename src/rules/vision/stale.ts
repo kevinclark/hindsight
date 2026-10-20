@@ -10,8 +10,8 @@
  * view, so its stale share says nothing: Back_Right was stale 37–40 % of the disabled field stretch in all three
  * CalGames logs, a working camera facing no tags.
  */
-import { lengthOf } from '../view.ts'
-import { isFalse, isTrue, pct, rule, round, type Answer } from '../rule.ts'
+import { lengthOf, type CameraView, type Episode, type MatchView } from '../view.ts'
+import { isFalse, isTrue, pct, plural, rule, round, totalSeconds, type Answer, type Problem } from '../rule.ts'
 
 export default rule({
   id: 'vision/stale',
@@ -29,33 +29,56 @@ export default rule({
   forEach: 'camera',
 
   check(camera, match): Answer {
-    if (match.wholeMatch.length === 0) {
-      if (match.beforeEnable.length === 0) return // never enabled: no match to measure
-      const drops = camera.connected().episodes(isFalse, { during: match.beforeEnable })
-      if (drops.length === 0) return
-      return {
-        likely: ['connection', 'coprocessor'],
-        message: `${camera.name} dropped out ${drops.length} time${drops.length === 1 ? '' : 's'} ${match.windowWords} (first at ${match.when(drops[0].start)} for ${drops[0].seconds.toFixed(1)} s)`,
-        at: drops[0].start,
-        measured: [{ label: 'dropouts before enable', value: drops.length, unit: '' }],
-        evidence: { 'dropouts before enable': drops.length, 'seconds disconnected': round(drops.reduce((s, d) => s + d.seconds, 0), 1) },
-      }
-    }
-    const staleSeconds = camera.stale().episodes(isTrue, { during: match.wholeMatch }).reduce((s, e) => s + e.seconds, 0)
+    // Foresight (robot disabled): drop-outs only.
+    if (match.wholeMatch.length === 0) return dropoutsBeforeEnable(camera, match)
+
+    const staleSeconds = totalSeconds(camera.stale().episodes(isTrue, { during: match.wholeMatch }))
     const staleShare = staleSeconds / lengthOf(match.wholeMatch)
     const drops = camera.connected().episodes(isFalse, { during: match.wholeMatch })
     if (staleShare <= 0.15 && drops.length === 0) return
+
     // The Connected flag going false points at the link; stale results with the camera still connected point at the coprocessor.
-    return {
+    let message = `${camera.name} was stale ${pct(staleShare)} of the match`
+    let likely: string[] | undefined
+    const ruledOut: Record<string, string> = {}
+    if (drops.length > 0) {
       // Stale while connected fits a busy coprocessor and a camera seeing no tags equally, so name no favourite.
-      likely: drops.length ? ['connection', 'coprocessor'] : undefined,
-      ruledOut: drops.length ? undefined : { connection: 'the camera never reported disconnected' },
-      message: drops.length
-        ? `${camera.name} dropped out ${drops.length} time${drops.length === 1 ? '' : 's'} during the match (first at ${match.when(drops[0].start)} for ${drops[0].seconds.toFixed(1)} s)`
-        : `${camera.name} was stale ${pct(staleShare)} of the match`,
+      likely = ['connection', 'coprocessor']
+      message = dropoutMessage(camera.name, drops, 'during the match', match)
+    } else {
+      ruledOut.connection = 'the camera never reported disconnected'
+    }
+    return {
+      likely,
+      ruledOut,
+      message,
       at: drops[0]?.start,
       measured: [{ label: 'stale share of the match', value: round(100 * staleShare, 1), unit: '%', threshold: 15 }],
-      evidence: { 'stale share of the match (%)': round(100 * staleShare, 1), 'dropouts during the match': drops.length, 'seconds disconnected': round(drops.reduce((s, d) => s + d.seconds, 0), 1) },
+      evidence: {
+        'stale share of the match (%)': round(100 * staleShare, 1),
+        'dropouts during the match': drops.length,
+        'seconds disconnected': round(totalSeconds(drops), 1),
+      },
     }
   },
 })
+
+/** The camera's drop-outs while the robot was disabled (Foresight); nothing when it was never enabled or never dropped. */
+function dropoutsBeforeEnable(camera: CameraView, match: MatchView): Problem | undefined {
+  if (match.beforeEnable.length === 0) return // never enabled: no match to measure
+  const drops = camera.connected().episodes(isFalse, { during: match.beforeEnable })
+  if (drops.length === 0) return
+  return {
+    likely: ['connection', 'coprocessor'],
+    message: dropoutMessage(camera.name, drops, match.windowWords, match),
+    at: drops[0].start,
+    measured: [{ label: 'dropouts before enable', value: drops.length, unit: '' }],
+    evidence: { 'dropouts before enable': drops.length, 'seconds disconnected': round(totalSeconds(drops), 1) },
+  }
+}
+
+/** "Back_Right dropped out 2 times during the match (first at 1:23 for 6.0 s)". */
+function dropoutMessage(camera: string, drops: Episode[], when: string, match: MatchView): string {
+  const first = drops[0]
+  return `${camera} dropped out ${plural(drops.length, 'time')} ${when} (first at ${match.when(first.start)} for ${first.seconds.toFixed(1)} s)`
+}

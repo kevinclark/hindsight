@@ -7,6 +7,7 @@
  * Future" fired 1–3 times per match. Unsynced timestamps put vision poses at the wrong moment.
  */
 import { rule } from '../rule.ts'
+import type { AlertView } from '../view.ts'
 
 /** Alert texts this rule owns; alerts/passthrough leaves them to this rule so they aren't listed twice. */
 export const TIME_SYNC_ALERTS = [/TimeSyncServer/i, /Coming from .*Future/i]
@@ -28,15 +29,26 @@ export default rule({
   check(match) {
     const syncAlerts = match.alerts().filter((a) => TIME_SYNC_ALERTS.some((pattern) => pattern.test(a.text)))
     if (syncAlerts.length === 0) return
-    const times = (a: (typeof syncAlerts)[0]) => a.onsetsInMatch.length + a.onsetsOutsideMatch
+
+    const times = (a: AlertView) => a.onsetsInMatch.length + a.onsetsOutsideMatch
+    const total = syncAlerts.reduce((n, a) => n + times(a), 0)
+    const duringMatch = syncAlerts.reduce((n, a) => n + a.onsetsInMatch.length, 0)
+    const evidence: Record<string, string> = {}
+    for (const alert of syncAlerts) evidence[alert.text] = `${times(alert)}× (${alert.onsetsInMatch.length} during the match)`
+
     // Alerts only before the match are the usual "not synced yet at boot"; any during the match means it stayed broken.
-    const inMatch = syncAlerts.reduce((n, a) => n + a.onsetsInMatch.length, 0)
+    let likely = ['boot-timing']
+    const ruledOut: Record<string, string> = {}
+    if (duringMatch > 0) {
+      likely = ['version', 'server']
+      ruledOut['boot-timing'] = 'the alerts came during the match, not just at boot'
+    }
     return {
-      likely: inMatch === 0 ? ['boot-timing'] : ['version', 'server'],
-      ruledOut: inMatch === 0 ? undefined : { 'boot-timing': 'the alerts came during the match, not just at boot' },
-      message: `Camera time-sync problems: ${syncAlerts.reduce((n, a) => n + times(a), 0)} alerts`,
-      measured: [{ label: 'time-sync alerts', value: syncAlerts.reduce((n, a) => n + times(a), 0), unit: '' }],
-      evidence: Object.fromEntries(syncAlerts.map((a) => [a.text, `${times(a)}× (${a.onsetsInMatch.length} during the match)`])),
+      likely,
+      ruledOut,
+      message: `Camera time-sync problems: ${total} alerts`,
+      measured: [{ label: 'time-sync alerts', value: total, unit: '' }],
+      evidence,
     }
   },
 })

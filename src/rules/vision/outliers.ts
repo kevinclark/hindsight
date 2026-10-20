@@ -11,8 +11,8 @@
  */
 import { maxOf, percentile } from '../../match/series.ts'
 import type { Pose2d } from '../../readers/wpilog.ts'
-import { pct, rule, round } from '../rule.ts'
-import type { MatchView } from '../view.ts'
+import { pct, plural, rule, round } from '../rule.ts'
+import type { AlertView, MatchView } from '../view.ts'
 import { TIME_SYNC_ALERTS } from './time-sync.ts'
 
 const MIN_POSES = 20 // fewer accepted poses than this can't give a rate worth acting on
@@ -21,7 +21,10 @@ const OFF_FIELD_METERS = 1 // past the field's edge by more than this, a robot p
 /** Is this pose off the field (the profile's field size)? False when the profile doesn't say how big the field is. */
 function offField(match: MatchView, pose: Pose2d): boolean {
   const f = match.profile.game.field
-  return !!f && (pose.x < -OFF_FIELD_METERS || pose.y < -OFF_FIELD_METERS || pose.x > f.length + OFF_FIELD_METERS || pose.y > f.width + OFF_FIELD_METERS)
+  if (!f) return false
+  const beyondX = pose.x < -OFF_FIELD_METERS || pose.x > f.length + OFF_FIELD_METERS
+  const beyondY = pose.y < -OFF_FIELD_METERS || pose.y > f.width + OFF_FIELD_METERS
+  return beyondX || beyondY
 }
 
 export default rule({
@@ -49,31 +52,63 @@ export default rule({
       const t = vision.series.t[i]
       const odo = odometry.at(t)
       if (!match.inMatch(t) || !odo) return
-      distances.push(Math.hypot(pose.x - odo.x, pose.y - odo.y))
-      if (distances.at(-1)! > 0.5 && offField(match, odo)) farOffField++
+      const distance = Math.hypot(pose.x - odo.x, pose.y - odo.y)
+      distances.push(distance)
+      if (distance > 0.5 && offField(match, odo)) farOffField++
     })
     const far = distances.filter((d) => d > 0.5).length
-    if (distances.length < MIN_POSES) return match.couldNotCheck(`only ${distances.length} accepted pose${distances.length === 1 ? '' : 's'} in the match (needs ${MIN_POSES} for a rate)`)
+    if (distances.length < MIN_POSES) {
+      return match.couldNotCheck(`only ${plural(distances.length, 'accepted pose')} in the match (needs ${MIN_POSES} for a rate)`)
+    }
     if (far / distances.length <= 0.05) return
-    // Alerts about unsynced camera clocks (vision/time-sync) point at the clock first.
-    const clockAlerts = match.alerts().some((a) => TIME_SYNC_ALERTS.some((pattern) => pattern.test(a.text)) && a.onsetsInMatch.length > 0)
+
+    // Alerts about unsynced camera clocks (vision/time-sync) point at the clock first. A time-sync alert during the
+    // match rules nothing in (it fires on most logs), but its absence rules it out.
+    const clockAlerts = match.alerts().some((a) => isTimeSyncAlert(a) && a.onsetsInMatch.length > 0)
+    const ruledOut: Record<string, string> = {}
+    if (!clockAlerts) ruledOut['time-sync'] = 'no time-sync alert during the match'
+
+    // Odometry off the field for most of the far poses: the distances measure odometry, not the camera.
     const odometryOff = farOffField > far / 2
     const start = match.autoStart === null ? undefined : odometry.at(match.autoStart)
-    const where = (p: Pose2d) => `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}) m`
+    let likely: string[] | undefined
+    let nextStep: string | undefined
+    let offFieldNote = ''
+    if (odometryOff) {
+      likely = ['odometry']
+      offFieldNote = `; odometry was off the field for ${farOffField} of them`
+      let whatToDo = 'Find where odometry left the field (the Match tab), fix that, then look at vision again.'
+      if (start && offField(match, start)) {
+        whatToDo = `It started auto at ${where(start)}: set the robot's starting pose in every auto, then look at vision again.`
+      }
+      nextStep = `Odometry was off the field for ${farOffField} of the ${far} far poses, so these distances measure odometry, not the camera. ${whatToDo}`
+    }
+
+    const farPercent = (100 * far) / distances.length
     return {
-      ...(odometryOff ? {
-        likely: ['odometry'],
-        nextStep: `Odometry was off the field for ${farOffField} of the ${far} far poses, so these distances measure odometry, not the camera. `
-          + (start && offField(match, start) ? `It started auto at ${where(start)}: set the robot's starting pose in every auto, then look at vision again.` : 'Find where odometry left the field (the Match tab), fix that, then look at vision again.'),
-      } : {}),
-      // A time-sync alert during the match rules nothing in (it fires on most logs), but its absence rules it out.
-      ruledOut: clockAlerts ? undefined : { 'time-sync': 'no time-sync alert during the match' },
-      message: `${camera.name}: ${pct(far / distances.length)} of accepted vision poses were more than 0.5 m from odometry${odometryOff ? `; odometry was off the field for ${farOffField} of them` : ''}`,
-      measured: [{ label: 'accepted poses > 0.5 m from odometry', value: round((100 * far) / distances.length, 1), unit: '%', threshold: 5 }],
+      likely,
+      nextStep,
+      ruledOut,
+      message: `${camera.name}: ${pct(far / distances.length)} of accepted vision poses were more than 0.5 m from odometry${offFieldNote}`,
+      measured: [{ label: 'accepted poses > 0.5 m from odometry', value: round(farPercent, 1), unit: '%', threshold: 5 }],
       evidence: {
-        'accepted poses in the match': distances.length, 'over 0.5 m': far, 'p90 distance (m)': round(percentile(distances, 90)), 'farthest (m)': round(maxOf(distances)),
-        ...(odometryOff ? { 'over 0.5 m while odometry was off the field': farOffField, ...(start ? { 'odometry when auto started (m)': where(start) } : {}) } : {}),
+        'accepted poses in the match': distances.length,
+        'over 0.5 m': far,
+        'p90 distance (m)': round(percentile(distances, 90)),
+        'farthest (m)': round(maxOf(distances)),
+        'over 0.5 m while odometry was off the field': odometryOff ? farOffField : undefined,
+        'odometry when auto started (m)': odometryOff && start ? where(start) : undefined,
       },
     }
   },
 })
+
+/** Is this one of the alerts vision/time-sync owns? */
+function isTimeSyncAlert(alert: AlertView): boolean {
+  return TIME_SYNC_ALERTS.some((pattern) => pattern.test(alert.text))
+}
+
+/** A pose's position in words: "(1.2, 3.4) m". */
+function where(pose: Pose2d): string {
+  return `(${pose.x.toFixed(1)}, ${pose.y.toFixed(1)}) m`
+}

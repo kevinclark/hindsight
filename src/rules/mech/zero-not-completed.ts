@@ -38,25 +38,44 @@ export default rule({
       if (moved.length) { movedAt = moved[0].start; break }
     }
     if (movedAt === null || movedAt >= doneAt) return
-    const zeroed = Number.isFinite(doneAt)
-    const jump = zeroed ? position.at(doneAt + 0.1) - position.at(doneAt - 0.1) : NaN
+    const plot = { signals: [position], unit: '°', from: movedAt - 2, to: movedAt + 6, marks: [movedAt] }
+
+    // The zero never completed: every angle in the match was measured from the wrong starting point.
+    if (!Number.isFinite(doneAt)) {
+      return {
+        message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed (it never did)`,
+        at: movedAt,
+        evidence: {
+          'first move while enabled (robot time, s)': round(movedAt),
+          'zero completed (robot time, s)': 'never',
+          'seconds moving in the wrong frame': 'whole match',
+          'position jump when the zero landed (°)': 'n/a',
+          'travel in the 0.2 s before the zero (°)': 'n/a',
+        },
+        plot,
+      }
+    }
+
+    const secondsLater = doneAt - movedAt
+    const jump = position.at(doneAt + 0.1) - position.at(doneAt - 0.1)
     // Less the travel it was already making (the 0.2 s before), so motion at that moment isn't read as a jump.
-    const before = zeroed ? position.at(doneAt - 0.1) - position.at(doneAt - 0.3) : 0
-    const drift = Number.isFinite(before) ? before : 0 // a zero right at the start of the log has no travel before it
-    if (zeroed && Math.abs(jump - drift) < mechanism.moveDegrees) return
-    // The log can't tell a cancelled zero from a late one, so only rule out "never ran" when it did finish.
+    const travelBefore = position.at(doneAt - 0.1) - position.at(doneAt - 0.3)
+    const drift = Number.isFinite(travelBefore) ? travelBefore : 0 // a zero right at the start of the log has no travel before it
+    if (Math.abs(jump - drift) < mechanism.moveDegrees) return
+
     return {
-      ruledOut: zeroed ? { 'zero-never-ran': `the zero did complete, ${(doneAt - movedAt).toFixed(1)} s after the first move` } : undefined,
-      message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed${zeroed ? `, ${(doneAt - movedAt).toFixed(1)} s later` : ' (it never did)'}`,
+      // The log can't tell a cancelled zero from a late one, so only rule out "never ran" when it did finish.
+      ruledOut: { 'zero-never-ran': `the zero did complete, ${secondsLater.toFixed(1)} s after the first move` },
+      message: `${mechanism.name} moved at ${match.when(movedAt)} before its zero completed, ${secondsLater.toFixed(1)} s later`,
       at: movedAt,
       evidence: {
         'first move while enabled (robot time, s)': round(movedAt),
-        'zero completed (robot time, s)': zeroed ? round(doneAt) : 'never',
-        'seconds moving in the wrong frame': zeroed ? round(doneAt - movedAt, 1) : 'whole match',
-        'position jump when the zero landed (°)': zeroed ? round(jump, 1) : 'n/a',
-        'travel in the 0.2 s before the zero (°)': zeroed ? round(drift, 1) : 'n/a',
+        'zero completed (robot time, s)': round(doneAt),
+        'seconds moving in the wrong frame': round(secondsLater, 1),
+        'position jump when the zero landed (°)': round(jump, 1),
+        'travel in the 0.2 s before the zero (°)': round(drift, 1),
       },
-      plot: { signals: [position], unit: '°', from: movedAt - 2, to: movedAt + 6, marks: [movedAt] },
+      plot,
     }
   },
 })
