@@ -23,7 +23,7 @@ export interface TrendMetric {
   atLinePasses?: boolean
 }
 
-/** The brownout setting + 1.0 V that power/margin judges against; 6.0 V is the roboRIO 2 default when a log has no setting. */
+/** The brownout setting + 1.0 V that power/margin judges against. 6.0 V is the roboRIO 2 default, used only for the row's headline line. */
 export const MARGIN_VOLTS = 1
 export const DEFAULT_BROWNOUT = 6
 
@@ -108,12 +108,12 @@ const mode = (xs: number[]) => {
   return [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] ?? null
 }
 
-/** The line one match is judged against. */
+/** The line one match is judged against. A log with no brownout setting has none for the voltage row: power/margin says "not checked" there too. */
 function lineFor(metric: TrendMetric, m: MatchSummary): number | null {
   if (metric.line === undefined) return null
   if (metric.key !== 'minVolts') return metric.line
   const setting = m.metrics.brownoutVolts
-  return (typeof setting === 'number' && Number.isFinite(setting) ? setting : DEFAULT_BROWNOUT) + MARGIN_VOLTS
+  return typeof setting === 'number' && Number.isFinite(setting) ? setting + MARGIN_VOLTS : null
 }
 
 export function trendRows(matches: MatchSummary[]): TrendRow[] {
@@ -125,11 +125,12 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
     })
     const lines = matches.map((m) => lineFor(metric, m))
     const n = values.filter((v) => v !== null).length
-    const hasLine = metric.line !== undefined && metric.bad !== undefined
+    // A row with a line, but no match with a line of its own (no brownout setting anywhere), reads as a row with none.
+    const hasLine = metric.line !== undefined && metric.bad !== undefined && lines.some((l) => l !== null)
     const sign = metric.bad === 'below' ? -1 : 1
     const past = values.map((v, i) => {
-      if (v === null || !hasLine) return false
-      const l = lines[i]!
+      const l = lines[i]
+      if (v === null || l === null) return false
       return metric.bad === 'below' ? v < l : metric.atLinePasses ? v >= l : v > l
     })
     const pastCount = past.filter(Boolean).length
@@ -140,7 +141,7 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
       if (worstIndex === null || sign * v > sign * values[worstIndex]!) worstIndex = i
     })
     const line = hasLine ? mode(lines.filter((l): l is number => l !== null)) : null
-    const lineVaries = hasLine && new Set(lines).size > 1
+    const lineVaries = hasLine && new Set(lines.filter((l) => l !== null)).size > 1
     const lastIndex = matches.length - 1
     const latest = lastIndex >= 0 ? values[lastIndex] : null
     const strictlyWorst = worstIndex === lastIndex && latest !== null && values.every((v, i) => v === null || i === lastIndex || sign * v < sign * latest)
@@ -150,7 +151,7 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
     const total = matches.length
     let verdict: string
     if (n === 0) verdict = 'not in these logs'
-    else if (!hasLine) verdict = `No line: ${format(Math.min(...(values.filter((v) => v !== null) as number[])), metric.digits)} to ${format(Math.max(...(values.filter((v) => v !== null) as number[])), metric.digits)} ${metric.unit}`
+    else if (!hasLine) verdict = `${metric.line === undefined ? 'No line' : 'No line (brownout setting not logged)'}: ${format(Math.min(...(values.filter((v) => v !== null) as number[])), metric.digits)} to ${format(Math.max(...(values.filter((v) => v !== null) as number[])), metric.digits)} ${metric.unit}`
     else {
       const side = metric.bad === 'below' ? 'Under' : 'Over'
       const lineText = lineVaries ? 'its brownout setting + 1 V' : `${+line!.toFixed(2)} ${metric.unit}`
@@ -175,8 +176,8 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
 
     let pastRatio: number | null = null
     if (hasLine && worstIndex !== null) {
-      const w = values[worstIndex]!, l = lines[worstIndex]!
-      pastRatio = metric.bad === 'below' ? (w > 0 ? l / w : 999) : l > 0 ? w / l : 999
+      const w = values[worstIndex]!, l = lines[worstIndex]
+      if (l !== null) pastRatio = metric.bad === 'below' ? (w > 0 ? l / w : 999) : l > 0 ? w / l : 999
     }
     // Tiers: past the line in any match (lowest voltage first, the brownout row; then by how far past, biggest
     // first: a ratio to the line would put volts last, 7/5.69 = 1.23 against 8.7 for vision), within the line, no

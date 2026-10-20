@@ -38,6 +38,17 @@ describe('trendRows verdicts', () => {
     const fine = row(trendRows([m(1, { resistanceMilliohms: 10 }), m(2, { resistanceMilliohms: 12 })]), 'resistanceMilliohms')
     expect(fine).toMatchObject({ latestIsWorst: false, verdict: 'Over 20 mΩ in 0 of 2 matches' })
   })
+  it('gives a match with no brownout setting no voltage line, and does not count it past', () => {
+    const rs = trendRows([m(1, { minVolts: 5.5, brownoutVolts: null }), m(2, { minVolts: 5.5, brownoutVolts: 4.5 }), m(3, { minVolts: 5.6, brownoutVolts: 6 })])
+    const r = row(rs, 'minVolts')
+    expect(r.lines).toEqual([null, 5.5, 7])
+    expect(r.past).toEqual([false, false, true])
+    expect(r.pastCount).toBe(1)
+    expect(r.verdict).toBe('Under its brownout setting + 1 V in 1 of 3 matches')
+    // Every log without a setting: the row has no line at all, and says why.
+    const none = row(trendRows([m(1, { minVolts: 5.5, brownoutVolts: null })]), 'minVolts')
+    expect(none).toMatchObject({ line: null, pastCount: 0, verdict: 'No line (brownout setting not logged): 5.50 to 5.50 V' })
+  })
   it('makes no trend call', () => {
     for (const r of rows) expect(`${r.verdict} ${r.verdict2}`).not.toMatch(/worse|better|trend|improv/i)
   })
