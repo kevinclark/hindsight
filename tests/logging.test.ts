@@ -84,6 +84,13 @@ describe('coverageKeys', () => {
     expect(keys).toContain('/NetworkInputs/SmartDashboard/Autos')
     expect(new Set(keys).size).toBe(keys.length)
   })
+  it('a key two slots share keeps its first slot (the motor\'s stator, not its zeroing current), with its rate bar', () => {
+    const z = offseason2025.zeroing.find((x) => x.zeroCurrent)!
+    const stator = coverageKeys(offseason2025).find((k) => k.key === z.zeroCurrent!.statorCurrent)!
+    expect(stator).toMatchObject({ hz: 30, label: expect.stringMatching(/ stator$/) })
+    expect(stator.what).toMatch(/stator current$/)
+    expect(stator.what).not.toMatch(/zeroing/)
+  })
 })
 
 describe('coverage', () => {
@@ -126,6 +133,27 @@ describe('coverage', () => {
   it('puts lines behind the checks that guard the match first', () => {
     const firstDark = cov.lines.findIndex((l) => l.dark.length === 0)
     expect(cov.lines.slice(firstDark).every((l) => l.dark.length === 0)).toBe(true)
+  })
+  it('reads the rules\' item-prefixed, multi-motor slow notes and the "has none" gap reasons', () => {
+    const report = {
+      findings: [], crashed: [],
+      skipped: [
+        { rule: 'power/limit-not-applied', reason: 'partly checked; Steer: Front Left steer supply and Back Left steer supply are logged about 9 times a second while enabled (every ~110 ms), so a dip or spike shorter than ~110 ms can fall between samples' },
+        { rule: 'battery/identity', reason: 'missing a battery tracker key (the robot profile has none)' },
+        { rule: 'alerts/passthrough', reason: 'missing alerts (the robot profile names no alert groups and the log has none)' },
+      ],
+    }
+    const c = coverage(a.match, report)
+    const on = (what: string) => c.lines.find((l) => l.what === what)!
+    for (const what of ['Front Left steer supply current', 'Back Left steer supply current']) {
+      expect(on(what).dark).toMatchObject([{ rule: 'power/limit-not-applied', partly: true }])
+    }
+    expect(on('Front Right steer supply current').dark).toEqual([])
+    expect(on('a battery tracker key')).toMatchObject({ state: 'profile gap', dark: [{ rule: 'battery/identity' }] })
+    expect(on('alerts')).toMatchObject({ state: 'profile gap', dark: [{ rule: 'alerts/passthrough' }] })
+  })
+  it('shows what each dark check catches without repo file paths', () => {
+    expect(cov.lines.flatMap((l) => l.dark).every((d) => !/\.md\b/.test(d.incident))).toBe(true)
   })
   it('never names a CTRE or AdvantageKit call in what to log', () => {
     const text = [...cov.lines.map((l) => l.todo), ...WANTED_CHECKS.flatMap((w) => [w.question, w.needs])].join('\n')

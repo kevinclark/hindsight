@@ -12,7 +12,7 @@
  * teleop is a restarted piece of a match, which loop/restart-mid-match reports. Amber until it has caught a real match.
  */
 import { rule, round } from '../rule.ts'
-import type { MatchView, PoseSignal, Window } from '../view.ts'
+import type { MatchView, Window } from '../view.ts'
 
 const NO_AUTO = /^none$/i
 
@@ -71,13 +71,14 @@ function firstPickAfter(series: { t: Float64Array; v: string[] }, t: number): nu
 /** How far the odometry pose travelled during the window (m), or null when the log has no odometry. */
 function distanceDriven(match: MatchView, window: Window): number | null {
   if (!match.has('odometryPose')) return null
-  const pose: PoseSignal = match.pose('odometryPose')
+  const pose = match.pose('odometryPose')
   let total = 0
   for (let i = 1; i < pose.series.t.length; i++) {
     const t = pose.series.t[i]
     if (!window.some((iv) => t > iv.start && t <= iv.end)) continue
-    const a = pose.series.v[i - 1], b = pose.series.v[i]
-    total += Math.hypot(b.x - a.x, b.y - a.y)
+    const from = pose.series.v[i - 1]
+    const to = pose.series.v[i]
+    total += Math.hypot(to.x - from.x, to.y - from.y)
   }
   return total
 }

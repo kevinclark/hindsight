@@ -7,11 +7,12 @@
  * tracker, each camera's stale flag and raw result, other devices, zeroing, the state machine, CAN bus members, alert
  * groups and three AdvantageKit keys rules read (e-stop, match clock, auto chooser).
  */
-import { has, num, type Match } from '../match/match.ts'
+import { firstPresent, num, type Match } from '../match/match.ts'
 import type { NumberSeries } from '../match/series.ts'
 import { profileKeys } from '../profiles/choose.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { RULES, ruleById, type Report } from '../rules/index.ts'
+import { stripRepoPaths } from '../report/review-model.ts'
 import type { Severity } from '../rules/rule.ts'
 import type { MatchSummary } from '../session/summary.ts'
 import { sampleRate, SLOW_HZ, words } from '../rules/view.ts'
@@ -64,7 +65,8 @@ export interface Coverage {
 /**
  * Battery voltage and motor supply current feed the power model's 50 Hz grid (power/battery-model.ts). Measured on 729
  * of these keys in 141 local logs (2026-10-19): 666 log at 49.5 Hz or more, 22 at 45–49.5 Hz (one robot loop of
- * jitter on short enables, judged fine) and 41 below 45 Hz. So "slow" is under 90 % of the bar.
+ * jitter on short enables, judged fine) and 41 below 45 Hz (logs the profile fits). So "slow" is under 90 % of this
+ * bar. Other measured keys use SLOW_HZ as it is, the line the rules' own "logged slowly" notes use.
  */
 const POWER_HZ = 50
 const RATE_SLACK = 0.9
@@ -77,7 +79,9 @@ const RULE_READS = ['emergencyStop', 'matchTimeLeft', 'autoChoice'] as const
 export function coverageKeys(profile: RobotProfile): CoverageKey[] {
   const signals = signalSlots(profile)
   const others = otherSlots(profile)
-  const byKey = new Map([...signals, ...others].filter((s) => s.key).map((s) => [s.key, s]))
+  // A key some slots share (a motor's stator current is also its zeroing current) keeps its first slot, as dedupe does.
+  const byKey = new Map<string, CoverageKey>()
+  for (const slot of [...signals, ...others]) if (slot.key && !byKey.has(slot.key)) byKey.set(slot.key, slot)
   const fromProfileKeys = profileKeys(profile).map((k) => byKey.get(k) ?? { what: k, key: k })
   // profileKeys leaves out empty slots, the keys every log has, and the AdvantageKit keys every robot logs; rules
   // still read the last ones.
@@ -186,7 +190,7 @@ function lineFor(slot: CoverageKey, match: Match, reasons: Reason[]): CoverageLi
 
 function stateOf(slot: CoverageKey, match: Match): { state: CoverageState; found?: string; measuredHz?: number } {
   if (!slot.key) return { state: 'profile gap' }
-  const found = [slot.key, ...(slot.alternatives ?? [])].find((k) => has(match, k))
+  const found = firstPresent(match, [slot.key, ...(slot.alternatives ?? [])])
   if (!found) return { state: 'not logged' }
   // Rate and frozen values only mean something while the robot was enabled.
   if (match.enabled.length === 0 || (!slot.hz && !slot.varies)) return { state: 'logged', found }
@@ -194,8 +198,13 @@ function stateOf(slot: CoverageKey, match: Match): { state: CoverageState; found
   if (!series || series.v.length === 0) return { state: 'logged', found }
   if (slot.varies && neverChanges(series)) return { state: 'never changes', found }
   const rate = slot.hz ? sampleRate(series, match.enabled) : null
-  if (rate && slot.hz && rate.fastHz < RATE_SLACK * slot.hz) return { state: 'slow', found, measuredHz: rate.fastHz }
+  if (rate && slot.hz && rate.fastHz < barFor(slot.hz)) return { state: 'slow', found, measuredHz: rate.fastHz }
   return { state: 'logged', found, measuredHz: rate?.fastHz }
+}
+
+/** Under this rate a key is slow: the 50 Hz power bar less one loop of jitter; the 30 Hz bar exactly as the rules' notes use it. */
+function barFor(hz: number): number {
+  return hz === POWER_HZ ? RATE_SLACK * hz : hz
 }
 
 function neverChanges(series: NumberSeries): boolean {
@@ -242,12 +251,12 @@ function unlistedLines(lines: CoverageLine[], reasons: Reason[]): CoverageLine[]
 function gapIn(part: string): string | null {
   const none = /^the robot profile (?:names|maps|lists) no (.+)$/.exec(part)?.[1]
   if (none) return none
-  return /^missing (.+) \((?:not in the robot profile|the robot profile has no key for it)\)$/.exec(part)?.[1] ?? null
+  return /^missing (.+) \((?:not in the robot profile|the robot profile has no key for it|the robot profile has none|the robot profile names no [^)]*)\)$/.exec(part)?.[1] ?? null
 }
 
 function darkCheck(id: string, partly: boolean): DarkCheck {
   const rule = ruleById(id)
-  return { rule: id, title: rule?.title ?? id, severity: rule?.severity ?? 'info', incident: rule?.incident ?? '', partly }
+  return { rule: id, title: rule?.title ?? id, severity: rule?.severity ?? 'info', incident: stripRepoPaths(rule?.incident ?? ''), partly }
 }
 
 function todoFor(slot: CoverageKey, state: CoverageState, hz?: number): string {
@@ -259,7 +268,7 @@ function todoFor(slot: CoverageKey, state: CoverageState, hz?: number): string {
     case 'slow':
       return `Log ${slot.what} on every robot loop: it was logged about ${Math.round(hz ?? 0)} times a second while enabled, and the checks need ${slot.hz}.`
     case 'never changes':
-      return `${slot.what} logged one value the whole time the robot was enabled: check that it is read from the device on every loop.`
+      return `${slot.what} logged one value for the whole log, though the robot was enabled: check that it is read from the device on every loop.`
     case 'profile gap':
       return `Fix the robot profile (src/profiles/): it has no key for ${slot.what}. If the robot logs it, add the key; this is not a robot-code change.`
   }
