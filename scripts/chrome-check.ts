@@ -54,7 +54,7 @@ for (const [gi, files] of groups.entries()) {
   await sleep(1000)
   const baseRss = rendererRssMB()
   const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
-  const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' }, sessionId)
+  const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog,.dslog,.jsonl"]' }, sessionId)
   let peak = baseRss
   const sampler = setInterval(() => { peak = Math.max(peak, rendererRssMB()) }, 50)
   const started = Date.now()

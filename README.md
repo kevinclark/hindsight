@@ -38,6 +38,21 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
   hashed Wi-Fi key.
 
+- **Save for Slack** (beside each Download for Claude, in Match review and Foresight) opens the print dialog on a
+  report layout, not on the app: page 1 is the bottom line, each error with its one number, next step and plot, then
+  warnings and info one line each; later pages hold what each error might mean, its causes and why the rule exists.
+  Pick **Save as PDF** in the dialog (the file is named `<log>.report`). The same click saves `<log>.card.png`, a
+  1080 px phone card (verdict or counts, each error's title and one number, the build with an uncommitted flag, type
+  32 px or more) to post as the Slack image, with the PDF attached. Print is always light, whatever the screen is.
+  Foresight's report is one page stamped with the time read, so a withdrawn verdict prints as NOT CHECKED, never GO.
+- **From the command line**, for Claude or a script: `node --experimental-strip-types scripts/report.ts <out-dir> <log>
+  [<dslog>] [-- <log> …]` builds first (`--no-build` skips), drives headless Chrome on `hindsight.html` and writes
+  `<log>.report.pdf`, `<log>.card.png` and `<log>.findings.json`. `scripts/chrome-foresight-report-check.ts <out-dir>`
+  replays P0 and Q13 as the robot's NT4 stream and writes the Foresight PDFs and cards.
+- **Ctrl+P** in Match review (any tab) also prints the report, not the app. What the report and card carry out of the
+  laptop: the log file names, the build sha and branch, any notes students wrote in the team's history file, and in
+  Foresight the robot's address and the controller names as read.
+
 ## Which robot a log is from
 
 Rules never name a log key or a current limit; they ask the log's **robot profile** (`src/profiles/`). A profile is

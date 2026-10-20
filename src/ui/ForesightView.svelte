@@ -15,6 +15,7 @@
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
   import { ASSISTED_RULES, markOnchecks } from '../foresight/onchecks.ts'
+  import ForesightReport from './ForesightReport.svelte'
 
   let { history, onPitCheck }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void } = $props()
 
@@ -88,10 +89,13 @@
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
   }
   const onchecks = $derived(markOnchecks(checked))
+  let reportView = $state<{ save: () => Promise<string | null> }>()
+  let saveProblem = $state<string | null>(null)
   const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye', 'not yet': 'Not yet' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
 
+<div class="screen-only">
 {#if field}
   <section class="field" role="alert">
     <p class="big">{FIELD_MESSAGE}</p>
@@ -173,9 +177,13 @@
         {/if}
       </dl>
       <button class="button" onclick={downloadReadings} title="Saves foresight-readings-….json: these readings, the verdict, and which signals the robot never sent">Download for Claude</button>
+      <button class="button" onclick={async () => { saveProblem = (await reportView?.save()) ?? null }} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
+      {#if saveProblem}<p class="small" role="alert">{saveProblem}</p>{/if}
     </details>
   {/if}
 {/if}
+</div>
+<ForesightReport bind:this={reportView} {status} {checked} {verdict} {why} {onchecks} {battery} {controllers} />
 
 <style>
   .connect { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; }

@@ -6,10 +6,12 @@
   import type { PlotModel } from './plot-data.ts'
   import { clock } from '../match/match.ts'
 
-  let { model, height = 140, xLabel = 's' }: { model: PlotModel; height?: number; xLabel?: string } = $props()
+  // `compact`: sparkline height for the printed report (2 y-ticks, no x-ticks, tight padding; the unit and time range
+  // go in the caption instead of the plot's margins).
+  let { model, height = 140, xLabel = 's', compact = false }: { model: PlotModel; height?: number; xLabel?: string; compact?: boolean } = $props()
 
-  const W = 640
-  const PAD = { left: 44, right: 10, top: 18, bottom: 22 }
+  const W = $derived(compact ? 330 : 640) // compact is drawn about 3.1 in wide in print, so the text stays 11 px there
+  const PAD = $derived(compact ? { left: 44, right: 10, top: 4, bottom: 10 } : { left: 44, right: 10, top: 18, bottom: 22 })
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
 
   const yRange = $derived.by(() => {
@@ -48,7 +50,15 @@
     for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) values.push(+v.toFixed(6))
     return { values, digits: Math.max(0, -Math.floor(Math.log10(step) + 1e-9)) }
   }
-  const yTicks = $derived(ticks(yRange.lo, yRange.hi, 4))
+  // Compact: two labelled ticks at most (the lowest and highest the 1-2-5 steps give), never a lone one.
+  function compactTicks(lo: number, hi: number): { values: number[]; digits: number } {
+    for (const count of [2, 3, 4, 6]) {
+      const t = ticks(lo, hi, count)
+      if (t.values.length >= 2) return { values: [t.values[0], t.values[t.values.length - 1]], digits: t.digits }
+    }
+    return ticks(lo, hi, 2)
+  }
+  const yTicks = $derived(compact ? compactTicks(yRange.lo, yRange.hi) : ticks(yRange.lo, yRange.hi, 4))
   // The time axis reads in match time (what people think in) when the match start is known; robot time otherwise.
   const ms = $derived(xLabel === 's' && model.matchStart != null ? model.matchStart : null)
   const xTicks = $derived(ms === null ? ticks(model.from, model.to, 6) : ticks(model.from - ms, model.to - ms, 6))
@@ -64,11 +74,13 @@
       <line class="grid" x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} />
       <text class="tick" x={PAD.left - 6} y={y(v) + 4} text-anchor="end">{v.toFixed(yTicks.digits)}</text>
     {/each}
-    {#each xTicks.values as t (t)}
-      <text class="tick" x={x(tickAt(t))} y={height - 6} text-anchor="middle">{tickText(t)}</text>
-    {/each}
-    <text class="tick unit" x={4} y={11}>{model.unit}</text>
-    <text class="tick unit" x={W - PAD.right} y={11} text-anchor="end">{axisText}</text>
+    {#if !compact}
+      {#each xTicks.values as t (t)}
+        <text class="tick" x={x(tickAt(t))} y={height - 6} text-anchor="middle">{tickText(t)}</text>
+      {/each}
+      <text class="tick unit" x={4} y={11}>{model.unit}</text>
+      <text class="tick unit" x={W - PAD.right} y={11} text-anchor="end">{axisText}</text>
+    {/if}
     {#if model.threshold}
       <line class="threshold" x1={PAD.left} x2={W - PAD.right} y1={y(model.threshold.value)} y2={y(model.threshold.value)} />
     {/if}
@@ -81,8 +93,9 @@
       <path d={stepPath(s.t, s.v)} stroke={COLORS[i % COLORS.length]} />
     {/each}
   </svg>
-  {#if model.series.length > 1 || model.threshold}
+  {#if compact || model.series.length > 1 || model.threshold}
     <figcaption>
+      {#if compact}<span class="key">{model.unit ? `${model.unit} · ` : ''}{axisText}</span>{/if}
       {#each model.series as s, i (s.label)}
         <span class="key"><span class="swatch" style={`background:${COLORS[i % COLORS.length]}`}></span>{s.label}</span>
       {/each}

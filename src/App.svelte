@@ -12,6 +12,10 @@
   import SessionView from './ui/SessionView.svelte'
   import SnapshotView from './ui/SnapshotView.svelte'
   import ForesightView from './ui/ForesightView.svelte'
+  import ReviewReport from './ui/ReviewReport.svelte'
+  import { buildCard } from './report/card.ts'
+  import { cardToPngDataUrl, saveForSlack } from './report/card-png.ts'
+  import { reviewCard, reviewModel } from './report/review-model.ts'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
   import { currentStatus, HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
@@ -126,10 +130,28 @@
     downloadText(findingsFileName(current.match), json)
   }
 
+  // "Save for Slack": the browser's print dialog (Save as PDF; the title names the file), then the phone card as a PNG.
+  const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(a, issues)))
+  let saveProblem = $state<string | null>(null)
+  async function saveForSlackReview() {
+    saveProblem = null
+    if (!current) return
+    const base = current.match.fileName.replace(/\.wpilog$/i, '')
+    try { saveProblem = await saveForSlack(`${base}.report`, `${base}.card.png`, reviewCardOf(current)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  // Print shows the report instead of the app, in Match review (with a log loaded) and Foresight; other views print as they are.
+  const reportable = $derived((mode === 'review' && !!current) || mode === 'foresight')
+
   // For automated checks (e.g. a test page that already has File objects): window.hindsight.load(files)
   ;(window as unknown as { hindsight: object }).hindsight = {
     load,
     version: VERSION,
+    // For scripts/report.ts: the same builders the buttons use, for the log in view.
+    findingsJson: () => (current ? JSON.stringify(buildFindingsJson(current.match, current.report, issues), null, 1) : null),
+    findingsFile: () => (current ? findingsFileName(current.match) : null),
+    reviewCard: () => (current ? reviewCardOf(current) : null),
+    reviewCardPng: async () => (current ? await cardToPngDataUrl(reviewCardOf(current)) : null),
+    foresightCardPng: async () => { const c = (window as unknown as { hindsight: { foresightCard?: () => Parameters<typeof cardToPngDataUrl>[0] } }).hindsight.foresightCard?.(); return c ? await cardToPngDataUrl(c) : null },
     get timings() {
       return { lastLoad, matches: analyses.map((a) => ({ file: a.match.fileName, ...a.timing, findings: a.report.findings.length })) }
     },
@@ -140,12 +162,12 @@
 
 <svelte:window ondragover={(e) => { e.preventDefault(); dragging = mode === 'review' }} ondragleave={(e) => { if (e.relatedTarget === null) dragging = false }} ondrop={onDrop} />
 
-<header>
+<header class:screen-only={reportable}>
   <h1>Hindsight</h1>
   <p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>
 </header>
 
-<nav class="modes" aria-label="Mode">
+<nav class="modes" class:screen-only={reportable} aria-label="Mode">
   <button class:active={mode === 'review'} onclick={() => (mode = 'review')}>Match review</button>
   <button class:active={mode === 'session'} onclick={() => (mode = 'session')}>Session</button>
   <button class:active={mode === 'wizard'} onclick={() => (mode = 'wizard')}>Limits wizard</button>
@@ -156,15 +178,15 @@
 
 <!-- All the views stay mounted and only the active one shows, so switching never loses a loaded session,
      the matches in review, the wizard's progress, or a snapshot. -->
-<div hidden={mode !== 'wizard'}><Wizard matches={analyses} /></div>
-<div hidden={mode !== 'snapshot'}><SnapshotView /></div>
-<div hidden={mode !== 'profile'}><ProfileBuilder /></div>
+<div hidden={mode !== 'wizard'} class:screen-only={reportable}><Wizard matches={analyses} /></div>
+<div hidden={mode !== 'snapshot'} class:screen-only={reportable}><SnapshotView /></div>
+<div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder /></div>
 <div hidden={mode !== 'foresight'}>
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
-  {#if unsaved}<p class="history">A pit check was added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
+  {#if unsaved}<p class="history screen-only">A pit check was added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
-<div hidden={mode !== 'session'}><SessionView {issues} onOpen={openFromSession} /></div>
-<div hidden={mode !== 'review'}>
+<div hidden={mode !== 'session'} class:screen-only={reportable}><SessionView {issues} onOpen={openFromSession} /></div>
+<div hidden={mode !== 'review'} class:screen-only={reportable}>
 <section class="drop" class:dragging aria-busy={busy}>
   <label class="button">
     <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={(e) => { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }} />
@@ -215,7 +237,11 @@
       </p>
       {#if current.match.profileChoice.note}<p class="meta dirty">{current.match.profileChoice.note}</p>{/if}
     </div>
-    <button class="button" onclick={downloadForClaude} title="Saves findings.json: findings, evidence and short data windows, for analysis with Claude">Download for Claude</button>
+    <span class="actions">
+      <button class="button" onclick={downloadForClaude} title="Saves findings.json: findings, evidence and short data windows, for analysis with Claude">Download for Claude</button>
+      <button class="button" onclick={saveForSlackReview} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
+    </span>
+    {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   </section>
 
   <div class="tabs" role="tablist">
@@ -248,6 +274,8 @@
 {/if}
 </div>
 
+{#if mode === 'review' && current}<ReviewReport analysis={current} {issues} />{/if}
+
 <style>
   :global(:root) {
     --bg: #ffffff; --fg: #1d1d1f; --muted: #5f6368; --border: #e3e3e6; --hover: #f4f5f7; --focus: #1a73e8;
@@ -262,6 +290,20 @@
       --error: #f28b82; --warning: #fdb863; --grid: #26282c;
       --series-1: #8ab4f8; --series-2: #f28b82; --series-3: #81c995; --series-4: #c58af9; --series-5: #fcad70;
     }
+  }
+  /* Print is always light, whatever the screen is: redeclare every variable above with the light values (the selector is
+     as specific as the dark one's, plus html, so it wins wherever the stylesheets land). The report is what prints. */
+  @media print {
+    :global(html:root), :global(html:root:not([data-theme='light'])) {
+      --bg: #ffffff; --fg: #1d1d1f; --muted: #5f6368; --border: #e3e3e6; --hover: #f4f5f7; --focus: #1a73e8;
+      --error: #c5221f; --warning: #a35200; --grid: #ececef; --go: #188038;
+      --series-1: #1a73e8; --series-2: #d93025; --series-3: #188038; --series-4: #9334e6; --series-5: #e37400;
+      color-scheme: light;
+    }
+    :global(body) { background: #ffffff; color: #1d1d1f; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    :global(#app) { max-width: none; padding: 0; }
+    :global(.screen-only) { display: none !important; }
+    @page { size: Letter; margin: 0.3in 0.5in; }
   }
   :global(body) { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
   :global(#app) { max-width: 980px; margin: 0 auto; padding: 1rem 16px 3rem; }
@@ -285,6 +327,7 @@
   .matches small { color: var(--muted); }
   .match-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 0.5rem 1rem; margin-top: 1.25rem; }
   .match-head h2 { margin: 0; font-size: 1.25rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
   .dirty { color: var(--warning); }
   .meta select { width: auto; max-width: 100%; font: inherit; font-size: 0.8rem; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }

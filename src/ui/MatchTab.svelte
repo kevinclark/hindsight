@@ -8,6 +8,7 @@
   import { ruleById } from '../rules/index.ts'
   import type { Audience, Finding } from '../rules/types.ts'
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
+  import { findingStatus, playedAt } from '../report/review-model.ts'
 
   let { analysis, issues, onMark }: {
     analysis: Analysis
@@ -23,17 +24,9 @@
   const all = $derived(analysis.report.findings.filter((f) => f.rule !== 'meta/not-checked'))
   const forAudience = (id: Audience | 'all') => all.filter((f) => id === 'all' || (ruleById(f.rule)?.who ?? []).includes(id))
   const shown = $derived(forAudience(audience))
-  // When this match was played (wall clock, ms), so a fix recorded after it doesn't make it "come back".
-  const playedAt = $derived(analysis.match.epochOffset !== null && analysis.match.matchStart !== null ? (analysis.match.epochOffset + analysis.match.matchStart) * 1000 : null)
-  function status(f: Finding): 'known' | 'came back' | 'fixed later' | undefined {
-    const issue = issues.get(f.key)
-    if (!issue) return undefined
-    if (issue.status === 'known') return 'known'
-    const fixedAt = Date.parse(issue.when)
-    // If we can't tell when the match was played or when the fix was, don't call it "came back": file it as known.
-    if (playedAt === null || Number.isNaN(fixedAt)) return 'fixed later'
-    return playedAt < fixedAt ? 'fixed later' : 'came back'
-  }
+  // When this match was played (wall clock, ms), so a fix recorded after it doesn't make it "came back".
+  const played = $derived(playedAt(analysis))
+  const status = (f: Finding) => findingStatus(f, issues, played)
   const cameBack = $derived(shown.filter((f) => status(f) === 'came back'))
   const fresh = $derived(shown.filter((f) => !status(f)))
   const known = $derived(shown.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
