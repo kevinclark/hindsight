@@ -3,7 +3,7 @@
 // themselves are checked in calgames-logs.test.ts and mttd-rules.test.ts when they are in ~/Downloads.
 import { describe, expect, it } from 'vitest'
 import { FORESIGHT_RULES, LINKS, RULES, ruleById, runRules } from '../src/rules/index.ts'
-import { linkFindings } from '../src/rules/run.ts'
+import { consolidate } from '../src/rules/run.ts'
 import type { Finding, Severity } from '../src/rules/types.ts'
 import { BUS_DEVICES } from '../src/rules/can/bus-dropout.ts'
 import { nest, partitionStanding, severityWords } from '../src/report/finding-tree.ts'
@@ -51,7 +51,7 @@ describe('links.ts', () => {
     const loss = finding('comms/loss', 417.404, { likely: ['ds-laptop'] })
     const ds = finding('comms/ds-log-truncated', 420.479)
     const all = [loss, disable, tilt, zero, ds]
-    linkFindings(all, LINKS)
+    consolidate(all, { links: LINKS })
     expect(all.map(explainer)).toEqual([undefined, 'collision/tilt · Pitch', 'mech/zero-not-completed · Hood', undefined, 'comms/loss'])
     expect(nest(all, all).map((n) => n.finding)).toEqual([loss, zero])
   })
@@ -63,7 +63,7 @@ describe('links.ts', () => {
     const follower = alert('Flywheel Follower Disconnected', 535.307)
     const margin = finding('power/margin', 541.168, { likely: ['weak-battery', 'load'], evidence: { 'margin (V)': -0.31 } })
     const all = [brownout, collapse, dropout, follower, margin]
-    linkFindings(all, LINKS)
+    consolidate(all, { links: LINKS })
     expect(all.map(explainer)).toEqual(['power/battery-collapse', undefined, 'power/brownout', 'can/device-dropout · Flywheel follower 16', 'power/brownout'])
     const [headline] = nest(all, all)
     expect(headline.finding).toBe(collapse)
@@ -74,8 +74,8 @@ describe('links.ts', () => {
     const collapse = finding('power/battery-collapse', 705.729)
     const brownout = finding('power/brownout', 703.006, { likely: ['weak-battery'] })
     const load = finding('power/brownout', 703.006, { likely: ['load', 'weak-battery'] })
-    linkFindings([collapse, brownout], LINKS)
-    linkFindings([collapse, load], LINKS)
+    consolidate([collapse, brownout], { links: LINKS })
+    consolidate([collapse, load], { links: LINKS })
     expect(explainer(brownout)).toBe('power/battery-collapse')
     expect(load.explainedBy).toBeUndefined()
   })
@@ -86,7 +86,7 @@ describe('links.ts', () => {
     const amber = alert("PhotonCamera 'Back_Right' is disconnected.", 394.717, 'warning')
     const other = alert('Back_Left Camera Disconnected!', 394.717)
     const all = [red, other, stale, amber]
-    linkFindings(all, LINKS)
+    consolidate(all, { links: LINKS })
     expect(all.map(explainer)).toEqual(['vision/stale · Back_Right', undefined, undefined, 'vision/stale · Back_Right'])
     // A link never hides a red under an amber: the red alert stays a headline and says what explains it.
     const heads = nest(all, all)
@@ -103,7 +103,7 @@ describe('links.ts', () => {
     const camera = alert("PhotonCamera 'Back_Right' is disconnected.", 744.5, 'warning')
     const later = alert('Missing Module Data again', 747.1)
     const all = [bus, module, gyro, camera, sync, later]
-    linkFindings(all, LINKS)
+    consolidate(all, { links: LINKS })
     expect(all.map(explainer)).toEqual([undefined, 'can/bus-dropout · CANivore bus', 'can/bus-dropout · CANivore bus', undefined, undefined, undefined])
   })
 
@@ -111,7 +111,7 @@ describe('links.ts', () => {
     const dropout = finding('can/device-dropout', 535.307, { about: 'Flywheel follower 16', likely: ['battery-sag'] })
     const other = alert('Flywheel Follower 17 Disconnected', 535.4)
     const same = alert('Flywheel Follower Disconnected', 535.307)
-    linkFindings([dropout, other, same], LINKS)
+    consolidate([dropout, other, same], { links: LINKS })
     expect([explainer(other), explainer(same)]).toEqual([undefined, 'can/device-dropout · Flywheel follower 16'])
   })
 
@@ -121,9 +121,28 @@ describe('links.ts', () => {
     const collapse = finding('power/battery-collapse', 705, { severity: 'error' })
     const margin = finding('power/margin', 703.3, { evidence: { 'margin (V)': -0.06 } })
     const crashed: { rule: string; reason: string }[] = []
-    linkFindings([brownout, collapse, margin], [broken, ...LINKS], crashed)
+    consolidate([brownout, collapse, margin], { links: [broken, ...LINKS] }, crashed)
     expect(crashed).toEqual([{ rule: 'link power/brownout → power/margin', reason: 'Error: typo' }])
     expect(explainer(brownout)).toBe('power/battery-collapse')
+  })
+
+  it('runs until a pass changes nothing: running it again changes nothing, and a pass cap still changing is crashed', () => {
+    const chain = () => [
+      finding('power/brownout', 532.770, { likely: ['weak-battery'] }),
+      finding('power/battery-collapse', 542.262, { severity: 'error', likely: ['weak-battery'] }),
+      finding('can/device-dropout', 535.307, { about: 'Flywheel follower 16', likely: ['battery-sag'] }),
+    ]
+    const all = chain()
+    const crashed: { rule: string; reason: string }[] = []
+    consolidate(all, { links: LINKS }, crashed)
+    const settled = JSON.stringify(all)
+    consolidate(all, { links: LINKS }, crashed)
+    expect(JSON.stringify(all)).toBe(settled)
+    expect(all.map(explainer)).toEqual(['power/battery-collapse', undefined, 'power/brownout'])
+    expect(crashed).toEqual([])
+    // One pass explains both; only a second pass could show it had settled, so with a cap of 1 it is still changing.
+    consolidate(chain(), { links: LINKS }, crashed, 1)
+    expect(crashed).toEqual([{ rule: 'consolidators', reason: 'still changing after 1 pass' }])
   })
 
   it('stays quiet: a dropout at normal voltage, a dropout before the brownout, a margin above zero, an alert only outside the match', () => {
@@ -133,7 +152,7 @@ describe('links.ts', () => {
     const margin = finding('power/margin', 423.539, { evidence: { 'margin (V)': 0.16 } })
     const outside = alert('Flywheel Follower Disconnected', null, 'info')
     const all = [brownout, normal, before, margin, outside]
-    linkFindings(all, LINKS)
+    consolidate(all, { links: LINKS })
     expect(all.map(explainer)).toEqual([undefined, undefined, undefined, undefined, undefined])
   })
 
@@ -143,7 +162,7 @@ describe('links.ts', () => {
     const teleopTilt = finding('collision/tilt', 300, { about: 'Roll' })
     const newAuto = finding('auto/early-disable', 301, { likely: ['new-auto'] })
     const all = [disable, newAuto, teleopTilt, zero]
-    linkFindings(all, LINKS)
+    consolidate(all, { links: LINKS })
     expect(all.map(explainer)).toEqual([undefined, undefined, undefined, undefined])
   })
 
@@ -151,7 +170,7 @@ describe('links.ts', () => {
     const zero = finding('mech/zero-not-completed', 83.4, { about: 'Intake pivot', evidence: { 'zero completed (robot time, s)': 'never' } })
     const inAuto = finding('collision/tilt', 90, { about: 'Pitch', severity: 'error', evidence: { phase: 'auto' } })
     const inTeleop = finding('collision/tilt', 150, { about: 'Roll', evidence: { phase: 'teleop' } })
-    linkFindings([zero, inAuto, inTeleop], LINKS)
+    consolidate([zero, inAuto, inTeleop], { links: LINKS })
     expect([explainer(inAuto), explainer(inTeleop)]).toEqual(['mech/zero-not-completed · Intake pivot', undefined])
   })
 })
@@ -161,7 +180,7 @@ describe('nesting in the lists', () => {
   const brownout = finding('power/brownout', 532, { likely: ['weak-battery'] })
   const margin = finding('power/margin', 541, { evidence: { 'margin (V)': -0.3 } })
   const all = [brownout, collapse, margin]
-  linkFindings(all, LINKS)
+  consolidate(all, { links: LINKS })
 
   it('a finding whose headline is a known issue is a headline in the active list, labelled', () => {
     const active = [brownout, margin]
@@ -219,7 +238,7 @@ describe('partitionStanding', () => {
   const margin = finding('power/margin', 703.3, { evidence: { 'margin (V)': -0.06 } })
   const loss = finding('comms/loss', 500)
   const all = [brownout, margin, loss]
-  linkFindings(all, LINKS)
+  consolidate(all, { links: LINKS })
   const tree = nest(all, all)
   const headlines = (nodes: ReturnType<typeof nest>) => nodes.map((n) => n.finding)
 

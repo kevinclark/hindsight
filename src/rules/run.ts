@@ -15,13 +15,26 @@ export interface Report {
   skipped: SkippedRule[]
   /** Rules that threw: a bug in the rule, shown so it isn't silent. */
   crashed: SkippedRule[]
+  /**
+   * Findings the consolidators made to name a group of findings (src/rules/parents.ts). Kept out of `findings`, so
+   * they add nothing to any count; the findings they group point at them with `explainedBy`. Left out when none.
+   */
+  parents?: Finding[]
 }
+
+/** What reduces a match's findings after the rules have run: links (src/rules/links.ts) nest one under another. */
+export interface Consolidators {
+  links?: Link[]
+}
+
+/** The most passes the consolidators get before they count as crashed (each pass only adds, so they settle sooner). */
+export const MAX_PASSES = 10
 
 const ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
 /** Things only a fitting robot profile can name: rules over them don't run on a log the profile doesn't fit. */
 const ROBOT_ITEMS = ['motor', 'motorGroup', 'device', 'camera', 'mechanism']
 
-export function runRules(match: Match, rules: Rule[], links: Link[] = []): Report {
+export function runRules(match: Match, rules: Rule[], consolidators: Consolidators = {}): Report {
   const view = new MatchView(match)
   const findings: Finding[] = []
   const skipped: SkippedRule[] = []
@@ -60,17 +73,34 @@ export function runRules(match: Match, rules: Rule[], links: Link[] = []): Repor
   // Worst first: severity, then the rule's place in the list (things that cost the match first), then time.
   const place = (f: Finding) => { const i = rules.findIndex((r) => r.id === f.rule); return i < 0 ? rules.length : i }
   findings.sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || place(a) - place(b) || (a.time ?? Infinity) - (b.time ?? Infinity))
-  linkFindings(findings, links, crashed)
-  return { findings, skipped, crashed }
+  const parents = consolidate(findings, consolidators, crashed)
+  return { findings, skipped, crashed, ...(parents.length ? { parents } : {}) }
 }
 
 /**
- * One pass over the links (src/rules/links.ts): a finding that another finding explains gets `explainedBy`. Nothing
- * is removed, merged or reordered. Each finding gets at most one: the first link that matches, in links.ts order, and
- * the first cause finding in report order. A link that throws is listed with the crashed rules, like a rule.
+ * The reduce stage: the consolidators run over the findings in a fixed order, pass after pass, until a pass changes
+ * nothing. They only add (an `explainedBy`), never remove, merge or reorder, so they always settle; still changing after
+ * `maxPasses` is reported as crashed, never a silent stop. Returns the parents they made.
  */
-export function linkFindings(findings: Finding[], links: Link[], crashed: SkippedRule[] = []): void {
+export function consolidate(findings: Finding[], consolidators: Consolidators, crashed: SkippedRule[] = [], maxPasses = MAX_PASSES): Finding[] {
+  const parents: Finding[] = []
+  for (let pass = 1; pass <= maxPasses; pass++) {
+    const changed = nestPass(findings, consolidators.links ?? [], crashed)
+    if (!changed) return parents
+  }
+  crashed.push({ rule: 'consolidators', reason: `still changing after ${maxPasses} pass${maxPasses === 1 ? '' : 'es'}` })
+  return parents
+}
+
+/**
+ * One pass over the links (src/rules/links.ts): a finding that another finding explains gets `explainedBy`. Each
+ * finding gets at most one, and keeps it: the first link that matches, in links.ts order, and the first cause finding
+ * in report order. A link that throws is listed with the crashed rules, like a rule. True if it explained any finding.
+ */
+function nestPass(findings: Finding[], links: Link[], crashed: SkippedRule[]): boolean {
+  let changed = false
   for (const symptom of findings) {
+    if (symptom.explainedBy) continue
     for (const l of links.filter((x) => x.explains === symptom.rule)) {
       let cause: Finding | undefined
       try {
@@ -81,9 +111,11 @@ export function linkFindings(findings: Finding[], links: Link[], crashed: Skippe
       }
       if (!cause) continue
       symptom.explainedBy = { rule: cause.rule, about: cause.about, time: cause.time, why: l.why }
+      changed = true
       break
     }
   }
+  return changed
 }
 
 /** Run one rule over each of its things. A thing whose signals are missing is noted, not fatal. */

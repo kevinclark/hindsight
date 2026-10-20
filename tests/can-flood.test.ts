@@ -7,7 +7,7 @@ import { analyzeFiles } from '../src/analyze.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { BUS_DEVICES } from '../src/rules/can/bus-dropout.ts'
 import { LINKS } from '../src/rules/index.ts'
-import { linkFindings } from '../src/rules/run.ts'
+import { consolidate } from '../src/rules/run.ts'
 import type { Finding } from '../src/rules/types.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 
@@ -88,21 +88,21 @@ describe('alert words for the bus link', () => {
       alert('Missing Module Data', 613.9),
       alert('Disconnected drive motor on Back Left module!'),
     ]
-    linkFindings([bus, ...alerts], LINKS)
+    consolidate([bus, ...alerts], { links: LINKS })
     expect(alerts.map((a) => a.explainedBy?.rule)).toEqual(Array(4).fill('can/bus-dropout'))
   })
 
   it('an alert that names no kind of device on the bus is still its own headline', () => {
     const odometry = alert('Using Sync Odometry')
     const far = alert('Disconnected turn motor on Back Left module!', 700)
-    linkFindings([bus, odometry, far], LINKS)
+    consolidate([bus, odometry, far], { links: LINKS })
     expect([odometry.explainedBy, far.explainedBy]).toEqual([undefined, undefined])
   })
 
   it('turn and module mean steer only when the bus has a steer motor', () => {
     const noSteer = { ...bus, evidence: { [BUS_DEVICES]: 'Front Left drive, Hood, Gyro (Pigeon)' } }
     const turn = alert('Disconnected turn motor on Back Left module!')
-    linkFindings([noSteer, turn], LINKS)
+    consolidate([noSteer, turn], { links: LINKS })
     expect(turn.explainedBy).toBeUndefined()
   })
 })

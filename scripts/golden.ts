@@ -30,7 +30,7 @@ for (const g of groups) {
   const { analyses, problems } = analyzeFiles(paths.map((p) => ({ name: p.split('/').pop()!, bytes: new Uint8Array(readFileSync(p)) })))
   result[g] = {
     problems,
-    logs: analyses.map((a) => ({ file: a.match.fileName, profile: a.match.profile?.name ?? null, findings: a.report.findings, skipped: a.report.skipped, crashed: a.report.crashed })),
+    logs: analyses.map((a) => ({ file: a.match.fileName, profile: a.match.profile?.name ?? null, findings: a.report.findings, skipped: a.report.skipped, crashed: a.report.crashed, ...(a.report.parents ? { parents: a.report.parents } : {}) })),
   }
   console.error(`${g}: ${analyses.length} logs, ${analyses.reduce((n, a) => n + a.report.findings.length, 0)} findings, ${analyses.reduce((n, a) => n + a.report.crashed.length, 0)} crashed`)
 }
