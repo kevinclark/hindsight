@@ -147,11 +147,12 @@ describe('links.ts', () => {
     expect(all.map(explainer)).toEqual([undefined, undefined, undefined, undefined])
   })
 
-  it('a zero that never completed covers the rest of the match', () => {
+  it('a zero that never completed explains a later tilt in auto, not one in teleop', () => {
     const zero = finding('mech/zero-not-completed', 83.4, { about: 'Intake pivot', evidence: { 'zero completed (robot time, s)': 'never' } })
-    const tilt = finding('collision/tilt', 150, { about: 'Pitch' })
-    linkFindings([zero, tilt], LINKS)
-    expect(explainer(tilt)).toBe('mech/zero-not-completed · Intake pivot')
+    const inAuto = finding('collision/tilt', 90, { about: 'Pitch', severity: 'error', evidence: { phase: 'auto' } })
+    const inTeleop = finding('collision/tilt', 150, { about: 'Roll', evidence: { phase: 'teleop' } })
+    linkFindings([zero, inAuto, inTeleop], LINKS)
+    expect([explainer(inAuto), explainer(inTeleop)]).toEqual(['mech/zero-not-completed · Intake pivot', undefined])
   })
 })
 

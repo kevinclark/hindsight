@@ -35,7 +35,8 @@ export const LINKS: Link[] = [
     when: (brownout, margin) => Number(margin.evidence['margin (V)']) <= 0,
     why: 'the voltage went below the brownout setting, so there was no margin left',
   }),
-  // CalGames 2026 Q13: the hood moved before its zero finished, then hit the trench bar 11 s later.
+  // CalGames 2026 Q13: the hood moved before its zero finished, then hit the trench bar 11 s later, in auto.
+  // A zero that never finished counts only for a tilt in auto: in teleop a tilt is more often a bump or a push.
   link({
     cause: 'mech/zero-not-completed',
     explains: 'collision/tilt',
@@ -127,10 +128,14 @@ function wordsOf(text: string): string[] {
   return text.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 0)
 }
 
-/** Did the tilt start while the mechanism was moving from the wrong zero (from its first move until its zero)? */
+/**
+ * Did the tilt start while the mechanism was moving from the wrong zero (from its first move until its zero)? When
+ * the zero never finished, only a tilt in auto counts.
+ */
 function duringWrongFrame(zero: Finding, tilt: Finding): boolean {
   const zeroDone = zero.evidence['zero completed (robot time, s)']
-  const until = typeof zeroDone === 'number' ? zeroDone : Infinity // 'never': the whole rest of the match
   const tiltAt = tilt.time ?? NaN
-  return tiltAt >= (zero.time ?? NaN) && tiltAt <= until
+  const afterTheMove = tiltAt >= (zero.time ?? NaN)
+  if (typeof zeroDone === 'number') return afterTheMove && tiltAt <= zeroDone
+  return afterTheMove && tilt.evidence.phase === 'auto'
 }
