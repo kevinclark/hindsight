@@ -15,6 +15,8 @@ import type { CodeFileEntry, Kept } from './source.ts'
 const ANSWERS = 'hindsight.limitLines'
 const GITHUB_FILES = 'hindsight.githubFiles'
 const GITHUB_CHOSEN = 'hindsight.codeGitHub'
+/** GitHub file lists (about 10 KB each) and short hashes kept: the oldest go first, well inside localStorage's 5 MB. */
+const KEEP_GITHUB = 100
 const DB = 'hindsight-code'
 const STORE = 'folders'
 
@@ -96,11 +98,15 @@ export async function folderFromHandle(handle: FileSystemDirectoryHandle): Promi
   return { name: handle.name, code: { repo: new GitRepo(dir), cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
 }
 
-/** A public GitHub repo ("owner/name") and the branch or commit typed with it. Its name says GitHub, so a log read
- * with a folder of the same name isn't taken for one read with this. */
-export function githubSource(repo: string, ref: string): ChosenFolder {
-  const github = new GitHubRepo(repo, browserKept<CodeFileEntry[] | string>(GITHUB_FILES))
-  return { name: `${repo}@${ref} (GitHub)`, code: { repo: github, cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
+/** A public GitHub repo ("owner/name"). Its name says GitHub, so a log read with a folder of the same name isn't
+ * taken for one read with this; it leaves out the branch, which the comparison never reads. */
+export function githubSource(repo: string): ChosenFolder {
+  return { name: `${repo} (GitHub)`, code: { repo: browserGitHub(repo), cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
+}
+
+/** A GitHub repo whose file lists are kept in this browser (the newest KEEP_GITHUB of them). */
+export function browserGitHub(repo: string): GitHubRepo {
+  return new GitHubRepo(repo, browserKept<CodeFileEntry[] | string>(GITHUB_FILES, KEEP_GITHUB))
 }
 
 /** The GitHub repo and ref chosen last visit ("owner/name@ref"), or null. Choosing a folder forgets it. */
@@ -195,8 +201,8 @@ function withStore<T>(mode: IDBTransactionMode, body: (store: IDBObjectStore) =>
   })
 }
 
-/** Answers kept in this browser's localStorage under one key: limit-line answers, GitHub's file lists. */
-function browserKept<T>(storageKey: string): Kept<T> {
+/** Answers kept in this browser's localStorage under one key: limit-line answers, GitHub's file lists (`atMost`). */
+function browserKept<T>(storageKey: string, atMost = Infinity): Kept<T> {
   const read = (): Record<string, T> => {
     try {
       return JSON.parse(localStorage.getItem(storageKey) ?? '{}')
@@ -208,7 +214,8 @@ function browserKept<T>(storageKey: string): Kept<T> {
     get: (key) => read()[key],
     set: (key, value) => {
       try {
-        localStorage.setItem(storageKey, JSON.stringify({ ...read(), [key]: value }))
+        const entries = Object.entries(read()).filter(([k]) => k !== key)
+        localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries([...entries.slice(-(atMost - 1)), [key, value]])))
       } catch {
         // Not remembered: a private window, storage blocked for pages opened from disk, or full.
       }

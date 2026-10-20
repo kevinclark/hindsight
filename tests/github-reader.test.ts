@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { CommitMissing, GitRepo, GitUnreadable } from '../src/code/git.ts'
 import { GitHubRepo, parseGitHub } from '../src/code/github.ts'
 import { hintsAt } from '../src/builder/code-hints.ts'
@@ -70,6 +70,25 @@ describe('reading a public repo', () => {
     expect(await next.repo.resolve('event')).toBe(head)
     expect(next.fake.asked).toEqual([`https://api.github.com/repos/${REPO}/commits/event`])
   })
+  it('a branch named like a hash isn\'t kept as one: it moves', async () => {
+    git('branch', 'cafe123')
+    const { repo, kept } = github()
+    expect(await repo.resolve('cafe123')).toBe(head)
+    expect(kept.kept.size).toBe(0)
+  })
+  it('asks for a full hash before listing or reading, and for some ref at all', async () => {
+    const { repo, fake } = github()
+    expect(await repo.files('event').catch((e) => e.message)).toMatch(/resolve it to a full commit hash first/)
+    expect(await repo.textAt('event', SHOOTER).catch((e) => e.message)).toMatch(/resolve it to a full commit hash first/)
+    expect(await repo.resolve(' ').catch((e) => e.message)).toBe('no branch or commit given')
+    expect(fake.asked).toEqual([])
+  })
+  it('shares a file read while it\'s on the way, and doesn\'t keep the text after', async () => {
+    const { repo, fake } = github()
+    await Promise.all([repo.textAt(head, SHOOTER), repo.textAt(head, SHOOTER)])
+    await repo.textAt(head, SHOOTER)
+    expect(fake.asked).toHaveLength(2)
+  })
   it('a commit\'s file list is kept: the next visit makes no call', async () => {
     const { repo, kept } = github()
     const files = await repo.files(head)
@@ -109,6 +128,28 @@ describe('when GitHub says no', () => {
     for (let group = 0; group < 13; group++) await repo.resolve('abcdef1').catch(() => {})
     expect(fake.asked).toHaveLength(1)
   })
+  it('a lasting no is asked again after a minute (the student may have pushed it)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { repo, fake } = github()
+      await repo.resolve('abcdef1').catch(() => {})
+      await vi.advanceTimersByTimeAsync(59_000)
+      await repo.resolve('abcdef1').catch(() => {})
+      expect(fake.asked).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(2_000)
+      await repo.resolve('abcdef1').catch(() => {})
+      expect(fake.asked).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('an unreadable answer is "not now", asked again next time', async () => {
+    let calls = 0
+    const repo = new GitHubRepo(REPO, memoryKept(), always(() => { calls++; return new Response('<html>proxy</html>', { status: 200 }) }))
+    expect(await reason(repo.resolve('event'))).toBe(`GitHub's answer for ${REPO} wasn't readable: choose the code folder instead`)
+    await repo.resolve('event').catch(() => {})
+    expect(calls).toBe(2)
+  })
   it('the 60-an-hour limit used up: says when it resets, and nothing is kept', async () => {
     const reset = Date.UTC(2026, 9, 20, 22, 7) / 1000
     const at = new Date(reset * 1000).toTimeString().slice(0, 5)
@@ -144,7 +185,8 @@ describe('naming a repo', () => {
     expect(parseGitHub('HighlanderRobotics/Rebuilt@event-calgames')).toEqual({ repo: 'HighlanderRobotics/Rebuilt', ref: 'event-calgames' })
     expect(parseGitHub(' example-team/robot.code@cb68b20 ')).toEqual({ repo: 'example-team/robot.code', ref: 'cb68b20' })
     expect(parseGitHub('https://github.com/example-team/robot/tree/feature/auto')).toEqual({ repo: 'example-team/robot', ref: 'feature/auto' })
-    expect(parseGitHub('example-team/robot')).toBeNull()
+    expect(parseGitHub('example-team/robot')).toEqual({ repo: 'example-team/robot', ref: '' })
+    expect(parseGitHub('not a repo')).toBeNull()
   })
 })
 

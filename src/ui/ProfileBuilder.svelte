@@ -11,7 +11,7 @@
   import { parseProfileJson, type GroupJson, type MotorJson, type ProfileJson } from '../builder/json.ts'
   import { forgetProfile, keepProfile, keptId, keptProfiles } from '../builder/store.ts'
   import { codeHead, codeHints, hintsAt, shaWarning, siteLabel, type CodeFile, type CodeHints } from '../builder/code-hints.ts'
-  import { githubSource, gitRepoOfFiles } from '../code/browser-code-folder.ts'
+  import { browserGitHub, gitRepoOfFiles } from '../code/browser-code-folder.ts'
   import { parseGitHub } from '../code/github.ts'
   import { PROFILES } from '../profiles/index.ts'
   import { deviceLabel } from '../builder/snapshot.ts'
@@ -148,10 +148,10 @@
   /** The code at a branch or commit of a public GitHub repo: every Java and Kotlin file's text at that commit. */
   async function loadGitHub(spec: string) {
     const parsed = parseGitHub(spec)
-    if (!parsed) { problems = [`"${spec}" isn't a GitHub repo and branch: write it as owner/repo@branch.`]; return }
+    if (!parsed?.ref) { problems = [`"${spec}" isn't a GitHub repo and branch: write it as owner/repo@branch.`]; return }
     busy = true
     try {
-      useHints(await hintsAt(githubSource(parsed.repo, parsed.ref).code!.repo, parsed.ref), `${parsed.repo} (GitHub)`)
+      useHints(await hintsAt(browserGitHub(parsed.repo), parsed.ref), `${parsed.repo} (GitHub)`)
       askingGitHub = false
       problems = []
     } catch (error) {

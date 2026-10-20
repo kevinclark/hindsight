@@ -108,7 +108,7 @@ function codeWords(match: MatchView, ranPin: boolean, compared: LimitLines | nul
   if (compared?.verdict === 'same') {
     return {
       asOf: ` (same current-limit lines as ${pin.branch} ${pin.sha}; this log ran ${ran})`,
-      linesWords: `the same as ${pin.sha} in ${compared.files.join(', ')} (read from the code folder)`,
+      linesWords: `the same as ${pin.sha} in ${compared.files.join(', ')} (read from the robot code)`,
     }
   }
   let linesWords: string | undefined

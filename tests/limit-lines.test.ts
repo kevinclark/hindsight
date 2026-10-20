@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { analyzeFiles, analyzeFilesWithCode } from '../src/analyze.ts'
+import { summarizeLogWithCode } from '../src/session/summary.ts'
 import { GitRepo } from '../src/code/git.ts'
 import { GitHubRepo } from '../src/code/github.ts'
 import type { CodeSource } from '../src/code/source.ts'
@@ -47,17 +48,21 @@ const memoryCache = (): CodeFolder['cache'] & { kept: Map<string, LimitLines> } 
 }
 const folder = (): CodeFolder => ({ repo: new GitRepo(nodeGitDir(dir)!), cache: memoryCache() })
 
-/** The flywheel supply finding for a log that ran `sha`, with its supply current at 90 A against the 40 A limit. */
-async function flywheelFinding(sha: string, code: CodeFolder | null) {
+/** A log that ran `sha`, with the flywheel's supply current at 90 A against the 40 A limit. */
+function flywheelLog(sha: string): Uint8Array {
   const amps = (key: string, a: number): FixtureEntry => ({ name: key, type: 'double', records: [[0, 0], [10, a], [410, 0]] })
-  const entries: FixtureEntry[] = [
+  return writeWpilog([
     { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [410, false]] },
     { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
     { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 12.5], [420, 12.3]] },
     { name: '/RealMetadata/GitSHA', type: 'string', records: [[0, sha]] },
     ...flywheel.motors.flatMap((m) => [amps(m.supplyCurrent!, 90), amps(m.statorCurrent!, 10)]),
-  ]
-  const { analyses } = await analyzeFilesWithCode([{ name: 't.wpilog', bytes: writeWpilog(entries) }], code, profile)
+  ])
+}
+
+/** The flywheel supply finding for that log. */
+async function flywheelFinding(sha: string, code: CodeFolder | null) {
+  const { analyses } = await analyzeFilesWithCode([{ name: 't.wpilog', bytes: flywheelLog(sha) }], code, profile)
   return analyses[0].report.findings.find((f) => f.rule === 'power/limit-not-applied' && f.title.startsWith('Flywheel supply'))!
 }
 const LINES = "current-limit lines vs the profile's commit"
@@ -107,7 +112,7 @@ describe('power/limit-not-applied with a code folder', () => {
     const f = await flywheelFinding(otherLinesChanged, folder())
     expect(f.severity).toBe('warning')
     expect(f.title).toContain(`same current-limit lines as main ${pinned.slice(0, 7)}`)
-    expect(f.evidence[LINES]).toBe(`the same as ${pinned.slice(0, 7)} in DrumSubsystem.java (read from the code folder)`)
+    expect(f.evidence[LINES]).toBe(`the same as ${pinned.slice(0, 7)} in DrumSubsystem.java (read from the robot code)`)
   })
   it('another commit with different limit lines: red, with the lines that differ', async () => {
     const f = await flywheelFinding(limitChanged, folder())
@@ -123,10 +128,25 @@ describe('power/limit-not-applied with a code folder', () => {
     const github = new GitHubRepo(GITHUB, memoryKept(), fakeGitHub(dir, GITHUB).fetch)
     const f = await flywheelFinding(otherLinesChanged, { repo: github, cache: memoryCache() })
     expect(f.severity).toBe('warning')
-    expect(f.evidence[LINES]).toBe(`the same as ${pinned.slice(0, 7)} in DrumSubsystem.java (read from the code folder)`)
+    expect(f.evidence[LINES]).toBe(`the same as ${pinned.slice(0, 7)} in DrumSubsystem.java (read from the robot code)`)
     // The profile's short hash (1), then each commit's file list (2), for all the groups with limit files.
     expect(profile.motorGroups.filter((g) => limitFiles(g).length).length).toBeGreaterThan(5)
     expect(github.calls.api).toBe(3)
+  })
+  it('a profile that pins no commit (read from a public log) asks nothing and says why', async () => {
+    const fake = fakeGitHub(dir, GITHUB)
+    const unpinned = { ...profile, code: { ...profile.code, sha: 'unknown' } }
+    const github: CodeFolder = { repo: new GitHubRepo(GITHUB, memoryKept(), fake.fetch), cache: memoryCache() }
+    const { analyses } = await analyzeFilesWithCode([{ name: 't.wpilog', bytes: flywheelLog(otherLinesChanged) }], github, unpinned)
+    expect(analyses[0].match.limitLines?.get('Flywheel')).toEqual({ verdict: 'unknown', why: 'the robot profile pins no commit to compare with' })
+    expect(fake.asked).toEqual([])
+  })
+  it('a Session summary read while GitHub couldn\'t answer isn\'t stamped with the source, so it is read again', async () => {
+    const file = { name: 't.wpilog', bytes: flywheelLog(otherLinesChanged) }
+    const offline = new GitHubRepo(GITHUB, memoryKept(), (async () => { throw new TypeError('Failed to fetch') }) as typeof fetch)
+    const online = new GitHubRepo(GITHUB, memoryKept(), fakeGitHub(dir, GITHUB).fetch)
+    expect((await summarizeLogWithCode(file, { repo: offline, cache: memoryCache() }, 'x (GitHub)', profile))?.codeFolder).toBeUndefined()
+    expect((await summarizeLogWithCode(file, { repo: online, cache: memoryCache() }, 'x (GitHub)', profile))?.codeFolder).toBe('x (GitHub)')
   })
   it('the pinned commit itself needs no comparison', async () => {
     const f = await flywheelFinding(pinned, folder())

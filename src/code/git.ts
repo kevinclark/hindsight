@@ -23,6 +23,8 @@ export interface GitDir {
 export class GitUnreadable extends Error {}
 /** The commit isn't there at all (not fetched, not pushed, or another repo): the most common GitUnreadable. */
 export class CommitMissing extends GitUnreadable {}
+/** Can't tell now (offline, GitHub's hourly limit, a server error): worth asking again later, unlike a missing commit. */
+export class TryAgain extends GitUnreadable {}
 
 export type ObjectKind = 'commit' | 'tree' | 'blob' | 'tag'
 export interface GitObject { kind: ObjectKind; data: Uint8Array }

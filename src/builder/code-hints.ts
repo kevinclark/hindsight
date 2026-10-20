@@ -72,8 +72,24 @@ export async function hintsAt(source: CodeSource, ref: string): Promise<CodeHint
   const sha = await source.resolve(ref)
   const paths = (await source.files(sha)).map((f) => f.path).filter((path) => SOURCE_FILE.test(path))
   const files = await Promise.all(paths.map(async (path) => ({ path, text: await source.textAt(sha, path) })))
-  return codeHints(files, { sha, branch: sha.startsWith(ref.trim().toLowerCase()) ? null : ref.trim() })
+  return codeHints(files, { sha, branch: branchOf(sha, ref) })
 }
+
+/** The commit a branch or hash names (GitHub), or why it can't be told. */
+export async function headAt(source: CodeSource, ref: string): Promise<CodeHead> {
+  try {
+    const sha = await source.resolve(ref)
+    return { sha, branch: branchOf(sha, ref) }
+  } catch (error) {
+    if (!(error instanceof GitUnreadable)) throw error
+    return { why: sentence(error.message) }
+  }
+}
+
+/** The branch typed, or null when a hash was typed. */
+const branchOf = (sha: string, ref: string) => (sha.startsWith(ref.trim().toLowerCase()) ? null : ref.trim())
+/** "couldn't find x" → "Couldn't find x.", as the builder's notes read. */
+const sentence = (message: string) => `${message[0].toUpperCase()}${message.slice(1)}.`
 
 /** The commit a code folder's .git is on (null: the folder has no .git). */
 export async function codeHead(repo: GitRepo | null): Promise<CodeHead> {
@@ -82,7 +98,7 @@ export async function codeHead(repo: GitRepo | null): Promise<CodeHead> {
     return await repo.head()
   } catch (error) {
     if (!(error instanceof GitUnreadable)) throw error
-    return { why: `${error.message[0].toUpperCase()}${error.message.slice(1)}.` }
+    return { why: sentence(error.message) }
   }
 }
 

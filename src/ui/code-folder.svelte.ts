@@ -5,6 +5,8 @@
  * changes. One source is in use at a time: choosing a folder replaces GitHub, and GitHub the folder.
  */
 import type { CodeFolder } from '../code/limit-lines.ts'
+import { GitRepo } from '../code/git.ts'
+import { codeHead, headAt, type CodeHead } from '../builder/code-hints.ts'
 import { parseGitHub } from '../code/github.ts'
 import { allowFolder, canRemember, folderFromFiles, folderFromHandle, forgetFolder, githubSource, pickFolder, rememberedFolder, rememberedGitHub, rememberGitHub, type ChosenFolder } from '../code/browser-code-folder.ts'
 
@@ -40,15 +42,23 @@ class CodeFolderState {
   /** "owner/name@branch" (or a commit): read the code from that public GitHub repo instead of a folder. */
   useGitHub(spec: string): boolean {
     const parsed = parseGitHub(spec)
-    if (!parsed) {
+    if (!parsed?.ref) {
       this.problem = `"${spec}" isn't a GitHub repo and branch: write it as owner/repo@branch (or owner/repo@a1b2c3d).`
       return false
     }
     this.github = `${parsed.repo}@${parsed.ref}`
     rememberGitHub(this.github)
     forgetFolder().catch(() => {})
-    this.use(githubSource(parsed.repo, parsed.ref))
+    this.use(githubSource(parsed.repo))
     return true
+  }
+
+  /** The commit and branch the chosen code is on: a folder's HEAD, or the branch typed with the GitHub repo. */
+  async head(): Promise<CodeHead> {
+    const repo = this.current?.repo
+    if (!repo) return { why: 'No robot code chosen.' }
+    if (repo instanceof GitRepo) return codeHead(repo)
+    return headAt(repo, parseGitHub(this.github ?? '')?.ref ?? '')
   }
 
   /** From a click: the folder picker this browser can remember, else the caller's folder input. */
@@ -86,10 +96,8 @@ class CodeFolderState {
   }
 
   private useFolder(folder: ChosenFolder) {
-    if (folder.code) {
-      this.github = null
-      rememberGitHub(null)
-    }
+    this.github = null
+    rememberGitHub(null)
     this.use(folder)
   }
 

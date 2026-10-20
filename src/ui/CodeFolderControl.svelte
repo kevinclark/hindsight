@@ -37,7 +37,7 @@
     <button class="button" onclick={() => codeFolder.allow()}>Use {codeFolder.waiting.name} again</button>
   {/if}
   {#if codeFolder.chosen}
-    <span class="chip" title={codeFolder.github ? 'Read from GitHub: public repos only, nothing signed in, nothing sent but the repo and commits' : 'Its .git is read to compare current-limit lines between commits; nothing is changed or uploaded'}>code: {codeFolder.chosen.name}</span>
+    <span class="chip" title={codeFolder.github ? 'Read from GitHub: public repos only, nothing signed in, nothing sent but the repo and commits' : 'Its .git is read to compare current-limit lines between commits; nothing is changed or uploaded'}>code: {codeFolder.github ? `${codeFolder.github} (GitHub)` : codeFolder.chosen.name}</span>
     <button class="link" onclick={() => codeFolder.forget()}>Forget</button>
   {/if}
 </span>

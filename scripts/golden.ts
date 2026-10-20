@@ -19,6 +19,7 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { analyzeFilesWithCode } from '../src/analyze.ts'
 import { DEFAULT_CACHE, nodeCodeFolder, nodeGitHub } from '../src/code/node-git-dir.ts'
+import { parseGitHub } from '../src/code/github.ts'
 
 const args = process.argv.slice(2)
 const option = (name: string) => {
@@ -29,7 +30,10 @@ const option = (name: string) => {
   return value
 }
 const codeDir = option('--code')
-const githubRepo = option('--github')?.split('@')[0]
+const githubSpec = option('--github')
+const githubRepo = githubSpec ? parseGitHub(githubSpec)?.repo : undefined
+if (githubSpec && !githubRepo) throw new Error(`--github ${githubSpec}: write it as owner/repo or owner/repo@ref`)
+if (codeDir && githubSpec) throw new Error('--code and --github: choose one')
 const cacheFile = option('--code-cache') ?? DEFAULT_CACHE
 const github = githubRepo ? nodeGitHub(githubRepo, cacheFile) : null
 const code = codeDir ? nodeCodeFolder(codeDir, cacheFile) : github
