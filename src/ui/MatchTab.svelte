@@ -6,11 +6,11 @@
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import FindingRow from './FindingRow.svelte'
-  import { ruleById } from '../rules/index.ts'
+  import { makerOf } from '../rules/index.ts'
   import type { Audience, Finding } from '../rules/types.ts'
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import { findingStatus, playedAt } from '../report/review-model.ts'
-  import { nest, partitionStanding } from '../report/finding-tree.ts'
+  import { nest, partitionStanding, withParents } from '../report/finding-tree.ts'
   import { cardTitle } from '../report/titles.ts'
 
   let { analysis, issues, standing = new Set<string>(), onMark }: {
@@ -27,8 +27,13 @@
   ]
   let audience = $state<Audience | 'all'>(readSavedAudience())
   const all = $derived(analysis.report.findings.filter((f) => f.rule !== 'meta/not-checked'))
-  const forAudience = (id: Audience | 'all') => all.filter((f) => id === 'all' || (ruleById(f.rule)?.who ?? []).includes(id))
+  // Parents name a group of findings (src/rules/parents.ts): listed with them, never counted.
+  const parents = $derived(analysis.report.parents ?? [])
+  const withGroups = $derived([...all, ...parents])
+  const isFor = (id: Audience | 'all') => (f: Finding) => id === 'all' || (makerOf(f.rule)?.who ?? []).includes(id)
+  const forAudience = (id: Audience | 'all') => all.filter(isFor(id))
   const shown = $derived(forAudience(audience))
+  const shownParents = $derived(parents.filter(isFor(audience)))
   // When this match was played (wall clock, ms), so a fix recorded after it doesn't make it "came back".
   const played = $derived(playedAt(analysis))
   const status = (f: Finding) => findingStatus(f, issues, played)
@@ -37,11 +42,13 @@
   const known = $derived(shown.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
   const active = $derived([...cameBack, ...fresh])
   // Every known issue, whichever audience is picked, so a hidden one still reads "explained by a known issue".
-  const allKnown = $derived(all.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
-  const fullTree = $derived(nest(active, all, allKnown, cameBack))
+  const allKnown = $derived(withGroups.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
+  const activeParents = $derived(shownParents.filter((f) => !status(f) || status(f) === 'came back'))
+  const knownParents = $derived(shownParents.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
+  const fullTree = $derived(nest(withParents(active, activeParents), withGroups, allKnown, cameBack))
   // A top-level finding folds into a closed group, with what it explains, only when it and everything under it fires in
   // every match of the session and none came back (partitionStanding). Anything else stays in the list.
-  const partition = $derived(partitionStanding(fullTree, standing, cameBack))
+  const partition = $derived(partitionStanding(fullTree, standing, cameBack, parents))
   const activeTree = $derived(partition.listed)
   const standingTree = $derived(partition.folded)
   // New errors first, then the fold, then new warnings and info, so the fold's summary (which names a standing error)
@@ -55,8 +62,8 @@
   // step is then shown in the fold's summary (the rows inside a closed fold can't show it).
   const firstError = $derived(activeTree.find((n) => n.finding.severity === 'error' && !issues.get(n.finding.key))?.finding)
   const fallbackError = $derived(!firstError && standingTree.length ? standingTree.find((n) => n.finding.severity === 'error')?.finding : undefined)
-  const knownTree = $derived(nest(known, all))
-  const firing = $derived(new Set(all.map((f) => f.key)))
+  const knownTree = $derived(nest(withParents(known, knownParents), withGroups))
+  const firing = $derived(new Set(withGroups.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
   // A rule that couldn't run says nothing about whether an issue is gone.
   const notRun = $derived(new Set(analysis.report.skipped.map((s) => s.rule)))

@@ -5,7 +5,7 @@
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import type { Finding } from '../rules/types.ts'
-  import { ruleById } from '../rules/index.ts'
+  import { makerOf } from '../rules/index.ts'
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import Plot from './Plot.svelte'
   import { plotModel } from './plot-data.ts'
@@ -33,7 +33,7 @@
     showNext?: boolean
   } = $props()
   const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
-  const rule = $derived(ruleById(finding.rule))
+  const rule = $derived(makerOf(finding.rule))
   const cameBack = $derived(issue?.status === 'fixed' && !fixedLater)
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
   const ICON = { error: '●', warning: '▲', info: '○' } as const

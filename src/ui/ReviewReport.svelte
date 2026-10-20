@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import type { IssueEvent } from '../triage/history.ts'
-  import { ruleById } from '../rules/index.ts'
+  import { makerOf } from '../rules/index.ts'
   import { headlinesOf as headlinesIn, incidentFor, keyNumber, listedAbove, reviewModel, shortWhen } from '../report/review-model.ts'
   import { stamp } from '../report/foresight-model.ts'
   import Plot from './Plot.svelte'
@@ -94,7 +94,7 @@
     <section class="detail">
       <h2>Detail for each error</h2>
       {#each detailOrder as f (f.key + f.time)}
-        {@const rule = ruleById(f.rule)}
+        {@const rule = makerOf(f.rule)}
         {@const note = issueFor(f.key)}
         <div class="d">
           <p class="title"><span class="sev error">Error</span> {f.title}</p>

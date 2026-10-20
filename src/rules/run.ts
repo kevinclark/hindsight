@@ -4,7 +4,7 @@
  */
 import type { Match } from '../match/match.ts'
 import type { Finding, Plot, PlotLine } from './types.ts'
-import type { Answer, Link, Problem, Rule, Severity } from './rule.ts'
+import type { Answer, Cause, Link, Parent, Problem, Rule, Severity } from './rule.ts'
 import { MatchView, MissingSignal, words, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
 
 export interface SkippedRule { rule: string; reason: string }
@@ -22,9 +22,13 @@ export interface Report {
   parents?: Finding[]
 }
 
-/** What reduces a match's findings after the rules have run: links (src/rules/links.ts) nest one under another. */
+/**
+ * What reduces a match's findings after the rules have run: links (src/rules/links.ts) nest one finding under another,
+ * parents (src/rules/parents.ts) name a group of findings and nest the group under it.
+ */
 export interface Consolidators {
   links?: Link[]
+  parents?: Parent[]
 }
 
 /** The most passes the consolidators get before they count as crashed (each pass only adds, so they settle sooner). */
@@ -79,14 +83,18 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
 
 /**
  * The reduce stage: the consolidators run over the findings in a fixed order, pass after pass, until a pass changes
- * nothing. They only add (an `explainedBy`), never remove, merge or reorder, so they always settle; still changing after
- * `maxPasses` is reported as crashed, never a silent stop. Returns the parents they made.
+ * nothing. They only add (an `explainedBy`, or a parent over findings nothing explained), never remove, merge or
+ * reorder, so they always settle. `maxPasses` counts the pass that changes nothing: still changing at the last pass is
+ * reported as crashed, never a silent stop. Returns the parents they made.
  */
 export function consolidate(findings: Finding[], consolidators: Consolidators, crashed: SkippedRule[] = [], maxPasses = MAX_PASSES): Finding[] {
   const parents: Finding[] = []
   for (let pass = 1; pass <= maxPasses; pass++) {
-    const changed = nestPass(findings, consolidators.links ?? [], crashed)
-    if (!changed) return parents
+    // Links first, so a specific explanation (this brownout dropped this device) wins over a group.
+    const nested = nestPass([...findings, ...parents], consolidators.links ?? [], crashed)
+    const made = groupPass([...findings, ...parents], consolidators.parents ?? [], crashed)
+    parents.push(...made)
+    if (!nested && made.length === 0) return parents
   }
   crashed.push({ rule: 'consolidators', reason: `still changing after ${maxPasses} pass${maxPasses === 1 ? '' : 'es'}` })
   return parents
@@ -116,6 +124,65 @@ function nestPass(findings: Finding[], links: Link[], crashed: SkippedRule[]): b
     }
   }
   return changed
+}
+
+/**
+ * One pass over the parents (src/rules/parents.ts): each group of findings that nothing explains yet gets a parent
+ * finding, and each finding in it gets `explainedBy` that parent. A parent that throws is listed with the crashed
+ * rules, and changes nothing. Returns the parents made.
+ */
+function groupPass(findings: Finding[], parents: Parent[], crashed: SkippedRule[]): Finding[] {
+  const made: Finding[] = []
+  for (const p of parents) {
+    const free = findings.filter((f) => f.rule === p.over && !f.explainedBy)
+    try {
+      const groups = groupsOf(free, p)
+      const named = groups.map((group) => parentOf(p, group))
+      groups.forEach((group, i) => { for (const f of group) f.explainedBy = { rule: p.id, about: null, time: named[i].time, why: p.why } })
+      made.push(...named)
+    } catch (error) {
+      const name = `parent ${p.id}`
+      if (!crashed.some((c) => c.rule === name)) crashed.push({ rule: name, reason: String(error) })
+    }
+  }
+  return made
+}
+
+/** The groups among these findings, in time order: from the earliest left, every one `together` with it, if enough. */
+function groupsOf(findings: Finding[], p: Parent): Finding[][] {
+  // A group of one would name each finding again, and never settle: each new parent is one more to group.
+  if (!(p.atLeast >= 2)) throw new Error(`${p.id}: atLeast must be 2 or more`)
+  let left = [...findings].sort((a, b) => (a.time ?? Infinity) - (b.time ?? Infinity))
+  const groups: Finding[][] = []
+  while (left.length) {
+    const first = left[0]
+    const group = left.filter((f) => f === first || p.together(first, f))
+    const enough = group.length >= p.atLeast
+    if (enough) groups.push(group)
+    left = left.filter((f) => (enough ? !group.includes(f) : f !== first))
+  }
+  return groups
+}
+
+/** The parent finding for a group: as serious as its worst finding, at the time of its first. */
+function parentOf(p: Parent, group: Finding[]): Finding {
+  const first = group[0]
+  const severity = group.map((f) => f.severity).sort((a, b) => ORDER[a] - ORDER[b])[0]
+  return {
+    rule: p.id,
+    severity,
+    title: p.name(group),
+    time: first.time,
+    matchTime: first.matchTime,
+    when: first.when,
+    meaning: p.meaning,
+    causes: rankedCauses(p.id, p.causes, p.likely(group)),
+    nextStep: p.nextStep,
+    about: null,
+    key: p.id,
+    evidence: p.evidence(group),
+    measured: [{ label: 'in the group', value: group.length, unit: '' }],
+  }
 }
 
 /** Run one rule over each of its things. A thing whose signals are missing is noted, not fatal. */
@@ -227,15 +294,7 @@ function need(key: string | undefined, what: string): string {
 function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchView): Finding {
   const about = p.about ?? itemName
   const time = p.at ?? null
-  // A cause id the rule doesn't have is a typo in the rule: stop, so it shows as crashed instead of silently ranking nothing.
-  const unknown = [...(p.likely ?? []), ...Object.keys(p.ruledOut ?? {})].filter((id) => !rule.causes.some((c) => c.id === id))
-  if (unknown.length) throw new Error(`${rule.id}: no cause with id ${unknown.map((id) => `"${id}"`).join(', ')}`)
-  // This log's likely causes first (in the order the rule gave them), then the rest in the rule's order.
-  const likely = p.likely ?? []
-  const rank = (id: string) => (likely.includes(id) ? likely.indexOf(id) : likely.length + rule.causes.findIndex((c) => c.id === id))
-  const causes = [...rule.causes]
-    .sort((a, b) => Number(!!p.ruledOut?.[a.id]) - Number(!!p.ruledOut?.[b.id]) || rank(a.id) - rank(b.id))
-    .map((c) => ({ ...c, ...(likely.includes(c.id) ? { likely: true } : {}), ...(p.ruledOut?.[c.id] ? { ruledOut: p.ruledOut[c.id] } : {}) }))
+  const causes = rankedCauses(rule.id, rule.causes, p.likely ?? [], p.ruledOut ?? {})
   return {
     rule: rule.id,
     severity: p.severity ?? rule.severity,
@@ -252,6 +311,17 @@ function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchV
     measured: p.measured,
     plot: toPlot(p, view),
   }
+}
+
+/** The causes with this log's likely ones first (in the order given), then the rest in their order, ruled out last. */
+function rankedCauses(id: string, all: Cause[], likely: string[], ruledOut: Record<string, string> = {}): Finding['causes'] {
+  // A cause id that isn't there is a typo: stop, so it shows as crashed instead of silently ranking nothing.
+  const unknown = [...likely, ...Object.keys(ruledOut)].filter((c) => !all.some((x) => x.id === c))
+  if (unknown.length) throw new Error(`${id}: no cause with id ${unknown.map((c) => `"${c}"`).join(', ')}`)
+  const rank = (c: string) => (likely.includes(c) ? likely.indexOf(c) : likely.length + all.findIndex((x) => x.id === c))
+  return [...all]
+    .sort((a, b) => Number(!!ruledOut[a.id]) - Number(!!ruledOut[b.id]) || rank(a.id) - rank(b.id))
+    .map((c) => ({ ...c, ...(likely.includes(c.id) ? { likely: true } : {}), ...(ruledOut[c.id] ? { ruledOut: ruledOut[c.id] } : {}) }))
 }
 
 function withSampling(f: Finding, slow: { label: string; note: string }[]): Finding {

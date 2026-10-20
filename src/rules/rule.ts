@@ -165,6 +165,32 @@ export function link(definition: Link): Link {
   return definition
 }
 
+/**
+ * A parent is a finding that names a group of findings: "25 CAN devices dropped within 0.25 s". The app lists the
+ * group under it (nothing is deleted), and it adds nothing to any count. Parents live in parents.ts.
+ */
+export interface Parent extends Omit<About, 'severity' | 'needsProfile' | 'foresightOnly'> {
+  /** The rule whose findings it groups. */
+  over: string
+  /** True when this finding belongs in the same group as the first (earliest) one. */
+  together: (first: Finding, other: Finding) => boolean
+  /** How many findings make a group (at least 2). */
+  atLeast: number
+  /** The parent's title, from its group (in time order): '25 CAN devices dropped within 0.25 s'. */
+  name: (group: Finding[]) => string
+  /** Why, in a few words, shown with each finding in the group. */
+  why: string
+  /** The causes this group points to (their ids), most likely first. */
+  likely: (group: Finding[]) => string[]
+  /** The numbers behind it. */
+  evidence: (group: Finding[]) => Record<string, number | string>
+}
+
+/** Declare a parent. Like `rule`, it only checks the shape. */
+export function parent(definition: Parent): Parent {
+  return definition
+}
+
 /** Did the log point to this cause for this finding? likely(dropout, 'battery-sag'). */
 export const likely = (finding: Finding, causeId: string) => finding.causes.some((c) => c.id === causeId && c.likely)
 /** Is this the first cause the log points to? mostLikely(brownout, 'weak-battery'). */
