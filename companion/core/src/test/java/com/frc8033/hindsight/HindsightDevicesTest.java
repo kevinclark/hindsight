@@ -23,6 +23,13 @@ class HindsightDevicesTest {
   }
 
   @Test
+  void watchReturnsTheKeyTheDeviceLogsUnder() {
+    assertEquals("Any/TalonFX/15", HindsightDevices.add("*", "TalonFX", 15, () -> new DeviceIO() {}));
+    assertEquals("Any/TalonFX/15", HindsightDevices.add("*", "TalonFX", 15, () -> new DeviceIO() {}));
+    assertEquals("drivebase/CANcoder/4", HindsightDevices.add("drivebase", "CANcoder", 4, () -> new DeviceIO() {}));
+  }
+
+  @Test
   void watchingTwiceKeepsOneEntryAndMakesOneReader() {
     int[] made = {0};
     for (int i = 0; i < 2; i++) {

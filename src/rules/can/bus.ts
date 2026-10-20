@@ -6,6 +6,8 @@ import { isFalse, voltageList } from '../rule.ts'
 import type { Episode, MatchView, Signal } from '../view.ts'
 
 export const LOW_VOLTS = 7
+/** A Connected flag goes false this long after the device stops answering (Phoenix's isConnected). */
+export const DROP_LOOK_BACK = 0.5
 export const TOGETHER_SECONDS = 1 // drops starting this close count as one event (assumed)
 const MIN_BUS_MEMBERS = 3 // "every device on the bus" needs at least this many reporting their health (assumed)
 
@@ -80,12 +82,15 @@ export interface DropReadings {
   everyDrop: string
 }
 
-/** The lowest battery voltage in the 0.5 s before each drop (the flag goes false after the device misses its frames). */
-export function readDrops(match: MatchView, battery: Signal, drops: Episode[]): DropReadings {
+/**
+ * The lowest battery voltage in the `lookBack` s before each drop (the flag goes false after the device misses its
+ * frames: 0.5 s for a flag the robot code reads every loop, longer for one read once a second).
+ */
+export function readDrops(match: MatchView, battery: Signal, drops: Episode[], lookBack = DROP_LOOK_BACK): DropReadings {
   const offAt = drops.map((d) => alreadyOffAt(match, d))
   const timed = drops.map((d, i) => ({ ...d, start: offAt[i] ?? d.start }))
   // null for a drop already under way: it has no voltage to read.
-  const readings = timed.map((d, i) => (offAt[i] === null ? battery.lowest(match.before(d.start, 0.5)).value : null))
+  const readings = timed.map((d, i) => (offAt[i] === null ? battery.lowest(match.before(d.start, lookBack)).value : null))
   const voltages = readings.filter((v): v is number => v !== null)
   const pit = match.beforeEnable.length > 0
   const alreadyOffText = `already off when ${pit ? 'the check started' : 'enabled'}`

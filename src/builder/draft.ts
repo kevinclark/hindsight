@@ -11,6 +11,7 @@ import { codebaseOf, signalsFromLog } from './signals.ts'
 import { matchByName, groupLimits } from './snapshot.ts'
 import { toProfile, PROFILE_SCHEMA, type GroupJson, type MotorJson, type ProfileJson } from './json.ts'
 import type { CodeHints } from './code-hints.ts'
+import { idFromDeviceKey } from '../match/companion.ts'
 
 /** What the builder couldn't settle from the files, for the confirm step. */
 export interface Draft {
@@ -50,12 +51,20 @@ export const NOT_INFERRED = [
   { what: 'the what-if group (Power tab)', rules: [] as string[] },
 ]
 
-/** A logged CAN ID beside the motor's keys (`<motor>/MotorId`, `<motor>CanId`), when the code logs one. */
+/**
+ * A logged CAN ID beside the motor's keys (`<motor>/MotorId`, `<motor>CanId`), or in the Hindsight companion's Device
+ * key (`<motor>/Device`, `<motor>Device`: "Any/TalonFX/15"), when the code logs one.
+ */
 function loggedCanId(log: WpilogFile, m: LogMotor): number | undefined {
   for (const key of [`${m.path}/MotorId`, `${m.path}/CanId`, `${m.path}/DeviceId`, `${m.path}MotorId`, `${m.path}CanId`]) {
     const v = readValues<number | bigint>(log, key)?.v
     const last = v?.at(-1)
     if (last !== undefined && Number.isInteger(Number(last))) return Number(last)
+  }
+  for (const key of [`${m.path}/Device`, `${m.path}Device`]) {
+    const last = readValues<string>(log, key)?.v.at(-1)
+    const id = typeof last === 'string' ? idFromDeviceKey(last) : undefined
+    if (id !== undefined) return id
   }
   return undefined
 }

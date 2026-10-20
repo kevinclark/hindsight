@@ -12,10 +12,16 @@
   import { findingStatus, playedAt } from '../report/review-model.ts'
   import { nest, partitionStanding, withParents } from '../report/finding-tree.ts'
   import { cardTitle } from '../report/titles.ts'
+  import { ruleOf } from '../triage/track-record.ts'
 
-  let { analysis, issues, standing = new Set<string>(), onMark }: {
+  let { analysis, issues, wrong = new Map(), sure = () => null, standing = new Set<string>(), onMark }: {
+    /** As the team's marks show it (track-record.ts withMarks): a red another match's wrong mark demotes is amber. */
     analysis: Analysis
     issues: Map<string, IssueEvent>
+    /** This match's "not a real problem" marks, by issue key. */
+    wrong?: Map<string, IssueEvent>
+    /** A check's "How sure" line from the team's marks, or null with no marks to go on. */
+    sure?: (rule: string) => string | null
     /** Issue keys that fired in every match of this match's session (session.ts standingKeys); empty when no loaded session holds it. */
     standing?: Set<string>
     onMark: (finding: Finding, status: IssueStatus, note: string) => void
@@ -36,13 +42,15 @@
   const shownParents = $derived(parents.filter(isFor(audience)))
   // When this match was played (wall clock, ms), so a fix recorded after it doesn't make it "came back".
   const played = $derived(playedAt(analysis))
-  const status = (f: Finding) => findingStatus(f, issues, played)
+  const status = (f: Finding) => findingStatus(f, issues, played, wrong)
+  const filed = (f: Finding) => { const s = status(f); return s === 'known' || s === 'fixed later' || s === 'wrong' }
   const cameBack = $derived(shown.filter((f) => status(f) === 'came back'))
   const fresh = $derived(shown.filter((f) => !status(f)))
-  const known = $derived(shown.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
+  const known = $derived(shown.filter(filed))
+  const falseAlarms = $derived(known.filter((f) => status(f) === 'wrong').length)
   const active = $derived([...cameBack, ...fresh])
   // Every known issue, whichever audience is picked, so a hidden one still reads "explained by a known issue".
-  const allKnown = $derived(withGroups.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
+  const allKnown = $derived(withGroups.filter(filed))
   // A parent heads its group wherever the group is: marked known, it still heads new members in this list (badged).
   const fullTree = $derived(nest(withParents(active, shownParents), withGroups, allKnown, cameBack))
   // A top-level finding folds into a closed group, with what it explains, only when it and everything under it fires in
@@ -59,14 +67,13 @@
   // The first active error's closed row carries its next step; derived, so it moves when that error is marked known or the audience changes.
   // It is the first error not in the fold; when every error is folded it falls back to the first folded one, whose next
   // step is then shown in the fold's summary (the rows inside a closed fold can't show it).
-  const firstError = $derived(activeTree.find((n) => n.finding.severity === 'error' && !issues.get(n.finding.key))?.finding)
+  const firstError = $derived(activeTree.find((n) => n.finding.severity === 'error' && !issues.get(n.finding.key) && !wrong.has(n.finding.key))?.finding)
   const fallbackError = $derived(!firstError && standingTree.length ? standingTree.find((n) => n.finding.severity === 'error')?.finding : undefined)
   const knownTree = $derived(nest(withParents(known, shownParents), withGroups))
   const firing = $derived(new Set(withGroups.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
   // A rule that couldn't run says nothing about whether an issue is gone.
   const notRun = $derived(new Set(analysis.report.skipped.map((s) => s.rule)))
-  const ruleOf = (key: string) => key.split(' · ')[0]
   const count = (s: string) => active.filter((f) => f.severity === s).length
   const red = (id: Audience | 'all') => forAudience(id).filter((f) => f.severity === 'error' && (!status(f) || status(f) === 'came back')).length
 
@@ -90,7 +97,7 @@
 
 <p class="counts">
   <span class="e">{count('error')} errors</span> · <span class="w">{count('warning')} warnings</span> · {count('info')} info ·
-  {known.length} known · {analysis.report.skipped.length} rules not checked
+  {known.length - falseAlarms} known{#if falseAlarms}{' · '}{falseAlarms} not a real problem{/if} · {analysis.report.skipped.length} rules not checked
 </p>
 
 {#if analysis.report.crashed.length}
@@ -105,7 +112,7 @@
 {:else if mainTree.length}
   <ul class="findings">
     {#each mainTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} showNext={n.finding === firstError} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} />
     {/each}
   </ul>
 {/if}
@@ -121,7 +128,7 @@
     </summary>
     <ul class="findings">
       {#each standingTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} {onMark} />
+        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {sure} statusOf={status} {onMark} />
       {/each}
     </ul>
   </details>
@@ -130,17 +137,17 @@
 {#if infoTree.length}
   <ul class="findings">
     {#each infoTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} showNext={n.finding === firstError} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} />
     {/each}
   </ul>
 {/if}
 
 {#if known.length}
   <details class="known-section">
-    <summary><h3>Known issues seen this match ({known.length})</h3></summary>
+    <summary><h3>{falseAlarms ? 'Known issues and false alarms' : 'Known issues'} seen this match ({known.length})</h3></summary>
     <ul class="findings">
       {#each knownTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} statusOf={status} {onMark} />
+        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} {wrong} {sure} statusOf={status} {onMark} />
       {/each}
     </ul>
   </details>

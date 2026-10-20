@@ -6,6 +6,8 @@
  * profile (a few dozen of the ~455 the robot publishes), never the whole tree.
  */
 import type { RobotProfile } from '../profiles/types.ts'
+import type { WpilogFile } from '../readers/wpilog.ts'
+import { COMPANION_ROOT } from '../match/companion.ts'
 
 export const AK_PREFIX = '/AdvantageKit'
 
@@ -43,6 +45,19 @@ export const LOG_DRIVE_KEYS = {
 
 /** A log drive whose device starts with this is a USB stick: the companion's LogDriveIO.isUsb (companion-keys test). */
 export const USB_DEVICE_PREFIX = '/dev/sd'
+
+/**
+ * Key prefixes Foresight subscribes to as a whole: everything the Hindsight companion logs (/Hindsight/...). Its device
+ * keys name each device (/Hindsight/Devices/<bus>/<model>/<id>/...), so they can't be listed ahead; about 7 keys per
+ * watched device, read once a second.
+ */
+export const FORESIGHT_PREFIXES = [COMPANION_ROOT]
+
+/** The keys of this log Foresight would receive: foresightKeys, and every key under FORESIGHT_PREFIXES (backtests). */
+export function foresightKeysIn(log: WpilogFile, profile: RobotProfile): string[] {
+  const prefixed = [...log.entries.keys()].filter((k) => FORESIGHT_PREFIXES.some((p) => k.startsWith(p)))
+  return [...new Set([...foresightKeys(profile), ...prefixed])]
+}
 
 /** Every log key Foresight's checks read for this robot profile. */
 export function foresightKeys(profile: RobotProfile): string[] {

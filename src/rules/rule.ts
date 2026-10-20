@@ -27,10 +27,11 @@
  * `forEach` says what one thing is. Leave it out to check the whole match once. Set it to 'motor', 'motorGroup',
  * 'device', 'camera', 'mechanism' or 'alert' and `check` runs once for each of those, getting it as its first
  * argument; the report names the thing ("Flywheel follower 16 dropped off CAN"), and a thing whose signals are
- * missing is listed under "Not checked" without stopping the others.
+ * missing is listed under "Not checked" without stopping the others. 'watchedDevice' is each CTRE device the robot
+ * code gave to the Hindsight companion's HindsightDevices.watch (from the log, not the profile).
  */
 
-import type { AlertView, CameraView, DeviceView, Episode, GroupView, MatchView, MechanismView, MotorView, Signal } from './view.ts'
+import type { AlertView, CameraView, DeviceView, Episode, GroupView, MatchView, MechanismView, MotorView, Signal, WatchedDeviceView } from './view.ts'
 import type { Finding } from './types.ts'
 
 /** red = it cost or nearly cost a match; amber = a margin is eroding; grey = context. */
@@ -135,6 +136,7 @@ export type Rule = About & (
   | { forEach: 'motor'; check: (motor: MotorView, match: MatchView) => Answer }
   | { forEach: 'motorGroup'; check: (group: GroupView, match: MatchView) => Answer }
   | { forEach: 'device'; check: (device: DeviceView, match: MatchView) => Answer }
+  | { forEach: 'watchedDevice'; check: (device: WatchedDeviceView, match: MatchView) => Answer }
   | { forEach: 'camera'; check: (camera: CameraView, match: MatchView) => Answer }
   | { forEach: 'mechanism'; check: (mechanism: MechanismView, match: MatchView) => Answer }
   | { forEach: 'alert'; check: (alert: AlertView, match: MatchView) => Answer }
