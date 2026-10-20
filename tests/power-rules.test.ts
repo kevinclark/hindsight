@@ -57,3 +57,45 @@ describe('power/pd-not-reporting', () => {
     expect(run(pushing(30)).skipped.find((s) => s.rule === 'power/pd-not-reporting')?.reason).toMatch(/no \/PowerDistribution/)
   })
 })
+
+describe('motor currents after a controller drops off CAN', () => {
+  // Two drive motors draw 80 A from 10 s and log no more currents. The front left's Connected flag goes false at 50 s;
+  // the back left has no Connected flag in the log at all.
+  const entries: Entries = [
+    { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [110, false]] },
+    { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
+    { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 12.5], [120, 12.3]] },
+    { name: '/Swerve/Front Left Module/DriveSupplyCurrentAmps', type: 'double', records: [[0, 0], [10, 80]] },
+    { name: '/Swerve/Back Left Module/DriveSupplyCurrentAmps', type: 'double', records: [[0, 0], [10, 80]] },
+    { name: '/Swerve/Front Left Module/DriveConnected', type: 'boolean', records: [[0, true], [50, false]] },
+  ] as Entries
+  const motorAmps = async (name: string, at: number) => {
+    const { buildPowerGrid } = await import('../src/power/battery-model.ts')
+    const match = analyzeFiles([{ name: 't.wpilog', bytes: writeWpilog(entries) }], offseason2026).analyses[0].match
+    const grid = buildPowerGrid(match)!
+    return grid.motors.find((m) => m.name === name)!.amps[grid.t.findIndex((x) => x >= at)]
+  }
+  it('reads 80 A while connected and 0 A once Connected is false', async () => {
+    expect(await motorAmps('Front Left drive', 30)).toBe(80)
+    expect(await motorAmps('Front Left drive', 60)).toBe(0)
+    expect(await motorAmps('Front Left drive', 119)).toBe(0)
+  })
+  it('a motor with no Connected flag in the log keeps its held value', async () => {
+    expect(await motorAmps('Back Left drive', 119)).toBe(80)
+  })
+})
+
+describe('power/main-breaker-margin: the peak is inside the match', () => {
+  it('a current held after the match ended is not the match\'s peak', () => {
+    // Four drives at 60 A to 260 s (the match), then no more records and no Connected flag: held to the end of the log.
+    // Heating peaks at the end of the match; the hold would keep climbing after it.
+    const entries = [
+      { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [260, false]] },
+      { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
+      { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 12.5], [700, 12.3]] },
+      ...modules.map((m) => ({ name: `/Swerve/${m} Module/DriveSupplyCurrentAmps`, type: 'double', records: [[0, 0], [10, 60]] })),
+    ] as Entries
+    const f = run(entries).findings.find((x) => x.rule === 'power/main-breaker-margin')
+    expect(f?.time).toBeLessThanOrEqual(260)
+  })
+})

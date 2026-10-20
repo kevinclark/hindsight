@@ -14,7 +14,7 @@
  */
 import { rule, round, type PlotRequest } from '../rule.ts'
 import { DT, type PowerGrid } from '../../power/battery-model.ts'
-import type { MatchView } from '../view.ts'
+import { inside, type MatchView } from '../view.ts'
 
 const MAIN_BREAKER_A = 120 // FRC rule R609: one 120 A main breaker
 const TRIP_BAND = [1.0, 1.3] // long-run trip, as a share of 120 A, at 25 °C (CB185-120 datasheet, read by eye)
@@ -40,7 +40,10 @@ export default rule({
     // Heating needs current only, so this runs on a log with motor currents and no battery voltage too.
     const grid = match.currents()
     const load = heating(grid.amps, TAU_SECONDS)
-    const peakAt = indexOfHighest(load)
+    // The peak is looked for inside the match only: heat builds up over the whole log, but a reading held after the
+    // match ended is not the match. (No match, no finding: the guard above also leaves out Foresight's pit stretch.)
+    const peakAt = indexOfHighest(load, grid.t, match.wholeMatch)
+    if (peakAt < 0) return
     const share = load[peakAt] / MAIN_BREAKER_A
     if (share < TRIP_BAND[0]) return
 
@@ -100,10 +103,13 @@ function peakHeating(amps: Float64Array, tau: number): number {
   return Math.sqrt(peak)
 }
 
-/** The index of the highest value (the first, if several tie). */
-function indexOfHighest(values: Float64Array): number {
-  let highest = 0
-  for (let i = 1; i < values.length; i++) if (values[i] > values[highest]) highest = i
+/** The index of the highest value whose time falls inside the window (the first, if several tie). */
+function indexOfHighest(values: Float64Array, times: Float64Array, window: MatchView['wholeMatch']): number {
+  let highest = -1
+  for (let i = 0; i < values.length; i++) {
+    if (!inside(window, times[i])) continue
+    if (highest < 0 || values[i] > values[highest]) highest = i
+  }
   return highest
 }
 

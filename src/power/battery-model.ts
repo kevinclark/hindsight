@@ -82,8 +82,9 @@ function gridWithCurrents(match: Match, t: Float64Array, volts: Float64Array): P
       if (!motor.supplyCurrent || !has(match, motor.supplyCurrent)) continue
       const s = num(match, motor.supplyCurrent)!
       const a = resample(s, t, 0)
+      const offCan = offCanMask(match, motor.connected, t)
       for (let i = 0; i < a.length; i++) {
-        const x = Number.isFinite(a[i]) ? Math.max(0, a[i]) : 0
+        const x = Number.isFinite(a[i]) && !offCan[i] ? Math.max(0, a[i]) : 0
         a[i] = x
         groupAmps[i] += x
         amps[i] += x
@@ -97,6 +98,19 @@ function gridWithCurrents(match: Match, t: Float64Array, volts: Float64Array): P
 
   const ah = chargeDrawn(t, amps, match.matchStart, match.matchEnd)
   return { t, volts, amps, ah, enabled: enabledMask, matchStart: match.matchStart, matchEnd: match.matchEnd, groups, motors }
+}
+
+/**
+ * The grid points where the motor's Connected flag reads false (the last value held). A controller that dropped
+ * off CAN logs no more currents, so the last one would otherwise be held for the rest of the log. Before the flag's
+ * first record, or when the profile has no flag for the motor or the log lacks it, nothing is masked.
+ */
+function offCanMask(match: Match, connectedKey: string | undefined, t: Float64Array): Uint8Array {
+  const mask = new Uint8Array(t.length)
+  if (!connectedKey || !has(match, connectedKey)) return mask
+  const flag = resample(num(match, connectedKey)!, t)
+  for (let i = 0; i < t.length; i++) mask[i] = flag[i] === 0 ? 1 : 0
+  return mask
 }
 
 /** Running charge (Ah) from matchStart to matchEnd; zero before, held after. */
