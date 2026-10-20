@@ -36,8 +36,8 @@
   // Every known issue, whichever audience is picked, so a hidden one still reads "explained by a known issue".
   const allKnown = $derived(all.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
   const activeTree = $derived(nest(active, all, allKnown, cameBack))
-  // Only the first active error starts open (a "came back" one opens itself).
-  const firstOpen = $derived(activeTree.find((n) => n.finding.severity === 'error' && !issues.get(n.finding.key))?.finding)
+  // The first active error's closed row carries its next step; derived, so it moves when that error is marked known or the audience changes.
+  const firstError = $derived(activeTree.find((n) => n.finding.severity === 'error' && !issues.get(n.finding.key))?.finding)
   const knownTree = $derived(nest(known, all))
   const firing = $derived(new Set(all.map((f) => f.key)))
   const quiet = $derived([...issues.values()].filter((e) => !firing.has(e.key)))
@@ -82,7 +82,7 @@
 {:else}
   <ul class="findings">
     {#each activeTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} startOpen={n.finding === firstOpen} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} showNext={n.finding === firstError} {onMark} />
     {/each}
   </ul>
 {/if}
@@ -126,10 +126,10 @@
 </section>
 
 <style>
-  .counts { color: var(--muted); margin: 0 0 0.5rem; }
+  .counts { color: var(--muted); margin: 0 0 0.35rem; }
   .e { color: var(--error); font-weight: 600; }
   .w { color: var(--warning); font-weight: 600; }
-  .audience { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; }
+  .audience { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.5rem; }
   .audience button { padding: 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg); font: inherit; font-size: 0.85rem; cursor: pointer; }
   .audience button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
   .audience .n { color: var(--muted); }

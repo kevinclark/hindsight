@@ -13,7 +13,7 @@
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
   import { keyNumber } from '../report/review-model.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, statusOf, startOpen = true }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, statusOf, showNext = false }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -29,8 +29,8 @@
     /** For the rows under this one: their known-issue state. */
     issues?: Map<string, IssueEvent>
     statusOf?: (f: Finding) => string | undefined
-    /** Whether an unresolved error starts open; the list passes true for the first one only. "Came back" rows always start open. */
-    startOpen?: boolean
+    /** The list's first active error: its closed row carries the next step and who acts (derived by the list, so it moves when that error is marked known or the audience changes). */
+    showNext?: boolean
   } = $props()
   const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
   const rule = $derived(ruleById(finding.rule))
@@ -40,9 +40,10 @@
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
   // The headline shows only the rule's judged measurement: the evidence fallback reads oddly beside a title ("0 times during the match" next to "(1×)").
   const key = $derived(keyNumber(finding))
-  // Only the list's first active error starts open (startOpen), and anything that came back after a fix; the reader can open or close any row after that.
+  // Every row starts closed except one that came back after a fix; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
-  let open = $state(!nested && ((startOpen && finding.severity === 'error' && !issue) || (issue?.status === 'fixed' && !fixedLater)))
+  let open = $state(!nested && issue?.status === 'fixed' && !fixedLater)
+  const who = $derived(rule ? rule.who.map((a) => WHO[a]).join(', ') : '')
 
   function mark(status: IssueStatus) {
     const ask = status === 'known' ? 'What do we know about it? (e.g. "belt slipping on 17/18, new belt before elims")'
@@ -65,9 +66,10 @@
         {finding.title}
         {#if nested && finding.explainedBy}<span class="why">↳ {finding.explainedBy.why}</span>{/if}
         {#if note}<span class="why">↳ {note}</span>{/if}
-        {#if finding.measured?.length && !key.inTitle}<span class="key" title={key.label}>{key.value}{key.label ? ` ${key.label}` : ''}</span>{/if}
+        {#if finding.measured?.length && !key.inTitle}<span class="key">{key.value}{key.label ? ` ${key.label}` : ''}</span>{/if}
       </span>
       <span class="rule">{finding.rule}</span>
+      {#if showNext && !open}<span class="next"><strong>Next step:</strong> {finding.nextStep}{#if who}{' · '}<strong>Who acts:</strong> {who}{/if}</span>{/if}
     </summary>
     <div class="body">
       {#if issue}
@@ -100,7 +102,7 @@
       </div>
       {#if rule}
         <p class="incident"><strong>Why this rule exists:</strong> {rule.incident}</p>
-        <p class="incident"><strong>Who acts:</strong> {rule.who.map((a) => WHO[a]).join(', ')} · <strong>Tracked as:</strong> <code>{finding.key}</code></p>
+        <p class="incident"><strong>Who acts:</strong> {who} · <strong>Tracked as:</strong> <code>{finding.key}</code></p>
       {/if}
       <div class="actions">
         {#if issue?.status !== 'known'}<button onclick={() => mark('known')}>Mark as known…</button>{/if}
@@ -123,7 +125,7 @@
 
 <style>
   .finding { border-bottom: 1px solid var(--border); list-style: none; }
-  summary { display: grid; grid-template-columns: 6.5rem 1fr auto; gap: 0.75rem; align-items: baseline; padding: 0.55rem 0.25rem; cursor: pointer; }
+  summary { display: grid; grid-template-columns: 6.5rem 1fr auto; gap: 0.75rem; align-items: baseline; padding: 0.4rem 0.25rem; cursor: pointer; }
   summary::-webkit-details-marker { display: none; }
   summary:hover { background: var(--hover); }
   summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
@@ -136,6 +138,7 @@
   .back { background: var(--error); color: var(--bg); }
   .known-badge { border: 1px solid var(--muted); color: var(--muted); }
   .key { margin-left: 0.5rem; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .next { grid-column: 2 / 4; font-size: 0.85rem; color: var(--muted); }
   .rule { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
   .body { padding: 0 0.25rem 0.9rem 7.25rem; }
   .issue-note { font-size: 0.85rem; margin: 0 0 0.5rem; padding: 0.25rem 0.6rem; border-left: 3px solid var(--muted); }
@@ -152,8 +155,8 @@
   .causes .ruled-out .tag { text-decoration: none; display: inline-block; }
   .incident { color: var(--muted); }
   .why { display: block; font-size: 0.8rem; color: var(--muted); }
-  .explains { margin: 0 0 0.4rem 7.25rem; }
-  .explains > summary { display: block; padding: 0.2rem 0.25rem; font-size: 0.85rem; color: var(--muted); }
+  .explains { margin: 0 0 0.25rem 7.25rem; }
+  .explains > summary { display: block; padding: 0.1rem 0.25rem; font-size: 0.85rem; color: var(--muted); }
   .explains > summary::before { content: '▸ '; }
   .explains[open] > summary::before { content: '▾ '; }
   .explains > ul { padding: 0; margin: 0; border-left: 2px solid var(--border); }

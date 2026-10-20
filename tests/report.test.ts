@@ -121,6 +121,11 @@ describe('report model, from the real CalGames fixtures', () => {
     expect(titleHasValue('Lost comms at 2:27 into the match', 2)).toBe(false)
     expect(titleHasValue('Browned out 53 times', 53)).toBe(true)
     expect(titleHasValue('Browned out 253 times', 53)).toBe(false)
+    // Equal at the title's own precision, sign ignored (the key-number line would only restate the title).
+    expect(titleHasValue('Pitch -24° for 0.8 s', 23.7)).toBe(true)
+    expect(titleHasValue('Battery fell 2.4 V below the line', 2.37)).toBe(true)
+    expect(titleHasValue('Battery fell 2.4 V below the line', 22.8)).toBe(false)
+    expect(titleHasValue('Fell to 22.1 %', 22.8)).toBe(false)
   })
   it('marks a finding that came back after a fix, on the card and in the model', () => {
     const first = p0.report.findings.find((f) => f.severity === 'error')!

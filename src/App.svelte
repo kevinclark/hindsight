@@ -197,7 +197,7 @@
     Choose logs…
   </label>
   {#if current}
-    <span>or drop files</span>
+    <span>or drop files (<code>.wpilog</code>, <code>.dslog</code>, history)</span>
   {:else}
     <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>, and the team's <code>{HISTORY_FILE_NAME}</code>) anywhere on the page.</span>
   {/if}
@@ -242,7 +242,7 @@
       <details class="more">
         <summary>Robot: <strong>{current.match.profile.name}</strong></summary>
         <p class="meta">
-          Robot: <strong>{current.match.profile.name}</strong>, code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>
+          Code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>
           ({HOW_WORDS[current.match.profileChoice.how]}) ·
           <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
             <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>
@@ -343,7 +343,6 @@
   .match-head { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.25rem 1rem; margin-top: 0.4rem; }
   .match-head .rest, .match-head .problem { grid-column: 1 / -1; }
   .rest { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6rem; }
-  .rest .meta, .rest .more > summary { font-size: 0.8rem; }
   .rest > .meta:last-child:not(:first-child) { flex-basis: 100%; }
   .more[open] { flex-basis: 100%; }
   .match-head .problem { margin: 0; }
@@ -351,13 +350,12 @@
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
   .dirty { color: var(--warning); }
-  .more { margin-top: 0; }
-  .more > summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; min-height: 24px; }
-  .meta select { width: auto; max-width: 100%; font: inherit; font-size: 0.8rem; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }
+  .more > summary { cursor: pointer; color: var(--muted); min-height: 24px; }
+  .meta select { width: auto; max-width: 100%; font: inherit; font-size: 0.8rem; min-height: 24px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }
   .modes { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.75rem; }
   .modes button { padding: 0.3rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .modes button.active { color: var(--fg); border-color: var(--focus); font-weight: 600; }
-  .tabs { display: flex; gap: 0.25rem; margin: 0.25rem 0 0.5rem; border-bottom: 1px solid var(--border); }
+  .tabs { display: flex; gap: 0.25rem; margin: 0 0 0.4rem; border-bottom: 1px solid var(--border); }
   .tabs button { padding: 0.45rem 1rem; border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .tabs button.active { color: var(--fg); border-bottom-color: var(--focus); font-weight: 600; }
   footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }

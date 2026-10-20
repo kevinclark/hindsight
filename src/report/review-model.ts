@@ -136,10 +136,22 @@ export function bottomLine(errors: Finding[], warnings: Finding[], infos: Findin
   return `${plural(errors.length, 'error')}, ${tail}. Worst: ${rest ? shortTitle(errors[0].title) : stop(shortTitle(errors[0].title))}${more}`
 }
 
-/** True when the title already says this number (not as part of a time like 2:27 or a longer number). */
+/**
+ * True when the title already says this number (not as part of a time like 2:27 or a longer number). A plain number
+ * counts when the title holds one equal to it at the title's own precision, sign ignored: "-24°" says 23.7, "2.4 V"
+ * says 2.37; "22.8 %" does not. Anything else (a string with text) must appear exactly.
+ */
 export function titleHasValue(title: string, value: number | string): boolean {
-  const v = String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?<![\\d.:])${v}(?![\\d:]|\\.\\d)`).test(title)
+  const text = String(value).trim()
+  const v = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (new RegExp(`(?<![\\d.:])${v}(?![\\d:]|\\.\\d)`).test(title)) return true
+  if (!/^[-+]?\d+(\.\d+)?$/.test(text)) return false
+  const n = Math.abs(Number(text))
+  for (const m of title.matchAll(/(?<![\d.:])(\d+)(?:\.(\d+))?(?![\d:]|\.\d)/g)) {
+    const places = m[2]?.length ?? 0
+    if (n.toFixed(places) === `${m[1]}${places ? `.${m[2]}` : ''}`) return true
+  }
+  return false
 }
 
 /**

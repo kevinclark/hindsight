@@ -237,6 +237,22 @@ async function matchReview(index: number, m: (typeof MATCHES)[number]) {
     await tab.waitFor(`document.querySelector('.match-head h2') !== null || document.querySelector('.problem') !== null`, 90, 'the match heading')
     if (await tab.eval(`document.querySelector('.match-head h2') === null`)) throw new Error(`log did not load: ${await tab.eval(`document.querySelector('.problem').innerText`)}`)
     await sleep(500)
+    // Exactly what the page shows on load (1366x768, both schemes), then the first error opened, full page, so a plot appears in the set.
+    // Slot numbers are the match's own; the view names sort before "match-groups-closed", so the existing files keep their names.
+    for (const scheme of SCHEMES) {
+      await tab.scheme(scheme)
+      await tab.eval('window.scrollTo(0, 0)')
+      await sleep(150)
+      const loaded = await tab.call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
+      save(base, 'match-as-loaded', `Match review ${label}${m.withDs ? ' (with .dslog)' : ''}: as loaded (nothing clicked)`, m.id, `${WIDTH}x${HEIGHT}`, scheme, 'png', Buffer.from(loaded.data, 'base64'), tab.errors)
+    }
+    await tab.scheme('light')
+    if (await tab.eval(`(() => { const d = document.querySelector('.findings > li.error > details:not([open])'); if (!d) return false; d.open = true; return true })()`)) {
+      await sleep(500) // the plot draws once the row is open
+      const full = await tab.eval(`({ x: 0, y: 0, width: ${WIDTH}, height: Math.max(${HEIGHT}, document.documentElement.scrollHeight) })`)
+      const shot = await tab.call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { ...full, height: Math.min(full.height, MAX_FULL_HEIGHT), scale: 1 } })
+      save(base, 'match-first-open', `Match review ${label}: first error opened (full page)`, m.id, `${WIDTH}xfull`, 'light', 'png', Buffer.from(shot.data, 'base64'), tab.errors, full.height > MAX_FULL_HEIGHT ? { truncated: true } : {})
+    }
     // As links-check does: close every finding body (headlines only) with the "Explains N more" groups closed, then open them all.
     await tab.eval(`document.querySelectorAll('.findings details[open]').forEach((d) => (d.open = false))`)
     await sleep(300)
