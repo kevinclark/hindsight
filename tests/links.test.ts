@@ -6,7 +6,7 @@ import { FORESIGHT_RULES, LINKS, RULES, ruleById, runRules } from '../src/rules/
 import { linkFindings } from '../src/rules/run.ts'
 import type { Finding, Severity } from '../src/rules/types.ts'
 import { BUS_DEVICES } from '../src/rules/can/bus-dropout.ts'
-import { nest, severityWords } from '../src/report/finding-tree.ts'
+import { nest, partitionStanding, severityWords } from '../src/report/finding-tree.ts'
 import { reviewCard, reviewModel } from '../src/report/review-model.ts'
 import { link } from '../src/rules/rule.ts'
 import { analyzeFixture } from './helpers/load.ts'
@@ -28,17 +28,15 @@ const explainer = (f: Finding) => f.explainedBy && `${f.explainedBy.rule}${f.exp
 const alert = (text: string, time: number | null, severity: Severity = 'error') => finding('alerts/passthrough', time, { about: text, severity })
 
 describe('links.ts', () => {
-  it('names only rules that exist, links a rule to itself only for dropped-with drops, and has no cycle', () => {
+  it('names only rules that exist, never links a rule to itself, and has no cycle', () => {
     const ids = new Set(RULES.map((r) => r.id))
     for (const l of LINKS) {
       expect(ids.has(l.cause), l.cause).toBe(true)
       expect(ids.has(l.explains), l.explains).toBe(true)
+      expect(l.cause).not.toBe(l.explains)
     }
-    // can/device-dropout names the device it dropped with, and a device always names an earlier one (see the rule), so
-    // that one link may join two findings of the same rule without a loop. No other rule does.
-    expect(LINKS.filter((l) => l.cause === l.explains).map((l) => l.cause)).toEqual(['can/device-dropout'])
     // Depth-first from every rule: reaching a rule already on the path is a cycle.
-    const next = (id: string) => LINKS.filter((l) => l.cause === id && l.explains !== id).map((l) => l.explains)
+    const next = (id: string) => LINKS.filter((l) => l.cause === id).map((l) => l.explains)
     const visit = (id: string, path: string[]): void => {
       expect(path, `cycle: ${[...path, id].join(' → ')}`).not.toContain(id)
       for (const n of next(id)) visit(n, [...path, id])
@@ -213,5 +211,45 @@ describe('the pass runs for match analysis only', () => {
     for (const report of [runRules(p0.match, FORESIGHT_RULES), runRules(p0.match)]) {
       expect(report.findings.filter((f) => f.explainedBy)).toEqual([])
     }
+  })
+})
+
+describe('partitionStanding', () => {
+  const brownout = finding('power/brownout', 703, { likely: ['weak-battery'] })
+  const margin = finding('power/margin', 703.3, { evidence: { 'margin (V)': -0.06 } })
+  const loss = finding('comms/loss', 500)
+  const all = [brownout, margin, loss]
+  linkFindings(all, LINKS)
+  const tree = nest(all, all)
+  const headlines = (nodes: ReturnType<typeof nest>) => nodes.map((n) => n.finding)
+
+  it('folds a node whose headline and every finding under it are standing', () => {
+    const { listed, folded } = partitionStanding(tree, new Set([brownout.key, margin.key]))
+    expect(headlines(folded)).toEqual([brownout])
+    expect(folded[0].children.map((c) => c.finding)).toEqual([margin])
+    expect(headlines(listed)).toEqual([loss])
+  })
+
+  it('a standing child under a headline that is not standing stays listed with its parent', () => {
+    const { listed, folded } = partitionStanding(tree, new Set([margin.key]))
+    expect(folded).toEqual([])
+    expect(headlines(listed)).toEqual([brownout, loss])
+  })
+
+  it('a standing headline with a child that is not standing stays listed (the subtree rule)', () => {
+    const { listed, folded } = partitionStanding(tree, new Set([brownout.key, loss.key]))
+    expect(headlines(folded)).toEqual([loss])
+    expect(headlines(listed)).toEqual([brownout])
+  })
+
+  it('a finding that came back stays listed, as does a node with one under it', () => {
+    const everything = new Set(all.map((f) => f.key))
+    expect(headlines(partitionStanding(tree, everything, [loss]).folded)).toEqual([brownout])
+    expect(headlines(partitionStanding(tree, everything, [margin]).listed)).toEqual([brownout])
+    expect(headlines(partitionStanding(tree, everything, [margin]).folded)).toEqual([loss])
+  })
+
+  it('folds nothing when nothing is standing', () => {
+    expect(partitionStanding(tree, new Set()).folded).toEqual([])
   })
 })

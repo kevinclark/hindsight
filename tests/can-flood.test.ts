@@ -1,10 +1,9 @@
 // A whole-robot CAN flood (CalGames 2026 Q2: 25 devices dropped within 0.3 s): the 2026 profile's bus members, the
-// 'dropped with' evidence that nests the rest of a cluster under its first device, and the alert words that tie
+// bus-wide and partial drops, and the alert words that tie
 // "turn motor" and "encoder" alerts to the bus. Built on small synthetic logs; the real Q2 log is in
 // calgames-logs.test.ts when it is in ~/Downloads.
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
-import { nest } from '../src/report/finding-tree.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { BUS_DEVICES } from '../src/rules/can/bus-dropout.ts'
 import { LINKS } from '../src/rules/index.ts'
@@ -38,8 +37,6 @@ function log(drops: Record<string, [number, boolean][]>): FixtureEntry[] {
 
 const run = (entries: FixtureEntry[], profile = offseason2026) =>
   analyzeFiles([{ name: 'a.wpilog', bytes: writeWpilog(entries) }], profile).analyses[0].report.findings
-const unmapped = { ...offseason2026, canBuses: undefined }
-const droppedWith = (f: Finding) => f.evidence['dropped with']
 
 describe('the 2026 profile\'s CAN bus', () => {
   const [bus] = offseason2026.canBuses ?? []
@@ -53,52 +50,8 @@ describe('the 2026 profile\'s CAN bus', () => {
   })
 })
 
-describe('can/device-dropout: dropped with', () => {
-  const names = (found: Finding[]) => found.filter((f) => f.rule === 'can/device-dropout')
-
-  it('the first device of a cluster has none; a tie goes to the device earlier in the profile; a lone drop has none', () => {
-    const [a, b, c, d] = [devices[1], devices[0], devices[12], devices[15]] // b is before a in the profile
-    const found = names(run(log({
-      [a.name]: [[5, true], [40, false], [45, true]],
-      [b.name]: [[5, true], [40, false], [45, true]], // the same instant as a: b is first in profile order
-      [c.name]: [[5, true], [40.5, false], [45, true]], // within 1 s of both
-      [d.name]: [[5, true], [60, false], [61, true]], // alone
-    }), unmapped))
-    const by = Object.fromEntries(found.map((f) => [f.about, droppedWith(f)]))
-    expect(by).toEqual({ [b.name]: undefined, [a.name]: b.name, [c.name]: b.name, [d.name]: undefined })
-    // The head's evidence has no such line at all, not an empty one.
-    expect('dropped with' in found.find((f) => f.about === b.name)!.evidence).toBe(false)
-  })
-
-  it('a device whose first drop is alone is judged by that drop, even if a later one clusters', () => {
-    const [a, b] = [devices[0], devices[1]]
-    const found = names(run(log({
-      [a.name]: [[5, true], [30, false], [31, true], [50, false], [51, true]],
-      [b.name]: [[5, true], [50, false], [51, true]],
-    }), unmapped))
-    // a's first drop (30 s) is alone, so a has no 'dropped with' even though b's drop at 50 s matches a's second.
-    expect(found.find((f) => f.about === a.name)!.evidence['dropped with']).toBeUndefined()
-    // b's first drop (50 s) is within 1 s of a's second drop, which is a's own drop, so b names a.
-    expect(found.find((f) => f.about === b.name)!.evidence['dropped with']).toBe(a.name)
-  })
-
-  it('a chain of drops each under 1 s from the last still points at earlier ones only (no loop)', () => {
-    const drops = Object.fromEntries([0, 1, 2, 3].map((i) => [devices[i].name, [[5, true], [40 + i * 0.8, false], [45, true]] as [number, boolean][]]))
-    const found = names(run(log(drops), unmapped))
-    const all = found.map((f) => ({ ...f }))
-    linkFindings(all, LINKS)
-    // Every finding has at most one explainer, and following explainers always ends at the first device.
-    for (const f of all) {
-      let at: Finding | undefined = f
-      for (let hops = 0; at?.explainedBy; hops++) {
-        expect(hops).toBeLessThan(all.length)
-        at = all.find((x) => x.about === at!.explainedBy!.about)
-      }
-      expect(at!.about).toBe(devices[0].name)
-    }
-  })
-
-  it('the silent failure: a member already down when the bus goes means no bus finding, and the rest still nest under one headline', () => {
+describe('can/device-dropout: bus-wide and partial drops', () => {
+  it('the silent failure: a member already down when the bus goes means no bus finding, but every device still has its own finding', () => {
     // Hood has been off since before the robot enabled, so the bus is not "every member at once".
     const drops: Record<string, [number, boolean][]> = { [devices.find((d) => d.name === 'Hood')!.name]: [[5, false]] }
     const going = devices.filter((d) => d.name !== 'Hood')
@@ -107,14 +60,7 @@ describe('can/device-dropout: dropped with', () => {
     expect(found.filter((f) => f.rule === 'can/bus-dropout')).toEqual([])
     const per = found.filter((f) => f.rule === 'can/device-dropout')
     expect(per).toHaveLength(25)
-    const head = going[0].name
-    expect(per.filter((f) => f.about !== 'Hood' && droppedWith(f) === undefined).map((f) => f.about)).toEqual([head])
-    expect(per.filter((f) => f.about !== 'Hood' && f.about !== head).every((f) => f.explainedBy?.about === head)).toBe(true)
-    expect(per.find((f) => f.about === 'Hood')!.explainedBy).toBeUndefined()
-    // One headline for the cluster (with the other 23 under it) and one for Hood.
-    const tree = nest(per, found)
-    expect(tree.map((n) => n.finding.about).sort()).toEqual([head, 'Hood'].sort())
-    expect(tree.find((n) => n.finding.about === head)!.children).toHaveLength(23)
+    expect(per.map((f) => f.about).sort()).toEqual(devices.map((d) => d.name).sort())
   })
 
   it('a whole-bus drop is still one bus finding with no per-device findings', () => {
@@ -122,23 +68,6 @@ describe('can/device-dropout: dropped with', () => {
     const found = run(log(drops))
     expect(found.filter((f) => f.rule === 'can/bus-dropout')).toHaveLength(1)
     expect(found.filter((f) => f.rule === 'can/device-dropout')).toEqual([])
-  })
-})
-
-describe('the same-rule link', () => {
-  const dropout = (about: string, more: Finding['evidence'] = {}): Finding => ({
-    rule: 'can/device-dropout', severity: 'error', title: about, time: 40, matchTime: null, when: null, about, key: `can/device-dropout · ${about}`,
-    evidence: more, meaning: '', causes: [], nextStep: '',
-  })
-
-  it('explains only the findings that name it, and leaves the first alone', () => {
-    const first = dropout('A')
-    const second = dropout('B', { 'dropped with': 'A' })
-    const third = dropout('C')
-    linkFindings([first, second, third], LINKS)
-    expect([first.explainedBy, third.explainedBy]).toEqual([undefined, undefined])
-    expect(second.explainedBy).toMatchObject({ rule: 'can/device-dropout', about: 'A' })
-    expect(second.explainedBy!.why).toMatch(/within 1 s of the first device to drop: one event/)
   })
 })
 

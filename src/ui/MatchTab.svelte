@@ -10,7 +10,7 @@
   import type { Audience, Finding } from '../rules/types.ts'
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import { findingStatus, playedAt } from '../report/review-model.ts'
-  import { nest, descendants, type FindingNode } from '../report/finding-tree.ts'
+  import { nest, partitionStanding } from '../report/finding-tree.ts'
   import { cardTitle } from '../report/titles.ts'
 
   let { analysis, issues, standing = new Set<string>(), onMark }: {
@@ -39,14 +39,16 @@
   // Every known issue, whichever audience is picked, so a hidden one still reads "explained by a known issue".
   const allKnown = $derived(all.filter((f) => status(f) === 'known' || status(f) === 'fixed later'))
   const fullTree = $derived(nest(active, all, allKnown, cameBack))
-  // A headline whose issue fires in every match of the session moves, with what it explains, into a closed fold after
-  // the list. A standing finding under a headline that isn't standing stays under it; one that came back stays listed.
-  const folded = (n: FindingNode) => standing.has(n.finding.key) && !cameBack.includes(n.finding)
-  const activeTree = $derived(fullTree.filter((n) => !folded(n)))
-  const standingTree = $derived(fullTree.filter(folded))
-  const standingAll = $derived(standingTree.flatMap((n) => [n.finding, ...descendants(n)]))
-  const standingErrors = $derived(standingAll.filter((f) => f.severity === 'error'))
-  const standingWarnings = $derived(standingAll.filter((f) => f.severity === 'warning').length)
+  // A top-level finding folds into a closed group, with what it explains, only when it and everything under it fires in
+  // every match of the session and none came back (partitionStanding). Anything else stays in the list.
+  const partition = $derived(partitionStanding(fullTree, standing, cameBack))
+  const activeTree = $derived(partition.listed)
+  const standingTree = $derived(partition.folded)
+  // Info rows are listed after the fold so the fold's summary (and the named error) sits near the top.
+  const mainTree = $derived(activeTree.filter((n) => n.finding.severity !== 'info'))
+  const infoTree = $derived(activeTree.filter((n) => n.finding.severity === 'info'))
+  const standingErrors = $derived(standingTree.filter((n) => n.finding.severity === 'error').map((n) => n.finding))
+  const standingWarnings = $derived(standingTree.filter((n) => n.finding.severity === 'warning').length)
   // The first active error's closed row carries its next step; derived, so it moves when that error is marked known or the audience changes.
   // It is the first error not in the fold; when every error is folded it falls back to the first folded one, whose next
   // step is then shown in the fold's summary (the rows inside a closed fold can't show it).
@@ -93,9 +95,9 @@
 
 {#if active.length === 0}
   <p>No new findings{audience === 'all' ? '' : ' for this group'}. Every rule not listed under "Not checked" looked and found nothing new.</p>
-{:else if activeTree.length}
+{:else if mainTree.length}
   <ul class="findings">
-    {#each activeTree as n (n.finding.key + n.finding.time)}
+    {#each mainTree as n (n.finding.key + n.finding.time)}
       <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} showNext={n.finding === firstError} {onMark} />
     {/each}
   </ul>
@@ -104,7 +106,7 @@
 {#if standingTree.length}
   <details class="standing">
     <summary>
-      <h3>In every match this event ({standingAll.length})</h3>
+      <h3>In every match of this session ({standingTree.length})</h3>
       <span class="sum">
         {#if standingErrors.length}<span class="e">{standingErrors.length} error{standingErrors.length === 1 ? '' : 's'}</span>: {standingErrors.map((f) => cardTitle(f.title)).join('; ')}{#if standingWarnings}{', '}{/if}{/if}{#if standingWarnings}<span class="w">{standingWarnings} warning{standingWarnings === 1 ? '' : 's'}</span>{/if}
       </span>
@@ -116,6 +118,14 @@
       {/each}
     </ul>
   </details>
+{/if}
+
+{#if infoTree.length}
+  <ul class="findings">
+    {#each infoTree as n (n.finding.key + n.finding.time)}
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} statusOf={status} showNext={n.finding === firstError} {onMark} />
+    {/each}
+  </ul>
 {/if}
 
 {#if known.length}

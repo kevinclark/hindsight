@@ -67,3 +67,20 @@ export function severityWords(findings: Finding[]): string {
     .map(([n, word]) => `${n} ${word}${n === 1 || word === 'info' ? '' : 's'}`)
     .join(', ')
 }
+
+/**
+ * Splits the top-level nodes for the Match tab's fold: a node folds only when its headline and every finding under it
+ * are standing (`standing`: issue keys that fired in every match of the session) and none of them came back after a
+ * fix. Otherwise the node stays listed with all it explains, so a one-off finding is never folded away with a
+ * standing cause. Order within each side is kept.
+ */
+export function partitionStanding(tree: FindingNode[], standing: Set<string>, cameBack: Finding[] = []): { listed: FindingNode[]; folded: FindingNode[] } {
+  const listed: FindingNode[] = []
+  const folded: FindingNode[] = []
+  for (const n of tree) {
+    const whole = [n.finding, ...descendants(n)]
+    const folds = whole.every((f) => standing.has(f.key) && !cameBack.includes(f))
+    ;(folds ? folded : listed).push(n)
+  }
+  return { listed, folded }
+}

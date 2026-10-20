@@ -7,13 +7,11 @@
  * voltage points at CAN wiring or a connector.
  * Why: CalGames 2026 P0: flywheel follower 16 alone dropped off CAN 7 times, each at 5.85–6.31 V.
  *
- * Drops that took the whole bus down at once are left to can/bus-dropout. When several devices drop together and the
- * profile maps no bus (or only some of them dropped), every device after the first says which one dropped first
- * ("dropped with"), so the list shows one headline for the event, not one per device.
+ * Drops that took the whole bus down at once are left to can/bus-dropout.
  */
 import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
 import type { DeviceView, Episode, MatchView } from '../view.ts'
-import { busOf, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, TOGETHER_SECONDS, watched, windowStart } from './bus.ts'
+import { busOf, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, watched, windowStart } from './bus.ts'
 
 
 export default rule({
@@ -48,7 +46,6 @@ export default rule({
 
 /** The finding for one device's own drops (not part of a whole-bus drop). */
 function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): Problem {
-  const droppedWith = firstToDropWith(match, device.name, drops[0].start)
   const battery = match.signal('batteryVoltage')
   // A drop already under way when the watched window began is timed from that start. It says nothing about sag.
   const { timed, alreadyOff, voltages, text: voltageText, everyDrop } = readDrops(match, battery, drops)
@@ -90,50 +87,11 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
       'came back': cameBack,
       'lowest battery voltage in the 0.5 s before each drop (V)': voltageText.join(', '),
       'other devices dropped at the same moment': othersDropped(together, others.length),
-      // Absent on the first device of a cluster and on a lone drop. links.ts reads it to nest this finding under that one.
-      ...(droppedWith ? { 'dropped with': droppedWith } : {}),
     },
     likely, ruledOut, nextStep: dropNextStep(allLow, everyDrop, together),
     measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
     plot: plotDrops(battery, timed, 3, drops[drops.length - 1].end + 2),
   }
-}
-
-/**
- * The name of the device that dropped off CAN first among those whose drop started within 1 s of this device's first
- * drop (TOGETHER_SECONDS), or undefined when this device was itself first (a tie goes to the device earlier in the
- * profile) or dropped alone. Only each device's own drops count (a whole-bus drop has no per-device finding to name).
- * A device whose first drop is alone but whose later drop clusters is judged by its first drop only: the later one
- * is not looked at. Each device points at one strictly earlier one (by time, then profile order), so it can never loop.
- */
-function firstToDropWith(match: MatchView, name: string, firstDrop: number): string | undefined {
-  const order = match.connectedDevices().filter((d) => match.has(d.key))
-  const me = order.findIndex((d) => d.name === name)
-  let best: { name: string; start: number; place: number } | undefined
-  order.forEach((d, place) => {
-    if (d.name === name) return
-    const start = ownDropStarts(match, d.name, d.key).find((t) => Math.abs(t - firstDrop) <= TOGETHER_SECONDS)
-    if (start === undefined) return
-    const earlier = start < firstDrop || (start === firstDrop && place < me)
-    const beatsBest = !best || start < best.start || (start === best.start && place < best.place)
-    if (earlier && beatsBest) best = { name: d.name, start, place }
-  })
-  return best?.name
-}
-
-/** When each device's own drops (not part of a whole-bus drop) started, kept per match: every device asks about every other. */
-const dropStartsCache = new WeakMap<MatchView, Map<string, number[]>>()
-
-function ownDropStarts(match: MatchView, name: string, key: string): number[] {
-  let byDevice = dropStartsCache.get(match)
-  if (!byDevice) dropStartsCache.set(match, (byDevice = new Map()))
-  let starts = byDevice.get(name)
-  if (!starts) {
-    const bus = busOf(match, name)
-    const drops = match.signal(key).episodes(isFalse, { touching: watched(match) })
-    byDevice.set(name, (starts = drops.filter((d) => !isBusWide(bus, d)).map((d) => d.start)))
-  }
-  return starts
 }
 
 /** When each other device dropped off CAN while enabled (every motor with a Connected flag, and the other devices). */
