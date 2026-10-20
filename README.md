@@ -108,7 +108,13 @@ lookups an hour per network** without signing in, and a venue's Wi-Fi may share 
 file list, kept in this browser by commit, so a second visit costs none), a branch name one more; file text comes from
 `raw.githubusercontent.com` and doesn't count. The 8 CalGames logs took 9 lookups the first time, 0 after. When the
 hour's lookups are used up, or the laptop is offline, the finding says so (with the time it resets) and stays red: choose
-the folder. One source is in use at a time; choosing either replaces the other. The scripts take `--github
+the folder. If the hourly limit ever runs out in real use, the planned fix is to read each commit's file list from
+jsDelivr (`data.jsdelivr.com/v1/packages/gh/owner/repo@<full sha>?structure=flat`, which allows `file://` pages and
+listed the same 84 files at cb68b20 on 2026-10-20), leaving GitHub's API only to turn a branch name into a commit.
+jsDelivr can't resolve a branch and may serve a branch's files stale, so it would only ever be asked for full commit
+hashes. Not built: no real use has hit the limit yet. The page can't clone the repo itself, because GitHub's clone
+endpoint and zip downloads don't allow calls from web pages. One source is in use at a time; choosing either replaces
+the other. The scripts take `--github
 owner/repo[@ref]` (`golden.ts`, `report.ts`), keeping GitHub's file lists in the same cache file.
 
 To add a robot: **Robot profile** drafts one from your logs, a robot snapshot and (optionally) your code folder, and keeps it in the browser or saves a `profile.json` (`docs/robot-profile.md`; code in `src/builder/`). A built-in profile is a TypeScript file in `src/profiles/`, listed in `src/profiles/index.ts`.

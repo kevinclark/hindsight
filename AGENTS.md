@@ -80,6 +80,15 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
 - Hardware is read only on a real robot, and every read is an AdvantageKit input, so a replay reads it back. A failed
   read is logged, never thrown: the library runs inside someone else's robot code.
 - The `/proc` fixtures in `core/src/test/resources/proc` are synthetic.
+- Reading a team's CTRE device: get each signal with `getX(false)` and `.clone()` it. A plain `getX()` looks the
+  signal up again with errors reported and refreshes the team's own cached object. Read clones with
+  `refresh(false)`: `BaseStatusSignal.refreshAll` prints "CAN frame not received" to the DS console for every
+  missing signal (9 lines per device at boot, seen in CTRE's simulator).
+- Phoenix's reset flag (`getResetOccurredChecker()`) also fires with a device's first answer after start-up
+  (`hasUpdated()` is true on the first valid timestamp): count a reboot only when the device was already answering.
+- Phoenix code can't run in companion's own tests (no natives). To exercise it, put a test in package
+  `com.frc8033.hindsight` inside a WPILib robot project (GradleRIO sets up the simulator) built against the
+  published companion jar; `HAL.initialize(500, 0)` first.
 
 Tests:
 
