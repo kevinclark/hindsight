@@ -35,7 +35,7 @@
     markers: p.sags.map((s) => ({ t: s.t, label: '' })), matchStart: m.matchStart,
   } : null)
   const currentPlot = $derived<PlotModel | null>(g ? {
-    from, to, unit: 'A', matchStart: m.matchStart, series: [gridSeries('Total current (motors + other)', g.amps), ...g.groups.filter((x) => x.name === m.profile.whatIfGroup).map((x) => gridSeries(`${x.name}`, x.amps))],
+    from, to, unit: 'A', matchStart: m.matchStart, series: [gridSeries(g.currentFrom ? 'Total current (measured)' : 'Total current (motors + other)', g.amps), ...g.groups.filter((x) => x.name === m.profile.whatIfGroup).map((x) => gridSeries(`${x.name}`, x.amps))],
   } : null)
   const ocvPlot = $derived<PlotModel | null>(p && p.ocv.length ? {
     from: 0, to: Math.max(p.ocv[p.ocv.length - 1].ah, FLEET_REFERENCE[FLEET_REFERENCE.length - 1].ah) + 0.25, unit: 'V',
@@ -54,14 +54,18 @@
     <div><dt>Lowest voltage (enabled)</dt><dd class:bad={p.marginVolts < 0} class:warn={p.marginVolts >= 0 && p.marginVolts < m.profile.power.marginVolts}>{f2(p.minVolts)} V</dd><dd class="sub">at {matchWhen(m, p.minAt)}</dd></div>
     <div><dt>Margin to brownout</dt><dd class:bad={p.marginVolts < 0} class:warn={p.marginVolts >= 0 && p.marginVolts < m.profile.power.marginVolts}>{f2(p.marginVolts)} V</dd><dd class="sub">setting {p.brownoutVolts} V; want ≥ {m.profile.power.marginVolts} V</dd></div>
     <div><dt>Time under 7 V</dt><dd>{p.secondsUnder7.toFixed(1)} s</dd><dd class="sub">while enabled</dd></div>
-    <div><dt>Charge drawn</dt><dd>{p.chargeAh.toFixed(2)} Ah</dd><dd class="sub">motors + {m.profile.power.otherLoadsAmps} A other (assumed)</dd></div>
+    <div><dt>Charge drawn</dt><dd>{p.chargeAh.toFixed(2)} Ah</dd><dd class="sub">{g?.currentFrom ? 'measured total' : `motors + ${m.profile.power.otherLoadsAmps} A other (assumed)`}</dd></div>
     <div><dt>Battery + wiring</dt><dd>{p.resistanceOhms ? (p.resistanceOhms * 1000).toFixed(1) : '—'} mΩ</dd><dd class="sub">from current steps</dd></div>
   </dl>
 
   <h3>Voltage and current over the match</h3>
   {#if voltagePlot}<Plot model={voltagePlot} height={150} />{/if}
   {#if currentPlot}<Plot model={currentPlot} height={130} />{/if}
-  <p class="note">Total current is the sum of motor supply currents plus {m.profile.power.otherLoadsAmps} A for everything else. <code>/SystemStats/BatteryCurrent</code> is only the roboRIO's own draw (~0.5 A), so it isn't used.</p>
+  {#if g?.currentFrom}
+    <p class="note">Total current is {g.currentFrom}.</p>
+  {:else}
+    <p class="note">Total current is the sum of motor supply currents plus {m.profile.power.otherLoadsAmps} A for everything else. <code>/SystemStats/BatteryCurrent</code> is only the roboRIO's own draw (~0.5 A), so it isn't used.</p>
+  {/if}
 
   <h3>The {p.sags.length} deepest sags, and what was drawing</h3>
   <table class="sags">
@@ -80,8 +84,8 @@
   {#if ocvPlot}<Plot model={ocvPlot} height={170} xLabel="Ah" />{/if}
   <p class="note">V + R·I with R = {p.resistanceOhms ? (p.resistanceOhms * 1000).toFixed(1) : '—'} mΩ, median per 0.25 Ah while enabled. A healthy battery stays high as charge is drawn; a weak one falls away. The reference is two batteries from one weekend until battery history exists.</p>
 
-  <h3>What if the {p.whatIfGroup.toLowerCase()} were current-limited?</h3>
-  {#if p.fit && p.modelNoChange}
+  {#if p.whatIfGroup}<h3>What if the {p.whatIfGroup.toLowerCase()} were current-limited?</h3>{/if}
+  {#if p.whatIfGroup && p.fit && p.modelNoChange}
     <p class="note">Replays this match's currents through a fitted battery model, V = V0 − k·Q − R0·I
       (V0 {p.fit.v0.toFixed(2)} V, k {p.fit.kVoltsPerAh.toFixed(2)} V/Ah, R0 {(p.fit.r0Ohms * 1000).toFixed(1)} mΩ).
       <strong>Model error: {p.fit.rmse.toFixed(2)} V overall, {f2(p.fit.rmseLow)} V in sags below 7.5 V.</strong>
@@ -108,7 +112,7 @@
       </tbody>
     </table>
     <p class="note">Compare what-ifs with "Model, no change", not with "Logged": the model and the log disagree by the error above.</p>
-  {:else}
+  {:else if p.whatIfGroup}
     <p>Not enough enabled data to fit the battery model.</p>
   {/if}
 {/if}

@@ -113,6 +113,12 @@ To add a robot: **Robot profile** drafts one from your logs, a robot snapshot an
 
 ### Robots without AdvantageKit
 
+Each type of log is a signal map in `src/profiles/` (`advantagekit.ts`, `datalogmanager.ts`, `doglog.ts`), listed in
+`src/profiles/formats.ts`: where that type keeps the signals every robot has. A signal may name several places in
+order, and each match uses the first its logs have (`src/profiles/sources.ts`); one of them can be the Driver Station
+log (`dslog:brownout`), and a finding that used it says so under "read from". Rules ask for signals by name and never
+see which type of log it is, so reading a new type of log takes its signal map and a team profile.
+
 A plain WPILib log (DataLogManager) works too. The match comes from `DS:enabled` / `DS:autonomous` and
 `NT:/FMSInfo/*` (event, match type and number, and the FMS- and DS-attached bits of `FMSControlData`), whatever the
 profile; `src/profiles/datalogmanager.ts` lists every key such a log can supply, and a profile starts from it. Two

@@ -122,7 +122,72 @@ export interface CodePin {
   alsoBranches?: string[]
 }
 
-export interface RobotProfile {
+/** Where a signal is in a log: its key, or several places in order (the first the log has is used). '' = nowhere. */
+export type Source = string | string[]
+
+/**
+ * Every signal a rule can ask for by name, and its log key ('' when the log type or robot has none). This is the
+ * shape after a match has picked one key per signal (src/profiles/sources.ts); a profile writes SignalSources.
+ */
+export interface SignalKeys {
+  enabled: string
+  autonomous: string
+  fmsAttached: string
+  dsAttached: string
+  eventName: string
+  matchType: string
+  matchNumber: string
+  replayNumber: string
+  allianceStation: string
+  gitSha: string
+  gitBranch: string
+  gitDate: string
+  gitDirty: string
+  epochMicros: string
+  systemTimeValid: string
+  batteryVoltage: string
+  brownedOut: string
+  brownoutVoltage: string
+  commsDisableCount: string
+  systemActive: string
+  loopCycleMs: string
+  console: string
+  /** Each AdvantageKit Alert group has string[] children: errors, warnings, infos. */
+  alertGroups: string[]
+  gyroPitch: string
+  gyroRoll: string
+  accelX: string
+  accelY: string
+  odometryPose: string
+  /** The Driver Station's e-stop flag (true from the e-stop until the robot program restarts). */
+  emergencyStop: string
+  /** The Driver Station's match clock: seconds left in the current period (auto or teleop). */
+  matchTimeLeft: string
+  /** The auto chooser's selection (text), e.g. AdvantageKit's LoggedDashboardChooser. */
+  autoChoice: string
+  /** Each Driver Station joystick port's button count (0 = nothing plugged in), port 0 first. */
+  joystickButtonCounts: string[]
+  /** The radio's own status: connected to the robot network (AdvantageKit's /RadioStatus). */
+  radioConnected: string
+  /** The power distribution board's channel currents (a list per record), its input voltage and channel count. */
+  powerDistributionCurrents: string
+  powerDistributionVoltage: string
+  powerDistributionChannels: string
+  /**
+   * A measured total robot current (a REV PDH's TotalCurrent), used as the robot's current only when the log has no
+   * motor supply currents (src/power/battery-model.ts). '' where it isn't trusted yet: the power model adds up the
+   * motors.
+   */
+  totalCurrent: string
+}
+
+/** The signals as a profile or a log type writes them: each single signal's Source (the lists stay lists). */
+export type SignalSources = { [K in keyof SignalKeys]: SignalKeys[K] extends string ? Source : SignalKeys[K] }
+
+/**
+ * A robot profile. `Signals` is SignalSources as written; a match's profile has one key per signal (ResolvedProfile).
+ */
+export interface RobotProfile<Signals = SignalSources> {
   /** The robot, as people call it: "2026 offseason robot". */
   name: string
   /**
@@ -138,45 +203,7 @@ export interface RobotProfile {
   code: CodePin
   /** `field`: the field's length (x) and width (y) in meters, from the season's AprilTag layout, for "is this pose on the field". */
   game: { name: string; autoSeconds: number; teleopSeconds: number; field?: { length: number; width: number } }
-  signals: {
-    enabled: string
-    autonomous: string
-    fmsAttached: string
-    dsAttached: string
-    eventName: string
-    matchType: string
-    matchNumber: string
-    replayNumber: string
-    allianceStation: string
-    gitSha: string
-    gitBranch: string
-    gitDate: string
-    gitDirty: string
-    epochMicros: string
-    systemTimeValid: string
-    batteryVoltage: string
-    brownedOut: string
-    brownoutVoltage: string
-    commsDisableCount: string
-    systemActive: string
-    loopCycleMs: string
-    console: string
-    /** Each AdvantageKit Alert group has string[] children: errors, warnings, infos. */
-    alertGroups: string[]
-    gyroPitch: string
-    gyroRoll: string
-    accelX: string
-    accelY: string
-    odometryPose: string
-    /** The Driver Station's e-stop flag (true from the e-stop until the robot program restarts). */
-    emergencyStop: string
-    /** The Driver Station's match clock: seconds left in the current period (auto or teleop). */
-    matchTimeLeft: string
-    /** The auto chooser's selection (text), e.g. AdvantageKit's LoggedDashboardChooser. */
-    autoChoice: string
-    /** Each Driver Station joystick port's button count (0 = nothing plugged in), port 0 first. */
-    joystickButtonCounts: string[]
-  }
+  signals: Signals
   /** Battery tracker keys. Each lists the places the key may be; the first one present is used. */
   battery: {
     id: string[]
@@ -192,11 +219,6 @@ export interface RobotProfile {
     restVoltageMin: number
     marginVolts: number
     healthyResistanceMaxOhms: number
-    /**
-     * A measured total robot current (e.g. a REV PDH's TotalCurrent), used as the robot's current only when the log
-     * has no motor supply currents. Leave out otherwise: the power model adds up the motors (src/power/).
-     */
-    totalCurrent?: string
   }
   motorGroups: MotorGroup[]
   /** `updating`: as for a motor (Motor.updating). */
@@ -229,8 +251,6 @@ export interface RobotProfile {
    * over CAN; a CTRE PDP 2.0 has no current telemetry at all.
    */
   powerDistribution?: 'rev-pdh' | 'ctre-pdp' | 'ctre-pdp-2'
-  /** Where the log keeps the board's entries (ChannelCurrent, Voltage, ChannelCount). Default: AdvantageKit's /PowerDistribution. */
-  powerDistributionFolder?: string
   zeroing: ZeroingMechanism[]
   /** Mechanisms with both a motor position and an absolute angle in the log, for mech/slip. */
   slipChecks?: SlipCheck[]
@@ -281,3 +301,6 @@ export type ZeroCheck =
     where: string
   }
   | { mechanism: string; notCheckable: string }
+
+/** A profile as a match uses it: one log key per signal, picked for that match's logs. */
+export type ResolvedProfile = RobotProfile<SignalKeys>

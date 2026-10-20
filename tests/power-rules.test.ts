@@ -54,7 +54,7 @@ describe('power/pd-not-reporting', () => {
     expect(pd(entries, { ...offseason2026, powerDistribution: 'rev-pdh' })).toBeUndefined()
   })
   it('is not checked when the log has no power distribution entries', () => {
-    expect(run(pushing(30)).skipped.find((s) => s.rule === 'power/pd-not-reporting')?.reason).toMatch(/no \/PowerDistribution/)
+    expect(run(pushing(30)).skipped.find((s) => s.rule === 'power/pd-not-reporting')?.reason).toBe('missing /PowerDistribution/ChannelCurrent')
   })
 })
 

@@ -219,12 +219,15 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
   for (const item of items) {
     view.notes = []
     view.sampled.clear()
+    view.readFrom.clear()
     try {
       const answer: Answer = item.check()
       const problems = answer === undefined ? [] : Array.isArray(answer) ? answer : [answer]
       // A signal logged slowly can hide a short dip or spike: say so on each finding, and as "partly checked".
       const slow = view.slowSignals()
-      findings.push(...problems.map((p) => withSampling(toFinding(rule, p, item.name, view), slow)))
+      // A signal read from somewhere other than the robot log's own key: say where, on each finding.
+      const finish = (p: Problem) => withSources(withSampling(toFinding(rule, p, item.name, view), slow), view.readFrom)
+      findings.push(...problems.map(finish))
       if (problems.length === 0) for (const s of slow) view.checkedOnlyPart(s.note)
       notChecked.push(...view.notes.map((n) => (item.name ? `${item.name}: ${n.reason}` : n.reason)))
       if (view.notes.some((n) => n.whole) && problems.length === 0) itemsSkipped++
@@ -341,6 +344,12 @@ function rankedCauses(id: string, all: Cause[], likely: string[], ruledOut: Reco
   return [...all]
     .sort((a, b) => Number(!!ruledOut[a.id]) - Number(!!ruledOut[b.id]) || rank(a.id) - rank(b.id))
     .map((c) => ({ ...c, ...(likely.includes(c.id) ? { likely: true } : {}), ...(ruledOut[c.id] ? { ruledOut: ruledOut[c.id] } : {}) }))
+}
+
+function withSources(f: Finding, readFrom: Map<string, string>): Finding {
+  if (readFrom.size === 0) return f
+  const where = [...readFrom].map(([label, from]) => `${label}: ${from}`).join('; ')
+  return { ...f, evidence: { ...f.evidence, 'read from': where } }
 }
 
 function withSampling(f: Finding, slow: { label: string; note: string }[]): Finding {

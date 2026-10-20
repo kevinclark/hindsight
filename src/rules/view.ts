@@ -15,7 +15,8 @@
 import { ranPinnedCommit, type LimitLines } from '../code/limit-lines.ts'
 import { has, matchSeconds, matchTimeLeft, matchWhen, matchWhenAt, num, phaseAt, values, type Match } from '../match/match.ts'
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
-import type { CurrentLimits, RobotProfile } from '../profiles/types.ts'
+import type { CurrentLimits, ResolvedProfile } from '../profiles/types.ts'
+import { isDslogKey } from '../profiles/sources.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
@@ -368,7 +369,7 @@ export class MatchView {
   readonly matchEnd: number | null
   /** True when the field (FMS) was attached at some point. */
   readonly onField: boolean
-  readonly profile: RobotProfile
+  readonly profile: ResolvedProfile
   /** The underlying match model (src/match/match.ts), for the power model and the runner. */
   readonly raw: Match
   /**
@@ -471,15 +472,22 @@ export class MatchView {
     const key = this.keyFor(name)
     if (!has(this.raw, key)) throw missing(name, key)
     if (this.isMeasured(key)) this.sampled.set(key, label)
+    if (isDslogKey(key)) this.readFrom.set(label, 'the Driver Station log (the robot log doesn\'t have it)')
     return new Signal(label, key, num(this.raw, key)!, this.raw.logEnd)
   }
 
   /** Measured signals (battery voltage, motor currents and speeds) the current rule item read, by key, with labels. */
   readonly sampled = new Map<string, string>()
 
+  /**
+   * Signals the current rule item read from somewhere other than the robot log's own key, label → where: the runner
+   * says so on its findings.
+   */
+  readonly readFrom = new Map<string, string>()
+
   /** Battery voltage and the motors' current and speed: things that change fast and can be under-sampled. */
   private isMeasured(key: string): boolean {
-    if (key === this.profile.signals.batteryVoltage || key === this.profile.power.totalCurrent) return true
+    if (key === this.profile.signals.batteryVoltage || key === this.profile.signals.totalCurrent) return true
     return this.profile.motorGroups.some((g) => g.motors.some((m) => [m.supplyCurrent, m.statorCurrent, m.velocity].includes(key)))
   }
 
@@ -655,8 +663,8 @@ export class MatchView {
 
   /** The battery model and current totals (see src/power/). Missing battery voltage or motor currents stop the rule. */
   power(): { report: PowerReport; grid: PowerGrid } {
-    this.markPowerSignals()
     const grid = buildPowerGrid(this.raw)
+    this.markPowerSignals(grid)
     const report = powerReport(this.raw)
     if (!grid || !report) throw new MissingSignal(this.has('batteryVoltage') ? 'motor supply currents' : (this.profile.signals.batteryVoltage || 'battery voltage (the robot profile has no key for it)'))
     return { report, grid }
@@ -668,32 +676,34 @@ export class MatchView {
    * currents stop the rule.
    */
   currents(): PowerGrid {
-    this.markPowerSignals()
     const grid = buildCurrentGrid(this.raw)
+    this.markPowerSignals(grid)
     if (!grid) throw new MissingSignal('motor supply currents')
     return grid
   }
 
   /**
-   * The power model reads battery voltage and every supply current (or, with none, the measured total): count them as
-   * read, for slowSignals().
+   * The power model reads battery voltage and every supply current (or, with none, a measured total): count them as
+   * read, for slowSignals(), and say where a measured total came from.
    */
-  private markPowerSignals(): void {
+  private markPowerSignals(grid: PowerGrid | null): void {
     const s = this.profile.signals
     if (s.batteryVoltage && has(this.raw, s.batteryVoltage)) this.sampled.set(s.batteryVoltage, 'battery voltage')
-    let motorCurrents = false
     for (const g of this.profile.motorGroups) {
-      for (const m of g.motors) {
-        if (m.supplyCurrent && has(this.raw, m.supplyCurrent)) { this.sampled.set(m.supplyCurrent, `${m.name} supply`); motorCurrents = true }
-      }
+      for (const m of g.motors) if (m.supplyCurrent && has(this.raw, m.supplyCurrent)) this.sampled.set(m.supplyCurrent, `${m.name} supply`)
     }
-    const total = this.profile.power.totalCurrent
-    if (!motorCurrents && total && has(this.raw, total)) this.sampled.set(total, 'total current')
+    if (grid?.currentFrom) this.sampled.set(s.totalCurrent, 'total current')
+    this.markCurrentFrom(grid)
+  }
+
+  private markCurrentFrom(grid: PowerGrid | null): void {
+    if (grid?.currentFrom) this.readFrom.set('total current', grid.currentFrom)
   }
 
   /** Like power(), but null instead of "not checked" when the log has no motor currents: for extra evidence. */
   powerIfLogged(): { report: PowerReport; grid: PowerGrid } | null {
     const grid = buildPowerGrid(this.raw)
+    this.markCurrentFrom(grid)
     const report = powerReport(this.raw)
     return grid && report ? { report, grid } : null
   }
@@ -709,21 +719,6 @@ export class MatchView {
 
   get dsLogs() {
     return this.raw.ds
-  }
-
-  /**
-   * The Driver Station logs' brownout flag or battery voltage as a signal on the robot's clock (50 records a second),
-   * for a robot log that lacks it. Null without a DS log, or when the roboRIO clock was never set (nothing lines the
-   * two up). Records where the DS saw no robot are left out.
-   */
-  dsLogSignal(field: 'brownout' | 'voltage', label: string): Signal | null {
-    const offset = this.raw.epochOffset
-    if (offset === null) return null
-    const records = this.raw.ds.flatMap((d) => d.file.records).filter((r) => r.voltage !== null)
-    if (!records.length) return null
-    const t = Float64Array.from(records, (r) => r.epochSeconds - offset)
-    const v = Float64Array.from(records, (r) => (field === 'brownout' ? Number(r.brownout) : r.voltage!))
-    return new Signal(label, `${field} (Driver Station log)`, { name: label, t, v }, this.raw.logEnd)
   }
 
   /** The first and last record of the log (robot time). */

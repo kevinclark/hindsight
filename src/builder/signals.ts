@@ -3,14 +3,15 @@
  * DataLogManager), the code's identity, and the robot-specific keys that can be told by their shape alone.
  */
 import { hasEntry, readValues, type WpilogEntry, type WpilogFile } from '../readers/wpilog.ts'
-import { DATALOGMANAGER_SIGNALS } from '../profiles/datalogmanager.ts'
-import { ADVANTAGEKIT_SIGNALS } from '../profiles/advantagekit.ts'
+import { LOG_FORMATS } from '../profiles/formats.ts'
+import { keysOf } from '../profiles/sources.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 
 type Signals = RobotProfile['signals']
 type Battery = RobotProfile['battery']
 
-export type Framework = 'advantagekit' | 'datalogmanager' | 'unknown'
+/** The log type's name (profiles/formats.ts), or 'unknown'. */
+export type Framework = string
 
 export interface SignalDraft {
   framework: Framework
@@ -31,10 +32,9 @@ export const codebaseOf = (log: WpilogFile) => firstString(log, '/RealMetadata/C
 
 const firstString = (log: WpilogFile, key: string) => { const v = readValues<string>(log, key)?.v; return v?.find((x) => typeof x === 'string' && x !== '') ?? '' }
 
-export function frameworkOf(log: WpilogFile): Framework {
-  if (hasEntry(log, ADVANTAGEKIT_SIGNALS.enabled)) return 'advantagekit'
-  if (hasEntry(log, DATALOGMANAGER_SIGNALS.enabled)) return 'datalogmanager'
-  return 'unknown'
+/** The first log type (profiles/formats.ts) whose marker the log has; AdvantageKit's map when none. */
+function formatOf(log: WpilogFile) {
+  return LOG_FORMATS.find((f) => hasEntry(log, f.marker))
 }
 
 /** Folders whose `errors` / `warnings` / `infos` children are string arrays: AdvantageKit's (and WPILib's) Alerts groups. */
@@ -67,8 +67,9 @@ const CAMERA_FOLDER = /vision|camera|photon|limelight|apriltag/i
 const NOT_A_DEVICE = /^(NT:)?\/(RadioStatus|SystemStats|PowerDistribution)(\/|$)/
 
 export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalDraft {
-  const framework = frameworkOf(log)
-  const base = framework === 'datalogmanager' ? DATALOGMANAGER_SIGNALS : ADVANTAGEKIT_SIGNALS
+  const format = formatOf(log)
+  const framework = format?.name ?? 'unknown'
+  const base = (format ?? LOG_FORMATS[0]).signals
   const entries = [...log.entries.values()].filter((e) => records(log, e) > 0)
   const guessed: (keyof Signals)[] = []
   const alternatives: SignalDraft['alternatives'] = {}
@@ -102,6 +103,7 @@ export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalD
 
   // Identity: AdvantageKit's Codebase, or ProjectName (the AdvantageKit template's name for it).
   const codebase = codebaseOf(log)
-  const code = { repo: '', branch: firstString(log, signals.gitBranch), sha: firstString(log, signals.gitSha) }
+  const first = (name: 'gitBranch' | 'gitSha') => keysOf(signals[name]).map((k) => firstString(log, k)).find((v) => v) ?? ''
+  const code = { repo: '', branch: first('gitBranch'), sha: first('gitSha') }
   return { framework, signals, guessed, alternatives, battery, codebase, code, otherDevices }
 }

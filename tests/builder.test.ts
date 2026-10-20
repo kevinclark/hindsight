@@ -153,7 +153,8 @@ describe('motors and groups from a log', () => {
     const draft = draftProfile({ logs: [{ log, fileName: 'example.wpilog' }] })
     expect(draft.json.codebase).toBe('Example Robot')
     expect(draft.json.code).toEqual({ repo: '', branch: 'main', sha: 'abc1234def' })
-    expect(draft.json.signals?.enabled).toBe('/DriverStation/Enabled')
+    // AdvantageKit's key, then the plain WPILib log's: the draft keeps the log type's list (profiles/sources.ts).
+    expect(draft.json.signals?.enabled).toEqual(['/DriverStation/Enabled', 'DS:enabled'])
     expect(draft.json.signals?.alertGroups).toEqual(['/RealOutputs/Alerts'])
     expect(draft.json.otherDevices).toEqual([{ name: 'Drive Gyro', connected: '/Drive/Gyro/Connected' }])
     expect(draft.json.motorGroups.find((g) => g.name === 'Flywheel')).toMatchObject({ sameLoop: true, sameLoopSuggested: true })

@@ -10,20 +10,27 @@
  *  - /Robot/SystemStats/EpochTimeMicros is the roboRIO's FPGA clock (24.6 s at log time 24.6 s), not the wall clock,
  *    so the wall clock stays DataLogManager's systemTime: that is what lines a Driver Station log up with the match.
  *  - With captureNt off there is no NT:/FMSInfo, so these logs don't say which match they hold.
+ *  - /Robot/DogLog/Options (the options it ran with) tells a DogLog log from a plain one (formats.ts).
  *  - While enabled, BatteryVoltage is logged 50 times a second and the board's TotalCurrent about 12 (every 80 ms).
  */
 import { DATALOGMANAGER_SIGNALS } from './datalogmanager.ts'
-import type { RobotProfile } from './types.ts'
+import { DSLOG } from './sources.ts'
+import type { SignalSources } from './types.ts'
 
 const STATS = '/Robot/SystemStats'
+const PD = `${STATS}/PowerDistribution`
 
-/** The power distribution board's folder: ChannelCurrent, TotalCurrent, Voltage, ChannelCount. */
-export const DOGLOG_POWER_DISTRIBUTION = `${STATS}/PowerDistribution`
-
-export const DOGLOG_SIGNALS: RobotProfile['signals'] = {
+export const DOGLOG_SIGNALS: SignalSources = {
   ...DATALOGMANAGER_SIGNALS,
   batteryVoltage: `${STATS}/BatteryVoltage`,
-  brownedOut: `${STATS}/BrownedOut`,
+  brownedOut: [`${STATS}/BrownedOut`, `${DSLOG}brownout`],
   brownoutVoltage: `${STATS}/BrownoutVoltage`,
   systemActive: `${STATS}/SystemActive`,
+  radioConnected: '/Robot/RadioStatus/Connected',
+  powerDistributionCurrents: `${PD}/ChannelCurrent`,
+  powerDistributionVoltage: `${PD}/Voltage`,
+  powerDistributionChannels: `${PD}/ChannelCount`,
+  // The robot's current when no motor currents are logged. Lined up with the voltage first: see measuredTotal in
+  // src/power/battery-model.ts, fitted on one team's three logs only.
+  totalCurrent: `${PD}/TotalCurrent`,
 }

@@ -9,7 +9,7 @@
  *    it is logged slowly.
  *  - No gyro pitch or roll, and the loop time is in seconds (Hindsight's loop rule reads milliseconds): left out.
  */
-import { DOGLOG_POWER_DISTRIBUTION, DOGLOG_SIGNALS } from './doglog.ts'
+import { DOGLOG_SIGNALS } from './doglog.ts'
 import type { RobotProfile } from './types.ts'
 
 export const frc334_2026: RobotProfile = {
@@ -22,12 +22,8 @@ export const frc334_2026: RobotProfile = {
     odometryPose: '/Robot/Swerve/Pose',
   },
   battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [] },
-  power: {
-    otherLoadsAmps: 3, restVoltageMin: 12.5, marginVolts: 1.0, healthyResistanceMaxOhms: 0.020,
-    totalCurrent: `${DOGLOG_POWER_DISTRIBUTION}/TotalCurrent`,
-  },
+  power: { otherLoadsAmps: 3, restVoltageMin: 12.5, marginVolts: 1.0, healthyResistanceMaxOhms: 0.020 },
   powerDistribution: 'rev-pdh',
-  powerDistributionFolder: DOGLOG_POWER_DISTRIBUTION,
   motorGroups: [],
   otherDevices: [],
   whatIfGroup: '',
