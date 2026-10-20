@@ -49,8 +49,14 @@ export class GitRepo {
       if (/^[0-9a-f]{40}$/.test(sha) && sha.startsWith(hex)) found.add(sha)
     }
     for (const pack of await this.allPacks()) for (const sha of await pack.find(hex)) found.add(sha)
-    if (found.size > 1) throw new GitUnreadable(`${hex} names ${found.size} objects in this .git`)
-    const [sha] = found
+    // As git does, a short hash that also starts a tree's or a file's hash still names the one commit.
+    let candidates = [...found]
+    if (candidates.length > 1) {
+      const kinds = await Promise.all(candidates.map(async (c) => (await this.object(c)).kind))
+      candidates = candidates.filter((_, k) => kinds[k] === 'commit')
+    }
+    if (candidates.length > 1) throw new GitUnreadable(`${hex} names ${candidates.length} commits in this .git`)
+    const [sha] = candidates
     if (!sha) throw new GitUnreadable(`commit ${hex.slice(0, 7)} isn't in this code folder${await this.whyMissing()}`)
     return sha
   }
@@ -137,6 +143,7 @@ export class GitRepo {
   private async whyMissing(): Promise<string> {
     if (await this.dir.size('shallow')) return ' (it is a shallow clone: fetch the whole history with git fetch --unshallow)'
     if (await this.dir.size('objects/info/alternates')) return ' (its objects are partly in another repo, objects/info/alternates)'
+    if ((await this.dir.list('objects/pack')).some((n) => n.endsWith('.promisor'))) return ' (it is a partial clone: clone it again without --filter)'
     return ' (fetch, or pull the branch the robot ran)'
   }
 
@@ -172,11 +179,11 @@ class Pack {
     if (i < 0) return null
     const { count } = await this.index()
     const at = 8 + 1024 + 24 * count + 4 * (first + i)
-    const word = new DataView((await this.idx(at, at + 4)).buffer).getUint32(0)
+    const word = view(await this.idx(at, at + 4)).getUint32(0)
     if ((word & 0x80000000) === 0) return word
     // A pack over 2 GB keeps this offset in the 8-byte table after the 4-byte one.
     const big = 8 + 1024 + 28 * count + 8 * (word & 0x7fffffff)
-    return Number(new DataView((await this.idx(big, big + 8)).buffer).getBigUint64(0))
+    return Number(view(await this.idx(big, big + 8)).getBigUint64(0))
   }
 
   /** The object at an offset, its delta chain applied. `byHash` reads a REF_DELTA's base (which may be anywhere). */
@@ -203,8 +210,10 @@ class Pack {
     } else if (!KINDS[type]) {
       throw new GitUnreadable(`the pack has an object of unknown type ${type}`)
     }
+    // The base is awaited before anything else, so a base that can't be read is an error here, never left unhandled.
+    const baseObject = base ? await base : null
     const data = await inflate(await this.pack(offset + i, await this.endOf(offset)))
-    const object = base ? { kind: (await base).kind, data: applyDelta((await base).data, data) } : { kind: KINDS[type], data }
+    const object = baseObject ? { kind: baseObject.kind, data: applyDelta(baseObject.data, data) } : { kind: KINDS[type], data }
     if (this.inflated.size >= KEEP_OBJECTS) this.inflated.delete(this.inflated.keys().next().value as number)
     this.inflated.set(offset, object)
     return object
@@ -223,10 +232,10 @@ class Pack {
 
   private index(): Promise<{ fanout: Uint32Array; count: number }> {
     this.header ??= this.idx(0, 8 + 1024).then((bytes) => {
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-      if (view.getUint32(0) !== 0xff744f63 || view.getUint32(4) !== 2) throw new GitUnreadable(`${this.base}.idx isn't a version 2 pack index`)
+      const header = view(bytes)
+      if (header.getUint32(0) !== 0xff744f63 || header.getUint32(4) !== 2) throw new GitUnreadable(`${this.base}.idx isn't a version 2 pack index`)
       const fanout = new Uint32Array(256)
-      for (let b = 0; b < 256; b++) fanout[b] = view.getUint32(8 + 4 * b)
+      for (let b = 0; b < 256; b++) fanout[b] = header.getUint32(8 + 4 * b)
       return { fanout, count: fanout[255] }
     })
     return this.header
@@ -237,18 +246,17 @@ class Pack {
     this.ends ??= (async () => {
       const { count } = await this.index()
       const table = await this.idx(8 + 1024 + 24 * count, 8 + 1024 + 28 * count)
-      const view = new DataView(table.buffer, table.byteOffset, table.byteLength)
+      const words = view(table)
       const offsets: number[] = []
       const bigOnes: number[] = []
       for (let k = 0; k < count; k++) {
-        const word = view.getUint32(4 * k)
+        const word = words.getUint32(4 * k)
         if (word & 0x80000000) bigOnes.push(word & 0x7fffffff)
         else offsets.push(word)
       }
       if (bigOnes.length) {
         const big = await this.idx(8 + 1024 + 28 * count, 8 + 1024 + 28 * count + 8 * bigOnes.length)
-        const bigView = new DataView(big.buffer, big.byteOffset, big.byteLength)
-        for (const k of bigOnes) offsets.push(Number(bigView.getBigUint64(8 * k)))
+        for (const k of bigOnes) offsets.push(Number(view(big).getBigUint64(8 * k)))
       }
       const size = await this.dir.size(`${this.base}.pack`)
       if (size === null) throw new GitUnreadable(`${this.base}.pack is missing`)
@@ -340,6 +348,8 @@ async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
   const stream = new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream('deflate'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
+
+const view = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 
 function hex(bytes: Uint8Array): string {
   let s = ''

@@ -90,6 +90,7 @@
     const files = Array.from(fileList)
     if (files.length === 0) return
     busy = true
+    const pass = ++passes
     await new Promise((r) => setTimeout(r, 30)) // let "Reading…" paint
     try {
       const started = performance.now()
@@ -99,10 +100,11 @@
       inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
       const read = performance.now()
       const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored])
+      if (result.history.length) keep(mergeHistory(history, result.history), false)
+      if (pass !== passes) return // a later pass (another code folder, another robot) has the newer answer
       const done = performance.now()
       analyses = result.analyses
       problems = result.problems
-      if (result.history.length) keep(mergeHistory(history, result.history), false)
       const newest = result.analyses.findIndex((a) => added.some((f) => f.name === a.match.fileName))
       selected = Math.max(0, newest)
       const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
@@ -110,7 +112,7 @@
     } catch (error) {
       problems = [String(error)]
     } finally {
-      busy = false
+      if (pass === passes) busy = false
     }
   }
 
@@ -124,10 +126,21 @@
   // Read the loaded logs again, keeping the same match selected (another robot picked, another code folder chosen).
   async function reanalyze() {
     const file = current?.match.fileName
-    const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored])
-    analyses = result.analyses
-    selected = Math.max(0, analyses.findIndex((a) => a.match.fileName === file))
+    const pass = ++passes
+    busy = true
+    try {
+      const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored])
+      if (pass !== passes) return
+      analyses = result.analyses
+      selected = Math.max(0, analyses.findIndex((a) => a.match.fileName === file))
+    } catch (error) {
+      problems = [String(error)]
+    } finally {
+      if (pass === passes) busy = false
+    }
   }
+  // Each analysis pass is numbered; only the newest one's result is shown.
+  let passes = 0
   // A code folder chosen (or forgotten) after logs were loaded: the limit findings may change.
   let seenFolder = codeFolder.version
   $effect(() => {

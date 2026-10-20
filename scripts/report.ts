@@ -31,7 +31,10 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const args = process.argv.slice(2)
 const option = (name: string) => {
   const i = args.indexOf(name)
-  return i < 0 ? undefined : args.splice(i, 2)[1]
+  if (i < 0) return undefined
+  const [, value] = args.splice(i, 2)
+  if (!value || value.startsWith('--')) throw new Error(`${name} needs a value`)
+  return value
 }
 const codeDir = option('--code')
 const cacheFile = option('--code-cache') ?? DEFAULT_CACHE

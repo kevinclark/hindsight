@@ -31,6 +31,9 @@ const pinned = commit(['    int speed = 1;', ...LIMITS])
 const otherLinesChanged = commit(['    int speed = 2;', ...LIMITS])
 const limitChanged = commit(['    int speed = 2;', LIMITS[0], '    cfg.CurrentLimits.SupplyCurrentLimitEnable = true;'])
 const reordered = commit(['    int speed = 2;', LIMITS[1], LIMITS[0]])
+// Two motors with the same lines (as an indexer and a kicker often are), then one of them loses its enable line.
+const twice = commit([...LIMITS, ...LIMITS])
+const onceLess = commit([...LIMITS, LIMITS[0]])
 
 const profile = { ...offseason2026, code: { ...offseason2026.code, sha: pinned.slice(0, 7) } }
 const flywheel = profile.motorGroups.find((g) => g.name === 'Flywheel')!
@@ -72,6 +75,16 @@ describe('comparing CurrentLimit lines between two commits', () => {
   it('different when the same lines moved', async () => {
     expect(await compareLimitLines(repo(), pinned.slice(0, 7), reordered, ['DrumSubsystem.java'])).toMatchObject({ verdict: 'different', lines: ['DrumSubsystem.java: the same lines in another order'] })
   })
+  it('counts repeated lines: losing one of two identical lines is that line, not a reorder', async () => {
+    expect(await compareLimitLines(repo(), twice.slice(0, 7), onceLess, ['DrumSubsystem.java'])).toMatchObject({
+      verdict: 'different', lines: ['- DrumSubsystem.java: cfg.CurrentLimits.SupplyCurrentLimitEnable = false;'],
+    })
+  })
+  it('a folder without the profile\'s commit is probably another repo, and says so', async () => {
+    expect(await compareLimitLines(repo(), 'abcdef1', otherLinesChanged, ['DrumSubsystem.java'], 'HighlanderRobotics/Rebuilt')).toMatchObject({
+      verdict: 'unknown', why: "the profile's commit abcdef1 isn't in this code folder: is it a clone of HighlanderRobotics/Rebuilt?",
+    })
+  })
   it('unknown, saying why, when the commit or the file isn\'t there', async () => {
     expect(await compareLimitLines(repo(), pinned.slice(0, 7), 'abcdef1234567', ['DrumSubsystem.java'])).toMatchObject({ verdict: 'unknown', why: expect.stringMatching(/commit abcdef1 isn't in this code folder/) })
     expect(await compareLimitLines(repo(), pinned.slice(0, 7), otherLinesChanged, ['Nowhere.java'])).toMatchObject({ verdict: 'unknown', why: expect.stringMatching(/Nowhere.java isn't in commit/) })
@@ -83,7 +96,7 @@ describe('power/limit-not-applied with a code folder', () => {
   it('another commit with the same limit lines: amber, like the pinned commit, and the evidence says so', async () => {
     const f = await flywheelFinding(otherLinesChanged, folder())
     expect(f.severity).toBe('warning')
-    expect(f.title).toContain(`its current-limit lines are the same as main ${pinned.slice(0, 7)}`)
+    expect(f.title).toContain(`same current-limit lines as main ${pinned.slice(0, 7)}`)
     expect(f.evidence[LINES]).toBe(`the same as ${pinned.slice(0, 7)} in DrumSubsystem.java (read from the code folder)`)
   })
   it('another commit with different limit lines: red, with the lines that differ', async () => {

@@ -42,6 +42,11 @@ export function limitFiles(group: MotorGroup): string[] {
   return [...new Set(group.limits.where.match(FILE_NAME) ?? [])]
 }
 
+/** Did this log run the commit its profile was copied from? Then there is nothing to compare. */
+export function ranPinnedCommit(match: Match): boolean {
+  return match.build.sha.startsWith(match.profile.code.sha)
+}
+
 export function limitLinesKey(repo: string, pin: string, logSha: string, files: string[]): string {
   return [repo, pin, logSha.toLowerCase(), [...files].sort().join(',')].join('|')
 }
@@ -51,9 +56,9 @@ export function limitLinesKey(repo: string, pin: string, logSha: string, files: 
  * answers on the match (`match.limitLines`, by group name) for power/limit-not-applied to read.
  */
 export async function compareMatchLimits(match: Match, code: CodeFolder): Promise<void> {
+  if (ranPinnedCommit(match)) return
   const pin = match.profile.code
   const logSha = match.build.sha.trim()
-  if (logSha && logSha.toLowerCase().startsWith(pin.sha.toLowerCase())) return
   const answers = new Map<string, LimitLines>()
   for (const group of match.profile.motorGroups) {
     const files = limitFiles(group)
@@ -61,7 +66,7 @@ export async function compareMatchLimits(match: Match, code: CodeFolder): Promis
     const key = limitLinesKey(pin.repo, pin.sha, logSha, files)
     let answer = code.cache.get(key)
     if (!answer) {
-      answer = await compareLimitLines(code.repo, pin.sha, logSha, files)
+      answer = await compareLimitLines(code.repo, pin.sha, logSha, files, pin.repo)
       if (answer.verdict !== 'unknown') code.cache.set(key, answer)
     }
     answers.set(group.name, answer)
@@ -70,10 +75,14 @@ export async function compareMatchLimits(match: Match, code: CodeFolder): Promis
 }
 
 /** The CurrentLimit lines of some files at two commits: the same, different (and which lines), or why it can't tell. */
-export async function compareLimitLines(repo: GitRepo, pin: string, logSha: string, files: string[]): Promise<LimitLines> {
+export async function compareLimitLines(repo: GitRepo, pin: string, logSha: string, files: string[], repoName = 'the profile\'s repo'): Promise<LimitLines> {
   if (!logSha) return { verdict: 'unknown', why: 'this log has no /RealMetadata/GitSHA' }
   try {
-    const [pinned, ran] = [await repo.resolve(pin), await repo.resolve(logSha)]
+    // The profile's own commit missing usually means another repo's folder was chosen.
+    const pinned = await repo.resolve(pin).catch((error) => {
+      throw error instanceof GitUnreadable ? new GitUnreadable(`the profile's commit ${pin} isn't in this code folder: is it a clone of ${repoName}?`) : error
+    })
+    const ran = await repo.resolve(logSha)
     const lines: string[] = []
     for (const name of files) lines.push(...(await differingLines(repo, pinned, ran, name)))
     return lines.length ? { verdict: 'different', files, lines } : { verdict: 'same', files }
@@ -92,8 +101,8 @@ async function differingLines(repo: GitRepo, pinned: string, ran: string, name: 
   const was = limitLinesOf(await repo.textAt(pinned, before.path))
   const now = after ? limitLinesOf(await repo.textAt(ran, after.path)) : []
   if (was.join('\n') === now.join('\n')) return []
-  const removed = was.filter((line) => !now.includes(line)).map((line) => `- ${name}: ${line}`)
-  const added = now.filter((line) => !was.includes(line)).map((line) => `+ ${name}: ${line}`)
+  const removed = linesNotIn(was, now).map((line) => `- ${name}: ${line}`)
+  const added = linesNotIn(now, was).map((line) => `+ ${name}: ${line}`)
   // The same lines in another order still differ (a line may now set another motor's config).
   return removed.length || added.length ? [...removed, ...added] : [`${name}: the same lines in another order`]
 }
@@ -103,6 +112,17 @@ async function onlyFileNamed(repo: GitRepo, commit: string, name: string) {
   const found = await repo.filesNamed(commit, name)
   if (found.length > 1) throw new GitUnreadable(`commit ${commit.slice(0, 7)} has ${found.length} files named ${name}`)
   return found[0] ?? null
+}
+
+/** The lines of `a` that `b` lacks, counting repeats: the indexer's and kicker's identical lines are two lines. */
+function linesNotIn(a: string[], b: string[]): string[] {
+  const left = new Map<string, number>()
+  for (const line of b) left.set(line, (left.get(line) ?? 0) + 1)
+  return a.filter((line) => {
+    const n = left.get(line) ?? 0
+    left.set(line, n - 1)
+    return n <= 0
+  })
 }
 
 function limitLinesOf(text: string): string[] {

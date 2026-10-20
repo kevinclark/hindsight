@@ -141,7 +141,15 @@
     try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* private window: not remembered */ }
   }
 
-  async function load(list: FileList | File[] | null) {
+  // Loads run one after another, so a re-read for a new code folder starts once the logs being read have all landed.
+  let loading: Promise<void> = Promise.resolve()
+  function load(list: FileList | File[] | null): Promise<void> {
+    const picked = Array.from(list ?? [])
+    loading = loading.then(() => loadNow(picked)).catch((error) => { problems = [...problems, String(error)] })
+    return loading
+  }
+
+  async function loadNow(list: File[]) {
     await ready
     const chosen = Array.from(list ?? []).filter((f) => /\.wpilog$/i.test(f.name))
     if (chosen.length === 0) { problems = ['No .wpilog files in what you chose. To load a folder, use "Choose a folder…" (dragging a folder in only works for the files themselves).']; return }

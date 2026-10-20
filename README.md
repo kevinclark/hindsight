@@ -90,7 +90,10 @@ stays red, and the evidence lists the lines. Can't tell (a shallow clone, a comm
 `.git` file): red, with the reason. Without a folder nothing changes. Only the `.git` files needed are read; nothing is
 changed or uploaded. Chrome and Edge remember the folder between visits (a click allows it again); other browsers ask
 each visit. Each answer is kept per (repo, profile commit, log commit, files): in this browser, and for the scripts in
-`~/.cache/hindsight/limit-lines.json` (`scripts/golden.ts` and `scripts/report.ts` take `--code <folder>`).
+`~/.cache/hindsight/limit-lines.json` (`scripts/golden.ts` and `scripts/report.ts` take `--code <folder>`). Only the
+lines in the files a group's `where` names are compared: a limit set through a name defined in another file
+(`= Constants.KICKER_LIMIT`) isn't followed, so a change there reads as "the same" (every CurrentLimit line in the
+2026 competition code is a literal).
 
 To add a robot: **Robot profile** drafts one from your logs, a robot snapshot and (optionally) your code folder, and keeps it in the browser or saves a `profile.json` (`docs/robot-profile.md`; code in `src/builder/`). A built-in profile is a TypeScript file in `src/profiles/`, listed in `src/profiles/index.ts`.
 
@@ -305,6 +308,9 @@ from the page and drop it in with the logs next time. Design and what's next (th
 
 ## Not verified
 
+- **The Session view keys its saved summaries by the code folder's name.** A summary read when a commit couldn't be
+  compared (a shallow clone, say) is reused after choosing a fuller clone with the same name, until the logs are added
+  again or "Clear saved copies". Kept limit-line answers (about 150 bytes each) are never pruned.
 - **The remembered code folder is not exercised.** Chrome's folder picker (`showDirectoryPicker`) and the "Use … again"
   permission after a reload need a person to click; only the folder input path was driven (headless Chrome from
   `file://`, through `scripts/report.ts --code`).

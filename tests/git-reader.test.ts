@@ -3,7 +3,7 @@
 //   HINDSIGHT_GIT_REPO=<a clone> npx vitest run tests/git-reader.test.ts
 // checks every Java file at the newest 40 commits of every branch of that clone, and the delta-heaviest blobs.
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -82,6 +82,25 @@ describe('git reader on a repo built here', () => {
     // A REF_DELTA object's header type is 7: find at least one in the pack.
     expect(await countRefDeltas(dir)).toBeGreaterThan(10)
     expect(await expectSameAsGit(dir, commits, files)).toBeGreaterThan(100)
+  })
+
+  it('a damaged delta base is an error the caller catches, never an unhandled one', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hindsight-git-bad-'))
+    made.push(dir)
+    cpSync(loose, dir, { recursive: true })
+    git(dir, '-c', 'repack.useDeltaBaseOffset=false', 'repack', '-a', '-d', '-f', '-q', '--depth=50', '--window=50')
+    git(dir, 'prune-packed')
+    const [idx] = packIdx(dir)
+    // verify-pack -v rows of deltified objects end with the base's hash: damage that base's compressed bytes.
+    const rows = git(dir, 'verify-pack', '-v', idx).split('\n').map((l) => l.split(/\s+/)).filter((r) => /^[0-9a-f]{40}$/.test(r[0]) && r.length >= 5)
+    const delta = rows.find((r) => r.length >= 7 && rows.some((b) => b[0] === r[6] && b.length < 7))!
+    const base = rows.find((b) => b[0] === delta[6])!
+    const packPath = idx.replace(/\.idx$/, '.pack')
+    const bytes = new Uint8Array(readFileSync(packPath))
+    bytes.fill(0xff, Number(base[4]) + 8, Number(base[4]) + 12)
+    chmodSync(packPath, 0o644)
+    writeFileSync(packPath, bytes)
+    await expect(repoAt(dir).object(delta[0])).rejects.toThrow()
   })
 
   it('resolves short hashes and finds files by name', async () => {

@@ -6,7 +6,7 @@
  * Limit-line answers are kept in localStorage, and the folder handle in IndexedDB. Every storage call is wrapped: a
  * private window or blocked storage just means nothing is remembered.
  */
-import { GitRepo, type GitDir } from './git.ts'
+import { GitRepo, GitUnreadable, type GitDir } from './git.ts'
 import type { CodeFolder, LimitLines, LimitLinesCache } from './limit-lines.ts'
 
 const ANSWERS = 'hindsight.limitLines'
@@ -55,9 +55,15 @@ export async function folderFromHandle(handle: FileSystemDirectoryHandle): Promi
     const name = parts.pop() as string
     try {
       return await (await (await folder(parts.join('/'))).getFileHandle(name)).getFile()
-    } catch {
+    } catch (error) {
+      onlyIfMissing(error)
       return null
     }
+  }
+  /** A file or folder that isn't there is fine; any other error (no longer allowed to read) is said as such. */
+  const onlyIfMissing = (error: unknown) => {
+    if (error instanceof DOMException && (error.name === 'NotFoundError' || error.name === 'TypeMismatchError')) return
+    throw new GitUnreadable(`this browser no longer allows reading ${handle.name}: choose the code folder again`)
   }
   const dir: GitDir = {
     read: async (path, start, end) => {
@@ -70,7 +76,8 @@ export async function folderFromHandle(handle: FileSystemDirectoryHandle): Promi
         const names: string[] = []
         for await (const name of (await folder(path)).keys()) names.push(name)
         return names
-      } catch {
+      } catch (error) {
+        onlyIfMissing(error)
         return []
       }
     },

@@ -4,7 +4,8 @@
  * Checks: for each motor group with limits in the robot profile, supply and stator current above 120 % of the limit
  * for more than 0.2 s while enabled. (Shorter bursts are the limiter catching up: ≤ 0.21 s at CalGames.) Says when the
  * limit is switched off in code: amber when the log ran the profile's commit, or another commit whose current-limit
- * lines a robot-code folder shows are the same (src/code/limit-lines.ts); red otherwise, as other code may differ.
+ * lines a robot-code folder shows are the same (src/code/limit-lines.ts); red otherwise, as other code may differ. Only
+ * the lines in the files `where` names are compared: a limit set through a name defined in another file isn't followed.
  * The share of enabled time over 110 % of the limit is evidence only: at CalGames it is made of
  * 154–233 bursts per motor per match with a median of 0.02 s (one 50 Hz sample) and a longest of 0.26 s, the limiter
  * catching up at each acceleration, so on its own it does not mean the limit is failing.
@@ -42,7 +43,7 @@ export default rule({
 
     // The profile copies the limits from one commit of the robot code. A log that ran another commit counts as that
     // code when the robot-code folder shows its current-limit lines are the same; otherwise say it ran other code.
-    const ranPin = match.build.sha.startsWith(match.profile.code.sha)
+    const ranPin = match.ranPinnedCommit()
     const compared = ranPin ? null : match.limitLinesVsProfile(group)
     const sameCode = ranPin || compared?.verdict === 'same'
     const { asOf, linesWords } = codeWords(match, ranPin, compared)
@@ -106,7 +107,7 @@ function codeWords(match: MatchView, ranPin: boolean, compared: LimitLines | nul
   if (ranPin) return { asOf: '', linesWords: undefined }
   if (compared?.verdict === 'same') {
     return {
-      asOf: ` (this log ran ${ran}; its current-limit lines are the same as ${pin.branch} ${pin.sha})`,
+      asOf: ` (same current-limit lines as ${pin.branch} ${pin.sha}; this log ran ${ran})`,
       linesWords: `the same as ${pin.sha} in ${compared.files.join(', ')} (read from the code folder)`,
     }
   }
