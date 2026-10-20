@@ -61,13 +61,24 @@ the same problem in five matches is one issue with five sightings, not five rows
 **Built (2026-10-19), after Kevin chose the history file (decision 2: yes):**
 
 - Every finding has *Mark as known…*, *Mark as fixed…* and *Treat as new*, each with a short note.
+- **Not a real problem…** (2026-10-20) needs a reason ("deliberate A-stop"). Unlike known and fixed it is about one
+  match only, and it files the finding with the known issues there. While it stands, the same check's reds on the
+  other matches of that event (same event name, played within 4 days) show amber with "marked not a real problem in
+  Q13: <reason>"; nothing is hidden. *Undo* writes `unmark`, which undoes only that mark (a build from before this
+  feature skips both lines; a `new` would have cleared the issue's known or fixed mark there). The Session view does
+  not apply the demotion yet.
+- **How sure:** with any marks in the history, each finding says how its check has done on our matches, counted once
+  per issue per match over the open logs plus every match named in the history: *marked real* (known or fixed on that
+  very match), *a known issue* (another fire of a known issue, or one before its fix; nobody looked), *marked not a
+  real problem*, and *not marked yet* (including a fire after a fix). With no marks it says nothing.
 - **Known** issues leave the red list and sit under "Known issues seen this match", with the note.
 - **Fixed** issues that fire again in a match played *after* the fix show at the top as **"Came back after a fix"**:
   the check that the fix worked. Matches played before the fix show it as "Fixed after this match".
 - "Tracked issues not seen this match" lists known and fixed issues that stayed quiet (✓ for fixed ones).
 - The record is `hindsight-history.jsonl`, one JSON line per change; lines are only added, so two laptops' files
   combine by concatenation and the newest line per issue wins. The page also keeps a copy in the browser; *Save* writes
-  the file, and dropping it in with the logs loads it. findings.json carries each finding's status.
+  the file, and dropping it in with the logs loads it. findings.json carries each finding's status (`known`, `fixed`
+  or `wrong`), and a demoted finding there is a warning with a `demoted` field naming the mark.
 
 Example, the CalGames flywheel belt (known slip, fixed before elims):
 

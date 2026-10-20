@@ -57,4 +57,9 @@ export interface Finding {
    * dropped this device off CAN). The app shows this finding under that one. Left out when nothing explains it.
    */
   explainedBy?: { rule: string; about: string | null; time: number | null; why: string }
+  /**
+   * Set only by the team's history (triage/track-record.ts), never by a rule: the same check was marked "not a real
+   * problem" on another match of this event, so this red shows amber. `match` is that match ("Q24").
+   */
+  demoted?: { match: string; reason: string; when: string }
 }

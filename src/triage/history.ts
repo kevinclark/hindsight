@@ -5,14 +5,19 @@
  * problem in five matches is one issue. Marking it:
  *   known — we know, we're on it (or living with it): it moves out of the red list into "Known issues"
  *   fixed — we fixed it: if it fires again it shows as "came back after a fix", at the top
- *   new   — undo: treat it as new again
+ *   wrong — not a real problem, with the reason ("deliberate A-stop"). Unlike known and fixed, this is about one match
+ *           only: the same check on another match may be right. Other matches of the same event show the check's
+ *           reds as amber while the mark stands (track-record.ts).
+ *   unmark — undo a wrong mark on its match only. (Not "new": a build from before wrong marks skips this line, but
+ *           would read "new" as clearing the issue's known or fixed mark.)
+ *   new   — undo: treat it as new again, on every match.
  *
  * The record is a text file, one JSON line per change (hindsight-history.jsonl). Lines only get added, so two
  * laptops' files can be combined by putting one after the other; for each issue the newest line wins.
  * The page also keeps a copy in the browser so a reload doesn't lose it. Save the file to share it.
  */
 
-export type IssueStatus = 'known' | 'fixed' | 'new'
+export type IssueStatus = 'known' | 'fixed' | 'wrong' | 'unmark' | 'new'
 
 export interface IssueEvent {
   type: 'issue'
@@ -21,8 +26,12 @@ export interface IssueEvent {
   note: string
   /** When the change was made (ISO time). */
   when: string
-  /** The match it was marked on, for context. */
+  /** The match it was marked on ("<event> <match label>", or the log's file name when it has neither). A wrong mark always has one. */
   match?: string
+  /** The match's event name, as the Driver Station logged it (absent in files written before wrong marks). */
+  event?: string
+  /** When that match was played (ISO time), so the same event name next year is a different event. */
+  played?: string
 }
 
 /**
@@ -53,6 +62,7 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
     try {
       const e = JSON.parse(line)
       if (e.type === 'issue' && typeof e.key === 'string' && ['known', 'fixed', 'new'].includes(e.status)) events.push({ note: '', when: '', ...e })
+      else if (e.type === 'issue' && typeof e.key === 'string' && ['wrong', 'unmark'].includes(e.status) && typeof e.match === 'string' && e.match) events.push({ note: '', when: '', ...e })
       else if (e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
       else skipped++
     } catch {
@@ -72,12 +82,38 @@ export function mergeHistory(a: HistoryEvent[], b: HistoryEvent[]): HistoryEvent
   return [...a, ...b.filter((e) => !seen.has(JSON.stringify(e)))].sort((x, y) => x.when.localeCompare(y.when))
 }
 
-/** Each issue's latest event (issues marked "new" again are left out). */
+/** Each issue's latest known or fixed mark (issues marked "new" again are left out). Wrong marks are per match: see `triage`. */
 export function currentStatus(events: HistoryEvent[]): Map<string, IssueEvent> {
-  const latest = new Map<string, IssueEvent>()
-  for (const e of [...events].sort((x, y) => x.when.localeCompare(y.when))) if (e.type === 'issue') latest.set(e.key, e)
-  for (const [key, e] of latest) if (e.status === 'new') latest.delete(key)
-  return latest
+  return triage(events).issues
+}
+
+export interface Triage {
+  /** Each issue's latest known or fixed mark, for every match it fires in. */
+  issues: Map<string, IssueEvent>
+  /** Wrong marks still standing, by `matchKey(issue, match)`. */
+  wrong: Map<string, IssueEvent>
+}
+
+export const matchKey = (key: string, match: string) => `${key}\u0000${match}`
+
+/**
+ * Replay the marks oldest first. Known and fixed apply to the issue in every match; a wrong mark applies to its own
+ * match, and only a later mark of the same issue on that same match changes it (known or fixed: it was real after all;
+ * unmark: undo just the wrong mark; new: the issue is new again everywhere).
+ */
+export function triage(events: HistoryEvent[]): Triage {
+  const issues = new Map<string, IssueEvent>()
+  const wrong = new Map<string, IssueEvent>()
+  for (const e of [...events].sort((x, y) => x.when.localeCompare(y.when))) {
+    if (e.type !== 'issue') continue
+    const here = e.match ? matchKey(e.key, e.match) : null
+    if (e.status === 'wrong') { wrong.set(here!, e); continue }
+    if (here) wrong.delete(here)
+    if (e.status === 'unmark') continue
+    if (e.status === 'new') issues.delete(e.key)
+    else issues.set(e.key, e)
+  }
+  return { issues, wrong }
 }
 
 /** The code of the latest pit check that came out GO (null if none is on record). */

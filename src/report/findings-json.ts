@@ -24,9 +24,10 @@ const MAX_POINTS = 300
 
 export interface WindowSeries { label: string; key: string | null; t: number[]; v: number[] }
 
-export function buildFindingsJson(match: Match, report: Report, issues: Map<string, IssueEvent> = new Map()): object {
+/** `wrong`: this match's "not a real problem" marks, by issue key; one stands in for the issue's known or fixed mark. */
+export function buildFindingsJson(match: Match, report: Report, issues: Map<string, IssueEvent> = new Map(), wrong: Map<string, IssueEvent> = new Map()): object {
   const power = powerReport(match)
-  const issue = (f: Finding) => issues.get(f.key)
+  const issue = (f: Finding) => wrong.get(f.key) ?? issues.get(f.key)
   // The match rules (as before parents) or the parent that made the finding.
   const maker = (f: Finding) => RULES.find((r) => r.id === f.rule) ?? PARENTS.find((p) => p.id === f.rule)
   const entry = (f: Finding) => ({
