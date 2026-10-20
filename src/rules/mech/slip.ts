@@ -13,6 +13,8 @@
  * The before-and-after test was added after two false slips in the held-out logs of 2026-02-19/20/22, both in
  * fast swings (about 250° in half a second): the absolute angle lagged the motor by up to 108° and caught up within
  * a second, and in the other it read 268° off for one record.
+ * Seconds are counted from each enable, so a slip split across two seconds needs more than 30° in one of them; the
+ * slips seen were 30–261° in a second and repeated, so a log with one is caught.
  * Why: 2026-02-21 practice: the turret's drive gear fell off; the motor spun and the turret stayed where it was.
  */
 import { plural, round, rule } from '../rule.ts'
@@ -49,7 +51,8 @@ export default rule({
       const worst = slips.reduce((a, b) => (b.motor > a.motor ? b : a))
       problems.push({
         about: pair.mechanism,
-        message: `${pair.mechanism}: the motor turned ${worst.motor.toFixed(0)}° in a second ${match.whenAt(worst.start)} while the mechanism moved ${worst.absolute.toFixed(1)}° (${plural(slips.length, 'second')} like this)`,
+        message: `${pair.mechanism}: the motor turned ${worst.motor.toFixed(0)}° in a second ${match.whenAt(worst.start)} `
+          + `while the mechanism moved ${worst.absolute.toFixed(1)}° (${plural(slips.length, 'second')} like this)`,
         at: worst.start,
         evidence: {
           'seconds the motor turned and the mechanism did not': slips.length,
@@ -59,7 +62,10 @@ export default rule({
         },
         measured: [{ label: 'seconds slipping', value: slips.length, unit: 's', threshold: 1 }],
         plot: {
-          signals: [match.signal(pair.motor).times(pair.motorToDegrees, `${pair.mechanism} motor (°)`), match.signal(pair.absolute).times(pair.absoluteToDegrees, `${pair.mechanism} absolute (°)`)],
+          signals: [
+            match.signal(pair.motor).times(pair.motorToDegrees, `${pair.mechanism} motor (°)`),
+            match.signal(pair.absolute).times(pair.absoluteToDegrees, `${pair.mechanism} absolute (°)`),
+          ],
           unit: '°',
           from: worst.start - 3,
           to: worst.start + WINDOW_SECONDS + 3,
@@ -88,7 +94,8 @@ function slipSeconds(pair: SlipCheck, match: MatchView): { start: number; motor:
       const absoluteTravel = Math.abs(absoluteDegrees(end) - absoluteDegrees(t))
       const gapChange = Math.abs(gap(end + WINDOW_SECONDS) - gap(t - WINDOW_SECONDS))
       const slipped = motorTravel > MOTOR_DEGREES && absoluteTravel < FOLLOWS_AT_LEAST * motorTravel
-      if (slipped && gapChange > STILL_OFF_SHARE * motorTravel) out.push({ start: t, motor: motorTravel, absolute: absoluteTravel })
+      if (!slipped || gapChange <= STILL_OFF_SHARE * motorTravel) continue
+      out.push({ start: t, motor: motorTravel, absolute: absoluteTravel })
     }
   }
   return out

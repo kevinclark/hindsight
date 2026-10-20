@@ -151,8 +151,17 @@ export const competition2026: RobotProfile = {
         updating: '/Shooter/Turret/StatorCurrentAmps',
       }],
       limits: { supplyA: 40, supplyEnabled: true, statorA: 40, statorEnabled: true, where: 'TurretIO.java:58-61' },
-      // Nothing for the turret to hold and no hard stop it rests on (soft limits in TurretSubsystem): a stall is a jam.
+      // Nothing for the turret to hold. Stalled short of its setpoint it is jammed (2026-02-21: 6 stalls at -17 to -30°
+      // with the setpoint 3–251° away). Parked at its -270° soft limit (TURRET_MIN_ANGLE, TurretSubsystem.java:55) it
+      // pushes something a few degrees short of it: 15 stalls at -264 to -271°, setpoint -270°, up to 14.7 s at 53 A,
+      // in 10 of the 170 practice logs of 2026-02-19..22.
       neverStalls: true,
+      setpoint: {
+        position: '/Shooter/Turret/PositionRotations', // a Rotation2d in turret radians
+        setpoint: '/RealOutputs/Shooter/Turret/Setpoint',
+        toDegrees: 180 / Math.PI,
+        where: 'TurretSubsystem.java:55-56 (TURRET_MIN_ANGLE -270°, TURRET_MAX_ANGLE -12.7°)',
+      },
     },
     {
       name: 'Intake rack',
@@ -310,6 +319,7 @@ export const competition2026: RobotProfile = {
       // The turret motor is seeded at boot from the two CANcoders (TurretSubsystem constructor); the code logs that
       // angle every loop as /RealOutputs/Shooter/Turret/Turret Calculated Rotation. The motor's own position is logged
       // as a Rotation2d (radians), which this check reads as rotations, so it can't be compared yet.
+      // mech/slip compares the same pair while the robot runs (slipChecks below).
       { mechanism: 'Turret', notCheckable: 'the turret motor\'s position is logged in radians (a Rotation2d), and this check reads motor positions in rotations' },
       { mechanism: 'Hood', notCheckable: 'the hood has no absolute encoder' },
     ],

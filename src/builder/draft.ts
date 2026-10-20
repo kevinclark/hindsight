@@ -45,6 +45,8 @@ export function draftWarnings(groups: { name: string; groupedBy?: string; motors
 export const NOT_INFERRED = [
   { what: 'zeroing mechanisms', rules: ['mech/zero-not-completed'] },
   { what: 'cameras', rules: ['vision/outliers', 'vision/stale'] },
+  { what: 'motor groups that never stall, and their setpoint', rules: ['mech/stall'] },
+  { what: 'motors paired with an absolute angle (slipChecks)', rules: ['mech/slip'] },
   { what: 'the what-if group (Power tab)', rules: [] as string[] },
 ]
 
