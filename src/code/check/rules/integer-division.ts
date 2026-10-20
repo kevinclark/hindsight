@@ -36,7 +36,7 @@ export default codeRule({
     const shown = valueOf(calculation, project) ? calculation : lossy[0]
     const java = valueOf(shown, project)
     const meant = valueOf(shown, project, { exact: true })
-    if (!java || !meant) return project.couldNotJudge(`couldn't work out ${quote(shown)}`)
+    if (!java || !meant || meant.number === 0) return project.couldNotJudge(`couldn't work out ${quote(shown)}`)
     const error = (java.number - meant.number) / meant.number
     return {
       message: `${quote(shown)} is ${round(java.number, 4)} in Java, not ${round(meant.number, 4)} (${pct(error)})`,

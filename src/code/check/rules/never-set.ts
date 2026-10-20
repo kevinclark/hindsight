@@ -62,14 +62,16 @@ function canBeChecked(declaration: Node, name: string, start: Node): boolean {
   return declaration.type === 'field_declaration' && literal && modifiers.includes('private') && !modifiers.includes('@')
 }
 
-/** Every mention of the variable in its scope: `name`, or `this.name`. Method names and other objects' fields don't count. */
+/**
+ * Every mention of the variable in its scope: `name`, `this.name`, or `other.name` (another object of the same class
+ * can set a private field). Method names don't count.
+ */
 function usesOf(name: string, scope: Node): Node[] {
   return scope.descendantsOfType('identifier').flatMap((id) => {
     const parent = id?.parent
     if (!id || id.text !== name || !parent) return []
     if (parent.type === 'method_invocation' && fills(id, 'name')) return []
-    if (parent.type === 'field_access' && fills(id, 'field')) return field(parent, 'object')?.type === 'this' ? [parent] : []
-    return [id]
+    return parent.type === 'field_access' && fills(id, 'field') ? [parent] : [id]
   })
 }
 

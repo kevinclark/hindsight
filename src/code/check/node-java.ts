@@ -6,5 +6,5 @@ import { loadJava } from './java.ts'
 export function loadJavaFromDisk(): Promise<void> {
   const require = createRequire(import.meta.url)
   const read = (module: string) => new Uint8Array(readFileSync(require.resolve(module)))
-  return loadJava(read('web-tree-sitter/web-tree-sitter.wasm'), read('tree-sitter-java-orchard/tree-sitter-java_orchard.wasm'))
+  return loadJava(async () => [read('web-tree-sitter/web-tree-sitter.wasm'), read('tree-sitter-java-orchard/tree-sitter-java_orchard.wasm')])
 }

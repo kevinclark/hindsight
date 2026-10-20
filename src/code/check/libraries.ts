@@ -47,3 +47,6 @@ export const SUBSYSTEM_TYPES = ['SubsystemBase', 'Subsystem']
 
 /** Calls that return an Optional (`receiver.method`): DriverStation.java `public static Optional<Alliance> getAlliance()`. */
 export const OPTIONAL_CALLS = new Set(['DriverStation.getAlliance'])
+
+/** The WPILib (and AdvantageKit) robot classes: WPILib builds the robot (`RobotBase.startRobot(Robot::new)`). */
+export const ROBOT_BASES = ['TimedRobot', 'LoggedRobot', 'IterativeRobotBase', 'RobotBase', 'TimesliceRobot']

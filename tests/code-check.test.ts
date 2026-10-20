@@ -136,14 +136,14 @@ describe('code/impossible-range', () => {
 describe('code/duplicate-can-id', () => {
   const follower = 'class FollowerIO { TalonFX m; FollowerIO(int id, CANBus bus) { m = new TalonFX(id, bus); } }'
   it('fires at each device given one ID on one bus, through a constructor and a field set once', () => {
-    const robot = 'class Robot {\n private CANBus bus = new CANBus("*");\n FollowerIO a = new FollowerIO(0, bus);\n FollowerIO b = new FollowerIO(0, bus); }'
+    const robot = 'class Robot extends TimedRobot {\n private CANBus bus = new CANBus("*");\n FollowerIO a = new FollowerIO(0, bus);\n FollowerIO b = new FollowerIO(0, bus); }'
     expect(messages(duplicateCanId, { 'FollowerIO.java': follower, 'Robot.java': robot })).toEqual([
       'TalonFX 0 on the CANivore ("*") is also built at Robot.java:4',
       'TalonFX 0 on the CANivore ("*") is also built at Robot.java:3',
     ])
   })
   it('stays quiet on sim and real arms, two kinds of device, two buses, and different IDs', () => {
-    const robot = `class Robot {
+    const robot = `class Robot extends TimedRobot {
       FollowerIO a = isReal() ? new FollowerIO(1, CANIVORE) : null;
       FollowerIO b = isReal() ? null : new FollowerIO(1, CANIVORE);
       CANcoder c = new CANcoder(1, "canivore"); TalonFX d = new TalonFX(2); TalonFX e = new TalonFX(2, "canivore"); TalonFX f = new TalonFX(3);
@@ -173,7 +173,7 @@ describe('the code-check framework', () => {
     const java = `class A { static final int t = 7; static final double M = -(50 / 12);
       void f(double[] xs) { for (double t : xs) { double d = t / 2; } } }`
     expect(messages(integerDivision, java)).toEqual(['50 / 12 is 4 in Java, not 4.1667 (-4.0 %)'])
-    const robot = 'class Robot { TalonFX a = new TalonFX(/* left */ 1); TalonFX b = new TalonFX(1); }'
+    const robot = 'class Robot extends TimedRobot { TalonFX a = new TalonFX(/* left */ 1); TalonFX b = new TalonFX(1); }'
     expect(messages(duplicateCanId, robot)).toHaveLength(2)
   })
   it('drops a crashed check\'s "couldn\'t judge" notes instead of filing them under the next check', () => {
@@ -183,5 +183,51 @@ describe('the code-check framework', () => {
   it('sees a lambda\'s own parameter before a constant of the same name', () => {
     const java = 'class A { static final int x = 50; Supplier<Double> f = () -> 1.0; DoubleUnaryOperator g = x -> { double y = x / 12; return y; }; }'
     expect(messages(integerDivision, java)).toEqual([])
+  })
+})
+
+describe('fixes from the review of 2026-10-20 (Fable + code-review high)', () => {
+  it('loads tree-sitter once when several checks start together', async () => {
+    await Promise.all([loadJavaFromDisk(), loadJavaFromDisk(), loadJavaFromDisk()])
+    expect(messages(integerDivision, 'class A { static final double R = 50 / 12; }')).toHaveLength(1)
+  })
+  it('duplicate-can-id: a class nothing builds builds no devices', () => {
+    const java = { 'Robot.java': 'class Robot extends TimedRobot { TalonFX a = new TalonFX(5); }', 'OldShooterIO.java': 'class OldShooterIO { TalonFX m = new TalonFX(5); }' }
+    expect(messages(duplicateCanId, java)).toEqual([])
+  })
+  it('duplicate-can-id: a field set in the constructor isn\'t read from a method call\'s arguments', () => {
+    const java = {
+      'IO.java': 'class IO { private final int id; TalonFX m; IO(int id, CANBus b) { this.id = id; } void build(int x, int y) { m = new TalonFX(this.id); } }',
+      'Robot.java': 'class Robot extends TimedRobot { IO a = new IO(5, bus); IO b = new IO(6, bus); void f() { a.build(5, 5); b.build(5, 5); } }',
+    }
+    expect(messages(duplicateCanId, java)).toEqual([])
+  })
+  it('duplicate-can-id: `if (x)` and `if (!x)` are the two arms of one fork', () => {
+    const java = 'class Robot extends TimedRobot { TalonFX a, b; Robot() { if (Robot.isReal()) { a = new TalonFX(1); } if (!Robot.isReal()) { b = new TalonFX(1); } } }'
+    expect(messages(duplicateCanId, java)).toEqual([])
+  })
+  it('optional-equals: a static Optional field is an Optional, not an Alliance', () => {
+    expect(messages(optionalEquals, 'class R { void f() { a = DriverStation.getAlliance().equals(RobotState.lastAlliance); } }')).toEqual([])
+  })
+  it('never-set: a write through another object of the class counts', () => {
+    expect(messages(neverSet, 'class Pair { private boolean ready = false; void link(Pair other) { other.ready = true; } boolean ok() { return !ready; } }')).toEqual([])
+  })
+  it('impossible-range: through parentheses and inside a longer && chain', () => {
+    const java = 'class R { void f(double x, boolean a) { b = (x >= 1) && (x < 0); c = a && x >= 1 && x < 0; } }'
+    expect(messages(impossibleRange, java)).toEqual([
+      '(x >= 1) && (x < 0) is never true: nothing is >= 1 and < 0',
+      'a && x >= 1 && x < 0 is never true: nothing is >= 1 and < 0',
+    ])
+  })
+  it('a bare name from a library class isn\'t a same-named constant elsewhere; a static import is followed', () => {
+    const java = {
+      'Consts.java': 'class Consts { static final int kDefaultPeriod = 20; static final int TEETH = 50; }',
+      'B.java': 'class B extends TimedRobot { double f() { return kDefaultPeriod / 3; } }',
+      'C.java': 'import static frc.robot.Consts.*;\nclass C { static final double R = TEETH / 12; }',
+    }
+    expect(messages(integerDivision, java)).toEqual(['TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)'])
+  })
+  it('integer-division: a division meant to be 0 isn\'t a percentage of 0, and int overflow isn\'t guessed', () => {
+    expect(messages(integerDivision, 'class A { static final double Z = (1 / 2) * 0; static final double W = 2048 * 2048 * 2048 / 3; }')).toEqual([])
   })
 })

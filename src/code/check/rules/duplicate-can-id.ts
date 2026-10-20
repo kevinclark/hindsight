@@ -11,7 +11,7 @@
  * Why: 2026-Offseason-Robot fd8fa0d and 427d98e, Rebuilt 505d4f1, 39dec94 and f7edbfe, and Charged-Up-Offseason-Training
  * 141b8cd each fixed devices built with an ID another device already had.
  */
-import { lineOf, parts, typeNamed, type Node } from '../java.ts'
+import { fileName, lineOf, parts, typeNamed, type Node } from '../java.ts'
 import { canBothHappen, valueAlong, waysToReach } from '../flow.ts'
 import { baseType, type Project } from '../project.ts'
 import { codeRule, type CodeProblem } from '../rule.ts'
@@ -48,7 +48,12 @@ function devicesBuiltAt(site: Node, project: Project): Device[] {
   const kind = baseType(typeNamed(site))
   const [idArgument, busArgument] = parts(site, 'arguments')
   if (!kind || !DEVICES.includes(kind) || !idArgument) return []
-  const devices = waysToReach(site, project).map((chain) => {
+  const ways = waysToReach(site, project)
+  if (!ways) {
+    project.couldNotJudge(`this ${kind} is built along too many paths to follow`, site)
+    return []
+  }
+  const devices = ways.map((chain) => {
     const id = valueAlong(idArgument, chain, project)
     const bus = busArgument ? valueAlong(busArgument, chain, project) : { value: RIO, at: site }
     if (!id || !bus || typeof id.value !== 'number') return null
@@ -79,7 +84,7 @@ function busLabel(bus: string): string {
 
 /** A finding at each device in a group that another one in it can be built with: each line to change gets one. */
 function clash(key: string, group: Device[], project: Project): CodeProblem[] {
-  const where = (d: Device) => `${project.fileOf(d.at).path.split('/').pop()}:${lineOf(d.at)}`
+  const where = (d: Device) => `${fileName(project.fileOf(d.at).path)}:${lineOf(d.at)}`
   const together = (a: Device, b: Device) => !a.at.equals(b.at) && canBothHappen(a.path, b.path)
   const said = new Set<number>()
   return group.flatMap((device) => {

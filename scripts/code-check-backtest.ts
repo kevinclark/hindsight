@@ -22,7 +22,7 @@ import { CODE_RULES, checkCode, javaFilesAt } from '../src/code/check/index.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import type { CodeFinding } from '../src/code/check/rule.ts'
 import { Project } from '../src/code/check/project.ts'
-import { lineOf, typeNamed } from '../src/code/check/java.ts'
+import { fileName, lineOf, typeNamed } from '../src/code/check/java.ts'
 import { codeHead, codeHints } from '../src/builder/code-hints.ts'
 
 /** How far (lines) a finding may sit from the line the history names: fixes move code a little. */
@@ -33,7 +33,7 @@ interface Reviewed { repo: string; file: string; line: number; rule: string; ver
 interface Cases { history: Case[]; live: Case[]; heads: Record<string, string>; reviewed: Reviewed[] }
 
 const [teamDir, publicDir, publicListPath] = process.argv.slice(2)
-if (!teamDir) throw new Error('usage: code-check-backtest.ts <team-repos-dir> [<public-repos-dir> <public-list.json>]')
+if (!teamDir || (publicDir && !publicListPath)) throw new Error('usage: code-check-backtest.ts <team-repos-dir> [<public-repos-dir> <public-list.json>]')
 const cases: Cases = JSON.parse(readFileSync(new URL('code-check-cases.json', import.meta.url), 'utf8'))
 const shipped = new Set(CODE_RULES.map((r) => r.id))
 const failures: string[] = []
@@ -89,7 +89,7 @@ async function readHeads(dir: string, heads: Record<string, string>, reviewed: R
   for (const [name, commit] of Object.entries(heads)) {
     for (const f of await findingsAt(repoAt(dir, name), commit)) {
       const verdict = reviewed.find((r) => r.repo === name && r.rule === f.rule && r.line === f.line && sameFile(f, r.file))
-      const where = `${name} ${f.file.split('/').pop()}:${f.line} ${f.rule}`
+      const where = `${name} ${fileName(f.file)}:${f.line} ${f.rule}`
       if (!verdict) failures.push(`not reviewed: ${where}: ${f.message}`)
       else if (verdict.verdict === 'false' && shipped.has(f.rule)) failures.push(`false hit from a shipped rule: ${where}: ${verdict.why}`)
       const counts = tally.get(f.rule) ?? { real: 0, false: 0 }

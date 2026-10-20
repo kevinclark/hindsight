@@ -4,7 +4,7 @@
  * true })` is what the code meant, every division done in full (4.1667). Anything it can't work out (a method call, a
  * variable that can change, a name with two different values) is null.
  */
-import { codeOf, field, modifiersOf, operatorOf, parts, typeNamed, type Node } from './java.ts'
+import { classAround, codeOf, field, modifiersOf, nameOf, operatorOf, parts, typeNamed, type Node } from './java.ts'
 import type { Project } from './project.ts'
 import { declaredType, localNamed } from './types.ts'
 
@@ -24,6 +24,8 @@ const ARITHMETIC = ['+', '-', '*', '/', '%']
 
 /** `a + b`, `a / b`, …: arithmetic, as opposed to `a && b` or `a < b`. */
 export const isArithmetic = (node: Node | null | undefined) => node?.type === 'binary_expression' && ARITHMETIC.includes(operatorOf(node) ?? '')
+/** Java's int holds up to this; past it Java wraps round, which isn't worked out here (no FRC case so far). */
+const LARGEST_INT = 2 ** 31 - 1
 /** Constants defined from other constants, this many deep, are as far as it looks (a cycle stops here too). */
 const MOST_HOPS = 8
 
@@ -64,6 +66,11 @@ export function valueOf(node: Node | null, project: Project, options = { exact: 
 
 /** `a op b` by Java's rules: two whole numbers make a whole number, and dividing them drops the remainder. */
 function arithmetic(op: string | null, a: Value | null, b: Value | null, exact: boolean): Value | null {
+  const result = exactly(op, a, b, exact)
+  return result?.whole && Math.abs(result.number) > LARGEST_INT ? null : result
+}
+
+function exactly(op: string | null, a: Value | null, b: Value | null, exact: boolean): Value | null {
   if (!a || !b) return null
   const whole = a.whole && b.whole
   if (op === '+') return { number: a.number + b.number, whole }
@@ -75,13 +82,13 @@ function arithmetic(op: string | null, a: Value | null, b: Value | null, exact: 
 }
 
 /**
- * A `final` field with this name (`GEAR_RATIO`, `IndexerIO.GEAR_RATIO`), when every field of that name in the project
- * has the same value. Whole or not comes from its declared type: `static final double TICKS = 2048` is a decimal.
+ * The `final` field a name means (`GEAR_RATIO`, `IndexerIO.GEAR_RATIO`), when every field it could mean has the same
+ * value. Whole or not comes from its declared type: `static final double TICKS = 2048` is a decimal.
  */
 function constantNamed(node: Node, project: Project, valueOfInitialiser: (n: Node | null) => Value | null): Value | null {
   const name = node.type === 'field_access' ? field(node, 'field')?.text : node.text
   if (!name || (node.type === 'identifier' && localNamed(node, name))) return null
-  const values = project.fieldsNamed(name).map((declarator) => {
+  const values = fieldsMeant(node, name, project).map((declarator) => {
     const declaration = declarator.parent
     if (!declaration || !modifiersOf(declaration).includes('final')) return null
     const value = valueOfInitialiser(field(declarator, 'value'))
@@ -90,4 +97,32 @@ function constantNamed(node: Node, project: Project, valueOfInitialiser: (n: Nod
   const [first] = values
   if (!first || values.some((v) => v?.number !== first.number || v.whole !== first.whole)) return null
   return first
+}
+
+/**
+ * The fields a name can mean: `Owner.NAME` is Owner's; a bare NAME is the enclosing classes' (and the project classes
+ * above them), else a class the file imports statically (`import static frc.robot.Constants.*`). A name from a
+ * library class (TimedRobot's kDefaultPeriod) means none: never a same-named constant elsewhere in the project.
+ */
+function fieldsMeant(node: Node, name: string, project: Project): Node[] {
+  if (node.type === 'field_access') {
+    const owner = field(node, 'object')?.text.split('.').pop() ?? null
+    return project.membersNamed(project.classNamed(owner), 'field_declaration', name)
+  }
+  for (let cls = classAround(node); cls; cls = classAround(cls)) {
+    const own = project.membersNamed(cls, 'field_declaration', name)
+    if (own.length) return own
+  }
+  const imported = staticImports(project.fileOf(node).tree.rootNode)
+  return project.fieldsNamed(name).filter((d) => imported.includes(nameOf(classAround(d) ?? d) ?? ''))
+}
+
+/** The classes a file imports static members from: `import static frc.robot.Constants.*` gives "Constants". */
+function staticImports(root: Node): string[] {
+  return parts(root).filter((n) => n.type === 'import_declaration').flatMap((n) => {
+    const path = /^import\s+static\s+([\w.]+?)(\.\*)?\s*;/.exec(codeOf(n))
+    if (!path) return []
+    const segments = path[1].split('.')
+    return [segments[segments.length - (path[2] ? 1 : 2)]]
+  })
 }

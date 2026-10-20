@@ -16,6 +16,7 @@ export class Project {
   private declared = new Map<string, Map<string, Node[]>>()
 
   private unjudged: { why: string; at?: Node }[] = []
+  private byType = new Map<string, Node[]>()
 
   constructor(sources: { path: string; text: string }[]) {
     this.files = sources.map((s) => parseJava(s.path, s.text))
@@ -67,7 +68,11 @@ export class Project {
 
   /** Every node of one type, in every file: `nodes('object_creation_expression')`. */
   nodes(type: string): Node[] {
-    return this.files.flatMap((f) => f.tree.rootNode.descendantsOfType(type).filter((n) => n !== null))
+    const known = this.byType.get(type)
+    if (known) return known
+    const found = this.files.flatMap((f) => f.tree.rootNode.descendantsOfType(type).filter((n) => n !== null))
+    this.byType.set(type, found)
+    return found
   }
 
   fileOf(node: Node): JavaFile {

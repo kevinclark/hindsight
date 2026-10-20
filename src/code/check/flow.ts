@@ -5,7 +5,8 @@
  * reach a piece of code; `valueAlong` works out a value along one chain; `canBothHappen` tells whether two chains can
  * both run (not when they sit in different arms of an `if`, `? :` or `switch` on the same condition).
  */
-import { classAround, codeOf, enclosing, field, isInside, nameOf, parts, superclassName, typeNamed, type Node } from './java.ts'
+import { classAround, codeOf, enclosing, field, isInside, modifiersOf, nameOf, parts, superclassName, typeNamed, type Node } from './java.ts'
+import { ROBOT_BASES } from './libraries.ts'
 import { baseType, type Project } from './project.ts'
 import { localNamed, typeOf } from './types.ts'
 import { valueOf } from './values.ts'
@@ -20,19 +21,29 @@ export interface Found {
 
 /** How many calls back it follows. */
 const MOST_CALLS = 6
+/** More ways than this to reach one piece of code and it gives up on it ("not judged"): assumed, a guard on time. */
+const MOST_WAYS = 200
 const DECLARATIONS = ['constructor_declaration', 'method_declaration', 'field_declaration']
 const FORKS = ['if_statement', 'ternary_expression', 'switch_block']
 
 /**
- * Each chain of calls that reaches this code, innermost call first. `[[]]` when it runs without a call from the
- * project (a robot's own constructor, a method WPILib calls).
+ * Each chain of calls that reaches this code, innermost call first: `[[]]` when it runs without a call from the
+ * project (the robot's constructor, a method WPILib calls), none when it never runs (a class nothing builds), and null
+ * when there are too many to follow.
  */
-export function waysToReach(node: Node, project: Project, calls = 0): Node[][] {
+export function waysToReach(node: Node, project: Project, calls = 0): Node[][] | null {
   const declaration = enclosing(node, DECLARATIONS)
   if (!declaration || calls >= MOST_CALLS) return [[]]
   const callers = callersOf(declaration, project)
-  if (callers.length === 0) return [[]]
-  return callers.flatMap((call) => waysToReach(call, project, calls + 1).map((chain) => [call, ...chain]))
+  if (callers.length === 0) return runsUncalled(declaration, project) ? [[]] : []
+  const ways: Node[][] = []
+  for (const call of callers) {
+    const outer = waysToReach(call, project, calls + 1)
+    if (!outer) return null
+    ways.push(...outer.map((chain) => [call, ...chain]))
+    if (ways.length > MOST_WAYS) return null
+  }
+  return ways
 }
 
 /** The value of `expr` when its code is reached through `chain` (from waysToReach), or null when it can't tell. */
@@ -45,7 +56,7 @@ export function valueAlong(expr: Node | null, chain: Node[], project: Project): 
   const name = expr.type === 'identifier' ? expr.text : thisField(expr)
   if (!name) return null
   const local = expr.type === 'identifier' ? localNamed(expr, name) : null
-  if (local?.type === 'formal_parameter') return valueAlong(argumentFor(local, chain[0]), chain.slice(1), project)
+  if (local?.type === 'formal_parameter') return valueAlong(argumentFor(local, chain[0], project), chain.slice(1), project)
   const set = local ? setOnce(local, enclosing(local, ['block']) ?? local) : setOnceInClass(expr, name, project)
   return set ? valueAlong(set, chain, project) : null
 }
@@ -79,10 +90,24 @@ function callsInto(call: Node, cls: Node, project: Project): boolean {
   return receiver.text === nameOf(cls) || project.lineage(project.classNamed(typeOf(receiver, project))).some(isCls)
 }
 
-/** What `call` passes for a parameter of the constructor or method it calls; null when it passes something else. */
-function argumentFor(parameter: Node, call: Node | undefined): Node | null {
+/**
+ * Code nothing in the project calls still runs when it is a method (WPILib calls robotPeriodic), a static field, the
+ * robot class (WPILib builds it: `Robot::new`), or a class with subclasses (built through them). Otherwise the class
+ * is never built: an old IO class left in the code.
+ */
+function runsUncalled(declaration: Node, project: Project): boolean {
+  const cls = classAround(declaration)
+  const name = cls && nameOf(cls)
+  if (!cls || !name || declaration.type === 'method_declaration' || modifiersOf(declaration).includes('static')) return true
+  if (ROBOT_BASES.includes(superclassName(project.lineage(cls).at(-1) ?? cls) ?? '')) return true
+  const builtByReference = project.nodes('method_reference').some((r) => r.text.replace(/\s+/g, '') === `${name}::new`)
+  return builtByReference || project.nodes('class_declaration').some((c) => superclassName(c) === name)
+}
+
+/** What `call` passes for a parameter of the constructor or method it calls; null when it calls something else. */
+function argumentFor(parameter: Node, call: Node | undefined, project: Project): Node | null {
   const declaration = enclosing(parameter, ['constructor_declaration', 'method_declaration'])
-  if (!call || !declaration) return null
+  if (!call || !declaration || !callersOf(declaration, project).some((c) => c.equals(call))) return null
   const parameters = parametersOf(declaration)
   const passed = argumentsOf(call)
   return passed.length === parameters.length ? (passed[parameters.findIndex((p) => p.equals(parameter))] ?? null) : null
@@ -132,7 +157,12 @@ function armsAround(node: Node): { condition: string; arm: string }[] {
     const arm = armOf(node, fork)
     const owner = fork.type === 'switch_block' ? fork.parent : fork
     const condition = owner && field(owner, 'condition')
-    if (arm && condition) arms.push({ condition: codeOf(condition).replace(/^\((.*)\)$/, '$1'), arm })
+    if (!arm || !condition) continue
+    // `if (!isReal())` is the other arm of `if (isReal())`.
+    const tested = codeOf(condition).replace(/^\((.*)\)$/, '$1')
+    const negated = /^!\s*[\w.()]+$/.test(tested)
+    const flipped = arm === 'then' ? 'else' : arm === 'else' ? 'then' : arm
+    arms.push(negated ? { condition: tested.replace(/^!\s*/, ''), arm: flipped } : { condition: tested, arm })
   }
   return arms
 }

@@ -36,9 +36,8 @@ export default codeRule({
 /** A call in the Optional table: `DriverStation.getAlliance()`. */
 const isOptionalCall = (node: Node) => node.type === 'method_invocation' && OPTIONAL_CALLS.has(`${field(node, 'object')?.text}.${nameOf(node)}`)
 
-/** A literal, or a class's constant (`Alliance.Blue`, `DriverStation.Alliance.Red`): never an Optional. */
+/** A literal, or an Alliance (`Alliance.Blue`, `DriverStation.Alliance.Red`): never an Optional. */
 function isPlainValue(node: Node): boolean {
   if (LITERALS.includes(node.type)) return true
-  const owner = field(node, 'object')
-  return node.type === 'field_access' && /^[A-Z]/.test(owner?.text.split('.').pop() ?? '')
+  return node.type === 'field_access' && /(^|\.)Alliance$/.test(field(node, 'object')?.text ?? '')
 }

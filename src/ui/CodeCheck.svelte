@@ -8,6 +8,7 @@
   import { codeFolder } from './code-folder.svelte.ts'
   import { CODE_RULES, checkFolder, type FolderCheck } from '../code/check/index.ts'
   import { loadJavaInPage } from '../code/check/browser-java.ts'
+  import { fileName } from '../code/check/java.ts'
   import { codeHead } from '../builder/code-hints.ts'
   import { GitRepo } from '../code/git.ts'
 
@@ -24,6 +25,7 @@
     const sha = robotSha
     void codeFolder.version
     if (!code) {
+      latest++                                  // a run still going when the folder was forgotten is dropped too
       result = null
       return
     }
@@ -38,7 +40,6 @@
   /** Findings grouped by check, in CODE_RULES order (the ones that cost a match most directly first). */
   const groups = $derived(CODE_RULES.map((rule) => (result?.report.findings ?? []).filter((f) => f.rule === rule.id)).filter((g) => g.length > 0))
   const short = (sha: string) => sha.slice(0, 7)
-  const fileName = (path: string) => path.split('/').pop() ?? path
 </script>
 
 <section class="code-check" aria-label="Code check: context for the software lead, never changes the verdict">

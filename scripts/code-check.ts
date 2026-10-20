@@ -29,6 +29,7 @@ const files = await javaFilesAt(repo, commit)
 
 if (showTree) {
   const [name, line] = (wanted ?? '').split(':')
+  if (!name || !Number(line)) throw new Error('usage: code-check.ts --tree <folder> File.java:50')
   const file = files.find((f) => f.path === name || f.path.endsWith(`/${name}`))
   if (!file) throw new Error(`no ${name} in ${commit.slice(0, 7)}`)
   const tree = parseJava(file.path, file.text).tree

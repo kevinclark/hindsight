@@ -13,14 +13,22 @@ export type { Node }
 export interface JavaFile { path: string; text: string; tree: Tree }
 
 let parser: Parser | null = null
+let loading: Promise<void> | null = null
 
-/** Loads tree-sitter and the Java grammar, once. The page passes the two .wasm files inlined; node reads them from disk. */
-export async function loadJava(runtimeWasm: Uint8Array, grammarWasm: Uint8Array): Promise<void> {
-  if (parser) return
-  await Parser.init({ wasmBinary: runtimeWasm })
-  const java = await Language.load(grammarWasm)
-  parser = new Parser()
-  parser.setLanguage(java)
+/**
+ * Loads tree-sitter and the Java grammar, once, however many checks ask at the same time (two loads at once break
+ * tree-sitter). `wasm` gives the two .wasm files: inlined in the page, read from disk under node.
+ */
+export function loadJava(wasm: () => Promise<[runtime: Uint8Array, grammar: Uint8Array]>): Promise<void> {
+  loading ??= (async () => {
+    const [runtime, grammar] = await wasm()
+    await Parser.init({ wasmBinary: runtime })
+    const java = await Language.load(grammar)
+    const ready = new Parser()
+    ready.setLanguage(java)
+    parser = ready
+  })()
+  return loading
 }
 
 export function parseJava(path: string, text: string): JavaFile {
@@ -29,6 +37,9 @@ export function parseJava(path: string, text: string): JavaFile {
   if (!tree) throw new Error(`couldn't parse ${path}`)
   return { path, text, tree }
 }
+
+/** "IndexerIO.java" from "src/main/java/frc/robot/subsystems/indexer/IndexerIO.java". */
+export const fileName = (path: string) => path.split('/').pop() ?? path
 
 /** The line a node starts on, counting from 1 as an editor does. */
 export const lineOf = (node: Node) => node.startPosition.row + 1
