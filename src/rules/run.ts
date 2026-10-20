@@ -361,7 +361,7 @@ function toPlot(p: Problem, view: MatchView): Plot | undefined {
   return { from, to, lines, unit: p.plot.unit ?? '', threshold: p.plot.line, markers: p.plot.marks?.map((t) => ({ t, label: '' })) }
 }
 
-/** The evidence without the entries a rule left undefined. */
-function definedOnly(evidence: Problem['evidence']): Record<string, number | string> {
+/** The evidence without the entries a rule left undefined. Code checks use it too (src/code/check/rule.ts). */
+export function definedOnly(evidence: Problem['evidence']): Record<string, number | string> {
   return Object.fromEntries(Object.entries(evidence ?? {}).filter((e): e is [string, number | string] => e[1] !== undefined))
 }

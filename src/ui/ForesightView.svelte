@@ -20,6 +20,7 @@
   import type { VerdictItem } from '../foresight/verdict.ts'
   import { didNotRun } from '../report/foresight-model.ts'
   import ForesightReport from './ForesightReport.svelte'
+  import CodeCheck from './CodeCheck.svelte'
 
   let { history, onPitCheck }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void } = $props()
 
@@ -246,6 +247,8 @@
       {/if}
     </section>
   {/if}
+
+  <CodeCheck robotSha={checked?.match.build.sha || null} robotDirty={!!checked && /uncommitted/i.test(checked.match.build.dirty)} />
 
   {#if status && status.state !== 'closed'}
     <details class="readings" open>

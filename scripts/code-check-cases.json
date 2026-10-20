@@ -1,0 +1,648 @@
+{
+ "about": "Evidence for scripts/code-check-backtest.ts. Bug fixes and live bugs from read-only study of 8033's own robot repos (github.com/HighlanderRobotics, 2026-10-20). Repo and commit only; lines are in the fix's parent (history) or at the commit (live).",
+ "history": [
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "dc7418c",
+   "rule": "code/integer-division",
+   "file": "DrumSubsystem.java",
+   "lines": [
+    32,
+    34
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "dd1f33c",
+   "rule": "code/integer-division",
+   "file": "IndexerIO.java",
+   "lines": [
+    51
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "3b31ea3",
+   "rule": "code/integer-division",
+   "file": "DumperSwerveConstants.java",
+   "lines": [
+    122
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Charged-Up",
+   "commit": "ecbf5e1",
+   "rule": "code/integer-division",
+   "file": "HighlanderFalcon.java",
+   "lines": [
+    16
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "19c911e",
+   "rule": "code/integer-division",
+   "file": "TurretIO.java",
+   "lines": [
+    28
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Reefscape",
+   "commit": "8a877fe",
+   "rule": "code/integer-division",
+   "file": "ShoulderSubsystem.java",
+   "lines": [
+    11
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "afa0259",
+   "rule": "code/never-set",
+   "file": "FieldUtils.java",
+   "lines": [
+    147
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "327a449",
+   "rule": "code/optional-equals",
+   "file": "Robot.java",
+   "lines": [
+    430
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "ae671de",
+   "rule": "code/discarded-result",
+   "file": "Robot.java",
+   "lines": [
+    439
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Reefscape",
+   "commit": "afc174e",
+   "rule": "code/discarded-result",
+   "file": "Superstructure.java",
+   "lines": [
+    616,
+    619,
+    622
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "fd8fa0d",
+   "rule": "code/duplicate-can-id",
+   "file": "IndexerIO.java",
+   "lines": [
+    87,
+    91,
+    95
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "427d98e",
+   "rule": "code/duplicate-can-id",
+   "file": "DrumSubsystem.java",
+   "lines": [
+    92,
+    95,
+    98
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "505d4f1",
+   "rule": "code/duplicate-can-id",
+   "file": "PivotIOSim.java",
+   "lines": [
+    95
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "39dec94",
+   "rule": "code/duplicate-can-id",
+   "file": "PivotIOReal.java",
+   "lines": [
+    131
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "f7edbfe",
+   "rule": "code/duplicate-can-id",
+   "file": "Robot.java",
+   "lines": [
+    361,
+    364
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Charged-Up-Offseason-Training",
+   "commit": "141b8cd",
+   "rule": "code/duplicate-can-id",
+   "file": "RobotContainer.java",
+   "lines": [
+    33,
+    37,
+    41,
+    45
+   ],
+   "expect": "fires",
+   "why": "the four ENCODER_ID constants (Constants.java:16-28) are all 0; the CANcoders are built where RobotContainer passes them"
+  }
+ ],
+ "live": [
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "cb68b20",
+   "rule": "code/integer-division",
+   "file": "IndexerIO.java",
+   "lines": [
+    50
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "cb68b20",
+   "rule": "code/integer-division",
+   "file": "DumperSwerveConstants.java",
+   "lines": [
+    233,
+    234
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "3eca5e5",
+   "rule": "code/integer-division",
+   "file": "R1WispSwerveConstants.java",
+   "lines": [
+    163
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "cb68b20",
+   "rule": "code/never-set",
+   "file": "Robot.java",
+   "lines": [
+    91
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Robot-Template",
+   "commit": "79ca4c1",
+   "rule": "code/optional-equals",
+   "file": "Robot.java",
+   "lines": [
+    295
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Reefscape",
+   "commit": "6d9065b",
+   "rule": "code/optional-equals",
+   "file": "Robot.java",
+   "lines": [
+    1135
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "commit": "7c09472",
+   "rule": "code/optional-equals",
+   "file": "Robot.java",
+   "lines": [
+    841,
+    961,
+    973
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "cb68b20",
+   "rule": "code/discarded-result",
+   "file": "Camera.java",
+   "lines": [
+    224,
+    238,
+    251
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "cb68b20",
+   "rule": "code/impossible-range",
+   "file": "Robot.java",
+   "lines": [
+    248
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "3eca5e5",
+   "rule": "code/never-set",
+   "file": "FieldUtils.java",
+   "lines": [
+    147
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "3eca5e5",
+   "rule": "code/duplicate-can-id",
+   "file": "Robot.java",
+   "lines": [
+    307,
+    316,
+    423,
+    431
+   ],
+   "expect": "fires",
+   "why": "in simulation only: HoodIOSim and FlywheelIOSim are both given 11, in the ALPHA and the COMP robot"
+  }
+ ],
+ "heads": {
+  "2025-Offseason-Robot": "7c09472",
+  "2026-Offseason-Robot": "cb68b20",
+  "2026-Robot-Template": "79ca4c1",
+  "Charged-Up": "4475dfc",
+  "Charged-Up-Offseason-Training": "690f292",
+  "Crescendo": "fb616f2",
+  "Rapid-React": "a29bfe4",
+  "Rebuilt": "3eca5e5",
+  "Reefscape": "6d9065b",
+  "SwerveTemplate2025": "160b3db"
+ },
+ "reviewed": [
+  {
+   "repo": "Reefscape",
+   "file": "AlphaSwerveConstants.java",
+   "line": 179,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Reefscape",
+   "file": "AlphaSwerveConstants.java",
+   "line": 180,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "AlphaSwerveConstants.java",
+   "line": 197,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "AlphaSwerveConstants.java",
+   "line": 198,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2026-Robot-Template",
+   "file": "AlphaSwerveConstants.java",
+   "line": 281,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2026-Robot-Template",
+   "file": "AlphaSwerveConstants.java",
+   "line": 282,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "AlphaSwerveConstants.java",
+   "line": 286,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "AlphaSwerveConstants.java",
+   "line": 287,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Reefscape",
+   "file": "BansheeSwerveConstants.java",
+   "line": 239,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Reefscape",
+   "file": "BansheeSwerveConstants.java",
+   "line": 240,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "Camera.java",
+   "line": 224,
+   "rule": "code/discarded-result",
+   "verdict": "real",
+   "why": "real: the value is built and never used"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "Camera.java",
+   "line": 238,
+   "rule": "code/discarded-result",
+   "verdict": "real",
+   "why": "real: the value is built and never used"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "Camera.java",
+   "line": 251,
+   "rule": "code/discarded-result",
+   "verdict": "real",
+   "why": "real: the value is built and never used"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "DumperSwerveConstants.java",
+   "line": 233,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "DumperSwerveConstants.java",
+   "line": 234,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "FieldUtils.java",
+   "line": 147,
+   "rule": "code/never-set",
+   "verdict": "real",
+   "why": "real: the closest-trench search never updates minDistance (2026-Offseason-Robot fixed the same code in afa0259)"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "IndexerIO.java",
+   "line": 50,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real: GEAR_RATIO = 50 / 12 is 4, not 4.17 (-4.0 %); feeds SensorToMechanismRatio"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "file": "KelpieSwerveConstants.java",
+   "line": 173,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Reefscape",
+   "file": "KelpieSwerveConstants.java",
+   "line": 173,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "file": "KelpieSwerveConstants.java",
+   "line": 174,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Reefscape",
+   "file": "KelpieSwerveConstants.java",
+   "line": 174,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "file": "OffseasonBotSwerveConstants.java",
+   "line": 93,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "file": "OffseasonBotSwerveConstants.java",
+   "line": 94,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "R1WispSwerveConstants.java",
+   "line": 163,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real: the turn gear ratio 287 / 11 is 26, not 26.09 (-0.35 %)"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "R1WispSwerveConstants.java",
+   "line": 268,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "R1WispSwerveConstants.java",
+   "line": 269,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Reefscape",
+   "file": "Robot.java",
+   "line": 1135,
+   "rule": "code/optional-equals",
+   "verdict": "real",
+   "why": "real: always false, so the blue branch never runs"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "Robot.java",
+   "line": 248,
+   "rule": "code/impossible-range",
+   "verdict": "real",
+   "why": "real: no value is in the range, so the branch never runs"
+  },
+  {
+   "repo": "2026-Robot-Template",
+   "file": "Robot.java",
+   "line": 295,
+   "rule": "code/optional-equals",
+   "verdict": "real",
+   "why": "real: always false, so the blue branch never runs"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "Robot.java",
+   "line": 307,
+   "rule": "code/duplicate-can-id",
+   "verdict": "real",
+   "why": "real, in simulation only: two sim IOs given ID 11"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "Robot.java",
+   "line": 316,
+   "rule": "code/duplicate-can-id",
+   "verdict": "real",
+   "why": "real, in simulation only: two sim IOs given ID 11"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "Robot.java",
+   "line": 423,
+   "rule": "code/duplicate-can-id",
+   "verdict": "real",
+   "why": "real, in simulation only: two sim IOs given ID 11"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "Robot.java",
+   "line": 431,
+   "rule": "code/duplicate-can-id",
+   "verdict": "real",
+   "why": "real, in simulation only: two sim IOs given ID 11"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "file": "Robot.java",
+   "line": 841,
+   "rule": "code/optional-equals",
+   "verdict": "real",
+   "why": "real: always false, so the blue branch never runs"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "Robot.java",
+   "line": 91,
+   "rule": "code/never-set",
+   "verdict": "real",
+   "why": "real: never set, so the condition always comes out the same way"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "file": "Robot.java",
+   "line": 961,
+   "rule": "code/optional-equals",
+   "verdict": "real",
+   "why": "real: always false, so the blue branch never runs"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "file": "Robot.java",
+   "line": 973,
+   "rule": "code/optional-equals",
+   "verdict": "real",
+   "why": "real: always false, so the blue branch never runs"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "SeahorseSwerveConstants.java",
+   "line": 104,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "SeahorseSwerveConstants.java",
+   "line": 105,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2026-Robot-Template",
+   "file": "SeahorseSwerveConstants.java",
+   "line": 93,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2026-Robot-Template",
+   "file": "SeahorseSwerveConstants.java",
+   "line": 94,
+   "rule": "code/integer-division",
+   "verdict": "real",
+   "why": "real, tuning-grade: a MotionMagic limit 0.7 % low, copied from one template"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "file": "Superstructure.java",
+   "line": 349,
+   "rule": "code/discarded-result",
+   "verdict": "real",
+   "why": "real: changeStateTo returns a Command, built inside a runOnce lambda and never run"
+  }
+ ]
+}

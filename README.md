@@ -37,6 +37,8 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   is a CTRE PDP 2.0, which has no current telemetry, or when the board is unknown.
 - **Power** tab: lowest voltage and margin to the brownout setting, the loads at the deepest sags, the battery's
   estimated open-circuit voltage against charge drawn, and flywheel current-cap what-ifs with the model's error.
+- **Logging** tab: which signals the checks need that this log is missing, as a to-do list. See
+  [Logging what the checks need](#logging-what-the-checks-need).
 - **Download for Claude** saves `<log>.findings.json` (schema `hindsight.findings/2`: each finding has robot time,
   match time, meaning, ranked causes and next step): findings, evidence, summary
   statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
@@ -221,6 +223,29 @@ settings**: it tells students what to set and which line to change, and they do 
 - The bench model in the tests (spin-up slows by the current ratio; battery = 12.6 V − 11 mΩ × current) predicts the
   real sweep. It only exists to exercise the wizard; the real numbers come from the students' runs.
 - The drive wheel-slip test procedure (not runnable until Kevin agrees it).
+
+## Logging what the checks need
+
+A check can only look at what the robot logged. Hindsight says what is missing, so a team can add it before the match
+where it matters.
+
+- **Logging tab** (Match review): every signal the checks need for this robot profile, marked ✅ logged, ⚠️ logged
+  too slowly or never changes, ❌ not logged, or ⬜ no key in the robot profile. The to-do list comes first. Each line
+  says which checks go dark without the signal, what those checks exist to catch, and the key to log it under. It
+  says what to log, never how: the robot code is the team's to write.
+- **Wanted checks** (same tab): problems no check can catch yet, because the robot doesn't log what it would take.
+  Each becomes a real check once the signal is in a log.
+- **Session view**, "Logging across the session": signals that appeared or vanished between matches, with the build
+  each match ran, and signals missing from every match.
+- **Companion library** (`companion/`, [its README](companion/README.md)): an optional vendordep for AdvantageKit
+  robots.
+  - It logs what AdvantageKit, Phoenix's hoot recording and PhotonVision don't: CANivore bus status, roboRIO CPU and
+    memory, Java heap, and log-drive space.
+  - For each CTRE device passed to `HindsightDevices.watch()`, it also logs whether the device answers, its firmware,
+    its faults and its reboots.
+  - Hindsight and Foresight read these keys when they are there. A robot without the library still gets every other
+    check.
+  - No vendordep is hosted yet: build it from `companion/`.
 
 ## Robot snapshot
 
