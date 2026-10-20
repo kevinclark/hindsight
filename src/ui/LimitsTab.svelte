@@ -30,15 +30,29 @@
     unconstrained: 'unconstrained: never near its limit',
     'no current logged': 'no current logged',
   }
+  const capText = (g: GroupLimits) => (Number.isFinite(g.capPerMotorA) ? `${g.capPerMotorA} A per motor` : 'nothing: both limits switched off')
   const limitText = (l: LimitView) => (l.limitA === null ? 'not set' : `${l.limitA} A, ${l.on ? 'on' : 'OFF'}`)
 </script>
 
-<p class="why">
-  <strong>Stator</strong> current flows through the motor (torque, heat); <strong>supply</strong> current is what it
-  draws from the battery. Supply ≈ stator × duty cycle, so supply can't exceed stator: with the supply limit off, the
-  stator limit is what caps battery draw. Bursts over a limit of {CATCH_UP_SECONDS} s or less are the limiter catching
-  up, not a limit that doesn't hold.
-</p>
+<ul class="summary" aria-label="Summary of the groups below">
+  {#each groups as g (g.group)}
+    <li>
+      <strong>{g.group}</strong>
+      <span class={`chip ${g.verdict.replace(/ /g, '-')}`}>{VERDICT[g.verdict]}</span>
+      <span class="cap" class:off={!Number.isFinite(g.capPerMotorA)}>Battery draw capped at {capText(g)}</span>
+    </li>
+  {/each}
+</ul>
+
+<details class="read">
+  <summary>How to read this</summary>
+  <p class="why">
+    <strong>Stator</strong> current flows through the motor (torque, heat); <strong>supply</strong> current is what it
+    draws from the battery. Supply ≈ stator × duty cycle, so supply can't exceed stator: with the supply limit off, the
+    stator limit is what caps battery draw. Bursts over a limit of {CATCH_UP_SECONDS} s or less are the limiter catching
+    up, not a limit that doesn't hold.
+  </p>
+</details>
 
 {#each groups as g (g.group)}
   <section class="group">
@@ -46,7 +60,7 @@
     <dl class="config">
       <div><dt>Supply limit</dt><dd class:off={g.supply.limitA !== null && !g.supply.on}>{limitText(g.supply)}</dd><dd class="note">{g.supply.note}</dd></div>
       <div><dt>Stator limit</dt><dd class:off={g.stator.limitA !== null && !g.stator.on}>{limitText(g.stator)}</dd><dd class="note">{g.stator.note}</dd></div>
-      <div><dt>Battery draw capped at</dt><dd class:off={!Number.isFinite(g.capPerMotorA)}>{Number.isFinite(g.capPerMotorA) ? `${g.capPerMotorA} A per motor` : 'nothing: both limits switched off'}</dd><dd class="note">{g.motorCount} motors · at the limit {(100 * g.shareAtLimit).toFixed(1)} % of enabled time</dd></div>
+      <div><dt>Battery draw capped at</dt><dd class:off={!Number.isFinite(g.capPerMotorA)}>{capText(g)}</dd><dd class="note">{g.motorCount} motors · at the limit {(100 * g.shareAtLimit).toFixed(1)} % of enabled time</dd></div>
       <div><dt>Set in</dt><dd><code>{g.where}</code></dd></div>
     </dl>
     {#each [g.supply, g.stator] as l (l.kind)}
@@ -136,6 +150,12 @@
 {/each}
 
 <style>
+  .summary { list-style: none; margin: 0.25rem 0 0.5rem; padding: 0; display: grid; gap: 0.15rem; font-size: 0.9rem; }
+  .summary li { display: flex; flex-wrap: wrap; gap: 0 0.6rem; align-items: baseline; }
+  .summary .cap { color: var(--muted); font-size: 0.85rem; }
+  .summary .cap.off { color: var(--error); font-weight: 600; }
+  .read { margin: 0.25rem 0; font-size: 0.85rem; }
+  .read summary { cursor: pointer; color: var(--muted); }
   .why, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
   .group { margin: 1.25rem 0; padding-top: 0.75rem; border-top: 1px solid var(--border); }
   h3 { font-size: 1rem; margin: 0 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }

@@ -3,7 +3,7 @@
   because a logged value holds until the next record. Minimal axes (Tufte: data ink first).
 -->
 <script lang="ts">
-  import type { PlotModel } from './plot-data.ts'
+  import { isBooleanPlot, type PlotModel } from './plot-data.ts'
   import { clock } from '../match/match.ts'
 
   // `compact`: sparkline height for the printed report (2 y-ticks, no x-ticks, tight padding; the unit and time range
@@ -14,7 +14,12 @@
   const PAD = $derived(compact ? { left: 44, right: 10, top: 4, bottom: 10 } : { left: 44, right: 10, top: 18, bottom: 22 })
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
 
+  // A 0/1 signal gets two ticks, at its two values, and no gridlines between (Tufte: the axis fits the data type).
+  // Not in compact mode (the printed sparkline already draws two ticks).
+  const boolean = $derived(!compact && isBooleanPlot(model))
+
   const yRange = $derived.by(() => {
+    if (boolean) return { lo: -0.08, hi: 1.08 }
     let lo = Infinity, hi = -Infinity
     for (const s of model.series) for (const v of s.v) { if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v) } }
     if (model.threshold) { lo = Math.min(lo, model.threshold.value); hi = Math.max(hi, model.threshold.value) }
@@ -58,7 +63,7 @@
     }
     return ticks(lo, hi, 2)
   }
-  const yTicks = $derived(compact ? compactTicks(yRange.lo, yRange.hi) : ticks(yRange.lo, yRange.hi, 4))
+  const yTicks = $derived(boolean ? { values: [0, 1], digits: 0 } : compact ? compactTicks(yRange.lo, yRange.hi) : ticks(yRange.lo, yRange.hi, 4))
   // The time axis reads in match time (what people think in) when the match start is known; robot time otherwise.
   const ms = $derived(xLabel === 's' && model.matchStart != null ? model.matchStart : null)
   const xTicks = $derived(ms === null ? ticks(model.from, model.to, 6) : ticks(model.from - ms, model.to - ms, 6))

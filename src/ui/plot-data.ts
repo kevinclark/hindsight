@@ -35,3 +35,15 @@ export function plotModel(match: Match, spec: PlotSpec): PlotModel {
   }
   return { from: spec.from, to: spec.to, unit: spec.unit, series, threshold: spec.threshold, markers: spec.markers, matchStart: match.matchStart }
 }
+
+/** True when every finite value plotted is 0 or 1 (a boolean signal) and no threshold line needs a numeric axis. */
+export function isBooleanPlot(model: PlotModel): boolean {
+  if (model.threshold) return false
+  let any = false
+  for (const s of model.series) for (const v of s.v) {
+    if (!Number.isFinite(v)) continue
+    if (v !== 0 && v !== 1) return false
+    any = true
+  }
+  return any
+}
