@@ -53,6 +53,23 @@ describe('track record', () => {
   })
 })
 
+describe('real marks', () => {
+  it('count as real on their match, without a known mark, and are not counted as known elsewhere', () => {
+    const events = [mark('real', q(13)), mark('real', q(9), { key: `${RULE} · x` })]
+    const fires = [fire(RULE, q(13)), fire(RULE, q(37))]
+    expect(trackRecord(RULE, triage(events), events, fires)).toEqual({ fired: 3, real: 2, known: 0, wrong: 0, untriaged: 1 })
+  })
+  it('a real mark on this match keeps its red red, whatever was marked wrong elsewhere', () => {
+    expect(demotion(finding(RULE), q7, triage([q2wrong, mark('real', q(7))]))).toBeUndefined()
+    // A real mark on a third match doesn't overrule the wrong mark for this one.
+    expect(demotion(finding(RULE), q7, triage([q2wrong, mark('real', q(13))]))).toEqual(q2wrong)
+  })
+  it('an undone real mark counts as not marked', () => {
+    const events = [mark('real', q(13)), mark('unmark', q(13), { when: '2026-10-21T00:00:00Z' })]
+    expect(trackRecord(RULE, triage(events), events, [])).toEqual({ fired: 1, real: 0, known: 0, wrong: 0, untriaged: 1 })
+  })
+})
+
 describe('a wrong mark demotes the check for its event', () => {
   const t = triage([q2wrong])
   it('turns the same check\'s red amber on another match of the same event', () => {

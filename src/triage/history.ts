@@ -8,7 +8,11 @@
  *   wrong — not a real problem, with the reason ("deliberate A-stop"). Unlike known and fixed, this is about one match
  *           only: the same check on another match may be right. Other matches of the same event show the check's
  *           reds as amber while the mark stands (track-record.ts).
- *   unmark — undo a wrong mark on its match only. (Not "new": a build from before wrong marks skips this line, but
+ *   real  — a real problem on this match, with an optional note (what happened, a link to the report). Also about
+ *           one match only, and it changes nothing on the page: the finding stays where it was, red stays red. It is
+ *           what the check's "How sure" line counts as confirmed. (A known mark would confirm too, but it files every
+ *           later fire of the issue as known, which hides reds for a check with no subject, like comms/loss.)
+ *   unmark — undo a wrong or real mark on its match only. (Not "new": a build from before wrong marks skips this line, but
  *           would read "new" as clearing the issue's known or fixed mark.)
  *   new   — undo: treat it as new again, on every match.
  *
@@ -17,7 +21,7 @@
  * The page also keeps a copy in the browser so a reload doesn't lose it. Save the file to share it.
  */
 
-export type IssueStatus = 'known' | 'fixed' | 'wrong' | 'unmark' | 'new'
+export type IssueStatus = 'known' | 'fixed' | 'wrong' | 'real' | 'unmark' | 'new'
 
 export interface IssueEvent {
   type: 'issue'
@@ -26,7 +30,7 @@ export interface IssueEvent {
   note: string
   /** When the change was made (ISO time). */
   when: string
-  /** The match it was marked on ("<event> <match label>", or the log's file name when it has neither). A wrong mark always has one. */
+  /** The match it was marked on ("<event> <match label>", or the log's file name when it has neither). A wrong or real mark always has one. */
   match?: string
   /** The match's event name, as the Driver Station logged it (absent in files written before wrong marks). */
   event?: string
@@ -62,7 +66,7 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
     try {
       const e = JSON.parse(line)
       if (e.type === 'issue' && typeof e.key === 'string' && ['known', 'fixed', 'new'].includes(e.status)) events.push({ note: '', when: '', ...e })
-      else if (e.type === 'issue' && typeof e.key === 'string' && ['wrong', 'unmark'].includes(e.status) && typeof e.match === 'string' && e.match) events.push({ note: '', when: '', ...e })
+      else if (e.type === 'issue' && typeof e.key === 'string' && ['wrong', 'real', 'unmark'].includes(e.status) && typeof e.match === 'string' && e.match) events.push({ note: '', when: '', ...e })
       else if (e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
       else skipped++
     } catch {
@@ -92,28 +96,34 @@ export interface Triage {
   issues: Map<string, IssueEvent>
   /** Wrong marks still standing, by `matchKey(issue, match)`. */
   wrong: Map<string, IssueEvent>
+  /** Real marks still standing, by `matchKey(issue, match)`. */
+  real: Map<string, IssueEvent>
 }
 
 export const matchKey = (key: string, match: string) => `${key}\u0000${match}`
 
 /**
- * Replay the marks oldest first. Known and fixed apply to the issue in every match; a wrong mark applies to its own
- * match, and only a later mark of the same issue on that same match changes it (known or fixed: it was real after all;
- * unmark: undo just the wrong mark; new: the issue is new again everywhere).
+ * Replay the marks oldest first. Known and fixed apply to the issue in every match; a wrong or real mark applies to its
+ * own match, and only a later mark of the same issue on that same match changes it (wrong and real replace each other;
+ * known or fixed: it was real after all; unmark: undo just the wrong or real mark; new: the issue is new again
+ * everywhere, and on that match).
  */
 export function triage(events: HistoryEvent[]): Triage {
   const issues = new Map<string, IssueEvent>()
   const wrong = new Map<string, IssueEvent>()
+  const real = new Map<string, IssueEvent>()
   for (const e of [...events].sort((x, y) => x.when.localeCompare(y.when))) {
     if (e.type !== 'issue') continue
     const here = e.match ? matchKey(e.key, e.match) : null
-    if (e.status === 'wrong') { wrong.set(here!, e); continue }
     if (here) wrong.delete(here)
+    if (e.status === 'wrong') { real.delete(here!); wrong.set(here!, e); continue }
+    if (e.status === 'real') { real.set(here!, e); continue }
+    if (here && (e.status === 'unmark' || e.status === 'new')) real.delete(here)
     if (e.status === 'unmark') continue
     if (e.status === 'new') issues.delete(e.key)
     else issues.set(e.key, e)
   }
-  return { issues, wrong }
+  return { issues, wrong, real }
 }
 
 /** The code of the latest pit check that came out GO (null if none is on record). */

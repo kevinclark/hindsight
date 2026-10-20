@@ -22,7 +22,7 @@
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
   import { HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, triage, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
-  import { howSure, matchRef, trackRecord, withMarks, wrongHere, type Fire } from './triage/track-record.ts'
+  import { howSure, matchRef, realHere, trackRecord, withMarks, wrongHere, type Fire } from './triage/track-record.ts'
   import type { Finding } from './rules/types.ts'
   import { PROFILES, profileId } from './profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './ui/robot-choice.ts'
@@ -85,6 +85,7 @@
   const marked = (a: Analysis) => withMarks(a, refOf(a), marks)
   const shownCurrent = $derived(current ? marked(current) : undefined)
   const wrongNow = $derived(here ? wrongHere(here, marks) : new Map())
+  const realNow = $derived(here ? realHere(here, marks) : new Map())
   // Every warning or error in the open logs (Match review and Session), for each check's track record.
   const fires = $derived.by(() => {
     const out: Fire[] = []
@@ -207,7 +208,7 @@
 
   function downloadForClaude() {
     if (!current || !shownCurrent) return
-    const json = JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow), null, 1)
+    const json = JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow, realNow), null, 1)
     downloadText(findingsFileName(current.match), json)
   }
 
@@ -230,7 +231,7 @@
     load,
     version: VERSION,
     // For scripts/report.ts: the same builders the buttons use, for the log in view.
-    findingsJson: () => (shownCurrent ? JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow), null, 1) : null),
+    findingsJson: () => (shownCurrent ? JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow, realNow), null, 1) : null),
     findingsFile: () => (current ? findingsFileName(current.match) : null),
     reviewCard: () => (current ? reviewCardOf(current) : null),
     reviewCardPng: async () => (current ? await cardToPngDataUrl(reviewCardOf(current)) : null),
@@ -288,7 +289,7 @@
 
 {#if history.length}
   <p class="history">
-    Known issues: {issues.size} tracked{#if marks.wrong.size}{' · '}{marks.wrong.size} marked not a real problem{/if}{#if unsaved}{' · '}<strong>changes not saved to a file yet</strong>{/if}
+    Known issues: {issues.size} tracked{#if marks.wrong.size}{' · '}{marks.wrong.size} marked not a real problem{/if}{#if marks.real.size}{' · '}{marks.real.size} marked a real problem{/if}{#if unsaved}{' · '}<strong>changes not saved to a file yet</strong>{/if}
     <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button>
   </p>
 {/if}
@@ -350,7 +351,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} {sure} {standing} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>

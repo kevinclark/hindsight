@@ -68,3 +68,30 @@ describe('"not a real problem" marks', () => {
     expect(before(serializeHistory([wrong, { ...wrong, status: 'unmark' }]))).toEqual([])
   })
 })
+
+describe('"real problem" marks', () => {
+  const real: IssueEvent = { type: 'issue', key: 'comms/loss', status: 'real', note: 'test note', when: '2026-10-20T10:00:00Z', match: 'TEST Qualification 2', event: 'TEST' }
+  const at = (e: IssueEvent, when: string, more: Partial<IssueEvent> = {}): IssueEvent => ({ ...e, when, ...more })
+  it('round-trip; need a match; old builds skip them', () => {
+    expect(parseHistory(serializeHistory([real])).events).toEqual([real])
+    const { match: _m, ...noMatch } = real
+    expect(parseHistory(JSON.stringify(noMatch)).skipped).toBe(1)
+    expect(['known', 'fixed', 'new'].includes(real.status)).toBe(false)
+  })
+  it('are about their own match, and never file the issue as known', () => {
+    const t = triage([real])
+    expect(t.real.has(matchKey(real.key, real.match!))).toBe(true)
+    expect(t.issues.size).toBe(0)
+    expect(currentStatus([real]).size).toBe(0)
+  })
+  it('real and wrong replace each other on the same match; unmark and new clear it there; another match is untouched', () => {
+    const wrongLater = at(real, '2026-10-21T00:00:00Z', { status: 'wrong' })
+    expect([triage([real, wrongLater]).real.size, triage([real, wrongLater]).wrong.size]).toEqual([0, 1])
+    expect([triage([wrongLater, at(real, '2026-10-22T00:00:00Z')]).real.size, triage([wrongLater, at(real, '2026-10-22T00:00:00Z')]).wrong.size]).toEqual([1, 0])
+    expect(triage([real, at(real, '2026-10-21T00:00:00Z', { status: 'unmark' })]).real.size).toBe(0)
+    expect(triage([real, at(real, '2026-10-21T00:00:00Z', { status: 'new' })]).real.size).toBe(0)
+    expect(triage([real, at(real, '2026-10-21T00:00:00Z', { status: 'unmark', match: 'TEST Qualification 7' })]).real.size).toBe(1)
+    // A known mark there keeps it: both say real.
+    expect(triage([real, at(real, '2026-10-21T00:00:00Z', { status: 'known' })]).real.size).toBe(1)
+  })
+})

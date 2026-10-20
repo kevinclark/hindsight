@@ -13,7 +13,7 @@
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
   import { keyNumber } from '../report/review-model.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, wrong, sure, statusOf, showNext = false }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, wrong, sure, statusOf, showNext = false, real }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -30,6 +30,8 @@
     issues?: Map<string, IssueEvent>
     /** This match's "not a real problem" marks, by issue key (this row's and the rows under it). */
     wrong?: Map<string, IssueEvent>
+    /** This match's "real problem" marks, by issue key. */
+    real?: Map<string, IssueEvent>
     /** The check's "How sure" line from the team's marks (null: no marks to go on). */
     sure?: (rule: string) => string | null
     statusOf?: (f: Finding) => string | undefined
@@ -39,6 +41,7 @@
   const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
   const rule = $derived(makerOf(finding.rule))
   const wrongMark = $derived(wrong?.get(finding.key))
+  const realMark = $derived(wrongMark ? undefined : real?.get(finding.key))
   const cameBack = $derived(issue?.status === 'fixed' && !fixedLater && !wrongMark)
   const howSure = $derived(sure?.(finding.rule) ?? null)
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
@@ -54,8 +57,9 @@
   function mark(status: IssueStatus) {
     const ask = status === 'known' ? 'What do we know about it? (e.g. "belt slipping on 17/18, new belt before elims")'
       : status === 'fixed' ? 'What fixed it? (e.g. "replaced belt, retensioned")'
-      : status === 'wrong' ? 'Why is this not a real problem on this match? (e.g. "deliberate A-stop", "zero kept through a restart")' : ''
-    let note: string | null = status === 'new' || status === 'unmark' ? '' : window.prompt(ask, status === 'wrong' ? '' : (issue?.note ?? ''))
+      : status === 'wrong' ? 'Why is this not a real problem on this match? (e.g. "deliberate A-stop", "zero kept through a restart")'
+      : status === 'real' ? 'What happened? (optional, e.g. "lost auto" or a link to the report)' : ''
+    let note: string | null = status === 'new' || status === 'unmark' ? '' : window.prompt(ask, status === 'wrong' || status === 'real' ? '' : (issue?.note ?? ''))
     // A wrong mark needs its reason: it turns this check's reds amber on the event's other matches.
     while (status === 'wrong' && note !== null && !note.trim()) note = window.prompt(`A reason is needed. ${ask}`, '')
     if (note === null) return // cancelled
@@ -70,7 +74,8 @@
       <span class="sev" title={LABEL[finding.severity]}><span aria-hidden="true">{ICON[finding.severity]}</span> {LABEL[finding.severity]}</span>
       <span class="title">
         {#if cameBack}<span class="badge back">Came back after a fix</span>{/if}
-        {#if wrongMark}<span class="badge known-badge">Not a real problem</span>{:else if issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
+        {#if wrongMark}<span class="badge known-badge">Not a real problem</span>{:else if realMark}<span class="badge real-badge">Real problem</span>{/if}
+        {#if !wrongMark && issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
         {#if fixedLater && !wrongMark}<span class="badge known-badge">{issue?.when ? 'Fixed after this match' : 'Fixed (date unknown)'}</span>{/if}
         {finding.title}
         {#if nested && finding.explainedBy}<span class="why">↳ {finding.explainedBy.why}</span>{/if}
@@ -84,13 +89,17 @@
     <div class="body">
       {#if wrongMark}
         <p class="issue-note"><strong>Not a real problem</strong> on this match, marked {date(wrongMark.when)}: {wrongMark.note}</p>
-      {:else if issue}
+      {/if}
+      {#if realMark}
+        <p class="issue-note"><strong>A real problem</strong> on this match, marked {date(realMark.when)}{realMark.note ? `: ${realMark.note}` : ''}</p>
+      {/if}
+      {#if !wrongMark && issue}
         <p class="issue-note">
           <strong>{issue.status === 'known' ? 'Known issue' : 'Marked fixed'}</strong> on {date(issue.when)}{issue.match ? ` (${issue.match})` : ''}{issue.note ? `: ${issue.note}` : ''}
         </p>
       {/if}
       {#if finding.demoted}
-        <p class="issue-note">This check was marked not a real problem in {finding.demoted.match} on {date(finding.demoted.when)}{finding.demoted.reason ? ` ("${finding.demoted.reason}")` : ''}, so its reds this event show amber. Mark this one too if it is the same, or as known if it is real.</p>
+        <p class="issue-note">This check was marked not a real problem in {finding.demoted.match} on {date(finding.demoted.when)}{finding.demoted.reason ? ` ("${finding.demoted.reason}")` : ''}, so its reds this event show amber. Mark this one too if it is the same, or as a real problem if it is real.</p>
       {/if}
       {#if howSure}<p class="sure"><strong>How sure:</strong> {howSure}.</p>{/if}
       <table class="evidence">
@@ -123,8 +132,10 @@
       <div class="actions">
         {#if wrongMark || issue?.status !== 'known'}<button onclick={() => mark('known')}>Mark as known…</button>{/if}
         {#if wrongMark || issue?.status !== 'fixed'}<button onclick={() => mark('fixed')}>Mark as fixed…</button>{/if}
+        {#if !realMark}<button onclick={() => mark('real')}>Real problem…</button>{/if}
         {#if !wrongMark}<button onclick={() => mark('wrong')}>Not a real problem…</button>{/if}
-        {#if wrongMark}<button onclick={() => mark('unmark')}>Undo "not a real problem"</button>{:else if issue}<button onclick={() => mark('new')}>Treat as new</button>{/if}
+        {#if wrongMark}<button onclick={() => mark('unmark')}>Undo "not a real problem"</button>{:else if realMark}<button onclick={() => mark('unmark')}>Undo "real problem"</button>{/if}
+        {#if issue && !wrongMark}<button onclick={() => mark('new')}>Treat as new</button>{/if}
       </div>
     </div>
   </details>
@@ -133,7 +144,7 @@
       <summary>Explains {under.length} more ({severityWords(under)})</summary>
       <ul>
         {#each explains as c (c.finding.key + c.finding.time)}
-          <FindingRow finding={c.finding} explains={c.children} nested {analysis} {issues} {wrong} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
+          <FindingRow finding={c.finding} explains={c.children} nested {analysis} {issues} {wrong} {real} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
         {/each}
       </ul>
     </details>
@@ -154,6 +165,7 @@
   .badge { font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.4rem; border-radius: 4px; margin-right: 0.35rem; white-space: nowrap; }
   .back { background: var(--error); color: var(--bg); }
   .known-badge { border: 1px solid var(--muted); color: var(--muted); }
+  .real-badge { border: 1px solid var(--error); color: var(--error); }
   .key { margin-left: 0.5rem; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
   .next { grid-column: 2 / 4; font-size: 0.85rem; color: var(--muted); }
   .rule { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
