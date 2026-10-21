@@ -1,5 +1,5 @@
 {
- "about": "Evidence for scripts/code-check-backtest.ts. Bug fixes and live bugs from read-only study of 8033's own robot repos (github.com/HighlanderRobotics, 2026-10-20). Repo and commit only; lines are in the fix's parent (history) or at the commit (live).",
+ "about": "Evidence for scripts/code-check-backtest.ts. Bug fixes and live bugs from read-only study of 8033's own robot repos (github.com/HighlanderRobotics, 2026-10-20). Repo and commit only; lines are in the fix's parent (history) or at the commit (live). `hints`: the profile builder's CAN ID hints (src/builder/code-hints.ts) at each head, counted: a change either way fails until it is checked by hand and written here.",
  "history": [
   {
    "repo": "2026-Offseason-Robot",
@@ -644,5 +644,47 @@
    "verdict": "real",
    "why": "real: changeStateTo returns a Command, built inside a runOnce lambda and never run"
   }
- ]
+ ],
+ "hints": {
+  "2025-Offseason-Robot": {
+   "withId": 8,
+   "withoutId": 4
+  },
+  "2026-Offseason-Robot": {
+   "withId": 11,
+   "withoutId": 2
+  },
+  "2026-Robot-Template": {
+   "withId": 0,
+   "withoutId": 4
+  },
+  "Charged-Up": {
+   "withId": 0,
+   "withoutId": 0
+  },
+  "Charged-Up-Offseason-Training": {
+   "withId": 9,
+   "withoutId": 0
+  },
+  "Crescendo": {
+   "withId": 12,
+   "withoutId": 2
+  },
+  "Rapid-React": {
+   "withId": 0,
+   "withoutId": 0
+  },
+  "Rebuilt": {
+   "withId": 10,
+   "withoutId": 2
+  },
+  "Reefscape": {
+   "withId": 7,
+   "withoutId": 5
+  },
+  "SwerveTemplate2025": {
+   "withId": 0,
+   "withoutId": 3
+  }
+ }
 }

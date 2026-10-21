@@ -134,6 +134,7 @@
     try {
       await loadJavaInPage()
       useHints(codeHints(read, await codeHead(gitRepoOfFiles(files))), 'code folder')
+      problems = []
     } catch (error) {
       problems = [error instanceof Error ? error.message : String(error)]
     }
@@ -285,7 +286,7 @@
 <div class="loaded">
   {#each logs as l (l.fileName)}<span class="chip">{l.fileName}</span>{/each}
   {#if snapshot}<span class="chip">{snapshot.fileName} · {snapshot.devices.filter((d) => d.isMotor).length} Talon FX</span>{/if}
-  {#if hints}<span class="chip">{hintsFrom}: {hints.sites.length} Talon FX site{hints.sites.length === 1 ? '' : 's'}{hints.sha ? ` · ${hints.branch ?? 'detached'} ${hints.sha.slice(0, 7)}` : ''}</span>{/if}
+  {#if hints}<span class="chip">{hintsFrom}: {hints.sites.length} CAN ID hint{hints.sites.length === 1 ? '' : 's'}{hints.sha ? ` · ${hints.branch ?? 'detached'} ${hints.sha.slice(0, 7)}` : ''}</span>{/if}
 </div>
 {#if hints}{#each hints.notes as n (n)}<p class="note">{n}</p>{/each}{/if}
 

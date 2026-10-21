@@ -111,12 +111,12 @@ const seen = await evalIn(sessionId, `(() => {
 })()`)
 
 // The code folder: its hints label the CAN ID choices.
-const { result: { root: page2 } } = await send('DOM.getDocument', {}, sessionId)
-const { result: { nodeId: codeInput } } = await send('DOM.querySelector', { nodeId: page2.nodeId, selector: 'input[type=file][webkitdirectory]' }, sessionId)
+const { result: { root: freshRoot } } = await send('DOM.getDocument', {}, sessionId)
+const { result: { nodeId: codeInput } } = await send('DOM.querySelector', { nodeId: freshRoot.nodeId, selector: 'input[type=file][webkitdirectory]' }, sessionId)
 await send('DOM.setFileInputFiles', { nodeId: codeInput, files: [codeFolder] }, sessionId)
 await sleep(1500)
 const hinted = await evalIn(sessionId, `(() => {
-  const chip = [...document.querySelectorAll('.chip')].map(c => c.innerText).find(t => /Talon FX site/.test(t)) ?? null
+  const chip = [...document.querySelectorAll('.chip')].map(c => c.innerText).find(t => /CAN ID hint/.test(t)) ?? null
   const options = [...document.querySelectorAll('tr[data-motor^="/Shooter/"] select[data-canid] option')].map(o => o.innerText)
   return { chip, options: [...new Set(options)].filter(o => /FlywheelIO/.test(o)) }
 })()`)
@@ -158,6 +158,7 @@ await sleep(200)
 const duplicateWarning = await evalIn(sessionId, `[...document.querySelectorAll('.warn')].map(w => w.innerText).find(t => /Two groups are called/.test(t)) ?? null`)
 
 const allSelected = seen.canIds.every((c: any) => c.value && c.value !== '')
+const labelled = (id: string) => hinted.options.some((o: string) => o.startsWith(`${id} `) && o.endsWith('FlywheelIO.java:3 (motorID)'))
 const checks: Record<string, boolean> = {
   'motor rows: 10': seen.rows === 10,
   'every CAN ID select has a value': seen.canIds.length === 10 && allSelected,
@@ -173,8 +174,7 @@ const checks: Record<string, boolean> = {
   'saved file has 10 motors': savedMotors === 10,
   'renamed then kept: replaces the old one': renamedList.length === 1 && /Renamed Robot/.test(renamedList[0]) && /in place of "Example Robot"/.test(renamedNote ?? ''),
   'two groups named alike: warned': /"Drive"/.test(duplicateWarning ?? ''),
-  'code folder: 2 Talon FX sites, IDs followed through the constructor': /code folder: 2 Talon FX sites/.test(hinted.chip ?? '')
-    && ['20', '21'].every((id) => hinted.options.some((o: string) => o.startsWith(`${id} `) && o.endsWith('FlywheelIO.java:3 (motorID)'))),
+  'code folder: 2 CAN ID hints, followed through the constructor': /code folder: 2 CAN ID hints/.test(hinted.chip ?? '') && labelled('20') && labelled('21'),
   'no page errors': consoleErrors.length === 0,
 }
 for (const [name, ok] of Object.entries(checks)) console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`)

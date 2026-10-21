@@ -32,6 +32,8 @@ import { loadFixture, CALGAMES, haveCalGames, readInput } from './helpers/load.t
 import { makeSnapshot } from './helpers/make-snapshot.ts'
 
 /** RegExps compared by source and flags. */
+beforeAll(loadJavaFromDisk)
+
 const plain = (x: unknown): unknown => JSON.parse(JSON.stringify(x, (_k, v) => (v instanceof RegExp ? { regexp: v.source, flags: v.flags } : v)))
 const roundTrip = (p: RobotProfile) => toProfile(parseProfileJson(JSON.stringify(fromProfile(p))))
 
@@ -215,7 +217,6 @@ describe('CAN IDs from a robot snapshot', () => {
 })
 
 describe('code hints', () => {
-  beforeAll(loadJavaFromDisk)
   const files = [
     { path: 'src/main/java/frc/robot/Shooter.java', text: 'class Shooter {\n  static final int LEADER_ID = 10;\n  TalonFX a = new TalonFX(LEADER_ID, "canivore");\n  TalonFX b = new TalonFX(11);\n  Shooter(int motorId) { new TalonFX(motorId); }\n}\n' },
     { path: '.git/HEAD', text: 'ref: refs/heads/event\n' },
@@ -241,8 +242,16 @@ describe('code hints', () => {
     expect(h.sites).toEqual([16, 17, null].map((id) => ({ id, expr: 'motorID', bus: 'canBus', file: 'src/FollowerIO.java', line: 3 })))
   })
   it('tells apart two constants of one name by the class written before it', async () => {
-    const java = [{ path: 'src/Hood.java', text: 'class Comp { static final int HOOD_ID = 24; }\nclass Wood { static final int HOOD_ID = 20; }\nclass Hood { TalonFX a = new TalonFX(Comp.HOOD_ID); }\n' }]
-    expect(codeHints(java, await codeHead(null)).sites.map((s) => [s.id, s.expr])).toEqual([[24, 'Comp.HOOD_ID']])
+    const java = [{ path: 'src/Hood.java', text: 'class Comp { static final int HOOD_ID = 31; }\nclass Practice { static final int HOOD_ID = 32; }\nclass Hood { TalonFX a = new TalonFX(Comp.HOOD_ID); }\n' }]
+    expect(codeHints(java, await codeHead(null)).sites.map((s) => [s.id, s.expr])).toEqual([[31, 'Comp.HOOD_ID']])
+  })
+  it('leaves out IDs that only simulation code passes (a class named …Sim, or one building it)', async () => {
+    const java = [
+      { path: 'src/FlywheelIO.java', text: 'class FlywheelIO {\n  FlywheelIO(int leaderID) {\n    new TalonFX(leaderID);\n  }\n}\n' },
+      { path: 'src/FlywheelIOSim.java', text: 'class FlywheelIOSim extends FlywheelIO {\n  FlywheelIOSim(int leaderID) { super(leaderID); }\n}\n' },
+      { path: 'src/Robot.java', text: 'class Robot extends LoggedRobot {\n  Robot() { flywheel = isReal() ? new FlywheelIO(12) : new FlywheelIOSim(11); }\n}\n' },
+    ]
+    expect(codeHints(java, await codeHead(null)).sites.map((s) => [s.id, s.file])).toEqual([[12, 'src/FlywheelIO.java']])
   })
   it('warns when the folder is not the commit the log ran', async () => {
     const h = codeHints(files, await headIn(files))
@@ -316,7 +325,6 @@ describe('review fixes', () => {
   })
 
   it('says so when the Java files build no Talon FX (Kotlin isn\'t read: no team code we have is Kotlin)', async () => {
-    await loadJavaFromDisk()
     const h = codeHints([{ path: 'Shooter.kt', text: 'object Ids { const val LEADER = 10 }\nval a = TalonFX(Ids.LEADER, "rio")\n' }], await codeHead(null))
     expect(h.sites).toEqual([])
     expect(h.notes[0]).toBe('No `new TalonFX(...)` in the folder\'s Java files.')

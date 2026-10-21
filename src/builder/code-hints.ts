@@ -10,15 +10,15 @@
  * `codeHead`.
  */
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
-import type { CodeSource } from '../code/source.ts'
+import { javaFilesAt, type CodeSource } from '../code/source.ts'
 import { valueAlong, waysToReach } from '../code/check/flow.ts'
-import { codeOf, lineOf, parts, typeNamed, type Node } from '../code/check/java.ts'
+import { classAround, codeOf, fileName, lineOf, nameOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, Project } from '../code/check/project.ts'
 
 export interface CodeFile { path: string; text: string }
 
 export interface TalonSite {
-  /** The CAN ID, when it is a number or a constant found in the folder. */
+  /** The CAN ID, when it is a number or a constant found in the folder, or what the call that builds the class passed. */
   id: number | null
   /** What the code passes: "15" or "FLYWHEEL_LEADER_ID" (or a parameter, "motorID", when a call passes the ID). */
   expr: string
@@ -35,8 +35,6 @@ export interface CodeHints {
   branch: string | null
   notes: string[]
 }
-
-const fileName = (p: string) => p.split('/').pop() ?? p
 
 /** The commit the code is on and its branch (null when detached), or why that can't be told. */
 export type CodeHead = { sha: string; branch: string | null } | { why: string }
@@ -62,25 +60,39 @@ function talonSites(java: CodeFile[]): TalonSite[] {
 
 /**
  * One `new TalonFX(…)`, with each ID it is built with: one per chain of calls that reaches it (`new FollowerIO(16, …)`
- * and `new FollowerIO(17, …)` both reach FollowerIO's), or no ID when a chain's can't be worked out. Code nothing
- * builds, or that is reached too many ways to follow, still gets the IDs written as constants.
+ * and `new FollowerIO(17, …)` both reach FollowerIO's), or no ID when a chain's can't be worked out. Chains through
+ * simulation code are left out (see inSimulation). Code nothing builds, or that is reached too many ways to follow,
+ * still gets the IDs written as constants.
+ * Not followed yet: constants in an interface, `Constants.Shooter.ID` when another class is also called Shooter,
+ * `this(…)` calls, and a `? :` choosing the ID. A call is matched to a constructor by its number of arguments only.
  */
 function sitesOf(talon: Node, project: Project): TalonSite[] {
   const [idArgument, busArgument] = parts(talon, 'arguments')
   if (!idArgument) return []
-  const ways = waysToReach(talon, project)
-  const ids = (ways?.length ? ways : [[]]).map((chain) => valueAlong(idArgument, chain, project)?.value)
+  const onRobot = (waysToReach(talon, project) ?? []).filter((chain) => !chain.some(inSimulation))
+  // Nothing on the robot builds it (or too many ways do): read the ID as written, with no call to look through.
+  const chains = onRobot.length ? onRobot : [[]]
+  const ids = chains.map((chain) => valueAlong(idArgument, chain, project)?.value)
+  const each = [...new Set(ids.map((id) => (typeof id === 'number' ? id : null)))]
   const bus = busArgument ? codeOf(busArgument) : null
   const where = { expr: codeOf(idArgument), bus, file: project.fileOf(talon).path, line: lineOf(talon) }
-  return [...new Set(ids.map((id) => (typeof id === 'number' ? id : null)))].map((id) => ({ id, ...where }))
+  return each.map((id) => ({ id, ...where }))
+}
+
+/**
+ * Is this call simulation code: in a class whose name ends in "Sim", or building one (`new FlywheelIOSim(…, 11, 12)`)?
+ * AdvantageKit's IO pattern names them so, and their IDs needn't match the robot's: Rebuilt 3eca5e5 gives the
+ * simulated flywheel 11 and 12, the real hood's and flywheel's IDs.
+ */
+function inSimulation(call: Node): boolean {
+  const named = (name: string | null | undefined) => !!name?.endsWith('Sim')
+  return named(nameOf(classAround(call) ?? call)) || (call.type === 'object_creation_expression' && named(baseType(typeNamed(call))))
 }
 
 /** Hints from the code at a branch or commit (GitHub): every Java file's text at that commit. */
 export async function hintsAt(source: CodeSource, ref: string): Promise<CodeHints> {
   const sha = await source.resolve(ref)
-  const paths = (await source.files(sha)).map((f) => f.path).filter((path) => path.endsWith('.java'))
-  const files = await Promise.all(paths.map(async (path) => ({ path, text: await source.textAt(sha, path) })))
-  return codeHints(files, { sha, branch: branchOf(sha, ref) })
+  return codeHints(await javaFilesAt(source, sha), { sha, branch: branchOf(sha, ref) })
 }
 
 /** The commit a branch or hash names (GitHub), or why it can't be told. */

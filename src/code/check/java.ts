@@ -17,7 +17,8 @@ let loading: Promise<void> | null = null
 
 /**
  * Loads tree-sitter and the Java grammar, once, however many checks ask at the same time (two loads at once break
- * tree-sitter). `wasm` gives the two .wasm files: inlined in the page, read from disk under node.
+ * tree-sitter). `wasm` gives the two .wasm files: inlined in the page, read from disk under node. A load that fails
+ * isn't kept: the next ask tries again.
  */
 export function loadJava(wasm: () => Promise<[runtime: Uint8Array, grammar: Uint8Array]>): Promise<void> {
   loading ??= (async () => {
@@ -27,7 +28,10 @@ export function loadJava(wasm: () => Promise<[runtime: Uint8Array, grammar: Uint
     const ready = new Parser()
     ready.setLanguage(java)
     parser = ready
-  })()
+  })().catch((error: unknown) => {
+    loading = null
+    throw error
+  })
   return loading
 }
 

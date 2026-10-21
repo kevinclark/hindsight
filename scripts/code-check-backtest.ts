@@ -11,13 +11,16 @@
  * - **False hits**: every finding at the pinned heads (`heads`) must be in the reviewed list (`reviewed`), marked real
  *   or false with why. A finding nobody has read fails; so does a false one from a rule that ships.
  * Public repos work the same way, but their reviewed list lives outside this repo (it names other teams' code).
+ * - **Builder hints**: the profile builder's CAN ID hints at each team head, with and without an ID, must equal `hints`.
  * Prints every case and a final PASS or FAIL; exits 1 on FAIL.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { GitRepo } from '../src/code/git.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
-import { CODE_RULES, checkCode, javaFilesAt } from '../src/code/check/index.ts'
+import { CODE_RULES, checkCode } from '../src/code/check/index.ts'
+import { javaFilesAt } from '../src/code/source.ts'
+import { codeHints } from '../src/builder/code-hints.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import type { CodeFinding } from '../src/code/check/rule.ts'
 import { fileName } from '../src/code/check/java.ts'
@@ -27,7 +30,8 @@ const NEAR_LINES = 2
 
 interface Case { repo: string; commit: string; rule: string; file: string; lines: number[]; expect: 'fires' | 'misses'; why?: string }
 interface Reviewed { repo: string; file: string; line: number; rule: string; verdict: 'real' | 'false'; why: string }
-interface Cases { history: Case[]; live: Case[]; heads: Record<string, string>; reviewed: Reviewed[] }
+interface HintCount { withId: number; withoutId: number }
+interface Cases { history: Case[]; live: Case[]; heads: Record<string, string>; reviewed: Reviewed[]; hints: Record<string, HintCount> }
 
 const [teamDir, publicDir, publicListPath] = process.argv.slice(2)
 if (!teamDir || (publicDir && !publicListPath)) throw new Error('usage: code-check-backtest.ts <team-repos-dir> [<public-repos-dir> <public-list.json>]')
@@ -55,6 +59,18 @@ for (const c of cases.live) {
   report(c, fired, `${c.repo} ${c.commit} ${c.file}:${c.lines.join(',')}`)
 }
 for (const [rule, r] of recall) console.log(`recall ${rule}: ${r.fired}/${r.cases}`)
+
+console.log('== The profile builder\'s CAN ID hints at the team heads (src/builder/code-hints.ts)')
+for (const [name, commit] of Object.entries(cases.heads)) {
+  const repo = repoAt(teamDir, name)
+  const sha = await repo.resolve(commit)
+  const { sites } = codeHints(await javaFilesAt(repo, sha), { sha, branch: null })
+  const found = { withId: sites.filter((s) => s.id !== null).length, withoutId: sites.filter((s) => s.id === null).length }
+  const expected = cases.hints[name]
+  const same = found.withId === expected?.withId && found.withoutId === expected?.withoutId
+  if (!same) failures.push(`${name}: ${found.withId} hints with an ID and ${found.withoutId} without, expected ${JSON.stringify(expected)}`)
+  console.log(`  ${same ? 'ok  ' : 'FAIL'} ${name}: ${found.withId} with an ID, ${found.withoutId} without`)
+}
 
 console.log('== Findings at the team heads')
 await readHeads(teamDir, cases.heads, cases.reviewed)
