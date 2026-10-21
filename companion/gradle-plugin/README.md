@@ -37,7 +37,7 @@ A failing robot-starts check reads like this (Rebuilt `4b68c96^`, a field read b
     in your code at frc.robot.subsystems.hood.HoodIO.<init>(HoodIO.java:38)
               from frc.robot.subsystems.hood.HoodIOSim.<init>(HoodIOSim.java:30)
               from frc.robot.Robot.<init>(Robot.java:116)
-  The real robot crashes the same way, unless this code runs only in simulation (a *Sim class or a SIM-mode branch). Fix it, then build again.
+  It went through HoodIOSim, a simulation class. If the real robot runs the same lines, it crashes the same way. Fix it, then build again.
 ```
 
 ## Turn something off

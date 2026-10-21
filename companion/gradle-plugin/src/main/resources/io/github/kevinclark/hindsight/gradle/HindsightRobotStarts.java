@@ -197,9 +197,12 @@ public final class HindsightRobotStarts {
     if (chain.stream().anyMatch(t -> mentions(t, "org.littletonrobotics.junction.LogFileUtil"))) {
       text.append("\nAdvantageKit is in replay mode and asked for a log file to replay. Set the robot's mode to SIM"
           + " for simulation.");
+    } else if (simulationClass(lines) != null) {
+      // a crash in shared code reached through a *Sim class (an IO's constructor, say) crashes the real robot too
+      text.append("\nIt went through ").append(simulationClass(lines)).append(", a simulation class. If the real"
+          + " robot runs the same lines, it crashes the same way. Fix it, then build again.");
     } else {
-      text.append("\nThe real robot crashes the same way, unless this code runs only in simulation (a *Sim class or a"
-          + " SIM-mode branch). Fix it, then build again.");
+      text.append("\nThe real robot would crash the same way. Fix it, then build again.");
     }
     return text.toString();
   }
@@ -218,6 +221,16 @@ public final class HindsightRobotStarts {
       if (!lines.isEmpty()) return lines;
     }
     return List.of();
+  }
+
+  /** The first of these lines whose class is named like a simulation class (HoodIOSim), or null. */
+  private static String simulationClass(List<StackTraceElement> lines) {
+    for (StackTraceElement line : lines) {
+      String className = line.getClassName().replaceAll("\\$.*", "");
+      String simpleName = className.substring(className.lastIndexOf('.') + 1);
+      if (simpleName.endsWith("Sim")) return simpleName;
+    }
+    return null;
   }
 
   private static Object codeSource(String className) {
