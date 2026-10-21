@@ -305,6 +305,60 @@ commit, reseat a controller).
 First time on a robot: [docs/foresight-first-robot.md](docs/foresight-first-robot.md). Not yet run on a roboRIO; tested
 against the CalGames logs replayed as NT4 and against desktop ntcore (pyntcore 2025.3.2) in Chrome from `file://`.
 
+## Code check in your team's CI
+
+The code check (Foresight's "does the robot code have a mistake that costs matches") also runs as a GitHub Action: on
+each pull request it reads your Java, compares with the base, and shows what the change **adds** as annotations on the
+changed lines plus a table on the run's summary page. It reports; it does not block unless you ask it to. Findings are
+context for the team, not a verdict on a change or on anyone. License: BSD-3-Clause (`LICENSE`).
+
+```yaml
+# .github/workflows/code-check.yml
+name: code-check
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  code-check:
+    runs-on: ubuntu-latest        # not the WPILib container: setup-node needs the runner
+    steps:
+      - uses: actions/checkout@<full commit sha of the checkout release you use>
+      - uses: kevinclark/hindsight@<full commit sha of a Hindsight commit>
+        with:
+          fail-on: none           # later, once you trust it: new
+```
+
+- **Pin a full commit sha**, not a tag or `main`. Then a new rule can't turn your CI red or add findings until you move
+  the pin on purpose.
+- **Use checkout's defaults** (no `ref: ${{ github.event.pull_request.head.sha }}`). The action compares the checked-out
+  merge of the pull request against the pull request's base; checking out the head instead makes the base look older than
+  it is and over-counts "fixed". Keep `persist-credentials` at its default (true) in a private repo, so the action can
+  fetch the base commit in a shallow clone; if it can't, it says so, reports every finding as "not compared" and never
+  fails because of it.
+- **`fail-on`**: `none` (default) never fails; `new` fails when the change adds a finding (and passes when the base can't
+  be read); `any` fails on any finding at all, including old ones, which punishes whoever touches the repo next.
+- **`exclude-rules`**: a comma list of rule ids to leave out. A team whose build already stops whole-number division in
+  the compiler (Error Prone's NarrowCalculation, say) writes `exclude-rules: code/integer-division`.
+- **`path`** is the folder holding the `.git` (default `.`); **`base`** overrides the commit compared with (the default
+  is the pull request's base, a merge group's base, or on a push the commit before it).
+- **Outputs**: `findings`, `new`, `fixed`, `compared`.
+- **Annotation cap:** GitHub shows only 10 warnings and 10 notices per step (50 per job) and drops the rest silently.
+  New findings are warnings and the rest notices, each with its own cap, so up to 10 new and 10 other findings show; the summary page lists every finding.
+- **How a finding is matched with the base:** rule + file + the text of its line, not the line number (adding a line
+  above moves findings) and not the message. A finding whose line is edited, or whose file moves, counts as one new
+  and one fixed.
+- **Cost** (measured on a 49-file robot repo on a Mac): the check with a comparison takes about 0.6 s; installing the
+  two parsing packages (`npm ci --omit=dev`, 8.5 MB) took 0.2 s with npm's cache warm. A cold runner install is not
+  measured (assumed 10-30 s).
+- Run the same thing on a laptop: `node --experimental-strip-types scripts/code-check.ts <robot folder> --base <commit>`
+  (add `--fail-on new`, `--exclude-rules a,b`; `--github` is for CI).
+
+`.github/workflows/code-check-action.yml` tests the action on every change to it, on a small repo of invented code
+built in the job: 13 findings, 12 new, 1 fixed, and that `fail-on: new` fails.
+
 ## Build and test
 
 ```

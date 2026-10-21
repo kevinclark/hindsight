@@ -1,0 +1,85 @@
+name: Hindsight code check
+description: >-
+  Reads your robot's Java code for mistakes that cost matches (two CAN devices with one ID, a whole-number division that
+  should be a decimal, ...) and reports the ones your change adds. Report only, unless you ask it to fail.
+author: Kevin Clark
+branding:
+  icon: search
+  color: orange
+
+inputs:
+  path:
+    description: The checked-out robot-code repo (the folder with the .git).
+    default: .
+  fail-on:
+    description: >-
+      When to fail the job. none (default): never, the report only. new: a finding the change adds (fails open when the
+      base can't be read). any: any finding at all.
+    default: none
+  exclude-rules:
+    description: >-
+      Rule ids to leave out, comma separated, e.g. code/integer-division when your build's compiler already gates it.
+    default: ''
+  base:
+    description: >-
+      The commit to compare with. When empty it is worked out: a pull request's base, a merge group's base, or on a push
+      the commit before it. With none, findings are reported without "new".
+    default: ''
+
+outputs:
+  findings:
+    description: How many findings the checked commit has.
+    value: ${{ steps.check.outputs.findings }}
+  new:
+    description: How many of them are new compared with the base (0 when nothing was compared).
+    value: ${{ steps.check.outputs.new }}
+  fixed:
+    description: How many of the base's findings are gone (0 when nothing was compared).
+    value: ${{ steps.check.outputs.fixed }}
+  compared:
+    description: true when the base was read and compared.
+    value: ${{ steps.check.outputs.compared }}
+
+runs:
+  using: composite
+  steps:
+    # Pinned by full commit hash (a tag can be moved). Node 24 runs the TypeScript scripts as they are.
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24'
+
+    # Only the two parsing packages the check needs (not the app's build tools), into this action's own folder.
+    - name: Install the check's two packages
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$ACTION_PATH"
+
+    # Also fetch the base (and the pull request's head) into the checked-out repo, so the check can read them in a
+    # shallow clone. A failure is fine: the check then says the base can't be read and reports without "new".
+    - name: Fetch the commits to compare
+      shell: bash
+      env:
+        REPO_PATH: ${{ inputs.path }}
+        BASE: ${{ inputs.base || github.event.pull_request.base.sha || github.event.merge_group.base_sha || (github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: |
+        for sha in "$BASE" "$HEAD_SHA"; do
+          if [ -n "$sha" ]; then git -C "$REPO_PATH" fetch --quiet --depth 1 origin "$sha" || echo "could not fetch $sha (continuing)"; fi
+        done
+
+    - name: Check the code
+      id: check
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        REPO_PATH: ${{ inputs.path }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        EXCLUDE_RULES: ${{ inputs.exclude-rules }}
+        BASE: ${{ inputs.base || github.event.pull_request.base.sha || github.event.merge_group.base_sha || (github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
+        # Links in the summary point at the pull request's head. The check reads checkout's default commit, a merge of
+        # that head into the base, so the CLI puts "#L<line>" on a link only for files that are the same in both.
+        CODE_CHECK_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: |
+        node --experimental-strip-types "$ACTION_PATH/scripts/code-check.ts" "$REPO_PATH" \
+          --base "$BASE" --fail-on "$FAIL_ON" --exclude-rules "$EXCLUDE_RULES" --github
