@@ -55,7 +55,7 @@ export const operatorOf = (node: Node | null) => node?.childForFieldName('operat
 export const field = (node: Node, name: string) => node.childForFieldName(name)
 
 /** A node's named children (or its named part's: `parts(call, 'arguments')`), leaving out comments. */
-export function parts(node: Node | null, name?: string): Node[] {
+export function parts(node: Node | null | undefined, name?: string): Node[] {
   const of = node && name ? field(node, name) : node
   return (of?.namedChildren ?? []).filter((c): c is Node => c !== null && !COMMENTS.includes(c.type))
 }
@@ -63,6 +63,15 @@ const COMMENTS = ['line_comment', 'block_comment']
 
 /** The class a node is in. */
 export const classAround = (node: Node) => enclosing(node, ['class_declaration'])
+
+/** The class or interface a node is in: where a bare name looks for a field first. */
+export const ownerAround = (node: Node) => enclosing(node, ['class_declaration', 'interface_declaration'])
+
+/** Where a class's or interface's fields and methods are written. An anonymous class's body is a class_body too. */
+export const BODIES = ['class_body', 'interface_body']
+
+/** What a field or method is declared in: its class or interface (or the `new` of an anonymous class). */
+export const declaredIn = (member: Node) => enclosing(member, BODIES)?.parent ?? null
 
 /** The name of the class a class extends, without type arguments, or null. */
 export const superclassName = (cls: Node | null) => (cls && parts(cls, 'superclass')[0]?.text.replace(/<.*$/s, '')) || null
