@@ -26,8 +26,7 @@ final class FormatHook {
 
   private FormatHook() {}
 
-  static void apply(Project project, boolean wanted, BuildContext build) {
-    if (build.ci()) return;
+  static void apply(Project project, boolean wanted) {
     boolean install = wanted && project.getTasks().getNames().contains("spotlessApply");
     project.getTasks().register("hindsightFormatHook", task -> {
       task.setDescription(install ? "Installs Hindsight's pre-commit format hook." : "Removes Hindsight's format hook.");
@@ -54,7 +53,8 @@ final class FormatHook {
     Optional<String> hooks = git(dir, "rev-parse", "--git-path", "hooks");
     if (hooks.isEmpty()) return;
     Path hook = dir.toPath().resolve(hooks.get()).resolve(HOOK);
-    boolean ours = Files.isRegularFile(hook) && Files.readString(hook).contains(MARKER);
+    String existing = Files.isRegularFile(hook) ? Files.readString(hook) : null;
+    boolean ours = existing != null && existing.contains(MARKER);
     if (Files.exists(hook) && !ours) {
       log.info("Hindsight didn't install its format hook: {} already exists.", hook);
       return;
@@ -64,7 +64,7 @@ final class FormatHook {
       return;
     }
     String text = hookText(project);
-    if (ours && Files.readString(hook).equals(text)) return;
+    if (text.equals(existing)) return;
     Files.createDirectories(hook.getParent());
     Files.writeString(hook, text);
     if (!System.getProperty("os.name").startsWith("Windows")) {

@@ -58,10 +58,6 @@ final class Sample {
     return this;
   }
 
-  Path dir() {
-    return dir;
-  }
-
   Path file(String relative) {
     return dir.resolve(relative);
   }

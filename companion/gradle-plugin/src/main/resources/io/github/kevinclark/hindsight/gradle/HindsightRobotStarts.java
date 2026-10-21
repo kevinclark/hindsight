@@ -207,10 +207,11 @@ public final class HindsightRobotStarts {
   /** Up to three lines of robot code, innermost first, from the deepest exception that went through any. */
   private List<StackTraceElement> robotCodeLines(List<Throwable> chain) {
     Object robotCode = codeSource(robotClass.getName());
+    if (robotCode == null) return List.of();
     for (Throwable t : chain) {
       List<StackTraceElement> lines = new ArrayList<>();
       for (StackTraceElement frame : t.getStackTrace()) {
-        if (lines.size() < 3 && robotCode != null && Objects.equals(codeSource(frame.getClassName()), robotCode)) {
+        if (lines.size() < 3 && Objects.equals(codeSource(frame.getClassName()), robotCode)) {
           lines.add(frame);
         }
       }

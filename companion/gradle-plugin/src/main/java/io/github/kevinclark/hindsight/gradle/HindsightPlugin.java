@@ -30,7 +30,7 @@ public class HindsightPlugin implements Plugin<Project> {
         if (settings.getFixIntegerDivision().get() && !build.ci()) IntegerDivisionFix.apply(p, build);
       }
       if (settings.getRobotStarts().get()) RobotStartsCheck.apply(p, settings);
-      FormatHook.apply(p, settings.getFormatHook().get(), build);
+      if (!build.ci()) FormatHook.apply(p, settings.getFormatHook().get());
     });
   }
 }
