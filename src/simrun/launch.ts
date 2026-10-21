@@ -34,8 +34,11 @@ const HARNESS = join(dirname(fileURLToPath(import.meta.url)), '../../tools/sim-r
  * measured 2026-10-21, a 2022 robot builds with it and fails without.
  */
 const JCENTER_MIRROR = 'https://frcmaven.wpi.edu/artifactory/ex-mvn-ajoberstarbintraybackup-remote'
-/** Gradle's words for "not in the local cache" when run offline (measured on 7 of 9 history builds, 2026-10-21). */
-const NOT_DOWNLOADED = /offline mode|No cached version|Could not resolve|Could not find|Could not download/
+/**
+ * Gradle's words for "not in the local cache" when run offline (measured 2026-10-21 on 14 history builds and on a
+ * plugin it had never fetched: "could not resolve plugin artifact", lower case).
+ */
+const NOT_DOWNLOADED = /offline mode|No cached version|could not resolve|could not find|could not download|was not found in any of the following sources/i
 /** Measured: a run's robot program is ready 2–2.5 s after its JVM starts; Phoenix's first start can take 11 s. */
 const START_ALLOWANCE_SECONDS = 45
 
