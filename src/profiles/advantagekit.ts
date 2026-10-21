@@ -7,6 +7,7 @@
  * The AdvantageKit counterpart of datalogmanager.ts.
  */
 import { DATALOGMANAGER_SIGNALS } from './datalogmanager.ts'
+import { DRIVER_STATION_SIGNALS } from './driverstation.ts'
 import { DSLOG, keysOf } from './sources.ts'
 import type { SignalKeys, SignalSources, Source } from './types.ts'
 
@@ -63,4 +64,5 @@ export const ADVANTAGEKIT_SIGNALS: SignalSources = {
   // AdvantageKit logs the board's total too, but the power model adds up the motors: a measured total has been
   // checked only on DogLog logs (doglog.ts).
   totalCurrent: '',
+  ...DRIVER_STATION_SIGNALS,
 }

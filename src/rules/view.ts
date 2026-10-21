@@ -16,7 +16,7 @@ import { ranPinnedCommit, type LimitLines } from '../code/limit-lines.ts'
 import { has, matchSeconds, matchTimeLeft, matchWhen, matchWhenAt, num, phaseAt, values, type Match } from '../match/match.ts'
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
 import type { BatteryKeys, CurrentLimits, ResolvedProfile } from '../profiles/types.ts'
-import { isDslogKey } from '../profiles/sources.ts'
+import { otherLogOf } from '../profiles/sources.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
@@ -472,7 +472,8 @@ export class MatchView {
     const key = this.keyFor(name)
     if (!has(this.raw, key)) throw missing(name, key)
     if (this.isMeasured(key)) this.sampled.set(key, label)
-    if (isDslogKey(key)) this.readFrom.set(label, 'the Driver Station log (the robot log doesn\'t have it)')
+    const otherLog = otherLogOf(key)
+    if (otherLog) this.readFrom.set(label, otherLog.readFrom)
     return new Signal(label, key, num(this.raw, key)!, this.raw.logEnd)
   }
 
@@ -797,11 +798,16 @@ function isLogKey(name: string): boolean {
 
 /** Why a signal with no key in the robot log is missing (the Logging tab matches these words: coverage.ts). */
 export const NO_KEY = 'the robot profile has no key for it'
-export const ONLY_DS_LOG = 'only a Driver Station log has it: load this match\'s .dslog'
+/** Why a signal only another log has is missing: say which file to load. */
+export function onlyIn(key: string): string | null {
+  const otherLog = otherLogOf(key)
+  return otherLog ? `only ${otherLog.oneOf} has it: load this match's ${otherLog.file}` : null
+}
 
 /** The "not checked" reason for a missing signal: its key, or why there is none. */
 function missing(name: string, key: string): MissingSignal {
-  if (isDslogKey(key)) return new MissingSignal(`${words(name)} (${ONLY_DS_LOG})`)
+  const elsewhere = onlyIn(key)
+  if (elsewhere) return new MissingSignal(`${words(name)} (${elsewhere})`)
   return new MissingSignal(key || `${words(name)} (${NO_KEY})`)
 }
 

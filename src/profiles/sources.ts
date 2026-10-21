@@ -4,14 +4,34 @@
  * Rules never see the list: they ask for a signal by name, and the framework says on a finding when it came from
  * somewhere other than the robot log.
  *
- * The Driver Station log is a source like any other, written `dslog:<field>` with a field of its records
- * (readers/dslog.ts), e.g. `dslog:brownout`.
+ * The Driver Station's own files are sources like any other (OTHER_LOGS): the DS log, written `dslog:<field>` with
+ * a field of its records (readers/dslog.ts, e.g. `dslog:brownout`), and its event log, `dsevents:<fact>`
+ * (readers/dsevents.ts, e.g. `dsevents:brownoutCount`).
  */
 import type { BatteryKeys, BatterySources, SignalKeys, SignalSources, Source } from './types.ts'
 
 export const DSLOG = 'dslog:'
+export const DSEVENTS = 'dsevents:'
 
-export const isDslogKey = (key: string) => key.startsWith(DSLOG)
+/**
+ * The logs beside the robot log a signal can come from: its key prefix, its file, and how findings name it
+ * (`readFrom`: on a finding that used it; `oneOf`: when it is missing).
+ */
+export const OTHER_LOGS = [
+  {
+    prefix: DSLOG, file: '.dslog', words: 'the Driver Station log', oneOf: 'a Driver Station log',
+    readFrom: 'the Driver Station log (the robot log doesn\'t have it)',
+  },
+  {
+    prefix: DSEVENTS, file: '.dsevents', words: 'the Driver Station\'s event log', oneOf: 'a Driver Station event log',
+    readFrom: 'the Driver Station\'s event log',
+  },
+]
+
+/** The other log a key is in, or undefined for a robot-log key. */
+export const otherLogOf = (key: string) => OTHER_LOGS.find((o) => key.startsWith(o.prefix))
+
+export const isOtherLogKey = (key: string) => otherLogOf(key) !== undefined
 
 /** Signals whose value is a list of keys that are all read (not alternatives). */
 const LISTS = new Set<string>(['alertGroups', 'joystickButtonCounts'] satisfies (keyof SignalKeys)[])
@@ -32,7 +52,7 @@ export function resolveBattery(battery: BatterySources, present: (key: string) =
 
 /**
  * The first key the logs have. With none, the first non-empty key: the robot log's when there is one (so "missing"
- * names the key a student can add), else the Driver Station log's (so it says to load the .dslog).
+ * names the key a student can add), else the other log's (so it says which file to load).
  */
 function pick(source: Source, present: (key: string) => boolean): string {
   const keys = keysOf(source)
