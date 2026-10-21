@@ -133,8 +133,9 @@ final class AutoFix {
       divided.forEach(file -> lines.add("  " + file));
     }
     if (tidied > 0) {
-      lines.add("Hindsight tidied " + files(tidied) + (divided.isEmpty() ? "" : " more")
-          + " (a missing @Override, extra parentheses, a StringBuilder that isn't needed, ...).");
+      String count = divided.isEmpty() ? files(tidied) : tidied + " more " + (tidied == 1 ? "file" : "files");
+      lines.add("Hindsight tidied " + count + " (a missing @Override, extra parentheses, a StringBuilder that isn't"
+          + " needed, ...).");
     }
     lines.add("This build still has the old code. Check the change (git diff), then build again.");
     lines.add("To keep one as it is, add @SuppressWarnings(\"<the check's name>\") to its field or method.");
