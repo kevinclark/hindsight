@@ -2,21 +2,21 @@
  * All the Java files of one commit, parsed, with an index of what they declare by name: fields, methods and classes.
  * The rules ask it where a name is declared (`fieldsNamed('GEAR_RATIO')`) and which file a node is in (`fileOf`).
  */
-import { enclosing, nameOf, ownerAround, parseJava, parts, superclassName, type JavaFile, type Node } from './java.ts'
+import { declaredIn, nameOf, ownerAround, parseJava, parts, superclassName, type JavaFile, type Node } from './java.ts'
 
 /** How many superclasses up `lineage` looks (and where a cycle stops). */
 const MOST_ANCESTORS = 8
 /**
  * What the index finds by name, and the declarations it reads each from. An interface's fields are
- * `constant_declaration`s (every one is static and final), and an interface can own fields as a class does.
+ * `constant_declaration`s (every one is static and final). An owner is what a field can belong to: a class or an
+ * interface.
  */
 const DECLARED = {
   field: ['field_declaration', 'constant_declaration'],
   method: ['method_declaration'],
-  class: ['class_declaration', 'interface_declaration'],
+  class: ['class_declaration'],
+  owner: ['class_declaration', 'interface_declaration'],
 }
-/** Where a class's or interface's members are written (an anonymous class's body is a class_body inside a `new`). */
-const BODIES = ['class_body', 'interface_body']
 
 /** A type without its type arguments or package: "Matrix<N3, N1>" is "Matrix", "frc.robot.Robot" is "Robot". */
 export const baseType = (type: string | null | undefined) => type?.replace(/<.*$/s, '').split('.').pop()?.trim() || null
@@ -59,14 +59,22 @@ export class Project {
   }
 
   /**
-   * The one class (or interface) in the project a name means, or null when there is none (a library's) or more than
-   * one. The name can say which classes it is inside: `Constants.Shooter` is the Shooter inside Constants even when a
-   * Shooter subsystem exists too, and `frc.robot.Constants` is the Constants in the package frc.robot.
+   * The one class in the project a name means, or null when there is none (a library's) or more than one. The name
+   * can say which classes it is inside: `Constants.Shooter` is the Shooter inside Constants even when a Shooter
+   * subsystem exists too, and `frc.robot.Constants` is the Constants in the package frc.robot. Not found: a nested
+   * class named through a subclass of the class it is in (`Sub.Ids` for Base's Ids).
    */
   classNamed(name: string | null): Node | null {
-    const candidates = name ? (this.index('class').get(name.split('.').pop() ?? '') ?? []) : []
-    const found = candidates.filter((c) => `.${fullName(c)}`.endsWith(`.${name}`))
+    const found = this.named('class', name)
     return found.length === 1 ? found[0] : null
+  }
+
+  /**
+   * Every class or interface a name can mean (named as for classNamed): what owns a field written `Owner.NAME`.
+   * More than one when two share a name, or a file was copied (an old/ folder).
+   */
+  ownersNamed(name: string | null): Node[] {
+    return this.named('owner', name)
   }
 
   /** A class and the project classes above it (`Robot`, then its superclass when the project has it), nearest first. */
@@ -78,13 +86,15 @@ export class Project {
 
   /**
    * Methods (or fields' declarators) named `name` in a class or the project classes above it, nearest first. A field
-   * can also be a constant of an interface one of them implements (`class Shooter implements RobotMap`).
+   * none of them declares can be a constant of an interface they implement (`class Shooter implements RobotMap`); a
+   * class's own field hides the interface's, as in Java. An interface's default methods aren't looked for yet.
    */
-  membersNamed(cls: Node | null, kind: 'method_declaration' | 'field_declaration', name: string): Node[] {
-    const members = kind === 'method_declaration' ? this.methodsNamed(name) : this.fieldsNamed(name)
-    const own = (c: Node) => members.filter((m) => enclosing(m, BODIES)?.parent?.equals(c))
-    const owners = kind === 'field_declaration' ? this.withInterfaces(this.lineage(cls)) : this.lineage(cls)
-    return owners.flatMap(own)
+  membersNamed(cls: Node | null, kind: 'method' | 'field', name: string): Node[] {
+    const members = kind === 'method' ? this.methodsNamed(name) : this.fieldsNamed(name)
+    const own = (c: Node) => members.filter((m) => declaredIn(m)?.equals(c))
+    const inClasses = this.lineage(cls).flatMap(own)
+    if (kind === 'method' || inClasses.length) return inClasses
+    return this.withInterfaces(this.lineage(cls)).flatMap(own)
   }
 
   /** These classes, each followed by the project interfaces it implements (and the interfaces those extend). */
@@ -93,10 +103,7 @@ export class Project {
     const add = (owner: Node) => {
       if (all.some((o) => o.equals(owner))) return
       all.push(owner)
-      for (const name of interfaceNames(owner)) {
-        const found = this.classNamed(name)
-        if (found) add(found)
-      }
+      interfaceNames(owner).flatMap((name) => this.ownersNamed(name)).forEach(add)
     }
     classes.forEach(add)
     return all
@@ -120,6 +127,14 @@ export class Project {
   /** Frees the parsed trees (tree-sitter keeps them in wasm memory, which nothing else frees). */
   close(): void {
     for (const f of this.files) f.tree.delete()
+  }
+
+  /** The classes (or owners) whose full name ends with this name: "Shooter", "Constants.Shooter". */
+  private named(kind: 'class' | 'owner', name: string | null): Node[] {
+    if (!name) return []
+    const simpleName = name.split('.').pop() ?? ''
+    // A "." in front of both, so "Shooter" matches "frc.robot.Shooter" but never "frc.robot.FlyShooter".
+    return (this.index(kind).get(simpleName) ?? []).filter((c) => `.${fullName(c)}`.endsWith(`.${name}`))
   }
 
   /** Declarations of one kind by name, built the first time they are asked for. */
@@ -147,8 +162,9 @@ function fullName(cls: Node): string {
   return [pack && parts(pack)[0]?.text, ...names].filter(Boolean).join('.')
 }
 
-/** The interfaces a class implements, or an interface extends, as written without type arguments: "frc.robot.RobotMap". */
+/** The interfaces a class implements, or an interface extends, as written without type arguments ("RobotMap"). */
 function interfaceNames(owner: Node): string[] {
-  const list = parts(owner).find((p) => p.type === 'super_interfaces' || p.type === 'extends_interfaces')
-  return parts(parts(list ?? null)[0] ?? null).map((t) => t.text.replace(/<.*$/s, ''))
+  const clause = parts(owner).find((p) => p.type === 'super_interfaces' || p.type === 'extends_interfaces')
+  const typeList = parts(clause)[0]
+  return parts(typeList).map((t) => t.text.replace(/<.*$/s, ''))
 }

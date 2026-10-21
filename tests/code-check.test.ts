@@ -11,6 +11,8 @@ import discardedResult from '../src/code/check/rules/discarded-result.ts'
 import impossibleRange from '../src/code/check/rules/impossible-range.ts'
 import duplicateCanId from '../src/code/check/rules/duplicate-can-id.ts'
 import { codeRule, type CodeRule } from '../src/code/check/rule.ts'
+import { Project } from '../src/code/check/project.ts'
+import { isSubsystem } from '../src/code/check/types.ts'
 
 beforeAll(loadJavaFromDisk)
 
@@ -274,5 +276,28 @@ describe('constants the old builder regex read: in an interface, and inside a cl
       'Hood.java': 'package frc.robot;\nclass Hood { static final double A = Shooter.TEETH / 12; }',
     }
     expect(messages(integerDivision, java)).toEqual([])
+  })
+  it('lets a class\'s own constant hide an interface\'s of the same name, as Java does', () => {
+    const java = { 'A.java': 'package frc.robot;\ninterface RobotMap { int TEETH = 50; }\nclass Arm implements RobotMap { static final int TEETH = 54; static final double R = TEETH / 12; }' }
+    expect(messages(integerDivision, java)).toEqual(['TEETH / 12 is 4 in Java, not 4.5 (-11.1 %)'])
+  })
+  it('reads a static import of a copied class (an old/ folder), and constants the imported class gets from an interface', () => {
+    const consts = 'package frc.robot;\nclass Consts implements Gearing { static final int TEETH = 50; }\ninterface Gearing { int PINION = 12; }'
+    const java = {
+      'src/Consts.java': consts,
+      'old/Consts.java': consts,
+      'Arm.java': 'package frc.robot.arm;\nimport static frc.robot.Consts.*;\nclass Arm { static final double R = TEETH / PINION; }',
+    }
+    expect(messages(integerDivision, java)).toEqual(['TEETH / PINION is 4 in Java, not 4.1667 (-4.0 %)'])
+  })
+  it('reads an interface nested in a class, and keeps a subsystem a subsystem when that interface shares its name', () => {
+    const java = {
+      'Constants.java': 'package frc.robot;\nclass Constants { interface Shooter { int TEETH = 50; } }',
+      'Shooter.java': 'package frc.robot.subsystems;\nclass Shooter extends SubsystemBase { static final double R = Constants.Shooter.TEETH / 12; }',
+    }
+    expect(messages(integerDivision, java)).toEqual(['Constants.Shooter.TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)'])
+    const project = new Project(Object.entries(java).map(([path, text]) => ({ path, text })))
+    expect(isSubsystem('Shooter', project)).toBe(true)
+    project.close()
   })
 })

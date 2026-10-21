@@ -86,7 +86,7 @@ export function isSubsystem(type: string | null, project: Project): boolean {
 
 /** A local, parameter or field (of this class or the project classes above it) by name: its declared type. */
 function variableType(node: Node, name: string, project: Project): string | null {
-  const declared = localNamed(node, name) ?? sameAnswer(project.membersNamed(classAround(node), 'field_declaration', name))
+  const declared = localNamed(node, name) ?? sameAnswer(project.membersNamed(classAround(node), 'field', name))
   if (!declared) return null
   const type = baseType(declaredType(declared))
   return type === 'var' ? typeOf(field(declared, 'value'), project) : type
@@ -100,7 +100,7 @@ function returnType(call: Node, project: Project): string | null {
   const owner = receiver ? typeOf(receiver, project) : nameOf(classAround(call) ?? call)
   if (owner === 'Command' && COMMAND_DECORATORS.includes(method)) return 'Command'
   // The project's own method of that name comes first: a subsystem's `private void run()` isn't Subsystem.run.
-  const declarations = project.membersNamed(project.classNamed(owner), 'method_declaration', method)
+  const declarations = project.membersNamed(project.classNamed(owner), 'method', method)
   if (declarations.length) return baseType(typeNamed(sameAnswer(declarations, typeNamed) ?? call))
   return SUBSYSTEM_COMMANDS.includes(method) && isSubsystem(owner, project) ? 'Command' : null
 }

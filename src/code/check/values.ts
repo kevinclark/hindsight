@@ -101,28 +101,32 @@ function constantNamed(node: Node, project: Project, valueOfInitialiser: (n: Nod
 }
 
 /** Is this field final: said so, or in an interface (where every field is)? */
-const isFinal = (declaration: Node) => declaration.type === 'constant_declaration' || modifiersOf(declaration).includes('final')
-
-/**
- * The fields a name can mean: `Owner.NAME` is Owner's (`Constants.Shooter.NAME`: the Shooter inside Constants); a
- * bare NAME is the enclosing classes' (with the project classes above them and the interfaces they implement), else
- * a class the file imports statically (`import static frc.robot.Constants.*`). A name from a library class
- * (TimedRobot's kDefaultPeriod) means none: never a same-named constant elsewhere in the project.
- */
-function fieldsMeant(node: Node, name: string, project: Project): Node[] {
-  if (node.type === 'field_access') {
-    const owner = field(node, 'object')?.text.replace(/\s+/g, '') ?? null
-    return project.membersNamed(project.classNamed(owner), 'field_declaration', name)
-  }
-  for (let owner = ownerAround(node); owner; owner = ownerAround(owner)) {
-    const own = project.membersNamed(owner, 'field_declaration', name)
-    if (own.length) return own
-  }
-  const imported = staticImports(project.fileOf(node).tree.rootNode).map((path) => project.classNamed(path))
-  return project.fieldsNamed(name).filter((d) => imported.some((owner) => owner && ownerAround(d)?.equals(owner)))
+function isFinal(declaration: Node): boolean {
+  return declaration.type === 'constant_declaration' || modifiersOf(declaration).includes('final')
 }
 
-/** The classes a file imports static members from: `import static frc.robot.Constants.*` gives "frc.robot.Constants". */
+/**
+ * The fields a name can mean: `Owner.NAME` is Owner's (`Constants.Shooter.NAME`: the Shooter inside Constants; every
+ * Owner, when two classes share the name); a bare NAME is the enclosing classes' (with the project classes above
+ * them and the interfaces they implement), else a class the file imports statically (`import static
+ * frc.robot.Constants.*`). A name from a library class (TimedRobot's kDefaultPeriod) means none: never a same-named
+ * constant elsewhere in the project. constantNamed then needs every field meant to have one value.
+ */
+function fieldsMeant(node: Node, name: string, project: Project): Node[] {
+  const fieldsOf = (owner: Node) => project.membersNamed(owner, 'field', name)
+  if (node.type === 'field_access') {
+    const owner = field(node, 'object')?.text.replace(/\s+/g, '') ?? null
+    return project.ownersNamed(owner).flatMap(fieldsOf)
+  }
+  for (let owner = ownerAround(node); owner; owner = ownerAround(owner)) {
+    const own = fieldsOf(owner)
+    if (own.length) return own
+  }
+  const imported = staticImports(project.fileOf(node).tree.rootNode).flatMap((path) => project.ownersNamed(path))
+  return imported.flatMap(fieldsOf)
+}
+
+/** The classes a file imports static members from: `import static frc.robot.Constants.*` is "frc.robot.Constants". */
 function staticImports(root: Node): string[] {
   return parts(root).filter((n) => n.type === 'import_declaration').flatMap((n) => {
     const path = /^import\s+static\s+([\w.]+?)(\.\*)?\s*;/.exec(codeOf(n))

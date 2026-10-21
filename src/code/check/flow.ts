@@ -5,7 +5,7 @@
  * reach a piece of code; `valueAlong` works out a value along one chain; `canBothHappen` tells whether two chains can
  * both run (not when they sit in different arms of an `if`, `? :` or `switch` on the same condition).
  */
-import { classAround, codeOf, enclosing, field, isInside, modifiersOf, nameOf, parts, superclassName, typeNamed, type Node } from './java.ts'
+import { BODIES, classAround, codeOf, enclosing, field, isInside, modifiersOf, nameOf, parts, superclassName, typeNamed, type Node } from './java.ts'
 import { ROBOT_BASES } from './libraries.ts'
 import { baseType, type Project } from './project.ts'
 import { localNamed, typeOf } from './types.ts'
@@ -123,8 +123,8 @@ function setOnce(declared: Node, scope: Node): Node | null {
 
 /** The one value a field ever gets in its class: its starting value, or a single `this.canBus = canBus`. */
 function setOnceInClass(use: Node, name: string, project: Project): Node | null {
-  const [declared] = project.membersNamed(classAround(use), 'field_declaration', name)
-  const body = declared && enclosing(declared, ['class_body', 'interface_body'])
+  const [declared] = project.membersNamed(classAround(use), 'field', name)
+  const body = declared && enclosing(declared, BODIES)
   if (!body) return null
   const writes = body.descendantsOfType('assignment_expression').flatMap((a) => {
     const target = a && field(a, 'left')
