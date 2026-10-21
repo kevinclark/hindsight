@@ -240,7 +240,10 @@ export function runsOf(scenario: Scenario): Run[] {
 
 function timeline(scenario: Scenario, alliance: Station): { timeline: string[]; seconds: number } {
   const lines: [number, string][] = [[0, `alliance ${alliance}`], [FIRST_DISABLED_SECONDS - 0.5, 'choosers']]
-  if (scenario.auto) lines.push([FIRST_DISABLED_SECONDS - 0.4, `select ${scenario.auto.chooser}|${scenario.auto.option}`])
+  if (scenario.auto) {
+    lines.push([FIRST_DISABLED_SECONDS - 0.4, `select ${scenario.auto.chooser}|${scenario.auto.option}`])
+    lines.push([FIRST_DISABLED_SECONDS - 0.1, 'choosers']) // so the run says whether the robot took the selection
+  }
   let t = 0
   for (const step of scenario.steps) {
     // A press at 0 is played before the mode, so the robot sees both in the same loop (as a held button would be).

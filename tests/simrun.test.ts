@@ -137,6 +137,13 @@ describe('the team file', () => {
     expect(b.timeline).toEqual(['0.000 alliance Blue1', '0.000 mode disabled', '2.500 choosers', '3.000 mode teleop', '3.500 button 0 2 1 #p1', '8.490 button 0 2 0', '9.200 end'])
   })
 
+  it('reads the chooser again before auto, and says when the robot kept another auto', () => {
+    const [left] = runsOf(autoScenarios({ key: 'Autos', options: ['Left', 'None'], defaultOption: 'None', active: 'None' }, NO_TEAM_FILE, 15)[0])
+    expect(left.timeline.slice(2, 5)).toEqual(['2.500 choosers', '2.600 select Autos|Left', '2.900 choosers'])
+    const kept = harness([[2, 'started'], [2, 'step', '0 mode disabled'], [4.9, 'chooser', 'Autos', 'Left|None', 'None', 'None'], [5, 'step', '3 mode auto'], [20, 'step', '18 mode disabled'], [21.2, 'end']])
+    expect(autos(context([result(kept, left)])).map((f) => f.check)).toEqual(['auto/not-selected'])
+  })
+
   it('plays a press at 0 before the mode, so the robot sees both in the same loop', () => {
     const atEnable = readTeamFile('{"scenarios":[{"steps":[{"disabled":3},{"auto":2,"press":[{"at":0,"driver":"leftTrigger"}]}]}]}', 'f.json')
     const lines = runsOf(atEnable.scenarios[0])[0].timeline
@@ -171,7 +178,7 @@ const POSE_SCHEMA: FixtureEntry[] = [
 ]
 
 describe('autos and alliances', () => {
-  const [auto, none] = autoScenarios({ key: 'Autos', options: ['Left', 'None'], defaultOption: 'None' }, NO_TEAM_FILE, 15)
+  const [auto, none] = autoScenarios({ key: 'Autos', options: ['Left', 'None'], defaultOption: 'None', active: 'None' }, NO_TEAM_FILE, 15)
   /** An auto run whose pose log moves `dx` in x after the start-pose reset. */
   const autoRun = (r: Run, dx: number, extra: Line[] = []) => {
     const output = harness([[2, 'started'], [2, 'step', '0 mode disabled'], [5, 'step', '3 mode auto'], ...extra, [20, 'step', '18 mode disabled'], [21.2, 'end']])

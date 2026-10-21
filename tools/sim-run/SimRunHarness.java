@@ -184,14 +184,15 @@ public class SimRunHarness {
     }
   }
 
-  /** Each SendableChooser on SmartDashboard: its key, its options (joined by |), and its default. */
+  /** Each SendableChooser on SmartDashboard: its key, its options (joined by |), its default and what is active. */
   static void printChoosers() {
     NetworkTable dashboard = NetworkTableInstance.getDefault().getTable("SmartDashboard");
     for (String key : dashboard.getSubTables()) {
       NetworkTable table = dashboard.getSubTable(key);
       if (!table.getEntry(".type").getString("").equals("String Chooser")) continue;
       String[] options = table.getEntry("options").getStringArray(new String[0]);
-      say("chooser", key, String.join("|", options), table.getEntry("default").getString(""));
+      say("chooser", key, String.join("|", options), table.getEntry("default").getString(""),
+          table.getEntry("active").getString(""));
     }
   }
 

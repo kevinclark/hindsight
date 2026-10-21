@@ -15,6 +15,7 @@
  */
 
 import { isEnabled } from '../events.ts'
+import { selectionNotTaken } from './auto.ts'
 import { headingGap, movement, RESET_SETTLE_SECONDS, type Movement } from './pose.ts'
 import { type Check, type Finding, type RunResult } from './types.ts'
 
@@ -31,7 +32,7 @@ export const alliances: Check = ({ results, poseKey }) => {
   // Each repeat's blue run is compared with the same repeat's red run.
   const pairs = new Set(results.map((r) => `${r.run.scenario.name}#${r.repeat}`))
   return [...pairs].flatMap((pair): Finding[] => {
-    const runs = results.filter((r) => `${r.run.scenario.name}#${r.repeat}` === pair && r.record.ended)
+    const runs = results.filter((r) => `${r.run.scenario.name}#${r.repeat}` === pair && r.record.ended && !selectionNotTaken(r))
     const blue = runs.find((r) => r.run.alliance.startsWith('Blue'))
     const red = runs.find((r) => r.run.alliance.startsWith('Red'))
     if (!blue || !red) return []

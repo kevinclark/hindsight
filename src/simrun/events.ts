@@ -21,7 +21,8 @@ export interface CommandEvent { t: number; kind: 'init' | 'finish' | 'interrupt'
 /** A line the robot printed. `native` lines came from C++ (the HAL, Phoenix) and carry the last time seen before them. */
 export interface ConsoleLine { t: number; stream: 'out' | 'err' | 'native'; text: string }
 
-export interface Chooser { key: string; options: string[]; defaultOption: string }
+/** A SendableChooser as the robot published it; `active` is the option it would run (WPILib's own "active"). */
+export interface Chooser { key: string; options: string[]; defaultOption: string; active: string }
 
 /** A stretch in one robot mode, from the timeline step that set it to the next one (or the end of the run). */
 export interface Period { mode: Mode; start: number; end: number }
@@ -67,7 +68,7 @@ export function readRun(output: string): RunRecord {
     if (kind === 'out' || kind === 'err') run.console.push({ t, stream: kind, text: fields.join('\t') })
     else if (kind === 'init' || kind === 'finish' || kind === 'interrupt') run.commands.push({ t, kind, command: commandRef(fields[0]), by: fields[1] ? commandRef(fields[1]) : null })
     else if (kind === 'step') run.steps.push({ t, line: fields[0] })
-    else if (kind === 'chooser') run.choosers.push({ key: fields[0], options: fields[1] ? fields[1].split('|') : [], defaultOption: fields[2] ?? '' })
+    else if (kind === 'chooser') run.choosers.push({ key: fields[0], options: fields[1] ? fields[1].split('|') : [], defaultOption: fields[2] ?? '', active: fields[3] ?? '' })
     else if (kind === 'started') run.started = t
     else if (kind === 'end') run.ended = true
     else if (kind === 'harness-error') run.harnessError = fields[0]

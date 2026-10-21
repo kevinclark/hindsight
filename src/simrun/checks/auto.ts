@@ -12,7 +12,7 @@
 
 import { describeCommand, signature, type Lifetime, type RunRecord } from '../events.ts'
 import { movement, RESET_SETTLE_SECONDS } from './pose.ts'
-import { duration, type Check, type Finding } from './types.ts'
+import { duration, type Check, type Finding, type RunResult } from './types.ts'
 
 /** Assumed: under 0.3 m is standing still (26Off's autos moved about 1 m in sim after their start-pose reset). */
 const MOVED_METERS = 0.3
@@ -25,6 +25,8 @@ export const autos: Check = ({ results, poseKey }) => {
   return autoRuns.filter((r) => !r.run.scenario.auto?.isDefault && r.record.ended).flatMap((r): Finding[] => {
     const period = r.record.periods.find((p) => p.mode === 'auto')
     if (!period) return []
+    const notTaken = selectionNotTaken(r)
+    if (notTaken) return [notTaken]
     const baseline = autoRuns.find((b) => b.run.scenario.auto?.isDefault && b.run.alliance === r.run.alliance)
     const baselineStarts = baseline ? autoCommands(baseline.record, []).map((l) => signature(l.command)) : []
     const findings: Finding[] = []
@@ -48,6 +50,24 @@ export const autos: Check = ({ results, poseKey }) => {
     }
     return findings
   })
+}
+
+/**
+ * The robot didn't take the selection: its chooser's active option before auto isn't the one sim-run selected
+ * (measured on a 2022 robot: every option ran the default auto). The run's other auto findings would be the wrong
+ * auto's, so it gets this one instead.
+ */
+export function selectionNotTaken(r: RunResult): Finding | null {
+  const wanted = r.run.scenario.auto
+  if (!wanted) return null
+  const lastSeen = r.record.choosers.filter((c) => c.key === wanted.chooser).at(-1)
+  if (!lastSeen || lastSeen.active === '' || lastSeen.active === wanted.option) return null
+  return {
+    check: 'auto/not-selected', severity: 'warning', run: r.run.label,
+    message: `The robot didn't take the auto sim-run selected: its chooser still said "${lastSeen.active}" when auto started, so this run says nothing about "${wanted.option}".`,
+    details: [],
+    look: 'how the robot code reads the chooser (a chooser read once at start-up, or a custom one sim-run can\'t set)',
+  }
 }
 
 /** The auto's own commands in a run (see the top of this file), leaving out ones the default auto also starts. */
