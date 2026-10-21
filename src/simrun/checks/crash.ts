@@ -14,6 +14,8 @@ import { duration, type Check, type Finding } from './types.ts'
 const EXCEPTION = /((?:[\w$]+\.)*[\w$]*(?:Exception|Error))(?:: (.*))?$/
 const CRASH_LINE = /Unhandled exception|Exception in thread/
 const FRAME = /^\s*at ([\w.$<>]+)\(([^)]*)\)/
+/** AdvantageKit asking where the log to replay is (measured: on a desktop with no stdin it throws "No line found"). */
+const REPLAY = /LogFileUtil\.findReplayLog/
 const FRAMES_SHOWN = 3
 
 export const crash: Check = ({ results, teamPackage }) => results.flatMap((r): Finding[] => {
@@ -36,6 +38,14 @@ export const crash: Check = ({ results, teamPackage }) => results.flatMap((r): F
       message: r.killed ? `The robot program stopped responding ${when}; sim-run stopped it at its deadline.` : `The robot program stopped ${when}, without printing an exception.`,
       details: lastLines(record.console),
       look: 'a loop that never ends, or a wait, in a constructor, robotInit or a periodic method',
+    }]
+  }
+  if (record.console.some((l) => REPLAY.test(l.text))) {
+    return [{
+      check: 'run/replay-mode', severity: 'error', run: r.run.label,
+      message: "The robot code started in AdvantageKit replay mode, which waits for a log to replay, so it couldn't run in the simulator.",
+      details: [`then: ${exceptionOf(crashLine.text)}`],
+      look: 'where your code picks REAL / SIM / REPLAY (often Constants or Robot): off the robot it should pick SIM',
     }]
   }
   const ours = teamFrames(record.console, crashLine, teamPackage)

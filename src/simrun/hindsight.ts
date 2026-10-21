@@ -36,9 +36,14 @@ export function hindsightOn(fileName: string, bytes: Uint8Array): { findings: Ru
   return { findings: analysis.report.findings.filter((f) => !(f.rule in LEFT_OUT)), match: analysis.match }
 }
 
-/** What sim-run uses from the profile the log was matched with. */
-export function profileFacts(match: Match): ProfileFacts {
-  const { profile } = match
+/**
+ * What sim-run uses from the profile the log was matched with, or null when the log doesn't name that profile's
+ * robot. A profile picked only because its signals fit best is another robot's: measured, four other robots' sim logs
+ * were matched to an 8033 profile that way, which would have given them its auto chooser and zeroes.
+ */
+export function profileFacts(match: Match): ProfileFacts | null {
+  const { profile, profileChoice } = match
+  if (profileChoice.how !== 'codebase' && profileChoice.how !== 'codebase and branch') return null
   const chooserKey = profile.signals.autoChoice
   return {
     profileName: profile.name,

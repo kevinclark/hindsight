@@ -122,6 +122,16 @@ describe('crash', () => {
     expect(crash(context([result(badSelect)])).map((f) => f.check)).toEqual(['run/harness-error'])
   })
 
+  it('names AdvantageKit replay mode when the code waits for a log to replay', () => {
+    const output = [
+      harness([[0.03, 'out', '********** Robot program starting **********']]),
+      'Error at java.base/java.util.Scanner.nextLine(Scanner.java:1651): Unhandled exception instantiating robot java.util.Scanner java.util.NoSuchElementException: No line found',
+      '\tat org.littletonrobotics.junction.LogFileUtil.findReplayLog(LogFileUtil.java:60)',
+      '\tat frc.robot.Robot.<init>(Robot.java:118)',
+    ].join('\n')
+    expect(crash(context([result(output)])).map((f) => f.check)).toEqual(['run/replay-mode'])
+  })
+
   it('is quiet when the timeline reached its end', () => {
     expect(crash(context([result(healthy)]))).toEqual([])
   })
