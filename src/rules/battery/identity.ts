@@ -22,10 +22,9 @@ export default rule({
   incident: 'CalGames 2026 P0: the weak battery could not be identified after the match (hindsight-proposal.md §3); library: kevinclark/8033-battery-tracker',
 
   check(match) {
-    const b = match.profile.battery
     const at = match.autoStart ?? Infinity
-    const id = match.text(match.firstOf(b.id)).at(at)
-    const source = match.text(match.firstOf(b.idSource)).at(at) || 'none'
+    const id = match.text(match.batteryKey('id')).at(at)
+    const source = match.text(match.batteryKey('idSource')).at(at) || 'none'
     if (id && (source === 'gauge' || source === 'gauge-cached')) return
 
     // An ID from the dashboard means the code works and someone typed a label; only the gauge was missing.

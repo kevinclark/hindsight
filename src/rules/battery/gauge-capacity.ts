@@ -24,17 +24,16 @@ export default rule({
   incident: 'CalGames 2026 P0 battery collapse; gauge snapshots (hindsight-proposal.md §3, battery-sources.md)',
 
   check(match) {
-    const b = match.profile.battery
-    const valid = match.signal(match.firstOf(b.gaugeValid))
-    const capacity = match.signal(match.firstOf(b.effectiveCapacityAh))
+    const valid = match.signal(match.batteryKey('gaugeValid'))
+    const capacity = match.signal(match.batteryKey('effectiveCapacityAh'))
     // The readings above zero that the gauge marked valid at the moment it logged them.
     const readings = capacity.series.v.filter((ah, i) => ah > 0 && valid.at(capacity.series.t[i]) > 0.5)
     if (readings.length === 0) return match.couldNotCheck('the fuel gauge never gave a valid reading')
     const latest = readings[readings.length - 1]
     if (latest >= LEAST_AH) return
 
-    const hasRated = b.ratedCapacityAh.some((key) => match.has(key))
-    const rated = hasRated ? match.signal(match.firstOf(b.ratedCapacityAh)).last() : 'not logged'
+    const ratedKey = match.profile.battery.ratedCapacityAh
+    const rated = ratedKey && match.has(ratedKey) ? match.signal(ratedKey).last() : 'not logged'
     return {
       message: `Fuel gauge: effective capacity ${latest.toFixed(1)} Ah (under ${LEAST_AH} Ah)`,
       measured: [{ label: 'effective capacity', value: round(latest), unit: 'Ah', threshold: LEAST_AH }],

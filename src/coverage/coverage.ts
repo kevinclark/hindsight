@@ -10,12 +10,14 @@
 import { firstPresent, has, num, type Match } from '../match/match.ts'
 import type { NumberSeries } from '../match/series.ts'
 import { profileKeys } from '../profiles/choose.ts'
+import { NAMES_SAME_ON_EVERY_ROBOT } from '../profiles/formats.ts'
+import { isDslogKey, keysOf } from '../profiles/sources.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { RULES, ruleById, type Report } from '../rules/index.ts'
 import { stripRepoPaths } from '../report/repo-paths.ts'
 import type { Severity } from '../rules/rule.ts'
 import type { MatchSummary } from '../session/summary.ts'
-import { sampleRate, SLOW_HZ, words } from '../rules/view.ts'
+import { NO_KEY, ONLY_DS_LOG, sampleRate, SLOW_HZ, words } from '../rules/view.ts'
 import { companionIn, hootLine, motorDeviceKey, type HootLine } from '../match/companion.ts'
 
 export type CoverageState = 'logged' | 'slow' | 'never changes' | 'not logged' | 'profile gap'
@@ -34,6 +36,8 @@ export interface CoverageKey {
   varies?: boolean
   /** The name rules give it in their "logged slowly" notes (view.ts labels). */
   label?: string
+  /** A signal the log type decides (formats.ts): left empty, it isn't a gap in this robot's profile. */
+  sameOnEveryRobot?: boolean
 }
 
 /** A check that couldn't run, or ran only partly, because of this signal. */
@@ -90,9 +94,11 @@ export function coverageKeys(profile: RobotProfile): CoverageKey[] {
   const fromProfileKeys = profileKeys(profile).map((k) => byKey.get(k) ?? { what: k, key: k })
   // profileKeys leaves out empty slots, the keys every log has, and the AdvantageKit keys every robot logs; rules
   // still read the last ones.
-  const empty = signals.filter((x) => !x.key)
+  const empty = signals.filter((x) => !x.key && !x.sameOnEveryRobot)
+  // A signal only the Driver Station log has (profileKeys leaves those out): logged when its .dslog is loaded.
+  const fromDsLog = signals.filter((x) => x.key && isDslogKey(x.key))
   const ruleReads = RULE_READS.map((name) => signals.find((x) => x.what === words(name))!)
-  return dedupe([...fromProfileKeys, ...empty, ...ruleReads, ...others])
+  return dedupe([...fromProfileKeys, ...fromDsLog, ...empty, ...ruleReads, ...others])
 }
 
 /** The profile's single signals (`signals`, without the lists), labelled. */
@@ -100,6 +106,8 @@ function signalSlots(p: RobotProfile): CoverageKey[] {
   const s = p.signals
   const names = (Object.keys(s) as (keyof typeof s)[]).filter((n) => typeof s[n] === 'string')
   return names.map((name) => ({
+    // A signal the log type decides (formats.ts): left empty, it isn't a gap in this robot's profile.
+    sameOnEveryRobot: NAMES_SAME_ON_EVERY_ROBOT.has(name) || undefined,
     what: words(name),
     key: (s[name] as string) || null,
     hz: name === 'batteryVoltage' ? POWER_HZ : undefined,
@@ -144,7 +152,7 @@ const BATTERY_WORDS: Record<keyof RobotProfile['battery'], string> = {
 
 function batterySlots(battery: RobotProfile['battery']): CoverageKey[] {
   return (Object.keys(BATTERY_WORDS) as (keyof RobotProfile['battery'])[]).map((name) => {
-    const [key = null, ...alternatives] = battery[name]
+    const [key = null, ...alternatives] = keysOf(battery[name]).filter((k) => k !== '')
     return { what: BATTERY_WORDS[name], key, alternatives: alternatives.length ? alternatives : undefined }
   })
 }
@@ -248,7 +256,8 @@ function neverChanges(series: NumberSeries): boolean {
 function namesSlot(part: string, slot: CoverageKey, state: CoverageState): boolean {
   const missing = /^missing (.+)$/.exec(part)?.[1]
   if (missing !== undefined) {
-    if (state === 'profile gap') return missing === `${slot.what} (the robot profile has no key for it)`
+    if (state === 'profile gap') return missing === `${slot.what} (${NO_KEY})`
+    if (slot.key && isDslogKey(slot.key)) return missing === `${slot.what} (${ONLY_DS_LOG})`
     return [slot.key, ...(slot.alternatives ?? [])].includes(missing)
   }
   const slow = /^(.+?) (?:is|are) logged about /.exec(part)?.[1]
@@ -284,7 +293,8 @@ function unlistedLines(lines: CoverageLine[], reasons: Reason[]): CoverageLine[]
 function gapIn(part: string): string | null {
   const none = /^the robot profile (?:names|maps|lists) no (.+)$/.exec(part)?.[1]
   if (none) return none
-  return /^missing (.+) \((?:not in the robot profile|the robot profile has no key for it|the robot profile has none|the robot profile names no [^)]*)\)$/.exec(part)?.[1] ?? null
+  const whys = `not in the robot profile|${NO_KEY}|the robot profile has none|the robot profile names no [^)]*`
+  return new RegExp(`^missing (.+) \\((?:${whys})\\)$`).exec(part)?.[1] ?? null
 }
 
 function darkCheck(id: string, partly: boolean): DarkCheck {
@@ -297,6 +307,7 @@ function todoFor(slot: CoverageKey, state: CoverageState, hz?: number): string {
     case 'logged':
       return ''
     case 'not logged':
+      if (slot.key && isDslogKey(slot.key)) return `Load this match's .dslog: only the Driver Station log has ${slot.what}.`
       return `Log ${slot.what} as ${slot.key}.`
     case 'slow':
       return `Log ${slot.what} on every robot loop: it was logged about ${Math.round(hz ?? 0)} times a second while enabled, and the checks need ${slot.hz}.`

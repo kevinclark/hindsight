@@ -3,14 +3,14 @@
  * DataLogManager), the code's identity, and the robot-specific keys that can be told by their shape alone.
  */
 import { hasEntry, readValues, type WpilogEntry, type WpilogFile } from '../readers/wpilog.ts'
-import { DATALOGMANAGER_SIGNALS } from '../profiles/datalogmanager.ts'
-import { ADVANTAGEKIT_SIGNALS } from '../profiles/advantagekit.ts'
+import { codeIdentity, firstText, formatOf, isRoboRioReading, LOG_FORMATS } from '../profiles/formats.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 
 type Signals = RobotProfile['signals']
 type Battery = RobotProfile['battery']
 
-export type Framework = 'advantagekit' | 'datalogmanager' | 'unknown'
+/** The log type's name (profiles/formats.ts), or 'unknown'. */
+export type Framework = string
 
 export interface SignalDraft {
   framework: Framework
@@ -26,16 +26,8 @@ export interface SignalDraft {
 }
 
 const records = (log: WpilogFile, e: WpilogEntry) => log.entryStart[e.id + 1] - log.entryStart[e.id]
-/** The code's name for itself: AdvantageKit's Codebase, or ProjectName (the AdvantageKit template's name for it). */
-export const codebaseOf = (log: WpilogFile) => firstString(log, '/RealMetadata/Codebase') || firstString(log, '/RealMetadata/ProjectName')
-
-const firstString = (log: WpilogFile, key: string) => { const v = readValues<string>(log, key)?.v; return v?.find((x) => typeof x === 'string' && x !== '') ?? '' }
-
-export function frameworkOf(log: WpilogFile): Framework {
-  if (hasEntry(log, ADVANTAGEKIT_SIGNALS.enabled)) return 'advantagekit'
-  if (hasEntry(log, DATALOGMANAGER_SIGNALS.enabled)) return 'datalogmanager'
-  return 'unknown'
-}
+/** The code's name for itself (the log type's codebase signal). */
+export const codebaseOf = (log: WpilogFile) => codeIdentity(log).codebase
 
 /** Folders whose `errors` / `warnings` / `infos` children are string arrays: AdvantageKit's (and WPILib's) Alerts groups. */
 function alertGroups(entries: WpilogEntry[]): string[] {
@@ -63,12 +55,11 @@ const BATTERY_LEAVES: Record<keyof Battery, RegExp> = {
 
 /** Not motors or devices this builder reads: cameras are out of scope, and their connected flags belong to them. */
 const CAMERA_FOLDER = /vision|camera|photon|limelight|apriltag/i
-/** Connected flags that aren't CAN devices: the radio, NetworkTables clients. */
-const NOT_A_DEVICE = /^(NT:)?\/(RadioStatus|SystemStats|PowerDistribution)(\/|$)/
 
 export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalDraft {
-  const framework = frameworkOf(log)
-  const base = framework === 'datalogmanager' ? DATALOGMANAGER_SIGNALS : ADVANTAGEKIT_SIGNALS
+  const format = formatOf(log)
+  const framework = format?.name ?? 'unknown'
+  const base = (format ?? LOG_FORMATS[0]).signals
   const entries = [...log.entries.values()].filter((e) => records(log, e) > 0)
   const guessed: (keyof Signals)[] = []
   const alternatives: SignalDraft['alternatives'] = {}
@@ -96,12 +87,12 @@ export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalD
 
   // Connected flags that aren't a motor's or a camera's: encoders, the gyro, sensors.
   const otherDevices = entries
-    .filter((e) => e.type === 'boolean' && /Connected$/.test(e.name) && !motorKeys.has(e.name) && !CAMERA_FOLDER.test(e.name) && !NOT_A_DEVICE.test(e.name))
+    .filter((e) => e.type === 'boolean' && /Connected$/.test(e.name) && !motorKeys.has(e.name) && !CAMERA_FOLDER.test(e.name) && !isRoboRioReading(e.name))
     .map((e) => ({ name: e.name.replace(/^NT:/, '').replace(/^\//, '').replace(/\/?(Is)?Connected$/, '').replace(/\//g, ' '), connected: e.name }))
     .sort((a, b) => a.connected.localeCompare(b.connected))
 
   // Identity: AdvantageKit's Codebase, or ProjectName (the AdvantageKit template's name for it).
   const codebase = codebaseOf(log)
-  const code = { repo: '', branch: firstString(log, signals.gitBranch), sha: firstString(log, signals.gitSha) }
+  const code = { repo: '', branch: firstText(log, signals.gitBranch), sha: firstText(log, signals.gitSha) }
   return { framework, signals, guessed, alternatives, battery, codebase, code, otherDevices }
 }

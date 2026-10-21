@@ -150,7 +150,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
       findings: findings.map((f) => toSummaryFinding(f, rule.nextStep)),
     }
   }
-  const idKey = match.profile.battery.id.find((k) => has(match, k))
+  const idKey = has(match, match.profile.battery.id) ? match.profile.battery.id : null
   const ids = idKey ? values<string>(match, idKey) : null
   const atStart = ids && match.matchStart !== null ? heldAt(ids, match.matchStart) : undefined
   return {

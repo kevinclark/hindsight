@@ -122,7 +122,90 @@ export interface CodePin {
   alsoBranches?: string[]
 }
 
-export interface RobotProfile {
+/** Where a signal is in a log: its key, or several places in order (the first the log has is used). '' = nowhere. */
+export type Source = string | string[]
+
+/**
+ * Every signal a rule can ask for by name, and its log key ('' when the log type or robot has none). This is the
+ * shape after a match has picked one key per signal (src/profiles/sources.ts); a profile writes SignalSources.
+ */
+export interface SignalKeys {
+  enabled: string
+  autonomous: string
+  fmsAttached: string
+  dsAttached: string
+  eventName: string
+  matchType: string
+  matchNumber: string
+  replayNumber: string
+  allianceStation: string
+  gitSha: string
+  gitBranch: string
+  gitDate: string
+  gitDirty: string
+  /** The code's name for itself (how a log says which robot it is from; see choose.ts). */
+  codebase: string
+  /** A key logged every robot loop, whose first and last records are the log's extent. */
+  logClock: string
+  epochMicros: string
+  systemTimeValid: string
+  batteryVoltage: string
+  brownedOut: string
+  brownoutVoltage: string
+  commsDisableCount: string
+  systemActive: string
+  loopCycleMs: string
+  console: string
+  /** Each AdvantageKit Alert group has string[] children: errors, warnings, infos. */
+  alertGroups: string[]
+  gyroPitch: string
+  gyroRoll: string
+  accelX: string
+  accelY: string
+  odometryPose: string
+  /** The Driver Station's e-stop flag (true from the e-stop until the robot program restarts). */
+  emergencyStop: string
+  /** The Driver Station's match clock: seconds left in the current period (auto or teleop). */
+  matchTimeLeft: string
+  /** The auto chooser's selection (text), e.g. AdvantageKit's LoggedDashboardChooser. */
+  autoChoice: string
+  /** Each Driver Station joystick port's button count (0 = nothing plugged in), port 0 first. */
+  joystickButtonCounts: string[]
+  /** The radio's own status: connected to the robot network (AdvantageKit's /RadioStatus). */
+  radioConnected: string
+  /** The power distribution board's channel currents (a list per record), its input voltage and channel count. */
+  powerDistributionCurrents: string
+  powerDistributionVoltage: string
+  powerDistributionChannels: string
+  /**
+   * A measured total robot current (a REV PDH's TotalCurrent), used as the robot's current only when the log has no
+   * motor supply currents (src/power/battery-model.ts). '' where it isn't trusted yet: the power model adds up the
+   * motors.
+   */
+  totalCurrent: string
+}
+
+/** The battery tracker's signals, each a key once a match has picked one ('' when the profile has none). */
+export interface BatteryKeys {
+  id: string
+  idSource: string
+  gaugeValid: string
+  effectiveCapacityAh: string
+  ratedCapacityAh: string
+  remainingChargePct: string
+  numCycles: string
+}
+
+export type BatterySources = { [K in keyof BatteryKeys]: Source }
+
+/** The signals as a profile or a log type writes them: each single signal's Source (the lists stay lists). */
+export type SignalSources = { [K in keyof SignalKeys]: SignalKeys[K] extends string ? Source : SignalKeys[K] }
+
+/**
+ * A robot profile, as written: every signal and battery key a Source. A match's profile has one key each
+ * (ResolvedProfile).
+ */
+export interface RobotProfile<Signals = SignalSources, Battery = BatterySources> {
   /** The robot, as people call it: "2026 offseason robot". */
   name: string
   /**
@@ -138,55 +221,9 @@ export interface RobotProfile {
   code: CodePin
   /** `field`: the field's length (x) and width (y) in meters, from the season's AprilTag layout, for "is this pose on the field". */
   game: { name: string; autoSeconds: number; teleopSeconds: number; field?: { length: number; width: number } }
-  signals: {
-    enabled: string
-    autonomous: string
-    fmsAttached: string
-    dsAttached: string
-    eventName: string
-    matchType: string
-    matchNumber: string
-    replayNumber: string
-    allianceStation: string
-    gitSha: string
-    gitBranch: string
-    gitDate: string
-    gitDirty: string
-    epochMicros: string
-    systemTimeValid: string
-    batteryVoltage: string
-    brownedOut: string
-    brownoutVoltage: string
-    commsDisableCount: string
-    systemActive: string
-    loopCycleMs: string
-    console: string
-    /** Each AdvantageKit Alert group has string[] children: errors, warnings, infos. */
-    alertGroups: string[]
-    gyroPitch: string
-    gyroRoll: string
-    accelX: string
-    accelY: string
-    odometryPose: string
-    /** The Driver Station's e-stop flag (true from the e-stop until the robot program restarts). */
-    emergencyStop: string
-    /** The Driver Station's match clock: seconds left in the current period (auto or teleop). */
-    matchTimeLeft: string
-    /** The auto chooser's selection (text), e.g. AdvantageKit's LoggedDashboardChooser. */
-    autoChoice: string
-    /** Each Driver Station joystick port's button count (0 = nothing plugged in), port 0 first. */
-    joystickButtonCounts: string[]
-  }
-  /** Battery tracker keys. Each lists the places the key may be; the first one present is used. */
-  battery: {
-    id: string[]
-    idSource: string[]
-    gaugeValid: string[]
-    effectiveCapacityAh: string[]
-    ratedCapacityAh: string[]
-    remainingChargePct: string[]
-    numCycles: string[]
-  }
+  signals: Signals
+  /** Battery tracker keys. Each lists the places the key may be (the tracker's keys moved between versions). */
+  battery: Battery
   power: {
     otherLoadsAmps: number
     restVoltageMin: number
@@ -274,3 +311,6 @@ export type ZeroCheck =
     where: string
   }
   | { mechanism: string; notCheckable: string }
+
+/** A profile as a match uses it: one log key per signal, picked for that match's logs. */
+export type ResolvedProfile = RobotProfile<SignalKeys, BatteryKeys>

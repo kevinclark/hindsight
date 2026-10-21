@@ -231,7 +231,7 @@ describe("a team-340-shaped log: TalonFX structs, no battery voltage", () => {
   it('says what it could not check, and why', () => {
     expect(skipped('power/limit-not-applied')).toMatch(/no current limits for Drive \(not read from 340's robot code\)/)
     expect(skipped('power/battery-collapse')).toBe('missing battery voltage (the robot profile has no key for it)')
-    expect(skipped('power/brownout')).toBe('missing browned out (the robot profile has no key for it)')
+    expect(skipped('power/brownout')).toBe("missing browned out (only a Driver Station log has it: load this match's .dslog)")
   })
 })
 

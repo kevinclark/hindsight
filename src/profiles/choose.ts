@@ -5,9 +5,10 @@
  *   3. a profile for that robot pinned to another branch (with a note: limits may differ);
  *   4. the profile with the most of its signals in the log (with a note, and a warning when under 60 % fit).
  */
-import { hasEntry, readValues, type WpilogFile } from '../readers/wpilog.ts'
+import { hasEntry, type WpilogFile } from '../readers/wpilog.ts'
 import type { RobotProfile } from './types.ts'
-import { DATALOGMANAGER_SIGNALS } from './datalogmanager.ts'
+import { codeIdentity, KEYS_SAME_ON_EVERY_ROBOT, NAMES_SAME_ON_EVERY_ROBOT } from './formats.ts'
+import { isDslogKey, keysOf } from './sources.ts'
 
 export interface ProfileChoice {
   how: 'chosen by you' | 'codebase and branch' | 'codebase' | 'signals' | 'given'
@@ -25,22 +26,23 @@ export interface ProfileChoice {
 /** Below this share of the profile's signals, the log is probably from another robot or another year's code. */
 export const PROFILE_FIT_MIN = 0.6
 
-/** Keys every plain WPILib log has (DS:, NT:/FMSInfo, systemTime, console): they say nothing about which robot it is. */
-const GENERIC = new Set(Object.values(DATALOGMANAGER_SIGNALS).filter((k): k is string => typeof k === 'string'))
 
 /**
- * Every signal the profile names (alert groups are folders of signals, not signals, so they don't count), less the
- * keys any plain WPILib log has: otherwise a profile made mostly of those would fit every such log. The e-stop flag,
- * match clock, auto chooser and joystick keys are left out too: every AdvantageKit log has them, whatever the robot.
+ * Every signal the profile names, less what doesn't tell robots apart: the signals and keys a log type keeps in the
+ * same place on every robot (formats.ts, sameOnEveryRobot), otherwise a profile made mostly of those would fit every
+ * such log, and Driver Station log sources (not in the robot log). Alert groups are folders of signals, not signals.
  */
 export function profileKeys(profile: RobotProfile): string[] {
-  const { alertGroups: _, emergencyStop: _e, matchTimeLeft: _m, autoChoice: _a, joystickButtonCounts: _j, ...signals } = profile.signals
+  const { alertGroups: _, ...signals } = profile.signals
+  const robotSignals = Object.entries(signals).filter(([name]) => !NAMES_SAME_ON_EVERY_ROBOT.has(name as never))
   const keys = [
     ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected, m.temperature])),
     ...profile.cameras.flatMap((c) => [c.acceptedPose, c.connected]),
-    ...Object.values(signals),
+    ...robotSignals.flatMap(([, source]) => keysOf(source)),
   ]
-  return [...new Set(keys.filter((k): k is string => typeof k === 'string' && k !== '' && !GENERIC.has(k)))]
+  const named = keys.filter((k): k is string => typeof k === 'string' && k !== '')
+  const robotKeys = named.filter((k) => !KEYS_SAME_ON_EVERY_ROBOT.has(k) && !isDslogKey(k))
+  return [...new Set(robotKeys)]
 }
 
 export function profileFit(log: WpilogFile, profile: RobotProfile): { present: number; total: number } {
@@ -50,7 +52,6 @@ export function profileFit(log: WpilogFile, profile: RobotProfile): { present: n
 
 const MISFIT_TEXT = 'So the rules about specific motors, devices, cameras and mechanisms were not run, and the auto and teleop lengths were measured from this log.'
 
-const first = (log: WpilogFile, key: string) => readValues<string>(log, key)?.v[0] ?? ''
 
 export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?: RobotProfile): { profile: RobotProfile; choice: ProfileChoice } {
   const fitText = (f: { present: number; total: number }) => `${f.present} of its ${f.total} signals are in this log`
@@ -59,9 +60,7 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
     const fit = profileFit(log, chosen)
     return { profile: chosen, choice: { how: 'chosen by you', fit, misfit: low(fit), note: low(fit) ? `You chose "${chosen.name}", but only ${fitText(fit)}. ${MISFIT_TEXT}` : null } }
   }
-  // AdvantageKit's template names the code ProjectName; some teams set Codebase.
-  const codebase = first(log, '/RealMetadata/Codebase') || first(log, '/RealMetadata/ProjectName')
-  const branch = first(log, '/RealMetadata/GitBranch')
+  const { codebase, branch } = codeIdentity(log)
   const sameRobot = profiles.filter((p) => codebase && p.codebase === codebase)
   const pinned = sameRobot.find((p) => p.code.branch === branch || (branch && p.code.alsoBranches?.includes(branch)))
   if (pinned) {

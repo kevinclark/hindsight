@@ -4,22 +4,28 @@
  * - phases: when the robot was enabled, and whether in auto or teleop (from /DriverStation/Enabled + /Autonomous,
  *   or DS:enabled + DS:autonomous in a plain WPILib log)
  * - event and match number (from /DriverStation/*, or NT:/FMSInfo/*; see profiles/datalogmanager.ts)
+ * - one log key per profile signal: the first of its sources this match's logs have (profiles/sources.ts), the
+ *   Driver Station log's fields (dslog:brownout) included
  * - the code build (from /RealMetadata/*)
  * - the wall clock, so a Driver Station log can be lined up with the robot log
  */
 
 import type { LimitLines } from '../code/limit-lines.ts'
 import { hasEntry, readNumbers, readValues, type WpilogFile } from '../readers/wpilog.ts'
-import { dslogEndEpoch, type DslogFile } from '../readers/dslog.ts'
-import type { RobotProfile } from '../profiles/types.ts'
+import { dslogEndEpoch, type DslogFile, type DslogRecord } from '../readers/dslog.ts'
+import type { ResolvedProfile, RobotProfile } from '../profiles/types.ts'
 import type { ProfileChoice } from '../profiles/choose.ts'
-import { withDataLogManagerKeys } from '../profiles/datalogmanager.ts'
+import { withNtAlertGroups } from '../profiles/datalogmanager.ts'
+import { DSLOG, isDslogKey, resolveBattery, resolveSignals } from '../profiles/sources.ts'
 import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } from './series.ts'
 
 export interface Match {
   fileName: string
   log: WpilogFile
-  profile: RobotProfile
+  /** The profile with one log key per signal, picked for this match's logs (see `sources`). */
+  profile: ResolvedProfile
+  /** The profile as written: every place each key may be, so a Driver Station log loaded later is used. */
+  sources: RobotProfile
   /** How the profile was picked for this log, and anything the student should know about it. */
   profileChoice: ProfileChoice
   /** First and last record time in the log, seconds. */
@@ -72,10 +78,30 @@ export interface ForesightWindow {
 
 export interface DsAttachment { file: DslogFile; fileName: string; startTime: number; endTime: number }
 
-/** A numeric signal from the log (null if missing). Decoded once per match. */
+/** A numeric signal from the log, or a Driver Station log field (dslog:brownout); null if missing. Decoded once. */
 export function num(match: Match, key: string): NumberSeries | null {
-  if (!match.cache.has(key)) match.cache.set(key, readNumbers(match.log, key))
+  if (match.cache.has(key)) return match.cache.get(key) as NumberSeries | null
+  match.cache.set(key, isDslogKey(key) ? dslogSeries(match, key) : readNumbers(match.log, key))
   return match.cache.get(key) as NumberSeries | null
+}
+
+/**
+ * A Driver Station log field on the robot's clock: the records where the DS saw the robot, inside this robot log
+ * (a DS log kept open across a reboot also holds the earlier boot). Null without a DS log or a set roboRIO clock.
+ */
+function dslogSeries(match: Match, key: string): NumberSeries | null {
+  const offset = match.epochOffset
+  if (offset === null) return null
+  const field = key.slice(DSLOG.length) as keyof DslogRecord
+  const records = match.ds.flatMap((d) => d.file.records)
+  if (records.length === 0 || !(field in records[0])) return null // no DS log, or no such field
+  const points = records
+    .filter((r) => r.voltage !== null)
+    .map((r) => ({ t: r.epochSeconds - offset, v: Number(r[field]) }))
+    .filter((p) => p.t >= match.logStart && p.t <= match.logEnd)
+    .sort((a, b) => a.t - b.t)
+  if (points.length === 0) return null
+  return { name: key, t: Float64Array.from(points, (p) => p.t), v: Float64Array.from(points, (p) => p.v) }
 }
 
 /** Any signal as plain values (strings, arrays, structs). Null if missing. */
@@ -85,9 +111,9 @@ export function values<T>(match: Match, key: string): ValueSeries<T> | null {
   return match.cache.get(cacheKey) as ValueSeries<T> | null
 }
 
-/** True when the log has the key with at least one record. */
+/** True when the log (or, for a dslog: key, a Driver Station log) has the key with at least one record. */
 export function has(match: Match, key: string): boolean {
-  return hasEntry(match.log, key)
+  return isDslogKey(key) ? num(match, key) !== null : hasEntry(match.log, key)
 }
 
 /** The first key in the list that the log has, or null. */
@@ -98,19 +124,20 @@ export function firstPresent(match: Match, keys: string[]): string | null {
 const MATCH_TYPES = ['', 'Practice', 'Qualification', 'Elimination']
 
 export function buildMatch(fileName: string, log: WpilogFile, givenProfile: RobotProfile, profileChoice: ProfileChoice = { how: 'given', note: null, fit: null }): Match {
-  // A plain WPILib log has the match identity under DS: and NT:/FMSInfo, whatever the profile says.
-  const profile = withDataLogManagerKeys(log, givenProfile)
+  // No Driver Station log yet: attachDslog picks again.
+  const resolved = resolveProfile(givenProfile, (key) => hasEntry(log, key))
+  const profile = withNtAlertGroups(log, resolved)
   const s = profile.signals
   let logStart = Infinity
   let logEnd = -Infinity
-  // AdvantageKit logs /Timestamp every cycle, so its first and last records give the log's extent; otherwise the
-  // first and last record of any kind.
-  const clock = readNumbers(log, '/Timestamp') ?? readNumbers(log, s.batteryVoltage)
+  // A key logged every loop (AdvantageKit's /Timestamp) gives the log's extent; otherwise the battery voltage, or
+  // the first and last record of any kind.
+  const clock = readNumbers(log, s.logClock) ?? readNumbers(log, s.batteryVoltage)
   if (clock && clock.t.length) { logStart = clock.t[0]; logEnd = clock.t[clock.t.length - 1] }
   if (!Number.isFinite(logStart)) { logStart = log.firstTime; logEnd = log.lastTime }
 
   const match: Match = {
-    fileName, log, profile, profileChoice, logStart, logEnd,
+    fileName, log, profile, sources: givenProfile, profileChoice, logStart, logEnd,
     enabled: [], auto: [], teleop: [], matchStart: null, teleopStart: null, matchEnd: null,
     fms: false, event: '', matchLabel: '', build: { sha: '', branch: '', date: '', dirty: '' },
     epochOffset: null, ds: [], others: [], cache: new Map(),
@@ -245,10 +272,20 @@ export function dslogOverlap(match: Match, file: DslogFile): number {
   return Math.max(0, Math.min(endTime, match.matchEnd) - Math.max(startTime, match.matchStart))
 }
 
+/** Add a Driver Station log, and pick each signal's source again: a signal the robot log lacks may be in it. */
 export function attachDslog(match: Match, file: DslogFile, fileName: string): void {
   const offset = match.epochOffset ?? 0
   match.ds.push({ file, fileName, startTime: file.startEpochSeconds - offset, endTime: dslogEndEpoch(file) - offset })
   match.ds.sort((a, b) => a.startTime - b.startTime)
+  // Every series from a DS log, and the power model built on the old picks, are out of date.
+  for (const key of match.cache.keys()) if (isDslogKey(key) || key.startsWith('power:')) match.cache.delete(key)
+  const { signals, battery } = resolveProfile(match.sources, (key) => has(match, key))
+  match.profile = { ...match.profile, battery, signals: { ...signals, alertGroups: match.profile.signals.alertGroups } }
+}
+
+/** The profile with one key per signal and battery key: the first of its sources that `present` says the logs have. */
+function resolveProfile(profile: RobotProfile, present: (key: string) => boolean): ResolvedProfile {
+  return { ...profile, signals: resolveSignals(profile.signals, present), battery: resolveBattery(profile.battery, present) }
 }
 
 /** Seconds of the current phase left at time t (auto or teleop), from the game's phase lengths. */

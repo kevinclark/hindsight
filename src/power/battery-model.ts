@@ -1,7 +1,8 @@
 /**
  * The power model behind the Power tab and the power/* rules.
  *
- * Total current is the SUM OF MOTOR SUPPLY CURRENTS plus a small constant for everything else.
+ * Total current is the SUM OF MOTOR SUPPLY CURRENTS plus a small constant for everything else (or, in a log with
+ * no motor currents, the measured total the log type names: the totalCurrent signal).
  * /SystemStats/BatteryCurrent is NOT battery current: it is the roboRIO's own input (~0.5 A).
  *
  * The battery model is the "no-RC" fit from hindsight-research/whatif/battery_model_replay.py:
@@ -15,10 +16,13 @@ import { makeGrid, median, resample, round } from '../match/series.ts'
 
 export const DT = 0.02 // 50 Hz grid, the robot's loop rate
 
+/** What the grid's current is when it is the motors' sum (evidence labels say it). */
+export const MOTOR_CURRENT_LABEL = 'total motor current'
+
 export interface PowerGrid {
   t: Float64Array
   volts: Float64Array
-  /** Total current: motor supply currents + otherLoadsAmps. */
+  /** Total current: motor supply currents + otherLoadsAmps, or a measured total (the totalCurrent signal). */
   amps: Float64Array
   /** Charge drawn since the match started (first enable), Ah. Held constant after the match ends. */
   ah: Float64Array
@@ -29,6 +33,12 @@ export interface PowerGrid {
   groups: { name: string; amps: Float64Array }[]
   /** Supply current per motor, same grid (for the what-if). */
   motors: { name: string; group: string; amps: Float64Array }[]
+  /** What `amps` is, for evidence labels: "total motor current" or "total current". */
+  currentLabel: string
+  /** Set when `amps` is a measured total rather than the motors' sum: where it came from, in words. */
+  currentFrom?: string
+  /** Set with currentFrom: how far the total was moved earlier to line up with the voltage (see measuredTotal), s. */
+  totalCurrentShift?: number
 }
 
 /** Resample voltage and every motor's supply current onto one 50 Hz grid. Null if voltage or currents are missing. */
@@ -94,10 +104,77 @@ function gridWithCurrents(match: Match, t: Float64Array, volts: Float64Array): P
     }
     groups.push({ name: group.name, amps: groupAmps })
   }
-  if (!anyMotor) return null
+  const shift = anyMotor ? null : measuredTotal(match, t, volts, enabledMask, amps)
+  if (!anyMotor && shift === null) return null
 
   const ah = chargeDrawn(t, amps, match.matchStart, match.matchEnd)
-  return { t, volts, amps, ah, enabled: enabledMask, matchStart: match.matchStart, matchEnd: match.matchEnd, groups, motors }
+  const { matchStart, matchEnd } = match
+  const base = { t, volts, amps, ah, enabled: enabledMask, matchStart, matchEnd, groups, motors }
+  if (shift === null) return { ...base, currentLabel: MOTOR_CURRENT_LABEL }
+  const moved = shift > 0 ? `, moved ${shift.toFixed(2)} s earlier to line up with the battery voltage` : ''
+  const currentFrom = `the power distribution board's own total (no motor currents are logged)${moved}`
+  return { ...base, currentLabel: 'total current', currentFrom, totalCurrentShift: shift }
+}
+
+/** The latest a measured total current may be stamped after the voltage it goes with (see measuredTotal). */
+const MOST_TOTAL_CURRENT_SHIFT = 0.3
+/**
+ * How much closer (correlation) a shifted total must follow the voltage than the unshifted one before it is moved.
+ * Assumed: the three logs it was fitted on gained 0.24–0.53, so this is a fifth of the smallest. No log has tested it.
+ */
+const SHIFT_MUST_GAIN = 0.05
+
+/**
+ * A log with no motor currents: the log type's measured total current (a REV PDH's TotalCurrent) in `amps`, which
+ * then holds the whole robot's current, the loads that aren't motors included. Null when there is none.
+ *
+ * The board's total reaches the log late. Fitted on one team's three public DogLog logs only: it lined up best with
+ * the voltage 0.10–0.12 s after it (correlation −0.80, −0.85, −0.75; unshifted −0.49, −0.61, −0.22), and left
+ * there it made the resistance read 2–6 mΩ instead of 17–19. So the total is moved earlier by the step (by DT,
+ * up to 0.3 s) where it follows the voltage most closely while enabled; the step also takes up the hold between the
+ * total's samples. It stays where it was unless that step beats no step by SHIFT_MUST_GAIN, and when the best step is
+ * the last one searched (a periodic load can put a second minimum there). Returns the step in seconds.
+ * The motor currents never take this path: 8033's CalGames logs line up best at 0.
+ */
+function measuredTotal(
+  match: Match, t: Float64Array, volts: Float64Array, enabled: Uint8Array, amps: Float64Array,
+): number | null {
+  const key = match.profile.signals.totalCurrent
+  const series = key ? num(match, key) : null
+  if (!series) return null
+  const total = resample(series, t, 0)
+  for (let i = 0; i < t.length; i++) total[i] = Number.isFinite(total[i]) ? Math.max(0, total[i]) : 0
+  const steps = bestShift(volts, total, enabled)
+  for (let i = 0; i < t.length; i++) amps[i] = total[Math.min(i + steps, t.length - 1)]
+  return steps * DT
+}
+
+/** The step (in grid points) that lines the total up with the voltage, or 0 when no step clearly does. */
+function bestShift(volts: Float64Array, total: Float64Array, enabled: Uint8Array): number {
+  const last = Math.round(MOST_TOTAL_CURRENT_SHIFT / DT)
+  const unshifted = correlation(volts, total, enabled, 0)
+  let best = { steps: 0, r: unshifted }
+  for (let steps = 1; steps <= last; steps++) {
+    const r = correlation(volts, total, enabled, steps)
+    if (r < best.r) best = { steps, r }
+  }
+  const clearlyBetter = best.r < Math.min(0, unshifted - SHIFT_MUST_GAIN)
+  return clearlyBetter && best.steps < last ? best.steps : 0
+}
+
+/**
+ * Correlation of volts[i] with amps[i + steps] over enabled grid points (NaN with too few). Negative: more current,
+ * less voltage.
+ */
+function correlation(volts: Float64Array, amps: Float64Array, enabled: Uint8Array, steps: number): number {
+  let n = 0, sv = 0, sa = 0, svv = 0, saa = 0, sva = 0
+  for (let i = 0; i + steps < volts.length; i++) {
+    if (!enabled[i] || !Number.isFinite(volts[i])) continue
+    const v = volts[i], a = amps[i + steps]
+    n++; sv += v; sa += a; svv += v * v; saa += a * a; sva += v * a
+  }
+  if (n < 100) return NaN
+  return (n * sva - sv * sa) / Math.sqrt((n * svv - sv * sv) * (n * saa - sa * sa))
 }
 
 /**

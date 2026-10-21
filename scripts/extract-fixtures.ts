@@ -8,8 +8,12 @@ import { homedir } from 'node:os'
 import { openWpilog, readValues } from '../src/readers/wpilog.ts'
 import { readDslog } from '../src/readers/dslog.ts'
 import { buildMatch, attachDslog } from '../src/match/match.ts'
-import { offseason2026 as P } from '../src/profiles/2026-offseason.ts'
+import { offseason2026 } from '../src/profiles/2026-offseason.ts'
+import { resolveSignals } from '../src/profiles/sources.ts'
 import type { Fixture, FixtureEntry } from '../tests/helpers/fixture-format.ts'
+
+/** The profile with its AdvantageKit keys (these fixtures are cut from AdvantageKit logs). */
+const P = { ...offseason2026, signals: resolveSignals(offseason2026.signals, () => true) }
 
 const DL = `${homedir()}/Downloads`
 const LOGS = {

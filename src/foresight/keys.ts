@@ -5,6 +5,7 @@
  * /AdvantageKit/DriverStation/Enabled. Foresight subscribes only to the keys its checks read for the chosen robot
  * profile (a few dozen of the ~455 the robot publishes), never the whole tree.
  */
+import { isDslogKey, keysOf } from '../profiles/sources.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import type { WpilogFile } from '../readers/wpilog.ts'
 import { COMPANION_ROOT } from '../match/companion.ts'
@@ -63,11 +64,11 @@ export function foresightKeysIn(log: WpilogFile, profile: RobotProfile): string[
 export function foresightKeys(profile: RobotProfile): string[] {
   const s = profile.signals
   const keys = [
-    '/Timestamp',
+    ...keysOf(s.logClock),
     ...METADATA_KEYS,
-    s.enabled, s.autonomous, s.fmsAttached, s.dsAttached,
-    s.gitSha, s.gitBranch, s.gitDate, s.gitDirty,
-    s.batteryVoltage,
+    // Every place each may be (profiles/sources.ts); not the Driver Station log's, which isn't on NetworkTables.
+    ...[s.enabled, s.autonomous, s.fmsAttached, s.dsAttached, s.gitSha, s.gitBranch, s.gitDate, s.gitDirty, s.batteryVoltage]
+      .flatMap(keysOf).filter((k) => !isDslogKey(k)),
     ...s.alertGroups.flatMap((g) => [`${g}/errors`, `${g}/warnings`, `${g}/infos`]),
     ...Object.values(profile.battery).flat(),
     ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.connected, m.temperature, m.updating])),

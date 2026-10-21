@@ -99,7 +99,7 @@ function measure(match: Match, group: MotorGroup, v: NumberSeries, setpoint: Num
     startVolts = before.length ? median(before) : valueAt(battery, start)
     for (let i = Math.max(0, indexAt(battery.t, start)); i < battery.t.length && battery.t[i] <= end; i++) if (!(battery.v[i] >= low)) low = battery.v[i]
   }
-  const idKey = match.profile.battery.id.find((k) => has(match, k))
+  const idKey = has(match, match.profile.battery.id) ? match.profile.battery.id : null
   // The battery in the robot at this run (held value at the start), so a swap between runs shows.
   const ids = idKey ? values<string>(match, idKey)! : null
   const idAtStart = ids ? ids.v[indexAt(ids.t, start)] : undefined
