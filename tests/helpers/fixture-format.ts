@@ -118,3 +118,29 @@ export function writeDslog(ds: FixtureDslog): Uint8Array {
   }
   return new Uint8Array(out.buffer)
 }
+
+/** A .dsevents file: a version-4 header, then one record per [epoch seconds, text] (text may hold several <TagVersion> messages). */
+export function writeDsevents(startEpochSeconds: number, records: [number, string][]): Uint8Array {
+  const parts: Uint8Array[] = [labviewHeader(startEpochSeconds)]
+  for (const [epoch, text] of records) {
+    const body = enc.encode(text)
+    const head = new DataView(new ArrayBuffer(20))
+    writeLabviewTime(head, 0, epoch)
+    head.setInt32(16, body.length, false)
+    parts.push(new Uint8Array(head.buffer), body)
+  }
+  return concat(parts)
+}
+
+function labviewHeader(epoch: number): Uint8Array {
+  const out = new DataView(new ArrayBuffer(20))
+  out.setInt32(0, 4, false)
+  writeLabviewTime(out, 4, epoch)
+  return new Uint8Array(out.buffer)
+}
+
+function writeLabviewTime(view: DataView, at: number, epoch: number): void {
+  const whole = Math.floor(epoch)
+  view.setBigInt64(at, BigInt(whole + 2082844800), false)
+  view.setBigUint64(at + 8, BigInt(Math.round((epoch - whole) * 2 ** 32)) << 32n, false)
+}

@@ -39,7 +39,7 @@ const github = githubRepo ? nodeGitHub(githubRepo, cacheFile) : null
 const code = codeDir ? nodeCodeFolder(codeDir, cacheFile) : github
 const [out, ...groups] = args
 const walk = (p: string): string[] =>
-  statSync(p).isDirectory() ? readdirSync(p).sort().flatMap((f) => walk(join(p, f))) : /\.(wpilog|dslog)$/.test(p) ? [p] : []
+  statSync(p).isDirectory() ? readdirSync(p).sort().flatMap((f) => walk(join(p, f))) : /\.(wpilog|dslog|dsevents)$/.test(p) ? [p] : []
 
 const summary = (_k: string, v: unknown) => {
   if (ArrayBuffer.isView(v)) {

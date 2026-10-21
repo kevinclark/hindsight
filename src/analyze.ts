@@ -1,12 +1,14 @@
 /**
- * From dropped files to reports: read each .wpilog, line up any .dslog with the match it overlaps, run the rules.
+ * From dropped files to reports: read each .wpilog, line up any .dslog and .dsevents with the match it overlaps, run
+ * the rules.
  * Used by the app (App.svelte), the command-line check (scripts/check.ts) and the tests.
  */
 
 import { openWpilog } from './readers/wpilog.ts'
 import { readDslog, type DslogFile } from './readers/dslog.ts'
+import { readDsevents, type DseventsFile } from './readers/dsevents.ts'
 import { parseHistory, type HistoryEvent } from './triage/history.ts'
-import { attachDslog, buildMatch, dslogOverlap, type Match } from './match/match.ts'
+import { attachDsevents, attachDslog, buildMatch, dseventsOverlap, dslogOverlap, type Match } from './match/match.ts'
 import { CONSOLIDATORS, RULES, runRules, type Report } from './rules/index.ts'
 import { PROFILES } from './profiles/index.ts'
 import { chooseProfile } from './profiles/choose.ts'
@@ -55,6 +57,7 @@ function openFiles(files: InputFile[], profile: ProfileChoice | undefined, profi
   const problems: string[] = []
   const analyses: Analysis[] = []
   const dslogs: { name: string; file: DslogFile }[] = []
+  const dsevents: { name: string; file: DseventsFile }[] = []
   const history: HistoryEvent[] = []
   for (const f of files) {
     const kind = fileKind(f)
@@ -68,25 +71,30 @@ function openFiles(files: InputFile[], profile: ProfileChoice | undefined, profi
         analyses.push({ match, report: { findings: [], skipped: [], crashed: [] }, timing: { parseMs: performance.now() - started, rulesMs: 0 } })
       } else if (kind === 'dslog') {
         dslogs.push({ name: f.name, file: readDslog(f.bytes) })
+      } else if (kind === 'dsevents') {
+        dsevents.push({ name: f.name, file: readDsevents(f.bytes) })
       } else if (kind === 'history') {
         const read = parseHistory(new TextDecoder().decode(f.bytes))
         history.push(...read.events)
         if (read.skipped) problems.push(`${f.name}: ${read.skipped} line${read.skipped === 1 ? '' : 's'} not understood (skipped)`)
       } else {
-        problems.push(`${f.name}: not a .wpilog, .dslog or ${'hindsight-history.jsonl'} (skipped)`)
+        problems.push(`${f.name}: not a .wpilog, .dslog, .dsevents or ${'hindsight-history.jsonl'} (skipped)`)
       }
     } catch (error) {
       problems.push(`${f.name}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  // Each DS log goes to the match it covers most of. One that covers no match window is reported, not guessed.
-  for (const ds of dslogs) {
-    const best = analyses
-      .map((a) => ({ a, seconds: dslogOverlap(a.match, ds.file) }))
-      .sort((x, y) => y.seconds - x.seconds)[0]
-    if (best && best.seconds > 0) attachDslog(best.a.match, ds.file, ds.name)
-    else problems.push(`${ds.name}: doesn't overlap any loaded match (it is from a different match, or the robot clock was never set)`)
+  // Each DS file goes to the match it covers most of. One that covers no match window is reported, not guessed.
+  type Attach<F> = { kind: { name: string; file: F }[]; overlap: (m: Match, f: F) => number; add: (m: Match, f: F, n: string) => void }
+  const attach = <F>({ kind, overlap, add }: Attach<F>) => {
+    for (const ds of kind) {
+      const best = analyses.map((a) => ({ a, seconds: overlap(a.match, ds.file) })).sort((x, y) => y.seconds - x.seconds)[0]
+      if (best && best.seconds > 0) add(best.a.match, ds.file, ds.name)
+      else problems.push(`${ds.name}: doesn't overlap any loaded match (it is from a different match, or the robot clock was never set)`)
+    }
   }
+  attach({ kind: dslogs, overlap: dslogOverlap, add: attachDslog })
+  attach({ kind: dsevents, overlap: dseventsOverlap, add: attachDsevents })
   return { analyses, problems, history }
 }
 
@@ -110,10 +118,11 @@ export function analyze(files: InputFile[], profile?: Parameters<typeof analyzeF
   return analyzeFiles(files, profile).analyses
 }
 
-function fileKind(f: InputFile): 'wpilog' | 'dslog' | 'history' | 'other' {
+function fileKind(f: InputFile): 'wpilog' | 'dslog' | 'dsevents' | 'history' | 'other' {
   const head = new TextDecoder().decode(f.bytes.subarray(0, 6))
   if (head === 'WPILOG') return 'wpilog'
   if (/\.dslog$/i.test(f.name)) return 'dslog'
+  if (/\.dsevents$/i.test(f.name)) return 'dsevents'
   if (/\.jsonl$/i.test(f.name)) return 'history'
   return 'other'
 }

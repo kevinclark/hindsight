@@ -124,7 +124,9 @@ To add a robot: **Robot profile** drafts one from your logs, a robot snapshot an
 Each type of log is a signal map in `src/profiles/` (`advantagekit.ts`, `datalogmanager.ts`, `doglog.ts`), listed in
 `src/profiles/formats.ts`: where that type keeps the signals every robot has. A signal may name several places in
 order, and each match uses the first its logs have (`src/profiles/sources.ts`); one of them can be the Driver Station
-log (`dslog:brownout`), and a finding that used it says so under "read from". Rules ask for signals by name and never
+log (`dslog:brownout`) or its event log (`dsevents:brownoutCount`, read by `src/readers/dsevents.ts`: the DS's own
+brownout count, the FMS's match identity, and the roboRIO's kernel USB lines that `can/usb-dropout` reads), and a
+finding that used one says so under "read from". The event-log facts were read from one robot's three matches only. Rules ask for signals by name and never
 see which type of log it is, so reading a new type of log takes its signal map and a team profile.
 
 A plain WPILib log (DataLogManager) works too. The match comes from `DS:enabled` / `DS:autonomous` and

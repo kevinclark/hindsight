@@ -8,7 +8,7 @@
 import { hasEntry, type WpilogFile } from '../readers/wpilog.ts'
 import type { RobotProfile } from './types.ts'
 import { codeIdentity, KEYS_SAME_ON_EVERY_ROBOT, NAMES_SAME_ON_EVERY_ROBOT } from './formats.ts'
-import { isDslogKey, keysOf } from './sources.ts'
+import { isOtherLogKey, keysOf } from './sources.ts'
 
 export interface ProfileChoice {
   how: 'chosen by you' | 'codebase and branch' | 'codebase' | 'signals' | 'given'
@@ -41,7 +41,7 @@ export function profileKeys(profile: RobotProfile): string[] {
     ...robotSignals.flatMap(([, source]) => keysOf(source)),
   ]
   const named = keys.filter((k): k is string => typeof k === 'string' && k !== '')
-  const robotKeys = named.filter((k) => !KEYS_SAME_ON_EVERY_ROBOT.has(k) && !isDslogKey(k))
+  const robotKeys = named.filter((k) => !KEYS_SAME_ON_EVERY_ROBOT.has(k) && !isOtherLogKey(k))
   return [...new Set(robotKeys)]
 }
 

@@ -12,7 +12,8 @@
  * 4 FMS attached, 5 DS attached).
  */
 import type { WpilogFile } from '../readers/wpilog.ts'
-import { DSLOG } from './sources.ts'
+import { DRIVER_STATION_SIGNALS } from './driverstation.ts'
+import { DSEVENTS, DSLOG } from './sources.ts'
 import type { ResolvedProfile, SignalSources } from './types.ts'
 
 const FMS = 'NT:/FMSInfo'
@@ -33,9 +34,10 @@ export const DATALOGMANAGER_SIGNALS: SignalSources = {
   fmsAttached: FMS_ATTACHED,
   dsAttached: DS_ATTACHED,
   eventName: `${FMS}/EventName`,
-  matchType: `${FMS}/MatchType`,
-  matchNumber: `${FMS}/MatchNumber`,
-  replayNumber: `${FMS}/ReplayNumber`,
+  // Without the NetworkTables capture, the FMS line in the Driver Station's event log.
+  matchType: [`${FMS}/MatchType`, `${DSEVENTS}matchType`],
+  matchNumber: [`${FMS}/MatchNumber`, `${DSEVENTS}matchNumber`],
+  replayNumber: [`${FMS}/ReplayNumber`, `${DSEVENTS}replayNumber`],
   allianceStation: '',
   gitSha: '',
   gitBranch: '',
@@ -70,6 +72,7 @@ export const DATALOGMANAGER_SIGNALS: SignalSources = {
   powerDistributionVoltage: '',
   powerDistributionChannels: '',
   totalCurrent: '',
+  ...DRIVER_STATION_SIGNALS,
 }
 
 /**

@@ -271,13 +271,13 @@
 {#if !current || dragging}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
   <label class="button">
-    <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={chosen} />
+    <input type="file" multiple accept=".wpilog,.dslog,.dsevents,.jsonl" onchange={chosen} />
     Choose logs…
   </label>
   {#if current}
-    <span>or drop files (<code>.wpilog</code>, <code>.dslog</code>, history)</span>
+    <span>or drop files (<code>.wpilog</code>, <code>.dslog</code>, <code>.dsevents</code>, history)</span>
   {:else}
-    <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code>, and the team's <code>{HISTORY_FILE_NAME}</code>) anywhere on the page.</span>
+    <span>or drop a match's <code>.wpilog</code> (and its <code>.dslog</code> and <code>.dsevents</code>, and the team's <code>{HISTORY_FILE_NAME}</code>) anywhere on the page.</span>
   {/if}
   <CodeFolderControl suggest={current?.match.profile?.code} />
   {#if busy}<span class="busy">Reading…</span>{/if}
@@ -312,7 +312,7 @@
     <span class="actions">
       {#if busy}<span class="busy">Reading…</span>{/if}
       <label class="button choose">
-        <input type="file" multiple accept=".wpilog,.dslog,.jsonl" onchange={chosen} />
+        <input type="file" multiple accept=".wpilog,.dslog,.dsevents,.jsonl" onchange={chosen} />
         Choose logs…
       </label>
       <Menu label="File" align="right" items={[
@@ -365,7 +365,7 @@
     <h2>How to use it</h2>
     <ol>
       <li>Get the match's log off the robot with AdvantageScope ("Download Logs"). For Phoenix <code>.hoot</code> files, export them as <code>.wpilog</code> in AdvantageScope first.</li>
-      <li>Drop the <code>.wpilog</code> here. Add the Driver Station's <code>.dslog</code> for the same match if you have it (on the DS laptop in <code>C:\Users\Public\Documents\FRC\Log Files</code>).</li>
+      <li>Drop the <code>.wpilog</code> here. Add the Driver Station's <code>.dslog</code> and <code>.dsevents</code> for the same match if you have them (on the DS laptop in <code>C:\Users\Public\Documents\FRC\Log Files</code>).</li>
       <li>Read the <strong>Match</strong> tab worst first: red cost or nearly cost a match, amber is a margin eroding, grey is context.</li>
       <li>Open the <strong>Power</strong> tab for brownouts and battery health.</li>
     </ol>

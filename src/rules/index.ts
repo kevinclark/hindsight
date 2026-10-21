@@ -20,6 +20,7 @@ import deviceRebooted from './can/device-rebooted.ts'
 import stickyFaults from './foresight/sticky-faults.ts'
 import firmwareMismatch from './foresight/firmware-mismatch.ts'
 import busDropout from './can/bus-dropout.ts'
+import usbDropout from './can/usb-dropout.ts'
 import dsLogTruncated from './comms/ds-log-truncated.ts'
 import limitNotApplied from './power/limit-not-applied.ts'
 import margin from './power/margin.ts'
@@ -51,7 +52,7 @@ import logUsbStick from './foresight/log-usb-stick.ts'
 export const RULES: Rule[] = [
   brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, noneAtEnable, stuckState, tilt, zeroNotCompleted, deviceDropout, busDropout, deviceRebooted, dsLogTruncated,
   limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, slip, stall, impact, overrun,
-  visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough,
+  visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough, usbDropout,
 ]
 
 /**
