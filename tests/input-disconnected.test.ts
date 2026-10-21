@@ -88,4 +88,25 @@ describe('can/input-disconnected', () => {
   it('a log with nothing disconnected has no finding', () => {
     expect(findings(log([flag('/Intake/Rollers/LeaderConnected', [[5, true]])]))).toEqual([])
   })
+
+  it('a drop that starts in the auto-to-teleop gap and runs into teleop counts', () => {
+    const [f] = findings(log([flag('/Intake/Rollers/LeaderConnected', [[5, true], [42, false], [60, true]])]))
+    expect(f.evidence['Intake/Rollers/LeaderConnected']).toMatch(/robot time 42\.0 s\), 18 s$/)
+  })
+
+  it('the group count and the still-off count are devices, not drops', () => {
+    const [f] = findings(log([
+      flag('/A/DriveConnected', [[5, true], [50, false], [50.01, true], [50.03, false]]), // two drops, one device, off to the end
+      flag('/B/DriveConnected', [[5, true], [50.02, false], [51, true]]),
+      flag('/C/DriveConnected', [[5, true], [50.04, false], [51, true]]),
+    ]))
+    expect(f.evidence['3 devices at once']).toMatch(/^3 devices dropped at once.*\(1 device still off at the end\)$/)
+  })
+
+  it('a flag false at the first record of a log that starts enabled is not a drop; a plot names each device once', () => {
+    const enabled: [number, boolean][] = [[5, true], [80, false]]
+    expect(findings(log([flag('/A/Connected', [[5, false], [30, true]])], enabled))).toEqual([])
+    const [f] = findings(log([flag('/A/Connected', [[5, true], [30, false], [31, true], [40, false], [41, true]])]))
+    expect(f.plot?.lines.length).toBe(1)
+  })
 })

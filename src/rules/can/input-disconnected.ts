@@ -47,17 +47,20 @@ export default rule({
     const named = profileKeys(match)
     const flags = match.deviceFlags().filter((f) => !named.has(f.key))
     const drops: Drop[] = []
+    const firstEnable = Math.min(...watched(match).map((w) => w.start))
     for (const f of flags) {
       // `touching` keeps a drop that spans the auto→teleop gap as one drop.
-      // Only drops that began while enabled: a flag false since boot (an unplugged spare) never "went" anywhere.
+      // Not a drop already under way at the first enable, or false from the log's first record: a flag false since
+      // boot (an unplugged spare) never "went" anywhere. Any later drop that touches an enabled stretch counts.
       for (const episode of match.signal(f.key).episodes(isFalse, { touching: watched(match) })) {
-        if (watched(match).some((w) => episode.start >= w.start && episode.start < w.end)) drops.push({ name: f.name, episode })
+        if (episode.start > firstEnable && episode.start > match.logStart) drops.push({ name: f.name, episode })
       }
     }
     if (drops.length === 0) return
     drops.sort((a, b) => a.episode.start - b.episode.start || a.name.localeCompare(b.name))
 
     const { events, singles } = groupDrops(drops)
+    const devicesIn = (ds: Drop[]) => new Set(ds.map((d) => d.name)).size
     const enabledEnd = Math.max(...watched(match).map((w) => w.end))
     const toTheEnd = (d: Drop) => d.episode.end >= enabledEnd
     const secondsOff = new Map<string, number>()
@@ -69,7 +72,8 @@ export default rule({
     const lines: [string, string][] = []
     for (const e of events) {
       const first = e.drops[0].episode.start
-      lines.push([`${e.drops.length} devices at once`, `${e.drops.length} devices dropped at once at ${match.when(first)}: likely robot power, the CAN bus, or the robot code stopping, not one device${e.drops.some(toTheEnd) ? ` (${plural(e.drops.filter(toTheEnd).length, 'device')} still off at the end)` : ''}`])
+      const stillOff = devicesIn(e.drops.filter(toTheEnd))
+      lines.push([`${devicesIn(e.drops)} devices at once`, `${devicesIn(e.drops)} devices dropped at once at ${match.when(first)}: likely robot power, the CAN bus, or the robot code stopping, not one device${stillOff ? ` (${plural(stillOff, 'device')} still off at the end)` : ''}`])
     }
     for (const [name, mine] of byDevice(singles)) {
       lines.push([name, mine.map((d) => `${match.when(d.episode.start)}, ${toTheEnd(d) ? 'to the end of the match' : `${seconds(d.episode.seconds)} s`}`).join('; ')])
@@ -91,7 +95,7 @@ export default rule({
       likely: events.length && !singles.length ? ['robot-power', 'code-stopped'] : ['connector', 'wiring'],
       ruledOut: events.length ? undefined : { 'robot-power': 'no group of devices dropped together', 'code-stopped': 'no group of devices dropped together' },
       measured: [{ label: 'longest a device was disconnected while enabled', value: round(worstSeconds), unit: 's', threshold: LONG_SECONDS }],
-      plot: { signals: [...new Set(drops.slice(0, 4).map((d) => match.signal(flags.find((f) => f.name === d.name)!.key)))], from: first - 5, to: Math.min(first + 30, match.logEnd) },
+      plot: { signals: [...new Set(drops.slice(0, 4).map((d) => flags.find((f) => f.name === d.name)!.key))].map((key) => match.signal(key)), from: first - 5, to: Math.min(first + 30, match.logEnd) },
     }
   },
 })
