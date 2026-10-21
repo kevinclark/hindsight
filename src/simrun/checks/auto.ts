@@ -6,18 +6,19 @@
  * trigger or a proxy, the commands that need a subsystem, start in the first two loops of auto and that the default
  * auto's run doesn't start. Commands a state machine starts later in auto (an intake group held while the state is
  * INTAKE) and wrappers that need no subsystem (Choreo's routine command, which runs until auto ends by design) are
- * not the auto's: measured on 26Off, the drive sequence starts 0.024 s after enable, the intake state group 0.08 s.
+ * not the auto's. Measured (2026-10-21): the auto's drive sequence starts 0.025–0.047 s after enable (26Off n = 11,
+ * Rebuilt), the intake state group 0.083–0.136 s.
  */
 
-import { describeCommand, lifetimes, signature, type Lifetime, type RunRecord } from '../events.ts'
+import { describeCommand, signature, type Lifetime, type RunRecord } from '../events.ts'
 import { movement, RESET_SETTLE_SECONDS } from './pose.ts'
-import { secs, type Check, type Finding } from './types.ts'
+import { duration, type Check, type Finding } from './types.ts'
 
-/** Measured on 26Off's autos in sim (2026-10-21): driving autos move 8+ m; nothing below 0.3 m counts as moving. */
+/** Assumed: under 0.3 m is standing still (26Off's autos moved about 1 m in sim after their start-pose reset). */
 const MOVED_METERS = 0.3
 const TURNED_DEGREES = 15
-/** Two robot loops: the auto's command, scheduled through a proxy, starts one loop after enable (measured above). */
-const AUTO_START_SECONDS = 0.05
+/** Between the drive sequence's latest start and the state group's earliest (measured above). */
+const AUTO_START_SECONDS = 0.07
 
 export const autos: Check = ({ results, poseKey }) => {
   const autoRuns = results.filter((r) => r.run.scenario.kind === 'auto')
@@ -27,11 +28,11 @@ export const autos: Check = ({ results, poseKey }) => {
     const baseline = autoRuns.find((b) => b.run.scenario.auto?.isDefault && b.run.alliance === r.run.alliance)
     const baselineStarts = baseline ? autoCommands(baseline.record, []).map((l) => signature(l.command)) : []
     const findings: Finding[] = []
-    const unfinished = autoCommands(r.record, baselineStarts).filter((l) => l.end >= period.end - 0.05)
+    const unfinished = autoCommands(r.record, baselineStarts).filter((l) => l.how !== 'finished' || l.end >= period.end)
     if (unfinished.length) {
       findings.push({
         check: 'auto/unfinished', severity: 'warning', run: r.run.label,
-        message: `The auto was still running when auto ended (${secs(period.end - period.start)}).`,
+        message: `The auto was still running when auto ended (${duration(period.end - period.start)}).`,
         details: unfinished.map((l) => `still running: ${describeCommand(l.command)}`),
         look: "the auto's steps: a path, a wait or a shot that never ends",
       })
@@ -53,7 +54,7 @@ export const autos: Check = ({ results, poseKey }) => {
 function autoCommands(record: RunRecord, baselineStarts: string[]): Lifetime[] {
   const auto = record.periods.find((p) => p.mode === 'auto')
   if (!auto) return []
-  const started = lifetimes(record).filter((l) => !l.command.isDefault && l.start >= auto.start && l.start < auto.end)
+  const started = record.lives.filter((l) => !l.command.isDefault && l.start >= auto.start && l.start < auto.end)
   const fromAutonomousInit = started.filter((l) => l.command.origin.includes('autonomousInit'))
   if (fromAutonomousInit.length) return fromAutonomousInit
   return started.filter((l) => l.start <= auto.start + AUTO_START_SECONDS && l.command.requirements.length > 0 && !baselineStarts.includes(signature(l.command)))

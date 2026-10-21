@@ -35,7 +35,9 @@ import java.io.PrintStream;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -43,6 +45,8 @@ import java.util.function.Consumer;
 public class SimRunHarness {
   private static final PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out), true);
   private static final int CONTROLLERS = 6;
+  /** Assumed: a clean JVM shutdown takes well under this; past it, the run is stopped anyway. */
+  private static final long EXIT_WATCHDOG_MS = 5000;
 
   public static void main(String[] args) throws Exception {
     System.setOut(new PrintStream(new Stamped("out"), true));
@@ -57,7 +61,9 @@ public class SimRunHarness {
 
   /** One line out, tab-separated, stamped with robot time. */
   static synchronized void say(String kind, String... fields) {
-    StringBuilder line = new StringBuilder("[sim-run]\t").append(String.format("%.4f", now())).append('\t').append(kind);
+    // Locale.ROOT: a laptop set to a comma-decimal language would otherwise print "1,2345".
+    String time = String.format(Locale.ROOT, "%.4f", now());
+    StringBuilder line = new StringBuilder("[sim-run]\t").append(time).append('\t').append(kind);
     for (String field : fields) line.append('\t').append(field.replace('\t', ' '));
     out.println(line);
   }
@@ -89,6 +95,7 @@ public class SimRunHarness {
       requirements.add(s instanceof SubsystemBase ? ((SubsystemBase) s).getName() : s.getClass().getSimpleName());
       isDefault |= CommandScheduler.getInstance().getDefaultCommand(s) == c;
     }
+    Collections.sort(requirements); // a set prints in no fixed order; sim-run matches commands across runs by it
     String id = Integer.toHexString(System.identityHashCode(c));
     return String.join("|", id, c.getName(), String.join(",", requirements), isDefault ? "default" : "", origin);
   }
@@ -112,7 +119,7 @@ public class SimRunHarness {
     try {
       SimHooks.waitForProgramStart();
       say("started");
-      Object log = startLog(new File(logPath));
+      Log log = startLog(new File(logPath));
       setUpDriverStation();
       long startNanos = System.nanoTime();
       for (String line : timeline) {
@@ -126,11 +133,12 @@ public class SimRunHarness {
           finish(log);
           return;
         }
+        // Said before the robot can see it, so nothing the input starts is printed before the step itself.
+        say("step", line.trim());
         act(action, rest);
         // Only tells the HAL that new data is there, as the WebSocket extension does. DriverStationSim's own
         // notifyNewData() also runs DriverStation.refreshData() on this thread, which deadlocked the robot loop.
         DriverStationDataJNI.notifyNewData();
-        say("step", line.trim());
       }
     } catch (Exception e) {
       say("harness-error", e.toString());
@@ -185,11 +193,27 @@ public class SimRunHarness {
     }
   }
 
-  static void finish(Object log) throws Exception {
+  static void finish(Log log) throws Exception {
+    System.out.flush();
+    System.err.flush();
     say("end");
-    if (log != null) log.getClass().getMethod("close").invoke(log);
-    // halt, not exit: nothing the robot registered to run at exit can hang the run after its log is closed.
-    Runtime.getRuntime().halt(0);
+    if (log != null) {
+      NetworkTableInstance.class.getMethod("stopEntryDataLog", int.class).invoke(null, log.handle);
+      log.writer.getClass().getMethod("close").invoke(log.writer);
+    }
+    // exit, not halt, so WPILib and the vendors shut their threads down: Runtime.halt() aborted in native code after
+    // 21 of 121 runs (measured 2026-10-21), each leaving a macOS crash report. A watchdog halts if shutdown hangs.
+    Thread watchdog = new Thread(() -> {
+      try {
+        Thread.sleep(EXIT_WATCHDOG_MS);
+      } catch (InterruptedException e) {
+        return;
+      }
+      Runtime.getRuntime().halt(0);
+    }, "sim-run exit watchdog");
+    watchdog.setDaemon(true);
+    watchdog.start();
+    System.exit(0);
   }
 
   // ---- The log ------------------------------------------------------------------------------------------------
@@ -200,16 +224,27 @@ public class SimRunHarness {
    * the calling thread stalled the robot loop inside NetworkTables. Null (and a "no-log" line) where the robot's
    * WPILib can't.
    */
-  static Object startLog(File file) {
+  static Log startLog(File file) {
     try {
-      Object log = newBackgroundLog(file);
+      Object writer = newBackgroundLog(file);
       Class<?> dataLog = Class.forName("edu.wpi.first.util.datalog.DataLog");
       Method start = NetworkTableInstance.class.getMethod("startEntryDataLog", dataLog, String.class, String.class);
-      start.invoke(NetworkTableInstance.getDefault(), log, "/AdvantageKit", "");
-      return log;
+      int handle = (int) start.invoke(NetworkTableInstance.getDefault(), writer, "/AdvantageKit", "");
+      return new Log(writer, handle);
     } catch (ReflectiveOperationException e) {
       say("no-log", "this WPILib version can't record NetworkTables to a log (" + e + ")");
       return null;
+    }
+  }
+
+  /** The log writer and the NetworkTables subscription feeding it, so both can be stopped before exit. */
+  static class Log {
+    final Object writer;
+    final int handle;
+
+    Log(Object writer, int handle) {
+      this.writer = writer;
+      this.handle = handle;
     }
   }
 
@@ -241,6 +276,13 @@ public class SimRunHarness {
         line.write(b);
         return;
       }
+      flush();
+    }
+
+    /** Says the line so far: at a newline, and before exit, so a last line without one isn't lost. */
+    @Override
+    public synchronized void flush() {
+      if (line.size() == 0) return;
       say(stream, line.toString().replace("\r", ""));
       line.reset();
     }

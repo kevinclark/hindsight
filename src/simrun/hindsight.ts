@@ -9,12 +9,15 @@ import type { Match } from '../match/match.ts'
 import type { Finding as RuleFinding } from '../rules/types.ts'
 import type { Zero } from './scenario.ts'
 
-/** Measured on 26Off sim runs (2026-10-20/21): these fire on every sim run and mean nothing about the robot. */
-export const SIM_ARTIFACTS: Record<string, string> = {
+/**
+ * Rules left out, each with why. The first three fire on every sim run and mean nothing about the robot (measured on
+ * 26Off, 2026-10-20/21); meta/not-checked lists the rules a sim log has nothing for, which is most power and vision.
+ */
+export const LEFT_OUT: Record<string, string> = {
   'vision/stale': 'simulated cameras deliver results about 34 % of the time in every sim run',
   'build/dirty': "sim-run's own copy of the code",
   'power/pd-not-reporting': 'the simulator reports a REV power hub whatever the robot has',
-  'meta/not-checked': 'a list of rules a sim log has nothing for',
+  'meta/not-checked': 'most power and vision rules have nothing to read in a sim log',
 }
 
 export interface ProfileFacts {
@@ -30,7 +33,7 @@ export interface ProfileFacts {
 export function hindsightOn(fileName: string, bytes: Uint8Array): { findings: RuleFinding[]; match: Match } | null {
   const analysis = analyzeFiles([{ name: fileName, bytes }]).analyses[0]
   if (!analysis) return null
-  return { findings: analysis.report.findings.filter((f) => !(f.rule in SIM_ARTIFACTS)), match: analysis.match }
+  return { findings: analysis.report.findings.filter((f) => !(f.rule in LEFT_OUT)), match: analysis.match }
 }
 
 /** What sim-run uses from the profile the log was matched with. */

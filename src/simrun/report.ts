@@ -3,10 +3,11 @@
  * what each run did, Hindsight's log rules, and what a simulator can't see.
  */
 
-import { describeCommand, isEnabled, lifetimes } from './events.ts'
+import { describeCommand, isEnabled } from './events.ts'
 import type { Finding } from './checks/types.ts'
 import type { SessionResult } from './session.ts'
-import { SIM_ARTIFACTS } from './hindsight.ts'
+import { LEFT_OUT } from './hindsight.ts'
+import { plural } from '../rules/rule.ts'
 import { enablesDone } from './checks/zero.ts'
 
 const HEADINGS: Record<Finding['severity'], string> = { error: 'PROBLEMS', warning: 'WARNINGS', info: 'NOTES' }
@@ -35,15 +36,15 @@ export function report(result: SessionResult, title: string): string {
   if (result.findings.every((f) => f.severity === 'info')) out.push('No problems found in these scenarios.', '')
   out.push('WHAT EACH RUN DID')
   for (const r of result.results) {
-    const lives = lifetimes(r.record)
+    const lives = r.record.lives
     const cutOff = lives.filter((l) => l.how === 'interrupted' && l.by && !l.command.isDefault).length
     const enables = r.record.periods.filter(isEnabled).length
-    const how = r.record.ended ? `${enables} enable${enables === 1 ? '' : 's'}, ${lives.length} commands started, ${cutOff} cut off by another` : 'stopped early'
+    const how = r.record.ended ? `${plural(enables, 'enable')}, ${lives.length} commands started, ${cutOff} cut off by another` : 'stopped early'
     const zeroes = result.zeroes.map((z) => `${z.name} zero done in ${enablesDone(r.record, z)} of ${enables}`)
     out.push(`- ${r.run.label}: ${[how, ...zeroes].join('; ')} (${r.wallSeconds.toFixed(0)} s)`)
   }
   if (result.hindsight.length) {
-    out.push('', `HINDSIGHT'S LOG RULES (profile: ${result.facts?.profileName ?? 'none'}; left out as sim artifacts: ${Object.keys(SIM_ARTIFACTS).join(', ')})`)
+    out.push('', `HINDSIGHT'S LOG RULES (robot profile: ${result.facts?.profileName ?? 'none'}; left out: ${Object.keys(LEFT_OUT).join(', ')})`)
     for (const { finding, runs } of result.hindsight) out.push(`- ${finding.severity}: ${finding.title} (${runs.length} of ${result.results.length} runs)`)
   }
   for (const note of result.notes) out.push('', note)
@@ -53,7 +54,7 @@ export function report(result: SessionResult, title: string): string {
 
 /** Every run's command story, for --verbose: when each command started and how it ended. */
 export function commandStory(result: SessionResult): string {
-  return result.results.map((r) => [`== ${r.run.label}`, ...lifetimes(r.record).map((l) => {
+  return result.results.map((r) => [`== ${r.run.label}`, ...r.record.lives.map((l) => {
     const end = l.how === 'interrupted' ? `cut off by ${l.by ? describeCommand(l.by) : 'disable or cancel'}` : l.how
     return `${l.start.toFixed(2)}–${l.end.toFixed(2)} ${describeCommand(l.command)}${l.command.isDefault ? ' (default)' : ''}: ${end}`
   })].join('\n')).join('\n\n')

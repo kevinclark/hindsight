@@ -6,7 +6,9 @@
  * For each enabled stretch of the scenario: it fires when the robot made the same move on both alliances (same
  * direction in x, and the two moves nearly equal), or, when it only turned (a heading reset), ended facing the same
  * way. Two moves that differ (an auto that barely moves in sim, steering differently each run) are not compared:
- * measured on 26Off, two such autos moved 1 m with x the same sign and y 0.88 m vs 0.15 m.
+ * measured on 26Off, two such autos moved 1 m with x the same sign and y 0.88 m vs 0.15 m. The heading comparison
+ * assumes a rotated field, or a heading reset: on a mirrored field a correctly flipped turn to 90° ends at 90° on
+ * both.
  *
  * Why: Rebuilt 327a449 (`getAlliance().equals(Alliance.Blue)` is always false, so the blue heading reset set red's
  * heading) and the 2026-03-04 red-alliance drive fix.
@@ -16,7 +18,10 @@ import { isEnabled } from '../events.ts'
 import { headingGap, movement, RESET_SETTLE_SECONDS, type Movement } from './pose.ts'
 import { type Check, type Finding, type RunResult } from './types.ts'
 
-/** Assumed: under 0.5 m of x travel is not a direction (sim drift is ~0.05 m when standing still, measured). */
+/**
+ * Assumed: under 0.5 m of x travel is not a direction (measured: a robot standing still through a 3 s teleop step
+ * moved under 0.01 m, Rebuilt, 6 runs).
+ */
 const MOVED_METERS = 0.5
 /** Assumed: an unflipped path replays the same move on red, so the two moves differ by under a third of their size. */
 const SAME_MOVE_SHARE = 0.35

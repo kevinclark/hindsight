@@ -1,7 +1,7 @@
 // sim-run's checks on made-up harness output (the lines tools/sim-run/SimRunHarness.java prints). No JVM runs here;
-// the runs against real robot code are in the backtest (8033's robot/2026-10-21-sim-run-tool.md).
+// the runs against real robot code are a backtest outside CI (Phoenix sim runs in real time).
 import { describe, expect, it } from 'vitest'
-import { lifetimes, readRun } from '../src/simrun/events.ts'
+import { readRun } from '../src/simrun/events.ts'
 import { autoScenarios, NO_TEAM_FILE, readTeamFile, runsOf, STARTUP, type Run, type Zero } from '../src/simrun/scenario.ts'
 import { crash } from '../src/simrun/checks/crash.ts'
 import { zeroes } from '../src/simrun/checks/zero.ts'
@@ -44,9 +44,9 @@ describe('reading a run', () => {
   it('reads modes, command lives and printed lines at robot time', () => {
     const record = readRun(q13)
     expect(record.periods.map((p) => p.mode)).toEqual(['disabled', 'auto', 'disabled'])
-    const [zero, intake] = lifetimes(record)
+    const [zero, intake] = record.lives
     expect(zero).toMatchObject({ how: 'interrupted', start: 5.01, end: 5.13 })
-    expect(zero.by?.requirements).toEqual(['IndexerSubsystem', 'DrumSubsystem'])
+    expect(zero.by?.requirements).toEqual(['DrumSubsystem', 'IndexerSubsystem']) // sorted: Java prints a set in any order
     expect(intake.how).toBe('interrupted')
     expect(intake.by).toBeNull() // disabled, not another command
   })
@@ -63,7 +63,13 @@ describe('zero checks', () => {
     expect(findings).toHaveLength(1)
     expect(findings[0]).toMatchObject({ check: 'zero/cut-off', run: 'auto' })
     expect(findings[0].message).toContain('cut off 0.12 s after it started')
-    expect(findings[0].details[1]).toContain('ParallelCommandGroup (needs IndexerSubsystem, DrumSubsystem)')
+    expect(findings[0].details[1]).toContain('ParallelCommandGroup (needs DrumSubsystem, IndexerSubsystem)')
+  })
+
+  it('knows the zero when its requirements print in another order, or it finishes 38 ms after its message', () => {
+    const otherOrder = healthy.replace(/DrumSubsystem/g, 'IntakeSubsystem,DrumSubsystem').replace('5.4505\tfinish', '5.4880\tfinish')
+    const cut = q13.replace(/SequentialCommandGroup\|DrumSubsystem/g, 'SequentialCommandGroup|DrumSubsystem,IntakeSubsystem')
+    expect(zeroes(context([result(otherOrder, run('startup')), result(cut, run('auto'))])).map((f) => f.check)).toEqual(['zero/cut-off'])
   })
 
   it('stays quiet on a healthy run', () => {
@@ -98,6 +104,13 @@ describe('crash', () => {
     expect(finding.details).toEqual(['at Camera.getName (Camera.java:120)', 'called from Camera.<init> (Camera.java:72)'])
   })
 
+  it('says the mode the robot was in when it stopped, and blames the harness for a harness error', () => {
+    const inTeleop = harness([[2, 'started'], [2, 'step', '0 mode disabled'], [5, 'step', '3 mode teleop'], [7.5, 'out', 'driving']])
+    expect(crash(context([result(inTeleop)]))[0].message).toBe('The robot program stopped 5.5 s after start, in teleop, without printing an exception.')
+    const badSelect = harness([[2, 'started'], [4.6, 'harness-error', 'java.lang.IllegalArgumentException: no chooser Autos']])
+    expect(crash(context([result(badSelect)])).map((f) => f.check)).toEqual(['run/harness-error'])
+  })
+
   it('is quiet when the timeline reached its end', () => {
     expect(crash(context([result(healthy)]))).toEqual([])
   })
@@ -113,9 +126,17 @@ describe('the team file', () => {
     expect(b.timeline).toEqual(['0.000 alliance Blue1', '0.000 mode disabled', '2.500 choosers', '3.000 mode teleop', '3.500 button 0 2 1 #p1', '8.490 button 0 2 0', '9.200 end'])
   })
 
+  it('plays a press at 0 before the mode, so the robot sees both in the same loop', () => {
+    const atEnable = readTeamFile('{"scenarios":[{"steps":[{"disabled":3},{"auto":2,"press":[{"at":0,"driver":"leftTrigger"}]}]}]}', 'f.json')
+    const lines = runsOf(atEnable.scenarios[0])[0].timeline
+    expect(lines.indexOf('3.000 axis 0 2 1 #p1')).toBeLessThan(lines.indexOf('3.000 mode auto'))
+  })
+
   it('says what is wrong with a bad press', () => {
     expect(() => readTeamFile('{"scenarios":[{"steps":[{"teleop":2,"press":[{"at":1,"pilot":"b"}]}]}]}', 'f.json')).toThrow(/needs one controller \(driver, operator\)/)
     expect(() => readTeamFile('{"scenarios":[{"steps":[{"teleop":2,"press":[{"at":1,"driver":"trigger"}]}]}]}', 'f.json')).toThrow(/"trigger" is not an Xbox input/)
+    expect(() => readTeamFile('{"scenarios":[{"steps":[{"teleop":5,"press":[{"at":6,"driver":"b"}]}]}]}', 'f.json')).toThrow(/a press at 6 s is outside this 5 s step/)
+    expect(() => readTeamFile('{"zeroes":[{"name":"hood"}]}', 'f.json')).toThrow(/zero 1 needs "name" and "done"/)
   })
 
   it('checks a message and finish expectation from the moment of the press', () => {

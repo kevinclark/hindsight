@@ -7,8 +7,8 @@
  * 4b68c96, 7e6d0ef, d783ef8 and two more).
  */
 
-import { periodAt, type ConsoleLine, type RunRecord } from '../events.ts'
-import { secs, type Check, type Finding } from './types.ts'
+import type { ConsoleLine, RunRecord } from '../events.ts'
+import { duration, type Check, type Finding } from './types.ts'
 
 /** "java.lang.NullPointerException: Cannot invoke ..." inside WPILib's "Unhandled exception" line, or on its own. */
 const EXCEPTION = /((?:[\w$]+\.)*[\w$]*(?:Exception|Error))(?:: (.*))?$/
@@ -18,9 +18,18 @@ const FRAMES_SHOWN = 3
 
 export const crash: Check = ({ results, teamPackage }) => results.flatMap((r): Finding[] => {
   const { record } = r
+  if (record.harnessError) {
+    return [{
+      check: 'run/harness-error', severity: 'error', run: r.run.label,
+      message: `sim-run's harness failed, not your robot code: ${record.harnessError}`,
+      details: [],
+      look: 'the scenario file (an auto or chooser name that does not exist?); if it looks right, report it to sim-run',
+    }]
+  }
   if (record.ended) return []
   const when = whenItStopped(record)
-  const crashLine = record.console.find((l) => CRASH_LINE.test(l.text))
+  // The last exception the robot printed is the one that stopped it; an earlier one may be a vendor thread's.
+  const crashLine = record.console.filter((l) => CRASH_LINE.test(l.text)).at(-1)
   if (!crashLine) {
     return [{
       check: r.killed ? 'run/hung' : 'run/crash', severity: 'error', run: r.run.label,
@@ -56,7 +65,8 @@ function exceptionOf(line: string): string {
 /** "while starting (in the Robot constructor or robotInit)", or "4.2 s after start, in teleop". */
 function whenItStopped(record: RunRecord): string {
   if (record.started === null) return 'while starting (in the Robot constructor or robotInit)'
-  return `${secs(record.last - record.started)} after start, in ${periodAt(record, record.last)?.mode ?? 'disabled'}`
+  // The last period runs to the last line read, which is the moment it stopped.
+  return `${duration(record.last - record.started)} after start, in ${record.periods.at(-1)?.mode ?? 'disabled'}`
 }
 
 function lastLines(console: ConsoleLine[]): string[] {

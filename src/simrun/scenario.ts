@@ -90,7 +90,7 @@ export function readTeamFile(text: string, fileName: string): TeamFile {
     alliances: stations(s.alliances ?? [s.alliance ?? 'blue1'], file),
   }))
   return {
-    zeroes: (raw.zeroes ?? []).map((z: any) => ({ name: z.name, done: new RegExp(z.done), once: z.once === true, fromFile: true })),
+    zeroes: (raw.zeroes ?? []).map((z: any, i: number) => readZero(z, file, `zero ${i + 1}`)),
     scenarios,
     autos: {
       chooser: raw.autos?.chooser ?? null,
@@ -111,8 +111,21 @@ function fail(file: FileContext, what: string): never {
 /** One step: `{ "teleop": 5, "press": [...] }`. */
 function readStep(s: Record<string, any>, file: FileContext, at: string): Step {
   const mode = MODES.find((m) => typeof s[m] === 'number')
-  if (!mode) fail(file, `${at} needs a mode and its seconds, like { "teleop": 5 }`)
-  return { mode, seconds: s[mode], presses: (s.press ?? []).map((p: any, i: number) => readPress(p, file, `${at}, press ${i + 1}`)) }
+  if (!mode || !(s[mode] > 0)) fail(file, `${at} needs a mode and its seconds, like { "teleop": 5 }`)
+  const seconds = s[mode]
+  const presses: Press[] = (s.press ?? []).map((p: any, i: number) => readPress(p, file, `${at}, press ${i + 1}`))
+  // A press timed past its step would be played after the step's release, or after the run's end.
+  const late = presses.find((p) => p.at < 0 || p.at >= seconds)
+  if (late) fail(file, `${at}: a press at ${late.at} s is outside this ${seconds} s step`)
+  return { mode, seconds, presses }
+}
+
+/** One zero: `{ "name": "hood", "done": "Rezeroed hood", "once": true }`. */
+function readZero(z: Record<string, any>, file: FileContext, at: string): Zero {
+  if (typeof z.name !== 'string' || typeof z.done !== 'string' || !z.done) {
+    fail(file, `${at} needs "name" and "done" (the text your code prints when the zero is done)`)
+  }
+  return { name: z.name, done: new RegExp(z.done), once: z.once === true, fromFile: true }
 }
 
 /** One press: `{ "at": 1, "driver": "b", "for": 2, "expect": [...] }`. */
@@ -127,21 +140,26 @@ function readPress(p: Record<string, any>, file: FileContext, at: string): Press
   file.presses++
   return {
     marker: `#p${file.presses}`,
-    at: Number(p.at ?? 0),
+    at: number(p.at ?? 0, file, `${at}, "at"`),
     said: `${controller[0]} ${input}`,
     ...lines,
-    holdFor: p.for ?? null,
+    holdFor: p.for === undefined ? null : number(p.for, file, `${at}, "for"`),
     expect: (p.expect ?? []).map((e: any) => readExpectation(e, file, `${at}, expect`)),
   }
 }
 
 function readExpectation(e: Record<string, any>, file: FileContext, at: string): Expectation {
-  const within = Number(e.within)
-  if (!(within > 0)) fail(file, `${at} needs "within": seconds`)
+  const within = number(e.within, file, `${at}, "within"`)
   if (typeof e.message === 'string') return { message: e.message, within }
   if (e.finish === true) return { finish: true, within }
   if (typeof e.key === 'string' && e.becomes !== undefined) return { key: e.key, becomes: e.becomes, within }
   fail(file, `${at}: each expectation is { "message": ... }, { "finish": true } or { "key": ..., "becomes": ... }, with "within"`)
+}
+
+/** A number of seconds (0 or more), or a failure that says where. */
+function number(value: unknown, file: FileContext, at: string): number {
+  if (typeof value !== 'number' || !(value >= 0)) fail(file, `${at} must be a number of seconds, 0 or more`)
+  return value
 }
 
 /** The drive check's forward input: `{ "driver": "leftY", "value": -1 }`. */

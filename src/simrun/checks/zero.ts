@@ -4,28 +4,29 @@
  *
  * The zeroes and their done messages come from the team's scenario file and the Hindsight robot profile. Commands
  * have no names a tool can rely on, so the zero's command is found from the runs themselves: the command that
- * finishes within one loop after the done message prints (CalGames Q13's hood zero is a SequentialCommandGroup
- * needing DrumSubsystem, which finishes 0.0 s after "Rezeroed hood"). When two do, the one that needs a subsystem,
- * then the longest, wins.
+ * finishes soonest after the done message prints (CalGames Q13's hood zero is a SequentialCommandGroup needing
+ * DrumSubsystem, which finishes a loop or two after "Rezeroed hood"), preferring one that needs a subsystem.
  *
  * Why: CalGames 2026 Q13. The auto's first state change took the drum 0.12 s after enable and cancelled the hood's
  * zero, so the hood ran unzeroed all of auto. The sim shows the same thing on a laptop (2026-10-21).
  */
 
-import { describeCommand, isEnabled, lifetimes, signature, type CommandRef, type Lifetime, type RunRecord } from '../events.ts'
+import { describeCommand, isEnabled, signature, type CommandRef, type Lifetime, type RunRecord } from '../events.ts'
 import type { Zero } from '../scenario.ts'
-import { secs, type Check, type Finding, type RunResult } from './types.ts'
+import { duration, type Check, type Finding, type RunResult } from './types.ts'
 
-/** One robot loop, with room for the scheduler's order within it (measured: the zero finishes 0.0–0.001 s after). */
-const ONE_LOOP_SECONDS = 0.03
+/** Measured: the zero's command finishes 12–38 ms after its done message prints (n = 17, 26Off, 2026-10-21). */
+const FINISHES_AFTER_MESSAGE_SECONDS = 0.1
+/** Disabling interrupts running commands in the next loop (measured: 0.01–0.02 s after the disable step). */
+const DISABLE_SECONDS = 0.1
 
 export const zeroes: Check = ({ results, zeroes }) => zeroes.flatMap((zero) => {
   const zeroCommand = findZeroCommand(results, zero)
   const findings: Finding[] = []
   for (const r of results) {
     const done = doneTimes(r.record, zero)
-    const tries = zeroCommand ? lifetimes(r.record).filter((l) => signature(l.command) === zeroCommand) : []
-    const undone = tries.filter((l) => !done.some((d) => d >= l.start && d <= l.end + ONE_LOOP_SECONDS))
+    const tries = zeroCommand ? r.record.lives.filter((l) => signature(l.command) === zeroCommand) : []
+    const undone = tries.filter((l) => !done.some((d) => d >= l.start && d <= l.end + FINISHES_AFTER_MESSAGE_SECONDS))
     findings.push(...undone.map((tried) => notDone(zero, tried, r)))
     const enables = enablesDone(r.record, zero)
     if (zero.once && enables > 1) {
@@ -51,7 +52,7 @@ export const zeroes: Check = ({ results, zeroes }) => zeroes.flatMap((zero) => {
 
 /** The zero ended without its done message: cut off by another command, or still going when the mode ended. */
 function notDone(zero: Zero, tried: Lifetime, r: RunResult): Finding {
-  const after = secs(tried.end - tried.start)
+  const after = duration(tried.end - tried.start)
   const theZero = `the zero: ${describeCommand(tried.command)}`
   if (tried.how === 'interrupted' && tried.by) {
     const shared = tried.by.requirements.filter((s) => tried.command.requirements.includes(s))
@@ -72,7 +73,8 @@ function notDone(zero: Zero, tried: Lifetime, r: RunResult): Finding {
 
 /** How a zero that wasn't cut off by another command ended. */
 function stillGoing(record: RunRecord, tried: Lifetime): string {
-  const disabled = record.periods.some((p) => p.mode === 'disabled' && Math.abs(p.start - tried.end) < 0.1)
+  const disabled = record.periods.some((p) => p.mode === 'disabled' && Math.abs(p.start - tried.end) < DISABLE_SECONDS)
+  if (tried.how === 'finished') return 'finished without printing its done message (a timeout?)'
   if (disabled) return 'was still running when the robot was disabled'
   if (tried.how === 'running') return 'was still running when the run ended'
   return 'was cancelled'
@@ -80,7 +82,7 @@ function stillGoing(record: RunRecord, tried: Lifetime): string {
 
 /** ", started by a trigger or button binding": what scheduled a command, from its start in this run. */
 function startedBy(record: RunRecord, command: CommandRef): string {
-  const origin = lifetimes(record).find((l) => l.command.id === command.id)?.command.origin ?? ''
+  const origin = record.lives.find((l) => l.command.id === command.id)?.command.origin ?? ''
   if (!origin) return ''
   return `, started by ${origin === 'trigger' ? 'a trigger or button binding' : origin}`
 }
@@ -100,13 +102,14 @@ function doneTimes(record: RunRecord, zero: Zero): number[] {
   return record.console.filter((l) => zero.done.test(l.text)).map((l) => l.t)
 }
 
-/** The zero's command, as a signature (same across runs), from any run where its done message printed. */
+/** The zero's command, as a signature (same across runs), from the first run where its done message printed. */
 function findZeroCommand(results: RunResult[], zero: Zero): string | null {
-  const needsSubsystem = (l: Lifetime) => Number(l.command.requirements.length > 0)
   for (const r of results) {
     for (const d of doneTimes(r.record, zero)) {
-      const finishing = lifetimes(r.record).filter((l) => l.how === 'finished' && l.end >= d && l.end <= d + ONE_LOOP_SECONDS)
-      const best = finishing.sort((a, b) => needsSubsystem(b) - needsSubsystem(a) || (b.end - b.start) - (a.end - a.start))[0]
+      const after = (l: Lifetime) => l.end - d
+      const finishing = r.record.lives.filter((l) => l.how === 'finished' && after(l) >= 0 && after(l) <= FINISHES_AFTER_MESSAGE_SECONDS)
+      const needsSubsystem = finishing.filter((l) => l.command.requirements.length > 0)
+      const best = (needsSubsystem.length ? needsSubsystem : finishing).sort((a, b) => after(a) - after(b))[0]
       if (best) return signature(best.command)
     }
   }

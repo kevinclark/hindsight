@@ -8,6 +8,7 @@
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { homedir, platform, arch } from 'node:os'
 import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -76,8 +77,11 @@ export function build(folder: string, work: string, javaHomeOverride: string | n
   const tasks = [...(year < 2023 ? ['--init-script', initScript] : []), 'simulateExternalJavaRelease', '--console=plain']
   const gradlew = join(folder, platform() === 'win32' ? 'gradlew.bat' : 'gradlew')
   const gradle = (extra: string[]) => {
-    const options = { cwd: folder, env: { ...process.env, JAVA_HOME: javaHome }, encoding: 'utf8' as const, shell: platform() === 'win32', maxBuffer: 1 << 28 }
-    const result = spawnSync(gradlew, [...tasks, ...extra], options)
+    // Windows runs gradlew.bat through cmd.exe, which splits unquoted paths at spaces ("C:\Users\First Last").
+    const windows = platform() === 'win32'
+    const quote = (a: string) => (windows ? `"${a}"` : a)
+    const options = { cwd: folder, env: { ...process.env, JAVA_HOME: javaHome }, encoding: 'utf8' as const, shell: windows, maxBuffer: 1 << 28 }
+    const result = spawnSync(quote(gradlew), [...tasks, ...extra].map(quote), options)
     return { ok: result.status === 0, output: `${result.stdout}${result.stderr}` }
   }
   const started = Date.now()
@@ -128,14 +132,20 @@ export function runTimeline(built: Built, timeline: string[], seconds: number, l
   rmSync(logFile, { force: true })
   const lib = built.libraryDir
   const env: NodeJS.ProcessEnv = { ...process.env, LD_LIBRARY_PATH: lib, DYLD_LIBRARY_PATH: lib, DYLD_FALLBACK_LIBRARY_PATH: lib }
-  env.PATH = `${process.env.PATH}${delimiter}${lib}`
+  // Windows finds native libraries on the path; its key is "Path", and a second "PATH" key would be ambiguous.
+  const pathKey = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH'
+  env[pathKey] = `${env[pathKey] ?? ''}${delimiter}${lib}`
   delete env.HALSIM_EXTENSIONS // no HAL extension: no simulator window, no WebSocket server
   const classpath = [built.harnessDir, built.jar].join(delimiter)
   const args = [`-Djava.library.path=${lib}`, '-cp', classpath, 'SimRunHarness', timelineFile, resolve(logFile), built.mainClass]
   const out = openSync(outFile, 'w')
   const java = spawn(join(built.javaHome, 'bin', 'java'), args, { cwd: built.folder, env, stdio: ['ignore', out, out] })
   const started = Date.now()
-  return new Promise((done) => {
+  return new Promise((done, fail) => {
+    java.on('error', (error) => {
+      closeSync(out)
+      fail(new Error(`Couldn't start Java from ${built.javaHome}: ${error.message}`))
+    })
     let killed = false
     const deadline = setTimeout(() => {
       killed = true
@@ -149,10 +159,31 @@ export function runTimeline(built: Built, timeline: string[], seconds: number, l
   })
 }
 
-/** A folder for this robot's copy and runs, outside the robot's own folder. */
+/**
+ * A folder for this robot's copy and runs, outside the robot's own folder: one per robot folder (by its full path)
+ * and commit, so a second run reuses the build. A lock file stops two sim-runs at once from wiping each other's copy.
+ */
 export function workFolder(cache: string, source: Source): string {
-  const name = `${basename(resolve(source.robot))}${source.commit ? `-${source.commit.slice(0, 10)}` : ''}`
+  const robot = resolve(source.robot)
+  const pathHash = createHash('sha1').update(robot).digest('hex').slice(0, 8)
+  const name = `${basename(robot)}-${pathHash}${source.commit ? `-${source.commit.slice(0, 10)}` : ''}`
   const folder = join(cache, name)
   mkdirSync(folder, { recursive: true })
+  const lock = join(folder, 'sim-run.lock')
+  const holder = existsSync(lock) ? Number(readFileSync(lock, 'utf8')) : null
+  if (holder && holder !== process.pid && isRunning(holder)) {
+    throw new Error(`Another sim-run (process ${holder}) is using ${folder}; wait for it to finish.`)
+  }
+  writeFileSync(lock, String(process.pid))
+  process.on('exit', () => rmSync(lock, { force: true }))
   return folder
+}
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }

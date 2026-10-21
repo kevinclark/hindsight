@@ -4,9 +4,9 @@
  */
 
 import { readValues } from '../../readers/wpilog.ts'
-import { describeCommand, lifetimes, markerTime, type Lifetime } from '../events.ts'
+import { describeCommand, markerTime, type Lifetime } from '../events.ts'
 import type { Expectation, Press } from '../scenario.ts'
-import { secs, type Check, type Finding, type RunResult } from './types.ts'
+import { duration, type Check, type Finding, type RunResult } from './types.ts'
 
 /** Commands that start within this long after a press were started by it (measured: same loop, under 0.03 s). */
 const STARTED_BY_PRESS_SECONDS = 0.1
@@ -27,18 +27,18 @@ function missed(e: Expectation, press: Press, pressedAt: number, r: RunResult): 
     if (printed) return []
     return [{
       check: 'expect/message', severity: 'error', run,
-      message: `"${e.message}" didn't print within ${secs(e.within)} after ${press.said}.`,
+      message: `"${e.message}" didn't print within ${duration(e.within)} after ${press.said}.`,
       details: [],
       look: `the command ${press.said} starts, and whether each of its steps ends`,
     }]
   }
   if ('finish' in e) {
-    const started = lifetimes(r.record).filter((l) => !l.command.isDefault && l.start >= pressedAt && l.start <= pressedAt + STARTED_BY_PRESS_SECONDS)
+    const started = r.record.lives.filter((l) => !l.command.isDefault && l.start >= pressedAt && l.start <= pressedAt + STARTED_BY_PRESS_SECONDS)
     const unfinished = started.filter((l) => l.how !== 'finished' || l.end > by)
     if (unfinished.length === 0) return []
     return [{
       check: 'expect/finish', severity: 'error', run,
-      message: `${unfinished.length === 1 ? 'A command' : `${unfinished.length} commands`} ${press.said} started didn't finish within ${secs(e.within)}.`,
+      message: `${unfinished.length === 1 ? 'A command' : `${unfinished.length} commands`} ${press.said} started didn't finish within ${duration(e.within)}.`,
       details: unfinished.map((l) => `${describeCommand(l.command)}: ${howItEnded(l)}`),
       look: 'a step in the command that never ends (a run() before an until(), a wait on a condition that never comes true)',
     }]
@@ -53,13 +53,13 @@ function missed(e: Expectation, press: Press, pressedAt: number, r: RunResult): 
   const last = values.v.filter((_, i) => values.t[i] <= by).at(-1)
   return [{
     check: 'expect/key', severity: 'error', run,
-    message: `${e.key} didn't become ${JSON.stringify(e.becomes)} within ${secs(e.within)} after ${press.said} (it was ${JSON.stringify(last)}).`,
+    message: `${e.key} didn't become ${JSON.stringify(e.becomes)} within ${duration(e.within)} after ${press.said} (it was ${JSON.stringify(last)}).`,
     details: [],
   }]
 }
 
 function howItEnded(l: Lifetime): string {
   if (l.how === 'running') return 'still running'
-  if (l.how === 'interrupted') return `stopped after ${secs(l.end - l.start)} without finishing`
-  return `finished after ${secs(l.end - l.start)}`
+  if (l.how === 'interrupted') return `stopped after ${duration(l.end - l.start)} without finishing`
+  return `finished after ${duration(l.end - l.start)}`
 }

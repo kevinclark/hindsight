@@ -42,6 +42,8 @@ export interface RunRecord {
   console: ConsoleLine[]
   choosers: Chooser[]
   periods: Period[]
+  /** Every command's life, in start order. */
+  lives: Lifetime[]
 }
 
 /** One command's life: from its start to its finish, its interrupt, or the end of the run. */
@@ -50,7 +52,10 @@ export interface Lifetime { command: CommandRef; start: number; end: number; how
 const PREFIX = '[sim-run]\t'
 
 export function readRun(output: string): RunRecord {
-  const run: RunRecord = { started: null, ended: false, last: 0, harnessError: null, noLog: null, steps: [], commands: [], console: [], choosers: [], periods: [] }
+  const run: RunRecord = {
+    started: null, ended: false, last: 0, harnessError: null, noLog: null,
+    steps: [], commands: [], console: [], choosers: [], periods: [], lives: [],
+  }
   for (const line of output.split(/\r?\n/)) {
     if (!line.startsWith(PREFIX)) {
       if (line.trim()) run.console.push({ t: run.last, stream: 'native', text: line })
@@ -69,12 +74,16 @@ export function readRun(output: string): RunRecord {
     else if (kind === 'no-log') run.noLog = fields[0]
   }
   run.periods = periodsOf(run)
+  run.lives = lifetimes(run)
   return run
 }
 
 function commandRef(field: string): CommandRef {
   const [id, name, requirements, isDefault, origin] = field.split('|')
-  return { id, name, requirements: requirements ? requirements.split(',') : [], isDefault: isDefault === 'default', origin: origin ?? '' }
+  // Sorted: a command's requirements are a set, and Java prints a set in no fixed order (the same group came out in
+  // two orders across runs), so the same command must read the same in every run.
+  const needs = requirements ? requirements.split(',').sort() : []
+  return { id, name, requirements: needs, isDefault: isDefault === 'default', origin: origin ?? '' }
 }
 
 function periodsOf(run: RunRecord): Period[] {
@@ -87,8 +96,8 @@ function periodsOf(run: RunRecord): Period[] {
 
 export const isEnabled = (p: Period) => p.mode !== 'disabled'
 
-/** Every command's life in the run, in start order. */
-export function lifetimes(run: RunRecord): Lifetime[] {
+/** Every command's life in the run, in start order (readRun keeps it as `lives`). */
+function lifetimes(run: RunRecord): Lifetime[] {
   const open = new Map<string, Lifetime>()
   const all: Lifetime[] = []
   for (const e of run.commands) {
@@ -121,6 +130,3 @@ export function markerTime(run: RunRecord, marker: string): number | null {
   return run.steps.find((s) => s.line.split(/\s+/).includes(marker))?.t ?? null
 }
 
-export function periodAt(run: RunRecord, t: number): Period | undefined {
-  return run.periods.find((p) => t >= p.start && t < p.end)
-}

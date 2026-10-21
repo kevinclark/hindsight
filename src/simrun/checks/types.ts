@@ -38,5 +38,14 @@ export interface Finding {
 
 export type Check = (context: Context) => Finding[]
 
-/** "0.12 s", as the report says a duration. */
-export const secs = (s: number) => `${s < 1 ? s.toFixed(2) : s.toFixed(1)} s`
+/**
+ * "0.12 s": a duration as sim-run says it. Rules' duration() rounds to 0.1 s, but sim-run's timing is a loop or two
+ * (a zero cut off 0.08 s after it started), so under a second it keeps two decimals.
+ */
+export const duration = (s: number) => `${s < 1 ? s.toFixed(2) : s.toFixed(1)} s`
+
+/** Which runs a finding is about: "every run", "6 runs", or the runs' names when given. */
+export function runsLabel(count: number, total: number, names: string[] = []): string {
+  if (count === total) return 'every run'
+  return names.length ? names.join(', ') : `${count} runs`
+}
