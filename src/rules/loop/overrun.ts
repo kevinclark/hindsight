@@ -6,7 +6,8 @@
  * Why: CalGames 2026: 14–27 % of auto loops overran (worst 134 ms). A 130 ms loop at 2.5 m/s is 0.33 m of blind
  * travel on a trench approach.
  */
-import { maxOf, pct, round, rule } from '../rule.ts'
+import { maxOf, pct, plural, round, rule } from '../rule.ts'
+import { describeSteps, SLOW_STEP_MS, slowSteps } from './tracer-steps.ts'
 
 export default rule({
   id: 'loop/overrun',
@@ -40,6 +41,15 @@ export default rule({
     // than that: the work is still the first suspect, then pauses (garbage collection).
     const middle = loop.percentile(50, worst.window)
     const tooHeavy = middle > 20 || worst.share > 0.2
+
+    // The robot console names the slow steps (when the log has it, and only for loops that overran).
+    const steps = slowSteps(match, worst.window)
+    const slowest = steps[0]
+    const tookLong = slowest ? `${plural(slowest.loops, 'overrun loop')} (worst ${round(slowest.worstMs, 0)} ms)` : ''
+    const nextStep = slowest
+      ? `Start with ${slowest.name}: it took over ${SLOW_STEP_MS} ms in ${tookLong}. Move its slow work off the main loop or cache it.`
+      : undefined
+
     return {
       likely: tooHeavy ? ['heavy-work', 'cpu'] : ['heavy-work', 'gc'],
       message: `${pct(worst.share)} of ${worst.name} loops took longer than 20 ms (worst ${maxOf(worst.samples).toFixed(0)} ms)`,
@@ -51,7 +61,9 @@ export default rule({
         'teleop: share over 20 ms (%)': round(100 * teleopShare, 1),
         'teleop: p99 (ms)': round(loop.percentile(99, match.teleop), 0),
         'teleop: worst (ms)': round(maxOf(teleop), 0),
+        [`slow steps over ${SLOW_STEP_MS} ms (console)`]: slowest ? describeSteps(steps) : undefined,
       },
+      nextStep,
       measured: [{ label: `${worst.name} loops over 20 ms`, value: round(100 * worst.share, 1), unit: '%', threshold: 10 }],
       plot: {
         signals: [loop], unit: 'ms', line: { value: 20, label: '20 ms' },
