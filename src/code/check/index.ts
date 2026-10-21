@@ -6,6 +6,7 @@
 import type { CodeHead } from '../../builder/code-hints.ts'
 import { GitUnreadable } from '../git.ts'
 import { javaFilesAt, type CodeSource } from '../source.ts'
+import { deviceSettings, type DeviceSetting } from './device-settings.ts'
 import { Project } from './project.ts'
 import { runCodeRules, type CodeReport, type CodeRule } from './rule.ts'
 import discardedResult from './rules/discarded-result.ts'
@@ -23,9 +24,14 @@ export const CODE_RULES: CodeRule[] = [duplicateCanId, neverSet, neverEndingStep
 
 /** Runs the code rules over these files (call loadJava first). */
 export function checkCode(sources: { path: string; text: string }[], rules = CODE_RULES): CodeReport {
+  return withProject(sources, (project) => runCodeRules(rules, project))
+}
+
+/** Parses the files into a project, uses it, and frees its trees (tree-sitter keeps them in wasm memory). */
+function withProject<T>(sources: { path: string; text: string }[], use: (project: Project) => T): T {
   const project = new Project(sources)
   try {
-    return runCodeRules(rules, project)
+    return use(project)
   } finally {
     project.close()
   }
@@ -43,6 +49,8 @@ export interface FolderCheck {
   /** Why it didn't check the robot's commit (none reported, or not in this code), when it didn't. */
   why: string | null
   files: number
+  /** The settings the code gives each device it builds, for Foresight's robot snapshot check (device-settings.ts). */
+  settings: DeviceSetting[]
 }
 
 /**
@@ -56,7 +64,8 @@ export async function checkFolder(source: CodeSource, robotSha: string | null, h
   const commit = robot.commit ?? fallback?.sha ?? ''
   const files = await javaFilesAt(source, commit)
   const ranOn = robot.commit ? 'robot' : 'head'
-  return { report: checkCode(files), commit, ranOn, branch: robot.commit ? null : (fallback?.branch ?? null), why: robot.why, files: files.length }
+  const { report, settings } = withProject(files, (project) => ({ report: runCodeRules(CODE_RULES, project), settings: deviceSettings(project) }))
+  return { report, commit, ranOn, branch: robot.commit ? null : (fallback?.branch ?? null), why: robot.why, files: files.length, settings }
 }
 
 /** The robot's commit in this code, or why it can't be checked. */

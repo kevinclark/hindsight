@@ -20,7 +20,7 @@
 import { BODIES, classAround, enclosing, field, fills, isInside, lineOf, nameOf, parts, type Node } from '../java.ts'
 import { baseType, type Project } from '../project.ts'
 import { codeRule, plural, type CodeProblem } from '../rule.ts'
-import { declarationOf, declaredType } from '../types.ts'
+import { declarationOf, declaredType, scopeOf } from '../types.ts'
 import { valueOf } from '../values.ts'
 
 const SIGNAL_TYPES = ['StatusSignal', 'StatusSignalValue', 'BaseStatusSignal']
@@ -82,7 +82,7 @@ function problemWith(signal: Node, project: Project): Problem[] {
 
 /** Everything done with a signal (or an array holding it) where it can be seen: its class, or its block. */
 function usesOf(declared: Node, project: Project): Use {
-  const scope = declared.parent?.type === 'field_declaration' ? enclosing(declared, BODIES) : enclosing(declared, ['block'])
+  const scope = declared.parent?.type === 'field_declaration' ? enclosing(declared, BODIES) : scopeOf(declared)
   const use: Use = { reads: [], refreshed: false, rates: [], handedOff: false, fetchedIn: [] }
   for (const mention of mentionsOf(declared, scope, project)) addUse(use, mention, project)
   return use
@@ -140,7 +140,7 @@ function arrayUses(use: Use, initializer: Node, project: Project): void {
     use.handedOff = true
     return
   }
-  const scope = variable.parent?.type === 'field_declaration' ? enclosing(variable, BODIES) : enclosing(variable, ['block'])
+  const scope = variable.parent?.type === 'field_declaration' ? enclosing(variable, BODIES) : scopeOf(variable)
   for (const mention of mentionsOf(variable, scope, project)) addUse(use, mention, project)
 }
 

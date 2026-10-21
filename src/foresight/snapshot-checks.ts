@@ -13,12 +13,15 @@
  */
 import type { Report, SkippedRule } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
+import { definedOnly } from '../rules/run.ts'
 import type { RobotProfile, SnapshotExpectations } from '../profiles/types.ts'
 import { busLabel, configOf, parseBool, parseNumber, type Config, type Device, type Snapshot } from '../snapshot/snapshot.ts'
-import { fieldText, inventory, limitsReport } from '../snapshot/report.ts'
+import { fieldText, inventory, limitsReport, sameNumber } from '../snapshot/report.ts'
+import { RIO, ANY_CANIVORE } from '../code/check/devices.ts'
+import type { DeviceSetting } from '../code/check/device-settings.ts'
 
-type Rule = 'snapshot/devices' | 'snapshot/licensed' | 'snapshot/cancoder-offsets' | 'snapshot/swerve-ratio' | 'snapshot/current-limits'
-export const SNAPSHOT_RULES: Rule[] = ['snapshot/devices', 'snapshot/licensed', 'snapshot/cancoder-offsets', 'snapshot/swerve-ratio', 'snapshot/current-limits']
+type Rule = 'snapshot/devices' | 'snapshot/licensed' | 'snapshot/cancoder-offsets' | 'snapshot/swerve-ratio' | 'snapshot/current-limits' | 'snapshot/code-settings'
+export const SNAPSHOT_RULES: Rule[] = ['snapshot/devices', 'snapshot/licensed', 'snapshot/cancoder-offsets', 'snapshot/swerve-ratio', 'snapshot/current-limits', 'snapshot/code-settings']
 
 /** Why these checks are amber whatever they find (shown as each finding's proof). */
 export const SNAPSHOT_PROOF = 'amber: no snapshot of our robot has been checked yet, so this check has no backtest and has never caught a real fault'
@@ -39,6 +42,14 @@ export interface SnapshotInput {
   snapshot: Snapshot | null
   codeStartWallMs: number | null
   codeStartFrom?: 'metadata' | 'first value' | null
+}
+
+/** The settings the Code panel read from the robot code (code/check/device-settings.ts), and which commit it read. */
+export interface CodeSettings {
+  commit: string
+  /** 'robot' when that commit is the one the robot runs (code/check/index.ts, checkFolder). */
+  ranOn: 'robot' | 'head'
+  settings: DeviceSetting[]
 }
 
 const RULE_TEXT: Record<Rule, { meaning: string; causes: Finding['causes']; nextStep: string }> = {
@@ -86,6 +97,15 @@ const RULE_TEXT: Record<Rule, { meaning: string; causes: Finding['causes']; next
     ],
     nextStep: 'Restart the robot code (or redeploy) and take a new snapshot; if the code changed the limit on purpose, the software lead updates the robot profile.',
   },
+  'snapshot/code-settings': {
+    meaning: 'A device holds another setting than the robot code gives it: a CANcoder offset, a gear ratio or a current limit. The code\'s config apply may have failed (for a value outside the range Phoenix documents, such as a magnet offset outside −1 to 1 rotation), or someone changed it in Phoenix Tuner X.',
+    causes: [
+      { id: 'invalid', cause: 'The code\'s value is outside the range Phoenix documents for it, so the apply may have failed and the device kept its old settings', look: 'the value in the code (the "where" below) and the robot code\'s console for config errors at start-up' },
+      { id: 'apply', cause: 'The config apply failed for another reason (a CAN error at start-up)', look: 'the robot code\'s console for config errors at start-up' },
+      { id: 'tuner', cause: 'Someone changed the setting in Phoenix Tuner X', look: 'ask who last used Tuner X on the robot; restarting the robot code puts the code\'s values back' },
+    ],
+    nextStep: 'Restart the robot code (or redeploy) and take a new snapshot; if it still differs, fix the value in the code with the software lead.',
+  },
 }
 
 function finding(rule: Rule, about: string, title: string, evidence: Finding['evidence'], severity: Finding['severity'] = 'warning'): Finding {
@@ -120,7 +140,9 @@ class Check {
   checked = 0
   readonly rule: Rule
   constructor(rule: Rule) { this.rule = rule }
-  fire(about: string, title: string, evidence: Finding['evidence'], severity?: Finding['severity']) { this.findings.push(finding(this.rule, about, title, evidence, severity)) }
+  fire(about: string, title: string, evidence: Record<string, string | number | undefined>, severity?: Finding['severity']) { this.findings.push(finding(this.rule, about, title, definedOnly(evidence), severity)) }
+  /** Nothing could be checked, and why. */
+  cannot(why: string): this { this.unread.push(why); return this }
   done(skipped: SkippedRule[], nothing: string): Finding[] {
     if (this.checked === 0 && this.findings.length === 0) skipped.push({ rule: this.rule, reason: this.unread.length ? this.unread.join('; ') : nothing })
     else if (this.unread.length) skipped.push({ rule: this.rule, reason: `partly checked; ${this.unread.join('; ')}` })
@@ -254,6 +276,81 @@ function limitsCheck(snapshot: Snapshot, profile: RobotProfile): Check {
   return c
 }
 
+/** Each setting the code check reads, how the snapshot names it, and when an applied value is the code's. */
+const SETTINGS: Record<string, { configs: string[]; kind: 'number' | 'bool'; same?: (applied: number, code: number) => boolean }> = {
+  MagnetOffset: { configs: ['CANCoder_MagnetOffset', 'Config_MagnetOffset'], kind: 'number', same: (a, c) => Math.abs(turnDifference(a, c)) <= OFFSET_TOLERANCE },
+  SensorToMechanismRatio: { configs: ['Config_SensorToMechanismRatio'], kind: 'number', same: (a, c) => sameRatio(a, c) },
+  StatorCurrentLimit: { configs: ['Config_StatorCurrentLimit'], kind: 'number', same: sameNumber },
+  StatorCurrentLimitEnable: { configs: ['Config_StatorCurrLimitEn'], kind: 'bool' },
+  SupplyCurrentLimit: { configs: ['Config_SupplyCurrentLimit'], kind: 'number', same: sameNumber },
+  SupplyCurrentLimitEnable: { configs: ['Config_SupplyCurrLimitEn'], kind: 'bool' },
+}
+/** Phoenix 6 MagnetSensorConfigs: MagnetOffset from -1 to 1 rotation (api.ctr-electronics.com, 26.3.0). */
+const LARGEST_OFFSET = 1
+
+/**
+ * The code's settings against what each device holds. A setting the robot profile already checks (its CANcoder
+ * offsets, its swerve ratios, every motor group's current limits) is left to that check, so one fault is one finding.
+ * A device may get one of several values (sim or real, two robots): it is wrong only when it holds none of them.
+ */
+function codeSettingsCheck(snapshot: Snapshot, profile: RobotProfile, expected: SnapshotExpectations | undefined, code: CodeSettings | undefined): Check {
+  const c = new Check('snapshot/code-settings')
+  if (!code) return c.cannot('no robot-code folder or GitHub repo chosen in the Code panel')
+  if (code.ranOn !== 'robot') return c.cannot(`the Code panel read ${code.commit.slice(0, 7)}, not the commit the robot runs`)
+  const covered = profileChecks(profile, expected)
+  const settings = code.settings.filter((s) => !covered.has(`${s.kind} ${s.id} ${s.field}`))
+  for (const [label, ofDevice] of groupBy(settings, (s) => `${s.kind} ${s.id}|${s.bus}`)) {
+    const [{ kind, id, bus }] = ofDevice
+    const device = snapshotDeviceFor(snapshot, { bus: companionBus(bus), model: kind, id })
+    if (typeof device === 'string') { c.unread.push(`${kind} ${id}: ${device}`); continue }
+    const wrong: string[] = []
+    for (const [field, choices] of groupBy(ofDevice, (s) => s.field)) {
+      const applied = appliedSetting(device, field)
+      if (applied === null) c.unread.push(`${kind} ${id}: its ${field} wasn't read`)
+      else if (choices.some((s) => sameSetting(field, applied, s.value))) c.checked++
+      else wrong.push(`${field} ${applied}, the code sets ${choices.map((s) => `${s.value} (${s.where})`).join(' or ')}`)
+    }
+    const outOfRange = ofDevice.find((s) => s.field === 'MagnetOffset' && Math.abs(Number(s.value)) > LARGEST_OFFSET)
+    if (wrong.length) c.fire(label.split('|')[0], `${kind} ${id} runs other settings than its code sets`, {
+      differs: wrong.join('; '),
+      'likely why': outOfRange ? `the code's MagnetOffset ${outOfRange.value} is outside the −1 to 1 rotation Phoenix documents` : undefined,
+    })
+  }
+  return c
+}
+
+/** The settings the profile's own snapshot checks compare: "CANcoder 4 MagnetOffset", "TalonFX 8 SupplyCurrentLimit". */
+function profileChecks(profile: RobotProfile, expected: SnapshotExpectations | undefined): Set<string> {
+  const motorsOf = (group: string) => profile.motorGroups.find((g) => g.name === group)?.motors ?? []
+  const offsets = (expected?.devices ?? []).filter((d) => d.magnetOffset !== undefined).map((d) => `CANcoder ${d.canId} MagnetOffset`)
+  const ratios = (expected?.ratios ?? []).filter((r) => r.sensorToMechanism !== undefined).flatMap((r) => motorsOf(r.group).map((m) => `TalonFX ${m.canId} SensorToMechanismRatio`))
+  const limitFields = Object.keys(SETTINGS).filter((f) => f.includes('CurrentLimit'))
+  const limits = profile.motorGroups.flatMap((g) => g.motors).flatMap((m) => limitFields.map((f) => `TalonFX ${m.canId} ${f}`))
+  return new Set([...offsets, ...ratios, ...limits])
+}
+
+/** What the device holds for a setting (true/false for an Enable), or null when the snapshot didn't read it. */
+function appliedSetting(device: Device, field: string): number | boolean | null {
+  const spec = SETTINGS[field]
+  const value = configNamed(device, ...spec.configs)?.value
+  return spec.kind === 'bool' ? parseBool(value) : parseNumber(value)
+}
+
+function sameSetting(field: string, applied: number | boolean, code: number | boolean): boolean {
+  const same = SETTINGS[field].same
+  if (typeof applied === 'boolean' || typeof code === 'boolean' || !same) return applied === code
+  return same(applied, code)
+}
+
+/** The bus as the companion names it (snapshotBusFor): the roboRIO's is "rio", CANBus("*") is "Any". */
+const companionBus = (bus: string) => (bus === RIO ? 'rio' : bus === ANY_CANIVORE ? 'Any' : bus)
+
+function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>()
+  for (const item of items) groups.set(key(item), [...(groups.get(key(item)) ?? []), item])
+  return groups
+}
+
 /** Why the snapshot can't be used for this run of the robot code, or null when it can. */
 export function snapshotNotUsable(input: SnapshotInput | undefined, profile: RobotProfile, settleSeconds: number): string | null {
   const snapshot = input?.snapshot
@@ -275,13 +372,13 @@ export function snapshotNotUsable(input: SnapshotInput | undefined, profile: Rob
  * counts only when taken `settleSeconds` or more after the robot code started (its configs are applied by then).
  * Returns whether the snapshot was used.
  */
-export function addSnapshotChecks(report: Report, input: SnapshotInput | undefined, profile: RobotProfile, settleSeconds: number): boolean {
+export function addSnapshotChecks(report: Report, input: SnapshotInput | undefined, profile: RobotProfile, settleSeconds: number, code?: CodeSettings): boolean {
   const why = snapshotNotUsable(input, profile, settleSeconds)
   if (why) { report.skipped.push(...SNAPSHOT_RULES.map((rule) => ({ rule, reason: why }))); return false }
   const snapshot = input!.snapshot!
   const expected = profile.foresight?.snapshot
   const incomplete = snapshot.stopped ? ` (the snapshot stopped early: ${snapshot.stopped.reason})` : ''
-  const checks = [devicesCheck(snapshot, profile, expected), licensedCheck(snapshot, profile, expected), offsetsCheck(snapshot, expected), ratioCheck(snapshot, profile, expected), limitsCheck(snapshot, profile)]
+  const checks = [devicesCheck(snapshot, profile, expected), licensedCheck(snapshot, profile, expected), offsetsCheck(snapshot, expected), ratioCheck(snapshot, profile, expected), limitsCheck(snapshot, profile), codeSettingsCheck(snapshot, profile, expected, code)]
   for (const check of checks) report.findings.push(...check.done(report.skipped, `nothing to check${incomplete}`))
   return true
 }

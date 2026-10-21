@@ -16,6 +16,7 @@ import unusedConfig from '../src/code/check/rules/unused-config.ts'
 import { codeRule, type CodeRule } from '../src/code/check/rule.ts'
 import { Project } from '../src/code/check/project.ts'
 import { isSubsystem } from '../src/code/check/types.ts'
+import { deviceSettings } from '../src/code/check/device-settings.ts'
 
 beforeAll(loadJavaFromDisk)
 
@@ -396,5 +397,49 @@ describe('code/stale-signal', () => {
     const java = io(`static class Inputs { double velocity; double voltage; }
       void update(Inputs inputs) { BaseStatusSignal.refreshAll(velocity, voltage); inputs.velocity = velocity.getValueAsDouble(); inputs.voltage = voltage.getValueAsDouble(); }`)
     expect(messages(staleSignal, java)).toEqual([])
+  })
+})
+
+describe('deviceSettings: what the code configures on each device, for the robot snapshot', () => {
+  const settingsOf = (files: Record<string, string>) => {
+    const project = new Project(Object.entries(files).map(([path, text]) => ({ path, text })))
+    try {
+      return deviceSettings(project).map((s) => `${s.kind} ${s.id} ${s.bus} ${s.field}=${s.value} ${s.where}`)
+    } finally {
+      project.close()
+    }
+  }
+  it('follows the config from where it is built, through an IO constructor, to the device it is applied to', () => {
+    const files = {
+      'Robot.java': `class Robot extends TimedRobot {
+        Robot() { turret = new Turret(isReal() ? new CANcoderIO(5, Turret.getCancoderConfig(), canivore) : new CANcoderIOSim(5, Turret.getCancoderConfig(), canivore)); }
+        static final CANBus canivore = new CANBus("canivore");
+      }`,
+      'Turret.java': `class Turret extends SubsystemBase {
+        public static CANcoderConfiguration getCancoderConfig() {
+          CANcoderConfiguration config = new CANcoderConfiguration();
+          config.MagnetSensor.MagnetOffset = -0.765 - 0.882;
+          config.MagnetSensor.SensorDirection = SensorDirectionValue.CounterClockwise_Positive;
+          return config;
+        }
+      }`,
+      'CANcoderIO.java': `class CANcoderIO {
+        private final CANcoder cancoder;
+        CANcoderIO(int id, CANcoderConfiguration config, CANBus bus) { cancoder = new CANcoder(id, bus); cancoder.getConfigurator().apply(config); }
+      }`,
+      'CANcoderIOSim.java': 'class CANcoderIOSim { CANcoder c; CANcoderIOSim(int id, CANcoderConfiguration config, CANBus bus) { c = new CANcoder(id, bus); c.getConfigurator().apply(config); } }',
+    }
+    expect(settingsOf(files)).toEqual(['CANcoder 5 canivore MagnetOffset=-1.647 Turret.java:4'])
+  })
+  it('reads limits and Enables, and nothing from a config built with .with…() builders', () => {
+    const files = {
+      'Robot.java': 'class Robot extends TimedRobot { Robot() { new HoodIO(14); new RollerIO(9); } }',
+      'HoodIO.java': `class HoodIO {
+        TalonFX motor;
+        HoodIO(int id) { motor = new TalonFX(id); var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 40; c.CurrentLimits.SupplyCurrentLimitEnable = true; motor.getConfigurator().apply(c); }
+      }`,
+      'RollerIO.java': 'class RollerIO { TalonFX motor; RollerIO(int id) { motor = new TalonFX(id); motor.getConfigurator().apply(new TalonFXConfiguration().withCurrentLimits(limits)); } }',
+    }
+    expect(settingsOf(files)).toEqual(['TalonFX 14 the roboRIO bus SupplyCurrentLimit=40 HoodIO.java:3', 'TalonFX 14 the roboRIO bus SupplyCurrentLimitEnable=true HoodIO.java:3'])
   })
 })

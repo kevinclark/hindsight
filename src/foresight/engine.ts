@@ -18,7 +18,7 @@ import type { RobotProfile } from '../profiles/types.ts'
 import { KEEP_SECONDS, type RecordStore } from './records.ts'
 import { verdictFor, type Verdict } from './verdict.ts'
 import { PROVEN } from './proven.ts'
-import { addSnapshotChecks, joinWatched, SNAPSHOT_PROOF, SNAPSHOT_RULES, type SnapshotInput } from './snapshot-checks.ts'
+import { addSnapshotChecks, joinWatched, SNAPSHOT_PROOF, SNAPSHOT_RULES, type CodeSettings, type SnapshotInput } from './snapshot-checks.ts'
 import { MatchView } from '../rules/view.ts'
 import { hootLine, type HootLine } from '../match/companion.ts'
 
@@ -38,6 +38,8 @@ export interface ForesightInput {
   rules?: Rule[]
   /** The robot snapshot dropped on the page, if any (snapshot-checks.ts). Without one, its checks say "not checked". */
   snapshot?: SnapshotInput
+  /** The settings the Code panel read from the robot code, for the snapshot to be checked against (snapshot-checks.ts). */
+  codeSettings?: CodeSettings
 }
 
 export type ForesightResult =
@@ -82,7 +84,7 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   // The Match tab's links (not its parents, which would add findings), so one problem two checks see is one item in
   // the verdict (verdict.ts).
   const report = runRules(match, input.rules ?? FORESIGHT_RULES, { links: LINKS })
-  const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS)
+  const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS, input.codeSettings)
   const snapshot = input.snapshot?.snapshot
   if (snapshotUsed && snapshot) joinWatched(report, snapshot, new MatchView(match).watchedDevices())
   // The backtest only proved checks on stretches before any enable. After a drive the battery is still recovering

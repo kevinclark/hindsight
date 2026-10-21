@@ -3,7 +3,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { offseason2026, offseason2026Event } from '../src/profiles/2026-offseason.ts'
-import { addSnapshotChecks, OFFSET_TOLERANCE, SNAPSHOT_PROOF, SNAPSHOT_RULES } from '../src/foresight/snapshot-checks.ts'
+import { addSnapshotChecks, OFFSET_TOLERANCE, SNAPSHOT_PROOF, SNAPSHOT_RULES, type CodeSettings } from '../src/foresight/snapshot-checks.ts'
+import type { DeviceSetting } from '../src/code/check/device-settings.ts'
 import { SETTLE_SECONDS } from '../src/foresight/engine.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
 import { markOnchecks } from '../src/foresight/onchecks.ts'
@@ -21,19 +22,20 @@ function robot(change: (devices: FakeDevice[]) => FakeDevice[] | void = () => {}
 }
 const device = (devices: FakeDevice[], model: string, id: number) => devices.find((d) => d.model.startsWith(model) && d.id === id)!
 
-function run(devices: FakeDevice[] | null, takenAt = AFTER_SETTLE, codeStartWallMs: number | null = CODE_START) {
+function run(devices: FakeDevice[] | null, takenAt = AFTER_SETTLE, codeStartWallMs: number | null = CODE_START, code?: CodeSettings) {
   const report: Report = { findings: [], skipped: [], crashed: [] }
-  const used = addSnapshotChecks(report, { snapshot: devices && makeDevicesSnapshot(devices, takenAt), codeStartWallMs }, offseason2026, SETTLE_SECONDS)
+  const used = addSnapshotChecks(report, { snapshot: devices && makeDevicesSnapshot(devices, takenAt), codeStartWallMs }, offseason2026, SETTLE_SECONDS, code)
   return { report, used, rules: report.findings.filter((f) => f.severity !== 'info').map((f) => f.rule), titles: report.findings.map((f) => f.title) }
 }
 const skippedReason = (r: ReturnType<typeof run>, rule: string) => r.report.skipped.find((s) => s.rule === rule)?.reason
 
 describe('Foresight over a robot snapshot', () => {
-  it('a healthy robot: all five checks run, nothing found, the four checklist lines OK', () => {
+  it('a healthy robot: the five profile checks run, nothing found, the four checklist lines OK', () => {
     const r = run(robot())
     expect(r.used).toBe(true)
     expect(r.report.findings).toEqual([])
-    expect(r.report.skipped).toEqual([])
+    // The code-settings check needs the Code panel's reading of the robot code: none here.
+    expect(r.report.skipped).toEqual([{ rule: 'snapshot/code-settings', reason: 'no robot-code folder or GitHub repo chosen in the Code panel' }])
     const marked = markOnchecks({ verdict: verdictFor(r.report), report: r.report, snapshotUsed: true })
     const lines = ['CANcoder offsets correct and unchanged', 'Swerve ratio unchanged', 'All CAN devices licensed and ID\'d', 'Current limits as the code sets them']
     expect(lines.map((l) => marked.find((m) => m.line === l)!.state)).toEqual(['ok', 'ok', 'ok', 'ok'])
@@ -180,10 +182,14 @@ describe('Foresight over a robot snapshot', () => {
   })
 
   it('every snapshot check stays amber, even when the proof table would make it red', () => {
-    const r = run(robot((d) => { device(d, 'Talon FX', 16).configs!.Config_SupplyCurrentLimit = 60 }))
+    // With the Code panel's settings too (one that matches), so every snapshot check runs.
+    const code: CodeSettings = { commit: 'cb68b20', ranOn: 'robot', settings: [{ kind: 'CANcoder', id: 5, bus: '*', field: 'MagnetOffset', value: 0, where: 'Made.java:1' }] }
+    const turret = { model: 'CANCoder vers. H', id: 5, configs: { CANCoder_MagnetOffset: 0 } }
+    const r = run(robot((d) => { device(d, 'Talon FX', 16).configs!.Config_SupplyCurrentLimit = 60; d.push(turret) }), AFTER_SETTLE, CODE_START, code)
     const proven = Object.fromEntries(SNAPSHOT_RULES.map((rule) => [rule, { logs: 9, fires: 1, ourFires: 1, base: 'x', date: 'd' }]))
     const verdict = verdictFor(r.report, proven, Object.fromEntries(SNAPSHOT_RULES.map((rule) => [rule, SNAPSHOT_PROOF])))
-    expect(verdict.items.map((i) => [i.level, i.proof])).toEqual([['amber', SNAPSHOT_PROOF]])
+    // The turret CANcoder the profile doesn't list is grey context (snapshot/devices).
+    expect(verdict.items.filter((i) => i.level !== 'grey').map((i) => [i.level, i.proof])).toEqual([['amber', SNAPSHOT_PROOF]])
     expect(verdict.verdict).toBe('GO')
   })
 
@@ -193,5 +199,40 @@ describe('Foresight over a robot snapshot', () => {
     for (const action of ['blink', 'controlv2', 'setconfigv2', 'setid', 'setname', 'clearstickyfaults']) {
       expect(sources.some((s) => new RegExp(`action=${action}\\b|['"]${action}['"]`, 'i').test(s))).toBe(false)
     }
+  })
+})
+
+describe('snapshot/code-settings: what the robot code sets against what each device holds', () => {
+  /** A setting as the Code panel reads it from the code (code/check/device-settings.ts). */
+  const set = (kind: string, id: number, field: string, value: number | boolean, where = 'Made.java:1'): DeviceSetting => ({ kind, id, bus: '*', field, value, where })
+  const turretCancoder = { model: 'CANCoder vers. H', id: 5, configs: { CANCoder_MagnetOffset: 0 } }
+  function withCode(devices: FakeDevice[], settings: DeviceSetting[], ranOn: CodeSettings['ranOn'] = 'robot') {
+    const report: Report = { findings: [], skipped: [], crashed: [] }
+    addSnapshotChecks(report, { snapshot: makeDevicesSnapshot(devices, AFTER_SETTLE), codeStartWallMs: CODE_START }, offseason2026, SETTLE_SECONDS, { commit: 'cb68b20', ranOn, settings })
+    return { report, found: report.findings.filter((f) => f.rule === 'snapshot/code-settings') }
+  }
+
+  it('fires when a device holds none of the code\'s values, and says why an offset outside -1..1 may not apply', () => {
+    const { found } = withCode(robot((d) => { d.push(turretCancoder) }), [set('CANcoder', 5, 'MagnetOffset', -1.6475, 'TurretSubsystem.java:576')])
+    expect(found.map((f) => [f.title, f.evidence])).toEqual([['CANcoder 5 runs other settings than its code sets', {
+      differs: 'MagnetOffset 0, the code sets -1.6475 (TurretSubsystem.java:576)',
+      'likely why': 'the code\'s MagnetOffset -1.6475 is outside the −1 to 1 rotation Phoenix documents',
+    }]])
+  })
+  it('stays quiet when the device holds one of the code\'s values (two robots, or sim and real)', () => {
+    const hood = robot((d) => { device(d, 'Talon FX', 14).configs!.Config_SensorToMechanismRatio = 46.40625 })
+    expect(withCode(hood, [set('TalonFX', 14, 'SensorToMechanismRatio', 1), set('TalonFX', 14, 'SensorToMechanismRatio', 46.40625)]).found).toEqual([])
+    expect(withCode(hood, [set('TalonFX', 14, 'SensorToMechanismRatio', 1)]).found.map((f) => f.evidence.differs)).toEqual(['SensorToMechanismRatio 46.40625, the code sets 1 (Made.java:1)'])
+  })
+  it('leaves a setting the profile already checks to that check: one fault, one finding', () => {
+    const moved = robot((d) => { device(d, 'CANCoder', 4).configs!.CANCoder_MagnetOffset = 0.1 })
+    const { report, found } = withCode(moved, [set('CANcoder', 4, 'MagnetOffset', -0.4106)])
+    expect(found).toEqual([])
+    expect(verdictFor(report).items.map((i) => i.finding.rule)).toEqual(['snapshot/cancoder-offsets'])
+  })
+  it('says why it could not check: code that is not what the robot runs, a device not on the bus, a setting not read', () => {
+    expect(withCode(robot(), [], 'head').report.skipped).toEqual([{ rule: 'snapshot/code-settings', reason: 'the Code panel read cb68b20, not the commit the robot runs' }])
+    const { report } = withCode(robot((d) => { d.push({ model: 'CANCoder vers. H', id: 5 }) }), [set('CANcoder', 6, 'MagnetOffset', 0.5), set('CANcoder', 5, 'MagnetOffset', 0.5)])
+    expect(report.skipped.find((s) => s.rule === 'snapshot/code-settings')?.reason).toBe("CANcoder 6: not on the snapshot's canivore1; CANcoder 5: its MagnetOffset wasn't read")
   })
 })
