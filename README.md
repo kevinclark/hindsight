@@ -37,6 +37,8 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   is a CTRE PDP 2.0, which has no current telemetry, or when the board is unknown.
 - **Power** tab: lowest voltage and margin to the brownout setting, the loads at the deepest sags, the battery's
   estimated open-circuit voltage against charge drawn, and flywheel current-cap what-ifs with the model's error.
+- **Logging** tab: which signals the checks need that this log is missing, as a to-do list. See
+  [Logging what the checks need](#logging-what-the-checks-need).
 - **Download for Claude** saves `<log>.findings.json` (schema `hindsight.findings/2`: each finding has robot time,
   match time, meaning, ranked causes and next step): findings, evidence, summary
   statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
@@ -51,7 +53,7 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   Foresight's report is one page stamped with the time read, so a withdrawn verdict prints as NOT CHECKED, never GO.
   The Session view has the same button: page 1 is the match count, a bottom line, the merged findings with their
   confidence in words ("Consistent", "3 of 3 where it could be checked", the measured range and its line), the trends
-  as small multiples (battery identity is a letter, not just a colour) and the notes; page 2 is the rule × match grid.
+  as small multiples with each number's verdict (battery identity is a letter, not just a colour) and the notes; page 2 is the rule × match grid.
   The card is `<label>.session-card.png`, the PDF `<label>.session-report.pdf`.
 - **From the command line**, for Claude or a script: `node --experimental-strip-types scripts/report.ts <out-dir> <log>
   [<dslog>] [-- <log> …]` builds first (`--no-build` skips), drives headless Chrome on `hindsight.html` and writes
@@ -106,7 +108,13 @@ lookups an hour per network** without signing in, and a venue's Wi-Fi may share 
 file list, kept in this browser by commit, so a second visit costs none), a branch name one more; file text comes from
 `raw.githubusercontent.com` and doesn't count. The 8 CalGames logs took 9 lookups the first time, 0 after. When the
 hour's lookups are used up, or the laptop is offline, the finding says so (with the time it resets) and stays red: choose
-the folder. One source is in use at a time; choosing either replaces the other. The scripts take `--github
+the folder. If the hourly limit ever runs out in real use, the planned fix is to read each commit's file list from
+jsDelivr (`data.jsdelivr.com/v1/packages/gh/owner/repo@<full sha>?structure=flat`, which allows `file://` pages and
+listed the same 84 files at cb68b20 on 2026-10-20), leaving GitHub's API only to turn a branch name into a commit.
+jsDelivr can't resolve a branch and may serve a branch's files stale, so it would only ever be asked for full commit
+hashes. Not built: no real use has hit the limit yet. The page can't clone the repo itself, because GitHub's clone
+endpoint and zip downloads don't allow calls from web pages. One source is in use at a time; choosing either replaces
+the other. The scripts take `--github
 owner/repo[@ref]` (`golden.ts`, `report.ts`), keeping GitHub's file lists in the same cache file.
 
 To add a robot: **Robot profile** drafts one from your logs, a robot snapshot and (optionally) your code folder, and keeps it in the browser or saves a `profile.json` (`docs/robot-profile.md`; code in `src/builder/`). A built-in profile is a TypeScript file in `src/profiles/`, listed in `src/profiles/index.ts`.
@@ -152,8 +160,10 @@ M5 Max (147 ms per log); the page never stopped responding for more than about 0
   or **not enough data** (under 2 matches checked). A fixed known issue that fires in a later match shows as "came
   back after a fix".
 - **Rule × match grid**: fired, quiet or not checked, per match. Click a match to open it in Match review.
-- **Per match** small multiples on one scale per number: lowest voltage, time under 7 V, charge, battery + wiring
-  resistance, slowest follower, auto loop overruns, vision outliers; coloured by battery ID (logged, or typed in).
+- **Per match** a verdict table, one row per number, worst first: lowest voltage, time under 7 V, charge, battery +
+  wiring resistance, seconds a follower ran more than 15 % off its leader, auto loop overruns, vision outliers. Each
+  row says the verdict ("Under 7 V in 8 of 8 matches"), draws a sparkline (the line as a hairline, one amber dot on the
+  worst match), and quotes the rule's own next step. Dots are coloured by battery ID when there are any (logged, or typed in).
 - **Download for Claude** saves `<session>.session-findings.json` (grid, confidence, per-match numbers).
 
 Not used in the session view: Driver Station logs (match review only).
@@ -219,6 +229,29 @@ settings**: it tells students what to set and which line to change, and they do 
 - The bench model in the tests (spin-up slows by the current ratio; battery = 12.6 V − 11 mΩ × current) predicts the
   real sweep. It only exists to exercise the wizard; the real numbers come from the students' runs.
 - The drive wheel-slip test procedure (not runnable until Kevin agrees it).
+
+## Logging what the checks need
+
+A check can only look at what the robot logged. Hindsight says what is missing, so a team can add it before the match
+where it matters.
+
+- **Logging tab** (Match review): every signal the checks need for this robot profile, marked ✅ logged, ⚠️ logged
+  too slowly or never changes, ❌ not logged, or ⬜ no key in the robot profile. The to-do list comes first. Each line
+  says which checks go dark without the signal, what those checks exist to catch, and the key to log it under. It
+  says what to log, never how: the robot code is the team's to write.
+- **Wanted checks** (same tab): problems no check can catch yet, because the robot doesn't log what it would take.
+  Each becomes a real check once the signal is in a log.
+- **Session view**, "Logging across the session": signals that appeared or vanished between matches, with the build
+  each match ran, and signals missing from every match.
+- **Companion library** (`companion/`, [its README](companion/README.md)): an optional vendordep for AdvantageKit
+  robots.
+  - It logs what AdvantageKit, Phoenix's hoot recording and PhotonVision don't: CANivore bus status, roboRIO CPU and
+    memory, Java heap, and log-drive space.
+  - For each CTRE device passed to `HindsightDevices.watch()`, it also logs whether the device answers, its firmware,
+    its faults and its reboots.
+  - Hindsight and Foresight read these keys when they are there. A robot without the library still gets every other
+    check.
+  - No vendordep is hosted yet: build it from `companion/`.
 
 ## Robot snapshot
 

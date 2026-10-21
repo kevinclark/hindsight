@@ -10,11 +10,8 @@
  * Why: CalGames 2026 Q21: flywheel followers 17 and 18 dropped 25 % below the leader while shooting. It was a belt
  * slipping, fixed just before elims. The velocity loop only sees the leader, so nothing corrected it.
  */
-import { indexAt } from '../../match/series.ts'
 import { median, round, rule } from '../rule.ts'
-import { SLOW_HZ, sampleRate, type MatchView, type MotorView } from '../view.ts'
-
-const DT = 0.02 // compare every 20 ms
+import { FOLLOWER_LINE_SECONDS, mostOffLeader, secondsOffLeader, traceGroup } from './follower-trace.ts'
 
 export default rule({
   id: 'mech/follower-mismatch',
@@ -34,26 +31,11 @@ export default rule({
 
   check(group, match) {
     if (!group.sameLoop) return
-    const grid = match.grid(DT)
-    const leader = group.motors[0].velocity().onGrid(grid)
-    const halfSecondAgo = Math.round(0.5 / DT)
-    const motors = group.motors.map((m) => motorTrace(m, match, grid))
-
-    // At every steady moment of the leader, note each motor's speed as a fraction of the leader's.
-    for (let i = halfSecondAgo; i < grid.length; i++) {
-      const now = Math.abs(leader[i])
-      const before = Math.abs(leader[i - halfSecondAgo])
-      const steady = now > 20 && Math.abs(now - before) <= 0.03 * now
-      if (!steady) continue
-      for (const m of motors) {
-        if (!hasFreshRecord(m, grid[i])) continue
-        m.ratios.push(Math.abs(m.speed[i]) / now)
-        m.times.push(grid[i])
-      }
-    }
+    // The trace code is shared with the Session view's Trends (follower-trace.ts).
+    const motors = traceGroup(group, match)
 
     const worst = mostOffLeader(motors)
-    if (worst.secondsOff < 1) return
+    if (worst.secondsOff < FOLLOWER_LINE_SECONDS) return
 
     const steadySeconds = motors[0].ratios.length * motors[0].weight
     const evidence: Record<string, number> = { 'steady seconds compared': round(steadySeconds, 1) }
@@ -72,65 +54,10 @@ export default rule({
       at: worst.at,
       evidence,
       measured: [
-        { label: `${worst.name}: seconds more than 15 % off`, value: round(worst.secondsOff, 1), unit: 's', threshold: 1 },
+        { label: `${worst.name}: seconds more than 15 % off`, value: round(worst.secondsOff, 1), unit: 's', threshold: FOLLOWER_LINE_SECONDS },
         { label: `${worst.name}: median speed vs leader`, value: round(100 * worst.median, 0), unit: '%' },
       ],
       plot: { signals: group.motors.map((m) => m.velocity()), unit: 'rot/s' },
     }
   },
 })
-
-/** One motor's speed on the grid, plus its speed as a fraction of the leader's at each steady moment (filled in by check). */
-interface MotorTrace {
-  name: string
-  speed: Float64Array
-  recordTimes: Float64Array
-  /** Logged slower than SLOW_HZ: compared only just after its own records. */
-  slow: boolean
-  /** Seconds one comparison stands for: 20 ms, or a slow motor's typical gap between records. */
-  weight: number
-  ratios: number[]
-  times: number[]
-}
-
-/** A motor's speed on the grid, with empty lists for the ratios. A slowly logged motor counts each record for its typical gap. */
-function motorTrace(motor: MotorView, match: MatchView, grid: Float64Array): MotorTrace {
-  const velocity = motor.velocity()
-  const rate = sampleRate(velocity.series, match.enabled)
-  const slow = !!rate && rate.fastHz < SLOW_HZ
-  const weight = slow ? 1 / rate.typicalHz : DT
-  const speed = velocity.onGrid(grid)
-  return { name: motor.name, speed, recordTimes: velocity.series.t, slow, weight, ratios: [], times: [] }
-}
-
-/** Is this moment just after one of the motor's own records? A slow motor's value between records is stale. */
-function hasFreshRecord(m: MotorTrace, t: number): boolean {
-  return !m.slow || t - m.recordTimes[indexAt(m.recordTimes, t)] < DT
-}
-
-/** How long the motor ran more than 15 % off the leader (s). */
-function secondsOffLeader(m: MotorTrace): number {
-  return m.ratios.filter((r) => Math.abs(1 - r) > 0.15).length * m.weight
-}
-
-/** The motor that spent longest more than 15 % off the leader, and its furthest moment. */
-function mostOffLeader(motors: MotorTrace[]) {
-  let worst = { name: '', secondsOff: 0, steadyShare: 0, median: 1, furthest: 1, at: 0 }
-  for (const m of motors) {
-    const secondsOff = secondsOffLeader(m)
-    if (secondsOff <= worst.secondsOff) continue
-    let furthest = 0
-    for (let k = 1; k < m.ratios.length; k++) {
-      if (Math.abs(1 - m.ratios[k]) > Math.abs(1 - m.ratios[furthest])) furthest = k
-    }
-    worst = {
-      name: m.name,
-      secondsOff,
-      steadyShare: secondsOff / (m.ratios.length * m.weight),
-      median: median(m.ratios),
-      furthest: m.ratios[furthest],
-      at: m.times[furthest],
-    }
-  }
-  return worst
-}
