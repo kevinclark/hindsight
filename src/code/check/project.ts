@@ -92,9 +92,10 @@ export class Project {
   membersNamed(cls: Node | null, kind: 'method' | 'field', name: string): Node[] {
     const members = kind === 'method' ? this.methodsNamed(name) : this.fieldsNamed(name)
     const own = (c: Node) => members.filter((m) => declaredIn(m)?.equals(c))
-    const inClasses = this.lineage(cls).flatMap(own)
+    const classes = this.lineage(cls)
+    const inClasses = classes.flatMap(own)
     if (kind === 'method' || inClasses.length) return inClasses
-    return this.withInterfaces(this.lineage(cls)).flatMap(own)
+    return this.withInterfaces(classes).flatMap(own)
   }
 
   /** These classes, each followed by the project interfaces it implements (and the interfaces those extend). */
