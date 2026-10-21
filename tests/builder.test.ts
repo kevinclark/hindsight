@@ -419,8 +419,11 @@ describe('backtest against the hand profiles (real logs)', () => {
 // CAN IDs from a synthetic snapshot whose applied limits are the hand profile's (so limits match by construction, and
 // are not what is compared) and from dropdowns set as a student would, to the hand profile's IDs.
 
-/** Rules that read only motors, signals and battery: everything but the ones over limits, zeroing, cameras, other devices, the state machine and the power board. */
-const NOT_COMPARED = ['power/limit-not-applied', 'mech/zero-not-completed', 'vision/outliers', 'vision/stale', 'can/device-dropout', 'mech/stuck-state', 'power/pd-not-reporting', 'meta/not-checked']
+/**
+ * Rules that read only motors, signals and battery: everything but the ones over limits, zeroing, cameras, other devices, the state machine and the power board.
+ * can/input-disconnected reports the Connected flags the profile does not name, so a builder profile that maps no cameras or devices leaves it more.
+ */
+const NOT_COMPARED = ['power/limit-not-applied', 'mech/zero-not-completed', 'vision/outliers', 'vision/stale', 'can/device-dropout', 'can/input-disconnected', 'mech/stuck-state', 'power/pd-not-reporting', 'meta/not-checked']
 
 describe.skipIf(!haveCalGames)('a team with no profile (8033 2026 CalGames logs, built-in profiles hidden)', () => {
   const inputs: InputFile[] = [CALGAMES.q13, CALGAMES.q21, CALGAMES.p0].map(readInput)

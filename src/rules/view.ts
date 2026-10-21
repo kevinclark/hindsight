@@ -17,6 +17,7 @@ import { has, matchSeconds, matchTimeLeft, matchWhen, matchWhenAt, num, phaseAt,
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
 import type { BatteryKeys, CurrentLimits, ResolvedProfile } from '../profiles/types.ts'
 import { otherLogOf } from '../profiles/sources.ts'
+import { deviceFlagKeys } from '../profiles/formats.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
@@ -465,6 +466,22 @@ export class MatchView {
   /** Foresight only: the code of the last pit check that came out GO (null if none is on record). */
   get lastPassingSha(): string | null {
     return this.raw.foresight?.lastPassingSha ?? null
+  }
+
+  /** Names of the log's entries of this type (default: any) whose name ends in `suffix`, case-sensitive, in log order. */
+  keysEndingWith(suffix: string, type?: string): string[] {
+    return [...this.raw.log.entries.values()]
+      .filter((e) => e.name.endsWith(suffix) && (type === undefined || e.type === type) && has(this.raw, e.name))
+      .map((e) => e.name)
+  }
+
+  /**
+   * The log's own device flags ("<device>Connected"), whether or not the robot profile lists the device: every
+   * boolean input of that name except the roboRIO's readings and the code's outputs (what counts is the log type's
+   * deviceFlag in src/profiles/formats.ts). Empty when the log type has no such flags.
+   */
+  deviceFlags(): { name: string; key: string }[] {
+    return deviceFlagKeys(this.raw.log, (suffix, type) => this.keysEndingWith(suffix, type)).map((key) => ({ name: key.replace(/^\//, ''), key }))
   }
 
   /** A numeric signal by its profile name (e.g. 'batteryVoltage') or its log key (e.g. '/Drum/Hood/Voltage'). */
