@@ -1,5 +1,7 @@
 // The code checks (src/code/check/) on small made-up Java: each must fire on its bug and stay quiet on the fix.
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { checkCode } from '../src/code/check/index.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import integerDivision from '../src/code/check/rules/integer-division.ts'
@@ -187,6 +189,15 @@ describe('the code-check framework', () => {
 })
 
 describe('fixes from the review of 2026-10-20 (Fable + code-review high)', () => {
+  it('tries again after a load that failed', async () => {
+    vi.resetModules()
+    const fresh = await import('../src/code/check/java.ts')
+    await expect(fresh.loadJava(() => Promise.reject(new Error('offline')))).rejects.toThrow('offline')
+    const require = createRequire(import.meta.url)
+    const read = (module: string) => new Uint8Array(readFileSync(require.resolve(module)))
+    await fresh.loadJava(async () => [read('web-tree-sitter/web-tree-sitter.wasm'), read('tree-sitter-java-orchard/tree-sitter-java_orchard.wasm')])
+    expect(fresh.parseJava('A.java', 'class A {}').tree.rootNode.type).toBe('program')
+  })
   it('loads tree-sitter once when several checks start together', async () => {
     await Promise.all([loadJavaFromDisk(), loadJavaFromDisk(), loadJavaFromDisk()])
     expect(messages(integerDivision, 'class A { static final double R = 50 / 12; }')).toHaveLength(1)

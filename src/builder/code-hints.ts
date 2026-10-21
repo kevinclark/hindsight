@@ -3,18 +3,24 @@
  * the ID usually reaches the subsystem that logs the motor through two or three files, so no single line proves which
  * log key a constructor is. They label the CAN ID choices in the builder ("15: Shooter.java:45, FLYWHEEL_LEADER_ID").
  *
- * Read only, in the browser: the folder's files are never changed or uploaded. The text comes from the folder's
- * working tree (uncommitted edits count) or from GitHub at one commit; the commit and branch from `codeHead`.
+ * The code is read by the code check's Java parser (code/check/), which follows an ID back to where it is written:
+ * through constants, and through the constructors and methods it is passed to (`new FollowerIO(16, …)`). Call
+ * loadJava first. Read only, in the browser: the folder's files are never changed or uploaded. The text comes from
+ * the folder's working tree (uncommitted edits count) or from GitHub at one commit; the commit and branch from
+ * `codeHead`.
  */
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
-import type { CodeSource } from '../code/source.ts'
+import { javaFilesAt, type CodeSource } from '../code/source.ts'
+import { valueAlong, waysToReach } from '../code/check/flow.ts'
+import { classAround, codeOf, fileName, lineOf, nameOf, parts, typeNamed, type Node } from '../code/check/java.ts'
+import { baseType, Project } from '../code/check/project.ts'
 
 export interface CodeFile { path: string; text: string }
 
 export interface TalonSite {
-  /** The CAN ID, when it is a number or a constant found in the folder. */
+  /** The CAN ID, when it is a number or a constant found in the folder, or what the call that builds the class passed. */
   id: number | null
-  /** What the code passes: "15" or "FLYWHEEL_LEADER_ID". */
+  /** What the code passes: "15" or "FLYWHEEL_LEADER_ID" (or a parameter, "motorID", when a call passes the ID). */
   expr: string
   /** The bus argument as written, if any ("canivore", "kCANBus"). */
   bus: string | null
@@ -30,49 +36,63 @@ export interface CodeHints {
   notes: string[]
 }
 
-/** `new TalonFX(15)` (Java) or `TalonFX(15)` (Kotlin). */
-const NEW_TALON = /\b(?:new\s+)?TalonFX\s*\(\s*([A-Za-z_][\w.]*(?:\(\))?|\d+)\s*(?:,\s*([^()]*?(?:\([^()]*\))?[^()]*?))?\s*\)/g
-/** `final int NAME = 15;` (Java) or `const val NAME = 15` / `val NAME: Int = 15` (Kotlin). Parameters and locals don't count. */
-const INT_CONST = /\b(?:(?:static\s+)?final\s+(?:static\s+)?(?:int|Integer)|const\s+val|val)\s+([A-Za-z_]\w*)\s*(?::\s*Int\s*)?=\s*(\d+)(?![\w.])/g
-
-const fileName = (p: string) => p.split('/').pop() ?? p
-const SOURCE_FILE = /\.(java|kt)$/
-
 /** The commit the code is on and its branch (null when detached), or why that can't be told. */
 export type CodeHead = { sha: string; branch: string | null } | { why: string }
 
 export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
+  const sites = talonSites(files.filter((f) => f.path.endsWith('.java')))
   const notes: string[] = []
-  const sources = files.filter((f) => SOURCE_FILE.test(f.path))
-  // Integer constants by simple name. A name defined with two values can't be resolved.
-  const constants = new Map<string, number | null>()
-  for (const f of sources) {
-    for (const m of f.text.matchAll(INT_CONST)) {
-      const prev = constants.get(m[1])
-      constants.set(m[1], prev === undefined || prev === Number(m[2]) ? Number(m[2]) : null)
-    }
-  }
-  const sites: TalonSite[] = []
-  for (const f of sources) {
-    for (const m of f.text.matchAll(NEW_TALON)) {
-      const expr = m[1]
-      const simple = expr.replace(/\(\)$/, '').split('.').pop()!
-      const id = /^\d+$/.test(expr) ? Number(expr) : (constants.get(simple) ?? null)
-      const line = f.text.slice(0, m.index).split('\n').length
-      sites.push({ id, expr, bus: m[2]?.trim() || null, file: f.path, line })
-    }
-  }
-  if (sources.length && sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java or Kotlin files.')
+  if (sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java files.')
   const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
   return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), ...git, notes: [...notes, ...git.notes] }
 }
 
-/** Hints from the code at a branch or commit (GitHub): every Java and Kotlin file's text at that commit. */
+/** Every `new TalonFX(…)` in these Java files, with its IDs. */
+function talonSites(java: CodeFile[]): TalonSite[] {
+  const project = new Project(java)
+  try {
+    const talons = project.nodes('object_creation_expression').filter((n) => baseType(typeNamed(n)) === 'TalonFX')
+    return talons.flatMap((talon) => sitesOf(talon, project))
+  } finally {
+    project.close()
+  }
+}
+
+/**
+ * One `new TalonFX(…)`, with each ID it is built with: one per chain of calls that reaches it (`new FollowerIO(16, …)`
+ * and `new FollowerIO(17, …)` both reach FollowerIO's), or no ID when a chain's can't be worked out. Chains through
+ * simulation code are left out (see inSimulation). Code nothing builds, or that is reached too many ways to follow,
+ * still gets the IDs written as constants.
+ * Not followed yet: constants in an interface, `Constants.Shooter.ID` when another class is also called Shooter,
+ * `this(…)` calls, and a `? :` choosing the ID. A call is matched to a constructor by its number of arguments only.
+ */
+function sitesOf(talon: Node, project: Project): TalonSite[] {
+  const [idArgument, busArgument] = parts(talon, 'arguments')
+  if (!idArgument) return []
+  const onRobot = (waysToReach(talon, project) ?? []).filter((chain) => !chain.some(inSimulation))
+  // Nothing on the robot builds it (or too many ways do): read the ID as written, with no call to look through.
+  const chains = onRobot.length ? onRobot : [[]]
+  const ids = chains.map((chain) => valueAlong(idArgument, chain, project)?.value)
+  const each = [...new Set(ids.map((id) => (typeof id === 'number' ? id : null)))]
+  const bus = busArgument ? codeOf(busArgument) : null
+  const where = { expr: codeOf(idArgument), bus, file: project.fileOf(talon).path, line: lineOf(talon) }
+  return each.map((id) => ({ id, ...where }))
+}
+
+/**
+ * Is this call simulation code: in a class whose name ends in "Sim", or building one (`new FlywheelIOSim(…, 11, 12)`)?
+ * AdvantageKit's IO pattern names them so, and their IDs needn't match the robot's: Rebuilt 3eca5e5 gives the
+ * simulated flywheel 11 and 12, the real hood's and flywheel's IDs.
+ */
+function inSimulation(call: Node): boolean {
+  const named = (name: string | null | undefined) => !!name?.endsWith('Sim')
+  return named(nameOf(classAround(call) ?? call)) || (call.type === 'object_creation_expression' && named(baseType(typeNamed(call))))
+}
+
+/** Hints from the code at a branch or commit (GitHub): every Java file's text at that commit. */
 export async function hintsAt(source: CodeSource, ref: string): Promise<CodeHints> {
   const sha = await source.resolve(ref)
-  const paths = (await source.files(sha)).map((f) => f.path).filter((path) => SOURCE_FILE.test(path))
-  const files = await Promise.all(paths.map(async (path) => ({ path, text: await source.textAt(sha, path) })))
-  return codeHints(files, { sha, branch: branchOf(sha, ref) })
+  return codeHints(await javaFilesAt(source, sha), { sha, branch: branchOf(sha, ref) })
 }
 
 /** The commit a branch or hash names (GitHub), or why it can't be told. */

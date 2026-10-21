@@ -1,7 +1,7 @@
 // The profile builder: profile.json round trip, motors and groups from synthetic logs, snapshot name matching, code
 // hints, and (when the real logs are on this computer) the backtest against the hand profiles and a team with no
 // profile. Synthetic logs and snapshots are made up here; real logs are read in place and never copied.
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,6 +21,7 @@ import { allMotors, applySnapshot, carryConfirmations, draftProfile, draftWarnin
 import { keepProfile, keptId, keptProfiles, storedProfiles } from '../src/builder/store.ts'
 import { PROFILES, profileId } from '../src/profiles/index.ts'
 import { codeHead, codeHints, shaWarning, type CodeFile } from '../src/builder/code-hints.ts'
+import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import { GitRepo } from '../src/code/git.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
 import { backtestLog } from '../src/builder/backtest.ts'
@@ -31,6 +32,8 @@ import { loadFixture, CALGAMES, haveCalGames, readInput } from './helpers/load.t
 import { makeSnapshot } from './helpers/make-snapshot.ts'
 
 /** RegExps compared by source and flags. */
+beforeAll(loadJavaFromDisk)
+
 const plain = (x: unknown): unknown => JSON.parse(JSON.stringify(x, (_k, v) => (v instanceof RegExp ? { regexp: v.source, flags: v.flags } : v)))
 const roundTrip = (p: RobotProfile) => toProfile(parseProfileJson(JSON.stringify(fromProfile(p))))
 
@@ -230,6 +233,26 @@ describe('code hints', () => {
     expect(h.sha).toBe('1111111111111111111111111111111111111111')
     expect(h.branch).toBe('event')
   })
+  it('follows an ID through the constructor it is passed to: one site per ID, at the `new TalonFX`', async () => {
+    const java = [
+      { path: 'src/FollowerIO.java', text: 'class FollowerIO {\n  FollowerIO(int motorID, String canBus) {\n    talon = new TalonFX(motorID, canBus);\n  }\n}\n' },
+      { path: 'src/Robot.java', text: 'class Robot extends LoggedRobot {\n  Robot() {\n    new FollowerIO(16, "canivore");\n    new FollowerIO(Ids.SECOND, "canivore");\n    new FollowerIO(isReal() ? 18 : 19, "canivore");\n  }\n}\nclass Ids { static final int SECOND = 17; }\n' },
+    ]
+    const h = codeHints(java, await codeHead(null))
+    expect(h.sites).toEqual([16, 17, null].map((id) => ({ id, expr: 'motorID', bus: 'canBus', file: 'src/FollowerIO.java', line: 3 })))
+  })
+  it('tells apart two constants of one name by the class written before it', async () => {
+    const java = [{ path: 'src/Hood.java', text: 'class Comp { static final int HOOD_ID = 31; }\nclass Practice { static final int HOOD_ID = 32; }\nclass Hood { TalonFX a = new TalonFX(Comp.HOOD_ID); }\n' }]
+    expect(codeHints(java, await codeHead(null)).sites.map((s) => [s.id, s.expr])).toEqual([[31, 'Comp.HOOD_ID']])
+  })
+  it('leaves out IDs that only simulation code passes (a class named …Sim, or one building it)', async () => {
+    const java = [
+      { path: 'src/FlywheelIO.java', text: 'class FlywheelIO {\n  FlywheelIO(int leaderID) {\n    new TalonFX(leaderID);\n  }\n}\n' },
+      { path: 'src/FlywheelIOSim.java', text: 'class FlywheelIOSim extends FlywheelIO {\n  FlywheelIOSim(int leaderID) { super(leaderID); }\n}\n' },
+      { path: 'src/Robot.java', text: 'class Robot extends LoggedRobot {\n  Robot() { flywheel = isReal() ? new FlywheelIO(12) : new FlywheelIOSim(11); }\n}\n' },
+    ]
+    expect(codeHints(java, await codeHead(null)).sites.map((s) => [s.id, s.file])).toEqual([[12, 'src/FlywheelIO.java']])
+  })
   it('warns when the folder is not the commit the log ran', async () => {
     const h = codeHints(files, await headIn(files))
     expect(shaWarning(h, '1111111')).toBeNull()
@@ -301,9 +324,10 @@ describe('review fixes', () => {
     expect(allMotors(next).find(({ motor }) => motor.logPath === '/Drive/Module0/Drive')!.motor).toMatchObject({ statorCurrent: '/Drive/Module0/DriveCurrentAmps', canId: 3, canIdFrom: 'you' })
   })
 
-  it('reads Kotlin constructors (no `new`) as code hints', async () => {
-    const h = codeHints([{ path: 'Shooter.kt', text: 'object Ids { const val LEADER = 10 }\nval a = TalonFX(Ids.LEADER, "rio")\nval b = getTalonFX(3)\n' }], await codeHead(null))
-    expect(h.sites.map((s) => [s.id, s.expr])).toEqual([[10, 'Ids.LEADER']])
+  it('says so when the Java files build no Talon FX (Kotlin isn\'t read: no team code we have is Kotlin)', async () => {
+    const h = codeHints([{ path: 'Shooter.kt', text: 'object Ids { const val LEADER = 10 }\nval a = TalonFX(Ids.LEADER, "rio")\n' }], await codeHead(null))
+    expect(h.sites).toEqual([])
+    expect(h.notes[0]).toBe('No `new TalonFX(...)` in the folder\'s Java files.')
   })
 })
 

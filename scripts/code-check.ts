@@ -9,7 +9,8 @@
  */
 import { GitRepo } from '../src/code/git.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
-import { checkCode, javaFilesAt } from '../src/code/check/index.ts'
+import { checkCode } from '../src/code/check/index.ts'
+import { javaFilesAt } from '../src/code/source.ts'
 import { lineOf, parseJava, type Node } from '../src/code/check/java.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 

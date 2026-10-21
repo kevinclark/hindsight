@@ -25,6 +25,12 @@ export async function filesNamed(source: CodeSource, commit: string, name: strin
   return (await source.files(commit)).filter((f) => f.path === name || f.path.endsWith(`/${name}`))
 }
 
+/** Every .java file in a commit, with its text. */
+export async function javaFilesAt(source: CodeSource, commit: string): Promise<{ path: string; text: string }[]> {
+  const files = (await source.files(commit)).filter((f) => f.path.endsWith('.java'))
+  return Promise.all(files.map(async (f) => ({ path: f.path, text: await source.textAt(commit, f.path) })))
+}
+
 /** Answers kept between visits (localStorage in the page, a cache file for the scripts). */
 export interface Kept<T> {
   get(key: string): T | undefined
