@@ -6,7 +6,7 @@
  * them: that red comes back and How sure counts it.
  *
  *   npm run build
- *   node --experimental-strip-types scripts/chrome-wrong-mark-check.ts <out-dir> <rule> <match to mark, e.g. "Qualification 13"> <log> [<log> ...]
+ *   node --experimental-strip-types scripts/chrome-wrong-mark-check.ts <out-dir> <rule> <match to mark, e.g. "Qualification 13"> <log> <log> [<log> ...]
  *
  * The rule must be red on the match to mark and fire on at least one other: a wrong mark demotes only reds
  * (track-record.ts demotion), so a warning rule such as power/margin has nothing to show. On the CalGames Q13, Q21
@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const [outArg, RULE, MARK_ON, ...logArgs] = process.argv.slice(2)
-if (!outArg || !RULE || !MARK_ON || logArgs.length < 2) { console.error('usage: chrome-wrong-mark-check.ts <out-dir> <rule> <match to mark> <log> <log> [<log> ...]'); process.exit(2) }
+if (!outArg || !RULE || !MARK_ON || logArgs.filter((f) => f.endsWith('.wpilog')).length < 2) { console.error('usage: chrome-wrong-mark-check.ts <out-dir> <rule> <match to mark> <log> <log> [<log> ...] (at least two .wpilog matches)'); process.exit(2) }
 const out = resolve(outArg)
 mkdirSync(out, { recursive: true })
 const logs = logArgs.map((f) => resolve(f))
@@ -31,6 +31,7 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const profile = mkdtempSync(`${tmpdir()}/hindsight-chrome-`)
 const port = 9300 + Math.floor(Math.random() * 500)
 const chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--headless=new', '--no-first-run', 'about:blank'], { stdio: 'ignore' })
+process.on('exit', () => chrome.kill()) // an error anywhere below would otherwise leave Chrome running
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 let wsUrl = ''
 for (let i = 0; i < 50 && !wsUrl; i++) { try { wsUrl = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl } catch { await sleep(200) } }
@@ -91,6 +92,7 @@ await sleep(1000)
 const MATCHES = logs.filter((f) => f.endsWith('.wpilog')).length
 await drop(logs, MATCHES)
 result.matches = await labels()
+if (!(result.matches as string[]).some((l) => l.includes(MARK_ON))) await fail(`no open match is named ${MARK_ON} (open: ${(result.matches as string[]).join(', ')})`)
 
 // 1. Mark the check "not a real problem" on one match.
 await pick(MARK_ON)
