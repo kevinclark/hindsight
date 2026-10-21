@@ -78,7 +78,9 @@ export function build(folder: string, work: string, javaHomeOverride: string | n
   const initScript = join(work, 'sim-run.init.gradle')
   const mirror = `settingsEvaluated { s -> s.pluginManagement.repositories { gradlePluginPortal(); maven { url '${JCENTER_MIRROR}' } } }`
   writeFileSync(initScript, `${mirror}\n`)
-  const tasks = [...(year < 2023 ? ['--init-script', initScript] : []), 'simulateExternalJavaRelease', '--console=plain']
+  // The team number only matters for deploying; a repo that doesn't commit .wpilib/wpilib_preferences.json can't
+  // build without one (measured on a public repo), and the simulator never uses it.
+  const tasks = [...(year < 2023 ? ['--init-script', initScript] : []), 'simulateExternalJavaRelease', '--console=plain', '-PteamNumber=0']
   const gradlew = join(folder, WINDOWS ? 'gradlew.bat' : 'gradlew')
   const gradle = (extra: string[]) => {
     // Windows runs gradlew.bat through cmd.exe, which splits unquoted paths at spaces ("C:\Users\First Last").
