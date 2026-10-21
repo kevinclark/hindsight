@@ -11,7 +11,8 @@
   import { trendLabelLong, trendRows, type TrendRow } from '../session/trends.ts'
 
   // `labels` is still passed by SessionView; the table labels logs itself (a log with no match number from its MatchType).
-  let { matches, typedBatteries }: { matches: MatchSummary[]; typedBatteries: Record<string, string>; labels?: string[] } = $props()
+  // onOpen: open a match in Match review (the worst match is a link when it is given).
+  let { matches, typedBatteries, onOpen }: { matches: MatchSummary[]; typedBatteries: Record<string, string>; labels?: string[]; onOpen?: (m: MatchSummary) => void } = $props()
 
   // Five colours for batteries, used only when battery IDs exist (logged, or typed by hand).
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
@@ -66,7 +67,7 @@
           {/if}
         </td>
         <td class="num" data-label="Latest">{row.latest !== null ? fmt(row, row.latest) : row.n > 0 ? 'not logged' : ''}</td>
-        <td class="worst" data-label="Worst match">{#if w !== null}{row.worstWord === 'highest' ? 'highest: ' : ''}<span title={trendLabelLong(matches[w], w)}>{row.labels[w]}</span> {fmt(row, row.values[w]!)}{/if}</td>
+        <td class="worst" data-label="Worst match">{#if w !== null}{row.worstWord === 'highest' ? 'highest: ' : ''}{#if onOpen}<button class="link" title={`Open ${trendLabelLong(matches[w], w)} in Match review`} onclick={() => onOpen(matches[w])}>{row.labels[w]}</button>{:else}<span title={trendLabelLong(matches[w], w)}>{row.labels[w]}</span>{/if} {fmt(row, row.values[w]!)}{/if}</td>
         <td class="todo" data-label="What to do">
           {#if row.next.source === 'rule' || row.next.source === 'match'}
             <q>{row.next.text}</q> <span class="muted rule">{row.next.ruleId}</span>
@@ -97,6 +98,7 @@
   .spark svg { width: 100px; height: 20px; display: block; }
   .num { white-space: nowrap; }
   .worst { white-space: nowrap; }
+  .link { border: none; background: none; color: var(--focus); font: inherit; cursor: pointer; padding: 0 0.15rem; min-height: 24px; min-width: 24px; box-sizing: border-box; }
   .todo { max-width: 24rem; }
   q { quotes: "\201C" "\201D"; }
   .ref { stroke: var(--muted); stroke-width: 0.75; opacity: 0.8; }

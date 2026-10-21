@@ -539,7 +539,7 @@
   {/if}
 
   <h3>Per match</h3>
-  <Trends matches={session.matches} {typedBatteries} labels={session.matches.map(shortLabel)} />
+  <Trends matches={session.matches} {typedBatteries} labels={session.matches.map(shortLabel)} onOpen={open} />
 
   <h3>Findings across the session</h3>
   <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some, or in every match of only 2 checked (too few to call consistent). Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
