@@ -13,10 +13,11 @@
 
 import { describeCommand, isEnabled, signature, type CommandRef, type Lifetime, type RunRecord } from '../events.ts'
 import type { Zero } from '../scenario.ts'
-import { duration, type Check, type Finding, type RunResult } from './types.ts'
+import { duration, runsLabel, type Check, type Finding, type RunResult } from './types.ts'
 
 /** Measured: the zero's command finishes 12–38 ms after its done message prints (n = 17, 26Off, 2026-10-21). */
 const FINISHES_AFTER_MESSAGE_SECONDS = 0.1
+const ONE_LOOP_SECONDS = 0.02
 /** Disabling interrupts running commands in the next loop (measured: 0.01–0.02 s after the disable step). */
 const DISABLE_SECONDS = 0.1
 
@@ -41,7 +42,7 @@ export const zeroes: Check = ({ results, zeroes }) => zeroes.flatMap((zero) => {
   const everDone = results.some((r) => doneTimes(r.record, zero).length > 0)
   if (zero.fromFile && !everDone) {
     findings.push({
-      check: 'zero/never-done', severity: 'warning', run: 'all runs',
+      check: 'zero/never-done', severity: 'warning', run: runsLabel(results.length, results.length),
       message: `${said(zero)} (the ${zero.name} zero's done message) never printed in any run.`,
       details: [],
       look: `the command that zeroes the ${zero.name}: does every step of it end?`,
@@ -109,8 +110,12 @@ function findZeroCommand(results: RunResult[], zero: Zero): string | null {
       const after = (l: Lifetime) => l.end - d
       const finishing = r.record.lives.filter((l) => l.how === 'finished' && after(l) >= 0 && after(l) <= FINISHES_AFTER_MESSAGE_SECONDS)
       const needsSubsystem = finishing.filter((l) => l.command.requirements.length > 0)
-      const best = (needsSubsystem.length ? needsSubsystem : finishing).sort((a, b) => after(a) - after(b))[0]
-      if (best) return signature(best.command)
+      const candidates = (needsSubsystem.length ? needsSubsystem : finishing).sort((a, b) => after(a) - after(b))
+      if (candidates.length === 0) continue
+      // A one-loop command (a runOnce) can finish with the zero: of those within a loop of the first, the longest.
+      const tied = candidates.filter((l) => after(l) <= after(candidates[0]) + ONE_LOOP_SECONDS)
+      const best = tied.sort((a, b) => (b.end - b.start) - (a.end - a.start))[0]
+      return signature(best.command)
     }
   }
   return null

@@ -4,6 +4,7 @@
  */
 
 import { readValues } from '../../readers/wpilog.ts'
+import { plural } from '../../rules/rule.ts'
 import { describeCommand, markerTime, type Lifetime } from '../events.ts'
 import type { Expectation, Press } from '../scenario.ts'
 import { duration, type Check, type Finding, type RunResult } from './types.ts'
@@ -38,7 +39,7 @@ function missed(e: Expectation, press: Press, pressedAt: number, r: RunResult): 
     if (unfinished.length === 0) return []
     return [{
       check: 'expect/finish', severity: 'error', run,
-      message: `${unfinished.length === 1 ? 'A command' : `${unfinished.length} commands`} ${press.said} started didn't finish within ${duration(e.within)}.`,
+      message: `${plural(unfinished.length, 'command')} ${press.said} started didn't finish within ${duration(e.within)}.`,
       details: unfinished.map((l) => `${describeCommand(l.command)}: ${howItEnded(l)}`),
       look: 'a step in the command that never ends (a run() before an until(), a wait on a condition that never comes true)',
     }]

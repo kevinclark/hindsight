@@ -115,7 +115,7 @@ function readStep(s: Record<string, any>, file: FileContext, at: string): Step {
   const seconds = s[mode]
   const presses: Press[] = (s.press ?? []).map((p: any, i: number) => readPress(p, file, `${at}, press ${i + 1}`))
   // A press timed past its step would be played after the step's release, or after the run's end.
-  const late = presses.find((p) => p.at < 0 || p.at >= seconds)
+  const late = presses.find((p) => p.at >= seconds)
   if (late) fail(file, `${at}: a press at ${late.at} s is outside this ${seconds} s step`)
   return { mode, seconds, presses }
 }
@@ -140,16 +140,16 @@ function readPress(p: Record<string, any>, file: FileContext, at: string): Press
   file.presses++
   return {
     marker: `#p${file.presses}`,
-    at: number(p.at ?? 0, file, `${at}, "at"`),
+    at: seconds(p.at ?? 0, file, `${at}, "at"`),
     said: `${controller[0]} ${input}`,
     ...lines,
-    holdFor: p.for === undefined ? null : number(p.for, file, `${at}, "for"`),
+    holdFor: p.for === undefined ? null : seconds(p.for, file, `${at}, "for"`),
     expect: (p.expect ?? []).map((e: any) => readExpectation(e, file, `${at}, expect`)),
   }
 }
 
 function readExpectation(e: Record<string, any>, file: FileContext, at: string): Expectation {
-  const within = number(e.within, file, `${at}, "within"`)
+  const within = seconds(e.within, file, `${at}, "within"`)
   if (typeof e.message === 'string') return { message: e.message, within }
   if (e.finish === true) return { finish: true, within }
   if (typeof e.key === 'string' && e.becomes !== undefined) return { key: e.key, becomes: e.becomes, within }
@@ -157,7 +157,7 @@ function readExpectation(e: Record<string, any>, file: FileContext, at: string):
 }
 
 /** A number of seconds (0 or more), or a failure that says where. */
-function number(value: unknown, file: FileContext, at: string): number {
+function seconds(value: unknown, file: FileContext, at: string): number {
   if (typeof value !== 'number' || !(value >= 0)) fail(file, `${at} must be a number of seconds, 0 or more`)
   return value
 }

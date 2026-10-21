@@ -44,13 +44,15 @@ import java.util.function.Consumer;
 
 public class SimRunHarness {
   private static final PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out), true);
+  private static final Stamped robotOut = new Stamped("out");
+  private static final Stamped robotErr = new Stamped("err");
   private static final int CONTROLLERS = 6;
   /** Assumed: a clean JVM shutdown takes well under this; past it, the run is stopped anyway. */
   private static final long EXIT_WATCHDOG_MS = 5000;
 
   public static void main(String[] args) throws Exception {
-    System.setOut(new PrintStream(new Stamped("out"), true));
-    System.setErr(new PrintStream(new Stamped("err"), true));
+    System.setOut(new PrintStream(robotOut, true));
+    System.setErr(new PrintStream(robotErr, true));
     watchCommands(CommandScheduler.getInstance());
     List<String> timeline = Files.readAllLines(new File(args[0]).toPath());
     Thread player = new Thread(() -> play(timeline, args[1]), "sim-run timeline");
@@ -196,9 +198,15 @@ public class SimRunHarness {
   static void finish(Log log) throws Exception {
     System.out.flush();
     System.err.flush();
+    robotOut.sayLine();
+    robotErr.sayLine();
     say("end");
     if (log != null) {
-      NetworkTableInstance.class.getMethod("stopEntryDataLog", int.class).invoke(null, log.handle);
+      try {
+        NetworkTableInstance.class.getMethod("stopEntryDataLog", int.class).invoke(null, log.handle);
+      } catch (ReflectiveOperationException e) {
+        say("no-log", "couldn't stop the log's NetworkTables feed (" + e + "); closing it anyway");
+      }
       log.writer.getClass().getMethod("close").invoke(log.writer);
     }
     // exit, not halt, so WPILib and the vendors shut their threads down: Runtime.halt() aborted in native code after
@@ -276,12 +284,14 @@ public class SimRunHarness {
         line.write(b);
         return;
       }
-      flush();
+      sayLine();
     }
 
-    /** Says the line so far: at a newline, and before exit, so a last line without one isn't lost. */
-    @Override
-    public synchronized void flush() {
+    /**
+     * Says the line so far: at each newline, and once before exit, so a last line without one isn't lost. Not from
+     * flush(): an auto-flushing PrintStream flushes after every print(), which would split "a" + "b\n" in two.
+     */
+    synchronized void sayLine() {
       if (line.size() == 0) return;
       say(stream, line.toString().replace("\r", ""));
       line.reset();

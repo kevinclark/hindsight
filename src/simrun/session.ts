@@ -98,10 +98,10 @@ export async function simRun(options: Options): Promise<SessionResult> {
     ...[driveScenario(team)].filter((s) => s !== null),
     ...team.scenarios,
   ]
-  const runs = scenarios.filter(wanted).flatMap((s) => runsOf(s))
+  // Each run, repeated: run 1 #1, run 1 #2, ..., run 2 #1, ...; each kept in that order after the start-up runs.
+  const planned = scenarios.filter(wanted).flatMap((s) => runsOf(s)).flatMap((run) => Array.from({ length: options.repeat }, (_, n) => ({ run, n: n + 1 })))
   const first = got.results.length
-  const jobs = runs.flatMap((run, i) => Array.from({ length: options.repeat }, (_, n) => () => playRun(got, run, n + 1, first + i * options.repeat + n)))
-  await inPool(jobs, options.parallel)
+  await inPool(planned.map(({ run, n }, i) => () => playRun(got, run, n, first + i)), options.parallel)
   return finish(got, team)
 }
 
@@ -154,7 +154,10 @@ function chooserOf(startup: RunResult, team: TeamFile, got: Collected): Chooser 
   const named = wantedKey ? choosers.find((c) => c.key === wantedKey) : undefined
   if (named) return named
   if (!wantedKey && choosers.length === 1) return choosers[0]
-  if (choosers.length > 1) {
+  if (wantedKey) {
+    const keys = choosers.map((c) => c.key).join(', ') || 'none'
+    notes.push(`No chooser "${wantedKey}" on SmartDashboard (found: ${keys}), so auto ran once, unselected.`)
+  } else if (choosers.length > 1) {
     const keys = choosers.map((c) => c.key).join(', ')
     notes.push(`More than one chooser (${keys}): name the auto chooser in the scenario file ("autos": { "chooser": ... }).`)
   } else {

@@ -39,7 +39,7 @@ export interface Finding {
 export type Check = (context: Context) => Finding[]
 
 /**
- * "0.12 s": a duration as sim-run says it. Rules' duration() rounds to 0.1 s, but sim-run's timing is a loop or two
+ * "0.12 s": a duration as sim-run says it. Rules' secs() (src/rules/rule.ts) rounds to 0.1 s, but sim-run's timing is a loop or two
  * (a zero cut off 0.08 s after it started), so under a second it keeps two decimals.
  */
 export const duration = (s: number) => `${s < 1 ? s.toFixed(2) : s.toFixed(1)} s`

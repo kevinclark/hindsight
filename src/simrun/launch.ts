@@ -27,6 +27,7 @@ export interface Built {
 
 export interface Source { robot: string; commit: string | null }
 
+const WINDOWS = platform() === 'win32'
 const HARNESS = join(dirname(fileURLToPath(import.meta.url)), '../../tools/sim-run/SimRunHarness.java')
 /**
  * WPILib's copy of artifacts that left the internet with JCenter (grgit 3.0.0, which GradleRIO 2022 needs):
@@ -75,12 +76,11 @@ export function build(folder: string, work: string, javaHomeOverride: string | n
   const mirror = `settingsEvaluated { s -> s.pluginManagement.repositories { gradlePluginPortal(); maven { url '${JCENTER_MIRROR}' } } }`
   writeFileSync(initScript, `${mirror}\n`)
   const tasks = [...(year < 2023 ? ['--init-script', initScript] : []), 'simulateExternalJavaRelease', '--console=plain']
-  const gradlew = join(folder, platform() === 'win32' ? 'gradlew.bat' : 'gradlew')
+  const gradlew = join(folder, WINDOWS ? 'gradlew.bat' : 'gradlew')
   const gradle = (extra: string[]) => {
     // Windows runs gradlew.bat through cmd.exe, which splits unquoted paths at spaces ("C:\Users\First Last").
-    const windows = platform() === 'win32'
-    const quote = (a: string) => (windows ? `"${a}"` : a)
-    const options = { cwd: folder, env: { ...process.env, JAVA_HOME: javaHome }, encoding: 'utf8' as const, shell: windows, maxBuffer: 1 << 28 }
+    const quote = (a: string) => (WINDOWS ? `"${a}"` : a)
+    const options = { cwd: folder, env: { ...process.env, JAVA_HOME: javaHome }, encoding: 'utf8' as const, shell: WINDOWS, maxBuffer: 1 << 28 }
     const result = spawnSync(quote(gradlew), [...tasks, ...extra].map(quote), options)
     return { ok: result.status === 0, output: `${result.stdout}${result.stderr}` }
   }
@@ -108,7 +108,7 @@ function buildErrors(output: string): string {
 
 /** WPILib's own JDK for the robot's year, else JAVA_HOME. */
 function findJava(year: number): string {
-  const home = platform() === 'win32' ? (process.env.PUBLIC ?? 'C:\\Users\\Public') : homedir()
+  const home = WINDOWS ? (process.env.PUBLIC ?? 'C:\\Users\\Public') : homedir()
   const wpilib = join(home, 'wpilib', String(year), 'jdk')
   if (existsSync(wpilib)) return wpilib
   if (process.env.JAVA_HOME) return process.env.JAVA_HOME
@@ -142,8 +142,9 @@ export function runTimeline(built: Built, timeline: string[], seconds: number, l
   const java = spawn(join(built.javaHome, 'bin', 'java'), args, { cwd: built.folder, env, stdio: ['ignore', out, out] })
   const started = Date.now()
   return new Promise((done, fail) => {
+    let failed = false
     java.on('error', (error) => {
-      closeSync(out)
+      failed = true
       fail(new Error(`Couldn't start Java from ${built.javaHome}: ${error.message}`))
     })
     let killed = false
@@ -153,7 +154,8 @@ export function runTimeline(built: Built, timeline: string[], seconds: number, l
     }, (seconds + START_ALLOWANCE_SECONDS) * 1000)
     java.on('close', () => {
       clearTimeout(deadline)
-      closeSync(out)
+      closeSync(out) // once, here: 'close' follows 'error' too
+      if (failed) return
       done({ output: readFileSync(outFile, 'utf8'), killed, wallSeconds: (Date.now() - started) / 1000 })
     })
   })
