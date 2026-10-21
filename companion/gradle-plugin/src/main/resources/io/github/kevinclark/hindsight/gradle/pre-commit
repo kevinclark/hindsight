@@ -1,0 +1,29 @@
+#!/bin/sh
+# Hindsight format hook: installed by the io.github.kevinclark.hindsight Gradle plugin on a build.
+# Before each commit it runs this project's own `gradlew spotlessApply`, then re-stages the files you had staged.
+# A file with changes you didn't stage is left as it is, so nothing you didn't stage gets committed.
+# It never stops a commit: if formatting fails, the commit goes ahead and CI's format check has the last word.
+# Turn it off with hindsight { formatHook = false } in build.gradle; the next build removes this file.
+
+project="@PROJECT_DIR@"
+[ -d "@JAVA_HOME@" ] && export JAVA_HOME="@JAVA_HOME@"  # the JDK the build ran with (WPILib's)
+
+staged=$(mktemp) && partial=$(mktemp) || exit 0
+trap 'rm -f "$staged" "$partial"' EXIT
+git diff --cached --name-only --diff-filter=ACMR > "$staged"
+[ -s "$staged" ] || exit 0
+git diff --name-only > "$partial"  # staged files that also have unstaged changes
+
+# sh, because a clone may not have gradlew marked executable
+if ! (cd "$project" && sh ./gradlew spotlessApply -q); then
+  echo "Hindsight: formatting failed, so this commit goes ahead unformatted." >&2
+  exit 0
+fi
+while IFS= read -r file; do
+  if grep -Fxq -- "$file" "$partial"; then
+    echo "Hindsight: $file has unstaged changes, so it's committed unformatted." >&2
+  else
+    git add -- "$file"
+  fi
+done < "$staged"
+exit 0

@@ -75,6 +75,23 @@ npx vitest run tests/foresight-snapshot.test.ts                  # Foresight's s
 npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.ts <out-dir>   # rendered check
 ```
 
+## Gradle plugin (`companion/gradle-plugin/`)
+
+- Plugin id `io.github.kevinclark.hindsight`, applied by a team's robot `build.gradle`. It runs inside their Gradle
+  (8.11 with JDK 17 for WPILib 2025 and 2026), so it targets Java 17 and reaches GradleRIO only by reflection
+  (`WpilibNatives`): never add a compile dependency on one GradleRIO year.
+- **Error Prone's patch mode runs only the checks it patches** (measured: 5 warnings instead of 71). Never add
+  `-XepPatchChecks` to `compileJava`; the fix runs in its own compile (`IntegerDivisionFix`), only when
+  `compileJava` warned, and never when a GradleRIO deploy task is in the graph or `CI=true`. A deploy is
+  recognised by task type (`edu.wpi.first.deployutils.deploy.*`), never by name: robot projects carry an
+  `eventDeploy` task that runs on every build.
+- `HindsightRobotStarts.java` is a resource, compiled against each robot's own WPILib. Keep its traps: the real
+  loop in a thread (`startCompetition`), the DS connected after the robot is built, one robot per JVM, and
+  `DriverStationDataJNI.notifyNewData()` (never `DriverStationSim.notifyNewData()`, which deadlocked). It runs as a
+  `JavaExec` with output to a file, because Phoenix and the HAL print natively and a `Test` task can't hold that back.
+- Test: `cd companion && JAVA_HOME=<a JDK 17> ./gradlew :gradle-plugin:test` (TestKit). The robot-starts check is
+  tested only on real robot projects; `companion/gradle-plugin/README.md` has the init script for that.
+
 ## Companion library (`companion/`)
 
 - A Gradle build (JDK 17) of two vendordeps, `HindsightCompanion` (`core/`) and `HindsightCompanionBattery`

@@ -1,0 +1,54 @@
+// The Hindsight Gradle plugin: build checks a robot project adds with one line in plugins {}.
+// It runs inside the robot's own Gradle (WPILib 2025 and 2026 bundle JDK 17 and Gradle 8.11).
+plugins {
+    id 'java-gradle-plugin'
+    id 'maven-publish'
+}
+
+group = 'io.github.kevinclark'
+version = '0.1.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+    gradlePluginPortal()
+}
+
+dependencies {
+    implementation 'net.ltgt.gradle:gradle-errorprone-plugin:5.1.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+gradlePlugin {
+    website = 'https://github.com/kevinclark/hindsight'
+    vcsUrl = 'https://github.com/kevinclark/hindsight'
+    plugins {
+        hindsight {
+            id = 'io.github.kevinclark.hindsight'
+            implementationClass = 'io.github.kevinclark.hindsight.gradle.HindsightPlugin'
+            displayName = 'Hindsight build checks for FRC robot code'
+            description = 'Error Prone and NullAway, integer division fixed on laptops, the two real-bug checks strict in CI, ' +
+                'a check that the robot starts and enables in simulation, and a pre-commit format hook.'
+            tags.set(['frc', 'wpilib', 'errorprone', 'nullaway'])
+        }
+    }
+}
+
+// A local Maven repo for trying the plugin on a robot project before it's on the Plugin Portal
+publishing {
+    repositories {
+        maven { url = layout.buildDirectory.dir('repo') }
+    }
+}
+
+test {
+    useJUnitPlatform()
+    // The functional tests run real builds (TestKit) that download Error Prone once
+    maxParallelForks = 2
+    testLogging { exceptionFormat = 'full' }
+}
