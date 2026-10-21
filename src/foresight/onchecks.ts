@@ -8,7 +8,7 @@
  * whatever the lines show (verdict.ts).
  */
 import type { Report } from '../rules/index.ts'
-import { allItems, type Verdict } from './verdict.ts'
+import { allItems, type Verdict, type VerdictItem } from './verdict.ts'
 import { SNAPSHOT_RULES, TAKE_SNAPSHOT } from './snapshot-checks.ts'
 import { WANTED_CHECKS } from '../rules/wanted.ts'
 
@@ -56,6 +56,35 @@ export const ONCHECKS: OncheckLine[] = [
 
 /** Every check that asks a person to do something (its grey findings are a step, not context). */
 export const ASSISTED_RULES = new Set(ONCHECKS.flatMap((l) => l.assisted ?? []))
+
+/**
+ * Steps for a person, one card per kind of step: items of the same assisted rule whose titles differ only in the
+ * camera ("Hold an AprilTag up to Back_Left", "... Back_Right") become one item naming every camera. Nothing but the
+ * title and the evidence labels changes, and no item leaves the verdict (this is only how the page lists them).
+ */
+export function groupSteps(items: VerdictItem[]): VerdictItem[] {
+  const shape = (i: VerdictItem) => /^(.*? up to )(.+?)((?: \(.*\))?)$/.exec(i.finding.title)
+  const out: VerdictItem[] = []
+  const groups = new Map<string, VerdictItem[]>()
+  for (const i of items) {
+    const m = shape(i)
+    if (!m) { out.push(i); continue }
+    const key = `${i.finding.rule}\u0000${m[1]}\u0000${m[3]}`
+    const g = groups.get(key)
+    if (g) g.push(i)
+    else { groups.set(key, [i]); out.push(i) }
+  }
+  return out.map((first) => {
+    const m = shape(first)
+    const g = m && groups.get(`${first.finding.rule}\u0000${m[1]}\u0000${m[3]}`)
+    if (!m || !g || g.length < 2) return first
+    const names = g.map((i) => shape(i)![2])
+    const list = names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+    const evidence: Record<string, number | string> = {}
+    for (const [i, name] of g.map((x, n) => [x, names[n]] as const)) for (const [k, v] of Object.entries(i.finding.evidence)) evidence[`${name}: ${k}`] = v
+    return { ...first, finding: { ...first.finding, title: `${m[1]}${list}${m[3]}`, evidence } }
+  })
+}
 
 export type LineState = 'ok' | 'red' | 'amber' | 'to do' | 'context' | 'not checked' | 'by eye'
 
@@ -113,8 +142,8 @@ export function wantedLines(current: { report: Report } | null): WantedLine[] {
 
 /**
  * The checklist as the page and the printed report show it (round-5-checklist.md, Kevin 2026-10-20): the team's lines
- * above, with each group below shown as one line at its first member's place. A merged line shows the worst state of
- * its parts and names every part that is not OK, so a merge hides nothing and changes nothing in the verdict (this is
+ * above, with each group below shown as one line at its first member's place. A merged line shows the worst state among
+ * its checked parts, says how many were checked, and names every part that is not OK, so a merge hides nothing and changes nothing in the verdict (this is
  * still only a view of it).
  */
 export const MERGED_LINES: Record<string, { line: string; ok: string }> = {
@@ -129,7 +158,8 @@ export interface ChecklistLine extends MarkedLine {
   parts: MarkedLine[]
 }
 
-// Worst first. "Not checked" outranks OK: a line is OK only if every part is.
+// Worst first. A merged line takes the worst state among the parts that were checked, so a part that measured
+// nothing never hides the ones that did; it is "not checked" only when no part was checked.
 const RANK: Record<LineState, number> = { red: 6, amber: 5, 'to do': 4, 'not checked': 3, context: 2, 'by eye': 1, ok: 0 }
 
 export function mergeLines(lines: MarkedLine[]): ChecklistLine[] {
@@ -145,13 +175,15 @@ export function mergeLines(lines: MarkedLine[]): ChecklistLine[] {
     m.parts.push(l)
   }
   for (const [group, m] of merged) {
-    m.state = m.parts.reduce<LineState>((w, p) => (RANK[p.state] > RANK[w] ? p.state : w), 'ok')
+    const checked = m.parts.filter((p) => p.state !== 'not checked')
+    m.state = checked.length ? checked.reduce<LineState>((w, p) => (RANK[p.state] > RANK[w] ? p.state : w), 'ok') : 'not checked'
     const bad = [...m.parts].filter((p) => p.state !== 'ok').sort((a, b) => RANK[b.state] - RANK[a.state])
     if (!bad.length) { m.detail = MERGED_LINES[group].ok; continue }
     // Parts that say the same thing (no snapshot) are named together, once.
     const byDetail = new Map<string, string[]>()
     for (const p of bad) byDetail.set(p.detail, [...(byDetail.get(p.detail) ?? []), p.line])
-    m.detail = [...byDetail].map(([d, names]) => `${names.join(', ')}: ${d}`).join('; ')
+    const named = [...byDetail].map(([d, names]) => `${names.join(', ')}: ${d}`).join('; ')
+    m.detail = checked.length && checked.length < m.parts.length ? `${checked.length} of ${m.parts.length} checked; ${named}` : named
   }
   return out
 }

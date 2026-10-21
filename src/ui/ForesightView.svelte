@@ -14,7 +14,7 @@
   import { profileId } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
-  import { ASSISTED_RULES, checklistLines, wantedLines, type ChecklistLine } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, checklistLines, groupSteps, wantedLines, type ChecklistLine } from '../foresight/onchecks.ts'
   import { SNAPSHOT_RULES } from '../foresight/snapshot-checks.ts'
   import { parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import type { VerdictItem } from '../foresight/verdict.ts'
@@ -119,7 +119,7 @@
   // Only red and amber items decide GO/NO-GO; grey ones (context, or a step for a person) sit in their own short list.
   const decisive = $derived(checked ? checked.verdict.items.filter((i) => i.level !== 'grey') : [])
   // Grey items that ask a person to do something (hold a tag up to a camera) are steps; the other greys are context.
-  const stepItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule)) : [])
+  const stepItems = $derived(checked ? groupSteps(checked.verdict.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule))) : [])
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
   const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
   const unrun = $derived(checked ? didNotRun(checked.verdict.notChecked.length + checked.verdict.crashed.length, totalChecks) : null)
@@ -209,9 +209,12 @@
       </ol>
     {/if}
     {#if contextItems.length}
-      <ol class="items context-items" aria-label="Context: never changes the verdict">
-        {#each contextItems as item (item.finding.key + item.finding.title)}{@render itemRow(item)}{/each}
-      </ol>
+      <details class="inert">
+        <summary>{contextItems.length} context {contextItems.length === 1 ? 'note' : 'notes'}: never {contextItems.length === 1 ? 'changes' : 'change'} the verdict</summary>
+        <ol class="items context-items" aria-label="Context: never changes the verdict">
+          {#each contextItems as item (item.finding.key + item.finding.title)}{@render itemRow(item)}{/each}
+        </ol>
+      </details>
     {/if}
     {#if checked.verdict.notChecked.length || checked.verdict.crashed.length}
       <details class="notchecked">
@@ -236,7 +239,7 @@
           {#each inertLines as l (l.line)}{@render checkLine(l)}{/each}
         </ul>
       </details>
-      <p class="small">In the team's 2026 checklist order. A line is marked only from the check on screen now; "By eye" lines are for a person and never count toward GO. A merged line shows the worst of its parts and names each one that is not OK.</p>
+      <p class="small">In the team's 2026 checklist order. A line is marked only from the check on screen now; "By eye" lines are for a person and never count toward GO. A merged line shows the worst of its checked parts, says how many were checked, and names each part that is not OK; it reads "Not checked" only when no part was.</p>
       {#if wanted.length}
         <details class="inert">
           <summary>{wanted.length} wanted checks: problems no check can see yet (context, never changes the verdict)</summary>
