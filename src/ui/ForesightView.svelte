@@ -248,7 +248,7 @@
     </section>
   {/if}
 
-  <CodeCheck robotSha={checked?.match.build.sha || null} robotDirty={!!checked && /uncommitted/i.test(checked.match.build.dirty)} />
+  <CodeCheck robotSha={checked?.match.build.sha || null} robotDirty={!!checked && /uncommitted/i.test(checked.match.build.dirty)} suggest={status?.profile?.code} />
 
   {#if status && status.state !== 'closed'}
     <details class="readings" open>
