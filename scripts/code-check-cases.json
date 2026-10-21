@@ -172,6 +172,138 @@
    ],
    "expect": "fires",
    "why": "the four ENCODER_ID constants (Constants.java:16-28) are all 0; the CANcoders are built where RobotContainer passes them"
+  },
+  {
+   "repo": "Rapid-React",
+   "commit": "fde835e",
+   "rule": "code/never-ending-step",
+   "file": "ShootingSequence.java",
+   "lines": [
+    38
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rapid-React",
+   "commit": "74087e6",
+   "rule": "code/never-ending-step",
+   "file": "ShootingSequence.java",
+   "lines": [
+    44
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rapid-React",
+   "commit": "dd9be00",
+   "rule": "code/never-ending-step",
+   "file": "ExtendClimber.java",
+   "lines": [
+    27,
+    29
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "commit": "bcf5654",
+   "rule": "code/stale-signal",
+   "file": "PivotIOReal.java",
+   "lines": [
+    53
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "2133a8c",
+   "rule": "code/stale-signal",
+   "file": "FlywheelIO.java",
+   "lines": [
+    74
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "0be6bb7",
+   "rule": "code/stale-signal",
+   "file": "CANcoderIO.java",
+   "lines": [
+    39
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "6b1670f",
+   "rule": "code/stale-signal",
+   "file": "PivotIO.java",
+   "lines": [
+    74
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Crescendo",
+   "commit": "1f202a7",
+   "rule": "code/stale-signal",
+   "file": "ShooterIOReal.java",
+   "lines": [
+    53
+   ],
+   "expect": "misses",
+   "why": "fires on the parent; the fix set rates but left the signals unrefreshed, so the finding rightly stays until 3bcd785"
+  },
+  {
+   "repo": "Crescendo",
+   "commit": "c77c85d",
+   "rule": "code/stale-signal",
+   "file": "ElevatorIOReal.java",
+   "lines": [
+    59
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Crescendo",
+   "commit": "3bcd785",
+   "rule": "code/stale-signal",
+   "file": "ShooterIOReal.java",
+   "lines": [
+    94
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Crescendo",
+   "commit": "774423b",
+   "rule": "code/stale-signal",
+   "file": "IntakeIOReal.java",
+   "lines": [
+    64
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Reefscape",
+   "commit": "ea7d383",
+   "rule": "code/stale-signal",
+   "file": "RollerIOReal.java",
+   "lines": [
+    73
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "d90f86a",
+   "rule": "code/unused-config",
+   "file": "HoodIO.java",
+   "lines": [
+    56
+   ],
+   "expect": "fires"
   }
  ],
  "live": [
@@ -293,6 +425,46 @@
    ],
    "expect": "fires",
    "why": "in simulation only: HoodIOSim and FlywheelIOSim are both given 11, in the ALPHA and the COMP robot"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "cb68b20",
+   "rule": "code/never-ending-step",
+   "file": "SlapdownSubsystem.java",
+   "lines": [
+    185
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "3eca5e5",
+   "rule": "code/never-ending-step",
+   "file": "SlapdownSubsystem.java",
+   "lines": [
+    168
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "3eca5e5",
+   "rule": "code/unused-config",
+   "file": "CANdleIOReal.java",
+   "lines": [
+    23
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Robot-Template",
+   "commit": "79ca4c1",
+   "rule": "code/unused-config",
+   "file": "CANdleIOReal.java",
+   "lines": [
+    23
+   ],
+   "expect": "fires"
   }
  ],
  "heads": {
@@ -643,6 +815,38 @@
    "rule": "code/discarded-result",
    "verdict": "real",
    "why": "real: changeStateTo returns a Command, built inside a runOnce lambda and never run"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "SlapdownSubsystem.java",
+   "line": 185,
+   "rule": "code/never-ending-step",
+   "verdict": "real",
+   "why": "real: this.run(..) never ends, so the zeroing sequence never reaches waitUntil or the encoder reset"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "SlapdownSubsystem.java",
+   "line": 168,
+   "rule": "code/never-ending-step",
+   "verdict": "real",
+   "why": "real: this.run(..) never ends, so the zeroing sequence never reaches waitUntil or the encoder reset"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "CANdleIOReal.java",
+   "line": 23,
+   "rule": "code/unused-config",
+   "verdict": "real",
+   "why": "real: the CANdleConfiguration (StripType GRB) is never applied; no visible effect while it only sets the strip type"
+  },
+  {
+   "repo": "2026-Robot-Template",
+   "file": "CANdleIOReal.java",
+   "line": 23,
+   "rule": "code/unused-config",
+   "verdict": "real",
+   "why": "real: the CANdleConfiguration (StripType GRB) is never applied; no visible effect while it only sets the strip type"
   }
  ],
  "hints": {

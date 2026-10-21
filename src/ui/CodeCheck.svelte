@@ -11,7 +11,7 @@
   import { loadJavaInPage } from '../code/check/browser-java.ts'
   import { fileName } from '../code/check/java.ts'
 
-  let { robotSha, robotDirty, suggest }: { robotSha: string | null; robotDirty: boolean; suggest?: RobotProfile['code'] } = $props()
+  let { robotSha, robotDirty, suggest, onchecked }: { robotSha: string | null; robotDirty: boolean; suggest?: RobotProfile['code']; onchecked?: (check: FolderCheck | null) => void } = $props()
 
   let result = $state.raw<FolderCheck | null>(null)
   let problem = $state<string | null>(null)
@@ -35,6 +35,9 @@
       .then((r) => { if (run === latest) { result = r; problem = null } }, (error) => { if (run === latest) { result = null; problem = error instanceof Error ? error.message : String(error) } })
       .finally(() => { if (run === latest) running = false })
   })
+
+  // Foresight checks the robot snapshot against the settings this read (snapshot/code-settings).
+  $effect(() => onchecked?.(result))
 
   /** Findings grouped by check, in CODE_RULES order (the ones that cost a match most directly first). */
   const groups = $derived(CODE_RULES.map((rule) => (result?.report.findings ?? []).filter((f) => f.rule === rule.id)).filter((g) => g.length > 0))

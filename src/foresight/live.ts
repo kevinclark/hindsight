@@ -17,6 +17,7 @@ import { chooseProfile } from '../profiles/choose.ts'
 import { openWpilog } from '../readers/wpilog.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import type { Snapshot } from '../snapshot/snapshot.ts'
+import type { CodeSettings } from './snapshot-checks.ts'
 import { RecordStore } from './records.ts'
 import { evaluateForesight, type ForesightResult } from './engine.ts'
 import { FORESIGHT_PREFIXES, foresightKeys, keyFor, METADATA_KEYS, topicFor, wpilogType } from './keys.ts'
@@ -67,6 +68,7 @@ export class ForesightLive {
   private profileChosen = false
   private lastValueWallMs: number | null = null
   private snapshot: Snapshot | null = null
+  private codeSettings: CodeSettings | null = null
   /** The "Connected. Robot: …" line, restored after a stale or failed check. */
   private connectedMessage = ''
   readonly status: LiveStatus
@@ -108,6 +110,11 @@ export class ForesightLive {
   /** A robot snapshot dropped on the page (null: none), used from the next check on. */
   setSnapshot(snapshot: Snapshot | null): void {
     this.snapshot = snapshot
+  }
+
+  /** The settings the Code panel read from the robot code (null: none yet), used from the next check on. */
+  setCodeSettings(settings: CodeSettings | null): void {
+    this.codeSettings = settings
   }
 
   /** The user clicked Disconnect. */
@@ -183,7 +190,7 @@ export class ForesightLive {
     this.store.prune()
     this.status.message = this.connectedMessage
     try {
-      this.status.result = evaluateForesight({ store: this.store, codeStart, now: this.store.latest, lastPassingSha: this.options.lastPassingSha, profile: this.status.profile ?? undefined, snapshot: { snapshot: this.snapshot, codeStartWallMs, codeStartFrom: this.status.codeStartFrom } })
+      this.status.result = evaluateForesight({ store: this.store, codeStart, now: this.store.latest, lastPassingSha: this.options.lastPassingSha, profile: this.status.profile ?? undefined, snapshot: { snapshot: this.snapshot, codeStartWallMs, codeStartFrom: this.status.codeStartFrom }, codeSettings: this.codeSettings ?? undefined })
     } catch (error) {
       this.status.result = null // never leave an earlier verdict up
       this.status.message = `The check failed: ${error instanceof Error ? error.message : String(error)}`

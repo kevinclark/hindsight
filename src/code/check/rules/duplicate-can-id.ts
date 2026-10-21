@@ -12,13 +12,12 @@
  * 141b8cd each fixed devices built with an ID another device already had.
  */
 import { fileName, lineOf, parts, typeNamed, type Node } from '../java.ts'
-import { canBothHappen, valueAlong, waysToReach } from '../flow.ts'
+import { deviceAlong, PHOENIX_DEVICES, type Device } from '../devices.ts'
+import { ANY_CANIVORE, RIO } from '../bus-names.ts'
+import { canBothHappen, waysToReach } from '../flow.ts'
 import { baseType, type Project } from '../project.ts'
 import { codeRule, type CodeProblem } from '../rule.ts'
-
-const DEVICES = ['TalonFX', 'CANcoder', 'Pigeon2']
-const RIO = 'the roboRIO bus'
-const ANY_CANIVORE = '*'
+import { groupBy } from '../../../rules/run.ts'
 
 export default codeRule({
   id: 'code/duplicate-can-id',
@@ -33,32 +32,16 @@ export default codeRule({
   },
 })
 
-interface Device {
-  kind: string
-  id: number
-  bus: string
-  /** Where the ID is written: the line to change. */
-  at: Node
-  /** Everywhere the ID and bus passed through to get here, to tell whether two devices can both be built. */
-  path: Node[]
-}
-
 /** The devices one `new TalonFX(…)` builds: one for each chain of calls that reaches it. Ones it can't follow aren't judged. */
 function devicesBuiltAt(site: Node, project: Project): Device[] {
   const kind = baseType(typeNamed(site))
-  const [idArgument, busArgument] = parts(site, 'arguments')
-  if (!kind || !DEVICES.includes(kind) || !idArgument) return []
+  if (!kind || !PHOENIX_DEVICES.includes(kind) || parts(site, 'arguments').length === 0) return []
   const ways = waysToReach(site, project)
   if (!ways) {
     project.couldNotJudge(`this ${kind} is built along too many paths to follow`, site)
     return []
   }
-  const devices = ways.map((chain) => {
-    const id = valueAlong(idArgument, chain, project)
-    const bus = busArgument ? valueAlong(busArgument, chain, project) : { value: RIO, at: site }
-    if (!id || !bus || typeof id.value !== 'number') return null
-    return { kind, id: id.value, bus: busName(bus.value), at: id.at, path: [id.at, bus.at, site, ...chain] }
-  })
+  const devices = ways.map((chain) => deviceAlong(site, chain, project))
   if (devices.includes(null)) project.couldNotJudge(`can't work out the ID or bus of this ${kind}`, site)
   return devices.filter((d) => d !== null)
 }
@@ -67,13 +50,8 @@ function devicesBuiltAt(site: Node, project: Project): Device[] {
 function byIdAndBus(devices: Device[]): Map<string, Device[]> {
   const named = new Set(devices.map((d) => d.bus).filter((b) => b !== RIO && b !== ANY_CANIVORE))
   const onlyCanivore = named.size === 1 ? [...named][0] : null
-  const groups = new Map<string, Device[]>()
-  for (const d of devices) {
-    const bus = d.bus === ANY_CANIVORE && onlyCanivore ? onlyCanivore : d.bus
-    const key = `${d.kind} ${d.id} on ${busLabel(bus)}`
-    groups.set(key, [...(groups.get(key) ?? []), d])
-  }
-  return groups
+  const busOf = (d: Device) => (d.bus === ANY_CANIVORE && onlyCanivore ? onlyCanivore : d.bus)
+  return groupBy(devices, (d) => `${d.kind} ${d.id} on ${busLabel(busOf(d))}`)
 }
 
 function busLabel(bus: string): string {
@@ -93,11 +71,4 @@ function clash(key: string, group: Device[], project: Project): CodeProblem[] {
     said.add(device.at.id)
     return [{ message: `${key} is also built at ${others.join(', ')}`, at: device.at }]
   })
-}
-
-/** A bus as a name: "canivore", "*", or the roboRIO's own bus for "", "rio" and `new CANBus()`. */
-function busName(value: number | string): string {
-  const text = String(value)
-  const named = /^new CANBus\(\s*"([^"]*)"/.exec(text)?.[1] ?? (text.startsWith('new CANBus(') ? '' : text)
-  return named === '' || named === 'rio' ? RIO : named
 }

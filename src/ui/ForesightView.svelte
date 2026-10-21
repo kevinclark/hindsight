@@ -15,7 +15,8 @@
   import { num, values } from '../match/match.ts'
   import { downloadText } from './download.ts'
   import { ASSISTED_RULES, checklistLines, groupSteps, wantedLines, type ChecklistLine } from '../foresight/onchecks.ts'
-  import { SNAPSHOT_RULES } from '../foresight/snapshot-checks.ts'
+  import { SNAPSHOT_RULES, type CodeSettings } from '../foresight/snapshot-checks.ts'
+  import type { FolderCheck } from '../code/check/index.ts'
   import { parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import type { VerdictItem } from '../foresight/verdict.ts'
   import { didNotRun } from '../report/foresight-model.ts'
@@ -31,6 +32,12 @@
   ]
   let address = $state(ADDRESSES[0].value)
   let live: ForesightLive | null = null
+  // What the Code panel read from the robot code, for the snapshot check (snapshot/code-settings).
+  let codeSettings: CodeSettings | null = null
+  function useCode(check: FolderCheck | null) {
+    codeSettings = check && { commit: check.commit, settings: check.settings }
+    live?.setCodeSettings(codeSettings)
+  }
   let status = $state.raw<LiveStatus | null>(null)
   let recorded = false
   let open = $state<Record<string, boolean>>({})
@@ -58,6 +65,7 @@
     const since = lastPassingSha(history)
     live = new ForesightLive({ address, lastPassingSha: since, onUpdate: (s) => { status = s; record(s) } })
     live.setSnapshot(snapshot)
+    live.setCodeSettings(codeSettings)
     live.start()
   }
   function disconnect() {
@@ -251,7 +259,7 @@
     </section>
   {/if}
 
-  <CodeCheck robotSha={checked?.match.build.sha || null} robotDirty={!!checked && /uncommitted/i.test(checked.match.build.dirty)} suggest={status?.profile?.code} />
+  <CodeCheck robotSha={checked?.match.build.sha || null} robotDirty={!!checked && /uncommitted/i.test(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
 
   {#if status && status.state !== 'closed'}
     <details class="readings" open>

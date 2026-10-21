@@ -12,7 +12,8 @@
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
 import { javaFilesAt, type CodeSource } from '../code/source.ts'
 import { valueAlong, waysToReach } from '../code/check/flow.ts'
-import { classAround, codeOf, fileName, lineOf, nameOf, parts, typeNamed, type Node } from '../code/check/java.ts'
+import { inSimulation } from '../code/check/devices.ts'
+import { codeOf, fileName, lineOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, Project } from '../code/check/project.ts'
 
 export interface CodeFile { path: string; text: string }
@@ -77,16 +78,6 @@ function sitesOf(talon: Node, project: Project): TalonSite[] {
   const bus = busArgument ? codeOf(busArgument) : null
   const where = { expr: codeOf(idArgument), bus, file: project.fileOf(talon).path, line: lineOf(talon) }
   return each.map((id) => ({ id, ...where }))
-}
-
-/**
- * Is this call simulation code: in a class whose name ends in "Sim", or building one (`new FlywheelIOSim(…, 11, 12)`)?
- * AdvantageKit's IO pattern names them so, and their IDs needn't match the robot's: Rebuilt 3eca5e5 gives the
- * simulated flywheel 11 and 12, the real hood's and flywheel's IDs.
- */
-function inSimulation(call: Node): boolean {
-  const named = (name: string | null | undefined) => !!name?.endsWith('Sim')
-  return named(nameOf(classAround(call) ?? call)) || (call.type === 'object_creation_expression' && named(baseType(typeNamed(call))))
 }
 
 /** Hints from the code at a branch or commit (GitHub): every Java file's text at that commit. */
