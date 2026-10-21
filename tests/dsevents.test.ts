@@ -112,3 +112,11 @@ describe('the event log across a DS session longer than this robot log', () => {
     expect(f?.title).toMatch(/^CANivore dropped off USB 1 time, first .*robot time 82\.3 s/)
   })
 })
+
+describe('a pit log inside a day-long event log', () => {
+  it("takes no identity from a match the FMS announced after it", () => {
+    const later = writeDsevents(EPOCH - 5, [[EPOCH + END + 600, 'FMS Connected:   Qualification - 31:1, Field Time: 26/4/8 20:0:0']])
+    const [a] = analyze([files()[0], { name: 'day.dsevents', bytes: later }], frc334_2026)
+    expect(a.match.matchLabel).toBe('')
+  })
+})

@@ -76,10 +76,12 @@ function countsFromLogStart(c: Clock): Point[] {
   return counts.filter((p) => inLog(c, p.t)).map((p) => ({ t: p.t, v: p.v - before }))
 }
 
-/** The FMS's last word on this match before the log ended (a DS left open across matches logs one per match). */
+/**
+ * The FMS's last word on this match before the log ended (a DS left open across matches logs one per match). None
+ * before then (a pit log in a day-long event log): no identity, rather than a later match's.
+ */
 function fmsPoint(c: Clock, field: 'type' | 'number' | 'replay'): Point[] {
-  const all = c.files.flatMap(fmsMatches)
-  const latest = all.filter((m) => robotTime(c, m.epochSeconds) <= c.logEnd).at(-1) ?? all[0]
+  const latest = c.files.flatMap(fmsMatches).filter((m) => robotTime(c, m.epochSeconds) <= c.logEnd).at(-1)
   return latest ? [{ t: c.logStart, v: latest[field] }] : []
 }
 
