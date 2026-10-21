@@ -11,9 +11,10 @@
   import { plotModel } from './plot-data.ts'
   import FindingRow from './FindingRow.svelte'
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
+  import { shortTitle } from '../report/titles.ts'
   import { keyNumber } from '../report/review-model.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, issues, wrong, sure, statusOf, showNext = false, real }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -26,6 +27,8 @@
     note?: string
     /** Shown under the finding that explains it. */
     nested?: boolean
+    /** For a row in the flat list under a headline: the title of the finding that explains it, when that is not the headline itself. */
+    via?: string
     /** For the rows under this one: their known-issue state. */
     issues?: Map<string, IssueEvent>
     /** This match's "not a real problem" marks, by issue key (this row's and the rows under it). */
@@ -39,6 +42,11 @@
     showNext?: boolean
   } = $props()
   const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
+  // One level under the headline, in tree order: a finding that hangs off another explained finding says so on its own line instead of opening a disclosure inside a disclosure.
+  type Flat = { node: FindingNode; via?: string }
+  const flatten = (nodes: FindingNode[], parent?: Finding): Flat[] =>
+    nodes.flatMap((n) => [{ node: n, via: parent ? shortTitle(parent.title) : undefined }, ...flatten(n.children, n.finding)])
+  const flat = $derived(flatten(explains))
   const rule = $derived(makerOf(finding.rule))
   const wrongMark = $derived(wrong?.get(finding.key))
   const realMark = $derived(wrongMark ? undefined : real?.get(finding.key))
@@ -78,7 +86,7 @@
         {#if !wrongMark && issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
         {#if fixedLater && !wrongMark}<span class="badge known-badge">{issue?.when ? 'Fixed after this match' : 'Fixed (date unknown)'}</span>{/if}
         {finding.title}
-        {#if nested && finding.explainedBy}<span class="why">↳ {finding.explainedBy.why}</span>{/if}
+        {#if nested && finding.explainedBy}<span class="why">↳ {via ? `explained by ${via}: ` : ''}{finding.explainedBy.why}</span>{/if}
         {#if note}<span class="why">↳ {note}</span>{/if}
         {#if finding.demoted}<span class="why">↳ amber, not red: marked not a real problem in {finding.demoted.match}{finding.demoted.reason ? `: ${finding.demoted.reason}` : ''}</span>{/if}
         {#if finding.measured?.length && !key.inTitle}<span class="key">{key.value}{key.label ? ` ${key.label}` : ''}</span>{/if}
@@ -143,8 +151,8 @@
     <details class="explains">
       <summary>Explains {under.length} more ({severityWords(under)})</summary>
       <ul>
-        {#each explains as c (c.finding.key + c.finding.time)}
-          <FindingRow finding={c.finding} explains={c.children} nested {analysis} {issues} {wrong} {real} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
+        {#each flat as { node: c, via } (c.finding.key + c.finding.time)}
+          <FindingRow finding={c.finding} nested {via} {analysis} {issues} {wrong} {real} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
         {/each}
       </ul>
     </details>
@@ -195,6 +203,8 @@
   .actions button:hover { border-color: var(--muted); }
   @media (max-width: 640px) {
     summary { grid-template-columns: 1fr; gap: 0.15rem; }
+    /* The wide layout puts this under columns 2 to 4; on one column that would add two implicit columns and squeeze the title (WCAG 1.4.10 reflow). */
+    .next { grid-column: 1; }
     .body { padding-left: 0.25rem; }
     .explains { margin-left: 0.25rem; }
   }
