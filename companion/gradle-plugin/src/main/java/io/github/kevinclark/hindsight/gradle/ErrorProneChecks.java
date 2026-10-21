@@ -21,9 +21,9 @@ final class ErrorProneChecks {
   static final String GENERATED_CODE = ".*/build/generated/.*"; // AdvantageKit's AutoLog classes
   static final String INTEGER_DIVISION = "NarrowCalculation";
   static final List<String> ALERTS = List.of(INTEGER_DIVISION, "EqualsIncompatibleType", "FallThrough");
+  // not PatternMatchingInstanceof: its fix names the new variable by lower-casing the type (cANcoderIOSim)
   static final List<String> TIDY = List.of(
-      "MissingOverride", "UnnecessaryParentheses", "OperatorPrecedence", "PatternMatchingInstanceof",
-      "UnnecessaryStringBuilder");
+      "MissingOverride", "UnnecessaryParentheses", "OperatorPrecedence", "UnnecessaryStringBuilder");
 
   private ErrorProneChecks() {}
 
