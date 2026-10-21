@@ -6,11 +6,11 @@
  * snapshot (foresight/snapshot-checks.ts, snapshot/code-settings). Simulation code is left out (devices.ts).
  * Only fields set one by one are read: a `.withMagnetOffset(…)` builder, or a whole configs object set at once, isn't.
  */
-import { codeOf, field, fileName, lineOf, nameOf, parts, type Node } from './java.ts'
+import { field, fileName, lineOf, nameOf, operatorOf, parts, type Node } from './java.ts'
 import { deviceAlong, inSimulation } from './devices.ts'
 import { valueAlong, waysToReach } from './flow.ts'
 import type { Project } from './project.ts'
-import { visibleIn } from './types.ts'
+import { declarationOf, visibleIn } from './types.ts'
 import { valueOf } from './values.ts'
 
 /** The Phoenix 6 config fields compared with the snapshot (MagnetSensorConfigs, FeedbackConfigs, CurrentLimitsConfigs). */
@@ -64,13 +64,21 @@ function fieldsSetOn(made: Node, project: Project): { field: SettingField; value
   if (!name || !scope) return []
   return scope.descendantsOfType('assignment_expression').flatMap((assignment) => {
     const target = assignment && field(assignment, 'left')
-    if (!assignment || target?.type !== 'field_access' || !codeOf(target).startsWith(`${name}.`)) return []
+    if (!assignment || operatorOf(assignment) !== '=' || target?.type !== 'field_access' || !setsOn(target, variable, project)) return []
     const setting = SETTING_FIELDS.find((f) => f === field(target, 'field')?.text)
     if (!setting) return []
     const value = settingValue(field(assignment, 'right'), project)
     const where = `${fileName(project.fileOf(assignment).path)}:${lineOf(assignment)}`
     return value === null ? [] : [{ field: setting, value, where }]
   })
+}
+
+/** Is `config.CurrentLimits.SupplyCurrentLimit` written on this config's variable (by its declaration, not its name)? */
+function setsOn(target: Node, variable: Node, project: Project): boolean {
+  let root = target
+  while (root.type === 'field_access') root = field(root, 'object') ?? root
+  if (root.type !== 'identifier') return false
+  return declarationOf(root, root.text, project)?.equals(variable) === true
 }
 
 /** A setting's value as written: `true`, `false`, or a number it can work out (values.ts). */

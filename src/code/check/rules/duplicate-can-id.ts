@@ -12,7 +12,8 @@
  * 141b8cd each fixed devices built with an ID another device already had.
  */
 import { fileName, lineOf, parts, typeNamed, type Node } from '../java.ts'
-import { ANY_CANIVORE, deviceAlong, PHOENIX_DEVICES, RIO, type Device } from '../devices.ts'
+import { deviceAlong, PHOENIX_DEVICES, type Device } from '../devices.ts'
+import { ANY_CANIVORE, RIO } from '../bus-names.ts'
 import { canBothHappen, waysToReach } from '../flow.ts'
 import { baseType, type Project } from '../project.ts'
 import { codeRule, type CodeProblem } from '../rule.ts'

@@ -95,7 +95,8 @@ function said(group: Problem[]): CodeProblem {
   if (kind === 'rate 0') return { message: `${signals} set to update 0 times a second${where} and then read: ${names}. The value never changes`, at: read }
   if (kind === 'slowed') {
     const own = one ? 'its own' : 'their own'
-    return { message: `${signals} read with no rate of ${own}, so optimizeBusUtilization()${where} slows ${one ? 'it' : 'them'} to 4 a second: ${names}`, at: read }
+    const optimize = at ? `${nameOf(at)}()` : 'optimizeBusUtilization()'
+    return { message: `${signals} read with no rate of ${own}, so ${optimize}${where} slows ${one ? 'it' : 'them'} to 4 a second: ${names}`, at: read }
   }
   return { message: `${signals} read but never refreshed: ${names}. Each read gives the value from when ${one ? 'it was' : 'they were'} first fetched`, at: read }
 }

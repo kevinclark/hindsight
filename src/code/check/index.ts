@@ -64,8 +64,24 @@ export async function checkFolder(source: CodeSource, robotSha: string | null, h
   const commit = robot.commit ?? fallback?.sha ?? ''
   const files = await javaFilesAt(source, commit)
   const ranOn = robot.commit ? 'robot' : 'head'
-  const { report, settings } = withProject(files, (project) => ({ report: runCodeRules(CODE_RULES, project), settings: deviceSettings(project) }))
+  const { report, settings } = withProject(files, (project) => {
+    const checked = runCodeRules(CODE_RULES, project)
+    return { report: checked, settings: settingsOf(project, checked) }
+  })
   return { report, commit, ranOn, branch: robot.commit ? null : (fallback?.branch ?? null), why: robot.why, files: files.length, settings }
+}
+
+/**
+ * The settings for Foresight's snapshot check, or none when reading them throws (a bug in device-settings.ts, never
+ * in the robot code). The rules' findings are kept either way.
+ */
+function settingsOf(project: Project, report: CodeReport): DeviceSetting[] {
+  try {
+    return deviceSettings(project)
+  } catch (error) {
+    report.crashed.push({ rule: 'device settings (for the robot snapshot)', why: error instanceof Error ? error.message : String(error) })
+    return []
+  }
 }
 
 /** The robot's commit in this code, or why it can't be checked. */

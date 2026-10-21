@@ -6,10 +6,9 @@
 import { classAround, nameOf, parts, typeNamed, type Node } from './java.ts'
 import { valueAlong } from './flow.ts'
 import { baseType, type Project } from './project.ts'
+import { busName, RIO } from './bus-names.ts'
 
 export const PHOENIX_DEVICES = ['TalonFX', 'CANcoder', 'Pigeon2']
-export const RIO = 'the roboRIO bus'
-export const ANY_CANIVORE = '*'
 
 export interface Device {
   kind: string
@@ -30,13 +29,6 @@ export function deviceAlong(site: Node, chain: Node[], project: Project): Device
   const bus = busArgument ? valueAlong(busArgument, chain, project) : { value: RIO, at: site }
   if (!id || !bus || typeof id.value !== 'number') return null
   return { kind, id: id.value, bus: busName(bus.value), at: id.at, path: [id.at, bus.at, site, ...chain] }
-}
-
-/** A bus as a name: "canivore", "*", or the roboRIO's own bus for "", "rio" and `new CANBus()`. */
-export function busName(value: number | string): string {
-  const text = String(value)
-  const named = /^new CANBus\(\s*"([^"]*)"/.exec(text)?.[1] ?? (text.startsWith('new CANBus(') ? '' : text)
-  return named === '' || named === 'rio' ? RIO : named
 }
 
 /**

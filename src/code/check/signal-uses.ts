@@ -34,6 +34,9 @@ export interface SignalUse {
 /** Everything done with a signal (or an array holding it) wherever its name can be used. */
 export function usesOf(declared: Node, project: Project): SignalUse {
   const use: SignalUse = { reads: [], refreshed: false, rates: [], handedOff: false, fetchedIn: [] }
+  // A local declared from its getter (`var p = motor.getPosition()`) is fetched fresh each time its method runs.
+  const method = enclosing(declared, METHODS)
+  if (declared.parent?.type === 'local_variable_declaration' && field(declared, 'value')?.type === 'method_invocation' && method) use.fetchedIn.push(method)
   for (const mention of mentionsOf(declared, project)) addUse(use, mention, project)
   return use
 }

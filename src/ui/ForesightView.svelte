@@ -35,7 +35,7 @@
   // What the Code panel read from the robot code, for the snapshot check (snapshot/code-settings).
   let codeSettings: CodeSettings | null = null
   function useCode(check: FolderCheck | null) {
-    codeSettings = check && { commit: check.commit, ranOn: check.ranOn, settings: check.settings }
+    codeSettings = check && { commit: check.commit, settings: check.settings }
     live?.setCodeSettings(codeSettings)
   }
   let status = $state.raw<LiveStatus | null>(null)

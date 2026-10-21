@@ -17,7 +17,7 @@ import { definedOnly, groupBy } from '../rules/run.ts'
 import type { RobotProfile, SnapshotExpectations } from '../profiles/types.ts'
 import { busLabel, configOf, parseBool, parseNumber, type Config, type Device, type Snapshot } from '../snapshot/snapshot.ts'
 import { fieldText, inventory, limitsReport, sameNumber } from '../snapshot/report.ts'
-import { RIO, ANY_CANIVORE } from '../code/check/devices.ts'
+import { ANY_CANIVORE, RIO } from '../code/check/bus-names.ts'
 import type { DeviceSetting, SettingField } from '../code/check/device-settings.ts'
 
 type Rule = 'snapshot/devices' | 'snapshot/licensed' | 'snapshot/cancoder-offsets' | 'snapshot/swerve-ratio' | 'snapshot/current-limits' | 'snapshot/code-settings'
@@ -47,10 +47,11 @@ export interface SnapshotInput {
 /** The settings the Code panel read from the robot code (code/check/device-settings.ts), and which commit it read. */
 export interface CodeSettings {
   commit: string
-  /** 'robot' when that commit is the one the robot runs (code/check/index.ts, checkFolder). */
-  ranOn: 'robot' | 'head'
   settings: DeviceSetting[]
 }
+
+/** What the robot says it runs (its build metadata): the commit, and whether it had uncommitted changes. */
+export interface RobotBuild { sha: string; dirty: string }
 
 const RULE_TEXT: Record<Rule, { meaning: string; causes: Finding['causes']; nextStep: string }> = {
   'snapshot/devices': {
@@ -293,10 +294,12 @@ const LARGEST_OFFSET = 1
  * offsets, its swerve ratios, every motor group's current limits) is left to that check, so one fault is one finding.
  * A device may get one of several values (sim or real, two robots): it is wrong only when it holds none of them.
  */
-function codeSettingsCheck(snapshot: Snapshot, profile: RobotProfile, expected: SnapshotExpectations | undefined, code: CodeSettings | undefined): Check {
+function codeSettingsCheck(snapshot: Snapshot, profile: RobotProfile, expected: SnapshotExpectations | undefined, code?: CodeSettings, robot?: RobotBuild): Check {
   const c = new Check('snapshot/code-settings')
   if (!code) return c.cannot('no robot-code folder or GitHub repo chosen in the Code panel')
-  if (code.ranOn !== 'robot') return c.cannot(`the Code panel read ${code.commit.slice(0, 7)}, not the commit the robot runs`)
+  const sameCommit = !!robot?.sha && code.commit.toLowerCase().startsWith(robot.sha.toLowerCase())
+  if (!sameCommit) return c.cannot(`the Code panel read ${code.commit.slice(0, 7)}, not the commit the robot runs (${robot?.sha.slice(0, 7) || 'not reported'})`)
+  if (/uncommitted/i.test(robot.dirty)) return c.cannot('the robot runs uncommitted changes, and the Code panel reads only commits')
   const covered = profileChecks(profile, expected)
   const settings = code.settings.filter((s) => !covered.has(`${s.kind} ${s.id} ${s.field}`))
   for (const ofDevice of groupBy(settings, (s) => `${s.kind} ${s.id} ${s.bus}`).values()) {
@@ -367,13 +370,13 @@ export function snapshotNotUsable(input: SnapshotInput | undefined, profile: Rob
  * counts only when taken `settleSeconds` or more after the robot code started (its configs are applied by then).
  * Returns whether the snapshot was used.
  */
-export function addSnapshotChecks(report: Report, input: SnapshotInput | undefined, profile: RobotProfile, settleSeconds: number, code?: CodeSettings): boolean {
+export function addSnapshotChecks(report: Report, input: SnapshotInput | undefined, profile: RobotProfile, settleSeconds: number, code?: CodeSettings, robot?: RobotBuild): boolean {
   const why = snapshotNotUsable(input, profile, settleSeconds)
   if (why) { report.skipped.push(...SNAPSHOT_RULES.map((rule) => ({ rule, reason: why }))); return false }
   const snapshot = input!.snapshot!
   const expected = profile.foresight?.snapshot
   const incomplete = snapshot.stopped ? ` (the snapshot stopped early: ${snapshot.stopped.reason})` : ''
-  const checks = [devicesCheck(snapshot, profile, expected), licensedCheck(snapshot, profile, expected), offsetsCheck(snapshot, expected), ratioCheck(snapshot, profile, expected), limitsCheck(snapshot, profile), codeSettingsCheck(snapshot, profile, expected, code)]
+  const checks = [devicesCheck(snapshot, profile, expected), licensedCheck(snapshot, profile, expected), offsetsCheck(snapshot, expected), ratioCheck(snapshot, profile, expected), limitsCheck(snapshot, profile), codeSettingsCheck(snapshot, profile, expected, code, robot)]
   for (const check of checks) report.findings.push(...check.done(report.skipped, `nothing to check${incomplete}`))
   return true
 }

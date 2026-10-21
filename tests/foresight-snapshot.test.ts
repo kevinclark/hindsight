@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { offseason2026, offseason2026Event } from '../src/profiles/2026-offseason.ts'
-import { addSnapshotChecks, OFFSET_TOLERANCE, SNAPSHOT_PROOF, SNAPSHOT_RULES, type CodeSettings } from '../src/foresight/snapshot-checks.ts'
+import { addSnapshotChecks, OFFSET_TOLERANCE, SNAPSHOT_PROOF, SNAPSHOT_RULES, type CodeSettings, type RobotBuild } from '../src/foresight/snapshot-checks.ts'
 import type { DeviceSetting } from '../src/code/check/device-settings.ts'
 import { SETTLE_SECONDS } from '../src/foresight/engine.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
@@ -20,11 +20,13 @@ function robot(change: (devices: FakeDevice[]) => FakeDevice[] | void = () => {}
   const devices = healthy()
   return change(devices) ?? devices
 }
+/** What the robot says it runs: the commit the code settings below are read from. */
+const ROBOT_BUILD: RobotBuild = { sha: 'cb68b20', dirty: 'All changes committed' }
 const device = (devices: FakeDevice[], model: string, id: number) => devices.find((d) => d.model.startsWith(model) && d.id === id)!
 
-function run(devices: FakeDevice[] | null, takenAt = AFTER_SETTLE, codeStartWallMs: number | null = CODE_START, code?: CodeSettings) {
+function run(devices: FakeDevice[] | null, takenAt = AFTER_SETTLE, codeStartWallMs: number | null = CODE_START, code?: CodeSettings, robot = ROBOT_BUILD) {
   const report: Report = { findings: [], skipped: [], crashed: [] }
-  const used = addSnapshotChecks(report, { snapshot: devices && makeDevicesSnapshot(devices, takenAt), codeStartWallMs }, offseason2026, SETTLE_SECONDS, code)
+  const used = addSnapshotChecks(report, { snapshot: devices && makeDevicesSnapshot(devices, takenAt), codeStartWallMs }, offseason2026, SETTLE_SECONDS, code, robot)
   return { report, used, rules: report.findings.filter((f) => f.severity !== 'info').map((f) => f.rule), titles: report.findings.map((f) => f.title) }
 }
 const skippedReason = (r: ReturnType<typeof run>, rule: string) => r.report.skipped.find((s) => s.rule === rule)?.reason
@@ -183,7 +185,7 @@ describe('Foresight over a robot snapshot', () => {
 
   it('every snapshot check stays amber, even when the proof table would make it red', () => {
     // With the Code panel's settings too (one that matches), so every snapshot check runs.
-    const code: CodeSettings = { commit: 'cb68b20', ranOn: 'robot', settings: [{ kind: 'CANcoder', id: 5, bus: '*', field: 'MagnetOffset', value: 0, where: 'Made.java:1' }] }
+    const code: CodeSettings = { commit: 'cb68b20a', settings: [{ kind: 'CANcoder', id: 5, bus: '*', field: 'MagnetOffset', value: 0, where: 'Made.java:1' }] }
     const turret = { model: 'CANCoder vers. H', id: 5, configs: { CANCoder_MagnetOffset: 0 } }
     const r = run(robot((d) => { device(d, 'Talon FX', 16).configs!.Config_SupplyCurrentLimit = 60; d.push(turret) }), AFTER_SETTLE, CODE_START, code)
     const proven = Object.fromEntries(SNAPSHOT_RULES.map((rule) => [rule, { logs: 9, fires: 1, ourFires: 1, base: 'x', date: 'd' }]))
@@ -206,8 +208,8 @@ describe('snapshot/code-settings: what the robot code sets against what each dev
   /** A setting as the Code panel reads it from the code (code/check/device-settings.ts). */
   const set = (kind: string, id: number, field: DeviceSetting['field'], value: number | boolean, where = 'Made.java:1'): DeviceSetting => ({ kind, id, bus: '*', field, value, where })
   const turretCancoder = { model: 'CANCoder vers. H', id: 5, configs: { CANCoder_MagnetOffset: 0 } }
-  function withCode(devices: FakeDevice[], settings: DeviceSetting[], ranOn: CodeSettings['ranOn'] = 'robot') {
-    const { report } = run(devices, AFTER_SETTLE, CODE_START, { commit: 'cb68b20', ranOn, settings })
+  function withCode(devices: FakeDevice[], settings: DeviceSetting[], robot = ROBOT_BUILD) {
+    const { report } = run(devices, AFTER_SETTLE, CODE_START, { commit: 'cb68b20a', settings }, robot)
     return { report, found: report.findings.filter((f) => f.rule === 'snapshot/code-settings') }
   }
 
@@ -230,7 +232,8 @@ describe('snapshot/code-settings: what the robot code sets against what each dev
     expect(verdictFor(report).items.map((i) => i.finding.rule)).toEqual(['snapshot/cancoder-offsets'])
   })
   it('says why it could not check: code that is not what the robot runs, a device not on the bus, a setting not read', () => {
-    expect(withCode(robot(), [], 'head').report.skipped).toEqual([{ rule: 'snapshot/code-settings', reason: 'the Code panel read cb68b20, not the commit the robot runs' }])
+    expect(withCode(robot(), [], { sha: '1a2b3c4', dirty: '' }).report.skipped).toEqual([{ rule: 'snapshot/code-settings', reason: 'the Code panel read cb68b20, not the commit the robot runs (1a2b3c4)' }])
+    expect(withCode(robot(), [], { sha: 'cb68b20', dirty: 'Uncommitted changes' }).report.skipped).toEqual([{ rule: 'snapshot/code-settings', reason: 'the robot runs uncommitted changes, and the Code panel reads only commits' }])
     const { report } = withCode(robot((d) => { d.push({ model: 'CANCoder vers. H', id: 5 }) }), [set('CANcoder', 6, 'MagnetOffset', 0.5), set('CANcoder', 5, 'MagnetOffset', 0.5)])
     expect(report.skipped.find((s) => s.rule === 'snapshot/code-settings')?.reason).toBe("CANcoder 6: not on the snapshot's canivore1; CANcoder 5: its MagnetOffset wasn't read")
   })

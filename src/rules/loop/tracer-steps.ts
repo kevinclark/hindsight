@@ -20,8 +20,9 @@ export interface SlowStep {
   worstMs: number
 }
 
-// A line that ends "<Name>(): <seconds>s". The epoch can follow a "Warning at ...:" prefix on the same line.
-const EPOCH_LINE = /(\S+\(\)): (\d+(?:\.\d+)?)s\s*$/
+// A line that ends "<Name>(): <seconds>s". The epoch can follow a "Warning at ...: " prefix and a tab on the same
+// line, and a command's name can have spaces in it ("Teleop drive.execute()" in CalGames Q13).
+const EPOCH_LINE = /([^\t]+?\(\)): (\d+(?:\.\d+)?)s\s*$/
 
 /** The steps over SLOW_STEP_MS in the console lines inside the window, slowest first (none without a console). */
 export function slowSteps(match: MatchView, window: Window): SlowStep[] {
@@ -51,12 +52,12 @@ export function slowSteps(match: MatchView, window: Window): SlowStep[] {
 export function describeSteps(steps: SlowStep[]): string {
   return steps.slice(0, 3).map((s, i) => {
     const loops = i === 0 ? plural(s.loops, 'overrun loop') : `${s.loops}`
-    return `${s.name} in ${loops}, worst ${round(s.worstMs, 0)} ms`
+    return `${s.name} in ${loops}, worst ${round(s.worstMs, 1)} ms`
   }).join('; ')
 }
 
 /** The next step when the console names the slowest step: start there. */
 export function startWith(step: SlowStep): string {
-  const tookLong = `${plural(step.loops, 'overrun loop')} (worst ${round(step.worstMs, 0)} ms)`
+  const tookLong = `${plural(step.loops, 'overrun loop')} (worst ${round(step.worstMs, 1)} ms)`
   return `Start with ${step.name}: it took over ${SLOW_STEP_MS} ms in ${tookLong}. Move its slow work off the main loop or cache it.`
 }

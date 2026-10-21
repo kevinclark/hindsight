@@ -9,13 +9,13 @@
  * - anywhere: a command that ends the first time it runs (`runOnce`, `new InstantCommand(..)`) given `.until(..)` or
  *   `.withTimeout(..)`. It has already ended, so they never wait. `.until(() -> true)` waits for nothing on purpose.
  * Only commands written out where they are used: a step that calls a method of the project returning `this.run(..)`
- * isn't followed. A `run` is WPILib's only on a subsystem (`this.run`, `shooter.run`) whose class has no `run` of its
+ * isn't followed, nor is `sequence(…)` imported statically (no team file does). A `run` is WPILib's only on a subsystem (`this.run`, `shooter.run`) whose class has no `run` of its
  * own: Charged-Up declares a `run(Command...)` that builds a parallel group.
  * Why: Rapid-React fde835e and 74087e6 fixed a RunCommand that stopped a shooting sequence; dd9be00 turned three
  * InstantCommand(..).withInterrupt(..) into RunCommands so the climber waited. 2026-Offseason-Robot's intake zeroing
  * (SlapdownSubsystem runCurrentZeroing) starts with this.run(..), so it never resets the encoder.
  */
-import { field, nameOf, parts, quote, superclassName, classAround, typeNamed, type Node } from '../java.ts'
+import { classAround, codeOf, field, nameOf, parts, quote, superclassName, typeNamed, type Node } from '../java.ts'
 import { COMMAND_FACTORIES, ENDLESS_CLASSES, ENDLESS_FACTORIES, INSTANT_CLASSES, INSTANT_FACTORIES, SAME_END_DECORATORS, WAITING_DECORATORS } from '../libraries.ts'
 import { baseType, type Project } from '../project.ts'
 import { codeRule, plural, type CodeProblem } from '../rule.ts'
@@ -84,8 +84,14 @@ function waitOnInstant(call: Node, project: Project): CodeProblem[] {
   const receiver = field(call, 'object')
   const [condition] = parts(call, 'arguments')
   if (!WAITING_DECORATORS.includes(method) || !receiver || !endsAtOnce(receiver, project)) return []
-  if (condition?.type === 'lambda_expression' && field(condition, 'body')?.type === 'true') return []   // waits for nothing on purpose
+  if (waitsForNothing(condition)) return []
   return [{ message: `${quote(receiver)} ends the first time it runs, so .${method}(…) never waits`, at: call }]
+}
+
+/** `() -> true` or `() -> { return true; }`: a condition written to wait for nothing, on purpose. */
+function waitsForNothing(condition: Node | undefined): boolean {
+  const body = condition?.type === 'lambda_expression' ? field(condition, 'body') : null
+  return !!body && codeOf(body).replace(/[{}\s;]|return/g, '') === 'true'
 }
 
 /** `runOnce(..)`, `Commands.print(..)`, `new InstantCommand(..)`: a command that ends the first time it runs. */

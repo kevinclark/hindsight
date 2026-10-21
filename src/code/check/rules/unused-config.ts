@@ -4,13 +4,15 @@
  * Checks: a constructor or method parameter whose type ends in `Configuration` (`TalonFXConfiguration`,
  * `CANdleConfiguration`, …) that nothing in its body reads. Only that type: unused parameters of other types are
  * mostly harmless (a thread name kept for later): 10 of the 13 at the heads of 10 FRC repos (2026-10-20). A method with
- * no body (in an interface, or abstract) is left alone.
+ * no body (in an interface, or abstract) is left alone, and so is simulation code (a class whose name ends in Sim):
+ * a simulated device has no settings to keep.
  * Why: Rebuilt d90f86a fixed a HoodIO that was given its TalonFXConfiguration and never applied it, so the hood ran
  * Phoenix's defaults.
  */
 import { field, fills, nameOf, type Node } from '../java.ts'
 import { codeRule } from '../rule.ts'
 import { localNamed } from '../types.ts'
+import { inSimulation } from '../devices.ts'
 
 const TAKES_A_CONFIG = /Configuration$/
 /** A lambda's parameters are left alone: forEach((TalonFXConfiguration c) -> …) often ignores c on purpose. */
@@ -29,7 +31,7 @@ export default codeRule({
     const type = field(parameter, 'type')?.text ?? ''
     const declaration = parameter.parent?.parent
     const body = declaration && METHODS.includes(declaration.type) ? field(declaration, 'body') : null
-    if (!name || !TAKES_A_CONFIG.test(type) || !declaration || !body) return
+    if (!name || !TAKES_A_CONFIG.test(type) || !declaration || !body || inSimulation(declaration)) return
     if (readsOf(name, parameter, body).length > 0) return
     return { message: `${name} (${type}) is passed to ${nameOf(declaration)}(…) and never used` }
   },

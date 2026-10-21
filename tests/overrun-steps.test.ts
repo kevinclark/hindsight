@@ -49,13 +49,14 @@ describe('loop/overrun slow steps', () => {
     expect(finding.nextStep).toBe('Start with SwerveSubsystem.periodic(): it took over 10 ms in 3 overrun loops (worst 608 ms). Move its slow work off the main loop or cache it.')
   })
 
-  it('lists the top three by worst time, and counts a "Warning at" line', () => {
+  it('lists the top three by worst time, counts a "Warning at" line, and keeps a command name with spaces', () => {
     const finding = overrunFinding([consoleOf([[21, [
       epoch('A.periodic()', '0.050'), epoch('B.periodic()', '0.040'), epoch('B.periodic()', '0.011'),
       epoch('C.periodic()', '0.030'), epoch('D.periodic()', '0.020'), epoch('E.periodic()', '0.0099'),
       'Warning at edu.wpi.first.wpilibj.Tracer.lambda$printEpochs$0(Tracer.java:62): \tF.periodic(): 0.080s\n',
+      epoch('Teleop drive.execute()', '0.060'),
     ].join('')]])])
-    expect(finding.evidence[STEP_LABEL]).toBe('F.periodic() in 1 overrun loop, worst 80 ms; A.periodic() in 1, worst 50 ms; B.periodic() in 2, worst 40 ms')
+    expect(finding.evidence[STEP_LABEL]).toBe('F.periodic() in 1 overrun loop, worst 80 ms; Teleop drive.execute() in 1, worst 60 ms; A.periodic() in 1, worst 50 ms')
   })
 
   it('names robotPeriodic() alone, but not beside a subsystem over 10 ms', () => {
@@ -95,7 +96,7 @@ describe('loop/overrun slow steps on the Q13 log', () => {
     const finding = report.findings.find((f) => f.rule === 'loop/overrun')
     // Auto is the worse period (26.7 % of loops over 20 ms against 4.2 % in teleop). The log has 38 Swerve epochs over
     // 10 ms in all (worst 608 ms); the other 30 are outside auto and must not be counted.
-    expect(finding?.evidence[STEP_LABEL]).toBe('SwerveSubsystem.periodic() in 8 overrun loops, worst 39 ms')
-    expect(finding?.nextStep).toBe('Start with SwerveSubsystem.periodic(): it took over 10 ms in 8 overrun loops (worst 39 ms). Move its slow work off the main loop or cache it.')
+    expect(finding?.evidence[STEP_LABEL]).toBe('SwerveSubsystem.periodic() in 8 overrun loops, worst 39.4 ms')
+    expect(finding?.nextStep).toBe('Start with SwerveSubsystem.periodic(): it took over 10 ms in 8 overrun loops (worst 39.4 ms). Move its slow work off the main loop or cache it.')
   })
 })

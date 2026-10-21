@@ -84,7 +84,7 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   // The Match tab's links (not its parents, which would add findings), so one problem two checks see is one item in
   // the verdict (verdict.ts).
   const report = runRules(match, input.rules ?? FORESIGHT_RULES, { links: LINKS })
-  const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS, input.codeSettings)
+  const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS, input.codeSettings, match.build)
   const snapshot = input.snapshot?.snapshot
   if (snapshotUsed && snapshot) joinWatched(report, snapshot, new MatchView(match).watchedDevices())
   // The backtest only proved checks on stretches before any enable. After a drive the battery is still recovering

@@ -339,7 +339,7 @@ describe('code/never-ending-step', () => {
   it('stays quiet on an ended step, a last step, until(() -> true), and a project method named run', () => {
     const java = SUBSYSTEM(`
       Command a() { return Commands.sequence(this.run(() -> stop()).until(() -> stalled()), runOnce(() -> reset())); }
-      Command b() { return Commands.sequence(runOnce(() -> hold()).until(() -> true), this.run(() -> {})); }
+      Command b() { return Commands.sequence(runOnce(() -> hold()).until(() -> true), runOnce(() -> hold()).until(() -> { return true; }), this.run(() -> {})); }
       Command c() { return Commands.sequence(runOnce(() -> reset()), this.run(() -> stop())); }`) + `
       class Container { static Command run(Command... c) { return new ParallelCommandGroup(c); } Command d() { return Commands.sequence(run(x), y); } }`
     expect(messages(neverEndingStep, java)).toEqual([])
@@ -359,7 +359,8 @@ describe('code/unused-config', () => {
       HoodIO(TalonFXConfiguration config, String threadName) { motor.getConfigurator().apply(config); }
     }
     interface IO { void configure(TalonFXConfiguration config); }
-    class Many { void all() { configs.forEach((TalonFXConfiguration c) -> motor.getConfigurator().apply(base)); } }`
+    class Many { void all() { configs.forEach((TalonFXConfiguration c) -> motor.getConfigurator().apply(base)); } }
+    class HoodIOSim { HoodIOSim(int id, TalonFXConfiguration config) { sim = new DCMotorSim(id); } }`
     expect(messages(unusedConfig, java)).toEqual([])
   })
 })
@@ -393,6 +394,8 @@ describe('code/stale-signal', () => {
     expect(messages(staleSignal, fetched)).toEqual([])
     const handed = io('FlywheelIO() { PhoenixUtil.registerSignals(velocity, voltage); } double v() { return velocity.getValueAsDouble() + voltage.getValueAsDouble(); }')
     expect(messages(staleSignal, handed)).toEqual([])
+    const local = 'class A { double p() { StatusSignal<Angle> p = motor.getPosition(); return p.getStatus().isOK() ? p.getValueAsDouble() : 0; } }'
+    expect(messages(staleSignal, local)).toEqual([])
   })
   it("isn't fooled by an inputs class with fields of the same names", () => {
     const java = io(`static class Inputs { double velocity; double voltage; }
@@ -442,5 +445,17 @@ describe('deviceSettings: what the code configures on each device, for the robot
       'RollerIO.java': 'class RollerIO { TalonFX motor; RollerIO(int id) { motor = new TalonFX(id); motor.getConfigurator().apply(new TalonFXConfiguration().withCurrentLimits(limits)); } }',
     }
     expect(settingsOf(files)).toEqual(['TalonFX 14 the roboRIO bus SupplyCurrentLimit=40 HoodIO.java:3', 'TalonFX 14 the roboRIO bus SupplyCurrentLimitEnable=true HoodIO.java:3'])
+  })
+  it('reads only the config the device gets: not a same-named config of another method, nor a `-=`', () => {
+    const files = {
+      'Robot.java': 'class Robot extends TimedRobot { Robot() { new PivotIO(14); } }',
+      'PivotIO.java': `class PivotIO {
+        TalonFX motor; CANcoder encoder;
+        TalonFXConfiguration config = new TalonFXConfiguration();
+        PivotIO(int id) { motor = new TalonFX(id); config.CurrentLimits.SupplyCurrentLimit = 40; config.CurrentLimits.StatorCurrentLimit -= 5; motor.getConfigurator().apply(config); }
+        void encoderSetup() { CANcoderConfiguration config = new CANcoderConfiguration(); config.MagnetSensor.MagnetOffset = 0.25; encoder.getConfigurator().apply(config); }
+      }`,
+    }
+    expect(settingsOf(files)).toEqual(['TalonFX 14 the roboRIO bus SupplyCurrentLimit=40 PivotIO.java:4'])
   })
 })
