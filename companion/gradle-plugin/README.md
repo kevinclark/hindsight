@@ -55,6 +55,10 @@ hindsight {
 
 To keep one whole-number division on purpose, put `@SuppressWarnings("NarrowCalculation")` on its field or method.
 
+**With the CI code check too** ([Code check in your team's CI](../../README.md#code-check-in-your-teams-ci)): integer
+division is this plugin's job in CI, so give the action `exclude-rules: code/integer-division` and each division is
+reported once, by the compiler.
+
 ## Details
 
 - **Why the fix waits for a second compile.** Error Prone's patch mode runs only the checks it patches, so patching
