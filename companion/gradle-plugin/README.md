@@ -23,9 +23,10 @@ Not published yet: until it is on the Plugin Portal, see [Trying it before it's 
 
 | Check | When | What you see |
 |---|---|---|
-| **Error Prone + NullAway** (`errorProne`) | every compile | Error Prone's default warnings, plus NullAway's on the robot's package (`frc.robot` for `frc.robot.Robot`). Generated code (AdvantageKit's `AutoLogged` classes) is skipped. Warnings only: they never stop a build. |
-| **Integer division fixed** (`fixIntegerDivision`) | laptop builds that warned about it; never a deploy, never CI | `50 / 12` is 4 in Java. Error Prone rewrites it to `50 / 12.0` in place and the build lists each file it changed. The rewrite lands after that build compiled, so build again before you deploy. |
-| **Strict in CI** (`strictInCi`) | `CI=true` (GitHub Actions sets it) | `NarrowCalculation` (integer division) and `EqualsIncompatibleType` (`Optional<Alliance>` compared with `Alliance`, always false) are errors. Everything else stays a warning. |
+| **Error Prone, an allowlist** (`errorProne`) | every compile | Every Error Prone warning is off except: the **alerts** `NarrowCalculation` (integer division), `EqualsIncompatibleType` (`Optional<Alliance>` compared with `Alliance`, always false) and `FallThrough` (a `switch` case that runs into the next), and the **tidy** checks `MissingOverride`, `UnnecessaryParentheses`, `OperatorPrecedence`, `PatternMatchingInstanceof`, `UnnecessaryStringBuilder`. Javadoc checks and the rest stay off; javac's own warnings (deprecated for removal) stay. Generated code (AdvantageKit's `AutoLogged` classes) is skipped. Warnings only on a laptop: they never stop a build. |
+| **NullAway** (`nullAway`) | off unless `nullAway = true` | NullAway on the robot's package (`frc.robot` for `frc.robot.Robot`), as warnings. |
+| **Fixed on laptops** (`fixIntegerDivision`, `fixStyle`) | laptop builds that warned about one; never a deploy, never CI | Error Prone's own fixes, in place: `50 / 12` (4 in Java) becomes `50 / 12.0`, and each tidy check's fix (adding `@Override`, dropping extra parentheses...). The build lists each file whose integer division it fixed and counts the files it tidied. The rewrite lands after that build compiled, so build again before you deploy. |
+| **Strict in CI** (`strictInCi`) | `CI=true` (GitHub Actions sets it) | The three alerts are errors. Everything else stays a warning. |
 | **Robot starts** (`robotStarts`) | `check`, so every "Build Robot Code" and CI; never deploy | Builds `frc.robot.Robot` in simulation, connects a Driver Station after it boots (as at the field) and runs the real robot loop disabled, in auto, in teleop and disabled again. A crash fails the build with the exception and the lines of your code it went through. The robot's console output goes to `build/hindsight/robot-starts/output.txt`. |
 | **Format hook** (`formatHook`) | each `git commit`, once the clone has built | Runs the project's own `spotlessApply` and re-stages the files you had staged. A file that also has unstaged changes is committed exactly as you staged it; its working copy is formatted, like every file `spotlessApply` touches. It never blocks a commit; `--no-verify` skips it. |
 
@@ -44,8 +45,10 @@ A failing robot-starts check reads like this (Rebuilt `4b68c96^`, a field read b
 
 ```groovy
 hindsight {
-    errorProne = false           // also turns off the two checks that use it
+    errorProne = false           // also turns off the checks that use it
     fixIntegerDivision = false   // warn about integer division, don't rewrite it
+    fixStyle = false             // warn about the tidy checks, don't rewrite them
+    nullAway = true              // on, as warnings (off by default)
     strictInCi = false           // CI warns instead of failing
     robotStarts = false
     formatHook = false           // the next build removes the hook it installed
@@ -63,7 +66,7 @@ reported once, by the compiler.
 
 - **Why the fix waits for a second compile.** Error Prone's patch mode runs only the checks it patches, so patching
   inside `compileJava` would hide every other warning. `compileJava` warns as usual; only a build whose compile warned
-  about integer division runs `hindsightFixIntegerDivision`, a patch-only compile into `build/`. A warning not yet
+  about one of the fixed checks runs `hindsightAutoFix`, a patch-only compile into `build/`. A warning not yet
   fixed (a deploy came first) is remembered in `build/`, so the next laptop build fixes it even with nothing to
   recompile. The fix's own compile never fails your build.
 - **Why never on deploy.** A deploy ships what was just compiled, so it would carry the old values and the next deploy

@@ -30,8 +30,9 @@ public final class HindsightRobotStarts {
   private static final long BUILD_TIMEOUT_MS = 60_000; // a first Phoenix start in simulation took 11 s
   private static final long LOOP_TIMEOUT_MS = 15_000; // a stuck loop fails the check instead of hanging the build
   private static final int HAL_TIMEOUT_MS = 500; // what WPILib's own RobotBase.startRobot passes
-  private static final int LOOPS_PER_MODE = 10; // assumed: each mode's init and several periodics
-  private static final int LOOPS_DISABLED_AFTER = 5;
+  // each mode's init and a periodic, with one to spare; 10 per mode caught nothing more on the history (measured)
+  private static final int LOOPS_PER_MODE = 2;
+  private static final int LOOPS_DISABLED_AFTER = 1;
   private static final long POLL_MS = 5;
 
   /** A mode the check waits for, and how the robot's own DriverStation says it is in it. */

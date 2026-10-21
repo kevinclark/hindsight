@@ -14,7 +14,9 @@ public class HindsightPlugin implements Plugin<Project> {
     HindsightExtension settings = project.getExtensions().create("hindsight", HindsightExtension.class);
     settings.getErrorProne().convention(true);
     settings.getFixIntegerDivision().convention(true);
+    settings.getFixStyle().convention(true);
     settings.getStrictInCi().convention(true);
+    settings.getNullAway().convention(false);
     settings.getRobotStarts().convention(true);
     settings.getRobotClass().convention("frc.robot.Robot");
     settings.getFormatHook().convention(true);
@@ -27,7 +29,7 @@ public class HindsightPlugin implements Plugin<Project> {
       }
       if (settings.getErrorProne().get()) {
         ErrorProneChecks.apply(p, settings, build);
-        if (settings.getFixIntegerDivision().get() && !build.ci()) IntegerDivisionFix.apply(p, build);
+        if (!build.ci()) AutoFix.apply(p, settings, build);
       }
       if (settings.getRobotStarts().get()) RobotStartsCheck.apply(p, settings);
       if (!build.ci()) FormatHook.apply(p, settings.getFormatHook().get());

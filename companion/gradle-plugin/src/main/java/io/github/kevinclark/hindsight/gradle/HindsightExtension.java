@@ -12,14 +12,20 @@ import org.gradle.api.provider.Property;
  * </pre>
  */
 public abstract class HindsightExtension {
-  /** Error Prone and NullAway, as warnings. Off also turns off the two checks below that need it. */
+  /** Error Prone's alerts and tidy checks, as warnings. Off also turns off the checks below that need it. */
   public abstract Property<Boolean> getErrorProne();
 
   /** Rewrite integer division that loses its fraction ({@code 50 / 12} to {@code 50 / 12.0}) on laptop builds. */
   public abstract Property<Boolean> getFixIntegerDivision();
 
-  /** In CI ({@code CI=true}), integer division and {@code equals} between unrelated types fail the build. */
+  /** Apply the tidy checks' fixes (a missing {@code @Override}, extra parentheses, ...) on laptop builds. */
+  public abstract Property<Boolean> getFixStyle();
+
+  /** In CI ({@code CI=true}), the alerts (integer division, unrelated {@code equals}, switch fall-through) fail. */
   public abstract Property<Boolean> getStrictInCi();
+
+  /** NullAway on the robot's package, as warnings. Off unless asked for. */
+  public abstract Property<Boolean> getNullAway();
 
   /** Build the robot and run it through disabled, auto, teleop and disabled in simulation, in {@code check}. */
   public abstract Property<Boolean> getRobotStarts();

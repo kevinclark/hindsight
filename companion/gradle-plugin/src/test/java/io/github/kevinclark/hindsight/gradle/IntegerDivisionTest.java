@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class IntegerDivisionTest {
-  private static final String FIX_TASK = ":hindsightFixIntegerDivision";
+  private static final String FIX_TASK = ":hindsightAutoFix";
 
   @TempDir Path dir;
 
@@ -101,7 +101,7 @@ class IntegerDivisionTest {
 
     assertTrue(result.getOutput().contains("[NarrowCalculation]"), result.getOutput());
     assertEquals(Sample.RATIOS_SOURCE, sample.read(Sample.RATIOS));
-    assertNull(result.task(FIX_TASK));
+    assertEquals(SKIPPED, result.task(FIX_TASK).getOutcome()); // a division alone no longer starts the fix
   }
 
   @Test
