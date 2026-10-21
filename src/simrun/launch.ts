@@ -140,7 +140,7 @@ function isIntelJava(javaHome: string): boolean {
  * descriptor into `<log>.out`, so lines keep the order they were printed in. Resolves with that text and whether the
  * run had to be killed at its deadline.
  */
-export function runTimeline(built: Built, timeline: string[], seconds: number, logFile: string): Promise<{ output: string; killed: boolean; wallSeconds: number }> {
+export function runTimeline(built: Built, timeline: string[], seconds: number, logFile: string): Promise<{ output: string; killed: boolean; wallSeconds: number; sleptSeconds: number }> {
   const timelineFile = `${logFile}.timeline`
   const outFile = `${logFile}.out`
   writeFileSync(timelineFile, timeline.join('\n') + '\n')
@@ -156,6 +156,7 @@ export function runTimeline(built: Built, timeline: string[], seconds: number, l
   const out = openSync(outFile, 'w')
   const java = spawn(join(built.javaHome, 'bin', 'java'), args, { cwd: built.folder, env, stdio: ['ignore', out, out] })
   const started = Date.now()
+  const awakeStart = performance.now()
   return new Promise((done, fail) => {
     let failed = false
     java.on('error', (error) => {
@@ -171,7 +172,11 @@ export function runTimeline(built: Built, timeline: string[], seconds: number, l
       clearTimeout(deadline)
       closeSync(out) // once, here: 'close' follows 'error' too
       if (failed) return
-      done({ output: readFileSync(outFile, 'utf8'), killed, wallSeconds: (Date.now() - started) / 1000 })
+      const wallSeconds = (Date.now() - started) / 1000
+      // The clock performance.now() reads stops while the computer sleeps; the wall clock doesn't (measured: a Mac
+      // that slept mid-run gave a 451 s run whose 69 s deadline fired on time by the stopped clock).
+      const sleptSeconds = Math.max(0, wallSeconds - (performance.now() - awakeStart) / 1000)
+      done({ output: readFileSync(outFile, 'utf8'), killed, wallSeconds, sleptSeconds })
     })
   })
 }

@@ -14,6 +14,8 @@ export interface RunResult {
   wallSeconds: number
   /** Still running at its deadline, so sim-run stopped it. */
   killed: boolean
+  /** Seconds the computer slept during the run: the simulator runs in real time, so a run that slept says nothing. */
+  sleptSeconds: number
 }
 
 export interface Context {

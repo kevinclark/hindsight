@@ -67,7 +67,7 @@ function summary(result: SessionResult) {
   return {
     findings: result.findings,
     hindsight: result.hindsight.map((h) => ({ rule: h.finding.rule, title: h.finding.title, runs: h.runs })),
-    runs: result.results.map((r) => ({ label: r.run.label, ended: r.record.ended, killed: r.killed, wallSeconds: r.wallSeconds })),
+    runs: result.results.map((r) => ({ label: r.run.label, ended: r.record.ended, killed: r.killed, wallSeconds: r.wallSeconds, sleptSeconds: r.sleptSeconds })),
     buildSeconds: result.built.buildSeconds,
     notes: result.notes,
   }

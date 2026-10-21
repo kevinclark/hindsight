@@ -20,7 +20,7 @@ const cmd = (id: string, name: string, needs = '', isDefault = false, origin = '
 
 const HOOD: Zero = { name: 'hood', done: /Rezeroed hood/, once: false, fromFile: true }
 const run = (label: string): Run => ({ ...runsOf(STARTUP)[0], label })
-const result = (output: string, r: Run = run('run'), log: Uint8Array | null = null): RunResult => ({ run: r, record: readRun(output), log: log ? openWpilog(log) : null, repeat: 1, wallSeconds: 1, killed: false })
+const result = (output: string, r: Run = run('run'), log: Uint8Array | null = null): RunResult => ({ run: r, record: readRun(output), log: log ? openWpilog(log) : null, repeat: 1, wallSeconds: 1, killed: false, sleptSeconds: 0 })
 const context = (results: RunResult[], extra: Partial<Context> = {}): Context => ({ results, zeroes: [HOOD], teamPackage: 'frc.robot.', poseKey: '/RealOutputs/Odometry/Robot', ...extra })
 
 /** Enabled at 5 s; the hood zero finishes 0.45 s later, right after its message (the healthy run). */

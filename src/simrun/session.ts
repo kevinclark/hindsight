@@ -22,6 +22,8 @@ import { findPoseKey } from './checks/pose.ts'
 import type { Check, Finding, RunResult } from './checks/types.ts'
 import { zeroes } from './checks/zero.ts'
 
+/** Assumed: under this, a run's clocks agree (timer jitter); over it, the computer slept. */
+const SLEEP_SECONDS = 2
 /** A .wpilog's header alone (no records): a run that crashed before its log got anything. */
 const WPILOG_HEADER_BYTES = 12
 
@@ -110,7 +112,7 @@ async function playRun(got: Collected, run: Run, n: number, index: number): Prom
   const label = got.repeat > 1 ? `${run.label} #${n}` : run.label
   got.say(`Running ${label} (${run.seconds.toFixed(0)} s of sim, real time)...`)
   const logFile = join(got.work, `run-${index + 1}.wpilog`)
-  const { output, killed, wallSeconds } = await runTimeline(got.built, run.timeline, run.seconds, logFile)
+  const { output, killed, wallSeconds, sleptSeconds } = await runTimeline(got.built, run.timeline, run.seconds, logFile)
   const bytes = existsSync(logFile) ? new Uint8Array(readFileSync(logFile)) : null
   const log = bytes && bytes.length > WPILOG_HEADER_BYTES ? openWpilog(bytes) : null
   const read = bytes && log ? hindsightOn(`${label}.wpilog`, bytes) : null
@@ -120,21 +122,25 @@ async function playRun(got: Collected, run: Run, n: number, index: number): Prom
     seen.runs.push(label)
     got.hindsight.set(f.key, seen)
   }
-  const result: RunResult = { run: { ...run, label }, record: readRun(output), log, repeat: n, wallSeconds, killed }
+  const result: RunResult = { run: { ...run, label }, record: readRun(output), log, repeat: n, wallSeconds, killed, sleptSeconds }
   got.results[index] = result
   return result
 }
 
 /** Every check over all the runs. */
 function finish(got: Collected, team: TeamFile): SessionResult {
-  const { built, results, facts, notes } = got
+  const { built, facts, notes } = got
+  // A run the computer slept through says nothing: the robot's clock ran on while the scenario stood still.
+  const slept = got.results.filter((r) => r.sleptSeconds > SLEEP_SECONDS)
+  if (slept.length) notes.push(`The computer slept during ${slept.map((r) => r.run.label).join(', ')}; those runs were not checked. Run again with it awake.`)
+  const results = got.results.filter((r) => !slept.includes(r))
   const zeroList = mergeZeroes(team.zeroes, facts?.zeroes ?? [])
   const poseKey = findPoseKey(results.find((r) => r.log)?.log ?? null, facts?.poseKey ?? null)
   if (!poseKey && results.some((r) => r.record.ended)) notes.push('No robot pose in the log, so "did it move" and red-vs-blue were not checked.')
   if (results.every((r) => r.record.noLog)) notes.push(`No log was recorded: ${results[0].record.noLog}`)
   const context = { results, zeroes: zeroList, teamPackage: teamPackage(built.mainClass), poseKey }
   const findings = CHECKS.flatMap((check) => check(context))
-  return { built, results, findings, hindsight: [...got.hindsight.values()], facts, zeroes: zeroList, notes }
+  return { built, results: got.results, findings, hindsight: [...got.hindsight.values()], facts, zeroes: zeroList, notes }
 }
 
 /** Runs the jobs, at most `size` at a time. */
