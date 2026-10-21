@@ -34,6 +34,8 @@ export default rule({
     const lowest = round(battery.lowest(match.between(first - 1, first + 1)).value)
     // Context only: a log without the setting or the motor currents still gets its brownouts reported.
     const setting = match.signalIfLogged('brownoutVoltage')?.last() ?? NaN
+    // A check on the count: the Driver Station's own count during this log, when its event log is loaded.
+    const dsCount = match.signalIfLogged('dsBrownoutCount', 'Driver Station brownout count')?.last()
     const power = match.powerIfLogged()
     const health = batteryHealth(match, power)
     const load = power ? loadAt(power.grid, first) : null
@@ -63,6 +65,7 @@ export default rule({
       likely, ruledOut, nextStep,
       evidence: {
         'brownout onsets': onsets.length,
+        'the Driver Station counted (this log)': dsCount,
         'last brownout': match.when(last),
         [`${currentLabel} at the first brownout (A)`]: load ? round(load.amps, 0) : 'not logged',
         'battery + wiring resistance (mΩ)': health.milliohms ?? 'not measured',

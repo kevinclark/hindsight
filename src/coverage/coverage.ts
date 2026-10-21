@@ -11,13 +11,13 @@ import { firstPresent, has, num, type Match } from '../match/match.ts'
 import type { NumberSeries } from '../match/series.ts'
 import { profileKeys } from '../profiles/choose.ts'
 import { NAMES_SAME_ON_EVERY_ROBOT } from '../profiles/formats.ts'
-import { isDslogKey, keysOf } from '../profiles/sources.ts'
+import { isOtherLogKey, keysOf, otherLogOf } from '../profiles/sources.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { RULES, ruleById, type Report } from '../rules/index.ts'
 import { stripRepoPaths } from '../report/repo-paths.ts'
 import type { Severity } from '../rules/rule.ts'
 import type { MatchSummary } from '../session/summary.ts'
-import { NO_KEY, ONLY_DS_LOG, sampleRate, SLOW_HZ, words } from '../rules/view.ts'
+import { NO_KEY, onlyIn, sampleRate, SLOW_HZ, words } from '../rules/view.ts'
 import { companionIn, hootLine, motorDeviceKey, type HootLine } from '../match/companion.ts'
 
 export type CoverageState = 'logged' | 'slow' | 'never changes' | 'not logged' | 'profile gap'
@@ -38,6 +38,8 @@ export interface CoverageKey {
   label?: string
   /** A signal the log type decides (formats.ts): left empty, it isn't a gap in this robot's profile. */
   sameOnEveryRobot?: boolean
+  /** The profile has a robot-log key for it (a DS file may stand in when the log lacks it). */
+  robotLogHasPlace?: boolean
 }
 
 /** A check that couldn't run, or ran only partly, because of this signal. */
@@ -85,8 +87,8 @@ const VARYING = ['batteryVoltage', 'gyroPitch', 'gyroRoll', 'accelX', 'accelY', 
 const RULE_READS = ['emergencyStop', 'matchTimeLeft', 'autoChoice'] as const
 
 /** Every signal the profile expects, labelled, starting from profileKeys. */
-export function coverageKeys(profile: RobotProfile): CoverageKey[] {
-  const signals = signalSlots(profile)
+export function coverageKeys(profile: RobotProfile, written: RobotProfile = profile): CoverageKey[] {
+  const signals = signalSlots(profile, written)
   const others = otherSlots(profile)
   // A key some slots share (a motor's stator current is also its zeroing current) keeps its first slot, as dedupe does.
   const byKey = new Map<string, CoverageKey>()
@@ -95,19 +97,22 @@ export function coverageKeys(profile: RobotProfile): CoverageKey[] {
   // profileKeys leaves out empty slots, the keys every log has, and the AdvantageKit keys every robot logs; rules
   // still read the last ones.
   const empty = signals.filter((x) => !x.key && !x.sameOnEveryRobot)
-  // A signal only the Driver Station log has (profileKeys leaves those out): logged when its .dslog is loaded.
-  const fromDsLog = signals.filter((x) => x.key && isDslogKey(x.key))
+  // A signal only another log has (profileKeys leaves those out): logged when that file is loaded. Not the ones a log
+  // type decides, and not a DS file standing in for a robot-log key (the robot log's own row says it).
+  const fromOtherLog = signals.filter((x) => x.key && isOtherLogKey(x.key) && !x.sameOnEveryRobot && !x.robotLogHasPlace)
   const ruleReads = RULE_READS.map((name) => signals.find((x) => x.what === words(name))!)
-  return dedupe([...fromProfileKeys, ...fromDsLog, ...empty, ...ruleReads, ...others])
+  return dedupe([...fromProfileKeys, ...fromOtherLog, ...empty, ...ruleReads, ...others])
 }
 
-/** The profile's single signals (`signals`, without the lists), labelled. */
-function signalSlots(p: RobotProfile): CoverageKey[] {
+/** The profile's single signals (`signals`, without the lists), labelled; `written` is where each may be. */
+function signalSlots(p: RobotProfile, written: RobotProfile): CoverageKey[] {
   const s = p.signals
   const names = (Object.keys(s) as (keyof typeof s)[]).filter((n) => typeof s[n] === 'string')
+  const robotLogHasPlace = (name: keyof typeof s) => keysOf(written.signals[name] ?? '').some((k) => k !== '' && !isOtherLogKey(k))
   return names.map((name) => ({
     // A signal the log type decides (formats.ts): left empty, it isn't a gap in this robot's profile.
     sameOnEveryRobot: NAMES_SAME_ON_EVERY_ROBOT.has(name) || undefined,
+    robotLogHasPlace: robotLogHasPlace(name) || undefined,
     what: words(name),
     key: (s[name] as string) || null,
     hz: name === 'batteryVoltage' ? POWER_HZ : undefined,
@@ -180,7 +185,7 @@ function dedupe(slots: CoverageKey[]): CoverageKey[] {
 /** The Logging tab for one match: each expected signal's state and the checks that went dark without it. */
 export function coverage(match: Match, report: Report): Coverage {
   const reasons = report.skipped.map((s) => ({ rule: s.rule, partly: s.reason.startsWith('partly'), parts: parts(s.reason) }))
-  const lines = coverageKeys(match.profile).map((slot) => lineFor(slot, match, reasons))
+  const lines = coverageKeys(match.profile, match.sources).map((slot) => lineFor(slot, match, reasons))
   lines.push(...unlistedLines(lines, reasons), ...watchLines(match))
   const misfit = match.profileChoice.misfit ? match.profileChoice.note : null
   return { lines: lines.sort(byUrgency), misfit, hoot: hootContext(match) }
@@ -257,7 +262,8 @@ function namesSlot(part: string, slot: CoverageKey, state: CoverageState): boole
   const missing = /^missing (.+)$/.exec(part)?.[1]
   if (missing !== undefined) {
     if (state === 'profile gap') return missing === `${slot.what} (${NO_KEY})`
-    if (slot.key && isDslogKey(slot.key)) return missing === `${slot.what} (${ONLY_DS_LOG})`
+    const elsewhere = slot.key ? onlyIn(slot.key) : null
+    if (elsewhere) return missing === `${slot.what} (${elsewhere})`
     return [slot.key, ...(slot.alternatives ?? [])].includes(missing)
   }
   const slow = /^(.+?) (?:is|are) logged about /.exec(part)?.[1]
@@ -306,9 +312,11 @@ function todoFor(slot: CoverageKey, state: CoverageState, hz?: number): string {
   switch (state) {
     case 'logged':
       return ''
-    case 'not logged':
-      if (slot.key && isDslogKey(slot.key)) return `Load this match's .dslog: only the Driver Station log has ${slot.what}.`
+    case 'not logged': {
+      const otherLog = slot.key ? otherLogOf(slot.key) : undefined
+      if (otherLog) return `Load this match's ${otherLog.file}: only ${otherLog.words} has ${slot.what}.`
       return `Log ${slot.what} as ${slot.key}.`
+    }
     case 'slow':
       return `Log ${slot.what} on every robot loop: it was logged about ${Math.round(hz ?? 0)} times a second while enabled, and the checks need ${slot.hz}.`
     case 'never changes':

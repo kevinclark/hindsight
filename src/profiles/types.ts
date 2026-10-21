@@ -183,6 +183,12 @@ export interface SignalKeys {
    * motors.
    */
   totalCurrent: string
+  /** The Driver Station's own running brownout count (its event log): a check on the robot log's count. */
+  dsBrownoutCount: string
+  /** Running counts of roboRIO kernel events: the CANivore dropping off USB, its failed USB sends, a hub disabling a port. */
+  canivoreUsbDisconnects: string
+  canivoreTxFails: string
+  usbPortDisabled: string
 }
 
 /** The battery tracker's signals, each a key once a match has picked one ('' when the profile has none). */

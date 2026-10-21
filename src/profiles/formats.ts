@@ -7,6 +7,7 @@ import { hasEntry, readValues, type WpilogFile } from '../readers/wpilog.ts'
 import { ADVANTAGEKIT_SIGNALS } from './advantagekit.ts'
 import { DATALOGMANAGER_SIGNALS } from './datalogmanager.ts'
 import { DOGLOG_SIGNALS } from './doglog.ts'
+import { DRIVER_STATION_SIGNALS } from './driverstation.ts'
 import { keysOf } from './sources.ts'
 import type { SignalKeys, SignalSources, Source } from './types.ts'
 
@@ -34,6 +35,7 @@ export const LOG_FORMATS: LogFormat[] = [
     sameOnEveryRobot: [
       'emergencyStop', 'matchTimeLeft', 'autoChoice', 'joystickButtonCounts', 'radioConnected', 'codebase', 'logClock',
       'powerDistributionCurrents', 'powerDistributionVoltage', 'powerDistributionChannels', 'totalCurrent',
+      ...(Object.keys(DRIVER_STATION_SIGNALS) as (keyof SignalKeys)[]),
     ],
     roboRioFolders: ['/SystemStats', '/PowerDistribution', '/RadioStatus'],
   },

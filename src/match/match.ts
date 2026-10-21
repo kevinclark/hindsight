@@ -12,11 +12,13 @@
 
 import type { LimitLines } from '../code/limit-lines.ts'
 import { hasEntry, readNumbers, readValues, type WpilogFile } from '../readers/wpilog.ts'
-import { dslogEndEpoch, type DslogFile, type DslogRecord } from '../readers/dslog.ts'
+import { dslogEndEpoch, type DslogFile } from '../readers/dslog.ts'
 import type { ResolvedProfile, RobotProfile } from '../profiles/types.ts'
 import type { ProfileChoice } from '../profiles/choose.ts'
 import { withNtAlertGroups } from '../profiles/datalogmanager.ts'
-import { DSLOG, isDslogKey, resolveBattery, resolveSignals } from '../profiles/sources.ts'
+import { isOtherLogKey, resolveBattery, resolveSignals } from '../profiles/sources.ts'
+import { dseventsEndEpoch, MATCH_TYPES, type DseventsFile } from '../readers/dsevents.ts'
+import { otherLogSeries } from './other-logs.ts'
 import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } from './series.ts'
 
 export interface Match {
@@ -50,6 +52,8 @@ export interface Match {
   epochOffset: number | null
   /** Driver Station logs for this match (two if the DS app restarted), and where they start and end in log time. */
   ds: DsAttachment[]
+  /** Driver Station event logs (.dsevents) for this match. */
+  dsEvents: { file: DseventsFile; fileName: string }[]
   /**
    * The other robot logs loaded with this one (empty when it was loaded alone): the other pieces of a match the robot
    * program restarted in, and earlier matches (e.g. earlier runs of the same auto).
@@ -81,27 +85,9 @@ export interface DsAttachment { file: DslogFile; fileName: string; startTime: nu
 /** A numeric signal from the log, or a Driver Station log field (dslog:brownout); null if missing. Decoded once. */
 export function num(match: Match, key: string): NumberSeries | null {
   if (match.cache.has(key)) return match.cache.get(key) as NumberSeries | null
-  match.cache.set(key, isDslogKey(key) ? dslogSeries(match, key) : readNumbers(match.log, key))
+  const fromOtherLog = otherLogSeries(match, key)
+  match.cache.set(key, fromOtherLog === undefined ? readNumbers(match.log, key) : fromOtherLog)
   return match.cache.get(key) as NumberSeries | null
-}
-
-/**
- * A Driver Station log field on the robot's clock: the records where the DS saw the robot, inside this robot log
- * (a DS log kept open across a reboot also holds the earlier boot). Null without a DS log or a set roboRIO clock.
- */
-function dslogSeries(match: Match, key: string): NumberSeries | null {
-  const offset = match.epochOffset
-  if (offset === null) return null
-  const field = key.slice(DSLOG.length) as keyof DslogRecord
-  const records = match.ds.flatMap((d) => d.file.records)
-  if (records.length === 0 || !(field in records[0])) return null // no DS log, or no such field
-  const points = records
-    .filter((r) => r.voltage !== null)
-    .map((r) => ({ t: r.epochSeconds - offset, v: Number(r[field]) }))
-    .filter((p) => p.t >= match.logStart && p.t <= match.logEnd)
-    .sort((a, b) => a.t - b.t)
-  if (points.length === 0) return null
-  return { name: key, t: Float64Array.from(points, (p) => p.t), v: Float64Array.from(points, (p) => p.v) }
 }
 
 /** Any signal as plain values (strings, arrays, structs). Null if missing. */
@@ -113,7 +99,7 @@ export function values<T>(match: Match, key: string): ValueSeries<T> | null {
 
 /** True when the log (or, for a dslog: key, a Driver Station log) has the key with at least one record. */
 export function has(match: Match, key: string): boolean {
-  return isDslogKey(key) ? num(match, key) !== null : hasEntry(match.log, key)
+  return isOtherLogKey(key) ? num(match, key) !== null : hasEntry(match.log, key)
 }
 
 /** The first key in the list that the log has, or null. */
@@ -121,7 +107,6 @@ export function firstPresent(match: Match, keys: string[]): string | null {
   return keys.find((k) => has(match, k)) ?? null
 }
 
-const MATCH_TYPES = ['', 'Practice', 'Qualification', 'Elimination']
 
 export function buildMatch(fileName: string, log: WpilogFile, givenProfile: RobotProfile, profileChoice: ProfileChoice = { how: 'given', note: null, fit: null }): Match {
   // No Driver Station log yet: attachDslog picks again.
@@ -140,7 +125,7 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
     fileName, log, profile, sources: givenProfile, profileChoice, logStart, logEnd,
     enabled: [], auto: [], teleop: [], matchStart: null, teleopStart: null, matchEnd: null,
     fms: false, event: '', matchLabel: '', build: { sha: '', branch: '', date: '', dirty: '' },
-    epochOffset: null, ds: [], others: [], cache: new Map(),
+    epochOffset: null, ds: [], dsEvents: [], others: [], cache: new Map(),
   }
 
   // Phases: walk the change points of Enabled and Autonomous together.
@@ -176,23 +161,33 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
   }
   findMatchWindow(match, fms)
 
-  const lastString = (key: string) => {
-    const v = values<string>(match, key)
-    return v ? (v.v.filter((x) => typeof x === 'string' && x !== '').at(-1) ?? '') : ''
-  }
-  const lastNumber = (key: string) => {
-    const v = num(match, key)
-    return v && v.v.length ? v.v[v.v.length - 1] : 0
-  }
-  match.event = lastString(s.eventName)
-  const type = MATCH_TYPES[lastNumber(s.matchType)] ?? ''
-  const number = lastNumber(s.matchNumber)
-  match.matchLabel = type && number ? `${type} ${number}` : ''
+  readIdentity(match)
   match.build = {
-    sha: lastString(s.gitSha), branch: lastString(s.gitBranch), date: lastString(s.gitDate), dirty: lastString(s.gitDirty),
+    sha: lastString(match, s.gitSha), branch: lastString(match, s.gitBranch), date: lastString(match, s.gitDate),
+    dirty: lastString(match, s.gitDirty),
   }
   match.epochOffset = computeEpochOffset(match)
   return match
+}
+
+const lastString = (match: Match, key: string) => {
+  const v = values<string>(match, key)
+  return v ? (v.v.filter((x) => typeof x === 'string' && x !== '').at(-1) ?? '') : ''
+}
+
+const lastNumber = (match: Match, key: string) => {
+  const v = num(match, key)
+  return v && v.v.length ? v.v[v.v.length - 1] : 0
+}
+
+/** The event and match the logs say this was ("Qualification 28"), from the profile's identity signals. */
+function readIdentity(match: Match): void {
+  const s = match.profile.signals
+  match.event = lastString(match, s.eventName)
+  const typeNumber = lastNumber(match, s.matchType)
+  const type = typeNumber > 0 ? MATCH_TYPES[typeNumber] ?? '' : ''
+  const number = lastNumber(match, s.matchNumber)
+  match.matchLabel = type && number ? `${type} ${number}` : ''
 }
 
 /**
@@ -266,9 +261,13 @@ function computeEpochOffset(match: Match): number | null {
  * Only the match window counts: a DS log that overlaps just the minutes after boot belongs to another session.
  */
 export function dslogOverlap(match: Match, file: DslogFile): number {
+  return overlap(match, file.startEpochSeconds, dslogEndEpoch(file))
+}
+
+function overlap(match: Match, startEpoch: number, endEpoch: number): number {
   if (match.epochOffset === null || match.matchStart === null || match.matchEnd === null) return 0
-  const startTime = file.startEpochSeconds - match.epochOffset
-  const endTime = dslogEndEpoch(file) - match.epochOffset
+  const startTime = startEpoch - match.epochOffset
+  const endTime = endEpoch - match.epochOffset
   return Math.max(0, Math.min(endTime, match.matchEnd) - Math.max(startTime, match.matchStart))
 }
 
@@ -277,10 +276,27 @@ export function attachDslog(match: Match, file: DslogFile, fileName: string): vo
   const offset = match.epochOffset ?? 0
   match.ds.push({ file, fileName, startTime: file.startEpochSeconds - offset, endTime: dslogEndEpoch(file) - offset })
   match.ds.sort((a, b) => a.startTime - b.startTime)
-  // Every series from a DS log, and the power model built on the old picks, are out of date.
-  for (const key of match.cache.keys()) if (isDslogKey(key) || key.startsWith('power:')) match.cache.delete(key)
+  pickSourcesAgain(match)
+}
+
+/** Add a Driver Station event log, likewise. */
+export function attachDsevents(match: Match, file: DseventsFile, fileName: string): void {
+  match.dsEvents.push({ file, fileName })
+  pickSourcesAgain(match)
+}
+
+/** How many seconds of this match a Driver Station event log covers (as dslogOverlap). */
+export function dseventsOverlap(match: Match, file: DseventsFile): number {
+  return overlap(match, file.startEpochSeconds, dseventsEndEpoch(file))
+}
+
+/** After a Driver Station file is added: each signal's source and the match identity, picked again. */
+function pickSourcesAgain(match: Match): void {
+  // Every series from another log, and the power model built on the old picks, are out of date.
+  for (const key of match.cache.keys()) if (isOtherLogKey(key) || key.startsWith('power:')) match.cache.delete(key)
   const { signals, battery } = resolveProfile(match.sources, (key) => has(match, key))
   match.profile = { ...match.profile, battery, signals: { ...signals, alertGroups: match.profile.signals.alertGroups } }
+  readIdentity(match)
 }
 
 /** The profile with one key per signal and battery key: the first of its sources that `present` says the logs have. */
