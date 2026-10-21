@@ -59,4 +59,17 @@ describe('compareFindings', () => {
     expect(compareFindings(some, none).findings.every((f) => f.isNew)).toBe(true)
     expect(compareFindings(none, some)).toMatchObject({ findings: [], fixed: 2 })
   })
+
+  it('a rule that crashed on either side is left out: head findings null, base findings not fixed', () => {
+    const crashed = (rule: string, f: CodeFinding): CodeFinding => ({ ...f, rule })
+    const base = side({ 'A.java': ['x', 'y'] }, ['A.java', 1], ['A.java', 2])
+    base.findings = [crashed('code/crashes-here', base.findings[0]!), base.findings[1]!]
+    // Base-only crash: the head has the rule's finding, the base run of that rule gave nothing to compare with.
+    const head = side({ 'A.java': ['x', 'y'] }, ['A.java', 1], ['A.java', 2])
+    head.findings = [crashed('code/crashes-here', head.findings[0]!), head.findings[1]!]
+    const result = compareFindings(head, base, ['code/crashes-here'])
+    expect(result.findings.map((f) => f.isNew)).toEqual([null, false])
+    expect(result.fixed).toBe(0)
+    expect(compareFindings(side({ 'A.java': ['z'] }, ['A.java', 1]), base, ['code/crashes-here']).fixed).toBe(1)   // only the other rule's
+  })
 })

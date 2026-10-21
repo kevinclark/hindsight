@@ -323,9 +323,10 @@ permissions:
   contents: read
 jobs:
   code-check:
-    runs-on: ubuntu-latest        # not the WPILib container: setup-node needs the runner
+    runs-on: ubuntu-latest        # not the WPILib container: setup-node needs the runner. Its own job: setup-node
+                                  # changes the Node version for the later steps of the same job
     steps:
-      - uses: actions/checkout@<full commit sha of the checkout release you use>
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: kevinclark/hindsight@<full commit sha of a Hindsight commit>
         with:
           fail-on: none           # later, once you trust it: new
@@ -342,14 +343,19 @@ jobs:
   be read); `any` fails on any finding at all, including old ones, which punishes whoever touches the repo next.
 - **`exclude-rules`**: a comma list of rule ids to leave out. A team whose build already stops whole-number division in
   the compiler (Error Prone's NarrowCalculation, say) writes `exclude-rules: code/integer-division`.
-- **`path`** is the folder holding the `.git` (default `.`); **`base`** overrides the commit compared with (the default
-  is the pull request's base, a merge group's base, or on a push the commit before it).
+- **`path`** is the folder holding the `.git` (default `.`, the workspace root). Keep the default: GitHub attaches an
+  annotation to a pull request's file only when the path is relative to the workspace root, so with another `path` the
+  annotations show on the run page but not on the files. **`base`** overrides the commit compared with (the default is
+  the pull request's base, a merge group's base, or on a push the commit before it). It must be a commit hash (7-40 hex
+  characters); a branch name is reported as "not compared". The merge-group default is untested: no data covers it.
 - **Outputs**: `findings`, `new`, `fixed`, `compared`.
-- **Annotation cap:** GitHub shows only 10 warnings and 10 notices per step (50 per job) and drops the rest silently.
-  New findings are warnings and the rest notices, each with its own cap, so up to 10 new and 10 other findings show; the summary page lists every finding.
+- **Annotation cap:** GitHub's docs give 10 warnings and 10 errors per step; the 10 notices per step and the 50 per job
+  come from the docs of `actions/toolkit`. Either way the rest are dropped silently. New findings are warnings and the
+  rest notices, each with its own cap, so up to 10 new and 10 other findings show; the summary page lists every finding.
 - **How a finding is matched with the base:** rule + file + the text of its line, not the line number (adding a line
   above moves findings) and not the message. A finding whose line is edited, or whose file moves, counts as one new
-  and one fixed.
+  and one fixed. Known limit: two findings of one rule in one file on lines with identical text can swap without
+  anyone noticing, so a new one may hide behind an old one (the counts stay right).
 - **Cost** (measured on a 49-file robot repo on a Mac): the check with a comparison takes about 0.6 s; installing the
   two parsing packages (`npm ci --omit=dev`, 8.5 MB) took 0.2 s with npm's cache warm. A cold runner install is not
   measured (assumed 10-30 s).

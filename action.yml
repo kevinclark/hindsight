@@ -9,7 +9,9 @@ branding:
 
 inputs:
   path:
-    description: The checked-out robot-code repo (the folder with the .git).
+    description: >-
+      The checked-out robot-code repo (the folder with the .git). Keep the default (the workspace root): GitHub attaches
+      annotations to a pull request's files only when the paths are relative to the root.
     default: .
   fail-on:
     description: >-
@@ -22,8 +24,9 @@ inputs:
     default: ''
   base:
     description: >-
-      The commit to compare with. When empty it is worked out: a pull request's base, a merge group's base, or on a push
-      the commit before it. With none, findings are reported without "new".
+      The commit to compare with, as a commit hash (7-40 hex characters; a branch name is reported as not compared). When
+      empty it is worked out: a pull request's base, a merge group's base, or on a push the commit before it. With none,
+      findings are reported without "new".
     default: ''
 
 outputs:
@@ -64,8 +67,11 @@ runs:
         BASE: ${{ inputs.base || github.event.pull_request.base.sha || github.event.merge_group.base_sha || (github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       run: |
+        # A commit the checkout already has is left alone: fetching with --depth would turn a full clone shallow.
         for sha in "$BASE" "$HEAD_SHA"; do
-          if [ -n "$sha" ]; then git -C "$REPO_PATH" fetch --quiet --depth 1 origin "$sha" || echo "could not fetch $sha (continuing)"; fi
+          [ -n "$sha" ] || continue
+          git -C "$REPO_PATH" cat-file -e "$sha^{commit}" 2>/dev/null && continue
+          git -C "$REPO_PATH" fetch --quiet --depth 1 origin "$sha" || echo "could not fetch $sha (continuing)"
         done
 
     - name: Check the code
@@ -74,7 +80,7 @@ runs:
       env:
         ACTION_PATH: ${{ github.action_path }}
         REPO_PATH: ${{ inputs.path }}
-        FAIL_ON: ${{ inputs.fail-on }}
+        FAIL_ON: ${{ inputs.fail-on || 'none' }}
         EXCLUDE_RULES: ${{ inputs.exclude-rules }}
         BASE: ${{ inputs.base || github.event.pull_request.base.sha || github.event.merge_group.base_sha || (github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
         # Links in the summary point at the pull request's head. The check reads checkout's default commit, a merge of

@@ -56,6 +56,23 @@ jobs:
           echo "findings=$FINDINGS new=$NEW fixed=$FIXED compared=$COMPARED"
           test "$FINDINGS" = 13 && test "$NEW" = 12 && test "$FIXED" = 1 && test "$COMPARED" = true
 
+      # No base input: the default BASE expression gives this event's own base commit, which the sample repo doesn't
+      # have, and the sample has no origin to fetch it from. So this is the "not compared" path: every finding is
+      # reported, and the step does not fail.
+      - name: Run the action with no base
+        id: nobase
+        uses: ./
+        with:
+          path: ${{ runner.temp }}/sample
+
+      - name: Check that nothing was compared
+        env:
+          FINDINGS: ${{ steps.nobase.outputs.findings }}
+          COMPARED: ${{ steps.nobase.outputs.compared }}
+        run: |
+          echo "findings=$FINDINGS compared=$COMPARED"
+          test "$FINDINGS" = 13 && test "$COMPARED" = false
+
       - name: Run the action again with fail-on new (it must fail)
         id: blocking
         continue-on-error: true

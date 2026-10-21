@@ -79,9 +79,27 @@ describe('code-check.ts on the sample repo', () => {
     expect(readFileSync(outputFile, 'utf8')).toBe('findings=13\nnew=12\nfixed=1\ncompared=true\n')
   })
 
-  it('a bad option exits 2 with the usage', () => {
-    const { code, err } = run('--fail-on', 'sometimes')
+  it('a bad --fail-on exits 2, names the wrong value and shows the usage; an empty one means the default', () => {
+    const { code, err } = run('--fail-on', 'warn')
     expect(code).toBe(2)
+    expect(err).toContain('--fail-on must be none, new or any, not "warn"')
     expect(err).toContain('usage:')
+    expect(run('--fail-on', '').code).toBe(1)        // empty: 'any', which fails on the sample's findings
+  })
+
+  it('--exclude-rules with an id no rule has: one line naming it, the exit code unchanged', () => {
+    const { code, out } = run('--exclude-rules', 'code/integer-divison', '--fail-on', 'none')
+    expect(out).toContain("--exclude-rules: no such rule: code/integer-divison")
+    expect(code).toBe(0)
+    expect(out).toContain('13 findings; ')            // nothing was left out
+  })
+
+  it('a repo with no commits: the reason on stderr, exit 2, no stack trace', () => {
+    const empty = mkdtempSync(join(tmpdir(), 'code-check-empty-'))
+    spawnSync('git', ['init', '-q', empty])
+    const done = spawnSync(process.execPath, ['--experimental-strip-types', 'scripts/code-check.ts', empty], { encoding: 'utf8' })
+    expect(done.status).toBe(2)
+    expect(done.stderr.trim()).not.toBe('')
+    expect(done.stderr).not.toMatch(/\n\s+at /)
   })
 })

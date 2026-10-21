@@ -15,11 +15,12 @@ export function without(report: CodeReport, excluded: string[]): CodeReport {
 }
 
 /** The base commit's findings and files; `why` when it can't be read (a shallow clone without it, a wrong hash). */
-export async function readBase(source: CodeSource, ref: string, excluded: string[]): Promise<{ commit: string; side: Side } | { why: string }> {
+export async function readBase(source: CodeSource, ref: string, excluded: string[]): Promise<{ commit: string; side: Side; crashed: string[] } | { why: string }> {
   try {
     const commit = await source.resolve(ref)
     const files = await javaFilesAt(source, commit)
-    return { commit, side: { findings: without(checkCode(files), excluded).findings, files } }
+    const report = without(checkCode(files), excluded)
+    return { commit, side: { findings: report.findings, files }, crashed: report.crashed.map((c) => c.rule) }
   } catch (error) {
     if (!(error instanceof GitUnreadable)) throw error
     return { why: error.message }

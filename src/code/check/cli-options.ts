@@ -19,8 +19,8 @@ export interface Options {
 export const USAGE = `usage: code-check.ts <robot-code folder> [commit] [--base <commit>] [--fail-on none|new|any] [--exclude-rules a,b] [--github]
        code-check.ts --tree <folder> File.java:50`
 
-/** The options, or null when the command line isn't right (the caller prints USAGE). */
-export function parseOptions(argv: string[]): Options | null {
+/** The options, or what is wrong with the command line (the caller prints it and USAGE). */
+export function parseOptions(argv: string[]): Options | string {
   try {
     const { values, positionals } = parseArgs({
       args: argv,
@@ -33,12 +33,12 @@ export function parseOptions(argv: string[]): Options | null {
         github: { type: 'boolean' },
       },
     })
-    const failOn = values['fail-on'] ?? 'any'
-    if (failOn !== 'none' && failOn !== 'new' && failOn !== 'any') return null
+    const failOn = values['fail-on'] || 'any'
+    if (failOn !== 'none' && failOn !== 'new' && failOn !== 'any') return `--fail-on must be none, new or any, not "${failOn}"`
     const excluded = (values['exclude-rules'] ?? '').split(',').map((id) => id.trim()).filter(Boolean)
     const [folder, wanted] = positionals
     return { tree: Boolean(values.tree), folder, wanted, base: values.base || undefined, failOn, excluded, github: Boolean(values.github) }
-  } catch {
-    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
   }
 }

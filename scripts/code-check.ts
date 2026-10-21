@@ -15,29 +15,29 @@
  * Read only: nothing in the folder is changed.
  */
 import { appendFileSync } from 'node:fs'
-import { GitRepo } from '../src/code/git.ts'
+import { GitRepo, GitUnreadable, type GitDir } from '../src/code/git.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
-import { checkCode } from '../src/code/check/index.ts'
+import { CODE_RULES, checkCode } from '../src/code/check/index.ts'
 import { readBase, without } from '../src/code/check/base.ts'
 import { parseOptions, USAGE, type Options } from '../src/code/check/cli-options.ts'
 import { compareFindings } from '../src/code/check/compare.ts'
-import { annotation, countsLine, crashNotice, summary, type Marked } from '../src/code/check/github-format.ts'
+import { annotation, countsLine, crashNotice, summary, unknownLine, unknownNotice, type Marked } from '../src/code/check/github-format.ts'
 import { linkerFor } from '../src/code/check/head-links.ts'
 import { javaFilesAt } from '../src/code/source.ts'
 import { lineOf, parseJava, type Node } from '../src/code/check/java.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 
-const options = parseOptions(process.argv.slice(2))
-const dir = options?.folder ? nodeGitDir(options.folder) : null
-if (!options || !dir) {
-  console.error(USAGE)
-  process.exit(2)
-}
+const parsed = parseOptions(process.argv.slice(2))
+if (typeof parsed === 'string') stop(parsed, true)
+const options = parsed as Options
+const dir = options.folder ? nodeGitDir(options.folder) : null
+if (!dir) stop(options.folder ? `${options.folder} has no .git folder` : 'no folder given', true)
 await loadJavaFromDisk()
-const repo = new GitRepo(dir)
-const head = await repo.head()
-const commit = options.tree || !options.wanted ? head.sha : await repo.resolve(options.wanted)
-const files = await javaFilesAt(repo, commit)
+const repo = new GitRepo(dir as GitDir)
+const { head, commit, files } = await readHead(repo, options).catch((error) => {
+  if (error instanceof GitUnreadable) return stop(error.message)      // no commits yet, a wrong commit, a damaged .git
+  throw error
+})
 
 if (options.tree) {
   const [name, line] = (options.wanted ?? '').split(':')
@@ -51,10 +51,26 @@ if (options.tree) {
   await checkAndPrint(options)
 }
 
+/** What the checked folder's HEAD is, the commit to check, and its Java files. */
+async function readHead(repo: GitRepo, options: Options) {
+  const head = await repo.head()
+  const commit = options.tree || !options.wanted ? head.sha : await repo.resolve(options.wanted)
+  return { head, commit, files: await javaFilesAt(repo, commit) }
+}
+
+/** Says what is wrong (and how to call the script) and exits 2. */
+function stop(message: string, showUsage = false): never {
+  console.error(message)
+  if (showUsage) console.error(USAGE)
+  process.exit(2)
+}
+
 async function checkAndPrint(options: Options): Promise<void> {
   const report = without(checkCode(files), options.excluded)
   const base = options.base ? await readBase(repo, options.base, options.excluded) : null
-  const compared = base && 'side' in base ? compareFindings({ findings: report.findings, files }, base.side) : null
+  // A rule that crashed on either side is left out of the comparison (marked null, not counted as fixed).
+  const skipped = [...report.crashed.map((c) => c.rule), ...(base && 'side' in base ? base.crashed : [])]
+  const compared = base && 'side' in base ? compareFindings({ findings: report.findings, files }, base.side, skipped) : null
   const findings: Marked[] = compared ? compared.findings : report.findings.map((f) => ({ ...f, isNew: null }))
   const fixed = compared ? compared.fixed : null
   const baseNote = comparisonNote(options.base, base, findings, fixed)
@@ -63,6 +79,8 @@ async function checkAndPrint(options: Options): Promise<void> {
   for (const f of findings) console.log(options.github ? annotation(f) : `${f.file}:${f.line}  ${f.rule}  ${f.message}${f.isNew ? '  [new]' : ''}`)
   console.log(`${findings.length} findings; ${report.notJudged.length} places it couldn't judge`)
   if (baseNote) console.log(baseNote)
+  const unknown = options.excluded.filter((id) => !CODE_RULES.some((rule) => rule.id === id))
+  if (unknown.length) console.log(options.github ? unknownNotice(unknown) : unknownLine(unknown))
   for (const c of report.crashed) console.log(options.github ? crashNotice(c.rule, c.why) : `CRASHED ${c.rule}: ${c.why}`)
   if (options.github) await writeForGitHub(findings, fixed, base && 'why' in base ? baseNote : null)
   process.exitCode = shouldFail(options, findings, compared !== null) ? 1 : 0

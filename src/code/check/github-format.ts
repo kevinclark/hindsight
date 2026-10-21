@@ -24,6 +24,11 @@ export function annotation(f: Marked): string {
 export const crashNotice = (rule: string, why: string) =>
   `::notice title=${escapeProperty(`Code check rule ${rule} crashed`)}::${escapeData(`${why} (a bug in Hindsight, not in your code)`)}`
 
+/** --exclude-rules named ids that no rule has (a typo would otherwise leave a rule on without a word). */
+export const unknownLine = (ids: string[]) => `--exclude-rules: no such rule: ${ids.join(', ')}`
+
+export const unknownNotice = (ids: string[]) => `::notice title=${escapeProperty('Unknown rule in exclude-rules')}::${escapeData(unknownLine(ids))}`
+
 /** Where a finding's file is on GitHub, and whether the line number can be trusted there. */
 export interface Linker {
   /** `https://github.com/owner/name/blob/<sha>`, or null when the environment doesn't say. */
