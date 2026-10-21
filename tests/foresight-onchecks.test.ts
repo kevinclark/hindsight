@@ -1,7 +1,7 @@
 // The team's pit checklist as Foresight marks it: from the current check only, "by eye" never OK, and the verdict
 // itself untouched by the list.
 import { describe, expect, it } from 'vitest'
-import { checklistLines, markOnchecks, mergeLines, ONCHECKS, wantedLines } from '../src/foresight/onchecks.ts'
+import { checklistLines, groupSteps, markOnchecks, mergeLines, ONCHECKS, wantedLines } from '../src/foresight/onchecks.ts'
 import { WANTED_CHECKS } from '../src/rules/wanted.ts'
 import { FORESIGHT_RULES } from '../src/rules/index.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
@@ -105,12 +105,13 @@ describe('the merged checklist (round-5-checklist.md): 9 live lines, worst state
     expect(v.items.filter((i) => i.level === 'grey').map((i) => i.finding.rule)).toEqual(['foresight/gyro-still-drift'])
   })
 
-  it('OK + not checked is not checked; the detail names the part that was not checked', () => {
+  it('OK + OK + not checked is OK, says "2 of 3 checked" and names the part that was not checked', () => {
     const r: Report = { findings: [], skipped: [{ rule: 'foresight/motor-temperature', reason: 'missing /Hood/Temp' }], crashed: [] }
-    expect(get(run(r), DEV)).toMatchObject({ state: 'not checked', detail: 'No motors overheating: missing /Hood/Temp' })
+    expect(get(run(r), DEV)).toMatchObject({ state: 'ok', detail: '2 of 3 checked; No motors overheating: missing /Hood/Temp' })
     // Without a snapshot all four say the same thing: named together, once.
     const l = get(run(none, false), SNAP)
     expect(l.state).toBe('not checked')
+    expect(l.detail).not.toMatch(/checked;/)
     expect(l.detail).toMatch(/^CANcoder offsets correct and unchanged, Swerve ratio unchanged, All CAN devices licensed and ID'd, Current limits as the code sets them: no robot snapshot/)
     expect(l.detail.split(';')).toHaveLength(1)
   })
@@ -124,7 +125,7 @@ describe('the merged checklist (round-5-checklist.md): 9 live lines, worst state
     const amber: Report = { findings: [finding('snapshot/swerve-ratio', 'warning', 'Front Left drive ratio is 6.1')], skipped: [{ rule: 'snapshot/current-limits', reason: 'no limits read' }], crashed: [] }
     const a = get(run(amber), SNAP)
     expect(a.state).toBe('amber')
-    expect(a.detail).toMatch(/^Swerve ratio unchanged: Front Left drive ratio is 6.1; Current limits as the code sets them: no limits read/)
+    expect(a.detail).toMatch(/^3 of 4 checked; Swerve ratio unchanged: Front Left drive ratio is 6.1; Current limits as the code sets them: no limits read/)
     const red: Report = { findings: [finding('can/device-dropout', 'warning', 'Intake roller follower dropped off CAN'), finding('foresight/motor-temperature', 'warning', 'Back Left drive at 61 C')], skipped: [], crashed: [] }
     const proven2 = { ...proven }
     const v = verdictFor(red, proven2)
@@ -136,8 +137,25 @@ describe('the merged checklist (round-5-checklist.md): 9 live lines, worst state
 
   it('mergeLines: worst state by rank, red over amber over to do over not checked over ok', () => {
     const mk = (state: any) => ({ section: 's', line: state, state, detail: state, group: 'devices' })
-    for (const [states, want] of [[['ok', 'not checked'], 'not checked'], [['ok', 'amber'], 'amber'], [['amber', 'red'], 'red'], [['not checked', 'amber'], 'amber'], [['ok', 'ok'], 'ok']] as const) {
+    for (const [states, want] of [[['ok', 'not checked'], 'ok'], [['not checked', 'not checked'], 'not checked'], [['red', 'not checked'], 'red'], [['to do', 'not checked'], 'to do'], [['ok', 'amber'], 'amber'], [['amber', 'red'], 'red'], [['not checked', 'amber'], 'amber'], [['ok', 'ok'], 'ok']] as const) {
       expect(mergeLines(states.map(mk))[0].state).toBe(want)
     }
+    const l = mergeLines(['ok', 'not checked', 'red'].map(mk))[0]
+    expect(l.detail).toMatch(/^2 of 3 checked; red: red; not checked: not checked/)
+  })
+})
+
+describe('groupSteps: one card per kind of step, naming every camera', () => {
+  const step = (cam: string, rule = 'foresight/camera-sees-tag') => ({ finding: { ...finding(rule, 'info', `Hold an AprilTag up to ${cam}`), key: `${rule}:${cam}`, evidence: { 'results with a tag': 0 } }, level: 'grey' as const, proof: '', action: 'Hold a tag', explains: [] })
+  it('two cameras become one item; one stays as it is; different wording stays apart', () => {
+    const g = groupSteps([step('Back_Left'), step('Back_Right')])
+    expect(g).toHaveLength(1)
+    expect(g[0].finding.title).toBe('Hold an AprilTag up to Back_Left and Back_Right')
+    expect(g[0].finding.evidence).toEqual({ 'Back_Left: results with a tag': 0, 'Back_Right: results with a tag': 0 })
+    expect(groupSteps([step('Back_Left')])[0].finding.title).toBe('Hold an AprilTag up to Back_Left')
+    const three = groupSteps([step('A'), step('B'), step('C')])
+    expect(three[0].finding.title).toBe('Hold an AprilTag up to A, B and C')
+    const mixed = { ...step('C'), finding: { ...step('C').finding, title: 'Hold two AprilTags up to C (it reports only poses)' } }
+    expect(groupSteps([step('A'), mixed, step('B')]).map((i) => i.finding.title)).toEqual(['Hold an AprilTag up to A and B', 'Hold two AprilTags up to C (it reports only poses)'])
   })
 })
