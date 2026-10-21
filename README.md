@@ -317,6 +317,10 @@ node --experimental-strip-types scripts/foresight-backtest.ts <logs or folders> 
 node --experimental-strip-types scripts/chrome-foresight-check.ts <out-dir>      # Foresight in Chrome against replays
 ```
 
+`.npmrc` turns off dependency install scripts (`ignore-scripts=true`) on every npm version: the only one npm 10 runs,
+tree-sitter-java-orchard's, would compile a native binding the code check never loads (it uses the package's
+`.wasm`). `npm run …` and `npm test` still run their own script.
+
 The CalGames logs are never committed. `tests/calgames-logs.test.ts` reads them read-only from `~/Downloads` and
 skips with a message when they aren't there; `fixtures/*.json` are small cuts that keep the core rules tested anyway.
 
