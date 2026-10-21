@@ -6,10 +6,11 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { CommitMissing, GitRepo, GitUnreadable } from '../src/code/git.ts'
 import { GitHubRepo, parseGitHub } from '../src/code/github.ts'
 import { hintsAt } from '../src/builder/code-hints.ts'
+import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
 import { fakeGitHub, json, memoryKept } from './helpers/fake-github.ts'
 
@@ -193,11 +194,12 @@ describe('naming a repo', () => {
 // Opt-in: the real repo a built-in profile names, at the commit the 2026 offseason profile pins. HINDSIGHT_LIVE_CLONE
 // (a clone of it) also checks the hints against the same commit read from the clone's .git.
 describe.skipIf(!process.env.HINDSIGHT_LIVE_GITHUB)('live: HighlanderRobotics/2026-Offseason-Robot at cb68b20', () => {
-  it('reads 49 Java/Kotlin files, and the profile builder\'s hints equal a local clone\'s', async () => {
+  beforeAll(loadJavaFromDisk)
+  it('reads 49 Java files, and the profile builder\'s hints equal a local clone\'s', async () => {
     const live = new GitHubRepo('HighlanderRobotics/2026-Offseason-Robot', memoryKept())
     const hints = await hintsAt(live, 'cb68b20')
-    const sources = (await live.files(hints.sha!)).filter((f) => /\.(java|kt)$/.test(f.path))
-    console.log(`live GitHub: ${sources.length} Java/Kotlin files, ${hints.sites.length} Talon FX sites, ${live.calls.api} API calls, ${live.calls.raw} raw reads`)
+    const sources = (await live.files(hints.sha!)).filter((f) => f.path.endsWith('.java'))
+    console.log(`live GitHub: ${sources.length} Java files, ${hints.sites.length} Talon FX sites, ${live.calls.api} API calls, ${live.calls.raw} raw reads`)
     expect(sources).toHaveLength(49)
     expect(live.calls.api).toBe(2)
     const clone = process.env.HINDSIGHT_LIVE_CLONE

@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { LiveStatus } from '../foresight/live.ts'
   import type { ForesightResult } from '../foresight/engine.ts'
-  import { ASSISTED_RULES, type ChecklistLine } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, groupSteps, type ChecklistLine } from '../foresight/onchecks.ts'
   import { profileId } from '../profiles/index.ts'
   import { buildCard, type Card } from '../report/card.ts'
   import { saveForSlack } from '../report/card-png.ts'
@@ -42,7 +42,7 @@
   const reds = $derived(input.items.filter((i) => i.level === 'red'))
   const ambers = $derived(input.items.filter((i) => i.level === 'amber'))
   // Grey items that ask a person to do something (hold a tag up to a camera) are steps, not context.
-  const steps = $derived(input.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule)))
+  const steps = $derived(groupSteps(input.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule))))
   const greys = $derived(input.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)))
   // Lines the tool can never judge, and context that is never a fault (the gyro), are listed by name under the table, not as rows.
   const liveLines = $derived(onchecks.filter((l) => !l.folded))

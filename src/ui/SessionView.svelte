@@ -405,7 +405,7 @@
   {@const back = cameBack(f.key, f.matches)}
   {@const marked = marksText(shown!, f)}
   <li class={f.severity} class:filed={allMarked(f)}>
-    <span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span>
+    <span class="lead"><span class="sev"><span aria-hidden="true">{SEV_ICON[f.severity]}</span> {SEV_WORD[f.severity]}</span><span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span></span>
     <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
     {#if f.measured.length}
       <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
@@ -516,30 +516,8 @@
   </div>
   <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
 
-  <h3>Logging across the session</h3>
-  {#if withLogging === 0}
-    <p class="hint">Read these logs again (choose the folder) to see which signals each match logged.</p>
-  {:else}
-    <p class="hint">Signals the checks need whose state changed from one match to the next, in the order the matches were played, with the code build each ran. Open a match's Logging tab for what each one guards.{withLogging < session.matches.length ? ` ${session.matches.length - withLogging} matches were read before Hindsight kept this and are left out.` : ''}</p>
-    {#if changes.length === 0}
-      <p>No signal appeared or vanished between matches.</p>
-    {:else}
-      <ul class="changes">
-        {#each changes as c (c.key ?? c.what)}
-          <li>
-            <strong>{c.what}</strong>{#if c.key}{' '}<code>{c.key}</code>{/if}:
-            {#each c.runs as r, i (i)}{i ? ' → ' : ''}<span class="run">{STATE_ICON[r.state]} {STATE_WORDS[r.state]} in {span(r)} ({builds(r)})</span>{/each}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-    {#if missingAll.length}
-      <p class="note">Not in any match ({missingAll.length}): {missingAll.map((s) => s.what).join(', ')}.</p>
-    {/if}
-  {/if}
-
   <h3>Per match</h3>
-  <Trends matches={session.matches} {typedBatteries} labels={session.matches.map(shortLabel)} />
+  <Trends matches={session.matches} {typedBatteries} labels={session.matches.map(shortLabel)} onOpen={open} />
 
   <h3>Findings across the session</h3>
   <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some, or in every match of only 2 checked (too few to call consistent). Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
@@ -567,6 +545,28 @@
         {/each}
       </ul>
     </details>
+  {/if}
+
+  <h3>Logging across the session</h3>
+  {#if withLogging === 0}
+    <p class="hint">Read these logs again (choose the folder) to see which signals each match logged.</p>
+  {:else}
+    <p class="hint">Signals the checks need whose state changed from one match to the next, in the order the matches were played, with the code build each ran. Open a match's Logging tab for what each one guards.{withLogging < session.matches.length ? ` ${session.matches.length - withLogging} matches were read before Hindsight kept this and are left out.` : ''}</p>
+    {#if changes.length === 0}
+      <p>No signal appeared or vanished between matches.</p>
+    {:else}
+      <ul class="changes">
+        {#each changes as c (c.key ?? c.what)}
+          <li>
+            <strong>{c.what}</strong>{#if c.key}{' '}<code>{c.key}</code>{/if}:
+            {#each c.runs as r, i (i)}{i ? ' → ' : ''}<span class="run">{STATE_ICON[r.state]} {STATE_WORDS[r.state]} in {span(r)} ({builds(r)})</span>{/each}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if missingAll.length}
+      <p class="note">Not in any match ({missingAll.length}): {missingAll.map((s) => s.what).join(', ')}.</p>
+    {/if}
   {/if}
 
   <h3>Matches in this session</h3>
@@ -619,14 +619,15 @@
   .merged li { display: grid; grid-template-columns: 8rem 1fr; gap: 0.1rem 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
   .merged .measured, .merged .latest, .merged .marked { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
   /* Marked not a real problem in every match it fired in: muted like Match review's known issues; the words still say its severity. */
-  .merged li.filed .title code { color: var(--muted); }
   .merged .title { overflow-wrap: anywhere; }
-  .error .title code { color: var(--error); }
-  .warning .title code { color: var(--warning); }
+  .merged .title code { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+  .lead { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+  .lead .sev { font-weight: 600; white-space: nowrap; }
+  .error .lead .sev { color: var(--error); }
+  .warning .lead .sev { color: var(--warning); }
+  .info .lead .sev { color: var(--muted); }
   .back { color: var(--error); }
   .chip { justify-self: start; font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); height: fit-content; }
-  .chip.consistent { border-color: var(--error); color: var(--error); }
-  .chip.intermittent { border-color: var(--warning); color: var(--warning); }
   .chip.once { border-style: dashed; }
   .grid-wrap { overflow-x: auto; }
   table { border-collapse: collapse; font-size: 0.8rem; }

@@ -1,5 +1,7 @@
 // The code checks (src/code/check/) on small made-up Java: each must fire on its bug and stay quiet on the fix.
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { checkCode } from '../src/code/check/index.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import integerDivision from '../src/code/check/rules/integer-division.ts'
@@ -9,6 +11,8 @@ import discardedResult from '../src/code/check/rules/discarded-result.ts'
 import impossibleRange from '../src/code/check/rules/impossible-range.ts'
 import duplicateCanId from '../src/code/check/rules/duplicate-can-id.ts'
 import { codeRule, type CodeRule } from '../src/code/check/rule.ts'
+import { Project } from '../src/code/check/project.ts'
+import { isSubsystem } from '../src/code/check/types.ts'
 
 beforeAll(loadJavaFromDisk)
 
@@ -187,6 +191,15 @@ describe('the code-check framework', () => {
 })
 
 describe('fixes from the review of 2026-10-20 (Fable + code-review high)', () => {
+  it('tries again after a load that failed', async () => {
+    vi.resetModules()
+    const fresh = await import('../src/code/check/java.ts')
+    await expect(fresh.loadJava(() => Promise.reject(new Error('offline')))).rejects.toThrow('offline')
+    const require = createRequire(import.meta.url)
+    const read = (module: string) => new Uint8Array(readFileSync(require.resolve(module)))
+    await fresh.loadJava(async () => [read('web-tree-sitter/web-tree-sitter.wasm'), read('tree-sitter-java-orchard/tree-sitter-java_orchard.wasm')])
+    expect(fresh.parseJava('A.java', 'class A {}').tree.rootNode.type).toBe('program')
+  })
   it('loads tree-sitter once when several checks start together', async () => {
     await Promise.all([loadJavaFromDisk(), loadJavaFromDisk(), loadJavaFromDisk()])
     expect(messages(integerDivision, 'class A { static final double R = 50 / 12; }')).toHaveLength(1)
@@ -221,7 +234,7 @@ describe('fixes from the review of 2026-10-20 (Fable + code-review high)', () =>
   })
   it('a bare name from a library class isn\'t a same-named constant elsewhere; a static import is followed', () => {
     const java = {
-      'Consts.java': 'class Consts { static final int kDefaultPeriod = 20; static final int TEETH = 50; }',
+      'Consts.java': 'package frc.robot;\nclass Consts { static final int kDefaultPeriod = 20; static final int TEETH = 50; }',
       'B.java': 'class B extends TimedRobot { double f() { return kDefaultPeriod / 3; } }',
       'C.java': 'import static frc.robot.Consts.*;\nclass C { static final double R = TEETH / 12; }',
     }
@@ -229,5 +242,62 @@ describe('fixes from the review of 2026-10-20 (Fable + code-review high)', () =>
   })
   it('integer-division: a division meant to be 0 isn\'t a percentage of 0, and int overflow isn\'t guessed', () => {
     expect(messages(integerDivision, 'class A { static final double Z = (1 / 2) * 0; static final double W = 2048 * 2048 * 2048 / 3; }')).toEqual([])
+  })
+})
+
+describe('constants the old builder regex read: in an interface, and inside a class whose name another class shares', () => {
+  it('reads an interface\'s constants by its name, bare inside it, and bare in a class that implements it', () => {
+    const java = {
+      'RobotMap.java': 'package frc.robot;\npublic interface RobotMap extends Gearing { int TEETH = 50; public static final double RATIO = TEETH / 12; }',
+      'Gearing.java': 'package frc.robot;\ninterface Gearing { int PINION = 12; }',
+      'Arm.java': 'package frc.robot;\nclass Arm implements RobotMap { static final double A = RobotMap.TEETH / 12; static final double B = TEETH / PINION; }',
+    }
+    expect(messages(integerDivision, java)).toEqual([
+      'RobotMap.TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)',
+      'TEETH / PINION is 4 in Java, not 4.1667 (-4.0 %)',
+      'TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)',
+    ])
+  })
+  it('reads Constants.Shooter.ID from the Shooter inside Constants when a Shooter subsystem exists too', () => {
+    const java = {
+      'Constants.java': 'package frc.robot;\nclass Constants { static final class Shooter { static final int TEETH = 50; } }',
+      'Shooter.java': 'package frc.robot.subsystems;\nclass Shooter extends SubsystemBase { static final int TEETH = 54; }',
+      'Hood.java': 'package frc.robot;\nclass Hood { static final double A = Constants.Shooter.TEETH / 12; static final double B = frc.robot.subsystems.Shooter.TEETH / 12; }',
+    }
+    expect(messages(integerDivision, java)).toEqual([
+      'Constants.Shooter.TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)',
+      'frc.robot.subsystems.Shooter.TEETH / 12 is 4 in Java, not 4.5 (-11.1 %)',
+    ])
+  })
+  it('still reads nothing from a bare Shooter that could be either class', () => {
+    const java = {
+      'Constants.java': 'package frc.robot;\nclass Constants { static final class Shooter { static final int TEETH = 50; } }',
+      'Shooter.java': 'package frc.robot.subsystems;\nclass Shooter extends SubsystemBase { static final int TEETH = 48; }',
+      'Hood.java': 'package frc.robot;\nclass Hood { static final double A = Shooter.TEETH / 12; }',
+    }
+    expect(messages(integerDivision, java)).toEqual([])
+  })
+  it('lets a class\'s own constant hide an interface\'s of the same name, as Java does', () => {
+    const java = { 'A.java': 'package frc.robot;\ninterface RobotMap { int TEETH = 50; }\nclass Arm implements RobotMap { static final int TEETH = 54; static final double R = TEETH / 12; }' }
+    expect(messages(integerDivision, java)).toEqual(['TEETH / 12 is 4 in Java, not 4.5 (-11.1 %)'])
+  })
+  it('reads a static import of a copied class (an old/ folder), and constants the imported class gets from an interface', () => {
+    const consts = 'package frc.robot;\nclass Consts implements Gearing { static final int TEETH = 50; }\ninterface Gearing { int PINION = 12; }'
+    const java = {
+      'src/Consts.java': consts,
+      'old/Consts.java': consts,
+      'Arm.java': 'package frc.robot.arm;\nimport static frc.robot.Consts.*;\nclass Arm { static final double R = TEETH / PINION; }',
+    }
+    expect(messages(integerDivision, java)).toEqual(['TEETH / PINION is 4 in Java, not 4.1667 (-4.0 %)'])
+  })
+  it('reads an interface nested in a class, and keeps a subsystem a subsystem when that interface shares its name', () => {
+    const java = {
+      'Constants.java': 'package frc.robot;\nclass Constants { interface Shooter { int TEETH = 50; } }',
+      'Shooter.java': 'package frc.robot.subsystems;\nclass Shooter extends SubsystemBase { static final double R = Constants.Shooter.TEETH / 12; }',
+    }
+    expect(messages(integerDivision, java)).toEqual(['Constants.Shooter.TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)'])
+    const project = new Project(Object.entries(java).map(([path, text]) => ({ path, text })))
+    expect(isSubsystem('Shooter', project)).toBe(true)
+    project.close()
   })
 })

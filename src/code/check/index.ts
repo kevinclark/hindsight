@@ -5,7 +5,7 @@
  */
 import type { CodeHead } from '../../builder/code-hints.ts'
 import { GitUnreadable } from '../git.ts'
-import type { CodeSource } from '../source.ts'
+import { javaFilesAt, type CodeSource } from '../source.ts'
 import { Project } from './project.ts'
 import { runCodeRules, type CodeReport, type CodeRule } from './rule.ts'
 import discardedResult from './rules/discarded-result.ts'
@@ -26,12 +26,6 @@ export function checkCode(sources: { path: string; text: string }[], rules = COD
   } finally {
     project.close()
   }
-}
-
-/** Every .java file in a commit, with its text. */
-export async function javaFilesAt(source: CodeSource, commit: string): Promise<{ path: string; text: string }[]> {
-  const files = (await source.files(commit)).filter((f) => f.path.endsWith('.java'))
-  return Promise.all(files.map(async (f) => ({ path: f.path, text: await source.textAt(commit, f.path) })))
 }
 
 /** What the code check ran on, and what it found. */
