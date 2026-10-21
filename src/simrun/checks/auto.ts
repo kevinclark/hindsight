@@ -1,6 +1,6 @@
 /**
- * Each auto, run alone on a freshly started robot: its own command should finish before auto ends, and it should
- * move the robot.
+ * Each auto, run alone on a freshly started robot: whether its own command finished before auto ended (a note: some
+ * autos hold an alignment to the end on purpose), and whether it moved the robot.
  *
  * The auto's own command is the one robot code schedules from autonomousInit, or else, when autos are scheduled by a
  * trigger or a proxy, the commands that need a subsystem, start in the first two loops of auto and that the default
@@ -33,8 +33,10 @@ export const autos: Check = ({ results, poseKey }) => {
     const unfinished = autoCommands(r.record, baselineStarts).filter((l) => l.how !== 'finished' || l.end >= period.end)
     if (unfinished.length) {
       findings.push({
-        check: 'auto/unfinished', severity: 'warning', run: r.run.label,
-        message: `The auto was still running when auto ended (${duration(period.end - period.start)}).`,
+        // A note, not a warning: in the precision run 4 of 4 on one robot were real (two 7 s shots can't fit), and 36 of
+        // 36 on another were autos that hold a climb alignment to the end on purpose.
+        check: 'auto/unfinished', severity: 'info', run: r.run.label,
+        message: `The auto was still running when auto ended (${duration(period.end - period.start)}): fine if it holds something on purpose (aiming, a climb), a problem if a step never finishes.`,
         details: unfinished.map((l) => `still running: ${describeCommand(l.command)}`),
         look: "the auto's steps: a path, a wait or a shot that never ends",
       })
