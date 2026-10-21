@@ -5,14 +5,13 @@
 -->
 <script lang="ts">
   import CodeFolderControl from './CodeFolderControl.svelte'
+  import type { RobotProfile } from '../profiles/types.ts'
   import { codeFolder } from './code-folder.svelte.ts'
   import { CODE_RULES, checkFolder, type FolderCheck } from '../code/check/index.ts'
   import { loadJavaInPage } from '../code/check/browser-java.ts'
   import { fileName } from '../code/check/java.ts'
-  import { codeHead } from '../builder/code-hints.ts'
-  import { GitRepo } from '../code/git.ts'
 
-  let { robotSha, robotDirty }: { robotSha: string | null; robotDirty: boolean } = $props()
+  let { robotSha, robotDirty, suggest }: { robotSha: string | null; robotDirty: boolean; suggest?: RobotProfile['code'] } = $props()
 
   let result = $state.raw<FolderCheck | null>(null)
   let problem = $state<string | null>(null)
@@ -32,7 +31,7 @@
     const run = ++latest
     running = true
     loadJavaInPage()
-      .then(async () => checkFolder(code.repo, sha, await codeHead(code.repo instanceof GitRepo ? code.repo : null)))
+      .then(async () => checkFolder(code.repo, sha, await codeFolder.head()))
       .then((r) => { if (run === latest) { result = r; problem = null } }, (error) => { if (run === latest) { result = null; problem = error instanceof Error ? error.message : String(error) } })
       .finally(() => { if (run === latest) running = false })
   })
@@ -44,19 +43,21 @@
 
 <section class="code-check" aria-label="Code check: context for the software lead, never changes the verdict">
   <h3>Code <span class="muted">· context for the software lead, never changes GO</span></h3>
-  <CodeFolderControl />
+  <CodeFolderControl {suggest} />
   {#if !codeFolder.current}
-    <p class="muted">Choose the robot-code folder (a git clone) to check its Java for bugs the robot can't show: a gear ratio that lost its remainder, a flag nothing sets.</p>
+    <p class="muted">Choose the robot-code folder (a git clone) or a GitHub repo to check its Java for bugs the robot can't show: a gear ratio that lost its remainder, a flag nothing sets.</p>
   {:else if running && !result}
     <p class="muted">Checking the code…</p>
   {:else if problem}
     <p class="code-problem" role="alert">Couldn't check the code: {problem}</p>
   {:else if result}
     <p class="code-commit">
-      Checked <code>{short(result.commit)}</code>{result.ranOn === 'robot' ? ', the commit the robot runs' : ` (the folder's ${result.branch ?? 'detached HEAD'})`}: {result.files} Java files, {result.report.findings.length} findings.
+      {#if result.ranOn === 'robot'}Checked <code>{short(result.commit)}</code>, the commit the robot runs
+      {:else}Checked {result.branch ? `${result.branch} at ` : ''}<code>{short(result.commit)}</code>{/if}
+      ({codeFolder.current?.repo.where ?? 'the robot code'}): {result.files} Java files, {result.report.findings.length} findings.
       {#if result.why}<br /><span class="muted">Not the robot's commit: {result.why}.</span>{/if}
       {#if robotDirty}<br /><span class="muted">The robot's code had uncommitted changes: those aren't checked.</span>{/if}
-      <br /><span class="muted">Uncommitted edits in the folder aren't checked either: only commits are.</span>
+      <br /><span class="muted">Uncommitted edits aren't checked: only commits are.</span>
     </p>
     {#each groups as findings (findings[0].rule)}
       <h4>{findings[0].title} <span class="muted">({findings.length})</span></h4>
