@@ -26,6 +26,8 @@ export interface FixtureDslog {
   noRobotFrom: number
   /** Records before this index also say "no robot" (DS opened before the robot connected). */
   robotFrom: number
+  /** Records [from, to) with the brownout flag set. */
+  brownouts?: [number, number][]
 }
 
 export interface Fixture {
@@ -111,7 +113,8 @@ export function writeDslog(ds: FixtureDslog): Uint8Array {
     out.setUint8(p, 12) // 6 ms trip time
     const robot = i >= ds.robotFrom && i < ds.noRobotFrom
     out.setUint16(p + 2, robot ? Math.round(12.5 * 256) : 0xffff, false)
-    out.setUint8(p + 5, 0xff) // all status bits false (active low)
+    const brownout = ds.brownouts?.some(([from, to]) => i >= from && i < to) ?? false
+    out.setUint8(p + 5, brownout ? 0x7f : 0xff) // status bits, active low: all false, or bit 7 (brownout) true
   }
   return new Uint8Array(out.buffer)
 }

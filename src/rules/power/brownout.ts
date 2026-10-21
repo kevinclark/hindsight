@@ -1,12 +1,13 @@
 /**
  * Did the roboRIO brown out?
  *
- * Checks: every time /SystemStats/BrownedOut turns on. Below the brownout setting the roboRIO switches every
- * motor off until the voltage recovers: the robot goes limp.
+ * Checks: every time the brownout flag turns on (the robot log's, or the Driver Station log's when the robot log has
+ * none). Below the brownout setting the roboRIO switches every motor off until the voltage recovers: the robot goes
+ * limp.
  * Why: CalGames 2026 P0 browned out 53 times in the last 18 s; nine shots in a row failed.
  */
 import { plural, rule, round } from '../rule.ts'
-import type { PowerGrid } from '../../power/battery-model.ts'
+import { MOTOR_CURRENT_LABEL, type PowerGrid } from '../../power/battery-model.ts'
 import { batteryHealth } from './battery-health.ts'
 
 export default rule({
@@ -36,6 +37,7 @@ export default rule({
     const power = match.powerIfLogged()
     const health = batteryHealth(match, power)
     const load = power ? loadAt(power.grid, first) : null
+    const currentLabel = power?.grid.currentLabel ?? MOTOR_CURRENT_LABEL
 
     // Which cause this log points to. A collapsed battery (power/battery-collapse) comes before the load: it has
     // normal resistance, so resistance alone can't tell it from too much load.
@@ -62,7 +64,7 @@ export default rule({
       evidence: {
         'brownout onsets': onsets.length,
         'last brownout': match.when(last),
-        'total motor current at the first brownout (A)': load ? round(load.amps, 0) : 'not logged',
+        [`${currentLabel} at the first brownout (A)`]: load ? round(load.amps, 0) : 'not logged',
         'battery + wiring resistance (mΩ)': health.milliohms ?? 'not measured',
         'lowest voltage around the first (V)': lowest,
         'brownout setting (V)': Number.isNaN(setting) ? 'not logged' : setting,

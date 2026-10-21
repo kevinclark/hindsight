@@ -1,8 +1,9 @@
 /**
  * Is the power distribution board reporting its channel currents to the robot code?
  *
- * Checks: AdvantageKit's /PowerDistribution entries, against the board the robot profile says is on the robot. A REV
- * PDH and a CTRE PDP (v1) report each channel's current over CAN; a CTRE PDP 2.0 has no current telemetry at all.
+ * Checks: the board's channel currents, voltage and channel count (the powerDistribution* signals), against the
+ * board the robot profile says is on the robot. A REV PDH and a CTRE PDP (v1) report each channel's current over
+ * CAN; a CTRE PDP 2.0 has no current telemetry at all.
  * Fires when the motors drew current but the board's channel currents were logged only once or twice, or were all
  * zero, or its voltage read 1 V or less: a warning when the board could report, context (grey) when it can't or the
  * profile doesn't say which board it is.
@@ -12,7 +13,6 @@
 import { maxOf, round, rule } from '../rule.ts'
 import type { MatchView } from '../view.ts'
 
-const PD = '/PowerDistribution'
 const MOTORS_DRAWING_AMPS = 20 // total motor current that the board's channels must show if it is reporting
 // The channel count the log claims tells which type of board the code's reader was set up for.
 const CLAIMED: Record<number, string> = { 24: 'a REV Power Distribution Hub (24 channels)', 16: 'a CTRE Power Distribution Panel (16 channels)' }
@@ -34,17 +34,15 @@ export default rule({
   incident: 'Two robots\' logs had two records of 24 channels, all 0 A, while the robot drew hundreds of amps.',
 
   check(match) {
-    if (!match.has(`${PD}/ChannelCurrent`)) {
-      return match.couldNotCheck('the log has no /PowerDistribution entries (the robot code doesn\'t log the board)')
-    }
+    const channels = match.lists('powerDistributionCurrents')
+    // The board's own total can't show the board is silent: only the motors' currents can.
     const power = match.powerIfLogged()
-    const motorPeak = power ? maxOf(power.grid.amps) : NaN
+    const motorPeak = power?.grid.motors.length ? maxOf(power.grid.amps) : NaN
     if (!(motorPeak > MOTORS_DRAWING_AMPS)) return match.couldNotCheck('no motor current to compare with')
 
-    const channels = match.lists(`${PD}/ChannelCurrent`)
     const highestChannel = highestCurrent(channels.v)
-    const boardVolts = match.signalIfLogged(`${PD}/Voltage`)?.highest().value ?? NaN
-    const count = match.signalIfLogged(`${PD}/ChannelCount`)?.last() ?? (channels.v[0]?.length ?? 0)
+    const boardVolts = match.signalIfLogged('powerDistributionVoltage')?.highest().value ?? NaN
+    const count = match.signalIfLogged('powerDistributionChannels')?.last() ?? (channels.v[0]?.length ?? 0)
     const silent = channels.t.length <= 2 || highestChannel < 0.5 || (Number.isFinite(boardVolts) && boardVolts <= 1)
     if (!silent) return
 

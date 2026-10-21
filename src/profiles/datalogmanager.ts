@@ -11,10 +11,9 @@
  * IsRedAlliance, FMSControlData: the HAL control word, bit 0 enabled, 1 autonomous, 2 test, 3 e-stop,
  * 4 FMS attached, 5 DS attached).
  */
-import { hasEntry, type WpilogFile } from '../readers/wpilog.ts'
-import type { RobotProfile } from './types.ts'
-
-type Signals = RobotProfile['signals']
+import type { WpilogFile } from '../readers/wpilog.ts'
+import { DSLOG } from './sources.ts'
+import type { ResolvedProfile, SignalSources } from './types.ts'
 
 const FMS = 'NT:/FMSInfo'
 
@@ -25,9 +24,10 @@ export const DS_ATTACHED = `${FMS}/FMSControlData:bit5`
 /**
  * For each signal a DataLogManager log can supply, where it is. A key of '' means "this kind of log doesn't have
  * it": rules that need it say so under "Not checked". A team profile starts from this and fills in what its robot
- * publishes (battery voltage, gyro, pose).
+ * publishes (battery voltage, gyro, pose). AdvantageKit's map lists these identity keys after its own, so any
+ * profile can tell which match a plain WPILib log holds (advantagekit.ts).
  */
-export const DATALOGMANAGER_SIGNALS: Signals = {
+export const DATALOGMANAGER_SIGNALS: SignalSources = {
   enabled: 'DS:enabled',
   autonomous: 'DS:autonomous',
   fmsAttached: FMS_ATTACHED,
@@ -41,10 +41,13 @@ export const DATALOGMANAGER_SIGNALS: Signals = {
   gitBranch: '',
   gitDate: '',
   gitDirty: '',
+  codebase: '',
+  logClock: '',
   epochMicros: 'systemTime',
   systemTimeValid: '',
   batteryVoltage: '',
-  brownedOut: '',
+  // Nothing in the robot log; the Driver Station log has its own flag.
+  brownedOut: `${DSLOG}brownout`,
   brownoutVoltage: '',
   commsDisableCount: '',
   systemActive: '',
@@ -62,31 +65,23 @@ export const DATALOGMANAGER_SIGNALS: Signals = {
   matchTimeLeft: '',
   autoChoice: '',
   joystickButtonCounts: [],
+  radioConnected: '',
+  powerDistributionCurrents: '',
+  powerDistributionVoltage: '',
+  powerDistributionChannels: '',
+  totalCurrent: '',
 }
 
-/** The signals that say which match a log holds and when the robot was enabled: always worth finding. */
-const IDENTITY: (keyof Signals)[] = [
-  'enabled', 'autonomous', 'fmsAttached', 'dsAttached', 'eventName', 'matchType', 'matchNumber', 'replayNumber', 'epochMicros', 'console',
-]
-
 /**
- * The profile with its match-identity keys pointed at DataLogManager's entries wherever the profile's own key isn't
- * in this log, and WPILib Alerts groups found in the log added. So any profile, even one for another robot, can tell
- * which match a plain WPILib log holds. Returns the profile itself when nothing needed filling.
+ * The profile with WPILib Alerts groups found in the log added: WPILib's Alerts publish each group to NetworkTables
+ * with a .type of "Alerts" (Shuffleboard/Elastic read it), so groups the profile doesn't name (PathPlanner's,
+ * PhotonVision's) are read too. Returns the profile itself when there are none.
  */
-export function withDataLogManagerKeys(log: WpilogFile, profile: RobotProfile): RobotProfile {
-  const filled: Partial<Signals> = {}
-  for (const name of IDENTITY) {
-    const own = profile.signals[name] as string
-    const fallback = DATALOGMANAGER_SIGNALS[name] as string
-    if (fallback && own !== fallback && !hasEntry(log, own) && hasEntry(log, fallback)) (filled as Record<string, string>)[name] = fallback
-  }
-  // WPILib's Alerts publish each group to NetworkTables with a .type of "Alerts" (Shuffleboard/Elastic read it), so
-  // groups the profile doesn't name (PathPlanner's, PhotonVision's) are read too.
+export function withNtAlertGroups(log: WpilogFile, profile: ResolvedProfile): ResolvedProfile {
   const alertGroups = [...log.entries.values()]
     .filter((e) => e.name.endsWith('/.type') && /"SmartDashboard"\s*:\s*"Alerts"/.test(e.metadata))
     .map((e) => e.name.slice(0, -'/.type'.length))
     .filter((g) => !profile.signals.alertGroups.includes(g))
-  if (Object.keys(filled).length === 0 && alertGroups.length === 0) return profile
-  return { ...profile, signals: { ...profile.signals, ...filled, alertGroups: [...profile.signals.alertGroups, ...alertGroups] } }
+  if (alertGroups.length === 0) return profile
+  return { ...profile, signals: { ...profile.signals, alertGroups: [...profile.signals.alertGroups, ...alertGroups] } }
 }

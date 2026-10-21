@@ -14,7 +14,6 @@
 import { isFalse, plural, rule, round, voltageList, type Severity } from '../rule.ts'
 import type { MatchView } from '../view.ts'
 
-const RADIO = '/RadioStatus/Connected' // AdvantageKit's radio logger: can the roboRIO reach the radio?
 const RADIO_REBOOT_SECONDS = 15
 const BLIP_SECONDS = 0.5 // a loss whose outputs came back on in less than this is a blip
 const MANY_BLIPS = 3 // this many blips and nothing longer: a warning, not just a note
@@ -41,7 +40,7 @@ export default rule({
     const backOn = match.signalIfLogged('systemActive')?.turnsOn() ?? []
     const deadSeconds = losses.map((t) => (backOn.find((on) => on > t) ?? NaN) - t)
     const battery = match.signalIfLogged('batteryVoltage')
-    const radio = match.signalIfLogged(RADIO)
+    const radio = match.signalIfLogged('radioConnected') // can the roboRIO reach the radio?
     // The roboRIO losing the radio around a loss (from 5 s before to 45 s after): the radio went down with it.
     const radioLost = !!radio && losses.some((t) => radio.episodes(isFalse, { touching: match.between(t - 5, t + 45) }).length > 0)
     const ds = match.dsLogs.length ? dsLogsAround(match, losses) : null

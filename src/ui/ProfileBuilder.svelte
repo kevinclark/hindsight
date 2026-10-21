@@ -14,6 +14,7 @@
   import { browserGitHub, gitRepoOfFiles } from '../code/browser-code-folder.ts'
   import { parseGitHub } from '../code/github.ts'
   import { PROFILES } from '../profiles/index.ts'
+  import { formatOfSignals } from '../profiles/formats.ts'
   import { deviceLabel } from '../builder/snapshot.ts'
   import { downloadText } from './download.ts'
   import { changed } from './kept-profiles.svelte.ts'
@@ -42,7 +43,7 @@
   // Logs left out (another robot) come from the draft; the rest follow the student's edits.
   const warnings = $derived(json ? [...draftWarningsAtDraft.filter((w) => w.includes('from another robot')), ...draftWarnings(json.motorGroups)] : [])
   const shaProblem = $derived(hints && json?.code ? shaWarning(hints, json.code.sha) : null)
-  const framework = $derived(json?.signals?.enabled?.startsWith('/DriverStation') ? 'AdvantageKit' : 'WPILib DataLogManager')
+  const framework = $derived(json?.signals ? formatOfSignals(json.signals)?.name ?? 'unknown' : 'unknown')
   // Computed on a copy: refreshLimits fills in the group's limits, and here only its reason for leaving them out is wanted.
   const limitProblems = $derived.by(() => {
     const out = new Map<string, string>()
