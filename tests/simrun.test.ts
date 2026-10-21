@@ -111,7 +111,7 @@ describe('crash', () => {
       '\tat edu.wpi.first.wpilibj.RobotBase.runRobot(RobotBase.java:370)',
     ].join('\n')
     const [finding] = crash(context([result(output)]))
-    expect(finding.message).toBe('The robot program crashed while starting (in the Robot constructor or robotInit): NullPointerException: Cannot invoke "getName()" because "this.io" is null')
+    expect(finding.message).toBe('The robot program crashed while starting (in the Robot constructor, robotInit or its first loop): NullPointerException: Cannot invoke "getName()" because "this.io" is null')
     expect(finding.details).toEqual(['at Camera.getName (Camera.java:120)', 'called from Camera.<init> (Camera.java:72)'])
   })
 

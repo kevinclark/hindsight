@@ -27,6 +27,8 @@ const MOVED_METERS = 0.5
 /** Assumed: an unflipped path replays the same move on red, so the two moves differ by under a third of their size. */
 const SAME_MOVE_SHARE = 0.35
 const TURNED_DEGREES = 20
+/** Measured: a robot standing still moved under 0.01 m (above); 0.2 m is still standing, with margin. */
+const STILL_METERS = 0.2
 
 export const alliances: Check = ({ results, poseKey }) => {
   // Each repeat's blue run is compared with the same repeat's red run.
@@ -62,11 +64,14 @@ function sameOnBoth(blue: Movement, red: Movement): string | null {
     const same = Math.sign(blue.dx) === Math.sign(red.dx) && gap <= SAME_MOVE_SHARE * Math.max(blue.distance, red.distance)
     return same ? `both drove ${blue.dx > 0 ? '+x (toward red)' : '−x (toward blue)'}` : null
   }
-  const turned = Math.abs(headingGap(blue.headingStart, blue.headingEnd)) >= TURNED_DEGREES || Math.abs(headingGap(red.headingStart, red.headingEnd)) >= TURNED_DEGREES
+  // Headings are compared only for a robot that stood still (a heading reset): one that drove a little and turned
+  // with it (26Off drove 0.3 m and turned 22-42° in sim) says nothing by its heading.
+  const stoodStill = blue.distance < STILL_METERS && red.distance < STILL_METERS
+  const turned = headingGap(blue.headingStart, blue.headingEnd) >= TURNED_DEGREES || headingGap(red.headingStart, red.headingEnd) >= TURNED_DEGREES
   // Unflipped, red starts where blue does too: a run that started flipped (an auto's start pose) isn't the same move.
   const sameStart = headingGap(blue.headingStart, red.headingStart) < TURNED_DEGREES
-  if (turned && sameStart && headingGap(blue.headingEnd, red.headingEnd) < TURNED_DEGREES) return `both ended facing ${blue.headingEnd.toFixed(0)}°`
-  return null
+  const sameEnd = headingGap(blue.headingEnd, red.headingEnd) < TURNED_DEGREES
+  return stoodStill && turned && sameStart && sameEnd ? `both ended facing ${blue.headingEnd.toFixed(0)}°` : null
 }
 
 function describe(m: Movement): string {

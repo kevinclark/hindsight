@@ -72,9 +72,9 @@ function exceptionOf(line: string): string {
   return exception[2] ? `${name}: ${exception[2]}` : `${name}`
 }
 
-/** "while starting (in the Robot constructor or robotInit)", or "4.2 s after start, in teleop". */
+/** "while starting (in the Robot constructor, robotInit or its first loop)", or "4.2 s after start, in teleop". */
 function whenItStopped(record: RunRecord): string {
-  if (record.started === null) return 'while starting (in the Robot constructor or robotInit)'
+  if (record.started === null) return 'while starting (in the Robot constructor, robotInit or its first loop)'
   // The last period runs to the last line read, which is the moment it stopped.
   return `${duration(record.last - record.started)} after start, in ${record.periods.at(-1)?.mode ?? 'disabled'}`
 }
