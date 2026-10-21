@@ -34,6 +34,17 @@ const HARNESS = join(dirname(fileURLToPath(import.meta.url)), '../../tools/sim-r
  * measured 2026-10-21, a 2022 robot builds with it and fails without.
  */
 const JCENTER_MIRROR = 'https://frcmaven.wpi.edu/artifactory/ex-mvn-ajoberstarbintraybackup-remote'
+const JCENTER_MIRROR_SCRIPT = `settingsEvaluated { s -> s.pluginManagement.repositories { gradlePluginPortal(); maven { url '${JCENTER_MIRROR}' } } }`
+/**
+ * The team's formatter never runs on sim-run's copy: it would only rewrite the copy, and Spotless can fail on its
+ * own download (measured: a public repo's Eclipse formatter fetch got an HTML page and the build stopped).
+ */
+const NO_FORMATTER = [
+  // Builds wire spotlessApply into compileJava; without that link the Spotless tasks are never even created.
+  "allprojects { afterEvaluate { p -> p.tasks.configureEach { t -> t.setDependsOn(t.dependsOn.findAll { !it.toString().contains('spotless') }) } } }",
+  "gradle.taskGraph.whenReady { g -> g.allTasks.findAll { it.name.startsWith('spotless') }.each { it.enabled = false } }",
+].join('\n')
+
 /**
  * Gradle's words for "not in the local cache" when run offline (measured 2026-10-21 on 14 history builds and on a
  * plugin it had never fetched: "could not resolve plugin artifact", lower case).
@@ -76,11 +87,10 @@ export function build(folder: string, work: string, javaHomeOverride: string | n
       + 'Run sim-run with --java <an Intel (x64) JDK 17 folder>; it runs under Rosetta.')
   }
   const initScript = join(work, 'sim-run.init.gradle')
-  const mirror = `settingsEvaluated { s -> s.pluginManagement.repositories { gradlePluginPortal(); maven { url '${JCENTER_MIRROR}' } } }`
-  writeFileSync(initScript, `${mirror}\n`)
+  writeFileSync(initScript, [NO_FORMATTER, ...(year < 2023 ? [JCENTER_MIRROR_SCRIPT] : [])].join('\n') + '\n')
   // The team number only matters for deploying; a repo that doesn't commit .wpilib/wpilib_preferences.json can't
   // build without one (measured on a public repo), and the simulator never uses it.
-  const tasks = [...(year < 2023 ? ['--init-script', initScript] : []), 'simulateExternalJavaRelease', '--console=plain', '-PteamNumber=0']
+  const tasks = ['--init-script', initScript, 'simulateExternalJavaRelease', '--console=plain', '-PteamNumber=0']
   const gradlew = join(folder, WINDOWS ? 'gradlew.bat' : 'gradlew')
   const gradle = (extra: string[]) => {
     // Windows runs gradlew.bat through cmd.exe, which splits unquoted paths at spaces ("C:\Users\First Last").
