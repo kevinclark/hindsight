@@ -25,6 +25,8 @@ const MOST_CALLS = 6
 const MOST_WAYS = 200
 const DECLARATIONS = ['constructor_declaration', 'method_declaration', 'field_declaration']
 const FORKS = ['if_statement', 'ternary_expression', 'switch_block']
+/** What a `return` belongs to: the nearest method, constructor or lambda. */
+const BODY_OWNERS = ['method_declaration', 'constructor_declaration', 'lambda_expression']
 
 /**
  * Each chain of calls that reaches this code, innermost call first: `[[]]` when it runs without a call from the
@@ -46,19 +48,34 @@ export function waysToReach(node: Node, project: Project, calls = 0): Node[][] |
   return ways
 }
 
-/** The value of `expr` when its code is reached through `chain` (from waysToReach), or null when it can't tell. */
-export function valueAlong(expr: Node | null, chain: Node[], project: Project): Found | null {
+/**
+ * The value of `expr` when its code is reached through `chain` (from waysToReach), or null when it can't tell. With
+ * `throughCalls`, a call to a project method with one `return` is followed into it (`DrumSubsystem.getHoodConfig()`
+ * is the `config` it returns); otherwise a call can't be told.
+ */
+export function valueAlong(expr: Node | null, chain: Node[], project: Project, options = { throughCalls: false }): Found | null {
   if (!expr) return null
+  const along = (next: Node | null, nextChain: Node[]) => valueAlong(next, nextChain, project, options)
   const number = valueOf(expr, project)
   if (number) return { value: number.number, at: expr }
   if (expr.type === 'string_literal') return { value: expr.text.slice(1, -1), at: expr }
   if (expr.type === 'object_creation_expression') return { value: codeOf(expr), at: expr }
+  if (expr.type === 'method_invocation' && options.throughCalls && chain.length < MOST_CALLS) return along(returnedBy(expr, project), [expr, ...chain])
   const name = expr.type === 'identifier' ? expr.text : thisField(expr)
   if (!name) return null
   const local = expr.type === 'identifier' ? localNamed(expr, name) : null
-  if (local?.type === 'formal_parameter') return valueAlong(argumentFor(local, chain[0], project), chain.slice(1), project)
+  if (local?.type === 'formal_parameter') return along(argumentFor(local, chain[0], project), chain.slice(1))
   const set = local ? setOnce(local, enclosing(local, ['block']) ?? local) : setOnceInClass(expr, name, project)
-  return set ? valueAlong(set, chain, project) : null
+  return set ? along(set, chain) : null
+}
+
+/** What the one project method a call goes to returns, when it has a single `return`; null when it can't tell. */
+function returnedBy(call: Node, project: Project): Node | null {
+  const goesTo = (m: Node) => parametersOf(m).length === argumentsOf(call).length && callsInto(call, classAround(m) ?? m, project)
+  const methods = project.methodsNamed(nameOf(call) ?? '').filter(goesTo)
+  if (methods.length !== 1) return null
+  const returns = methods[0].descendantsOfType('return_statement').filter((r) => r && enclosing(r, BODY_OWNERS)?.equals(methods[0]))
+  return returns.length === 1 ? (parts(returns[0])[0] ?? null) : null
 }
 
 /** Can code reached by these two paths (each the places a value passed through) both run? */

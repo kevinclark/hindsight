@@ -383,6 +383,13 @@ function toPlot(p: Problem, view: MatchView): Plot | undefined {
   return { from, to, lines, unit: p.plot.unit ?? '', threshold: p.plot.line, markers: p.plot.marks?.map((t) => ({ t, label: '' })) }
 }
 
+/** Items grouped by a key, each group in the order its items came, the groups in the order their keys first came. */
+export function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>()
+  for (const item of items) groups.set(key(item), [...(groups.get(key(item)) ?? []), item])
+  return groups
+}
+
 /** The evidence without the entries a rule left undefined. Code checks use it too (src/code/check/rule.ts). */
 export function definedOnly(evidence: Problem['evidence']): Record<string, number | string> {
   return Object.fromEntries(Object.entries(evidence ?? {}).filter((e): e is [string, number | string] => e[1] !== undefined))
