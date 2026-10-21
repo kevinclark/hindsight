@@ -619,7 +619,6 @@
   .merged li { display: grid; grid-template-columns: 8rem 1fr; gap: 0.1rem 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
   .merged .measured, .merged .latest, .merged .marked { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
   /* Marked not a real problem in every match it fired in: muted like Match review's known issues; the words still say its severity. */
-  .merged li.filed .title code { color: var(--muted); }
   .merged .title { overflow-wrap: anywhere; }
   .merged .title code { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
   .lead { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }

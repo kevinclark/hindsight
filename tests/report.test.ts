@@ -242,6 +242,16 @@ describe('Foresight card', () => {
     const text = JSON.stringify(foresightCard({ ...base, items: [item] }).items)
     expect(text).not.toContain(sha)
   })
+  it('keeps a number line whose digits only appear inside another number in the title', () => {
+    const finding = { rule: 'can/device-dropout', title: 'Intake roller dropped off CAN for 13 s', evidence: { 'devices dropped': 1 } }
+    const item = { finding, level: 'red', proof: '', action: 'x', explains: [] } as unknown as ForesightReportInput['items'][number]
+    expect(foresightCard({ ...base, items: [item] }).items[0].number).toBe('devices dropped: 1')
+  })
+  it('drops the uncommitted box only when the first item, which is always drawn, says it', () => {
+    const mk = (title: string, level = 'red') => ({ finding: { rule: 'x', title, evidence: {} }, level, proof: '', action: 'x', explains: [] }) as unknown as ForesightReportInput['items'][number]
+    expect(foresightCard({ ...base, items: [mk('Robot ran uncommitted changes on top of 123eec6')] }).uncommitted).toBe(false)
+    expect(foresightCard({ ...base, items: [mk('Battery low'), mk('Robot ran uncommitted changes on top of 123eec6', 'amber')] }).uncommitted).toBe(true)
+  })
   it('shortens shas with one helper and counts the checks that did not run only when there are some', () => {
     const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
     expect(shortShas(`${sha} and ${sha.slice(0, 7)}`)).toBe('123eec6 and 123eec6')

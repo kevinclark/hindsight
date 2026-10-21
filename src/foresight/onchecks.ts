@@ -175,7 +175,8 @@ export function mergeLines(lines: MarkedLine[]): ChecklistLine[] {
     m.parts.push(l)
   }
   for (const [group, m] of merged) {
-    const checked = m.parts.filter((p) => p.state !== 'not checked')
+    // Merged groups hold measured lines only (no by-eye or context parts), but say so in the filter rather than rely on it.
+    const checked = m.parts.filter((p) => p.state !== 'not checked' && p.state !== 'by eye' && p.state !== 'context')
     m.state = checked.length ? checked.reduce<LineState>((w, p) => (RANK[p.state] > RANK[w] ? p.state : w), 'ok') : 'not checked'
     const bad = [...m.parts].filter((p) => p.state !== 'ok').sort((a, b) => RANK[b.state] - RANK[a.state])
     if (!bad.length) { m.detail = MERGED_LINES[group].ok; continue }
