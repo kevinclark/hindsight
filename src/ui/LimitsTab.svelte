@@ -161,7 +161,7 @@
   .summary .cap { color: var(--muted); font-size: 0.85rem; }
   .summary .cap.off { color: var(--error); font-weight: 600; }
   .read { margin: 0.25rem 0; font-size: 0.85rem; }
-  .read summary { cursor: pointer; color: var(--muted); }
+  .read summary { cursor: pointer; color: var(--muted); min-height: 24px; line-height: 24px; }
   .why, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
   .group { margin: 1.25rem 0; padding-top: 0.75rem; border-top: 1px solid var(--border); }
   h3 { font-size: 1rem; margin: 0 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
@@ -179,5 +179,6 @@
   .bad { color: var(--error); font-weight: 600; }
   .hl { background: var(--hover); }
   .controls { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; font-size: 0.9rem; }
-  input[type='range'] { width: 10rem; vertical-align: middle; }
+  input[type='range'] { width: 10rem; height: 24px; vertical-align: middle; }
+  select { min-height: 24px; }
 </style>

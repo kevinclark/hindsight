@@ -269,9 +269,10 @@
   .unverified { font-size: 0.8rem; color: var(--warning); }
   .locked { opacity: 0.85; }
   .stop { color: var(--error); }
-  .chip { font-size: 0.75rem; font-weight: normal; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--warning); color: var(--warning); }
+  .chip { font-size: 0.75rem; font-weight: normal; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--warning); color: var(--fg); }
   .quiz { font-size: 0.85rem; margin-top: 0.4rem; }
   .quiz summary { cursor: pointer; color: var(--focus); }
+  details summary { min-height: 24px; line-height: 24px; }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin: 0.5rem 0; }
   button { padding: 0.35rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
   button.link { border: none; background: none; text-decoration: underline; color: var(--muted); }

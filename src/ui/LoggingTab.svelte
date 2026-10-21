@@ -97,7 +97,7 @@
   .hoot { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.5rem; }
   section, details { margin-top: 1.25rem; }
   h3 { font-size: 1rem; margin: 0 0 0.25rem; }
-  details summary { cursor: pointer; }
+  details summary { cursor: pointer; min-height: 24px; }
   details h3 { display: inline; }
   .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.5rem; }
   .lines { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--border); }
