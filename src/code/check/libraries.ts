@@ -42,6 +42,27 @@ export const COMMAND_DECORATORS = [
 ]
 /** Subsystem's default methods that build a Command (Subsystem.java), called on a subsystem or from inside one. */
 export const SUBSYSTEM_COMMANDS = ['idle', 'runOnce', 'run', 'startEnd', 'runEnd', 'startRun', 'defer']
+/**
+ * How long a command runs, from Command.java, Commands.java and Subsystem.java. Never ending on their own: `run`,
+ * `startEnd`, `runEnd`, `startRun` and `idle` (on a subsystem or `Commands.`), RunCommand, StartEndCommand, and
+ * anything `.repeatedly()`. Ending the first time they run: `runOnce`, InstantCommand, `Commands.print`,
+ * `Commands.none`.
+ */
+export const ENDLESS_FACTORIES = ['run', 'startEnd', 'runEnd', 'startRun', 'idle']
+export const ENDLESS_CLASSES = ['RunCommand', 'StartEndCommand']
+export const INSTANT_FACTORIES = ['runOnce', 'print', 'none']
+export const INSTANT_CLASSES = ['InstantCommand', 'PrintCommand']
+/**
+ * Decorators that make a command wait for a condition or a time before it ends (`withInterrupt` is the 2022 name of
+ * `until`). On a command that ends at once they never wait.
+ */
+export const WAITING_DECORATORS = ['until', 'onlyWhile', 'withTimeout', 'withInterrupt']
+/** Decorators whose command ends exactly when the one they wrap does, or later (a parallel group waits for all). */
+export const SAME_END_DECORATORS = [
+  'alongWith', 'beforeStarting', 'withName', 'finallyDo', 'handleInterrupt', 'ignoringDisable', 'withInterruptBehavior',
+  'asProxy', 'deadlineFor', 'deadlineWith',
+]
+
 /** The classes a subsystem extends or implements (wpilibNewCommands). */
 export const SUBSYSTEM_TYPES = ['SubsystemBase', 'Subsystem']
 

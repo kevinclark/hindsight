@@ -84,9 +84,17 @@ export function isSubsystem(type: string | null, project: Project): boolean {
   return project.lineage(project.classNamed(type)).some((c) => supers(c).some((t) => SUBSYSTEM_TYPES.includes(t?.text ?? '')))
 }
 
+/**
+ * Where a name used at `node` is declared: a local or parameter, else a field of this class or the project classes
+ * above it (its declarator), or null when it can't tell.
+ */
+export function declarationOf(node: Node, name: string, project: Project): Node | null {
+  return localNamed(node, name) ?? sameAnswer(project.membersNamed(classAround(node), 'field', name))
+}
+
 /** A local, parameter or field (of this class or the project classes above it) by name: its declared type. */
 function variableType(node: Node, name: string, project: Project): string | null {
-  const declared = localNamed(node, name) ?? sameAnswer(project.membersNamed(classAround(node), 'field', name))
+  const declared = declarationOf(node, name, project)
   if (!declared) return null
   const type = baseType(declaredType(declared))
   return type === 'var' ? typeOf(field(declared, 'value'), project) : type

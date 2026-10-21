@@ -10,6 +10,9 @@ import optionalEquals from '../src/code/check/rules/optional-equals.ts'
 import discardedResult from '../src/code/check/rules/discarded-result.ts'
 import impossibleRange from '../src/code/check/rules/impossible-range.ts'
 import duplicateCanId from '../src/code/check/rules/duplicate-can-id.ts'
+import neverEndingStep from '../src/code/check/rules/never-ending-step.ts'
+import staleSignal from '../src/code/check/rules/stale-signal.ts'
+import unusedConfig from '../src/code/check/rules/unused-config.ts'
 import { codeRule, type CodeRule } from '../src/code/check/rule.ts'
 import { Project } from '../src/code/check/project.ts'
 import { isSubsystem } from '../src/code/check/types.ts'
@@ -299,5 +302,99 @@ describe('constants the old builder regex read: in an interface, and inside a cl
     const project = new Project(Object.entries(java).map(([path, text]) => ({ path, text })))
     expect(isSubsystem('Shooter', project)).toBe(true)
     project.close()
+  })
+})
+
+/** A subsystem for the command checks: WPILib's run and runOnce come from SubsystemBase. */
+const SUBSYSTEM = (body: string) => `class Intake extends SubsystemBase { ${body} }`
+
+describe('code/never-ending-step', () => {
+  it('fires on an endless step before the last, in Commands.sequence, andThen and a SequentialCommandGroup', () => {
+    const java = SUBSYSTEM(`
+      Command zero() { return Commands.sequence(this.run(() -> stop()), Commands.waitUntil(() -> stalled()), runOnce(() -> reset())); }
+      Command a() { return run(() -> spin()).withName("spin").andThen(Commands.print("done")); }
+      Command b() { return new SequentialCommandGroup(new RunCommand(() -> spin(), this), new WaitCommand(1)); }`)
+    expect(messages(neverEndingStep, java)).toEqual([
+      'this.run(() -> stop()) never ends on its own, so the 2 steps after it never run',
+      'run(() -> spin()).withName("spin") never ends on its own, so the 1 step after it never runs',
+      'new RunCommand(() -> spin(), this) never ends on its own, so the 1 step after it never runs',
+    ])
+  })
+  it('reads addCommands and super in a class that extends SequentialCommandGroup', () => {
+    const java = `class Climb extends SequentialCommandGroup {
+      Climb(Climber c) { super(new RunCommand(() -> c.up(), c), new WaitCommand(1)); addCommands(Commands.idle(c), new WaitCommand(2)); }
+    }`
+    expect(messages(neverEndingStep, java)).toHaveLength(2)
+  })
+  it('fires on a command that ends at once given until or withTimeout, anywhere', () => {
+    const java = SUBSYSTEM(`
+      Command a() { return runOnce(() -> up()).until(() -> atTop()); }
+      Command b() { return new InstantCommand(() -> unlock()).withTimeout(0.5); }`)
+    expect(messages(neverEndingStep, java)).toEqual([
+      'runOnce(() -> up()) ends the first time it runs, so .until(…) never waits',
+      'new InstantCommand(() -> unlock()) ends the first time it runs, so .withTimeout(…) never waits',
+    ])
+  })
+  it('stays quiet on an ended step, a last step, until(() -> true), and a project method named run', () => {
+    const java = SUBSYSTEM(`
+      Command a() { return Commands.sequence(this.run(() -> stop()).until(() -> stalled()), runOnce(() -> reset())); }
+      Command b() { return Commands.sequence(runOnce(() -> hold()).until(() -> true), this.run(() -> {})); }
+      Command c() { return Commands.sequence(runOnce(() -> reset()), this.run(() -> stop())); }`) + `
+      class Container { static Command run(Command... c) { return new ParallelCommandGroup(c); } Command d() { return Commands.sequence(run(x), y); } }`
+    expect(messages(neverEndingStep, java)).toEqual([])
+  })
+})
+
+describe('code/unused-config', () => {
+  it('fires on a configuration parameter nothing reads, even beside a field of the same name', () => {
+    const java = `class CANdleIOReal {
+      CANdleConfiguration config;
+      CANdleIOReal(int id, CANdleConfiguration config) { candle = new CANdle(id); this.config = new CANdleConfiguration(); }
+    }`
+    expect(messages(unusedConfig, java)).toEqual(['config (CANdleConfiguration) is passed to CANdleIOReal(…) and never used'])
+  })
+  it('stays quiet when it is applied, on other types, and in an interface', () => {
+    const java = `class HoodIO {
+      HoodIO(TalonFXConfiguration config, String threadName) { motor.getConfigurator().apply(config); }
+    }
+    interface IO { void configure(TalonFXConfiguration config); }`
+    expect(messages(unusedConfig, java)).toEqual([])
+  })
+})
+
+describe('code/stale-signal', () => {
+  const io = (body: string) => `class FlywheelIO {
+    private final TalonFX motor = new TalonFX(1);
+    private final StatusSignal<AngularVelocity> velocity = motor.getVelocity();
+    private final StatusSignal<Voltage> voltage = motor.getMotorVoltage();
+    ${body}
+  }`
+  it('fires when a kept signal is read and never refreshed, once per class', () => {
+    const java = io('void update(Inputs inputs) { inputs.v = velocity.getValueAsDouble(); inputs.volts = voltage.getValueAsDouble(); }')
+    expect(messages(staleSignal, java)).toEqual(['2 status signals read but never refreshed: velocity, voltage. Each read gives the value from when they were first fetched'])
+  })
+  it('fires on a rate of 0, and on optimizeBusUtilization with no rate (but not for a temperature)', () => {
+    const zero = io(`FlywheelIO() { BaseStatusSignal.setUpdateFrequencyForAll(0.0, velocity); }
+      void update(Inputs inputs) { BaseStatusSignal.refreshAll(velocity, voltage); inputs.v = velocity.getValueAsDouble(); }`)
+    expect(messages(staleSignal, zero)).toEqual(['1 status signal set to update 0 times a second (line 5) and then read: velocity. The value never changes'])
+    const slowed = io(`private final StatusSignal<Temperature> temp = motor.getDeviceTemp();
+      FlywheelIO() { motor.optimizeBusUtilization(); }
+      void update(Inputs inputs) { BaseStatusSignal.refreshAll(velocity, voltage, temp); inputs.v = velocity.getValueAsDouble(); inputs.t = temp.getValueAsDouble(); }`)
+    expect(messages(staleSignal, slowed)).toEqual(['1 status signal read with no rate of its own, so optimizeBusUtilization() (line 6) slows it to 4 a second: velocity'])
+  })
+  it('stays quiet when refreshed through an array, rated through its getter, re-fetched, or handed off', () => {
+    const java = io(`private final BaseStatusSignal[] all = new BaseStatusSignal[] {velocity, voltage};
+      FlywheelIO() { BaseStatusSignal.setUpdateFrequencyForAll(50, motor.getVelocity(), motor.getMotorVoltage()); motor.optimizeBusUtilization(); }
+      void update(Inputs inputs) { BaseStatusSignal.refreshAll(all); inputs.v = velocity.getValueAsDouble(); inputs.volts = voltage.getValueAsDouble(); }`)
+    expect(messages(staleSignal, java)).toEqual([])
+    const fetched = 'class A { StatusSignalValue<Double> s; void update() { s = motor.getSupplyVoltage(); x = s.getValue(); } }'
+    expect(messages(staleSignal, fetched)).toEqual([])
+    const handed = io('FlywheelIO() { PhoenixUtil.registerSignals(velocity, voltage); } double v() { return velocity.getValueAsDouble() + voltage.getValueAsDouble(); }')
+    expect(messages(staleSignal, handed)).toEqual([])
+  })
+  it("isn't fooled by an inputs class with fields of the same names", () => {
+    const java = io(`static class Inputs { double velocity; double voltage; }
+      void update(Inputs inputs) { BaseStatusSignal.refreshAll(velocity, voltage); inputs.velocity = velocity.getValueAsDouble(); inputs.voltage = voltage.getValueAsDouble(); }`)
+    expect(messages(staleSignal, java)).toEqual([])
   })
 })
