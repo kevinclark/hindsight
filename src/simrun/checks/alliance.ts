@@ -5,7 +5,7 @@
  *
  * For each enabled stretch of the scenario: it fires when the robot made the same move on both alliances (same
  * direction in x, and the two moves nearly equal), or, when it only turned (a heading reset), ended facing the same
- * way. Two moves that differ (an auto that barely moves in sim, steering differently each run) are not compared:
+ * way from the same start. Two moves that differ (an auto that barely moves in sim, steering differently each run) are not compared:
  * measured on 26Off, two such autos moved 1 m with x the same sign and y 0.88 m vs 0.15 m. The heading comparison
  * assumes a rotated field, or a heading reset: on a mirrored field a correctly flipped turn to 90° ends at 90° on
  * both.
@@ -62,7 +62,9 @@ function sameOnBoth(blue: Movement, red: Movement): string | null {
     return same ? `both drove ${blue.dx > 0 ? '+x (toward red)' : '−x (toward blue)'}` : null
   }
   const turned = Math.abs(headingGap(blue.headingStart, blue.headingEnd)) >= TURNED_DEGREES || Math.abs(headingGap(red.headingStart, red.headingEnd)) >= TURNED_DEGREES
-  if (turned && headingGap(blue.headingEnd, red.headingEnd) < TURNED_DEGREES) return `both ended facing ${blue.headingEnd.toFixed(0)}°`
+  // Unflipped, red starts where blue does too: a run that started flipped (an auto's start pose) isn't the same move.
+  const sameStart = headingGap(blue.headingStart, red.headingStart) < TURNED_DEGREES
+  if (turned && sameStart && headingGap(blue.headingEnd, red.headingEnd) < TURNED_DEGREES) return `both ended facing ${blue.headingEnd.toFixed(0)}°`
   return null
 }
 

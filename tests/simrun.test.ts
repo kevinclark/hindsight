@@ -185,6 +185,18 @@ describe('autos and alliances', () => {
     expect(alliances(context([autoRun(blue, 3), autoRun(red, -3)]))).toEqual([])
   })
 
+  it('does not compare headings of runs that started flipped (an auto that barely moves in sim)', () => {
+    const [blue, red] = runsOf(auto)
+    const turning = (r: Run, from: number, to: number) => {
+      const output = harness([[2, 'started'], [2, 'step', '0 mode disabled'], [5, 'step', '3 mode auto'], [20, 'step', '18 mode disabled'], [21.2, 'end']])
+      const log = writeWpilog([...POSE_SCHEMA, { name: '/RealOutputs/Odometry/Robot', type: 'struct:Pose2d', records: [[5.1, { x: 8, y: 4, rot: from }], [19, { x: 8, y: 4, rot: to }]] }])
+      return result(output, r, log)
+    }
+    const deg = Math.PI / 180
+    expect(alliances(context([turning(blue, -89 * deg, 94 * deg), turning(red, 88 * deg, 77 * deg)]))).toEqual([])
+    expect(alliances(context([turning(blue, 0, 178 * deg), turning(red, 0, 179 * deg)])).map((f) => f.check)).toEqual(['alliance/same-on-both'])
+  })
+
   it("reports the auto's own command still running at the end, not wrappers or a state machine's later commands", () => {
     const [left] = runsOf(auto)
     const [noneBlue] = runsOf(none)
