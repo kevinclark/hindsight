@@ -29,7 +29,9 @@ export const zeroes: Check = ({ results, zeroes }) => zeroes.flatMap((zero) => {
     const tries = zeroCommand ? r.record.lives.filter((l) => signature(l.command) === zeroCommand) : []
     const undone = tries.filter((l) => !done.some((d) => d >= l.start && d <= l.end + FINISHES_AFTER_MESSAGE_SECONDS))
     findings.push(...undone.map((tried) => notDone(zero, tried, r)))
-    const enables = enablesDone(r.record, zero)
+    // Enables the zero ran in: its command started (whether or not it finished), else its message printed.
+    const ran = r.record.periods.filter(isEnabled).filter((p) => tries.some((l) => l.start >= p.start && l.start <= p.end)).length
+    const enables = Math.max(ran, enablesDone(r.record, zero))
     if (zero.once && enables > 1) {
       findings.push({
         check: 'zero/every-enable', severity: 'warning', run: r.run.label,

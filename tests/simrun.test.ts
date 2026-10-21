@@ -89,6 +89,17 @@ describe('zero checks', () => {
     const findings = zeroes(context([result(twice)], { zeroes: [{ ...HOOD, once: true }] }))
     expect(findings.map((f) => f.message)).toEqual(['The hood zero ran on 2 enables; your scenario file says it runs once.'])
   })
+
+  it('counts an enable where the zero ran but never tripped as a run of it', () => {
+    const secondStalls = harness([
+      [2, 'started'], [5, 'step', '3 mode teleop'], [5.01, 'init', cmd('z1', 'SequentialCommandGroup', 'DrumSubsystem')],
+      [5.4, 'out', 'Rezeroed hood'], [5.42, 'finish', cmd('z1', 'SequentialCommandGroup', 'DrumSubsystem')], [8, 'step', '6 mode disabled'],
+      [10, 'step', '8 mode teleop'], [10.01, 'init', cmd('z1', 'SequentialCommandGroup', 'DrumSubsystem')],
+      [15, 'step', '13 mode disabled'], [15.01, 'interrupt', cmd('z1', 'SequentialCommandGroup', 'DrumSubsystem')], [15.2, 'end'],
+    ])
+    const checks = zeroes(context([result(secondStalls)], { zeroes: [{ ...HOOD, once: true }] })).map((f) => f.check)
+    expect(checks).toEqual(['zero/unfinished', 'zero/every-enable'])
+  })
 })
 
 describe('crash', () => {
