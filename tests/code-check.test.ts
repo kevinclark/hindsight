@@ -232,7 +232,7 @@ describe('fixes from the review of 2026-10-20 (Fable + code-review high)', () =>
   })
   it('a bare name from a library class isn\'t a same-named constant elsewhere; a static import is followed', () => {
     const java = {
-      'Consts.java': 'class Consts { static final int kDefaultPeriod = 20; static final int TEETH = 50; }',
+      'Consts.java': 'package frc.robot;\nclass Consts { static final int kDefaultPeriod = 20; static final int TEETH = 50; }',
       'B.java': 'class B extends TimedRobot { double f() { return kDefaultPeriod / 3; } }',
       'C.java': 'import static frc.robot.Consts.*;\nclass C { static final double R = TEETH / 12; }',
     }
@@ -240,5 +240,39 @@ describe('fixes from the review of 2026-10-20 (Fable + code-review high)', () =>
   })
   it('integer-division: a division meant to be 0 isn\'t a percentage of 0, and int overflow isn\'t guessed', () => {
     expect(messages(integerDivision, 'class A { static final double Z = (1 / 2) * 0; static final double W = 2048 * 2048 * 2048 / 3; }')).toEqual([])
+  })
+})
+
+describe('constants the old builder regex read: in an interface, and inside a class whose name another class shares', () => {
+  it('reads an interface\'s constants by its name, bare inside it, and bare in a class that implements it', () => {
+    const java = {
+      'RobotMap.java': 'package frc.robot;\npublic interface RobotMap extends Gearing { int TEETH = 50; public static final double RATIO = TEETH / 12; }',
+      'Gearing.java': 'package frc.robot;\ninterface Gearing { int PINION = 12; }',
+      'Arm.java': 'package frc.robot;\nclass Arm implements RobotMap { static final double A = RobotMap.TEETH / 12; static final double B = TEETH / PINION; }',
+    }
+    expect(messages(integerDivision, java)).toEqual([
+      'RobotMap.TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)',
+      'TEETH / PINION is 4 in Java, not 4.1667 (-4.0 %)',
+      'TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)',
+    ])
+  })
+  it('reads Constants.Shooter.ID from the Shooter inside Constants when a Shooter subsystem exists too', () => {
+    const java = {
+      'Constants.java': 'package frc.robot;\nclass Constants { static final class Shooter { static final int TEETH = 50; } }',
+      'Shooter.java': 'package frc.robot.subsystems;\nclass Shooter extends SubsystemBase { static final int TEETH = 54; }',
+      'Hood.java': 'package frc.robot;\nclass Hood { static final double A = Constants.Shooter.TEETH / 12; static final double B = frc.robot.subsystems.Shooter.TEETH / 12; }',
+    }
+    expect(messages(integerDivision, java)).toEqual([
+      'Constants.Shooter.TEETH / 12 is 4 in Java, not 4.1667 (-4.0 %)',
+      'frc.robot.subsystems.Shooter.TEETH / 12 is 4 in Java, not 4.5 (-11.1 %)',
+    ])
+  })
+  it('still reads nothing from a bare Shooter that could be either class', () => {
+    const java = {
+      'Constants.java': 'package frc.robot;\nclass Constants { static final class Shooter { static final int TEETH = 50; } }',
+      'Shooter.java': 'package frc.robot.subsystems;\nclass Shooter extends SubsystemBase { static final int TEETH = 48; }',
+      'Hood.java': 'package frc.robot;\nclass Hood { static final double A = Shooter.TEETH / 12; }',
+    }
+    expect(messages(integerDivision, java)).toEqual([])
   })
 })

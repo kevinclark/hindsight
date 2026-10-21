@@ -63,8 +63,8 @@ function talonSites(java: CodeFile[]): TalonSite[] {
  * and `new FollowerIO(17, …)` both reach FollowerIO's), or no ID when a chain's can't be worked out. Chains through
  * simulation code are left out (see inSimulation). Code nothing builds, or that is reached too many ways to follow,
  * still gets the IDs written as constants.
- * Not followed yet: constants in an interface, `Constants.Shooter.ID` when another class is also called Shooter,
- * `this(…)` calls, and a `? :` choosing the ID. A call is matched to a constructor by its number of arguments only.
+ * Not followed yet: `this(…)` calls, and a `? :` choosing the ID. A call is matched to a constructor by its number of
+ * arguments only.
  */
 function sitesOf(talon: Node, project: Project): TalonSite[] {
   const [idArgument, busArgument] = parts(talon, 'arguments')

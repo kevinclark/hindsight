@@ -245,6 +245,14 @@ describe('code hints', () => {
     const java = [{ path: 'src/Hood.java', text: 'class Comp { static final int HOOD_ID = 31; }\nclass Practice { static final int HOOD_ID = 32; }\nclass Hood { TalonFX a = new TalonFX(Comp.HOOD_ID); }\n' }]
     expect(codeHints(java, await codeHead(null)).sites.map((s) => [s.id, s.expr])).toEqual([[31, 'Comp.HOOD_ID']])
   })
+  it('reads IDs from an interface\'s constants and from Constants.Shooter beside a Shooter subsystem', async () => {
+    const java = [
+      { path: 'src/RobotMap.java', text: 'package frc.robot;\npublic interface RobotMap {\n  int FEEDER_ID = 21;\n  int KICKER_ID = 22;\n}\n' },
+      { path: 'src/Constants.java', text: 'package frc.robot;\npublic final class Constants {\n  public static final class Shooter {\n    public static final int LEADER_ID = 23;\n  }\n}\n' },
+      { path: 'src/Shooter.java', text: 'package frc.robot.subsystems;\nclass Shooter extends SubsystemBase implements RobotMap {\n  TalonFX feeder = new TalonFX(FEEDER_ID);\n  TalonFX kicker = new TalonFX(RobotMap.KICKER_ID);\n  TalonFX leader = new TalonFX(Constants.Shooter.LEADER_ID);\n}\n' },
+    ]
+    expect(codeHints(java, await codeHead(null)).sites.map((s) => [s.id, s.expr])).toEqual([[21, 'FEEDER_ID'], [22, 'RobotMap.KICKER_ID'], [23, 'Constants.Shooter.LEADER_ID']])
+  })
   it('leaves out IDs that only simulation code passes (a class named …Sim, or one building it)', async () => {
     const java = [
       { path: 'src/FlywheelIO.java', text: 'class FlywheelIO {\n  FlywheelIO(int leaderID) {\n    new TalonFX(leaderID);\n  }\n}\n' },

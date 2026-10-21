@@ -4,7 +4,7 @@
  * true })` is what the code meant, every division done in full (4.1667). Anything it can't work out (a method call, a
  * variable that can change, a name with two different values) is null.
  */
-import { classAround, codeOf, field, modifiersOf, nameOf, operatorOf, parts, typeNamed, type Node } from './java.ts'
+import { codeOf, field, modifiersOf, operatorOf, ownerAround, parts, typeNamed, type Node } from './java.ts'
 import type { Project } from './project.ts'
 import { declaredType, localNamed } from './types.ts'
 
@@ -83,14 +83,15 @@ function exactly(op: string | null, a: Value | null, b: Value | null, exact: boo
 
 /**
  * The `final` field a name means (`GEAR_RATIO`, `IndexerIO.GEAR_RATIO`), when every field it could mean has the same
- * value. Whole or not comes from its declared type: `static final double TICKS = 2048` is a decimal.
+ * value. Whole or not comes from its declared type: `static final double TICKS = 2048` is a decimal. An interface's
+ * fields are final without saying so.
  */
 function constantNamed(node: Node, project: Project, valueOfInitialiser: (n: Node | null) => Value | null): Value | null {
   const name = node.type === 'field_access' ? field(node, 'field')?.text : node.text
   if (!name || (node.type === 'identifier' && localNamed(node, name))) return null
   const values = fieldsMeant(node, name, project).map((declarator) => {
     const declaration = declarator.parent
-    if (!declaration || !modifiersOf(declaration).includes('final')) return null
+    if (!declaration || !isFinal(declaration)) return null
     const value = valueOfInitialiser(field(declarator, 'value'))
     return value && { number: value.number, whole: WHOLE_TYPES.includes(declaredType(declarator) ?? '') }
   })
@@ -99,30 +100,33 @@ function constantNamed(node: Node, project: Project, valueOfInitialiser: (n: Nod
   return first
 }
 
+/** Is this field final: said so, or in an interface (where every field is)? */
+const isFinal = (declaration: Node) => declaration.type === 'constant_declaration' || modifiersOf(declaration).includes('final')
+
 /**
- * The fields a name can mean: `Owner.NAME` is Owner's; a bare NAME is the enclosing classes' (and the project classes
- * above them), else a class the file imports statically (`import static frc.robot.Constants.*`). A name from a
- * library class (TimedRobot's kDefaultPeriod) means none: never a same-named constant elsewhere in the project.
+ * The fields a name can mean: `Owner.NAME` is Owner's (`Constants.Shooter.NAME`: the Shooter inside Constants); a
+ * bare NAME is the enclosing classes' (with the project classes above them and the interfaces they implement), else
+ * a class the file imports statically (`import static frc.robot.Constants.*`). A name from a library class
+ * (TimedRobot's kDefaultPeriod) means none: never a same-named constant elsewhere in the project.
  */
 function fieldsMeant(node: Node, name: string, project: Project): Node[] {
   if (node.type === 'field_access') {
-    const owner = field(node, 'object')?.text.split('.').pop() ?? null
+    const owner = field(node, 'object')?.text.replace(/\s+/g, '') ?? null
     return project.membersNamed(project.classNamed(owner), 'field_declaration', name)
   }
-  for (let cls = classAround(node); cls; cls = classAround(cls)) {
-    const own = project.membersNamed(cls, 'field_declaration', name)
+  for (let owner = ownerAround(node); owner; owner = ownerAround(owner)) {
+    const own = project.membersNamed(owner, 'field_declaration', name)
     if (own.length) return own
   }
-  const imported = staticImports(project.fileOf(node).tree.rootNode)
-  return project.fieldsNamed(name).filter((d) => imported.includes(nameOf(classAround(d) ?? d) ?? ''))
+  const imported = staticImports(project.fileOf(node).tree.rootNode).map((path) => project.classNamed(path))
+  return project.fieldsNamed(name).filter((d) => imported.some((owner) => owner && ownerAround(d)?.equals(owner)))
 }
 
-/** The classes a file imports static members from: `import static frc.robot.Constants.*` gives "Constants". */
+/** The classes a file imports static members from: `import static frc.robot.Constants.*` gives "frc.robot.Constants". */
 function staticImports(root: Node): string[] {
   return parts(root).filter((n) => n.type === 'import_declaration').flatMap((n) => {
     const path = /^import\s+static\s+([\w.]+?)(\.\*)?\s*;/.exec(codeOf(n))
     if (!path) return []
-    const segments = path[1].split('.')
-    return [segments[segments.length - (path[2] ? 1 : 2)]]
+    return [path[2] ? path[1] : path[1].replace(/\.\w+$/, '')]
   })
 }

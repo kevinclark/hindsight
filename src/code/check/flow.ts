@@ -124,7 +124,7 @@ function setOnce(declared: Node, scope: Node): Node | null {
 /** The one value a field ever gets in its class: its starting value, or a single `this.canBus = canBus`. */
 function setOnceInClass(use: Node, name: string, project: Project): Node | null {
   const [declared] = project.membersNamed(classAround(use), 'field_declaration', name)
-  const body = declared && enclosing(declared, ['class_body'])
+  const body = declared && enclosing(declared, ['class_body', 'interface_body'])
   if (!body) return null
   const writes = body.descendantsOfType('assignment_expression').flatMap((a) => {
     const target = a && field(a, 'left')

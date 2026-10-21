@@ -64,6 +64,9 @@ const COMMENTS = ['line_comment', 'block_comment']
 /** The class a node is in. */
 export const classAround = (node: Node) => enclosing(node, ['class_declaration'])
 
+/** The class or interface a node is in: what owns a field or method declared there. */
+export const ownerAround = (node: Node) => enclosing(node, ['class_declaration', 'interface_declaration'])
+
 /** The name of the class a class extends, without type arguments, or null. */
 export const superclassName = (cls: Node | null) => (cls && parts(cls, 'superclass')[0]?.text.replace(/<.*$/s, '')) || null
 
