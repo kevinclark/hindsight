@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.gradle.testkit.runner.TaskOutcome.SKIPPED;
+import static org.gradle.testkit.runner.TaskOutcome.UP_TO_DATE;
 
 import java.nio.file.Path;
 import org.gradle.testkit.runner.BuildResult;
@@ -50,6 +51,28 @@ class IntegerDivisionTest {
 
     assertEquals(Sample.RATIOS_SOURCE, sample.read(Sample.RATIOS));
     assertEquals(SKIPPED, result.task(FIX_TASK).getOutcome());
+  }
+
+  @Test
+  void aBuildAfterADeployFixesWithNothingToRecompile() {
+    Sample sample = Sample.in(dir).buildLine("tasks.register('deploy', edu.wpi.first.deployutils.deploy.FakeDeploy) "
+        + "{ dependsOn 'compileJava' }");
+    sample.write("buildSrc/src/main/java/edu/wpi/first/deployutils/deploy/FakeDeploy.java",
+        "package edu.wpi.first.deployutils.deploy;\n"
+            + "public class FakeDeploy extends org.gradle.api.DefaultTask {}\n");
+    sample.build(false, "deploy");
+    BuildResult build = sample.build(false, "compileJava");
+
+    assertEquals(UP_TO_DATE, build.task(":compileJava").getOutcome());
+    assertTrue(sample.read(Sample.RATIOS).contains("50 / 12.0"));
+  }
+
+  @Test
+  void quietBuildStillFixes() {
+    Sample sample = Sample.in(dir);
+    sample.build(false, "compileJava", "-q");
+
+    assertTrue(sample.read(Sample.RATIOS).contains("50 / 12.0"));
   }
 
   @Test

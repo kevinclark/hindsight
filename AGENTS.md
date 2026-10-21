@@ -85,7 +85,8 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
   `compileJava` warned, and never when a GradleRIO deploy task is in the graph or `CI=true`. A deploy is
   recognised by task type (`edu.wpi.first.deployutils.deploy.*`), never by name: robot projects carry an
   `eventDeploy` task that runs on every build.
-- `HindsightRobotStarts.java` is a resource, compiled against each robot's own WPILib. Keep its traps: the real
+- `HindsightRobotStarts.java` is a resource, compiled against each robot's own WPILib by a `JavaCompile` of its own
+  (a source set would put it in front of the team's Spotless and Checkstyle). Keep its traps: the real
   loop in a thread (`startCompetition`), the DS connected after the robot is built, one robot per JVM, and
   `DriverStationDataJNI.notifyNewData()` (never `DriverStationSim.notifyNewData()`, which deadlocked). It runs as a
   `JavaExec` with output to a file, because Phoenix and the HAL print natively and a `Test` task can't hold that back.

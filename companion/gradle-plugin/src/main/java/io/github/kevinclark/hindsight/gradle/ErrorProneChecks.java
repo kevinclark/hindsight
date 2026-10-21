@@ -9,8 +9,8 @@ import org.gradle.api.tasks.compile.JavaCompile;
 
 /**
  * Error Prone with its default checks, plus NullAway on the robot's package, all as warnings. In CI the two checks
- * that have only found real bugs in robot code (16 integer divisions and 1 {@code Optional.equals(Alliance)} across
- * three robots, 0 false) fail the build instead.
+ * whose every hit in the robot code we measured was a real bug (integer division, and {@code Optional<Alliance>}
+ * compared with an {@code Alliance}) fail the build instead.
  */
 final class ErrorProneChecks {
   // The last Error Prone that runs on JDK 17, which WPILib 2025 and 2026 bundle
@@ -30,8 +30,12 @@ final class ErrorProneChecks {
     project.getTasks().withType(JavaCompile.class).configureEach(task -> {
       ErrorProneOptions errorProne = options(task);
       errorProne.getExcludedPaths().set(GENERATED_CODE);
-      errorProne.check("NullAway", CheckSeverity.WARN);
-      errorProne.option("NullAway:AnnotatedPackages", robotPackage);
+      if (robotPackage.isEmpty()) {
+        errorProne.disable("NullAway"); // NullAway needs a package to check; a robot class with none gives none
+      } else {
+        errorProne.check("NullAway", CheckSeverity.WARN);
+        errorProne.option("NullAway:AnnotatedPackages", robotPackage);
+      }
       if (strict) errorProne.error(STRICT_IN_CI);
     });
   }

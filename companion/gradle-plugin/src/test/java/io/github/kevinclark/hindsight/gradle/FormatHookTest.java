@@ -146,9 +146,23 @@ class FormatHookTest {
     assertEquals(source(TAB + "int x;\n"), sample.git("show", "HEAD:" + FORMATTED).output());
   }
 
+  @Test
+  void aProjectPathWithShellCharactersStillFormats() {
+    Sample sample = installedWithGradlew(Sample.in(dir.resolve("team \"$HOME` robot")), FORMATTING_GRADLEW);
+    sample.write(FORMATTED, source(TAB + "int x;\n"));
+    sample.git("add", FORMATTED);
+    sample.git("commit", "-q", "-m", "format");
+
+    assertEquals(source("  int x;\n"), sample.git("show", "HEAD:" + FORMATTED).output());
+  }
+
   // Builds once so the plugin installs the hook, then swaps in a stand-in for the project's gradlew
   private Sample installedWithGradlew(String script) {
-    Sample sample = hooked("fixIntegerDivision = false");
+    return installedWithGradlew(Sample.in(dir), script);
+  }
+
+  private Sample installedWithGradlew(Sample project, String script) {
+    Sample sample = project.buildLine("tasks.register('spotlessApply')").setting("fixIntegerDivision = false").gitInit();
     sample.build(false, "compileJava");
     assertTrue(Files.exists(sample.file(HOOK)));
     sample.write("gradlew", script);

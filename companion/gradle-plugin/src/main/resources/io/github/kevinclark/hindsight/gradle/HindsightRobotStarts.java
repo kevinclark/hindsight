@@ -3,6 +3,7 @@ package io.github.kevinclark.hindsight.robotstarts;
 import edu.wpi.first.hal.AllianceStationID;
 import edu.wpi.first.hal.HAL;
 import edu.wpi.first.hal.simulation.DriverStationDataJNI;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.simulation.DriverStationSim;
 import java.lang.reflect.Constructor;
@@ -28,9 +29,38 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class HindsightRobotStarts {
   private static final long BUILD_TIMEOUT_MS = 60_000; // a first Phoenix start in simulation took 11 s
   private static final long LOOP_TIMEOUT_MS = 15_000; // a stuck loop fails the check instead of hanging the build
+  private static final int HAL_TIMEOUT_MS = 500; // what WPILib's own RobotBase.startRobot passes
+  private static final int LOOPS_PER_MODE = 10; // assumed: each mode's init and several periodics
+  private static final int LOOPS_DISABLED_AFTER = 5;
+  private static final long POLL_MS = 5;
+
+  /** A mode the check waits for, and how the robot's own DriverStation says it is in it. */
+  private enum Mode {
+    DISABLED("disabled"),
+    AUTONOMOUS("in autonomous"),
+    TELEOP("in teleop");
+
+    private final String words;
+
+    Mode(String words) {
+      this.words = words;
+    }
+
+    boolean isCurrent() {
+      switch (this) {
+        case AUTONOMOUS:
+          return DriverStation.isAutonomousEnabled();
+        case TELEOP:
+          return DriverStation.isTeleopEnabled();
+        default:
+          return DriverStation.isDisabled();
+      }
+    }
+  }
 
   private final Class<?> robotClass;
-  private final AtomicInteger loops = new AtomicInteger();
+  private final AtomicInteger loops = new AtomicInteger(); // loops the robot finished in the expected mode
+  private volatile Mode expected = Mode.DISABLED;
   private final CountDownLatch built = new CountDownLatch(1);
   private volatile String phase;
   private volatile RobotBase robot;
@@ -68,10 +98,11 @@ public final class HindsightRobotStarts {
   }
 
   private void run() throws Exception {
-    if (!HAL.initialize(500, 0)) throw new Failed("Hindsight couldn't start WPILib's simulator.", null);
+    if (!HAL.initialize(HAL_TIMEOUT_MS, 0)) throw new Failed("Hindsight couldn't start WPILib's simulator.", null);
     phase = "while building the robot (new " + robotClass.getSimpleName() + "())";
-    // HAL calls this at the end of every robot loop in simulation, in every mode, command-based or not
-    try (HAL.SimPeriodicAfterCallback counter = HAL.registerSimPeriodicAfterCallback(loops::incrementAndGet)) {
+    // HAL calls this on the robot thread at the end of every robot loop in simulation, command-based or not. A loop
+    // counts only in the mode being checked, so a robot that never enables can't pass.
+    try (HAL.SimPeriodicAfterCallback counter = HAL.registerSimPeriodicAfterCallback(this::countLoop)) {
       Thread robotThread = new Thread(this::buildAndRun, "robot");
       robotThread.setDaemon(true);
       robotThread.start();
@@ -85,10 +116,10 @@ public final class HindsightRobotStarts {
       DriverStationSim.setAllianceStationId(AllianceStationID.Blue1);
       DriverStationSim.setDsAttached(true);
       try {
-        runLoops("while disabled, after the Driver Station connected", 10, false, false);
-        runLoops("in autonomous", 10, true, true);
-        runLoops("in teleop", 10, true, false);
-        runLoops("while disabled after teleop", 5, false, false);
+        runLoops(Mode.DISABLED, "while disabled, after the Driver Station connected", LOOPS_PER_MODE);
+        runLoops(Mode.AUTONOMOUS, "in autonomous", LOOPS_PER_MODE);
+        runLoops(Mode.TELEOP, "in teleop", LOOPS_PER_MODE);
+        runLoops(Mode.DISABLED, "while disabled after teleop", LOOPS_DISABLED_AFTER);
       } finally {
         if (robot != null) robot.endCompetition();
         robotThread.join(LOOP_TIMEOUT_MS);
@@ -118,22 +149,28 @@ public final class HindsightRobotStarts {
     }
   }
 
-  private void runLoops(String phase, int count, boolean enabled, boolean auto) throws InterruptedException {
+  private void countLoop() {
+    if (expected.isCurrent()) loops.incrementAndGet();
+  }
+
+  private void runLoops(Mode mode, String phase, int count) throws InterruptedException {
     this.phase = phase;
-    DriverStationSim.setAutonomous(auto); // mode first, so no loop sees "enabled" in the old mode
-    DriverStationSim.setEnabled(enabled);
+    int target = loops.get() + count;
+    expected = mode;
+    DriverStationSim.setAutonomous(mode == Mode.AUTONOMOUS); // mode first, so no loop sees "enabled" in the old mode
+    DriverStationSim.setEnabled(mode != Mode.DISABLED);
     // only signal new data: DriverStationSim.notifyNewData() would also read it on this thread, racing the robot
     // loop (a deadlock measured in the sim-run tool)
     DriverStationDataJNI.notifyNewData();
-    int target = loops.get() + count;
     long deadline = System.currentTimeMillis() + LOOP_TIMEOUT_MS;
     while (loops.get() < target) {
       checkForCrash();
       if (System.currentTimeMillis() > deadline) {
-        throw new Failed("The robot loop stopped running " + phase + ": fewer than " + count + " loops in "
-            + LOOP_TIMEOUT_MS / 1000 + " s. Something in the robot code is waiting or looping forever.", null);
+        throw new Failed("The robot didn't run " + mode.words + ": fewer than " + count + " loops " + mode.words
+            + " in " + LOOP_TIMEOUT_MS / 1000 + " s. Either something in the robot code is waiting or looping"
+            + " forever, or the robot never switched to that mode.", null);
       }
-      Thread.sleep(5);
+      Thread.sleep(POLL_MS);
     }
   }
 
@@ -161,7 +198,8 @@ public final class HindsightRobotStarts {
       text.append("\nAdvantageKit is in replay mode and asked for a log file to replay. Set the robot's mode to SIM"
           + " for simulation.");
     } else {
-      text.append("\nThe real robot would crash the same way. Fix it, then build again.");
+      text.append("\nThe real robot crashes the same way, unless this code runs only in simulation (a *Sim class or a"
+          + " SIM-mode branch). Fix it, then build again.");
     }
     return text.toString();
   }

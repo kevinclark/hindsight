@@ -27,7 +27,7 @@ Not published yet: until it is on the Plugin Portal, see [Trying it before it's 
 | **Integer division fixed** (`fixIntegerDivision`) | laptop builds that warned about it; never a deploy, never CI | `50 / 12` is 4 in Java. Error Prone rewrites it to `50 / 12.0` in place and the build lists each file it changed. The rewrite lands after that build compiled, so build again before you deploy. |
 | **Strict in CI** (`strictInCi`) | `CI=true` (GitHub Actions sets it) | `NarrowCalculation` (integer division) and `EqualsIncompatibleType` (`Optional<Alliance>` compared with `Alliance`, always false) are errors. Everything else stays a warning. |
 | **Robot starts** (`robotStarts`) | `check`, so every "Build Robot Code" and CI; never deploy | Builds `frc.robot.Robot` in simulation, connects a Driver Station after it boots (as at the field) and runs the real robot loop disabled, in auto, in teleop and disabled again. A crash fails the build with the exception and the lines of your code it went through. The robot's console output goes to `build/hindsight/robot-starts/output.txt`. |
-| **Format hook** (`formatHook`) | each `git commit`, once the clone has built | Runs the project's own `spotlessApply` and re-stages the files you had staged. A file with unstaged changes is left as it is. It never blocks a commit; `--no-verify` skips it. |
+| **Format hook** (`formatHook`) | each `git commit`, once the clone has built | Runs the project's own `spotlessApply` and re-stages the files you had staged. A file that also has unstaged changes is committed exactly as you staged it; its working copy is formatted, like every file `spotlessApply` touches. It never blocks a commit; `--no-verify` skips it. |
 
 A failing robot-starts check reads like this (Rebuilt `4b68c96^`, a field read before the constructor set it):
 
@@ -37,7 +37,7 @@ A failing robot-starts check reads like this (Rebuilt `4b68c96^`, a field read b
     in your code at frc.robot.subsystems.hood.HoodIO.<init>(HoodIO.java:38)
               from frc.robot.subsystems.hood.HoodIOSim.<init>(HoodIOSim.java:30)
               from frc.robot.Robot.<init>(Robot.java:116)
-  The real robot would crash the same way. Fix it, then build again.
+  The real robot crashes the same way, unless this code runs only in simulation (a *Sim class or a SIM-mode branch). Fix it, then build again.
 ```
 
 ## Turn something off
@@ -59,14 +59,17 @@ To keep one whole-number division on purpose, put `@SuppressWarnings("NarrowCalc
 
 - **Why the fix waits for a second compile.** Error Prone's patch mode runs only the checks it patches, so patching
   inside `compileJava` would hide every other warning. `compileJava` warns as usual; only a build whose compile warned
-  about integer division runs `hindsightFixIntegerDivision`, a patch-only compile into `build/`.
+  about integer division runs `hindsightFixIntegerDivision`, a patch-only compile into `build/`. A warning not yet
+  fixed (a deploy came first) is remembered in `build/`, so the next laptop build fixes it even with nothing to
+  recompile. The fix's own compile never fails your build.
 - **Why never on deploy.** A deploy ships what was just compiled, so it would carry the old values and the next deploy
   would change them with no edit. Any GradleRIO deploy task (a DeployUtils task, such as `deploy`'s roboRIO
   discovery) turns the fix off for that build; a task merely named like one, such as `eventDeploy`, doesn't. GradleRIO's
   `deploy` doesn't run `check`, so the robot-starts check never runs at the field either.
-- **The robot-starts check** is written into `build/generated/sources/hindsight/` and compiled against your own
-  WPILib, then run as its own Java process with WPILib's simulator libraries, the way GradleRIO runs tests. It is up
-  to date (skipped) while your compiled code hasn't changed. Your code must build in simulation: an AdvantageKit robot
+- **The robot-starts check** is written into `build/hindsight/robot-starts/` and compiled against your own WPILib by
+  a task of its own (so your Spotless or Checkstyle never sees it), then run as its own Java process with WPILib's
+  simulator libraries, the way GradleRIO runs tests. A loop counts only in the mode being checked, so a robot that
+  never enables fails. It is up to date (skipped) while your compiled code and `src/main/deploy` haven't changed. Your code must build in simulation: an AdvantageKit robot
   left in `REPLAY` mode asks for a log file and fails (the message says so).
 - **The format hook** is installed only in a git checkout where `build.gradle` is tracked, with a `spotlessApply`
   task, no `core.hooksPath`, and no `pre-commit` hook of your own. It is never installed in CI.

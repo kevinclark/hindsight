@@ -81,9 +81,12 @@ final class FormatHook {
     }
   }
 
-  /** Git for Windows runs hooks in its own sh, which reads C:/x but not C:\x. */
+  /**
+   * A path inside the hook's double quotes: forward slashes (Git for Windows runs hooks in its own sh, which reads
+   * C:/x but not C:\x), and the characters sh would expand there escaped.
+   */
   private static String forShell(String path) {
-    return path.replace('\\', '/');
+    return path.replace('\\', '/').replaceAll("([\"$`])", "\\\\$1");
   }
 
   /** The command's first output line, or empty if git isn't there or the command failed. */
