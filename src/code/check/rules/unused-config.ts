@@ -13,6 +13,8 @@ import { codeRule } from '../rule.ts'
 import { localNamed } from '../types.ts'
 
 const TAKES_A_CONFIG = /Configuration$/
+/** A lambda's parameters are left alone: forEach((TalonFXConfiguration c) -> …) often ignores c on purpose. */
+const METHODS = ['method_declaration', 'constructor_declaration']
 
 export default codeRule({
   id: 'code/unused-config',
@@ -26,8 +28,8 @@ export default codeRule({
     const name = nameOf(parameter)
     const type = field(parameter, 'type')?.text ?? ''
     const declaration = parameter.parent?.parent
-    const body = declaration && field(declaration, 'body')
-    if (!name || !TAKES_A_CONFIG.test(type) || !body) return
+    const body = declaration && METHODS.includes(declaration.type) ? field(declaration, 'body') : null
+    if (!name || !TAKES_A_CONFIG.test(type) || !declaration || !body) return
     if (readsOf(name, parameter, body).length > 0) return
     return { message: `${name} (${type}) is passed to ${nameOf(declaration)}(…) and never used` }
   },

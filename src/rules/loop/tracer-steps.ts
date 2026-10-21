@@ -54,3 +54,9 @@ export function describeSteps(steps: SlowStep[]): string {
     return `${s.name} in ${loops}, worst ${round(s.worstMs, 0)} ms`
   }).join('; ')
 }
+
+/** The next step when the console names the slowest step: start there. */
+export function startWith(step: SlowStep): string {
+  const tookLong = `${plural(step.loops, 'overrun loop')} (worst ${round(step.worstMs, 0)} ms)`
+  return `Start with ${step.name}: it took over ${SLOW_STEP_MS} ms in ${tookLong}. Move its slow work off the main loop or cache it.`
+}

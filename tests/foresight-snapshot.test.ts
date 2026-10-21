@@ -204,11 +204,10 @@ describe('Foresight over a robot snapshot', () => {
 
 describe('snapshot/code-settings: what the robot code sets against what each device holds', () => {
   /** A setting as the Code panel reads it from the code (code/check/device-settings.ts). */
-  const set = (kind: string, id: number, field: string, value: number | boolean, where = 'Made.java:1'): DeviceSetting => ({ kind, id, bus: '*', field, value, where })
+  const set = (kind: string, id: number, field: DeviceSetting['field'], value: number | boolean, where = 'Made.java:1'): DeviceSetting => ({ kind, id, bus: '*', field, value, where })
   const turretCancoder = { model: 'CANCoder vers. H', id: 5, configs: { CANCoder_MagnetOffset: 0 } }
   function withCode(devices: FakeDevice[], settings: DeviceSetting[], ranOn: CodeSettings['ranOn'] = 'robot') {
-    const report: Report = { findings: [], skipped: [], crashed: [] }
-    addSnapshotChecks(report, { snapshot: makeDevicesSnapshot(devices, AFTER_SETTLE), codeStartWallMs: CODE_START }, offseason2026, SETTLE_SECONDS, { commit: 'cb68b20', ranOn, settings })
+    const { report } = run(devices, AFTER_SETTLE, CODE_START, { commit: 'cb68b20', ranOn, settings })
     return { report, found: report.findings.filter((f) => f.rule === 'snapshot/code-settings') }
   }
 

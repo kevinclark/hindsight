@@ -358,7 +358,8 @@ describe('code/unused-config', () => {
     const java = `class HoodIO {
       HoodIO(TalonFXConfiguration config, String threadName) { motor.getConfigurator().apply(config); }
     }
-    interface IO { void configure(TalonFXConfiguration config); }`
+    interface IO { void configure(TalonFXConfiguration config); }
+    class Many { void all() { configs.forEach((TalonFXConfiguration c) -> motor.getConfigurator().apply(base)); } }`
     expect(messages(unusedConfig, java)).toEqual([])
   })
 })

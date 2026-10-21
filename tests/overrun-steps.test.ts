@@ -37,13 +37,15 @@ function overrunFinding(extra: FixtureEntry[]) {
 const epoch = (name: string, seconds: string) => `\t${name}: ${seconds}s\n`
 
 describe('loop/overrun slow steps', () => {
+  // Real logs split a list of epochs between records at a line break (CalGames and one practice log: ~7,700 records,
+  // none cut mid-line).
   it('names the worst step, with epoch lines split across two records', () => {
     const finding = overrunFinding([consoleOf([
-      [21, epoch('SwerveSubsystem.periodic()', '0.018531') + epoch('buttons.run()', '0.007865') + 'Warning at edu.wpi.first.wpilibj.Tracer.lambda$printEpochs$0(Tracer.java:62): \tDrumSubsystem.periodic(): 0.0'],
-      [21.1, '32s\n\tSwerveSubsystem.periodic(): 0.608s\n'],
+      [21, epoch('SwerveSubsystem.periodic()', '0.018531') + epoch('buttons.run()', '0.007865') + 'Warning at edu.wpi.first.wpilibj.Tracer.lambda$printEpochs$0(Tracer.java:62): \tDrumSubsystem.periodic(): 0.032s\n'],
+      [21.1, '\tSwerveSubsystem.periodic(): 0.608s\n'],
       [22, epoch('SwerveSubsystem.periodic()', '0.012000') + epoch('DrumSubsystem.periodic()', '0.001373')],
     ])])
-    expect(finding.evidence[STEP_LABEL]).toBe('SwerveSubsystem.periodic() in 3 overrun loops, worst 608 ms')
+    expect(finding.evidence[STEP_LABEL]).toBe('SwerveSubsystem.periodic() in 3 overrun loops, worst 608 ms; DrumSubsystem.periodic() in 1, worst 32 ms')
     expect(finding.nextStep).toBe('Start with SwerveSubsystem.periodic(): it took over 10 ms in 3 overrun loops (worst 608 ms). Move its slow work off the main loop or cache it.')
   })
 

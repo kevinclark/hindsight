@@ -2,7 +2,7 @@
  * Types read from the code, without a compiler: where a name is declared, and what type a value is going into. Only
  * what the code says outright (a declaration, a method's return type, a cast); anything else is null, "don't know".
  */
-import { classAround, enclosing, field, fills, nameOf, parts, typeNamed, type Node } from './java.ts'
+import { BODIES, classAround, enclosing, field, fills, nameOf, parts, typeNamed, type Node } from './java.ts'
 import { COMMAND_DECORATORS, COMMAND_FACTORIES, PHOENIX_DECIMAL_FIELDS, SUBSYSTEM_COMMANDS, SUBSYSTEM_TYPES } from './libraries.ts'
 import { baseType, type Project } from './project.ts'
 
@@ -12,6 +12,9 @@ const DECLARES = ['variable_declarator', 'formal_parameter', 'catch_formal_param
 
 /** The block (or method, loop, lambda) a local variable or parameter belongs to: where its name can be used. */
 export const scopeOf = (declared: Node) => enclosing(declared, LOCAL_SCOPES)
+
+/** Where a declared name can be used: a field's whole class (and the classes inside it), else a local's scope. */
+export const visibleIn = (declared: Node) => (declared.parent?.type === 'field_declaration' ? enclosing(declared, BODIES) : scopeOf(declared))
 
 /**
  * The local variable or parameter `name` seen from `node`: its declarator (or parameter), or null when the name isn't

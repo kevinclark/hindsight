@@ -13,12 +13,12 @@
  */
 import type { Report, SkippedRule } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
-import { definedOnly } from '../rules/run.ts'
+import { definedOnly, groupBy } from '../rules/run.ts'
 import type { RobotProfile, SnapshotExpectations } from '../profiles/types.ts'
 import { busLabel, configOf, parseBool, parseNumber, type Config, type Device, type Snapshot } from '../snapshot/snapshot.ts'
 import { fieldText, inventory, limitsReport, sameNumber } from '../snapshot/report.ts'
 import { RIO, ANY_CANIVORE } from '../code/check/devices.ts'
-import type { DeviceSetting } from '../code/check/device-settings.ts'
+import type { DeviceSetting, SettingField } from '../code/check/device-settings.ts'
 
 type Rule = 'snapshot/devices' | 'snapshot/licensed' | 'snapshot/cancoder-offsets' | 'snapshot/swerve-ratio' | 'snapshot/current-limits' | 'snapshot/code-settings'
 export const SNAPSHOT_RULES: Rule[] = ['snapshot/devices', 'snapshot/licensed', 'snapshot/cancoder-offsets', 'snapshot/swerve-ratio', 'snapshot/current-limits', 'snapshot/code-settings']
@@ -277,7 +277,7 @@ function limitsCheck(snapshot: Snapshot, profile: RobotProfile): Check {
 }
 
 /** Each setting the code check reads, how the snapshot names it, and when an applied value is the code's. */
-const SETTINGS: Record<string, { configs: string[]; kind: 'number' | 'bool'; same?: (applied: number, code: number) => boolean }> = {
+const SETTINGS: Record<SettingField, { configs: string[]; kind: 'number' | 'bool'; same?: (applied: number, code: number) => boolean }> = {
   MagnetOffset: { configs: ['CANCoder_MagnetOffset', 'Config_MagnetOffset'], kind: 'number', same: (a, c) => Math.abs(turnDifference(a, c)) <= OFFSET_TOLERANCE },
   SensorToMechanismRatio: { configs: ['Config_SensorToMechanismRatio'], kind: 'number', same: (a, c) => sameRatio(a, c) },
   StatorCurrentLimit: { configs: ['Config_StatorCurrentLimit'], kind: 'number', same: sameNumber },
@@ -299,19 +299,20 @@ function codeSettingsCheck(snapshot: Snapshot, profile: RobotProfile, expected: 
   if (code.ranOn !== 'robot') return c.cannot(`the Code panel read ${code.commit.slice(0, 7)}, not the commit the robot runs`)
   const covered = profileChecks(profile, expected)
   const settings = code.settings.filter((s) => !covered.has(`${s.kind} ${s.id} ${s.field}`))
-  for (const [label, ofDevice] of groupBy(settings, (s) => `${s.kind} ${s.id}|${s.bus}`)) {
+  for (const ofDevice of groupBy(settings, (s) => `${s.kind} ${s.id} ${s.bus}`).values()) {
     const [{ kind, id, bus }] = ofDevice
-    const device = snapshotDeviceFor(snapshot, { bus: companionBus(bus), model: kind, id })
+    const device = snapshotDeviceFor(snapshot, { bus: COMPANION_BUS[bus] ?? bus, model: kind, id })
     if (typeof device === 'string') { c.unread.push(`${kind} ${id}: ${device}`); continue }
     const wrong: string[] = []
-    for (const [field, choices] of groupBy(ofDevice, (s) => s.field)) {
+    for (const choices of groupBy(ofDevice, (s) => s.field).values()) {
+      const { field } = choices[0]
       const applied = appliedSetting(device, field)
       if (applied === null) c.unread.push(`${kind} ${id}: its ${field} wasn't read`)
       else if (choices.some((s) => sameSetting(field, applied, s.value))) c.checked++
       else wrong.push(`${field} ${applied}, the code sets ${choices.map((s) => `${s.value} (${s.where})`).join(' or ')}`)
     }
     const outOfRange = ofDevice.find((s) => s.field === 'MagnetOffset' && Math.abs(Number(s.value)) > LARGEST_OFFSET)
-    if (wrong.length) c.fire(label.split('|')[0], `${kind} ${id} runs other settings than its code sets`, {
+    if (wrong.length) c.fire(`${kind} ${id} on the ${busLabel(device.bus)}`, `${kind} ${id} runs other settings than its code sets`, {
       differs: wrong.join('; '),
       'likely why': outOfRange ? `the code's MagnetOffset ${outOfRange.value} is outside the −1 to 1 rotation Phoenix documents` : undefined,
     })
@@ -330,26 +331,20 @@ function profileChecks(profile: RobotProfile, expected: SnapshotExpectations | u
 }
 
 /** What the device holds for a setting (true/false for an Enable), or null when the snapshot didn't read it. */
-function appliedSetting(device: Device, field: string): number | boolean | null {
+function appliedSetting(device: Device, field: SettingField): number | boolean | null {
   const spec = SETTINGS[field]
   const value = configNamed(device, ...spec.configs)?.value
   return spec.kind === 'bool' ? parseBool(value) : parseNumber(value)
 }
 
-function sameSetting(field: string, applied: number | boolean, code: number | boolean): boolean {
+function sameSetting(field: SettingField, applied: number | boolean, code: number | boolean): boolean {
   const same = SETTINGS[field].same
   if (typeof applied === 'boolean' || typeof code === 'boolean' || !same) return applied === code
   return same(applied, code)
 }
 
-/** The bus as the companion names it (snapshotBusFor): the roboRIO's is "rio", CANBus("*") is "Any". */
-const companionBus = (bus: string) => (bus === RIO ? 'rio' : bus === ANY_CANIVORE ? 'Any' : bus)
-
-function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
-  const groups = new Map<string, T[]>()
-  for (const item of items) groups.set(key(item), [...(groups.get(key(item)) ?? []), item])
-  return groups
-}
+/** A bus as the companion names it (snapshotBusFor): the roboRIO's is "rio", CANBus("*") is "Any", others as they are. */
+const COMPANION_BUS: Record<string, string> = { [RIO]: 'rio', [ANY_CANIVORE]: 'Any' }
 
 /** Why the snapshot can't be used for this run of the robot code, or null when it can. */
 export function snapshotNotUsable(input: SnapshotInput | undefined, profile: RobotProfile, settleSeconds: number): string | null {

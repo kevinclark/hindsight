@@ -6,15 +6,16 @@
  * snapshot (foresight/snapshot-checks.ts, snapshot/code-settings). Simulation code is left out (devices.ts).
  * Only fields set one by one are read: a `.withMagnetOffset(…)` builder, or a whole configs object set at once, isn't.
  */
-import { codeOf, field, fileName, lineOf, nameOf, parts, BODIES, enclosing, type Node } from './java.ts'
+import { codeOf, field, fileName, lineOf, nameOf, parts, type Node } from './java.ts'
 import { deviceAlong, inSimulation } from './devices.ts'
 import { valueAlong, waysToReach } from './flow.ts'
 import type { Project } from './project.ts'
-import { scopeOf } from './types.ts'
+import { visibleIn } from './types.ts'
 import { valueOf } from './values.ts'
 
 /** The Phoenix 6 config fields compared with the snapshot (MagnetSensorConfigs, FeedbackConfigs, CurrentLimitsConfigs). */
-export const SETTING_FIELDS = ['MagnetOffset', 'SensorToMechanismRatio', 'StatorCurrentLimit', 'StatorCurrentLimitEnable', 'SupplyCurrentLimit', 'SupplyCurrentLimitEnable']
+export const SETTING_FIELDS = ['MagnetOffset', 'SensorToMechanismRatio', 'StatorCurrentLimit', 'StatorCurrentLimitEnable', 'SupplyCurrentLimit', 'SupplyCurrentLimitEnable'] as const
+export type SettingField = (typeof SETTING_FIELDS)[number]
 
 /** One setting the code gives one device. Plain data: it is handed from the Code panel to the Foresight check. */
 export interface DeviceSetting {
@@ -22,7 +23,7 @@ export interface DeviceSetting {
   id: number
   /** As devices.ts names it: "canivore", "*", or "the roboRIO bus". */
   bus: string
-  field: string
+  field: SettingField
   value: number | boolean
   /** Where the code sets it: "TurretSubsystem.java:576". */
   where: string
@@ -56,16 +57,16 @@ function settingsApplied(apply: Node, project: Project): DeviceSetting[] {
 }
 
 /** The setting fields assigned on the config a `new TalonFXConfiguration()` starts, where its variable is seen. */
-function fieldsSetOn(made: Node, project: Project): { field: string; value: number | boolean; where: string }[] {
+function fieldsSetOn(made: Node, project: Project): { field: SettingField; value: number | boolean; where: string }[] {
   const variable = made.parent?.type === 'variable_declarator' ? made.parent : null
   const name = variable && nameOf(variable)
-  const scope = variable && (variable.parent?.type === 'field_declaration' ? enclosing(variable, BODIES) : scopeOf(variable))
+  const scope = variable && visibleIn(variable)
   if (!name || !scope) return []
   return scope.descendantsOfType('assignment_expression').flatMap((assignment) => {
     const target = assignment && field(assignment, 'left')
     if (!assignment || target?.type !== 'field_access' || !codeOf(target).startsWith(`${name}.`)) return []
-    const setting = field(target, 'field')?.text ?? ''
-    if (!SETTING_FIELDS.includes(setting)) return []
+    const setting = SETTING_FIELDS.find((f) => f === field(target, 'field')?.text)
+    if (!setting) return []
     const value = settingValue(field(assignment, 'right'), project)
     const where = `${fileName(project.fileOf(assignment).path)}:${lineOf(assignment)}`
     return value === null ? [] : [{ field: setting, value, where }]

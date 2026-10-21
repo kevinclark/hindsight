@@ -16,6 +16,7 @@ import { ANY_CANIVORE, deviceAlong, PHOENIX_DEVICES, RIO, type Device } from '..
 import { canBothHappen, waysToReach } from '../flow.ts'
 import { baseType, type Project } from '../project.ts'
 import { codeRule, type CodeProblem } from '../rule.ts'
+import { groupBy } from '../../../rules/run.ts'
 
 export default codeRule({
   id: 'code/duplicate-can-id',
@@ -48,13 +49,8 @@ function devicesBuiltAt(site: Node, project: Project): Device[] {
 function byIdAndBus(devices: Device[]): Map<string, Device[]> {
   const named = new Set(devices.map((d) => d.bus).filter((b) => b !== RIO && b !== ANY_CANIVORE))
   const onlyCanivore = named.size === 1 ? [...named][0] : null
-  const groups = new Map<string, Device[]>()
-  for (const d of devices) {
-    const bus = d.bus === ANY_CANIVORE && onlyCanivore ? onlyCanivore : d.bus
-    const key = `${d.kind} ${d.id} on ${busLabel(bus)}`
-    groups.set(key, [...(groups.get(key) ?? []), d])
-  }
-  return groups
+  const busOf = (d: Device) => (d.bus === ANY_CANIVORE && onlyCanivore ? onlyCanivore : d.bus)
+  return groupBy(devices, (d) => `${d.kind} ${d.id} on ${busLabel(busOf(d))}`)
 }
 
 function busLabel(bus: string): string {

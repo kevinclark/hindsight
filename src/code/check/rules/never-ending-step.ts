@@ -31,34 +31,34 @@ export default codeRule({
   incident: '2026-Offseason-Robot SlapdownSubsystem: the intake zeroing sequence starts with this.run(...), so it never resets the encoder',
 
   check(project) {
-    const sequences = [...project.nodes('method_invocation'), ...project.nodes('object_creation_expression'), ...project.nodes('explicit_constructor_invocation')]
-    const endless = sequences.flatMap((s) => stepsOf(s, project)).flatMap(({ step, after }) => endlessStep(step, after, project))
-    const waits = project.nodes('method_invocation').flatMap((call) => waitOnInstant(call, project))
+    const calls = project.nodes('method_invocation')
+    const sequences = [...calls, ...project.nodes('object_creation_expression'), ...project.nodes('explicit_constructor_invocation')]
+    const endless = sequences.flatMap((sequence) => {
+      const steps = sequenceSteps(sequence, project)
+      return steps.flatMap((step, i) => endlessStep(step, steps.length - 1 - i, project))
+    })
+    const waits = calls.flatMap((call) => waitOnInstant(call, project))
     return [...endless, ...waits]
   },
 })
-
-/** The steps of a sequence, each with how many come after it; none when the node isn't a sequence. */
-function stepsOf(node: Node, project: Project): { step: Node; after: number }[] {
-  const steps = sequenceSteps(node, project)
-  return steps.map((step, i) => ({ step, after: steps.length - 1 - i }))
-}
 
 /** `Commands.sequence(a, b)`, `new SequentialCommandGroup(a, b)`, `addCommands`/`super` in one, `a.andThen(b)`. */
 function sequenceSteps(node: Node, project: Project): Node[] {
   const passed = parts(node, 'arguments')
   if (node.type === 'object_creation_expression') return baseType(typeNamed(node)) === SEQUENCE_GROUP ? passed : []
-  const inGroup = isSequenceGroup(classAround(node), project)
-  if (node.type === 'explicit_constructor_invocation') return node.text.startsWith('super') && inGroup ? passed : []
+  if (node.type === 'explicit_constructor_invocation') return node.text.startsWith('super') && inSequenceGroup(node, project) ? passed : []
   const receiver = field(node, 'object')
   const method = nameOf(node)
   if (method === 'sequence' && receiver?.text === COMMAND_FACTORIES) return passed
-  if (method === 'addCommands' && (!receiver || receiver.type === 'this') && inGroup) return passed
+  if (method === 'addCommands' && (!receiver || receiver.type === 'this') && inSequenceGroup(node, project)) return passed
   return method === 'andThen' && receiver ? [receiver, ...passed] : []
 }
 
-/** Does this class (or a project class above it) extend SequentialCommandGroup? */
-const isSequenceGroup = (cls: Node | null, project: Project) => superclassName(project.lineage(cls).at(-1) ?? null) === SEQUENCE_GROUP
+/** Is this code in a class that extends SequentialCommandGroup (itself, or through a project class above it)? */
+function inSequenceGroup(node: Node, project: Project): boolean {
+  const top = project.lineage(classAround(node)).at(-1) ?? null
+  return superclassName(top) === SEQUENCE_GROUP
+}
 
 /** A finding when a step before the last never ends. */
 function endlessStep(step: Node, after: number, project: Project): CodeProblem[] {
