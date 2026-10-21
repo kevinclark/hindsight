@@ -83,6 +83,7 @@ class ErrorProneTest {
   @Test
   void fallThroughFailsCi() {
     Sample sample = Sample.in(dir);
+    sample.write(Sample.RATIOS, "package frc.robot;\n\npublic class Ratios {}\n"); // so FallThrough alone fails it
     sample.write(TIDY, TIDY_SOURCE);
     BuildResult result = sample.buildAndFail(true, "compileJava");
 
@@ -96,7 +97,7 @@ class ErrorProneTest {
     BuildResult result = sample.build(false, "compileJava");
 
     assertTrue(sample.read(TIDY).contains("@Override"), sample.read(TIDY));
-    assertTrue(result.getOutput().contains("Hindsight tidied 1 file"), result.getOutput());
+    assertTrue(result.getOutput().contains("Hindsight tidied 1 file (MissingOverride)"), result.getOutput());
   }
 
   @Test

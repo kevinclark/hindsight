@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -77,25 +78,26 @@ final class AutoFix {
         main.getSource().forEach(file -> before.put(file, file.lastModified()));
       });
       task.doLast(t -> {
-        report(project, changed(before), divisionFiles(pending));
+        report(project, changed(before), readPending(pending));
         project.delete(pending);
       });
     });
     compileJava.configure(task -> {
       // javac stops printing at 100 warnings, and a warning it doesn't print isn't fixed
       task.getOptions().getCompilerArgs().addAll(List.of("-Xmaxwarns", String.valueOf(MAX_WARNINGS)));
-      Set<String> warned = new TreeSet<>();
-      task.getLogging().addStandardErrorListener((StandardOutputListener) output -> {
-        Matcher warning = WARNING.matcher(output);
-        while (warning.find()) {
-          if (checks.contains(warning.group(2))) warned.add(warning.group(2) + "\t" + warning.group(1));
-        }
-      });
+      // the whole error stream, read once the compile is done, so a line split across two writes still matches
+      StringBuilder errors = new StringBuilder();
+      task.getLogging().addStandardErrorListener((StandardOutputListener) errors::append);
       task.doFirst(t -> {
-        warned.clear();
+        errors.setLength(0);
         project.delete(pending);
       });
       task.doLast(t -> {
+        Set<String> warned = new TreeSet<>();
+        Matcher warning = WARNING.matcher(errors);
+        while (warning.find()) {
+          if (checks.contains(warning.group(2))) warned.add(warning.group(2) + "\t" + warning.group(1));
+        }
         if (!warned.isEmpty()) write(pending, String.join("\n", warned) + "\n");
       });
       task.finalizedBy(fix);
@@ -109,20 +111,22 @@ final class AutoFix {
         .collect(Collectors.toSet());
   }
 
-  /** The files compileJava warned about integer division in, from the pending list. */
-  private static Set<File> divisionFiles(File pending) {
+  /** The pending list: each check compileJava warned about, and the files it warned in. */
+  private static Map<String, Set<File>> readPending(File pending) {
     try {
-      return Files.readAllLines(pending.toPath()).stream()
-          .filter(line -> line.startsWith(ErrorProneChecks.INTEGER_DIVISION + "\t"))
-          .map(line -> new File(line.substring(line.indexOf('\t') + 1)))
-          .collect(Collectors.toSet());
+      return Files.readAllLines(pending.toPath()).stream().map(line -> line.split("\t", 2))
+          .collect(Collectors.groupingBy(line -> line[0], TreeMap::new,
+              Collectors.mapping(line -> new File(line[1]), Collectors.toSet())));
     } catch (IOException e) {
-      return Set.of();
+      return Map.of();
     }
   }
 
-  private static void report(Project project, Set<File> changed, Set<File> divisions) {
+  private static void report(Project project, Set<File> changed, Map<String, Set<File>> warned) {
     if (changed.isEmpty()) return;
+    Set<File> divisions = warned.getOrDefault(ErrorProneChecks.INTEGER_DIVISION, Set.of());
+    List<String> tidyChecks = warned.keySet().stream()
+        .filter(check -> !check.equals(ErrorProneChecks.INTEGER_DIVISION)).collect(Collectors.toList());
     List<String> divided = changed.stream().filter(divisions::contains).map(project::relativePath).sorted()
         .collect(Collectors.toList());
     long tidied = changed.size() - divided.size();
@@ -134,11 +138,10 @@ final class AutoFix {
     }
     if (tidied > 0) {
       String count = divided.isEmpty() ? files(tidied) : tidied + " more " + (tidied == 1 ? "file" : "files");
-      lines.add("Hindsight tidied " + count + " (a missing @Override, extra parentheses, a StringBuilder that isn't"
-          + " needed, ...).");
+      lines.add("Hindsight tidied " + count + " (" + String.join(", ", tidyChecks) + ").");
     }
     lines.add("This build still has the old code. Check the change (git diff), then build again.");
-    lines.add("To keep one as it is, add @SuppressWarnings(\"<the check's name>\") to its field or method.");
+    lines.add("To keep one as it is, add @SuppressWarnings(\"<the check's name, as above>\") to its field or method.");
     lines.add("");
     project.getLogger().warn(String.join("\n", lines));
   }
