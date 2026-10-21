@@ -11,6 +11,7 @@
   import { parseProfileJson, type GroupJson, type MotorJson, type ProfileJson } from '../builder/json.ts'
   import { forgetProfile, keepProfile, keptId, keptProfiles } from '../builder/store.ts'
   import { codeHead, codeHints, hintsAt, shaWarning, siteLabel, type CodeFile, type CodeHints } from '../builder/code-hints.ts'
+  import { loadJavaInPage } from '../code/check/browser-java.ts'
   import { browserGitHub, gitRepoOfFiles } from '../code/browser-code-folder.ts'
   import { parseGitHub } from '../code/github.ts'
   import { PROFILES } from '../profiles/index.ts'
@@ -128,9 +129,14 @@
     const read: CodeFile[] = []
     for (const f of files) {
       const path = f.webkitRelativePath || f.name
-      if (/\.(java|kt)$/.test(path)) read.push({ path, text: await f.text() })
+      if (path.endsWith('.java')) read.push({ path, text: await f.text() })
     }
-    useHints(codeHints(read, await codeHead(gitRepoOfFiles(files))), 'code folder')
+    try {
+      await loadJavaInPage()
+      useHints(codeHints(read, await codeHead(gitRepoOfFiles(files))), 'code folder')
+    } catch (error) {
+      problems = [error instanceof Error ? error.message : String(error)]
+    }
     busy = false
   }
 
@@ -146,12 +152,13 @@
     askingGitHub = !askingGitHub
   }
 
-  /** The code at a branch or commit of a public GitHub repo: every Java and Kotlin file's text at that commit. */
+  /** The code at a branch or commit of a public GitHub repo: every Java file's text at that commit. */
   async function loadGitHub(spec: string) {
     const parsed = parseGitHub(spec)
     if (!parsed?.ref) { problems = [`"${spec}" isn't a GitHub repo and branch: write it as owner/repo@branch.`]; return }
     busy = true
     try {
+      await loadJavaInPage()
       useHints(await hintsAt(browserGitHub(parsed.repo), parsed.ref), `${parsed.repo} (GitHub)`)
       askingGitHub = false
       problems = []
@@ -246,7 +253,7 @@
 
 <p class="intro">
   Drop your match logs (<code>.wpilog</code>, several is better), your robot snapshot (<code>snapshot.json</code>), or a saved <code>profile.json</code>
-  to draft a robot profile you can check and keep. Optionally choose your robot-code folder (only its <code>.java</code> and <code>.kt</code> files and
+  to draft a robot profile you can check and keep. Optionally choose your robot-code folder (only its <code>.java</code> files and
   <code>.git</code> branch files are read) or a public GitHub repo, to label the CAN ID choices. Files never leave the computer.
 </p>
 
@@ -267,7 +274,7 @@
 
 {#if askingGitHub}
   <form class="github" onsubmit={(e) => { e.preventDefault(); loadGitHub(githubSpec) }}
-    title="Every .java and .kt file at that branch's newest commit (or the commit you name) is read from GitHub. Public repos only; GitHub allows 60 lookups an hour per network without signing in, and this uses 1 or 2.">
+    title="Every .java file at that branch's newest commit (or the commit you name) is read from GitHub. Public repos only; GitHub allows 60 lookups an hour per network without signing in, and this uses 1 or 2.">
     <label>GitHub repo and branch <input data-builder-github bind:value={githubSpec} placeholder="owner/repo@branch" size="40" spellcheck="false" autocomplete="off" /></label>
     <button class="button" type="submit">Read</button>
   </form>

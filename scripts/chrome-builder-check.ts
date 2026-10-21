@@ -7,7 +7,7 @@
  *   node --experimental-strip-types scripts/chrome-builder-check.ts <out-dir> [page.html]
  */
 import { spawn, execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { writeWpilog, type FixtureEntry } from '../tests/helpers/fixture-format.ts'
@@ -46,6 +46,14 @@ const talons: FakeTalon[] = [
 ]
 const snapshotPath = `${work}/snapshot.json`
 writeFileSync(snapshotPath, makeSnapshotJson(talons, '2026-01-01T12:00:00Z'))
+// Robot code where the shooter's IDs reach `new TalonFX` through a constructor, as most team code passes them.
+const codeFiles = {
+  'FlywheelIO.java': 'class FlywheelIO {\n  FlywheelIO(int motorID) {\n    talon = new TalonFX(motorID, "canivore");\n  }\n}\n',
+  'Robot.java': 'class Robot extends LoggedRobot {\n  Robot() {\n    new FlywheelIO(20);\n    new FlywheelIO(21);\n  }\n}\n',
+}
+const codeFolder = `${work}/robot-code`
+mkdirSync(codeFolder)
+for (const [name, text] of Object.entries(codeFiles)) writeFileSync(`${codeFolder}/${name}`, text)
 
 // --- Chrome -----------------------------------------------------------------------------------------------------
 const profile = mkdtempSync(`${tmpdir()}/hindsight-chrome-`)
@@ -102,6 +110,17 @@ const seen = await evalIn(sessionId, `(() => {
   }
 })()`)
 
+// The code folder: its hints label the CAN ID choices.
+const { result: { root: page2 } } = await send('DOM.getDocument', {}, sessionId)
+const { result: { nodeId: codeInput } } = await send('DOM.querySelector', { nodeId: page2.nodeId, selector: 'input[type=file][webkitdirectory]' }, sessionId)
+await send('DOM.setFileInputFiles', { nodeId: codeInput, files: [codeFolder] }, sessionId)
+await sleep(1500)
+const hinted = await evalIn(sessionId, `(() => {
+  const chip = [...document.querySelectorAll('.chip')].map(c => c.innerText).find(t => /Talon FX site/.test(t)) ?? null
+  const options = [...document.querySelectorAll('tr[data-motor^="/Shooter/"] select[data-canid] option')].map(o => o.innerText)
+  return { chip, options: [...new Set(options)].filter(o => /FlywheelIO/.test(o)) }
+})()`)
+
 async function shot(name: string) {
   const { result } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId)
   writeFileSync(`${outDir}/${name}.png`, Buffer.from(result.data, 'base64'))
@@ -154,10 +173,12 @@ const checks: Record<string, boolean> = {
   'saved file has 10 motors': savedMotors === 10,
   'renamed then kept: replaces the old one': renamedList.length === 1 && /Renamed Robot/.test(renamedList[0]) && /in place of "Example Robot"/.test(renamedNote ?? ''),
   'two groups named alike: warned': /"Drive"/.test(duplicateWarning ?? ''),
+  'code folder: 2 Talon FX sites, IDs followed through the constructor': /code folder: 2 Talon FX sites/.test(hinted.chip ?? '')
+    && ['20', '21'].every((id) => hinted.options.some((o: string) => o.startsWith(`${id} `) && o.endsWith('FlywheelIO.java:3 (motorID)'))),
   'no page errors': consoleErrors.length === 0,
 }
 for (const [name, ok] of Object.entries(checks)) console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`)
-console.log(JSON.stringify({ chrome: execSync(`"${CHROME}" --version`).toString().trim(), page, seen, keptNote, keptList, renamedNote, renamedList, duplicateWarning, saved, savedError, consoleErrors }, null, 1))
+console.log(JSON.stringify({ chrome: execSync(`"${CHROME}" --version`).toString().trim(), page, seen, hinted, keptNote, keptList, renamedNote, renamedList, duplicateWarning, saved, savedError, consoleErrors }, null, 1))
 console.log(`${Object.values(checks).filter(Boolean).length} of ${Object.keys(checks).length} checks passed`)
 ws.close()
 chrome.kill()
