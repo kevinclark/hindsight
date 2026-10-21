@@ -357,8 +357,8 @@ jobs:
   and one fixed. Known limit: two findings of one rule in one file on lines with identical text can swap without
   anyone noticing, so a new one may hide behind an old one (the counts stay right).
 - **Cost** (measured on a 49-file robot repo on a Mac): the check with a comparison takes about 0.6 s; installing the
-  two parsing packages (`npm ci --omit=dev`, 8.5 MB) took 0.2 s with npm's cache warm. A cold runner install is not
-  measured (assumed 10-30 s).
+  two parsing packages (`npm ci --omit=dev`, 8.5 MB) took 0.2 s with npm's cache warm. On a GitHub
+  `ubuntu-latest` runner (2026-10-21, the self-test): the install took 0.9 s and the whole action step about 2 s.
 - Run the same thing on a laptop: `node --experimental-strip-types scripts/code-check.ts <robot folder> --base <commit>`
   (add `--fail-on new`, `--exclude-rules a,b`; `--github` is for CI).
 
