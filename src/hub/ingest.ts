@@ -19,6 +19,8 @@ export interface SourceFile {
   size: number
   modifiedTime: number | null
   from: LogRecord['from']
+  /** The file's id in the store it came from (Drive), if it has one. */
+  sourceId?: string
   /** Checksums the source already knows (a Drive listing's); with one of them matching the library the file is not downloaded. */
   sha256?: string
   md5?: string
@@ -91,7 +93,7 @@ async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOpt
     }
     const record: LogRecord = {
       type: 'log', ...d.meta, sha256: d.sha256, md5: d.md5, size: d.size, path, names: [file.name],
-      modifiedTime: file.modifiedTime, from: file.from, recordedAt: now(), machine: lib.machine,
+      modifiedTime: file.modifiedTime, from: file.from, ...(file.sourceId ? { sourceId: file.sourceId } : {}), recordedAt: now(), machine: lib.machine,
     }
     await lib.append(record)
     report.added.push({ name: file.name, where: file.where, path, size: d.size, undated: d.meta.playedAt === null, stub: d.meta.stub })
@@ -118,6 +120,30 @@ async function noteAlready(lib: LocalLibrary, file: SourceFile, known: LogRecord
     await lib.append(alias)
   }
   report.already.push({ name: file.name, where: file.where, path: known.path, names: lib.catalog.namesOf(known.sha256), newName })
+}
+
+export interface IngestPlan {
+  /** Log files found (by extension). */
+  logs: number
+  /** Already in the library by a checksum the source reported: nothing to read. */
+  alreadyKnown: number
+  /** Files that must be read (downloaded, for Drive) to be hashed, and their total size: the cost, stated before it is paid. */
+  toRead: number
+  bytesToRead: number
+  ignored: number
+}
+
+/** What an ingest of these files would cost, without reading or writing anything. A local file seen unchanged before counts as known. */
+export function planIngest(lib: LocalLibrary, files: SourceFile[], seen?: IngestOptions['seen']): IngestPlan {
+  const plan: IngestPlan = { logs: 0, alreadyKnown: 0, toRead: 0, bytesToRead: 0, ignored: 0 }
+  for (const f of files) {
+    if (kindOf(f.name) === null) { plan.ignored++; continue }
+    plan.logs++
+    const sha = f.sha256 ?? seen?.get(`${f.where}|${f.size}|${f.modifiedTime}`)
+    if ((sha && lib.catalog.bySha(sha)) || (f.md5 && lib.catalog.byMd5(f.md5))) plan.alreadyKnown++
+    else { plan.toRead++; plan.bytesToRead += f.size }
+  }
+  return plan
 }
 
 /** A local folder, recursive, any structure: every file with its size and modified time. Nothing is opened. */

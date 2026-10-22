@@ -94,7 +94,7 @@ export class FakeDrive {
       if (url.searchParams.get('alt') !== 'media') return json(this.view(n))
       const range = /bytes=(\d+)-(\d+)/.exec(headers.get('range') ?? '')
       const bytes = n.bytes ?? new Uint8Array(0)
-      return new Response(range ? bytes.slice(Number(range[1]), Number(range[2]) + 1) : bytes, { status: range ? 206 : 200 })
+      return new Response((range ? bytes.slice(Number(range[1]), Number(range[2]) + 1) : bytes) as unknown as BodyInit, { status: range ? 206 : 200 })
     }
     return json({ error: { code: 404, message: `fake drive has no ${method} ${p}` } }, 404)
   }

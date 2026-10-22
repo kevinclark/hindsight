@@ -56,6 +56,8 @@ export interface LogRecord extends LogMeta {
   modifiedTime: number | null
   /** Where it was brought in from: a folder on a machine, a Drive folder, or the robot. */
   from: 'folder' | 'drive' | 'robot'
+  /** For a log brought in from Drive: its id there, so sync can copy it inside Drive instead of uploading it again. */
+  sourceId?: string
   recordedAt: number
   machine: string
 }

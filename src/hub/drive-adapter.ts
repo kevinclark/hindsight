@@ -39,6 +39,8 @@ export class DriveAdapter implements StorageAdapter {
   private readonly sleep: (ms: number) => Promise<void>
   /** path → folder id. */
   private folders = new Map<string, string>()
+  /** Logs are never rewritten, so a log's file is remembered by path (a manifest changes, so it is looked up each time). */
+  private logs = new Map<string, DriveFile>()
   /** Counts of calls by kind, for the dry run's cost and the tests. */
   readonly calls = { list: 0, upload: 0, download: 0, copy: 0 }
 
@@ -189,6 +191,8 @@ export class DriveAdapter implements StorageAdapter {
   }
 
   private async find(path: string): Promise<DriveFile | null> {
+    const cached = this.logs.get(path)
+    if (cached) return cached
     const { parent, name } = splitPath(checkPath(path))
     const folder = await this.folderId(parent, false)
     if (!folder) return null
@@ -197,7 +201,9 @@ export class DriveAdapter implements StorageAdapter {
     })
     this.calls.list++
     const body = (await (await this.request(`${API}/files?${params}`)).json()) as { files?: DriveFile[] }
-    return body.files?.find((f) => f.mimeType !== FOLDER) ?? null
+    const found = body.files?.find((f) => f.mimeType !== FOLDER) ?? null
+    if (found && path.startsWith('logs/')) this.logs.set(path, found)
+    return found
   }
 
   /** The id of the folder at `path` under the root; created (each part, once) when `create`, else null if missing. */

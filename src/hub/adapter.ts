@@ -47,6 +47,8 @@ export interface StorageAdapter {
    * earlier appends); if it holds anything else, someone else wrote to it and nothing is changed (ManifestConflict).
    */
   appendManifest(path: string, content: string): Promise<void>
+  /** Make a copy of a file the store already holds, by its id in the store, at `path` (Drive `files.copy`: nothing is uploaded). Throws if it can't. */
+  copyInto?(sourceId: string, path: string): Promise<FileInfo>
 }
 
 export class AlreadyExists extends Error {
