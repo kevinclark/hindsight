@@ -23,7 +23,7 @@ function createWindow(): void {
   // The page is local; every link out opens in the user's browser.
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https:/.test(url)) void shell.openExternal(url); return { action: 'deny' } })
   // One line each to stdout, to tell a navigation from a crashed renderer when the page reloads without being asked.
-  window.webContents.on('did-start-navigation', ({ url, isSameDocument, isMainFrame }) => console.log(`did-start-navigation url=${url} isSameDocument=${isSameDocument} isMainFrame=${isMainFrame}`))
+  window.webContents.on('did-start-navigation', ({ url, isSameDocument, isMainFrame }) => { if (!isSameDocument && isMainFrame) console.log(`did-start-navigation url=${url}`) })
   window.webContents.on('render-process-gone', (_e, details) => console.log(`render-process-gone reason=${details.reason}`))
   window.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:')) e.preventDefault() })
   void window.loadFile(join(__dirname, '..', 'dist', 'index.html'))

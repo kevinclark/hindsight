@@ -29,6 +29,48 @@ export interface CodeLink {
   checkedAt: number
 }
 
+/** "owner/name" or an organization / user name: what a GitHub source may be (no `node:` here; the page validates too). */
+export const GITHUB_SOURCE = /^[\w.-]+(\/[\w.-]+)?$/
+export const validSource = (text: string): boolean => GITHUB_SOURCE.test(text) && !text.includes('..')
+
+/** The fields of a log record that a later reading (a `meta` record) may set. Nothing else in a meta is ever laid over a log. */
+export const DESCRIBABLE_KEYS = ['wall', 'matchWindow', 'event', 'matchType', 'matchNumber', 'onField', 'batteryId', 'robot', 'build', 'stub', 'hardwareId', 'code'] as const
+/** The fields that decide where a file lives (and so its identity in the library): set by the first reading, never by a later one. */
+export const FIXED_KEYS = ['kind', 'playedAt', 'dateSource'] as const
+export type DescribableKey = (typeof DESCRIBABLE_KEYS)[number]
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const orNull = (ok: (v: unknown) => boolean) => (v: unknown) => v === null || ok(v)
+const span = orNull((v) => isObject(v) && finite(v.start) && finite(v.end))
+
+export function isCodeLink(v: unknown): v is CodeLink {
+  return isObject(v) && typeof v.repo === 'string' && validSource(v.repo) && v.repo.includes('/') && (v.linkedBy === 'sha' || v.linkedBy === 'codebase')
+    && (v.sha === undefined || (typeof v.sha === 'string' && /^[0-9a-f]{40}$/.test(v.sha)))
+    && (v.candidates === undefined || (Array.isArray(v.candidates) && v.candidates.every((c) => typeof c === 'string')))
+    && finite(v.checkedAt)
+}
+
+const SHAPES: Record<DescribableKey, (v: unknown) => boolean> = {
+  wall: span, matchWindow: span,
+  event: (v) => typeof v === 'string',
+  matchType: orNull(finite), matchNumber: orNull(finite),
+  onField: (v) => typeof v === 'boolean', stub: (v) => typeof v === 'boolean',
+  batteryId: orNull((v) => typeof v === 'string'), hardwareId: orNull((v) => typeof v === 'string'),
+  robot: orNull((v) => isObject(v) && typeof v.name === 'string' && (v.profileId === null || typeof v.profileId === 'string') && (v.how === undefined || typeof v.how === 'string') && (v.fit === undefined || v.fit === null || finite(v.fit))),
+  build: orNull((v) => isObject(v) && typeof v.sha === 'string' && typeof v.branch === 'string'),
+  code: (v) => isCodeLink(v),
+}
+
+/**
+ * The fields of a reading that a log record may take: only the describable keys, each of the shape the page and the rules
+ * rely on. A manifest from a teammate is untrusted input, so a field of the wrong shape (or any other key) is dropped.
+ */
+export function usableReading(meta: unknown): Partial<LogMeta> {
+  if (!isObject(meta)) return {}
+  return Object.fromEntries(DESCRIBABLE_KEYS.filter((k) => k in meta && meta[k] !== undefined && SHAPES[k](meta[k])).map((k) => [k, meta[k]])) as Partial<LogMeta>
+}
+
 export interface LogRobot {
   profileId: string | null
   name: string

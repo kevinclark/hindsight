@@ -10,17 +10,16 @@
  * Stops at the first answer saying no requests remain; what was linked before is kept. No node: imports (the page uses
  * `describeCodeLink`).
  */
-import type { CodeLink, LogRecord } from './types.ts'
+import { isCodeLink, validSource, type CodeLink, type LogRecord } from './types.ts'
+
+export { validSource }
 
 const API = 'https://api.github.com'
 const RAW = 'https://raw.githubusercontent.com'
 const ROBOT_JAVA = 'src/main/java/frc/robot/Robot.java'
 const CODEBASE = /recordMetadata\(\s*"Codebase"\s*,\s*"([^"]+)"/
-const SOURCE = /^[\w.-]+(\/[\w.-]+)?$/
 
 export interface RepoInfo { full: string; defaultBranch: string; pushedAt: string }
-
-export const validSource = (text: string): boolean => SOURCE.test(text) && !text.includes('..')
 
 /** A log that could be linked: its robot is only a code name, and the link isn't already by commit. */
 export function linkable(r: LogRecord): boolean {
@@ -92,11 +91,20 @@ export async function linkCode(sources: string[], records: LogRecord[], options:
     }
 
     // 2. Each log: candidates by Codebase text, the commit if it has one.
-    const held = new Map<string, Promise<string | null>>()
-    const holds = (repo: RepoInfo, sha: string) => {
+    // Only a definite answer (the commit's full hash, or "not there") is remembered; a failed check is asked again next time it is needed.
+    const held = new Map<string, string | null>()
+    const holds = async (repo: RepoInfo, sha: string): Promise<string | null> => {
       const key = `${repo.full}@${sha}`
-      if (!held.has(key)) held.set(key, commitSha(api, repo.full, sha))
-      return held.get(key)!
+      if (held.has(key)) return held.get(key)!
+      try {
+        const full = await commitSha(api, repo.full, sha)
+        held.set(key, full)
+        return full
+      } catch (e) {
+        if (e instanceof RateLimited) throw e
+        result.problems.push(`${repo.full}: could not check commit ${sha} (${e instanceof Error ? e.message : String(e)}); treated as not there for now`)
+        return null
+      }
     }
     let done = 0
     for (const r of todo) {
@@ -128,6 +136,7 @@ export function preferred(repos: RepoInfo[]): RepoInfo {
   return [...repos].sort((a, b) => Number(plain(b)) - Number(plain(a)) || b.pushedAt.localeCompare(a.pushedAt) || a.full.localeCompare(b.full))[0]
 }
 
+/** A bare name is an organization; if GitHub has none of that name (404) it is tried as a user (one more request). */
 async function list(source: string, api: (path: string) => Promise<Response>): Promise<RepoInfo[]> {
   const one = (r: { full_name: string; default_branch: string; pushed_at: string | null }): RepoInfo => ({ full: r.full_name, defaultBranch: r.default_branch, pushedAt: r.pushed_at ?? '' })
   if (source.includes('/')) {
@@ -136,8 +145,10 @@ async function list(source: string, api: (path: string) => Promise<Response>): P
     return [one((await res.json()) as never)]
   }
   const out: RepoInfo[] = []
+  let owner: 'orgs' | 'users' = 'orgs'
   for (let page = 1; ; page++) {
-    const res = await api(`/orgs/${source}/repos?per_page=100&page=${page}`)
+    let res = await api(`/${owner}/${source}/repos?per_page=100&page=${page}`)
+    if (res.status === 404 && owner === 'orgs' && page === 1) { owner = 'users'; res = await api(`/users/${source}/repos?per_page=100&page=1`) }
     if (!res.ok) throw new Error(`GitHub answered ${res.status}`)
     const rows = (await res.json()) as never[]
     out.push(...rows.map(one))
@@ -157,7 +168,7 @@ async function readRaw(get: typeof fetch, repo: RepoInfo, result: LinkResult): P
 async function commitSha(api: (path: string) => Promise<Response>, repo: string, sha: string): Promise<string | null> {
   const res = await api(`/repos/${repo}/commits/${encodeURIComponent(sha)}`)
   if (res.status === 404 || res.status === 422) return null
-  if (!res.ok) throw new Error(`GitHub answered ${res.status} for a commit`)
+  if (!res.ok) throw new Error(`GitHub answered ${res.status}`)
   const full = ((await res.json()) as { sha?: unknown }).sha
   return typeof full === 'string' && /^[0-9a-f]{40}$/.test(full) ? full : null
 }
@@ -165,9 +176,9 @@ async function commitSha(api: (path: string) => Promise<Response>, repo: string,
 /** How the Library view words a link, and where it points. */
 export function describeCodeLink(r: Pick<LogRecord, 'code' | 'build'>): { text: string; url: string } | null {
   const c = r.code
-  if (!c) return null
+  if (!isCodeLink(c)) return null // a link comes from a manifest anyone on the team can write: show only a well-formed one
   const repoUrl = `https://github.com/${c.repo}`
   if (c.linkedBy === 'sha' && c.sha) return { text: `${c.repo} @ ${c.sha.slice(0, 7)}`, url: `${repoUrl}/commit/${c.sha}` }
-  const sha = r.build?.sha.slice(0, 7)
+  const sha = typeof r.build?.sha === 'string' ? r.build.sha.slice(0, 7) : undefined
   return { text: `${c.repo} (named by the log${sha ? `; commit ${sha} not on GitHub` : ''})`, url: repoUrl }
 }

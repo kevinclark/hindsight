@@ -16,10 +16,11 @@ const REPOS: Repo[] = [
   { name: 'no-code', pushed: '2026-01-01T00:00:00Z' },
 ]
 
-function fakeGitHub(opts: { repos?: Repo[]; limitAfter?: number; remaining?: number } = {}) {
+function fakeGitHub(opts: { repos?: Repo[]; limitAfter?: number; remaining?: number; failCommits?: number; asUser?: boolean } = {}) {
   const repos = opts.repos ?? REPOS
   const calls: string[] = []
   let api = 0
+  let commitCalls = 0
   const get = (async (input: string | URL | Request) => {
     const url = String(input)
     calls.push(url)
@@ -35,11 +36,18 @@ function fakeGitHub(opts: { repos?: Repo[]; limitAfter?: number; remaining?: num
     const headers = { 'x-ratelimit-remaining': left, 'x-ratelimit-reset': '1800000000' }
     if (opts.limitAfter !== undefined && api > opts.limitAfter) return json({ message: 'rate limit' }, 403, headers)
     const u = new URL(url)
-    if (u.pathname === '/orgs/testorg/repos') {
+    if (u.pathname === '/orgs/testorg/repos' && opts.asUser) return json({ message: 'Not Found' }, 404, headers)
+    const single = /^\/repos\/testorg\/([^/]+)$/.exec(u.pathname)
+    if (single) {
+      const r = repos.find((x) => x.name === single[1])
+      return r ? json({ full_name: `testorg/${r.name}`, default_branch: r.branch ?? 'main', pushed_at: r.pushed }, 200, headers) : json({}, 404, headers)
+    }
+    if (u.pathname === (opts.asUser ? '/users/testorg/repos' : '/orgs/testorg/repos')) {
       const page = Number(u.searchParams.get('page') ?? 1)
       return json(repos.slice((page - 1) * 100, page * 100).map((r) => ({ full_name: `testorg/${r.name}`, default_branch: r.branch ?? 'main', pushed_at: r.pushed })), 200, headers)
     }
     const commit = /^\/repos\/testorg\/([^/]+)\/commits\/(.+)$/.exec(u.pathname)
+    if (commit && ++commitCalls <= (opts.failCommits ?? 0)) return json({ message: 'bad gateway' }, 502, headers)
     if (commit) {
       const repo = repos.find((r) => r.name === commit[1])
       return repo?.commits?.includes(commit[2]) ? json({ sha: FULL, commit: { author: { name: 'someone', email: 'x@example.com' } } }, 200, headers) : json({ message: 'No commit found' }, 422, headers)
@@ -112,6 +120,40 @@ describe('linking a log to its code', () => {
     const r = await linkCode(['testorg'], [log('l1')], { get: gh.get })
     expect(r.repos).toBe(101)
     expect(gh.api()).toBe(2)
+  })
+
+  it('treats a failed commit check as unknown, says so once, carries on, and asks again rather than remembering the failure', async () => {
+    const gh = fakeGitHub({ failCommits: 1 }) // the first commit check gets a 502, every later one is answered
+    const b = { sha: 'abc1234', branch: 'm' }
+    const r = await linkCode(['testorg'], [log('l1', { build: b }), log('l2', { build: b })], { get: gh.get })
+    expect(r.problems).toHaveLength(1)
+    expect(r.problems[0]).toContain('502')
+    expect(r.links.get('l1')).toMatchObject({ repo: 'testorg/robot-main', linkedBy: 'codebase' }) // robot-main's check failed for l1
+    expect(r.links.get('l2')).toMatchObject({ repo: 'testorg/robot-main', linkedBy: 'sha', sha: FULL }) // the same check, asked again, succeeded
+    expect(r.rateLimitedUntil).toBeNull()
+  })
+
+  it('tries a bare name as a user when no organization has it (one more request), and reads owner/repo from the repo itself', async () => {
+    const user = fakeGitHub({ asUser: true })
+    const r = await linkCode(['testorg'], [log('l1')], { get: user.get })
+    expect(r.repos).toBe(6)
+    expect(r.links.get('l1')).toMatchObject({ repo: 'testorg/robot-main' })
+    expect(user.calls.filter((u) => u.includes('api.github.com')).map((u) => new URL(u).pathname)).toEqual(['/orgs/testorg/repos', '/users/testorg/repos'])
+    const one = fakeGitHub()
+    const r2 = await linkCode(['testorg/solo'], [log('l1', { robot: { profileId: null, name: 'SoloCode', how: 'signals', fit: 0 } })], { get: one.get })
+    expect(r2.links.get('l1')).toMatchObject({ repo: 'testorg/solo', linkedBy: 'codebase' })
+    expect(r2.requests).toEqual({ api: 1, raw: 1 })
+  })
+
+  it('shows only a well-formed link', () => {
+    const bad = (code: unknown) => describeCodeLink(log('l1', { code: code as never }))
+    expect(bad({ repo: 'noslash', linkedBy: 'sha', checkedAt: 1 })).toBeNull()
+    expect(bad({ repo: '../x/y', linkedBy: 'codebase', checkedAt: 1 })).toBeNull()
+    expect(bad({ repo: 'o/r', linkedBy: 'guess', checkedAt: 1 })).toBeNull()
+    expect(bad({ repo: 'o/r', linkedBy: 'sha', sha: 'not-hex', checkedAt: 1 })).toBeNull()
+    expect(bad({ repo: 'o/r', linkedBy: 'sha', sha: 'a'.repeat(39), checkedAt: 1 })).toBeNull()
+    expect(bad('o/r')).toBeNull()
+    expect(bad({ repo: 'o/r', linkedBy: 'codebase', checkedAt: 1 })).not.toBeNull()
   })
 
   it('tie-break: plain names first, then the latest push', () => {

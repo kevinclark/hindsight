@@ -15,10 +15,22 @@ export interface Progress { job: string; done: number; total: number; current: s
 export interface LastJob { job: string; report?: unknown; error?: string; at: number }
 
 /** The GitHub sources code is linked from, and the most API requests "Link code" would make. */
-export interface CodePlan { sources: string[]; requests: number }
+export interface CodePlan {
+  sources: string[]
+  /** A floor, not a total: one listing per source plus one commit check per distinct (Codebase text, build commit); a text recorded by several repos costs one check per repo. */
+  requests: number
+  /** Logs "Link code" would look at. */
+  logs: number
+  /** Some robot log has no describer stamp: it was filed before this version read logs, so "Read logs again" may find its robot. */
+  unstamped: boolean
+}
 
 export interface LinkReport {
+  /** Logs that found a repo. */
   linked: number
+  /** Of those, how many wrote a record and how many already had the same link. */
+  written: number
+  unchanged: number
   /** Logs with a Codebase text that no listed repo records. */
   unmatched: number
   repos: number

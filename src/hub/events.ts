@@ -24,10 +24,14 @@ export function eventTableYears(): number[] { return [...TABLES.keys()].sort() }
  * ("MILSTEIN") matches the entry named "<Word> Division".
  */
 export function resolveEvent(event: string, playedAt: number | null): string | null {
+  if (playedAt === null) return null
+  return resolveIn(TABLES.get(new Date(playedAt).getUTCFullYear()), event)
+}
+
+/** `resolveEvent` against one year's table (code -> name), for a table of your own. */
+export function resolveIn(table: ReadonlyMap<string, string> | undefined, event: string): string | null {
   const key = event.trim().toLowerCase()
-  if (key === '' || playedAt === null) return null
-  const table = TABLES.get(new Date(playedAt).getUTCFullYear())
-  if (!table) return null
+  if (key === '' || !table) return null
   const byCode = table.get(key)
   if (byCode) return byCode
   const division = `${key} division`

@@ -7,13 +7,14 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { Described } from './describe-file.ts'
 import type { LocalLibrary } from './library-store.ts'
-import type { LogMeta, LogRecord } from './types.ts'
+import { newerVersion } from './catalog.ts'
+import { DESCRIBABLE_KEYS, type LogMeta, type LogRecord } from './types.ts'
 
 export interface RedescribeReport {
   wpilogs: number
   changed: number
   unchanged: number
-  /** Already read by this build of the describer (the log's latest meta carries its id): not read again. */
+  /** Already read by this build of the describer, or by a newer app version (the log's latest meta carries its id): not read again. */
   skipped: number
   /** Recorded in the library but not on this computer. */
   missing: number
@@ -28,18 +29,14 @@ export interface RedescribeOptions {
   onProgress?(done: number, total: number, current: string): void
 }
 
-const FIXED = new Set(['kind', 'playedAt', 'dateSource'])
-
-/** Every describable field of a reading: all but the ones that decide where the file lives. */
+/** Every describable field of a reading from the describer: all but the ones that decide where the file lives. */
 export function describable(meta: LogMeta): Partial<LogMeta> {
-  return Object.fromEntries(Object.entries(meta).filter(([k]) => !FIXED.has(k))) as Partial<LogMeta>
+  return Object.fromEntries(DESCRIBABLE_KEYS.filter((k) => k in meta && meta[k] !== undefined).map((k) => [k, meta[k]])) as Partial<LogMeta>
 }
-
-const META_KEYS = ['matchWindow', 'wall', 'event', 'matchType', 'matchNumber', 'onField', 'batteryId', 'robot', 'build', 'stub', 'hardwareId', 'code'] as const
 
 /** What a log record shows of a reading (no path, hashes or names), as a `meta` record carries it, `code` included. */
 export function readingOf(r: LogRecord): Partial<LogMeta> {
-  return Object.fromEntries(META_KEYS.filter((k) => r[k] !== undefined).map((k) => [k, r[k]])) as Partial<LogMeta>
+  return describable(r)
 }
 
 export async function redescribe(lib: LocalLibrary, options: RedescribeOptions): Promise<RedescribeReport> {
@@ -49,7 +46,9 @@ export async function redescribe(lib: LocalLibrary, options: RedescribeOptions):
   for (const r of records) {
     if (options.cancelled?.()) break
     options.onProgress?.(done++, records.length, r.path.split('/').pop() ?? r.path)
-    if (options.describer && lib.catalog.metaOf(r.sha256)?.describer === options.describer) { report.skipped++; continue }
+    // Already read by this build, or by a newer app version (an older one must not overwrite what a newer one found).
+    const latest = lib.catalog.metaOf(r.sha256)?.describer
+    if (options.describer && latest && (latest === options.describer || newerVersion(latest, options.describer))) { report.skipped++; continue }
     if ((await lib.store.stat(r.path)) === null) { report.missing++; continue }
     try {
       const read = await options.describe(lib.store.at(r.path), r.names[0] ?? r.path.split('/').pop()!)

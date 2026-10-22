@@ -53,6 +53,7 @@
     if (!api || progress) return undefined
     problem = null
     progress = { job: label, done: 0, total: 0, current: '' }
+    lastJob = null // a new job's own report replaces the old one
     ownWork = true
     try { return await body() } catch (e) { problem = e instanceof Error ? e.message : String(e); return undefined } finally { ownWork = false; progress = null; await refresh().catch(() => {}) }
   }
@@ -118,6 +119,9 @@
   let codeText = $state('')
   let linkReport = $state.raw<LinkReport | null>(null)
   let lastJob = $state.raw<LastJob | null>(null)
+  const linkLabel = $derived(!codePlan ? 'Link code' : codePlan.logs === 0
+    ? `Link code (${codePlan.unstamped ? 'no logs to link; read logs again first?' : 'no logs to link'})`
+    : `Link code (at least ${codePlan.requests} requests)`)
   async function saveSources() {
     const sources = codeText.split(/[\s,]+/).filter(Boolean)
     const p = await work('Saving', () => api!.setCodeSources(sources))
@@ -169,6 +173,16 @@
     return [...groups]
   })
 
+  /** Every log of each day, before the filters (but after the stub setting). */
+  const wholeDays = $derived.by(() => {
+    const groups = new Map<string, Entry[]>()
+    for (const e of base) {
+      const day = e.record.playedAt === null ? 'No date' : dayText(e.record.playedAt)
+      groups.set(day, [...(groups.get(day) ?? []), e])
+    }
+    return groups
+  })
+
   function toggle(f: FacetId, value: string) {
     const now = selection[f] ?? []
     selection = { ...selection, [f]: now.includes(value) ? now.filter((v) => v !== value) : [...now, value] }
@@ -200,6 +214,7 @@
    * FMS name is not known, or differs).
    */
   function dayHeader(rows: Entry[]): { fixed: string } | { label: string; placeholder: string } {
+    // From every log of the day the stub setting shows, not only those the filters leave: a filter must not change what the day is.
     const field = rows.filter((e) => e.record.onField)
     if (field.length === 0) return { label: 'practice place', placeholder: 'where' }
     const names = new Set(rows.map((e) => fmsPlace(e.record)).map((p) => (p?.resolved ? p.name : null)))
@@ -233,7 +248,7 @@
   <summary>Code: {codePlan?.sources.length ? codePlan.sources.join(', ') : 'no GitHub source yet'}</summary>
   <p class="meta">Logs that name only their code (no robot profile) can be linked to the public GitHub repo that holds it. Give an organization or <code>owner/repo</code>, comma separated. Pressing <em>Link code</em> reads each repo's <code>Robot.java</code> and asks GitHub about build commits; nothing is sent but repo and commit names.</p>
   <p class="row"><input bind:value={codeText} placeholder="organization or owner/repo" aria-label="GitHub sources for code" /><button class="primary" onclick={saveSources} disabled={driveBusy}>Save</button>
-    <button class="primary" onclick={linkCode} disabled={driveBusy || !codePlan?.sources.length}>Link code ({codePlan?.requests ?? 0} requests)</button></p>
+    <button class="primary" onclick={linkCode} disabled={driveBusy || !codePlan?.sources.length || !codePlan.logs}>{linkLabel}</button></p>
 </details>
 
 <details class="team" open={drive !== null && !drive.teamFolder}>
@@ -371,7 +386,7 @@
       <div class="day">
         <h3>{day}<span class="meta"> · {rows.length}</span></h3>
         {#if day !== 'No date'}
-          {@const head = dayHeader(rows)}
+          {@const head = dayHeader(wholeDays.get(day) ?? rows)}
           {#if 'fixed' in head}
             <span class="tagfield fixed">{head.fixed}</span>
           {:else}

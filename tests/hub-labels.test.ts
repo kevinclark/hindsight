@@ -9,11 +9,13 @@ import { describeLog, robotIdentity } from '../src/hub/describe.ts'
 import { describeFile, type Described } from '../src/hub/describe-file.ts'
 import { Catalog, newerReading } from '../src/hub/catalog.ts'
 import { fmsPlace, facetValues, robotIsGuess } from '../src/hub/facets.ts'
-import { resolveEvent, eventTableYears } from '../src/hub/events.ts'
+import table2026 from '../src/hub/events/2026.json' with { type: 'json' }
+import { resolveEvent, resolveIn, eventTableYears } from '../src/hub/events.ts'
 import { ingest, localFolderFiles } from '../src/hub/ingest.ts'
 import { JobRunner } from '../src/hub/jobs.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { readingOf, redescribe } from '../src/hub/redescribe.ts'
+import { applyLinks } from '../src/hub/links.ts'
 import { parseManifest, serializeRecord, type LogRecord, type MetaRecord } from '../src/hub/types.ts'
 import { PROFILES } from '../src/profiles/index.ts'
 import { robotLog } from './helpers/hub-logs.ts'
@@ -105,6 +107,26 @@ describe('a later reading laid over a log record', () => {
     const { records } = parseManifest('{"type":"meta","sha256":"a1","meta":{"event":"TEST"},"recordedAt":3,"machine":"m"}\n')
     expect(records).toHaveLength(1)
   })
+  it('takes only the describable fields from a meta, whatever else it carries', () => {
+    const c = new Catalog()
+    c.add(base({ sha256: 'a1' }))
+    c.add(meta({ path: 'x', sha256: 'y', size: 1, names: ['z'], recordedAt: 99, machine: 'evil', md5: 'q', from: 'robot', modifiedTime: 5, event: 'TEST' } as never, 20))
+    const r = c.bySha('a1')!
+    expect(r).toEqual({ ...base({ sha256: 'a1' }), event: 'TEST' })
+    expect(c.bySha('y')).toBeUndefined()
+  })
+  it('drops a meta field of the wrong shape and keeps the rest, without throwing', () => {
+    const c = new Catalog()
+    c.add(base())
+    c.add(meta({ robot: 'Robot Z', build: { sha: 1, branch: 'x' }, code: { repo: '../..', linkedBy: 'sha', checkedAt: 1 }, event: 5, wall: { start: 'a', end: 2 }, matchType: '3', onField: 'yes', stub: 1, batteryId: 7, matchWindow: { start: 1, end: 2 }, matchNumber: 4 } as never, 20))
+    const r = c.bySha('a1')!
+    expect(r).toMatchObject({ robot: { profileId: 'p', name: 'Robot A' }, build: null, event: '', wall: null, matchType: null, onField: false, stub: false, batteryId: null })
+    expect(r.code).toBeUndefined()
+    expect(r).toMatchObject({ matchWindow: { start: 1, end: 2 }, matchNumber: 4 }) // the good fields still apply
+    expect(() => facetValues(c.entries()[0])).not.toThrow()
+    c.add(meta('not an object' as never, 30, 'a1', 'D2'))
+    expect(c.bySha('a1')!.event).toBe('')
+  })
   it('keeps names from a second machine\'s record of the same bytes', () => {
     const c = new Catalog()
     c.add(base()); c.add(meta({ event: 'TEST' }, 20)); c.add(base({ recordedAt: 30, names: ['copy.wpilog'] }))
@@ -115,32 +137,43 @@ describe('a later reading laid over a log record', () => {
 
 describe('event names from the FMS table', () => {
   const y = (year: number) => Date.UTC(year, 5, 1)
-  it('resolves a code in any case for the log\'s year', () => {
-    expect(resolveEvent('cacg', y(2026))).toBe('CalGames 2026')
-    expect(resolveEvent('CACG', y(2026))).toBe('CalGames 2026')
-    expect(resolveEvent('CASNF', y(2026))).toBe('CA District San Francisco Event')
+  // The resolution rules run on a table of invented events; the committed tables are only checked to load and agree with their files.
+  const table = new Map([['abc', 'Test Regional'], ['xyz', 'Other Event'], ['qq', 'Quux Division']])
+  it('resolves a code in any case', () => {
+    expect(resolveIn(table, 'abc')).toBe('Test Regional')
+    expect(resolveIn(table, 'ABC')).toBe('Test Regional')
+    expect(resolveIn(table, ' Xyz ')).toBe('Other Event')
   })
   it('resolves a division word to the division\'s entry', () => {
-    expect(resolveEvent('MILSTEIN', y(2024))).toBe('Milstein Division')
-    expect(resolveEvent('mil', y(2024))).toBe('Milstein Division')
+    expect(resolveIn(table, 'QUUX')).toBe('Quux Division')
+    expect(resolveIn(table, 'qq')).toBe('Quux Division')
+    expect(resolveIn(table, 'Test')).toBeNull() // only "<Word> Division" entries are matched by word
   })
-  it('resolves nothing for an empty string, an unknown code, another year, or no date', () => {
+  it('resolves nothing for an empty string, an unknown code or a missing table', () => {
+    expect(resolveIn(table, '')).toBeNull()
+    expect(resolveIn(table, '  ')).toBeNull()
+    expect(resolveIn(table, 'TEST')).toBeNull()
+    expect(resolveIn(undefined, 'abc')).toBeNull()
+  })
+  const [code, name] = Object.entries(table2026).find(([k]) => !k.startsWith('_'))!
+  it('loads the committed tables, by the year the log was played', () => {
+    expect(eventTableYears()).toContain(2026)
+    expect(resolveEvent(code.toUpperCase(), y(2026))).toBe(name)
+    expect(resolveEvent(code, null)).toBeNull()
     expect(resolveEvent('', y(2026))).toBeNull()
-    expect(resolveEvent('  ', y(2026))).toBeNull()
-    expect(resolveEvent('TEST', y(2026))).toBeNull()
-    expect(resolveEvent('cacg', y(2025))).toBeNull()
-    expect(resolveEvent('cacg', null)).toBeNull()
     expect(resolveEvent('_source', y(2026))).toBeNull()
+    expect(resolveEvent(code, y(1990))).toBeNull() // no table for that year
+    expect(Object.keys(table2026)).not.toContain('test') // the invented event of these tests resolves to nothing
+    expect(resolveEvent('TEST', y(2026))).toBeNull()
   })
-  it('has the seed years', () => { expect(eventTableYears()).toEqual([2023, 2024, 2025, 2026]) })
   it('names the place of an on-field log, falling back to the FMS text, and a typed place never overrides it', () => {
-    expect(fmsPlace({ onField: true, event: 'cacg', playedAt: y(2026) })).toEqual({ name: 'CalGames 2026', resolved: true })
+    expect(fmsPlace({ onField: true, event: code, playedAt: y(2026) })).toEqual({ name, resolved: true })
     expect(fmsPlace({ onField: true, event: 'TEST', playedAt: y(2026) })).toEqual({ name: 'TEST', resolved: false })
-    expect(fmsPlace({ onField: false, event: 'cacg', playedAt: y(2026) })).toBeNull()
+    expect(fmsPlace({ onField: false, event: code, playedAt: y(2026) })).toBeNull()
     const c = new Catalog()
-    c.add(base({ onField: true, event: 'cacg' }))
+    c.add(base({ onField: true, event: code }))
     c.add({ type: 'tag', target: { log: 'a1' }, field: 'place', value: 'Shop', recordedAt: 50, machine: 'm1' })
-    expect(facetValues(c.entries()[0]).place).toBe('CalGames 2026')
+    expect(facetValues(c.entries()[0]).place).toBe(name)
   })
 })
 
@@ -277,6 +310,38 @@ describe('reading a library\'s logs again', () => {
     const lines = await manifestLines()
     expect(lines.filter((l) => l.includes('from another process') || l.includes('then this'))).toHaveLength(2)
     expect(lib.ownLines()).toEqual(lines)
+  })
+
+  it('skips a log read by a newer app version', async () => {
+    const a = lib.catalog.all().find((r) => r.names[0] === 'b.wpilog')!
+    await lib.append({ type: 'meta', sha256: a.sha256, meta: readingOf(a), describer: '9.0.0+future', recordedAt: Date.now(), machine: 'm2' })
+    const report = await redescribe(lib, { describer: '0.1.0+old', describe: async () => { throw new Error('should not be read') } })
+    expect(report.failed.filter((f) => f.path === a.path)).toEqual([])
+    expect(report.skipped).toBeGreaterThanOrEqual(1)
+    expect(lib.catalog.metaOf(a.sha256)!.describer).toBe('9.0.0+future')
+  })
+
+  it('writes a link only when it is new or different, naming a describer, never an empty one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hindsight-links-'))
+    try {
+      const l = await LocalLibrary.open(dir, 'm1')
+      const rec = (sha256: string): LogRecord => ({ ...base({ sha256, path: `logs/x/${sha256}.wpilog`, names: [`${sha256}.wpilog`] }) })
+      await l.append(rec('s1'), rec('s2'))
+      await l.append({ type: 'meta', sha256: 's2', meta: {}, describer: '0.1.0+earlier', recordedAt: 5, machine: 'm1' })
+      const link = { repo: 'testorg/robot-main', linkedBy: 'codebase' as const, checkedAt: 100 }
+      const lines = async () => (await readFile(join(dir, l.ownManifestPath), 'utf8')).split('\n').filter(Boolean).length
+      const before = await lines()
+      expect(await applyLinks(l, new Map([['s1', link], ['s2', link], ['missing', link]]), '0.1.0+now', () => 200)).toEqual({ written: 2, unchanged: 0 })
+      expect(await lines()).toBe(before + 2)
+      expect(l.catalog.metaOf('s1')!.describer).toBe('0.1.0+now') // no meta before: this build's id
+      expect(l.catalog.metaOf('s2')!.describer).toBe('0.1.0+earlier') // the reading it copied
+      expect(l.catalog.bySha('s1')!.code).toEqual(link)
+      // The same link found again (only checkedAt differs) writes nothing; a different one does.
+      expect(await applyLinks(l, new Map([['s1', { ...link, checkedAt: 999 }]]), '0.1.0+now')).toEqual({ written: 0, unchanged: 1 })
+      expect(await lines()).toBe(before + 2)
+      expect(await applyLinks(l, new Map([['s1', { ...link, repo: 'testorg/other', checkedAt: 999 }]]), '0.1.0+now')).toEqual({ written: 1, unchanged: 0 })
+      expect(l.catalog.bySha('s1')!.code!.repo).toBe('testorg/other')
+    } finally { await rm(dir, { recursive: true, force: true }) }
   })
 
   it('stops when cancelled', async () => {

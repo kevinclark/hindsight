@@ -42,9 +42,12 @@ panel. Neither is committed.
   files hold a seed (`_source`) until that has been run. A typed place never overrides an FMS name.
 - **Read logs again** re-describes every robot log on this computer with this version and appends a `meta` record to this
   computer's manifest for each (the catalog lays the latest over the log record; `kind`, `playedAt` and `dateSource` never
-  change, as they decide the file's path). A record names the describer that wrote it, `<app version>+<source hash>`: the
-  catalog prefers the newer app version, and with the same version the later record (the hash is not ordered). A log whose
-  latest record already names this build is skipped (reported as `skipped`), so a second run reads nothing; a log that reads
+  change, as they decide the file's path; only the describable fields (`DESCRIBABLE_KEYS` in `src/hub/types.ts`), each of the
+  right shape, are ever laid over a log, because a teammate's manifest is untrusted input). A record names the describer that
+  wrote it, `<app version>+<hash of the files describing a log depends on>` (`describerHash` in `vite.build-id.ts`: everything
+  `describe.ts` imports, so a change to the Library view does not make every log read again): the catalog prefers the newer
+  app version, and with the same version the later record (the hash is not ordered). A log whose
+  latest record already names this build, or a strictly newer app version, is skipped (reported as `skipped`), so a second run reads nothing; a log that reads
   the same still gets a record, which is what marks it as read. It is a job like the others: one at a time, with a bar. A
   code link survives a re-reading: it is copied into the new record.
 - **Older builds ignore `meta` lines.** A build from before this record type counts them in the manifest's `skipped` total
@@ -57,9 +60,15 @@ panel. Neither is committed.
   `owner/name`, chosen on this computer, never in the repo). For logs whose robot only has a Codebase text, the button reads
   each repo's `src/main/java/frc/robot/Robot.java` at its default branch from raw.githubusercontent.com (not counted by
   GitHub) for `recordMetadata("Codebase", "…")`, and, for a log with a build commit, asks `GET /repos/{repo}/commits/{sha}`
-  of each repo recording that text (a 404 or 422 is "not there"; only `.sha` is read). The label shows the most **API**
-  requests it will make (unauthenticated GitHub allows 60 an hour per network): one listing per source (per 100 repos, paged),
-  plus one check per distinct (Codebase text, build commit). It stops at the first "no requests remain" answer, says when the
+  of each repo recording that text (a 404 or 422 is "not there"; only `.sha` is read). The label shows *at least* how many **API**
+  requests it will make (unauthenticated GitHub allows 60 an hour per network): one listing per source (per 100 repos, paged;
+  a bare name that is no organization is tried as a user, one more), plus one commit check per repo that records that
+  Codebase text, per distinct build commit. The button shows "(no logs to link)" and is disabled when no log needs a link,
+  adding "read logs again first?" when some robot log was filed before any reading was stamped. A failed commit check (not
+  404, 422 or the limit) counts as "not there" for that run, adds a problem line, and is asked again next time. Writing a
+  link that is the same as the one held (but for `checkedAt`) writes nothing. A log with no reading stamped yet gets the link
+  record under this build's id, so "Read logs again" will skip it until a newer version; run it first. Not done: sharing
+  `src/code/github.ts` (it has no org listing or commits lookup), and re-checking commits known to be missing. It stops at the first "no requests remain" answer, says when the
   limit resets and keeps what it linked. Two repos recording one text: the one holding the commit wins; with no commit, a name
   without "template" or "training", then the latest push; the others are kept as `candidates`. The link is stored as a `meta`
   record (`code`: repo, `linkedBy` `sha` or `codebase`, full sha when by commit, `checkedAt`). No tag or branch other than

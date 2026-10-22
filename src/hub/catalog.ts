@@ -4,7 +4,7 @@
  * files it holds and from a listing of `logs/`.
  */
 import { dayText } from './layout.ts'
-import { parseManifest, type LogRecord, type ManifestRecord, type MetaRecord, type TagField, type TagRecord } from './types.ts'
+import { parseManifest, usableReading, type LogRecord, type ManifestRecord, type MetaRecord, type TagField, type TagRecord } from './types.ts'
 
 export type Tags = Partial<Record<TagField, string>>
 
@@ -30,15 +30,9 @@ export function filesToFetch(e: Pick<Entry, 'record' | 'attached'>, held: Readon
   return [e.record, ...e.attached.dslog, ...e.attached.dsevents, ...e.attached.hoot].filter((r) => shared.has(r.path) && !held.has(r.path))
 }
 
-/** What a later reading may never change: it decides the file's path (and so its identity in the library). */
-const FIXED_BY_FIRST_READING = ['kind', 'playedAt', 'dateSource'] as const
-
-/** The log record with a later reading laid over it, minus the fields that decide where the file lives. */
+/** The log record with a later reading laid over it: only the describable fields, never the ones that decide where the file lives. */
 function overlay(base: LogRecord, meta: MetaRecord | undefined): LogRecord {
-  if (!meta) return base
-  const later = { ...meta.meta } as Record<string, unknown>
-  for (const k of FIXED_BY_FIRST_READING) delete later[k]
-  return { ...base, ...later } as LogRecord
+  return meta ? { ...base, ...usableReading(meta.meta) } : base
 }
 
 /** The dotted numbers at the start of a describer id ("0.1.0+3fa9…" -> [0, 1, 0]); [] for none. */
@@ -52,12 +46,19 @@ function versionOf(describer: string | undefined): number[] {
  * Hindsight reads better). The source hash after the "+" is not ordered, so with the same version (or none) the later
  * recordedAt decides, which is also what lets linking code, which copies a describer id, win over the reading it copied.
  */
-export function newerReading(a: MetaRecord, b: MetaRecord): boolean {
-  const [x, y] = [versionOf(a.describer), versionOf(b.describer)]
+/** Whether describer id `a` names a strictly newer app version than `b` (the hash after the "+" is not ordered). */
+export function newerVersion(a: string | undefined, b: string | undefined): boolean {
+  const [x, y] = [versionOf(a), versionOf(b)]
   for (let i = 0; i < Math.max(x.length, y.length); i++) {
     const d = (x[i] ?? 0) - (y[i] ?? 0)
     if (d !== 0) return d > 0
   }
+  return false
+}
+
+export function newerReading(a: MetaRecord, b: MetaRecord): boolean {
+  if (newerVersion(a.describer, b.describer)) return true
+  if (newerVersion(b.describer, a.describer)) return false
   return a.recordedAt >= b.recordedAt
 }
 

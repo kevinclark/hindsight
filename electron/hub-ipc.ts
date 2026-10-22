@@ -12,8 +12,9 @@ import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
 import { checkForUpdate } from '../src/hub/update.ts'
 import { JobRunner, type Work } from '../src/hub/jobs.ts'
-import { readingOf, redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
-import { estimateRequests, linkCode, validSource } from '../src/hub/codelink.ts'
+import { applyLinks } from '../src/hub/links.ts'
+import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
+import { estimateRequests, linkable, linkCode, validSource } from '../src/hub/codelink.ts'
 import type { CodePlan, DriveStatus, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
 import { Describer } from './describer.ts'
@@ -91,7 +92,11 @@ export function registerHub(window: () => BrowserWindow | null): void {
   const codePlan = async (): Promise<CodePlan> => {
     const [lib, settings] = [await open(), await loadSettings()]
     const sources = settings.codeSources ?? []
-    return { sources, requests: estimateRequests(sources, lib.catalog.all()) }
+    const records = lib.catalog.all()
+    return {
+      sources, requests: estimateRequests(sources, records), logs: records.filter(linkable).length,
+      unstamped: records.some((r) => r.kind === 'wpilog' && !lib.catalog.metaOf(r.sha256)?.describer),
+    }
   }
   ipcMain.handle('hub:codePlan', codePlan)
   ipcMain.handle('hub:setCodeSources', async (_e, sources: string[]): Promise<CodePlan> => {
@@ -108,15 +113,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
     if (sources.length === 0) throw new Error('Add a GitHub organization or repository first.')
     return job('Linking code', async (j, progress) => {
       const found = await linkCode(sources, lib.catalog.all(), { cancelled: () => j.cancelled, onProgress: progress })
-      let linked = 0
-      for (const [sha256, code] of found.links) {
-        const now = lib.catalog.bySha(sha256)
-        if (!now) continue
-        // The whole reading with the link added: the catalog keeps the latest meta record per log, whole.
-        await lib.append({ type: 'meta', sha256, meta: { ...readingOf(now), code }, describer: lib.catalog.metaOf(sha256)?.describer ?? '', recordedAt: Date.now(), machine: lib.machine })
-        linked++
-      }
-      return { linked, unmatched: found.unmatched, repos: found.repos, requests: found.requests, rateLimitedUntil: found.rateLimitedUntil, problems: found.problems }
+      const { written, unchanged } = await applyLinks(lib, found.links, describerId(app.getVersion()))
+      return { linked: found.links.size, written, unchanged, unmatched: found.unmatched, repos: found.repos, requests: found.requests, rateLimitedUntil: found.rateLimitedUntil, problems: found.problems }
     })
   })
 
