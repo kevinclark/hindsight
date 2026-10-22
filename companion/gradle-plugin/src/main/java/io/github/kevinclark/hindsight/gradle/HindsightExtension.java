@@ -30,6 +30,12 @@ public abstract class HindsightExtension {
   /** Build the robot and run it through disabled, auto, teleop and disabled in simulation, in {@code check}. */
   public abstract Property<Boolean> getRobotStarts();
 
+  /**
+   * Also run the robot-starts check on every laptop build (it always runs in CI). Off by default: it is 2.6 s of a
+   * 4.4 s warm build.
+   */
+  public abstract Property<Boolean> getRobotStartsOnLaptop();
+
   /** The robot class the robot-starts check builds. */
   public abstract Property<String> getRobotClass();
 

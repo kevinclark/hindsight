@@ -27,7 +27,7 @@ Not published yet: until it is on the Plugin Portal, see [Trying it before it's 
 | **NullAway** (`nullAway`) | off unless `nullAway = true` | NullAway on the robot's package (`frc.robot` for `frc.robot.Robot`), as warnings. |
 | **Fixed on laptops** (`fixIntegerDivision`, `fixStyle`) | laptop builds that warned about one; never a deploy, never CI | Error Prone's own fixes, in place: `50 / 12` (4 in Java) becomes `50 / 12.0`, and each tidy check's fix (adding `@Override`, dropping extra parentheses...). The build lists each file whose integer division it fixed, and counts the files it tidied with the checks that fired. The rewrite lands after that build compiled, so build again before you deploy. |
 | **Strict in CI** (`strictInCi`) | `CI=true` (GitHub Actions sets it) | The three alerts are errors. Everything else keeps its severity. |
-| **Robot starts** (`robotStarts`) | `check`, so every "Build Robot Code" and CI; never deploy | Builds `frc.robot.Robot` in simulation, connects a Driver Station after it boots (as at the field) and runs the real robot loop disabled, in auto, in teleop and disabled again. A crash fails the build with the exception and the lines of your code it went through. The robot's console output goes to `build/hindsight/robot-starts/output.txt`. |
+| **Robot starts** (`robotStarts`) | CI (`CI=true`); on a laptop run `./gradlew hindsightRobotStarts`, or set `robotStartsOnLaptop = true` to run it on every build; never deploy | Builds `frc.robot.Robot` in simulation, connects a Driver Station after it boots (as at the field) and runs the real robot loop disabled, in auto, in teleop and disabled again. A crash fails the build with the exception and the lines of your code it went through. The robot's console output goes to `build/hindsight/robot-starts/output.txt`. |
 | **Format hook** (`formatHook`) | each `git commit`, once the clone has built | Runs the project's own `spotlessApply` and re-stages the files you had staged. A file that also has unstaged changes is committed exactly as you staged it; its working copy is formatted, like every file `spotlessApply` touches. It never blocks a commit; `--no-verify` skips it. |
 
 A failing robot-starts check reads like this (Rebuilt `4b68c96^`, a field read before the constructor set it):
@@ -51,6 +51,7 @@ hindsight {
     nullAway = true              // on, as warnings (off by default)
     strictInCi = false           // CI warns instead of failing
     robotStarts = false
+    robotStartsOnLaptop = true   // also run the robot-starts check on every laptop build (CI always does; 2.6 s of a 4.4 s warm build)
     formatHook = false           // the next build removes the hook it installed
     robotClass = "frc.robot.Robot"   // if your robot class has another name
 }
@@ -72,7 +73,8 @@ reported once, by the compiler.
 - **Why never on deploy.** A deploy ships what was just compiled, so it would carry the old values and the next deploy
   would change them with no edit. Any GradleRIO deploy task (a DeployUtils task, such as `deploy`'s roboRIO
   discovery) turns the fix off for that build; a task merely named like one, such as `eventDeploy`, doesn't. GradleRIO's
-  `deploy` doesn't run `check`, so the robot-starts check never runs at the field either.
+  `deploy` doesn't run `check`, so the robot-starts check never runs at the field either. It is in `check` only in CI
+  or with `robotStartsOnLaptop = true`; `./gradlew hindsightRobotStarts` runs it by hand.
 - **The robot-starts check** is written into `build/hindsight/robot-starts/` and compiled against your own WPILib by
   a task of its own (so your Spotless or Checkstyle never sees it), then run as its own Java process with WPILib's
   simulator libraries, the way GradleRIO runs tests. A loop counts only in the mode being checked, so a robot that
