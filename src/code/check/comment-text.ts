@@ -77,11 +77,11 @@ function build(input: CommentInput, maxRows: number): string {
   return parts.join('\n\n') + '\n'
 }
 
-/** `### Code check · 3 new · 1 fixed` (nothing about fixed when 0; "not compared" when there was no base). */
+/** `### Code check · 3 new · 1 fixed` ("nothing new" for 0; nothing about fixed when 0; "not compared" when there was no base). */
 function header({ fixed, notCompared }: CommentInput, newCount: number): string {
   if (notCompared) return '### Code check · not compared'
   const fixedText = (fixed ?? 0) > 0 ? ` · ${fixed} fixed` : ''
-  return `### Code check · ${newCount} new${fixedText}`
+  return `### Code check · ${newCount > 0 ? `${newCount} new` : 'nothing new'}${fixedText}`
 }
 
 /** The red boxes: the run fails because of fail-on, and/or a check crashed. Usually none. */
