@@ -22,6 +22,8 @@ describe('the comment text', () => {
   it('starts with the hidden marker and a header with the counts', () => {
     expect(body([found()], 0).split('\n').slice(0, 3)).toEqual([MARKER, '', '### Code check · 1 new'])
     expect(body([found()], 2)).toContain('### Code check · 1 new · 2 fixed\n')
+    expect(body([found({ isNew: false })], 0)).toContain('### Code check · nothing new\n')
+    expect(body([found({ isNew: false })], 2)).toContain('### Code check · nothing new · 2 fixed\n')
     expect(body([found({ isNew: null })], null, 'Not compared with abc1234: no base')).toContain('### Code check · not compared\n')
   })
   it('new findings: an amber box with an icon and words, then short blocks with a linked file name', () => {
