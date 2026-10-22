@@ -12,12 +12,17 @@ import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
 import { checkForUpdate } from '../src/hub/update.ts'
 import { JobRunner, type Work } from '../src/hub/jobs.ts'
-import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
-import type { DriveStatus, LibrarySnapshot, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
+import { readingOf, redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
+import { estimateRequests, linkCode, validSource } from '../src/hub/codelink.ts'
+import type { CodePlan, DriveStatus, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
 import { Describer } from './describer.ts'
 import { driveToken, googleClient, keeping, signIn, signOut, signedIn } from './google-auth.ts'
 import { loadSettings, saveSettings } from './settings.ts'
+
+declare const __BUILD_ID__: string
+/** Names this build of the describer on the `meta` records it writes: "<app version>+<source hash>" (the version orders builds; the hash only tells them apart). */
+const describerId = (version: string) => `${version}+${typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev'}`
 
 export function registerHub(window: () => BrowserWindow | null): void {
   const describer = new Describer()
@@ -81,10 +86,44 @@ export function registerHub(window: () => BrowserWindow | null): void {
   ipcMain.handle('hub:cancel', () => jobs.cancel())
   ipcMain.handle('hub:runningJob', (): Progress | null => jobs.current())
 
+  ipcMain.handle('hub:lastJob', (): LastJob | null => jobs.lastFinished as LastJob | null)
+
+  const codePlan = async (): Promise<CodePlan> => {
+    const [lib, settings] = [await open(), await loadSettings()]
+    const sources = settings.codeSources ?? []
+    return { sources, requests: estimateRequests(sources, lib.catalog.all()) }
+  }
+  ipcMain.handle('hub:codePlan', codePlan)
+  ipcMain.handle('hub:setCodeSources', async (_e, sources: string[]): Promise<CodePlan> => {
+    const clean = [...new Set((Array.isArray(sources) ? sources : []).map((s) => String(s).trim()).filter(Boolean))]
+    const bad = clean.find((s) => !validSource(s))
+    if (bad) throw new Error(`"${bad}" is not a GitHub organization (name) or repository (owner/name).`)
+    await saveSettings({ codeSources: clean })
+    return codePlan()
+  })
+  /** Find the repo each code-named log ran, from the listed GitHub sources; writes a `meta` record for each log linked. */
+  ipcMain.handle('hub:linkCode', async (): Promise<LinkReport> => {
+    const lib = await open()
+    const sources = (await loadSettings()).codeSources ?? []
+    if (sources.length === 0) throw new Error('Add a GitHub organization or repository first.')
+    return job('Linking code', async (j, progress) => {
+      const found = await linkCode(sources, lib.catalog.all(), { cancelled: () => j.cancelled, onProgress: progress })
+      let linked = 0
+      for (const [sha256, code] of found.links) {
+        const now = lib.catalog.bySha(sha256)
+        if (!now) continue
+        // The whole reading with the link added: the catalog keeps the latest meta record per log, whole.
+        await lib.append({ type: 'meta', sha256, meta: { ...readingOf(now), code }, describer: lib.catalog.metaOf(sha256)?.describer ?? '', recordedAt: Date.now(), machine: lib.machine })
+        linked++
+      }
+      return { linked, unmatched: found.unmatched, repos: found.repos, requests: found.requests, rateLimitedUntil: found.rateLimitedUntil, problems: found.problems }
+    })
+  })
+
   /** Read every robot log in this library again with the current describer; appends a `meta` record for each that reads differently. */
   ipcMain.handle('hub:redescribe', async (): Promise<RedescribeReport> => {
     const lib = await open()
-    return job('Reading logs again', (j, progress) => redescribe(lib, { describe: describer.describe, cancelled: () => j.cancelled, onProgress: progress }))
+    return job('Reading logs again', (j, progress) => redescribe(lib, { describer: describerId(app.getVersion()), describe: describer.describe, cancelled: () => j.cancelled, onProgress: progress }))
   })
 
   ipcMain.handle('hub:setTag', async (_e, target: TagTarget, field: TagField, value: string) => {

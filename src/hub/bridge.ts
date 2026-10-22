@@ -11,6 +11,23 @@ import type { TagField, TagTarget } from './types.ts'
 
 export interface Progress { job: string; done: number; total: number; current: string }
 
+/** The job that finished last (kept by the app, so a page that reloaded can still show how it ended). */
+export interface LastJob { job: string; report?: unknown; error?: string; at: number }
+
+/** The GitHub sources code is linked from, and the most API requests "Link code" would make. */
+export interface CodePlan { sources: string[]; requests: number }
+
+export interface LinkReport {
+  linked: number
+  /** Logs with a Codebase text that no listed repo records. */
+  unmatched: number
+  repos: number
+  requests: { api: number; raw: number }
+  /** When GitHub's request limit was hit: when it resets (ms since 1970). */
+  rateLimitedUntil: number | null
+  problems: string[]
+}
+
 export interface LibrarySnapshot {
   entries: Entry[]
   /** Manifest lines that could not be read. */
@@ -43,6 +60,13 @@ export interface HubApi {
   cancel(): Promise<void>
   /** The running job's latest progress, or null when none runs (a page that loads mid-job asks this). */
   runningJob(): Promise<Progress | null>
+  /** The job that finished last, or null if none has since the app started. */
+  lastJob(): Promise<LastJob | null>
+  codePlan(): Promise<CodePlan>
+  /** Save the GitHub orgs (name) and repos (owner/name) to link code from. */
+  setCodeSources(sources: string[]): Promise<CodePlan>
+  /** Find, for logs that name only a code name, the repo that holds that code; makes GitHub requests (see codePlan). */
+  linkCode(): Promise<LinkReport>
   /** Read this library's robot logs again with the current describer; resolves with what changed. */
   redescribe(): Promise<RedescribeReport>
   setTag(target: TagTarget, field: TagField, value: string): Promise<void>

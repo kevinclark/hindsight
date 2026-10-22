@@ -41,8 +41,29 @@ panel. Neither is committed.
   is generated with `TBA_READ_KEY=… node --experimental-strip-types scripts/build-event-table.ts <year>`; the committed
   files hold a seed (`_source`) until that has been run. A typed place never overrides an FMS name.
 - **Read logs again** re-describes every robot log on this computer with this version and appends a `meta` record to this
-  computer's manifest for each that reads differently (the catalog lays the latest over the log record; `kind`, `playedAt`
-  and `dateSource` never change, as they decide the file's path). It is a job like the others: one at a time, with a bar.
+  computer's manifest for each (the catalog lays the latest over the log record; `kind`, `playedAt` and `dateSource` never
+  change, as they decide the file's path). A record names the describer that wrote it, `<app version>+<source hash>`: the
+  catalog prefers the newer app version, and with the same version the later record (the hash is not ordered). A log whose
+  latest record already names this build is skipped (reported as `skipped`), so a second run reads nothing; a log that reads
+  the same still gets a record, which is what marks it as read. It is a job like the others: one at a time, with a bar. A
+  code link survives a re-reading: it is copied into the new record.
+- **Older builds ignore `meta` lines.** A build from before this record type counts them in the manifest's `skipped` total
+  (which nothing in the UI shows) and keeps showing the first reading of each log. Nothing breaks; the fix appears when that
+  computer updates.
+- **The event table is a seed until it is generated.** `src/hub/events/*.json` holds only entries checked by hand
+  (`"_source": "seed, not generated"`); a code not in it keeps the FMS text and a typed place. Generate a year with
+  `TBA_READ_KEY=… node --experimental-strip-types scripts/build-event-table.ts <year>`.
+- **Link code** (Library view, "Code" section; settings keep `codeSources`: GitHub organizations as `name` or repos as
+  `owner/name`, chosen on this computer, never in the repo). For logs whose robot only has a Codebase text, the button reads
+  each repo's `src/main/java/frc/robot/Robot.java` at its default branch from raw.githubusercontent.com (not counted by
+  GitHub) for `recordMetadata("Codebase", "…")`, and, for a log with a build commit, asks `GET /repos/{repo}/commits/{sha}`
+  of each repo recording that text (a 404 or 422 is "not there"; only `.sha` is read). The label shows the most **API**
+  requests it will make (unauthenticated GitHub allows 60 an hour per network): one listing per source (per 100 repos, paged),
+  plus one check per distinct (Codebase text, build commit). It stops at the first "no requests remain" answer, says when the
+  limit resets and keeps what it linked. Two repos recording one text: the one holding the commit wins; with no commit, a name
+  without "template" or "training", then the latest push; the others are kept as `candidates`. The link is stored as a `meta`
+  record (`code`: repo, `linkedBy` `sha` or `codebase`, full sha when by commit, `checkedAt`). No tag or branch other than
+  the default is tried, so a Codebase line that moved off the default branch is not found.
 - **Open in Session view** reads the filtered logs one at a time into the Session view.
 
 ## Sharing through the team's Drive

@@ -12,6 +12,8 @@ export interface Settings {
   teamFolder?: { id: string; name: string }
   /** A Google Desktop OAuth client a team made for itself, used in place of the build's. */
   googleClient?: { id: string; secret: string }
+  /** GitHub orgs ("name") or repos ("owner/name") whose code logs are linked to (src/hub/codelink.ts). Chosen at run time, never in the repo. */
+  codeSources?: string[]
   /** The last sync: when, and the paths the team store held (what "shared" means in the Library view). */
   lastSync?: { at: number; paths: string[] }
 }

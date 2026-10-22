@@ -16,6 +16,8 @@
   import { FACETS, FACET_LABELS, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, type FacetId, type Selection } from '../hub/facets.ts'
   import { baseName, dayText, withShaSuffix } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
+  import { describeCodeLink } from '../hub/codelink.ts'
+  import type { CodePlan, LastJob, LinkReport } from '../hub/bridge.ts'
 
   let { onOpenSession }: { onOpenSession: (files: File[]) => void } = $props()
   const api = hub()
@@ -95,6 +97,9 @@
     void refresh().catch((e) => { problem = String(e) })
     void api?.updateInfo().then((u) => { update = u })
     // A job already running (the page was reloaded, or something else started it) gets the same bar.
+    void api?.codePlan().then((p) => { codePlan = p; codeText = p.sources.join(', ') }).catch(() => {})
+    // How the job that finished last ended, for a page that reloaded and did not see it (kept for 30 minutes).
+    void api?.lastJob().then((j) => { if (j && Date.now() - j.at < 30 * 60e3) lastJob = j }).catch(() => {})
     void api?.runningJob().then((p) => { if (p && !progress) progress = p }).catch(() => {})
     return api?.onProgress((p) => {
       if (p) progress = p
@@ -109,6 +114,24 @@
     }, 2000)
     return () => clearInterval(timer)
   })
+  let codePlan = $state<CodePlan | null>(null)
+  let codeText = $state('')
+  let linkReport = $state.raw<LinkReport | null>(null)
+  let lastJob = $state.raw<LastJob | null>(null)
+  async function saveSources() {
+    const sources = codeText.split(/[\s,]+/).filter(Boolean)
+    const p = await work('Saving', () => api!.setCodeSources(sources))
+    if (p) { codePlan = p; codeText = p.sources.join(', ') }
+  }
+  async function linkCode() {
+    const r = await work('Linking code', () => api!.linkCode())
+    if (r) linkReport = r
+    codePlan = await api!.codePlan().catch(() => codePlan)
+  }
+  /** A report's counts as words: each number, and the length of each list. */
+  const reportText = (report: unknown) => (typeof report === 'object' && report !== null
+    ? Object.entries(report).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
+    : '')
   async function readAgain() {
     const r = await work('Reading logs again', () => api!.redescribe())
     if (r) rereadReport = r
@@ -206,6 +229,13 @@
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 
+<details class="team">
+  <summary>Code: {codePlan?.sources.length ? codePlan.sources.join(', ') : 'no GitHub source yet'}</summary>
+  <p class="meta">Logs that name only their code (no robot profile) can be linked to the public GitHub repo that holds it. Give an organization or <code>owner/repo</code>, comma separated. Pressing <em>Link code</em> reads each repo's <code>Robot.java</code> and asks GitHub about build commits; nothing is sent but repo and commit names.</p>
+  <p class="row"><input bind:value={codeText} placeholder="organization or owner/repo" aria-label="GitHub sources for code" /><button class="primary" onclick={saveSources} disabled={driveBusy}>Save</button>
+    <button class="primary" onclick={linkCode} disabled={driveBusy || !codePlan?.sources.length}>Link code ({codePlan?.requests ?? 0} requests)</button></p>
+</details>
+
 <details class="team" open={drive !== null && !drive.teamFolder}>
   <summary>Team Drive: {#if !drive}…{:else if !drive.configured}not set up{:else if !drive.signedIn}not signed in{:else if !drive.teamFolder}signed in, no team folder yet{:else}<strong>{drive.teamFolder.name}</strong>{drive.lastSync ? ` · synced ${new Date(drive.lastSync).toLocaleString()}` : ' · not synced yet'}{/if}</summary>
   {#if drive && !drive.configured}
@@ -237,9 +267,24 @@
   {/if}
 </details>
 
+{#if lastJob}
+  <section class="report" aria-label="How the last job ended">
+    <h2>{lastJob.job} finished at {new Date(lastJob.at).toLocaleTimeString()}{lastJob.error ? '' : `: ${reportText(lastJob.report)}`}</h2>
+    {#if lastJob.error}<p class="problem">{lastJob.error}</p>{/if}
+    <button class="link" onclick={() => (lastJob = null)}>Dismiss</button>
+  </section>
+{/if}
+{#if linkReport}
+  <section class="report" aria-label="What was linked">
+    <h2>Linked {linkReport.linked} log{linkReport.linked === 1 ? '' : 's'} to their code · {linkReport.unmatched} named by no listed repo · {linkReport.repos} repos read</h2>
+    <p class="meta">{linkReport.requests.api} GitHub API request{linkReport.requests.api === 1 ? '' : 's'}, {linkReport.requests.raw} file reads.{linkReport.rateLimitedUntil ? ` GitHub's request limit was reached: stopped, and what was found is kept. Try again after ${new Date(linkReport.rateLimitedUntil).toLocaleTimeString()}.` : ''}</p>
+    {#each linkReport.problems as p (p)}<p class="problem">{p}</p>{/each}
+    <button class="link" onclick={() => (linkReport = null)}>Dismiss</button>
+  </section>
+{/if}
 {#if rereadReport}
   <section class="report" aria-label="What was read again">
-    <h2>Read again: {rereadReport.changed} updated · {rereadReport.unchanged} the same · {rereadReport.missing} not on this computer · {rereadReport.failed.length} failed</h2>
+    <h2>Read again: {rereadReport.changed} updated · {rereadReport.unchanged} the same · {rereadReport.skipped} already read by this version · {rereadReport.missing} not on this computer · {rereadReport.failed.length} failed</h2>
     {#each rereadReport.failed as f (f.path)}<p class="problem"><code>{f.path}</code> {f.reason}</p>{/each}
     <button class="link" onclick={() => (rereadReport = null)}>Dismiss</button>
   </section>
@@ -339,12 +384,13 @@
         <tbody>
           {#each rows as e (e.record.sha256)}
             {@const v = facetValues(e)}
+            {@const code = describeCodeLink(e.record)}
             <tr class:remote={!e.local}>
               <td class="time">{clock(e.record.playedAt)}</td>
               <td class="name"><code title={e.record.path}>{baseName(e.record.path)}</code></td>
               <td>{fmsPlace(e.record)?.name ?? ''} {matchText(e)}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
-              <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if !e.tags.robot && robotIsGuess(e.record)}<span class="meta"> {e.record.robot?.profileId === null ? '(code name)' : '(guess)'}</span>{/if}</td>
+              <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if code}<span class="meta"> · <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}{#if !e.tags.robot && robotIsGuess(e.record)}<span class="meta"> {e.record.robot?.profileId === null ? '(code name)' : '(guess)'}</span>{/if}</td>
               <td><input class="driver" aria-label="Driver for this log" value={e.tags.driver ?? ''} placeholder="driver" onchange={(ev) => tag({ log: e.record.sha256 }, 'driver', typed(ev))} /></td>
               <td class="num">{size(e.record.size)}</td>
               <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
