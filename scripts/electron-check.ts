@@ -18,17 +18,19 @@ const [folder, shots] = process.argv.slice(2).map((p) => resolve(p))
 if (!folder || !shots) throw new Error('usage: electron-check.ts <log folder> <screenshot folder>')
 mkdirSync(shots, { recursive: true })
 const userData = process.argv.includes('--keep') ? resolve(process.argv[process.argv.indexOf('--keep') + 1]) : mkdtempSync(join(tmpdir(), 'hindsight-app-'))
-const electron = createRequire(import.meta.url)('electron') as unknown as string
+// HINDSIGHT_APP: a packaged app's executable (release/mac-arm64/Hindsight.app/Contents/MacOS/Hindsight) instead of `electron .`.
+const packaged = process.env.HINDSIGHT_APP
+const electron = packaged ?? (createRequire(import.meta.url)('electron') as unknown as string)
 const port = 9400 + Math.floor(Math.random() * 400)
 
-const app = spawn(electron, ['.', `--remote-debugging-port=${port}`], {
+const app = spawn(electron, [...(packaged ? [] : ['.']), `--remote-debugging-port=${port}`], {
   env: { ...process.env, HINDSIGHT_USER_DATA: userData, HINDSIGHT_PICK_FOLDER: folder }, stdio: ['ignore', 'pipe', 'pipe'],
 })
 let log = ''
 app.stdout.on('data', (d) => { log += d }); app.stderr.on('data', (d) => { log += d })
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-async function until(page: Page, expression: string, what: string, ms = 600000): Promise<void> {
+async function until(page: Page, expression: string, what: string, ms = 120000): Promise<void> {
   const deadline = Date.now() + ms
   while (Date.now() < deadline) { if (await page.eval<boolean>(expression)) return; await sleep(300) }
   throw new Error(`timed out waiting for ${what}`)

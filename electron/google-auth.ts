@@ -7,6 +7,7 @@
 import { app, safeStorage, shell } from 'electron'
 import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { authUrl, exchangeCode, newPkce, tokenSource, type Client } from '../src/hub/oauth.ts'
@@ -15,8 +16,14 @@ import { loadSettings } from './settings.ts'
 const tokenFile = () => join(app.getPath('userData'), 'google-refresh.bin')
 const SIGN_IN_TIMEOUT_MS = 5 * 60_000
 
-/** Whether the refresh token can be kept safely on this machine, and if not, why. */
-export function keeping(): { keeps: boolean; why: string | null } {
+/**
+ * Whether the refresh token can be kept safely on this machine, and if not, why. On a Mac, asking safeStorage at all reads
+ * the Keychain, and an app signed ad hoc makes the system ask the user's permission, blocking the app until they answer
+ * (seen on a packaged build, 2026-10-21): so it is asked only when signing in or using a sign-in already kept, never at
+ * start-up. `ask` false is the answer for "has the user signed in?" before they have.
+ */
+export function keeping(ask = true): { keeps: boolean; why: string | null } {
+  if (!ask && process.platform === 'darwin') return { keeps: true, why: null }
   if (!safeStorage.isEncryptionAvailable()) return { keeps: false, why: 'This computer has no secure place to keep the sign-in (no keychain).' }
   const backend = typeof safeStorage.getSelectedStorageBackend === 'function' ? safeStorage.getSelectedStorageBackend() : null
   if (backend === 'basic_text') return { keeps: false, why: 'No keyring was found (Linux), so the sign-in is not kept: you sign in again each time Hindsight starts.' }
@@ -46,7 +53,8 @@ const store = {
   async clear(): Promise<void> { session = null; await rm(tokenFile(), { force: true }) },
 }
 
-export async function signedIn(): Promise<boolean> { return (await store.load()) !== null }
+/** A sign-in is kept (a token file exists) or was made in this run. Does not touch the Keychain. */
+export function signedIn(): boolean { return session !== null || existsSync(tokenFile()) }
 export const signOut = () => store.clear()
 
 /** An access token for DriveAdapter, renewed from the stored refresh token. */

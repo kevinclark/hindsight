@@ -91,8 +91,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
   // ---- Google Drive ----
   ipcMain.handle('hub:driveStatus', async (): Promise<DriveStatus> => {
     const s = await loadSettings()
-    const k = keeping()
-    return { configured: (await googleClient()) !== null, signedIn: await signedIn(), teamFolder: s.teamFolder ?? null, keepsSignIn: k.keeps, keepWarning: k.why, lastSync: s.lastSync?.at ?? null }
+    const k = keeping(signedIn())
+    return { configured: (await googleClient()) !== null, signedIn: signedIn(), teamFolder: s.teamFolder ?? null, keepsSignIn: k.keeps, keepWarning: k.why, lastSync: s.lastSync?.at ?? null }
   })
   ipcMain.handle('hub:driveSignIn', () => signIn())
   ipcMain.handle('hub:driveSignOut', () => signOut())
