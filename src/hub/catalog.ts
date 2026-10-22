@@ -21,6 +21,13 @@ export interface Entry {
   local: boolean
   /** Whether the team store holds it. Set by the app after a listing. */
   shared: boolean
+  /** The files the team store holds and this machine lacks: the log and the DS and hoot files attached to it. Set by the app. */
+  toFetch: LogRecord[]
+}
+
+/** The log and its attached files that a download would fetch: in the team store, not on this machine. */
+export function filesToFetch(e: Pick<Entry, 'record' | 'attached'>, held: ReadonlySet<string>, shared: ReadonlySet<string>): LogRecord[] {
+  return [e.record, ...e.attached.dslog, ...e.attached.dsevents, ...e.attached.hoot].filter((r) => shared.has(r.path) && !held.has(r.path))
 }
 
 export class Catalog {
@@ -86,7 +93,7 @@ export class Catalog {
   entries(): Entry[] {
     const all = this.all()
     const robots = all.filter((r) => r.kind === 'wpilog')
-    const out = new Map<string, Entry>(robots.map((r) => [r.sha256, { record: r, names: this.namesOf(r.sha256), tags: this.tagsFor(r), attached: { dslog: [], dsevents: [], hoot: [] }, local: false, shared: false }]))
+    const out = new Map<string, Entry>(robots.map((r) => [r.sha256, { record: r, names: this.namesOf(r.sha256), tags: this.tagsFor(r), attached: { dslog: [], dsevents: [], hoot: [] }, local: false, shared: false, toFetch: [] }]))
     for (const r of all) {
       if (r.kind === 'wpilog' || !r.wall && r.playedAt === null) continue
       const span = r.wall ?? { start: r.playedAt!, end: r.playedAt! }

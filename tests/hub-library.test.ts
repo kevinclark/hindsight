@@ -6,7 +6,7 @@ import { dayText, libraryPath, schoolYear, withShaSuffix } from '../src/hub/layo
 import { hootName, nameInstant } from '../src/hub/dates.ts'
 import { seasonOf } from '../src/hub/season.ts'
 import { describeLog } from '../src/hub/describe.ts'
-import { Catalog } from '../src/hub/catalog.ts'
+import { Catalog, filesToFetch } from '../src/hub/catalog.ts'
 import { facetCounts, facetValues, filterEntries } from '../src/hub/facets.ts'
 import { kindOf, parseManifest, serializeRecord, type LogRecord, type TagRecord } from '../src/hub/types.ts'
 import { robotLog } from './helpers/hub-logs.ts'
@@ -146,6 +146,21 @@ describe('tags and facets', () => {
     const wall = { start: at(2026, 10, 17, 11), end: at(2026, 10, 17, 13) }
     const c = Catalog.from([[log({ sha256: 'b1', wall, matchWindow: wall }), log({ sha256: 'h2', kind: 'hoot', playedAt: at(2026, 10, 17, 12), hardwareId: 'ABC123', wall: null })].map(serializeRecord).join('')])
     expect(facetValues(c.entries()[0]).robot).toBe('Robot A · CANivore ABC123')
+  })
+
+  it('a download fetches the log and the DS and hoot files attached to it, only those the team has and this computer lacks', () => {
+    const wall = { start: at(2026, 10, 17, 11), end: at(2026, 10, 17, 13) }
+    const robot = log({ sha256: 'r1', wall, matchWindow: wall })
+    const ds = log({ sha256: 'd2', kind: 'dslog', playedAt: at(2026, 10, 17, 12), wall })
+    const hoot = log({ sha256: 'h3', kind: 'hoot', playedAt: at(2026, 10, 17, 12), wall: null })
+    const [entry] = Catalog.from([[robot, ds, hoot].map(serializeRecord).join('')]).entries()
+    expect(entry.attached.dslog.length + entry.attached.hoot.length).toBe(2)
+    const paths = (held: string[], shared: string[]) => filesToFetch(entry, new Set(held), new Set(shared)).map((r) => r.sha256)
+    const all = [robot.path, ds.path, hoot.path]
+    expect(paths([], all)).toEqual(['r1', 'd2', 'h3']) // the second computer: all three, the .dslog included
+    expect(paths([robot.path], all)).toEqual(['d2', 'h3']) // the log is here but its DS log is not: still something to fetch
+    expect(paths(all, all)).toEqual([])
+    expect(paths([], [robot.path])).toEqual(['r1']) // not in the team store: nothing to fetch for it
   })
 
   it('ORs picks within a facet and ANDs across facets', () => {

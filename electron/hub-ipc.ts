@@ -2,6 +2,7 @@
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { stat } from 'node:fs/promises'
+import { filesToFetch } from '../src/hub/catalog.ts'
 import { LocalLibrary, readJson, writeJson } from '../src/hub/library-store.ts'
 import { ingest, localFolderFiles, planIngest, type IngestReport, type SourceFile } from '../src/hub/ingest.ts'
 import { checkPath } from '../src/hub/adapter.ts'
@@ -62,8 +63,13 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const shared = new Set((await loadSettings()).lastSync?.paths ?? [])
     const entries = lib.catalog.entries()
     await Promise.all(entries.map(async (e) => {
-      e.local = (await stat(lib.store.at(e.record.path)).catch(() => null)) !== null
+      const held = new Set<string>()
+      await Promise.all([e.record, ...e.attached.dslog, ...e.attached.dsevents, ...e.attached.hoot].map(async (r) => {
+        if ((await stat(lib.store.at(r.path)).catch(() => null)) !== null) held.add(r.path)
+      }))
+      e.local = held.has(e.record.path)
       e.shared = shared.has(e.record.path)
+      e.toFetch = filesToFetch(e, held, shared)
     }))
     return { entries, skipped: lib.catalog.skipped, libraryDir: lib.root, machineId: lib.machine }
   })

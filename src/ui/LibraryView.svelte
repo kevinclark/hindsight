@@ -71,7 +71,7 @@
     else { const r = await work('Syncing', () => api!.sync()); if (r) syncReport = r }
   }
   async function download() {
-    const paths = filtered.filter((e) => !e.local && e.shared).map((e) => e.record.path)
+    const paths = fetchable.map((r) => r.path)
     const r = await work('Downloading', () => api!.fetchLogs(paths))
     if (r) fetchReport = r
   }
@@ -112,7 +112,7 @@
   const bytes = $derived(filtered.reduce((n, e) => n + e.record.size, 0))
   const local = $derived(filtered.filter((e) => e.local))
   /** Logs the team has that this computer lacks: what a download would fetch. */
-  const remoteOnly = $derived(filtered.filter((e) => !e.local && e.shared))
+  const fetchable = $derived(filtered.flatMap((e) => e.toFetch))
   const attachments = $derived(filtered.reduce((n, e) => n + e.attached.dslog.length + e.attached.dsevents.length + e.attached.hoot.length, 0))
 
   const days = $derived.by(() => {
@@ -272,7 +272,7 @@
   <section class="list">
     <div class="summary" role="status">
       <strong>{filtered.length}</strong> log{filtered.length === 1 ? '' : 's'} · {size(bytes)} · <strong>{local.length}</strong> on this computer{filtered.length - local.length ? ` (${filtered.length - local.length} not)` : ''}{attachments ? ` · ${attachments} DS or hoot files attached` : ''}
-      {#if remoteOnly.length}<button class="primary" onclick={download} disabled={driveBusy}>Download {remoteOnly.length} ({size(remoteOnly.reduce((n, e) => n + e.record.size, 0))})</button>{/if}
+      {#if fetchable.length}<button class="primary" onclick={download} disabled={driveBusy}>Download {fetchable.length} file{fetchable.length === 1 ? '' : 's'} ({size(fetchable.reduce((n, r) => n + r.size, 0))})</button>{/if}
       <button class="primary" onclick={openInSession} disabled={local.length === 0}>Open in Session view</button>
     </div>
     {#if all.length === 0}
