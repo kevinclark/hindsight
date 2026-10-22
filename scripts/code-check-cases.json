@@ -851,19 +851,19 @@
  ],
  "hints": {
   "2025-Offseason-Robot": {
-   "withId": 8,
-   "withoutId": 4
-  },
-  "2026-Offseason-Robot": {
-   "withId": 11,
+   "withId": 16,
    "withoutId": 2
   },
+  "2026-Offseason-Robot": {
+   "withId": 19,
+   "withoutId": 0
+  },
   "2026-Robot-Template": {
-   "withId": 0,
-   "withoutId": 4
+   "withId": 8,
+   "withoutId": 2
   },
   "Charged-Up": {
-   "withId": 0,
+   "withId": 15,
    "withoutId": 0
   },
   "Charged-Up-Offseason-Training": {
@@ -871,11 +871,11 @@
    "withoutId": 0
   },
   "Crescendo": {
-   "withId": 12,
-   "withoutId": 2
+   "withId": 20,
+   "withoutId": 0
   },
   "Rapid-React": {
-   "withId": 0,
+   "withId": 5,
    "withoutId": 0
   },
   "Rebuilt": {
@@ -883,12 +883,12 @@
    "withoutId": 2
   },
   "Reefscape": {
-   "withId": 7,
-   "withoutId": 5
+   "withId": 15,
+   "withoutId": 3
   },
   "SwerveTemplate2025": {
-   "withId": 0,
-   "withoutId": 3
+   "withId": 8,
+   "withoutId": 1
   }
  }
 }

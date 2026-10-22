@@ -12,7 +12,7 @@
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
 import { javaFilesAt, type CodeSource } from '../code/source.ts'
 import { valueAlong, waysToReach } from '../code/check/flow.ts'
-import { inSimulation } from '../code/check/devices.ts'
+import { deviceBuilt, inSimulation } from '../code/check/devices.ts'
 import { codeOf, fileName, lineOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, Project } from '../code/check/project.ts'
 
@@ -52,7 +52,7 @@ export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
 function talonSites(java: CodeFile[]): TalonSite[] {
   const project = new Project(java)
   try {
-    const talons = project.nodes('object_creation_expression').filter((n) => baseType(typeNamed(n)) === 'TalonFX')
+    const talons = project.nodes('object_creation_expression').filter((n) => deviceBuilt(n, project)?.kind === 'TalonFX')
     return talons.flatMap((talon) => sitesOf(talon, project))
   } finally {
     project.close()
@@ -68,15 +68,20 @@ function talonSites(java: CodeFile[]): TalonSite[] {
  * arguments only.
  */
 function sitesOf(talon: Node, project: Project): TalonSite[] {
-  const [idArgument, busArgument] = parts(talon, 'arguments')
-  if (!idArgument) return []
+  const built = deviceBuilt(talon, project)
+  const idArgument = built?.id
+  if (!built || !idArgument) return []
+  // As the `new` is written: a subclass's own arguments, not its constructor's `super(id, canbus)`.
+  const [writtenId, busArgument] = parts(talon, 'arguments')
   const onRobot = (waysToReach(talon, project) ?? []).filter((chain) => !chain.some(inSimulation))
   // Nothing on the robot builds it (or too many ways do): read the ID as written, with no call to look through.
   const chains = onRobot.length ? onRobot : [[]]
-  const ids = chains.map((chain) => valueAlong(idArgument, chain, project)?.value)
+  const ids = chains.map((chain) => valueAlong(idArgument, [...built.through, ...chain], project)?.value)
   const each = [...new Set(ids.map((id) => (typeof id === 'number' ? id : null)))]
-  const bus = busArgument ? codeOf(busArgument) : null
-  const where = { expr: codeOf(idArgument), bus, file: project.fileOf(talon).path, line: lineOf(talon) }
+  // A subclass's bus is what its constructor hands on (none: the roboRIO's bus), not its own second argument.
+  const handedOn = built.through.length ? (built.bus ? valueAlong(built.bus, [...built.through, ...chains[0]], project)?.value : null) : undefined
+  const bus = handedOn !== undefined ? (handedOn === null ? null : JSON.stringify(handedOn)) : busArgument ? codeOf(busArgument) : null
+  const where = { expr: codeOf(writtenId ?? idArgument), bus, file: project.fileOf(talon).path, line: lineOf(talon) }
   return each.map((id) => ({ id, ...where }))
 }
 
