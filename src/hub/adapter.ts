@@ -48,13 +48,18 @@ export interface StorageAdapter {
 }
 
 export class AlreadyExists extends Error {
-  constructor(public readonly path: string) { super(`${path} already exists`) }
+  readonly path: string
+  constructor(path: string) { super(`${path} already exists`); this.path = path }
 }
 export class ManifestConflict extends Error {
-  constructor(public readonly path: string) { super(`${path} holds records this copy lacks: not changed`) }
+  readonly path: string
+  constructor(path: string) { super(`${path} holds records this copy lacks: not changed`); this.path = path }
 }
 export class ChecksumMismatch extends Error {
-  constructor(public readonly path: string, public readonly want: string, public readonly got: string) { super(`${path}: sha-256 is ${got}, expected ${want}`) }
+  readonly path: string
+  readonly want: string
+  readonly got: string
+  constructor(path: string, want: string, got: string) { super(`${path}: sha-256 is ${got}, expected ${want}`); this.path = path; this.want = want; this.got = got }
 }
 /** The store refused for a reason signing in again fixes (Drive `invalid_grant`). */
 export class SignInAgain extends Error {

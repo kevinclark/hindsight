@@ -10,7 +10,8 @@ const CHUNK = 4 << 20
 export const PART_SUFFIX = '.part'
 
 export class LocalFolderAdapter implements StorageAdapter {
-  constructor(readonly root: string) {}
+  readonly root: string
+  constructor(root: string) { this.root = root }
 
   /** Where a library path is on disk. */
   at(path: string): string { return join(this.root, ...checkPath(path).split('/')) }

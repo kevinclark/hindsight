@@ -183,6 +183,9 @@
     return queue
   }
 
+  /** From the Library: read these logs into the session, as if chosen with "Choose logs…". */
+  export function addFiles(list: File[]): Promise<void> { return load(list) }
+
   async function loadNow(list: File[], gen: number, { fresh = false }: { fresh?: boolean } = {}) {
     await ready
     if (gen !== loadGen) return

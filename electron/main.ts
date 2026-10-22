@@ -24,6 +24,9 @@ function createWindow(): void {
 }
 
 app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus() } })
+// A test or demo run keeps its settings, library and caches in a folder of its own.
+if (process.env.HINDSIGHT_USER_DATA) app.setPath('userData', process.env.HINDSIGHT_USER_DATA)
+
 void app.whenReady().then(() => {
   registerHub(() => window)
   createWindow()

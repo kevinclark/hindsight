@@ -15,6 +15,8 @@
   import { standingKeys, type Session } from './session/session.ts'
   import SnapshotView from './ui/SnapshotView.svelte'
   import ForesightView from './ui/ForesightView.svelte'
+  import LibraryView from './ui/LibraryView.svelte'
+  import { hub } from './hub/bridge.ts'
   import ReviewReport from './ui/ReviewReport.svelte'
   import { buildCard } from './report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from './report/card-png.ts'
@@ -38,7 +40,7 @@
   let selected = $state(0)
   let tab = $state<'match' | 'power' | 'limits' | 'logging'>('match')
   // Review match logs, a whole session of them, the limits wizard, or a robot snapshot (device settings and faults).
-  let mode = $state<'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight'>('review')
+  let mode = $state<'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight' | 'library'>(hub() ? 'library' : 'review')
   // Robot profiles kept in this browser (built in the Robot profile mode), offered beside the built-in ones.
   const stored = $derived(profilesNow())
 
@@ -48,10 +50,19 @@
     tab = 'match'
     await load(files)
   }
+  // The Library is part of the desktop app (src/hub/): the page opened from disk has no library, so no tab for it.
   const MODES = [
+    ...(hub() ? [{ id: 'library', label: 'Library' } as const] : []),
     { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'wizard', label: 'Limits wizard' },
     { id: 'snapshot', label: 'Robot snapshot' }, { id: 'profile', label: 'Robot profile' }, { id: 'foresight', label: 'Foresight' },
   ] as const
+  if (hub()) document.getElementById('app')?.classList.add('wide')
+  let sessionView = $state<{ addFiles(files: File[]): Promise<void> }>()
+  // From the Library: the filtered logs, in the Session view.
+  async function openInSession(files: File[]) {
+    mode = 'session'
+    await sessionView?.addFiles(files)
+  }
   // With a log loaded the dashed drop row is gone (dropping anywhere still works): Choose logs… stays beside the File menu.
   function chosen(e: Event) { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }
   let busy = $state(false)
@@ -266,7 +277,8 @@
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
-<div hidden={mode !== 'session'}><SessionView {marks} onOpen={openFromSession} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
+{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} /></div>{/if}
+<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} onOpen={openFromSession} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 {#if !current || dragging}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
@@ -406,6 +418,7 @@
     @page { size: Letter; margin: 0.3in 0.5in; }
   }
   :global(body) { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  :global(#app.wide) { max-width: 1280px; }
   :global(#app) { max-width: 980px; margin: 0 auto; padding: 1rem 16px 3rem; }
   :global(code) { font-family: var(--mono); font-size: 0.85em; overflow-wrap: anywhere; }
   .top.compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1.25rem; }

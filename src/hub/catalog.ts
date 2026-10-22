@@ -89,7 +89,7 @@ export class Catalog {
       if (r.kind === 'wpilog' || !r.wall && r.playedAt === null) continue
       const span = r.wall ?? { start: r.playedAt!, end: r.playedAt! }
       const best = robots.map((robot) => ({ robot, seconds: overlapMs(span, robot, r.kind === 'hoot') })).filter((x) => x.seconds > 0).sort((a, b) => b.seconds - a.seconds)[0]
-      if (best && r.kind !== 'wpilog') out.get(best.robot.sha256)!.attached[r.kind].push(r)
+      if (best) out.get(best.robot.sha256)!.attached[r.kind].push(r)
     }
     return [...out.values()].sort((a, b) => (a.record.playedAt ?? Infinity) - (b.record.playedAt ?? Infinity) || a.record.path.localeCompare(b.record.path))
   }

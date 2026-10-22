@@ -15,7 +15,12 @@ export class LocalLibrary {
   /** This machine's manifest as it is on disk. */
   private own: string
 
-  private constructor(readonly store: LocalFolderAdapter, readonly machine: string, catalog: Catalog, own: string) {
+  readonly store: LocalFolderAdapter
+  readonly machine: string
+
+  private constructor(store: LocalFolderAdapter, machine: string, catalog: Catalog, own: string) {
+    this.store = store
+    this.machine = machine
     this.catalog = catalog
     this.own = own
   }
