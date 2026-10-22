@@ -63,7 +63,7 @@ export class Catalog {
   get size(): number { return this.logs.size }
   all(): LogRecord[] { return [...this.logs.values()] }
 
-  /** The value for a field on a log: a tag on the log itself, else one on its day. Latest record wins; an empty value clears. */
+  /** The value for a field on a log: a tag on the log itself, else one on its day. Latest record wins; an empty value clears it (a cleared log tag shows the day's again). */
   tagsFor(r: LogRecord): Tags {
     const day = r.playedAt === null ? null : dayText(r.playedAt)
     const latest = (match: (t: TagRecord) => boolean, field: TagField) => this.tagRecords.filter((t) => t.field === field && match(t)).sort((a, b) => a.recordedAt - b.recordedAt).at(-1)
@@ -71,7 +71,7 @@ export class Catalog {
     for (const field of ['driver', 'place', 'battery', 'robot'] as const) {
       const own = latest((t) => 'log' in t.target && t.target.log === r.sha256, field)
       const onDay = day === null ? undefined : latest((t) => 'day' in t.target && t.target.day === day, field)
-      const chosen = own ?? onDay
+      const chosen = own && own.value !== '' ? own : onDay
       if (chosen && chosen.value !== '') out[field] = chosen.value
     }
     return out
