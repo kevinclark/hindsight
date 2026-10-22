@@ -6,7 +6,7 @@
  *     and a log's record is written only after its file is there, so a failed upload leaves no record.
  * Nothing is deleted or overwritten on either side.
  */
-import { ManifestConflict, readText, type StorageAdapter } from './adapter.ts'
+import { ManifestConflict, readText, type FileInfo, type StorageAdapter } from './adapter.ts'
 import type { LocalLibrary } from './library-store.ts'
 import { fileSource } from './local-adapter.ts'
 import type { LogRecord } from './types.ts'
@@ -27,6 +27,14 @@ export interface SyncReport {
   problems: string[]
   /** Paths in the team's logs/ after the sync: what "shared" means in the Library view. */
   remotePaths: string[]
+}
+
+/** The store holds this log: same size, and every checksum it reports agrees (a corrupted upload keeps its size). */
+function isThere(remote: FileInfo | undefined, r: LogRecord): boolean {
+  if (!remote || remote.size !== r.size) return false
+  if (remote.sha256 && remote.sha256 !== r.sha256) return false
+  if (remote.md5 && r.md5 && remote.md5 !== r.md5) return false
+  return true
 }
 
 export interface SyncOptions {
@@ -68,17 +76,17 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   // 3. Uploads: this machine's logs the team store lacks.
   const remote = new Map((await team.list('logs')).map((f) => [f.path, f]))
   const mine = lib.catalog.all().filter((r) => r.machine === lib.machine)
-  const todo = mine.filter((r) => remote.get(r.path)?.size !== r.size)
+  const todo = mine.filter((r) => !isThere(remote.get(r.path), r))
   report.alreadyThere = mine.length - todo.length
   let done = 0
   for (const r of todo) {
     options.onProgress?.(done++, todo.length, r.names[0])
     if (options.cancelled?.()) break
     const there = remote.get(r.path)
-    if (there) { report.failed.push({ path: r.path, reason: `the team store has a different file at this path (${there.size} bytes, not ${r.size}); left alone` }); continue }
+    if (there) { report.failed.push({ path: r.path, reason: `the team store has a different file at this path (${there.size} bytes, or other checksums); left alone and not published` }); continue }
     try {
       report.uploaded.push(await putLog(lib, team, r))
-      remote.set(r.path, { path: r.path, size: r.size, modifiedTime: r.modifiedTime })
+      remote.set(r.path, { path: r.path, size: r.size, modifiedTime: r.modifiedTime, sha256: r.sha256 })
     } catch (e) {
       report.failed.push({ path: r.path, reason: e instanceof Error ? e.message : String(e) })
     }
@@ -86,20 +94,23 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   options.onProgress?.(todo.length, todo.length, '')
 
   // 4. Publish: a log's record only when its file is there; aliases and tags always.
-  const published = new Set(mine.filter((r) => remote.get(r.path)?.size === r.size).map((r) => r.sha256))
+  const published = new Set(mine.filter((r) => isThere(remote.get(r.path), r)).map((r) => r.sha256))
   const lineOk = (line: string) => {
     const r = parseManifest(line).records[0]
     return r !== undefined && (r.type !== 'log' || published.has(r.sha256))
   }
-  const add = localLines.filter((l) => !remoteLines.includes(l) && lineOk(l))
+  let conflicted = false
+  const remoteSet = new Set(remoteLines)
+  const add = localLines.filter((l) => !remoteSet.has(l) && lineOk(l))
   if (add.length) {
     const content = `${[...remoteLines, ...add].join('\n')}\n`
     try { await team.appendManifest(own, content) } catch (e) {
-      if (e instanceof ManifestConflict) report.problems.push(`${own} changed on the team store while syncing: not published (run sync again)`)
-      else throw e
+      if (!(e instanceof ManifestConflict)) throw e
+      conflicted = true
+      report.problems.push(`${own} changed on the team store while syncing: not published (run sync again)`)
     }
   }
-  report.published = remoteLines.length + (report.problems.length ? 0 : add.length)
+  report.published = remoteLines.length + (conflicted ? 0 : add.length)
 
   await lib.reload()
   const known = new Set(lib.catalog.all().map((r) => r.path))

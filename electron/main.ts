@@ -6,8 +6,12 @@ import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerHub } from './hub-ipc.ts'
 
-// One Hindsight per machine: two would append to the same manifest (src/hub/manifest.ts, one writer per file).
-if (!app.requestSingleInstanceLock()) app.quit()
+// A test or demo run keeps its settings, library and caches in a folder of its own (before the lock, which is per data folder).
+if (process.env.HINDSIGHT_USER_DATA) app.setPath('userData', process.env.HINDSIGHT_USER_DATA)
+
+// One Hindsight per machine: two would append to the same manifest (src/hub/catalog.ts, one writer per file).
+const first = app.requestSingleInstanceLock()
+if (!first) app.quit()
 
 let window: BrowserWindow | null = null
 
@@ -24,10 +28,7 @@ function createWindow(): void {
 }
 
 app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus() } })
-// A test or demo run keeps its settings, library and caches in a folder of its own.
-if (process.env.HINDSIGHT_USER_DATA) app.setPath('userData', process.env.HINDSIGHT_USER_DATA)
-
-void app.whenReady().then(() => {
+if (first) void app.whenReady().then(() => {
   registerHub(() => window)
   createWindow()
 })

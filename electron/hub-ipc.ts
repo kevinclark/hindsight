@@ -76,6 +76,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
   ipcMain.handle('hub:cancel', () => { if (running) running.cancelled = true })
 
   ipcMain.handle('hub:setTag', async (_e, target: TagTarget, field: TagField, value: string) => {
+    const goodTarget = ('log' in target && /^[0-9a-f]{64}$/.test(target.log)) || ('day' in target && /^\d{4}-\d{2}-\d{2}$/.test(target.day))
+    if (!goodTarget || !['driver', 'place', 'battery', 'robot'].includes(field)) throw new Error('not a tag Hindsight knows')
     const lib = await open()
     await lib.append({ type: 'tag', target, field, value: String(value).trim(), recordedAt: Date.now(), machine: lib.machine })
   })

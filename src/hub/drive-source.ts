@@ -23,6 +23,7 @@ export async function driveFolderFiles(drive: DriveAdapter, folderId: string, te
       if (kindOf(f.name) === null) { out.push({ name: f.name, where: `${where}${f.name}`, size: 0, modifiedTime: null, from: 'drive', open: async () => { throw new Error('not a log') } }); continue }
       out.push({
         name: f.name, where: `${where}${f.name}`, size: f.size, modifiedTime: f.modifiedTime, from: 'drive', sourceId: f.id, sha256: f.sha256, md5: f.md5,
+        cacheKey: `drive:${f.id}|${f.size}|${f.md5 ?? f.modifiedTime}`,
         open: async () => {
           const dir = await mkdtemp(join(tempRoot, 'hindsight-drive-'))
           const path = join(dir, f.name.replace(/[\\/]/g, '_'))

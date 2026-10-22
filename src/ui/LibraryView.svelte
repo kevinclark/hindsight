@@ -14,7 +14,7 @@
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
   import { FACETS, FACET_LABELS, facetCounts, facetValues, filterEntries, type FacetId, type Selection } from '../hub/facets.ts'
-  import { baseName, dayText } from '../hub/layout.ts'
+  import { baseName, dayText, withShaSuffix } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
 
   let { onOpenSession }: { onOpenSession: (files: File[]) => void } = $props()
@@ -128,7 +128,11 @@
 
   function openInSession() {
     if (!api) return
-    const files = local.map((e) => new LibraryFile(baseName(e.record.path), e.record.size, e.record.modifiedTime ?? e.record.recordedAt, e.record.path, api) as unknown as File)
+    // The Session view tells logs apart by name: two logs filed under the same name on different days get their sha-256 start added.
+    const count = new Map<string, number>()
+    for (const e of local) count.set(baseName(e.record.path), (count.get(baseName(e.record.path)) ?? 0) + 1)
+    const nameOf = (e: Entry) => (count.get(baseName(e.record.path)) === 1 ? baseName(e.record.path) : withShaSuffix(baseName(e.record.path), e.record.sha256))
+    const files = local.map((e) => new LibraryFile(nameOf(e), e.record.size, e.record.modifiedTime ?? e.record.recordedAt, e.record.path, api) as unknown as File)
     onOpenSession(files)
   }
 

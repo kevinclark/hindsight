@@ -128,6 +128,19 @@ describe('sync through a team store', () => {
     expect([...team.files.keys()].filter((k) => k.startsWith('logs/'))).toEqual([])
   })
 
+  it('does not call a file there, or publish its record, when its checksum differs from the log (a corrupted upload keeps its size)', async () => {
+    const team = new MemoryAdapter()
+    const a = await machine('ma')
+    await putLog(join(work, 'src'), 'one.wpilog', 'one')
+    await ingest(a, await localFolderFiles(join(work, 'src')), options)
+    const record = a.catalog.all()[0]
+    team.put(record.path, new Uint8Array(record.size).fill(7)) // same size, other bytes
+    const rep = await syncWithTeam(a, team)
+    expect(rep.uploaded).toEqual([])
+    expect(rep.failed).toEqual([expect.objectContaining({ path: record.path, reason: expect.stringMatching(/different file/) })])
+    expect(parseManifest((await readText(team, 'manifests/ma.jsonl')) ?? '').records.filter((r) => r.type === 'log')).toEqual([])
+  })
+
   it('lists files in the team folder that no manifest mentions', async () => {
     const team = new MemoryAdapter()
     team.put('logs/2026-2027/2026-10-17/by-hand.wpilog', 'x')

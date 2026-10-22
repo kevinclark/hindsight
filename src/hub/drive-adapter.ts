@@ -41,6 +41,8 @@ export class DriveAdapter implements StorageAdapter {
   private folders = new Map<string, string>()
   /** Logs are never rewritten, so a log's file is remembered by path (a manifest changes, so it is looked up each time). */
   private logs = new Map<string, DriveFile>()
+  /** Upload session addresses Drive gave us: the only places a PUT may go. */
+  private sessions = new Set<string>()
   /** Counts of calls by kind, for the dry run's cost and the tests. */
   readonly calls = { list: 0, upload: 0, download: 0, copy: 0 }
 
@@ -95,10 +97,12 @@ export class DriveAdapter implements StorageAdapter {
     })
     const uri = session.headers.get('location')
     if (!uri) throw new DriveError(0, 'Drive gave no upload address')
+    this.sessions.add(uri)
     this.calls.upload++
     let created: DriveFile | null = null
     if (from.size === 0) created = await this.put(uri, new Uint8Array(0), `bytes */0`)
     for (let at = 0; created === null; at += CHUNK) {
+      if (at >= from.size && from.size > 0) throw new DriveError(0, 'Drive did not finish the file after its last byte')
       const chunk = await from.read(at, Math.min(from.size, at + CHUNK))
       md5.update(chunk); sha.update(chunk)
       created = await this.putChunk(uri, chunk, at, from.size)
@@ -112,7 +116,8 @@ export class DriveAdapter implements StorageAdapter {
     const existing = await this.find(path)
     const body = new TextEncoder().encode(content)
     if (existing) {
-      const have = new TextDecoder().decode(await this.read(path, 0, Number(existing.size ?? 0)))
+      const size = Number(existing.size ?? 0)
+      const have = size === 0 ? '' : new TextDecoder().decode(await this.read(path, 0, size))
       if (!extendsManifest(have, content)) throw new ManifestConflict(path)
       this.calls.upload++
       await this.request(`${UPLOAD}/files/${existing.id}?uploadType=media&supportsAllDrives=true`, { method: 'PATCH', headers: { 'Content-Type': 'text/plain' }, body })
@@ -237,7 +242,8 @@ export class DriveAdapter implements StorageAdapter {
         if (e instanceof SignInAgain || attempt >= RETRIES - 1 || (e instanceof DriveError && e.status >= 400 && e.status < 500 && e.status !== 429 && e.status !== 408)) throw e
         await this.sleep(2 ** attempt * 500)
         // Ask Drive how much it kept: the whole chunk (go on), none of it (send it again) or something between (give up: the file is started again).
-        const got = await this.sessionStatus(uri, total)
+        const got = await this.sessionStatus(uri, total).catch((statusError) => { if (statusError instanceof SignInAgain) throw statusError; return null })
+        if (got === null) continue // the question failed too: wait, then ask again with the next attempt
         if (got.file) return got.file
         if (got.next === at + chunk.length) return null
         if (got.next !== at) throw new DriveError(0, `the upload stopped at byte ${got.next} of a chunk starting at ${at}; start the file again`)
@@ -268,6 +274,10 @@ export class DriveAdapter implements StorageAdapter {
 
   /** One authorised request with retries; throws DriveError for a refusal, SignInAgain when the token can't be renewed. */
   private async request(url: string, init: RequestInit = {}, okStatuses: number[] = []): Promise<Response> {
+    const method = (init.method ?? 'GET').toUpperCase()
+    if (!isAllowedRequest(method, url, this.sessions)) throw new Error(`Hindsight never sends ${method} ${url.split('?')[0]} to Drive`)
+    // Creating a folder or a copy is not repeated after a lost answer (the first may have worked): the caller looks first next time.
+    const retryNetwork = method !== 'POST' || url.includes('uploadType=resumable')
     let refreshed = false
     for (let attempt = 0; ; attempt++) {
       const token = await this.opts.token(refreshed)
@@ -275,7 +285,7 @@ export class DriveAdapter implements StorageAdapter {
       try {
         res = await this.fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` } })
       } catch (e) {
-        if (attempt >= RETRIES - 1) throw e
+        if (!retryNetwork || attempt >= RETRIES - 1) throw e
         await this.sleep(2 ** attempt * 500)
         continue
       }
@@ -286,6 +296,21 @@ export class DriveAdapter implements StorageAdapter {
       throw new DriveError(res.status, `Google Drive said ${res.status}: ${(await res.text()).slice(0, 300)}`)
     }
   }
+}
+
+/**
+ * Every request the adapter may send. The OAuth scope `drive` can delete and trash anything, so the code itself is limited to
+ * what the library needs: read, create a folder, create or copy a file, start and continue an upload, and update the
+ * content of a manifest. No DELETE, no trashing, no metadata update (`trashed: true` is a metadata update), no permissions.
+ */
+export function isAllowedRequest(method: string, url: string, sessions: ReadonlySet<string> = new Set()): boolean {
+  const u = url.split('?')[0]
+  const files = `${API}/files`
+  if (method === 'GET') return u === files || u === `${API}/drives` || (u.startsWith(`${files}/`) && !u.slice(files.length + 1).includes('/'))
+  if (method === 'POST') return u === files || (u.startsWith(`${files}/`) && /^[^/]+\/copy$/.test(u.slice(files.length + 1))) || (u === `${UPLOAD}/files` && url.includes('uploadType=resumable'))
+  if (method === 'PUT') return sessions.has(url)
+  if (method === 'PATCH') return u.startsWith(`${UPLOAD}/files/`) && url.includes('uploadType=media')
+  return false
 }
 
 function splitPath(path: string): { parent: string; name: string } {

@@ -46,9 +46,10 @@ export class LocalLibrary {
   /** Add records to this machine's manifest, durably, and to the catalog. */
   async append(...records: ManifestRecord[]): Promise<void> {
     if (records.length === 0) return
-    const next = this.own + records.map(serializeRecord).join('')
-    await this.store.appendManifest(this.ownManifestPath, next)
-    this.own = next
+    // A crash can leave the last line without its newline: start a fresh line rather than join the next record to it.
+    const lines = (this.own !== '' && !this.own.endsWith('\n') ? '\n' : '') + records.map(serializeRecord).join('')
+    await this.store.appendOwn(this.ownManifestPath, lines)
+    this.own += lines
     for (const r of records) this.catalog.add(r)
   }
 

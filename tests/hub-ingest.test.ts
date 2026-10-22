@@ -148,6 +148,43 @@ describe('ingesting a folder of unorganized logs', () => {
     expect(added.path).toMatch(/^logs\/2026-2027\/2026-10-17\/akit_26-10-17_19-00-00_test_q7-[0-9a-f]{8}\.wpilog$/)
   })
 
+  it('does not read a file again that would not read, until it changes', async () => {
+    const seen = new Map<string, string>()
+    let reads = 0
+    const counting = { describe: (p: string, n: string) => { reads++; return describeFile(p, n) }, seen }
+    const lib2 = await LocalLibrary.open(join(work, 'library-two'), 'machine-b')
+    const files = await localFolderFiles(join(source, 'misc'))
+    const first2 = await ingest(lib2, files.filter((f) => f.name === 'broken.wpilog'), counting)
+    const again = await ingest(lib2, files.filter((f) => f.name === 'broken.wpilog'), counting)
+    expect(first2.unreadable[0].reason).toMatch(/Not a \.wpilog/)
+    expect(again.unreadable[0].reason).toBe(first2.unreadable[0].reason)
+    expect(reads).toBe(1)
+    await put('misc/broken.wpilog', 'changed, still not a log')
+    await ingest(lib2, await localFolderFiles(join(source, 'misc')).then((fs) => fs.filter((f) => f.name === 'broken.wpilog')), counting)
+    expect(reads).toBe(2)
+  })
+
+  it('counts a symlink to a log as the log, and does not follow a symlink to a folder', async () => {
+    const { symlink } = await import('node:fs/promises')
+    await mkdir(join(source, 'links'), { recursive: true })
+    await symlink(join(source, 'misc/Log_2.wpilog'), join(source, 'links/linked.wpilog'))
+    await symlink(source, join(source, 'links/loop'))
+    const files = await localFolderFiles(source)
+    expect(files.filter((f) => f.name === 'linked.wpilog').length).toBe(1)
+    expect(files.filter((f) => f.where.includes('/loop/')).length).toBe(0)
+  })
+
+  it('starts a fresh line after a crash left the manifest without its last newline', async () => {
+    const lib3 = await LocalLibrary.open(join(work, 'library-three'), 'machine-c')
+    await lib3.append({ type: 'alias', sha256: 'aa', name: 'one', recordedAt: 1, machine: 'machine-c' })
+    await writeFile(join(work, 'library-three/manifests/machine-c.jsonl'), '{"type":"alias","sha256":"aa","name":"one","recordedAt":1,"machine":"machine-c"}\n{"type":"alias","sha')
+    const reopened = await LocalLibrary.open(join(work, 'library-three'), 'machine-c')
+    await reopened.append({ type: 'alias', sha256: 'bb', name: 'two', recordedAt: 2, machine: 'machine-c' })
+    const again = await LocalLibrary.open(join(work, 'library-three'), 'machine-c')
+    expect(again.catalog.namesOf('bb')).toEqual([]) // aliases of unknown logs are kept, not listed
+    expect(again.catalog.skipped).toBe(1) // only the cut-off line is lost
+  })
+
   it('recovers a copy filed before its record was written (a crash) without making a second copy', async () => {
     const crashed = robotLog({ clockMs: CLOCK + 3600e3, enabled: ENABLED, seed: 'crash' })
     await put('crash/c.wpilog', crashed)

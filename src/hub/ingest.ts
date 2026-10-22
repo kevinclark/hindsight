@@ -19,6 +19,11 @@ export interface SourceFile {
   size: number
   modifiedTime: number | null
   from: LogRecord['from']
+  /**
+   * Names this file's content for the "seen" memory (a local file's path, size and modified time; a Drive file's id and checksum):
+   * a file seen unchanged is not read again. Absent where nothing stable names it (the robot), so it is read every time.
+   */
+  cacheKey?: string
   /** The file's id in the store it came from (Drive), if it has one. */
   sourceId?: string
   /** Checksums the source already knows (a Drive listing's); with one of them matching the library the file is not downloaded. */
@@ -27,6 +32,8 @@ export interface SourceFile {
   /** Make the bytes available as a file on this machine. A local source returns the original path; the original is only read. */
   open(): Promise<{ path: string; done(): Promise<void> }>
 }
+
+const UNREADABLE = 'unreadable: '
 
 export interface ReportEntry { name: string; where: string }
 export interface IngestReport {
@@ -44,7 +51,7 @@ export interface IngestOptions {
   describe(path: string, name: string): Promise<Described>
   now?: () => number
   onProgress?(done: number, total: number, current: string): void
-  /** Fingerprints of local files already read: "path|size|modified" → sha-256. A hit skips reading the file. */
+  /** Files already read, by their `cacheKey`: a sha-256, or `unreadable: <why>` for a file that would not read. A hit skips reading the file. */
   seen?: { get(key: string): string | undefined; set(key: string, sha256: string): void }
   /** Stop early (the user pressed cancel). */
   cancelled?: () => boolean
@@ -71,17 +78,23 @@ export async function ingest(lib: LocalLibrary, files: SourceFile[], options: In
 }
 
 async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOptions, report: IngestReport, now: () => number): Promise<void> {
-  const fingerprint = `${file.where}|${file.size}|${file.modifiedTime}`
-  // 1. Known without reading it: the source's own checksum, or a local file seen unchanged before.
-  const knownSha = file.sha256 ?? options.seen?.get(fingerprint)
+  const remembered = file.cacheKey ? options.seen?.get(file.cacheKey) : undefined
+  // A file that would not read last time, unchanged, is reported again without being read (a Drive file would be downloaded again).
+  if (remembered?.startsWith(UNREADABLE)) throw new Error(remembered.slice(UNREADABLE.length))
+  // 1. Known without reading it: the source's own checksum, or a file seen unchanged before.
+  const knownSha = file.sha256 ?? remembered
   const known = (knownSha ? lib.catalog.bySha(knownSha) : undefined) ?? (file.md5 ? lib.catalog.byMd5(file.md5) : undefined)
   if (known) return noteAlready(lib, file, known, report, now)
 
   const source = await file.open()
   try {
     // 2. Read it: hash and what it says about itself. A file that will not read is reported, not filed.
-    const d = await options.describe(source.path, file.name)
-    options.seen?.set(fingerprint, d.sha256)
+    let d: Described
+    try { d = await options.describe(source.path, file.name) } catch (e) {
+      if (file.cacheKey) options.seen?.set(file.cacheKey, `${UNREADABLE}${e instanceof Error ? e.message : String(e)}`)
+      throw e
+    }
+    if (file.cacheKey) options.seen?.set(file.cacheKey, d.sha256)
     const again = lib.catalog.bySha(d.sha256)
     if (again) return noteAlready(lib, file, again, report, now)
     // A hoot file with no time in its name, pulled from the robot: the roboRIO's modified time, recorded at the pull, is its date.
@@ -141,7 +154,7 @@ export function planIngest(lib: LocalLibrary, files: SourceFile[], seen?: Ingest
   for (const f of files) {
     if (kindOf(f.name) === null) { plan.ignored++; continue }
     plan.logs++
-    const sha = f.sha256 ?? seen?.get(`${f.where}|${f.size}|${f.modifiedTime}`)
+    const sha = f.sha256 ?? (f.cacheKey ? seen?.get(f.cacheKey) : undefined)
     if ((sha && lib.catalog.bySha(sha)) || (f.md5 && lib.catalog.byMd5(f.md5))) plan.alreadyKnown++
     else { plan.toRead++; plan.bytesToRead += f.size }
   }
@@ -157,9 +170,11 @@ export async function localFolderFiles(root: string): Promise<SourceFile[]> {
     for (const e of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
       const path = join(dir, e.name)
       if (e.isDirectory()) { await walk(path); continue }
-      if (!e.isFile() || e.name.startsWith('.')) continue
-      const s = await stat(path)
-      out.push({ name: e.name, where: path, size: s.size, modifiedTime: Math.round(s.mtimeMs), from: 'folder', open: async () => ({ path, done: async () => {} }) })
+      if (e.name.startsWith('.')) continue
+      // A symlink to a file counts as the file (a symlink to a folder is not followed: it could loop).
+      const s = e.isFile() || e.isSymbolicLink() ? await stat(path).catch(() => null) : null
+      if (!s?.isFile()) continue
+      out.push({ name: e.name, where: path, size: s.size, modifiedTime: Math.round(s.mtimeMs), from: 'folder', cacheKey: `${path}|${s.size}|${Math.round(s.mtimeMs)}`, open: async () => ({ path, done: async () => {} }) })
     }
   }
   await walk(root)

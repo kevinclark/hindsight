@@ -1,6 +1,6 @@
 /** A StorageAdapter over a folder on this machine: the local library, and later any synced folder (Drive for desktop, a NAS share). */
 import { createReadStream } from 'node:fs'
-import { mkdir, open, readdir, rename, rm, stat as fsStat, readFile, utimes, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, open, readdir, rename, rm, stat as fsStat, readFile, utimes, writeFile } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isManifestPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
@@ -81,6 +81,13 @@ export class LocalFolderAdapter implements StorageAdapter {
       throw e
     }
     return this.statFile(path)
+  }
+
+  /** Add lines to the end of a manifest this process alone writes (one install per machine): O(the new lines), not a rewrite of the whole file. */
+  async appendOwn(path: string, lines: string): Promise<void> {
+    if (!isManifestPath(checkPath(path))) throw new Error(`${path} is not a manifest path`)
+    await mkdir(dirname(this.at(path)), { recursive: true })
+    await appendFile(this.at(path), lines)
   }
 
   async appendManifest(path: string, content: string): Promise<void> {

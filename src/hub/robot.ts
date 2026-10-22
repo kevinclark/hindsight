@@ -108,6 +108,8 @@ export async function connectRobotFs(address: string, timeoutMs = 10_000): Promi
     ssh.connect({ host: address, username: 'lvuser', password: '', tryKeyboard: true, readyTimeout: timeoutMs })
     ssh.once('keyboard-interactive', (_n, _i, _l, _p, finish) => finish([]))
   })
+  // An error after the connection was made (the robot rebooted, Wi-Fi dropped) must not crash the app: the pending read fails on its own.
+  ssh.on('error', () => {})
   const sftp = await new Promise<import('ssh2').SFTPWrapper>((resolve, reject) => ssh.sftp((e, s) => (e ? reject(e) : resolve(s))))
   return {
     list: (dir) => new Promise((resolve, reject) => sftp.readdir(dir, (e, entries) => (e ? reject(e) : resolve(entries.map((x) => ({ name: x.filename, size: x.attrs.size, mtimeMs: x.attrs.mtime * 1000, isDir: x.attrs.isDirectory() })))))),

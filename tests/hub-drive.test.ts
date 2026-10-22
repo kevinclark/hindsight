@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { DriveAdapter, DriveError } from '../src/hub/drive-adapter.ts'
+import { DriveAdapter, DriveError, isAllowedRequest } from '../src/hub/drive-adapter.ts'
 import { AlreadyExists, ChecksumMismatch, SignInAgain, bytesSource, readText } from '../src/hub/adapter.ts'
 import { SCOPE, authUrl, exchangeCode, newPkce, refreshAccess, tokenSource } from '../src/hub/oauth.ts'
 import { adapterContract } from './helpers/adapter-contract.ts'
@@ -118,6 +118,50 @@ describe('Drive adapter', () => {
     drive.nodes.get(drive.at('manifests/m1.jsonl')!.id)!.bytes = new TextEncoder().encode('{"a":1}\n{"z":0}\n')
     await expect(store.appendManifest('manifests/m1.jsonl', '{"a":1}\n{"a":2}\n{"a":3}\n')).rejects.toThrow(/lacks/)
     expect(await readText(store, 'manifests/m1.jsonl')).toBe('{"a":1}\n{"z":0}\n')
+  })
+})
+
+describe('what the Drive adapter may send', () => {
+  const A = 'https://www.googleapis.com/drive/v3'
+  const U = 'https://www.googleapis.com/upload/drive/v3'
+  it('allows reading, creating, copying, uploading and updating a manifest', () => {
+    expect(isAllowedRequest('GET', `${A}/files?q=x`)).toBe(true)
+    expect(isAllowedRequest('GET', `${A}/files/abc?alt=media`)).toBe(true)
+    expect(isAllowedRequest('GET', `${A}/drives?pageSize=100`)).toBe(true)
+    expect(isAllowedRequest('POST', `${A}/files?supportsAllDrives=true`)).toBe(true)
+    expect(isAllowedRequest('POST', `${A}/files/abc/copy?supportsAllDrives=true`)).toBe(true)
+    expect(isAllowedRequest('POST', `${U}/files?uploadType=resumable`)).toBe(true)
+    expect(isAllowedRequest('PUT', 'https://x/session/1', new Set(['https://x/session/1']))).toBe(true)
+    expect(isAllowedRequest('PATCH', `${U}/files/abc?uploadType=media`)).toBe(true)
+  })
+  it('refuses everything that deletes, trashes, shares or rewrites a file, and a PUT anywhere it was not told to', () => {
+    expect(isAllowedRequest('DELETE', `${A}/files/abc`)).toBe(false)
+    expect(isAllowedRequest('DELETE', `${A}/files/trash`)).toBe(false)
+    expect(isAllowedRequest('PATCH', `${A}/files/abc`)).toBe(false) // metadata, which is how a file is trashed
+    expect(isAllowedRequest('PUT', `${A}/files/abc`)).toBe(false)
+    expect(isAllowedRequest('POST', `${A}/files/abc/permissions`)).toBe(false)
+    expect(isAllowedRequest('POST', `${A}/files/abc/trash`)).toBe(false)
+    expect(isAllowedRequest('POST', `${U}/files`)).toBe(false) // a plain upload with no session
+    expect(isAllowedRequest('GET', `${A}/files/abc/permissions`)).toBe(false)
+  })
+  it('stops a trashing request before it leaves, whoever asks', async () => {
+    const drive = new FakeDrive()
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: drive.fetch, sleep: noSleep })
+    const request = (store as unknown as { request(url: string, init: RequestInit): Promise<Response> }).request.bind(store)
+    await expect(request(`https://www.googleapis.com/drive/v3/files/root`, { method: 'DELETE' })).rejects.toThrow(/never sends DELETE/)
+    expect(drive.log).toEqual([])
+  })
+  it('does not repeat a folder creation after a lost answer', async () => {
+    const drive = new FakeDrive()
+    let posts = 0
+    const lossy: typeof fetch = async (input, init) => { if ((init?.method ?? 'GET') === 'POST' && !String(input).includes('upload')) { posts++; await drive.fetch(input, init); throw new TypeError('answer lost') } return drive.fetch(input, init) }
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: lossy, sleep: noSleep })
+    await expect(store.writeNew('logs/y/a.wpilog', bytesSource(pattern(5)))).rejects.toThrow()
+    expect(posts).toBe(1)
+    // The folder the lost answer created is found, not made again.
+    const again = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: drive.fetch, sleep: noSleep })
+    await again.writeNew('logs/y/a.wpilog', bytesSource(pattern(5)))
+    expect([...drive.nodes.values()].filter((n) => n.name === 'logs').length).toBe(1)
   })
 })
 

@@ -84,6 +84,7 @@ export class LibraryFile {
   }
   async arrayBuffer(): Promise<ArrayBuffer> {
     const bytes = await this.api.readLog(this.path)
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    // The bytes usually fill their buffer: hand it over rather than copy a log that can be hundreds of MB.
+    return (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)) as ArrayBuffer
   }
 }
