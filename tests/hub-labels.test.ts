@@ -10,7 +10,7 @@ import { describeFile, type Described } from '../src/hub/describe-file.ts'
 import { Catalog, newerReading } from '../src/hub/catalog.ts'
 import { fmsPlace, facetValues, robotIsGuess } from '../src/hub/facets.ts'
 import table2026 from '../src/hub/events/2026.json' with { type: 'json' }
-import { resolveEvent, resolveIn, eventTableYears } from '../src/hub/events.ts'
+import { resolveEvent, resolveIn, eventTableYears, withYear } from '../src/hub/events.ts'
 import { ingest, localFolderFiles } from '../src/hub/ingest.ts'
 import { JobRunner } from '../src/hub/jobs.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
@@ -158,7 +158,9 @@ describe('event names from the FMS table', () => {
   const [code, name] = Object.entries(table2026).find(([k]) => !k.startsWith('_'))!
   it('loads the committed tables, by the year the log was played', () => {
     expect(eventTableYears()).toContain(2026)
-    expect(resolveEvent(code.toUpperCase(), y(2026))).toBe(name)
+    expect(resolveEvent(code.toUpperCase(), y(2026))).toBe(withYear(name, 2026))
+    expect(withYear('Test Regional', 2026)).toBe('Test Regional 2026')
+    expect(withYear('Test Regional 2025', 2026)).toBe('Test Regional 2025') // a name that already has a year keeps it
     expect(resolveEvent(code, null)).toBeNull()
     expect(resolveEvent('', y(2026))).toBeNull()
     expect(resolveEvent('_source', y(2026))).toBeNull()
@@ -167,13 +169,13 @@ describe('event names from the FMS table', () => {
     expect(resolveEvent('TEST', y(2026))).toBeNull()
   })
   it('names the place of an on-field log, falling back to the FMS text, and a typed place never overrides it', () => {
-    expect(fmsPlace({ onField: true, event: code, playedAt: y(2026) })).toEqual({ name, resolved: true })
+    expect(fmsPlace({ onField: true, event: code, playedAt: y(2026) })).toEqual({ name: withYear(name, 2026), resolved: true })
     expect(fmsPlace({ onField: true, event: 'TEST', playedAt: y(2026) })).toEqual({ name: 'TEST', resolved: false })
     expect(fmsPlace({ onField: false, event: code, playedAt: y(2026) })).toBeNull()
     const c = new Catalog()
     c.add(base({ onField: true, event: code }))
     c.add({ type: 'tag', target: { log: 'a1' }, field: 'place', value: 'Shop', recordedAt: 50, machine: 'm1' })
-    expect(facetValues(c.entries()[0]).place).toBe(name)
+    expect(facetValues(c.entries()[0]).place).toBe(withYear(name, new Date(c.entries()[0].record.playedAt!).getUTCFullYear()))
   })
 })
 

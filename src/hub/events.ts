@@ -25,7 +25,14 @@ export function eventTableYears(): number[] { return [...TABLES.keys()].sort() }
  */
 export function resolveEvent(event: string, playedAt: number | null): string | null {
   if (playedAt === null) return null
-  return resolveIn(TABLES.get(new Date(playedAt).getUTCFullYear()), event)
+  const year = new Date(playedAt).getUTCFullYear()
+  const name = resolveIn(TABLES.get(year), event)
+  return name === null ? null : withYear(name, year)
+}
+
+/** TBA names most events without the year ("CalGames"); the place facet needs it, or two years' events become one value. */
+export function withYear(name: string, year: number): string {
+  return /\b(19|20)\d\d\b/.test(name) ? name : `${name} ${year}`
 }
 
 /** `resolveEvent` against one year's table (code -> name), for a table of your own. */
