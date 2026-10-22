@@ -24,6 +24,11 @@ permissions:
   contents: read
   pull-requests: write          # for the step that tests the comment
 
+# Two overlapping runs on one pull request could each find no comment and post one: the newer run replaces the older.
+concurrency:
+  group: code-check-action-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   sample:
     runs-on: ubuntu-latest

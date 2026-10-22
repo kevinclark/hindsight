@@ -123,5 +123,5 @@ async function findComment(call: Call, api: string, firstPage: string): Promise<
 
 /** The one line for a failed call: what failed, and the usual fix. */
 function failure(what: string, status: number): string {
-  return `PR comment: could not ${what} (HTTP ${status}); ${FIX} (a pull request from a fork never gets one). The check itself is unaffected.`
+  return `PR comment: could not ${what} (HTTP ${status}); ${FIX} (a pull request from a fork, or a run started by Dependabot, never gets one: its token is read-only). The check itself is unaffected.`
 }

@@ -86,8 +86,9 @@ async function checkAndPrint(options: Options): Promise<void> {
   const unknown = options.excluded.filter((id) => !CODE_RULES.some((rule) => rule.id === id))
   if (unknown.length) console.log(options.github ? unknownNotice(unknown) : unknownLine(unknown))
   for (const c of report.crashed) console.log(options.github ? crashNotice(c.rule, c.why) : `CRASHED ${c.rule}: ${c.why}`)
-  if (options.github) await writeForGitHub(findings, fixed, base && 'why' in base ? baseNote : null, options.comment)
-  process.exitCode = shouldFail(options, findings, compared !== null) ? 1 : 0
+  const fails = shouldFail(options, findings, compared !== null)
+  if (options.github) await writeForGitHub(findings, fixed, base && 'why' in base ? baseNote : null, options.comment ? { fails, crashed: report.crashed.map((c) => c.rule) } : null)
+  process.exitCode = fails ? 1 : 0
 }
 
 /** The line about the comparison: how many are new and fixed, or why nothing was compared. Null when no --base. */
@@ -105,19 +106,25 @@ function shouldFail(options: Options, findings: Marked[], compared: boolean): bo
 }
 
 /** The run's summary page, the step's outputs (when GitHub gave files for them) and, if asked, the pull request's comment. */
-async function writeForGitHub(findings: Marked[], fixed: number | null, notCompared: string | null, comment: boolean): Promise<void> {
-  const link = await linkerFor(repo, commit, process.env.CODE_CHECK_HEAD_SHA || commit, process.env)
+async function writeForGitHub(findings: Marked[], fixed: number | null, notCompared: string | null, comment: CommentFacts | null): Promise<void> {
+  const link = await linkerFor(repo, options.folder ?? '.', commit, process.env.CODE_CHECK_HEAD_SHA || commit, process.env)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary(findings, fixed, link, notCompared))
   const outputs = { findings: findings.length, new: findings.filter((f) => f.isNew).length, fixed: fixed ?? 0, compared: fixed !== null }
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(outputs).map(([k, v]) => `${k}=${v}\n`).join(''))
-  if (comment) await commentOnPullRequest(findings, fixed, link, notCompared)
+  if (comment) await commentOnPullRequest(findings, fixed, link, notCompared, comment)
+}
+
+/** What the comment says besides the findings: whether the run fails, and which checks crashed. */
+interface CommentFacts {
+  fails: boolean
+  crashed: string[]
 }
 
 /** Posts or edits the pull request's comment, and prints the one line about what happened. */
-async function commentOnPullRequest(findings: Marked[], fixed: number | null, link: Linker, notCompared: string | null): Promise<void> {
+async function commentOnPullRequest(findings: Marked[], fixed: number | null, link: Linker, notCompared: string | null, facts: CommentFacts): Promise<void> {
   const { GITHUB_SERVER_URL: server, GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId } = process.env
   const runUrl = server && repository && runId ? `${server}/${repository}/actions/runs/${runId}` : null
-  const body = commentBody({ findings, fixed, link, notCompared, runUrl })
+  const body = commentBody({ findings, fixed, link, notCompared, runUrl, failOn: options.failOn, ...facts })
   const line = await postComment({ body, mayCreate: hasNews(findings, fixed), env: process.env, fetcher: fetch, readEvent: (path) => readFileSync(path, 'utf8') })
   console.log(line)
 }

@@ -340,6 +340,9 @@ on:
     branches: [main]
 permissions:
   contents: read
+concurrency:                      # two overlapping runs on one pull request could each post a comment
+  group: code-check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 jobs:
   code-check:
     runs-on: ubuntu-latest        # not the WPILib container: setup-node needs the runner. Its own job: setup-node
@@ -371,14 +374,16 @@ jobs:
 - **`comment: true`** (default `false`) also puts the report in **one pull-request comment**: what the change adds
   (and how many findings are fixed), with the older findings folded under "already in the code". Give that job
   `permissions: pull-requests: write` (and keep `contents: read`); without it the step prints one line saying so and
-  carries on, and the exit code never changes. It posts only when something is new or fixed, and after that keeps the
+  carries on, and the exit code never changes. It posts only when something is new or fixed (and, when the base can't be read, no comment is posted; an existing one
+  is updated to say so), and after that keeps the
   same comment up to date (it says "Nothing new in this change." once the change is clean again) instead of adding more.
-  A pull request from a fork gets none: its token is read-only, and the action never uses `pull_request_target`. Why
+  A pull request from a fork gets none, and neither does a run started by Dependabot: their tokens are read-only, and the action never uses `pull_request_target`. Why
   it exists: GitHub does not document annotations or step summaries on GitHub Mobile (comments are a core Mobile
   feature), and re-running only the other failed jobs carries this job into a new attempt with no annotations (seen on
   a real repo: 11 notices on attempt 1, 0 on attempts 2 and 3). The comment lists at most 50 findings, new first, and
   links the run's summary page for the rest. **It is visible to everyone who can see the pull request**, and it is
-  context for the team, not a verdict. `token` overrides the token used (the default is the job's own).
+  context for the team, not a verdict. Finding names link to the files only when the checked folder is the job's own
+  checkout (`path` left at the default); otherwise they are plain text. `token` overrides the token used (the default is the job's own).
 - **Annotation cap:** GitHub's docs give 10 warnings and 10 errors per step; the 10 notices per step and the 50 per job
   come from the docs of `actions/toolkit`. Either way the rest are dropped silently. New findings are warnings and the
   rest notices, each with its own cap, so up to 10 new and 10 other findings show; the summary page lists every finding.

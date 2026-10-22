@@ -61,11 +61,22 @@ export function summary(findings: Marked[], fixed: number | null, link: Linker, 
 /** `file:line`, linked to the file on GitHub (to the line too, when the line number holds there). */
 export function where(f: Marked, link: Linker): string {
   const text = `\`${f.file.replace(/`/g, '')}:${f.line}\``
-  if (!link.blob) return text
-  const anchor = link.sameText.has(f.file) ? `#L${f.line}` : ''
-  return `[${text}](${link.blob}/${f.file.split('/').map(encodeURIComponent).join('/')}${anchor})`
+  const url = fileUrl(f, link)
+  return url ? `[${text}](${url})` : text
 }
 
-/** Text safe inside a Markdown table cell: no HTML, no emphasis or code from the code's own characters, one line. */
+/** The file's address on GitHub, with "#L<line>" when the line number holds there; null when there are no links. */
+export function fileUrl(f: Marked, link: Linker): string | null {
+  if (!link.blob) return null
+  const anchor = link.sameText.has(f.file) ? `#L${f.line}` : ''
+  return `${link.blob}/${f.file.split('/').map(encodeURIComponent).join('/')}${anchor}`
+}
+
+/**
+ * Text safe inside a Markdown table cell or list item: no HTML, no emphasis or code from the code's own characters, one
+ * line. An "@name" or "#123" in it would mention a person or link an issue, so those are put in code.
+ */
 export const cell = (text: string) =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\\|`*_[\]]/g, '\\$&').replace(/\s*\n\s*/g, ' ')
+  text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\\|`*_[\]]/g, '\\$&').replace(/\s*\n\s*/g, ' ')
+    .replace(/(^|[^\w`])(@[\w-]+|#\d+)/g, '$1`$2`')

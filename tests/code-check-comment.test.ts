@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { commentBody, hasNews, MARKER, MAX_ROWS } from '../src/code/check/comment-text.ts'
-import type { Marked } from '../src/code/check/github-format.ts'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { commentBody, hasNews, MARKER, MAX_ROWS, type CommentInput } from '../src/code/check/comment-text.ts'
+import { cell, type Marked } from '../src/code/check/github-format.ts'
+import { linkerFor } from '../src/code/check/head-links.ts'
+import type { CodeSource } from '../src/code/source.ts'
 import { parseOptions } from '../src/code/check/cli-options.ts'
 import { postComment, type Fetcher } from '../src/code/check/pr-comment.ts'
 
@@ -10,38 +15,76 @@ const found = (over: Partial<Marked> = {}): Marked => ({
 })
 const link = { blob: 'https://github.com/o/r/blob/abc', sameText: new Set(['src/A.java']) }
 const runUrl = 'https://github.com/o/r/actions/runs/42'
-const body = (findings: Marked[], fixed: number | null = 0, notCompared: string | null = null) =>
-  commentBody({ findings, fixed, link, notCompared, runUrl })
+const body = (findings: Marked[], fixed: number | null = 0, notCompared: string | null = null, over: Partial<CommentInput> = {}) =>
+  commentBody({ findings, fixed, link, notCompared, runUrl, failOn: 'none', fails: false, crashed: [], ...over })
 
 describe('the comment text', () => {
-  it('starts with the hidden marker and a heading, and says it is not a verdict', () => {
-    const text = body([found()])
-    expect(text.split('\n').slice(0, 2)).toEqual([MARKER, '### Code check'])
-    expect(text).toContain('context for the team, not a verdict on the change or on anyone')
+  it('starts with the hidden marker and a header with the counts', () => {
+    expect(body([found()], 0).split('\n').slice(0, 3)).toEqual([MARKER, '', '### Code check · 1 new'])
+    expect(body([found()], 2)).toContain('### Code check · 1 new · 2 fixed\n')
+    expect(body([found({ isNew: null })], null, 'Not compared with abc1234: no base')).toContain('### Code check · not compared\n')
   })
-  it('new findings are listed, the old ones are folded, fixed is said when more than 0', () => {
+  it('new findings: an amber box with an icon and words, then short blocks with a linked file name', () => {
     const text = body([found(), found({ isNew: false, file: 'src/B.java', line: 3 })], 2)
-    expect(text).toContain('1 new in this change, 2 fixed:')
-    expect(text).toContain('- **Whole-number division** at [`src/A.java:7`](https://github.com/o/r/blob/abc/src/A.java#L7)')
-    expect(text).toContain('Next step: Write 50.0 / 12.')
-    expect(text).toContain('50 / 12 is 4 (-4.0 %). Next step')
-    expect(text).toContain('<details>\n<summary>1 finding already in the code</summary>')
-    expect(text.indexOf('src/B.java')).toBeGreaterThan(text.indexOf('<details>'))
-  })
-  it('nothing new: says so, and does not mention fixed when there are none', () => {
-    const text = body([found({ isNew: false })], 0)
-    expect(text).toContain('Nothing new in this change.')
-    expect(text).not.toContain('fixed')
-    expect(body([found({ isNew: false })], 2)).toContain('Nothing new in this change. 2 fixed.')
-  })
-  it('not compared: says why in one line and folds every finding', () => {
-    const text = body([found({ isNew: null })], null, 'Not compared with abc1234: the base is not here')
-    expect(text).toContain('Not compared with abc1234: the base is not here')
-    expect(text).toContain('<summary>1 finding</summary>')
+    expect(text).toContain([
+      '> [!WARNING]',
+      '> ⚠️ **1 new in this change**',
+      '>',
+      '> **Whole-number division** · [A.java:7](https://github.com/o/r/blob/abc/src/A.java#L7 "src/A.java")',
+      '> 50 / 12 is 4 (-4.0 %).',
+      '> *Next step:* Write 50.0 / 12.',
+    ].join('\n'))
     expect(text).not.toContain('Nothing new')
+  })
+  it('a blank quoted line separates findings in the box', () => {
+    const text = body([found(), found({ line: 9 })])
+    expect(text).toMatch(/Write 50\.0 \/ 12\.\n>\n> \*\*Whole-number division\*\*/)
+  })
+  it('clean: a green box with an icon and words, and fixed when more than 0', () => {
+    expect(body([found({ isNew: false })], 0)).toContain('> [!TIP]\n> ✅ **Nothing new in this change.**\n')
+    expect(body([found({ isNew: false })], 2)).toContain('> [!TIP]\n> ✅ **Nothing new in this change.** 2 fixed.')
+  })
+  it('older findings: folded, plain (no box), with the same short blocks', () => {
+    const text = body([found(), found({ isNew: false, file: 'src/B.java', line: 3 })])
+    expect(text).toContain('<details>\n<summary>ℹ️ 1 finding already in the code</summary>\n\n**Whole-number division** · [B.java:3](https://github.com/o/r/blob/abc/src/B.java "src/B.java")')
+    expect(text.slice(text.indexOf('<details>'))).not.toContain('> ')
+  })
+  it('the run fails because of fail-on new: a red box that says why', () => {
+    const text = body([found(), found()], 0, null, { failOn: 'new', fails: true })
+    expect(text).toContain('> [!CAUTION]\n> ❌ **This run fails:** fail-on is set to new and this change adds 2 findings.')
+    expect(body([found({ isNew: false })], 0, null, { failOn: 'any', fails: true })).toContain('fail-on is set to any and the code has 1 finding.')
+    expect(body([found()])).not.toContain('CAUTION')
+  })
+  it('a check crashed: a red box that says it is not their code', () => {
+    const text = body([found({ isNew: false })], 0, null, { crashed: ['code/x', 'code/y'] })
+    expect(text).toContain('> [!CAUTION]\n> ❌ **A check crashed** (a bug in Hindsight, not in your code): code/x, code/y.')
+  })
+  it('not compared: a blue note with the reason, and every finding folded as info', () => {
+    const text = body([found({ isNew: null })], null, 'Not compared with abc1234: the base is not here')
+    expect(text).toContain('> [!NOTE]\n> Not compared with abc1234: the base is not here')
+    expect(text).toContain('<summary>ℹ️ 1 finding</summary>')
+    expect(text).not.toContain('Nothing new')
+  })
+  it('the footer: not a verdict, and the full report', () => {
+    expect(body([found()]).trimEnd().split('\n').pop()).toBe(
+      `<sub>Context for the team, not a verdict on the change or on anyone · Hindsight code check · [full report](${runUrl})</sub>`)
+  })
+  it('no link when the linker has none: the plain path and line', () => {
+    const text = body([found()].map((f) => f), 0, null, { link: { blob: null, sameText: new Set() } })
+    expect(text).toContain('**Whole-number division** · `src/A.java:7`')
   })
   it('keeps a message from adding HTML', () => {
     expect(body([found({ message: '<script>x</script>' })])).toContain('&lt;script&gt;x&lt;/script&gt;')
+  })
+  it('puts @names and #numbers in code, so nobody is mentioned and no issue is linked', () => {
+    expect(cell('ask @someone, see #12')).toBe('ask `@someone`, see `#12`')
+    expect(cell('a@b.com and v#1')).toBe('a@b.com and v#1')
+    expect(body([found({ message: 'ask @someone, see #12' })])).toContain('ask `@someone`, see `#12`.')
+  })
+  it('a cut never leaves half an entity or a lone backslash', () => {
+    const text = body([found({ message: `${'x'.repeat(246)}<<<` })])      // "&lt;" cut after "&l"
+    expect(text).not.toMatch(/&l?t?…/)
+    expect(text).toContain('x'.repeat(246) + '&lt;…')
   })
   it('hasNews: a new or a fixed finding', () => {
     expect(hasNews([found({ isNew: false })], 0)).toBe(false)
@@ -51,18 +94,40 @@ describe('the comment text', () => {
   })
   it('500 findings: 50 rows, the rest pointed at the run, far under the 65,536-character cap', () => {
     const long = 'x'.repeat(5000)
-    const many = Array.from({ length: 500 }, (_, i) => found({ line: i + 1, message: long, nextStep: long, title: long, isNew: i < 20 }))
+    const many = Array.from({ length: 500 }, (_, i) => found({ line: i + 1, message: long, nextStep: long, title: long, file: `${long}.java`, isNew: i < 20 }))
     const text = body(many, 3)
-    expect(text.split('\n').filter((l) => l.startsWith('- **')).length).toBe(MAX_ROWS)
+    expect(text.split('\n').filter((l) => /^(> )?\*\*x/.test(l)).length).toBe(MAX_ROWS)
     expect(text).toContain(`… and 450 more on [the run's summary page](${runUrl}).`)
-    expect(text).toContain('<summary>480 findings already in the code</summary>')
-    expect(text.length).toBeLessThan(40_000)
+    expect(text).toContain('<summary>ℹ️ 480 findings already in the code</summary>')
+    expect(text.length).toBeLessThan(45_000)
   })
-  it('more than 50 new: only 50 of the new are listed, the old folded section is empty of rows', () => {
+  it('odd text that would pass the cap lists fewer findings instead', () => {
+    const odd = 'é'.repeat(5000)
+    const many = Array.from({ length: 500 }, (_, i) => found({ line: i + 1, message: odd, nextStep: odd, title: odd, file: `${'é'.repeat(190)}.java` }))
+    const text = commentBody({ findings: many, fixed: 0, link: { blob: 'https://github.com/o/r/blob/abc', sameText: new Set() }, notCompared: null, runUrl, failOn: 'none', fails: false, crashed: [] })
+    expect(text.length).toBeLessThan(65_536)
+  })
+  it('more than 50 new: only 50 of the new are listed', () => {
     const many = Array.from({ length: 60 }, (_, i) => found({ line: i + 1 }))
     const text = body(many)
-    expect(text.split('\n').filter((l) => l.startsWith('- **')).length).toBe(50)
+    expect(text.split('\n').filter((l) => l.startsWith('> **Whole')).length).toBe(50)
+    expect(text).toContain('⚠️ **60 new in this change**')
     expect(text).toContain('… and 10 more on')
+  })
+})
+
+describe('links only when they can be right', () => {
+  const source = { files: async () => [{ path: 'src/A.java', sha: 'x' }], resolve: async () => 'abc' } as unknown as CodeSource
+  const here = mkdtempSync(join(tmpdir(), 'code-check-ws-'))
+  const elsewhere = mkdtempSync(join(tmpdir(), 'code-check-other-'))
+  const env = { GITHUB_SERVER_URL: 'https://github.com', GITHUB_REPOSITORY: 'o/r', GITHUB_WORKSPACE: here }
+  it('the checked folder is the run\'s workspace: links', async () => {
+    expect((await linkerFor(source, here, 'abc', 'abc', env)).blob).toBe('https://github.com/o/r/blob/abc')
+  })
+  it('another folder, a missing folder, or no workspace: plain text', async () => {
+    expect((await linkerFor(source, elsewhere, 'abc', 'abc', env)).blob).toBeNull()
+    expect((await linkerFor(source, join(here, 'nope'), 'abc', 'abc', env)).blob).toBeNull()
+    expect((await linkerFor(source, here, 'abc', 'abc', { ...env, GITHUB_WORKSPACE: undefined })).blob).toBeNull()
   })
 })
 
