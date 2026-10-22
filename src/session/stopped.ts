@@ -174,4 +174,16 @@ export function stoppedShort(session: Session, s: NotSeenSince): string {
   return `not seen since ${matchName(session, s.last)}, ${chanceText(s).replace(/ times? in /, ' in ')}`
 }
 
+/**
+ * For the phone card, only what is worth its room: "potentially fixed: not seen since Q21, 1 in 35" (errors too), or
+ * "marked fixed after Q21, quiet in 3 since". A plain "not seen since" (weaker than 1 in 20) stays off. Empty otherwise.
+ */
+export function stoppedCard(session: Session, s: Stopped | null): string {
+  if (s?.kind === 'fixed mark') {
+    const after = s.before === null ? 'marked fixed' : `marked fixed after ${matchName(session, s.before)}`
+    return `${after}, ${s.quiet ? `quiet in ${s.quiet} since` : 'no match checked since'}`
+  }
+  return s?.potentiallyFixed ? `potentially fixed: ${stoppedShort(session, s)}` : ''
+}
+
 const matchName = (session: Session, i: number) => shortMatchLabel(session.matches[i].matchLabel, i)

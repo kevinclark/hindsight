@@ -14,7 +14,7 @@ import {
   type Confidence, type MergedFinding, type RuleRow, type Session,
 } from '../session/session.ts'
 import { SESSION_FINDINGS_SCHEMA } from '../session/export.ts'
-import { sinks, stoppedFiring, stoppedShort, stoppedText } from '../session/stopped.ts'
+import { sinks, stoppedCard, stoppedFiring, stoppedShort, stoppedText } from '../session/stopped.ts'
 import type { MatchSummary, RuleStatus } from '../session/summary.ts'
 import type { Severity } from '../rules/types.ts'
 import { trendRows } from '../session/trends.ts'
@@ -64,6 +64,10 @@ export interface ReportFinding {
   sinks: boolean
   /** "not seen since Q21, 1 in 35", for the bottom line; empty unless it sinks. */
   stoppedShort: string
+  /** The card's stopped line (session/stopped.ts stoppedCard): potentially fixed, errors too, or a fixed mark; else empty. */
+  cardStopped: string
+  /** Potentially fixed, whatever its severity: the card's word says so. */
+  potentiallyFixed: boolean
   /** Labels of the matches it fired in. */
   matchLabels: string[]
   /** The first measured quantity, for the card; empty when the title already says its number. */
@@ -346,6 +350,7 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
       rateText: `fired in ${ratio} where it could be checked (${interval(f.interval)})`,
       measured: measuredText(f), cameBack: cameBack(session, issues, f.key, f.matches),
       stopped: s ? stoppedText(session, s, f) : '', sinks: sunk(f), stoppedShort: s?.kind === 'not seen' && sunk(f) ? stoppedShort(session, s) : '',
+      cardStopped: stoppedCard(session, s), potentiallyFixed: s?.kind === 'not seen' && s.potentiallyFixed,
       matchLabels: f.matches.map((i) => matchLabel(session.matches[i])),
       cardMeasured: f.measured[0] && !(f.measured[0].min === f.measured[0].max && titleHasValue(cardTitle(f.title), f.measured[0].min)) ? measuredText({ measured: [f.measured[0]] }) : '',
       marks: marksText(session, f), wrongIn: wrongIn(session, f),
@@ -417,10 +422,10 @@ export function sessionCard(m: SessionModel): CardModel {
     headingTone: 'muted' as Tone,
     subheading: [parts.length ? parts.join(' · ') : m.filed.length ? 'No other errors or warnings' : 'No errors or warnings in any match', m.filed.length ? `${m.filed.length} not a real problem` : ''].filter(Boolean).join(' · '),
     items: m.findings.map((f) => ({
-      word: `${f.sevWord.toUpperCase()}${f.confidence === 'quiet' ? '' : ` · ${f.confidenceWord.toUpperCase()}`}${f.cameBack.length ? ' · CAME BACK' : ''}${f.sinks ? ' · POTENTIALLY FIXED' : ''}`,
+      word: `${f.sevWord.toUpperCase()}${f.confidence === 'quiet' ? '' : ` · ${f.confidenceWord.toUpperCase()}`}${f.cameBack.length ? ' · CAME BACK' : ''}${f.potentiallyFixed ? ' · POTENTIALLY FIXED' : ''}`,
       tone: (f.severity === 'error' ? 'error' : 'warning') as Tone,
       title: f.title,
-      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured, f.wrongIn.length ? `not a real problem in ${f.wrongIn.join(', ')}` : ''].filter(Boolean).join(' · '),
+      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured, f.wrongIn.length ? `not a real problem in ${f.wrongIn.join(', ')}` : '', f.cardStopped].filter(Boolean).join(' · '),
       short: `${f.ruleTitle} (${f.matchLabels.join(', ')})`,
     })),
     emptyText: 'Nothing to fix from these logs.',

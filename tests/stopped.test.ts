@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { chanceText, cleanRunChance, notSeenSince, sinks, stoppedFiring, stoppedText } from '../src/session/stopped.ts'
 import { mergeFindings, type Session } from '../src/session/session.ts'
 import type { MatchSummary, RuleStatus } from '../src/session/summary.ts'
-import { bottomLine, sessionModel } from '../src/report/session-model.ts'
+import { bottomLine, sessionCard, sessionModel } from '../src/report/session-model.ts'
 import { buildSessionJson } from '../src/session/export.ts'
 import type { IssueEvent } from '../src/triage/history.ts'
 
@@ -112,6 +112,15 @@ describe('only a potentially fixed warning sinks; an error never does', () => {
     const err = sessionModel(session('XXXX...', { severity: 'error' }))
     expect(err.findings[0]).toMatchObject({ sinks: false, stopped: expect.stringMatching(/^Potentially fixed: not seen since Q4/) })
     expect(err.bottomLine).toMatch(/Consistent: Battery not fully charged, 4 of 7\.$/)
+  })
+  it('the phone card shows potentially fixed for an error too, and a fixed mark; plain "not seen since" stays off', () => {
+    const errCard = sessionCard(sessionModel(session('XXXX...', { severity: 'error' }))).items[0]
+    expect(errCard.word).toMatch(/^ERROR · CONSISTENT · POTENTIALLY FIXED$/)
+    expect(errCard.number).toMatch(/ · potentially fixed: not seen since Q4, 1 in 35$/)
+    expect(sessionCard(sessionModel(session('X......'))).items[0].number).not.toMatch(/seen since|fixed/)
+    const marked = session('XX.....')
+    const card = sessionCard(sessionModel(marked, new Map([[RULE, fixed(START + 3.5 * HOUR)]]))).items[0]
+    expect(card.number).toMatch(/ · marked fixed after Q4, quiet in 3 since$/)
   })
   it('bottomLine: live findings first, then the stopped ones', () => {
     const f = (ruleTitle: string, confidence: 'consistent' | 'once', sunk: boolean) => ({ ruleTitle, confidence, ratio: '3 of 7', sinks: sunk, stoppedShort: sunk ? 'not seen since Q3, 1 in 35' : '' }) as never
