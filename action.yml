@@ -28,6 +28,15 @@ inputs:
       empty it is worked out: a pull request's base, a merge group's base, or on a push the commit before it. With none,
       findings are reported without "new".
     default: ''
+  comment:
+    description: >-
+      true: on a pull request, also post the report as one comment, edited in place on later runs (readable on GitHub
+      Mobile and kept across re-runs). Needs `permissions: pull-requests: write` on the job; a pull request from a fork
+      gets none. Default false.
+    default: 'false'
+  token:
+    description: The token used to post the comment. The default is the job's own.
+    default: ${{ github.token }}
 
 outputs:
   findings:
@@ -86,6 +95,10 @@ runs:
         # Links in the summary point at the pull request's head. The check reads checkout's default commit, a merge of
         # that head into the base, so the CLI puts "#L<line>" on a link only for files that are the same in both.
         CODE_CHECK_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        COMMENT: ${{ inputs.comment }}
+        CODE_CHECK_TOKEN: ${{ inputs.token }}
       run: |
+        extra=()
+        if [ "$COMMENT" = true ]; then extra+=(--comment); fi
         node --experimental-strip-types "$ACTION_PATH/scripts/code-check.ts" "$REPO_PATH" \
-          --base "$BASE" --fail-on "$FAIL_ON" --exclude-rules "$EXCLUDE_RULES" --github
+          --base "$BASE" --fail-on "$FAIL_ON" --exclude-rules "$EXCLUDE_RULES" --github "${extra[@]}"
