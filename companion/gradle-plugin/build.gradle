@@ -32,9 +32,10 @@ gradlePlugin {
             id = 'io.github.kevinclark.hindsight'
             implementationClass = 'io.github.kevinclark.hindsight.gradle.HindsightPlugin'
             displayName = 'Hindsight build checks for FRC robot code'
-            description = 'Error Prone and NullAway, integer division fixed on laptops, the two real-bug checks strict in CI, ' +
-                'a check that the robot starts and enables in simulation, and a pre-commit format hook.'
-            tags.set(['frc', 'wpilib', 'errorprone', 'nullaway'])
+            description = 'A short Error Prone allowlist, integer division and small style slips fixed on laptops, three ' +
+                'real-bug checks strict in CI, a check that the robot starts and enables in simulation, and a pre-commit ' +
+                'format hook.'
+            tags.set(['frc', 'wpilib', 'errorprone'])
         }
     }
 }
