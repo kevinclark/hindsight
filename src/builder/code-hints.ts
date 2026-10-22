@@ -55,13 +55,15 @@ export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
     const notes: string[] = []
     if (sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java files.')
     const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
-    return {
-      sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)),
-      motors: codeMotors(project),
-      settings: deviceSettings(project),
-      ...git,
-      notes: [...notes, ...git.notes],
+    // The CAN ID hints worked before the code model did: code it can't read loses the draft's code values, not them.
+    let motors: CodeMotor[] = [], settings: DeviceSetting[] = []
+    try {
+      motors = codeMotors(project)
+      settings = deviceSettings(project)
+    } catch (error) {
+      notes.push(`Couldn't read the motors' log keys from the code (${error instanceof Error ? error.message : error}): only the CAN ID choices are labelled.`)
     }
+    return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), motors, settings, ...git, notes: [...notes, ...git.notes] }
   } finally {
     project.close()
   }

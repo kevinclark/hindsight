@@ -40,6 +40,8 @@ export interface GroupJson extends Omit<MotorGroup, 'motors' | 'limits'> {
   groupedBy?: 'code' | 'swerve' | 'one array' | 'leader/follower' | 'one motor' | 'you'
   /** The robot code builds these motors together (one place, one folder, or a leader and its followers). */
   groupFromCode?: true
+  /** The code makes one of them follow another (`setControl(new Follower(…))`): why "same loop" is suggested. */
+  followerFromCode?: true
   /** The limits were read from the robot code (a snapshot's are marked by limitsFrom on the profile). */
   limitsFromCode?: true
 }
@@ -93,7 +95,7 @@ export function toProfile(json: ProfileJson): RobotProfile {
     signals: { ...EMPTY_SIGNALS, ...(signals ? formatOfSignals(signals)?.signals : undefined), ...signals },
     battery: { ...EMPTY_BATTERY, ...battery },
     zeroing: (zeroing ?? []).map((z) => ({ ...z, doneMessage: new RegExp(z.doneMessage.source, z.doneMessage.flags) })),
-    motorGroups: motorGroups.map(({ sameLoopSuggested: _ss, groupedBy: _g, groupFromCode: _gc, limitsFromCode: _lc, motors, limits, ...g }) => ({
+    motorGroups: motorGroups.map(({ sameLoopSuggested: _ss, groupedBy: _g, groupFromCode: _gc, followerFromCode: _fc, limitsFromCode: _lc, motors, limits, ...g }) => ({
       ...g,
       limits: limits ?? NO_LIMITS,
       motors: motors.map(({ bus: _bus, current: _c, canIdFrom: _f, kindFrom: _k, logPath: _p, ...m }) => m),

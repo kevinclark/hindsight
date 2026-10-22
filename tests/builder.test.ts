@@ -467,6 +467,42 @@ describe('the code\'s motors and their log keys', () => {
     expect(motorsOf(files).motors.map(show)).toEqual([['RollerIOReal.java:3', 19, ['stator Funnel/StatorCurrentAmps']], ['RollerIOReal.java:3', 13, ['stator Intake/StatorCurrentAmps']]])
   })
 
+  it('pairs each folder with the IO object whose updateInputs fills it, and gives no key when that can\'t be told', () => {
+    const rollerIO = [
+      java('RollerIO.java', 'public interface RollerIO {', '  @AutoLog', '  class RollerIOInputs { public double statorCurrentAmps = 0.0; public Rotation2d angle = new Rotation2d(); }', '}'),
+      java('RollerIOReal.java', 'public class RollerIOReal implements RollerIO {', '  private final TalonFX motor;', '  public RollerIOReal(int motorID) { motor = new TalonFX(motorID); }',
+        '  public void updateInputs(RollerIOInputsAutoLogged inputs) { inputs.angle = new Rotation2d(); inputs.statorCurrentAmps = motor.getStatorCurrent().getValueAsDouble(); }', '}'),
+    ]
+    const intake = (body: string[]) => [...rollerIO, java('Intake.java', 'public class Intake extends SubsystemBase {', ...body, '}'), java('Robot.java', 'public class Robot extends LoggedRobot {', '  Intake intake = new Intake(new RollerIOReal(13), new RollerIOReal(14));', '}')]
+    const paired = motorsOf(intake([
+      '  RollerIOInputsAutoLogged leaderInputs = new RollerIOInputsAutoLogged();', '  RollerIOInputsAutoLogged followerInputs = new RollerIOInputsAutoLogged();',
+      '  private final RollerIO leader;', '  private final RollerIO follower;', '  public Intake(RollerIO leader, RollerIO follower) { this.leader = leader; this.follower = follower; }',
+      '  public void periodic() { leader.updateInputs(leaderInputs); follower.updateInputs(followerInputs); Logger.processInputs("Intake/Leader", leaderInputs); Logger.processInputs("Intake/Follower", followerInputs); }',
+    ])).motors
+    expect(paired.map(show)).toEqual([['RollerIOReal.java:3', 13, ['stator Intake/Leader/StatorCurrentAmps']], ['RollerIOReal.java:3', 14, ['stator Intake/Follower/StatorCurrentAmps']]])
+    // An object the IO puts in its inputs (`angle`, a Rotation2d) is no mark: it never stops a key being placed.
+    const log = openWpilog(writeWpilog([d('/Intake/Leader/StatorCurrentAmps'), { name: '/Intake/Leader/Angle', type: 'struct:Rotation2d', records: [[1, 0.5]] }]))
+    expect(placeInLog(paired[0], log).map((k) => k.key)).toEqual(['/Intake/Leader/StatorCurrentAmps'])
+    // The same two folders with nothing tying an IO object to either: no keys, rather than one motor's ID on the other's.
+    const unpaired = motorsOf(intake([
+      '  RollerIOInputsAutoLogged leaderInputs = new RollerIOInputsAutoLogged();', '  RollerIOInputsAutoLogged followerInputs = new RollerIOInputsAutoLogged();',
+      '  public Intake(RollerIO leader, RollerIO follower) {}', '  public void periodic() { Logger.processInputs("Intake/Leader", leaderInputs); Logger.processInputs("Intake/Follower", followerInputs); }',
+    ])).motors
+    expect(unpaired.map((m) => m.currents)).toEqual([[], []])
+  })
+
+  it('tells a subclass\'s constructors of one length apart by what the arguments work out to, and joins a Phoenix 5 follower', () => {
+    const files = [
+      java('Falcon.java', 'public class Falcon extends TalonFX {', '  public Falcon(int id, double gearing) { super(id); }', '  public Falcon(int id, String canbus) { super(id, canbus); }', '}'),
+      java('Lift.java', 'public class Lift {', '  static final String BUS = "canivore";', '  Falcon leader = new Falcon(25, 5.45 / 1.0);', '  Falcon follower = new Falcon(26, BUS);',
+        '  Lift() { follower.set(ControlMode.Follower, 25); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Lift lift = new Lift();', '}'),
+    ]
+    const { motors } = motorsOf(files)
+    expect(motors.map((m) => [m.id, m.bus, m.follows ?? null])).toEqual([[25, 'the roboRIO bus', null], [26, 'canivore', 'Lift.java:3']])
+    expect(motors[1].group).toBe(motors[0].group)
+  })
+
   it('reads current limits: Phoenix 6 fields, a .withCurrentLimits builder, and Phoenix 5 limit configs', () => {
     const files = [
       java('Arm.java',
@@ -512,6 +548,13 @@ describe('the code\'s motors and their log keys', () => {
     ])
     // Builder-only marks never reach the profile the rules use.
     expect(toProfile(draft.json).motorGroups[0]).not.toHaveProperty('limitsFromCode')
+    // Code read again (another commit): its IDs replace the old code's; a student's pick is kept.
+    const other = codeHints(files.map((f) => ({ ...f, text: f.text.replace('new Falcon(11)', 'new Falcon(21)') })), { sha: 'fedcba9876', branch: 'main' })
+    const again = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints: other })
+    const picked = structuredClone(draft.json)
+    allMotors(picked).find(({ motor }) => motor.canId === 12)!.motor.canIdFrom = 'you'
+    carryConfirmations(picked, again.json)
+    expect(allMotors(again.json).map(({ motor }) => [motor.canId, motor.canIdFrom])).toEqual([[21, 'code'], [12, 'you']])
   })
 })
 

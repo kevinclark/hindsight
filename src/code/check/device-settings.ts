@@ -135,7 +135,10 @@ function fieldsSetOn(made: Node, chain: Node[], project: Project): { field: Sett
     const setting = SETTING_FIELDS.find((f) => f === field(target, 'field')?.text)
     if (!setting) return []
     const value = settingValue(field(assignment, 'right'), chain, project)
-    const where = `${fileName(project.fileOf(assignment).path)}:${lineOf(assignment)}`
+    // A value passed in (`createRollerConfig(…, 20)`) is changed where it is passed: that line, not the helper's.
+    const origin = madeAlong(field(assignment, 'right'), chain, project, { throughCalls: false, stopAt: isFlag })?.at
+    const at = origin && !(origin.startIndex >= assignment.startIndex && origin.endIndex <= assignment.endIndex && origin.tree === assignment.tree) ? origin : assignment
+    const where = `${fileName(project.fileOf(at).path)}:${lineOf(at)}`
     return value === null ? [] : [{ field: setting, value, where }]
   })
 }
@@ -156,9 +159,11 @@ function setsOn(target: Node, variable: Node, project: Project): boolean {
   return declarationOf(root, root.text, project)?.equals(variable) === true
 }
 
+const isFlag = (n: Node) => n.type === 'true' || n.type === 'false'
+
 /** A setting's value: `true`, `false`, or a number it can work out (values.ts), through names and what calls passed. */
 function settingValue(written: Node | null, chain: Node[], project: Project): number | boolean | null {
-  const flag = madeAlong(written, chain, project, { throughCalls: false, stopAt: (n) => n.type === 'true' || n.type === 'false' })?.at
+  const flag = madeAlong(written, chain, project, { throughCalls: false, stopAt: isFlag })?.at
   if (flag?.type === 'true' || flag?.type === 'false') return flag.type === 'true'
   const number = valueOf(written, project)?.number ?? valueAlong(written, chain, project)?.value
   return typeof number === 'number' ? number : null

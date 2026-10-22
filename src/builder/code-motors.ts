@@ -89,14 +89,14 @@ export function codeMotors(project: Project): CodeMotor[] {
     const marks: Record<string, string | number> = {}
     for (const a of filled) {
       if (!cls || !classAround(a.node)?.equals(cls)) continue
-      const value = valueAlong(a.value, chain, project)?.value
+      const value = literalAlong(a.value, chain, project)
       if (value !== undefined) marks[keyOf(a.field)] = value
     }
     const called = new Set([...folders.values()].flat().flatMap((f) => f.folder.flatMap((p) => (typeof p === 'object' && 'call' in p ? [p.call] : []))))
     for (const method of called) {
       const [declared] = project.membersNamed(cls, 'method', method).filter((m) => parts(m, 'parameters').length === 0)
       const returns = declared?.descendantsOfType('return_statement') ?? []
-      const value = returns.length === 1 && returns[0] ? valueAlong(parts(returns[0])[0] ?? null, chain, project)?.value : undefined
+      const value = returns.length === 1 && returns[0] ? literalAlong(parts(returns[0])[0] ?? null, chain, project) : undefined
       if (value !== undefined) marks[`${method}()`] = value
     }
     return marks
@@ -138,6 +138,12 @@ export function codeMotors(project: Project): CodeMotor[] {
   return all
 }
 
+/** A number or a string the code gives, never an object it builds (its code isn't what the log holds). */
+function literalAlong(expr: Node | null, chain: Node[], project: Project): string | number | undefined {
+  const found = valueAlong(expr, chain, project)
+  return found && found.at.type !== 'object_creation_expression' ? found.value : undefined
+}
+
 /** The inputs classes (annotated @AutoLog), by the names the code uses for them: `ShooterIOInputs` and `…AutoLogged`. */
 function inputsClasses(project: Project): Map<string, string> {
   const names = new Map<string, string>()
@@ -158,19 +164,28 @@ function inputsTypeOf(node: Node | null, project: Project, inputs: Map<string, s
   return (type && inputs.get(type)) ?? null
 }
 
-/** Each inputs class's folders: one per processInputs call and chain of calls that reaches it, with those chains. */
-function processedFolders(project: Project, inputs: Map<string, string>): Map<string, { folder: FolderPart[]; chains: Node[][] }[]> {
-  const out = new Map<string, { folder: FolderPart[]; chains: Node[][] }[]>()
+/**
+ * One folder an inputs class is logged in: the chains of calls that reach its processInputs, and the IO objects whose
+ * `io.updateInputs(inputs)` fills the inputs it logs (the `new ModuleIOReal(…)` each Module is built with).
+ */
+interface Folder { folder: FolderPart[]; chains: Node[][]; ios: Node[] }
+
+/** Each inputs class's folders: one per processInputs call and chain of calls that reaches it. */
+function processedFolders(project: Project, inputs: Map<string, string>): Map<string, Folder[]> {
+  const out = new Map<string, Folder[]>()
   for (const call of project.nodes('method_invocation')) {
     const [folderExpr, inputsExpr] = parts(call, 'arguments')
     if (nameOf(call) !== 'processInputs' || !folderExpr || !inputsExpr) continue
     const cls = inputsTypeOf(inputsExpr, project, inputs)
     if (!cls) continue
     const list = out.get(cls) ?? []
+    // The calls in this class that fill these inputs: `io.updateInputs(inputs)`.
+    const fills = (classAround(call)?.descendantsOfType('method_invocation') ?? []).filter((u): u is Node => !!u && nameOf(u) === 'updateInputs' && parts(u, 'arguments')[0]?.text === inputsExpr.text)
     for (const chain of instanceChains(call, project)) {
       const folder = folderOf(folderExpr, chain, project, inputs)
+      const ios = fills.flatMap((u) => { const io = madeAlong(field(u, 'object'), chain, project)?.at; return io?.type === 'object_creation_expression' ? [io] : [] })
       const same = list.find((f) => JSON.stringify(f.folder) === JSON.stringify(folder))
-      if (same) same.chains.push(chain); else list.push({ folder, chains: [chain] })
+      if (same) { same.chains.push(chain); same.ios.push(...ios) } else list.push({ folder, chains: [chain], ios })
     }
     out.set(cls, list)
   }
@@ -293,18 +308,28 @@ function localDeclarators(use: Node, name: string): Node[] {
   return method.descendantsOfType('variable_declarator').filter((d): d is Node => !!d && nameOf(d) === name && d.startIndex < use.startIndex)
 }
 
-/** The folders of an inputs class that this motor's IO logs into: all of them, or the ones its own chain reaches. */
-function foldersFor(folders: { folder: FolderPart[]; chains: Node[][] }[], chain: Node[]): FolderPart[][] {
+/**
+ * The folder this motor's IO logs into. First the folder whose `updateInputs` is called on this motor's IO object; else
+ * the one folder, or the one whose chain of calls meets the motor's closest in (a Module built around this IO, not just
+ * the SwerveSubsystem every module shares). Several equally close: none, rather than a guess that gives one motor
+ * another's ID.
+ */
+function foldersFor(folders: Folder[], chain: Node[]): FolderPart[][] {
+  const filled = folders.filter((f) => f.ios.some((io) => chain.some((c) => c.equals(io))))
+  if (filled.length) return filled.map((f) => f.folder)
   if (folders.length <= 1) return folders.map((f) => f.folder)
-  const meets = (a: Node[], b: Node[]) => a.some((x) => b.some((y) => x.equals(y) || (x.startIndex >= y.startIndex && x.endIndex <= y.endIndex && x.tree === y.tree)))
-  const mine = folders.filter((f) => f.chains.some((c) => meets(chain, c)))
-  return (mine.length ? mine : folders).map((f) => f.folder)
+  const within = (x: Node, y: Node) => x.equals(y) || (x.tree === y.tree && x.startIndex >= y.startIndex && x.endIndex <= y.endIndex)
+  const depth = (f: Folder) => Math.min(...f.chains.map((c) => { const i = c.findIndex((y) => chain.some((x) => within(x, y))); return i < 0 ? Infinity : i }))
+  const best = Math.min(...folders.map(depth))
+  const closest = folders.filter((f) => depth(f) === best)
+  return best < Infinity && closest.length === 1 ? [closest[0].folder] : []
 }
 
 /**
  * Leaders and followers: `follower.setControl(new Follower(leader.getDeviceID(), …))` or `new Follower(10, …)` (Phoenix
  * 6), `follower.follow(leader)` or `follower.set(ControlMode.Follower, 25)` (Phoenix 5). A follower joins its leader's
- * group; leader and follower are paired within one IO object.
+ * group; leader and follower are paired within one IO object. No code we have uses `follow(…)` or StrictFollower:
+ * no data covers those two.
  */
 function followers(project: Project, motors: CodeMotor[]): void {
   const at = (expr: Node | null) => {

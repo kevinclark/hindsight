@@ -44,7 +44,13 @@ export function deviceBuilt(site: Node, project: Project): { kind: string; id?: 
   const cls = project.classNamed(type)
   const kind = baseType(superclassName(cls))
   if (!cls || !kind || !PHOENIX_DEVICES.includes(kind)) return null
-  const constructor = parts(field(cls, 'body')).find((c) => c.type === 'constructor_declaration' && parts(c, 'parameters').filter((p) => p.type === 'formal_parameter').length === passed.length)
+  // Constructors of this many parameters; two of one count (`(int id, double gearing)`, `(int id, String canbus)`) are
+  // told apart by what the arguments work out to (a string or a number), else not at all.
+  const params = (c: Node) => parts(c, 'parameters').filter((p) => p.type === 'formal_parameter')
+  const fits = parts(field(cls, 'body')).filter((c) => c.type === 'constructor_declaration' && params(c).length === passed.length)
+  const worksOut = (a: Node | undefined) => { const v = a && valueAlong(a, [], project)?.value; return typeof v === 'string' ? 'String' : typeof v === 'number' ? 'number' : null }
+  const typed = fits.filter((c) => params(c).every((p, i) => { const k = worksOut(passed[i]); return k === null || (k === 'String') === (typeNamed(p) === 'String') }))
+  const constructor = fits.length === 1 ? fits[0] : typed.length === 1 ? typed[0] : undefined
   const handOn = parts(field(constructor ?? cls, 'body')).find((c) => c.type === 'explicit_constructor_invocation' && c.text.startsWith('super'))
   if (!constructor || !handOn) return null
   const [id, bus] = parts(handOn, 'arguments')

@@ -17,15 +17,19 @@ import type { CurrentLimits } from '../profiles/types.ts'
 /** Apply the code to a draft, in place. Returns what the student should know (motors the log lacks, a dirty tree). */
 export function applyCode(json: ProfileJson, hints: CodeHints, log: WpilogFile, dirty: boolean): string[] {
   const placed = hints.motors.map((motor) => ({ motor, keys: placeInLog(motor, log) }))
-  const byKey = new Map<string, { motor: CodeMotor; keys: PlacedCurrent[] }>()
-  for (const p of placed) for (const k of p.keys) byKey.set(k.key, p)
+  // A key two code motors claim tells nothing: neither gets it.
+  const claims = new Map<string, { motor: CodeMotor; keys: PlacedCurrent[] }[]>()
+  for (const p of placed) for (const k of p.keys) claims.set(k.key, [...(claims.get(k.key) ?? []), p])
+  const byKey = new Map([...claims].filter(([, ps]) => ps.length === 1).map(([k, ps]) => [k, ps[0]]))
   const codeOf = new Map<MotorJson, CodeMotor>()
+  const notes: string[] = []
 
   for (const { motor } of allMotors(json)) {
     const hit = [motor.supplyCurrent, motor.statorCurrent, motor.current].map((k) => (k ? byKey.get(k) : undefined)).find(Boolean)
     if (!hit) continue
     codeOf.set(motor, hit.motor)
     const kind = hit.keys.find((k) => k.key === motor.current)?.kind
+    if (motor.current && kind === 'torque') notes.push(`${motor.current} is a torque current (the code reads getTorqueCurrent): neither supply nor stator, so leave it unpicked.`)
     if (motor.current && kind === 'supply' && !motor.supplyCurrent) { motor.supplyCurrent = motor.current; delete motor.current; motor.kindFrom = 'code' }
     if (motor.current && kind === 'stator' && !motor.statorCurrent) { motor.statorCurrent = motor.current; delete motor.current; motor.kindFrom = 'code' }
     if (hit.motor.id !== null && (motor.canIdFrom === undefined || motor.canIdFrom === 'code hint')) { motor.canId = hit.motor.id; motor.canIdFrom = 'code' }
@@ -37,12 +41,9 @@ export function applyCode(json: ProfileJson, hints: CodeHints, log: WpilogFile, 
     if (limits && !g.limits?.where.startsWith('as running')) { g.limits = limits; g.limitsFromCode = true }
   }
 
-  const notes: string[] = []
-  const unmatched = placed.filter((p) => ![...codeOf.values()].includes(p.motor))
-  if (unmatched.length) {
-    const list = unmatched.map((p) => `${p.motor.site}${p.motor.id !== null ? ` (ID ${p.motor.id})` : ''}`).join(', ')
-    notes.push(`The code builds ${unmatched.length} more Talon FX that this log has no current for: ${list}. Their current isn't in the battery model.`)
-  }
+  // One line per motor: a site and ID reached along two chains of calls is still one motor.
+  const unmatched = [...new Set(placed.filter((p) => ![...codeOf.values()].includes(p.motor)).map((p) => `${p.motor.site}${p.motor.id !== null ? ` (ID ${p.motor.id})` : ''}`))]
+  if (unmatched.length) notes.push(`The code builds ${unmatched.length} more Talon FX that this log has no current for: ${unmatched.join(', ')}. Their current isn't in the battery model.`)
   if (dirty) notes.push(`The robot ran uncommitted changes on top of ${hints.sha?.slice(0, 7) ?? 'its commit'}: this draft is from the commit, so check what the changes touched.`)
   return notes
 }
@@ -72,7 +73,7 @@ function regroup(json: ProfileJson, codeOf: Map<MotorJson, CodeMotor>): void {
   for (const g of json.motorGroups) {
     const codes = g.motors.map((m) => codeOf.get(m))
     if (codes.every((c) => c && c.group === codes[0]!.group)) g.groupFromCode = true
-    if (codes.some((c) => c?.follows)) { g.sameLoop = true; g.sameLoopSuggested = true }
+    if (codes.some((c) => c?.follows)) { g.sameLoop = true; g.sameLoopSuggested = true; g.followerFromCode = true }
   }
 }
 

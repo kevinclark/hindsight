@@ -193,7 +193,8 @@ export function carryConfirmations(from: ProfileJson, to: ProfileJson): void {
     const o = motor.logPath ? old.get(motor.logPath) : undefined
     if (!o) continue
     motor.name = o.name
-    if (o.canId !== undefined && motor.canIdFrom !== 'log') { motor.canId = o.canId; motor.bus = o.bus; motor.canIdFrom = o.canIdFrom }
+    // An ID the code gave is the new draft's to give again (the code may be another commit now); the student's is kept.
+    if (o.canId !== undefined && motor.canIdFrom !== 'log' && o.canIdFrom !== 'code') { motor.canId = o.canId; motor.bus = o.bus; motor.canIdFrom = o.canIdFrom }
     if (motor.current && !o.current) {
       if (o.supplyCurrent === motor.current) { motor.supplyCurrent = motor.current; delete motor.current }
       else if (o.statorCurrent === motor.current) { motor.statorCurrent = motor.current; delete motor.current }

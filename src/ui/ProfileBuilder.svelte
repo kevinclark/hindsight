@@ -37,6 +37,8 @@
   let dragging = $state(false)
   let keptNote = $state('')
   let draftNotes = $state<string[]>([])
+  /** The profile on screen was opened (kept list, profile.json), not drafted from the logs. */
+  let openedProfile = $state(false)
   let kept = $state<ProfileJson[]>(keptProfiles())
   // The keptId of the kept profile being edited (opened from the list, or kept since): keeping replaces it, renamed or not.
   let keptAs = $state<string | null>(null)
@@ -72,6 +74,7 @@
     draftNotes = []
     notUsed = []
     guessedSignals = []
+    openedProfile = true
     seenLimits = []
     keptNote = ''
   }
@@ -83,6 +86,7 @@
     if (json) { carryConfirmations($state.snapshot(json) as ProfileJson, d.json); if (snapshot) refreshLimits(d.json, snapshot) }
     json = d.json
     draftNotes = d.notes
+    openedProfile = false
     notUsed = d.notUsed
     guessedSignals = d.guessed
     seenLimits = d.limits
@@ -180,7 +184,8 @@
   function useHints(found: CodeHints, from: string) {
     hints = found
     hintsFrom = from
-    if (logs.length) redraft()
+    // A profile opened from the kept list or a file is the student's: label its choices, never draft over it.
+    if (logs.length && !openedProfile) redraft()
     else if (json) json.builtFrom = { ...json.builtFrom, at: json.builtFrom?.at ?? new Date().toISOString(), code: found.sha ?? 'unknown commit' }
   }
 
@@ -332,7 +337,7 @@
         {/if}
         <p class="row">
           <label class="check"><input type="checkbox" bind:checked={g.sameLoop} onchange={() => confirmLoop(g)} /> these motors run one control loop (leader + followers)</label>
-          {#if g.sameLoop && g.sameLoopSuggested}<span class="suggested">suggested from the {g.groupFromCode ? 'code (a follower)' : 'names'}: confirm</span>{/if}
+          {#if g.sameLoop && g.sameLoopSuggested}<span class="suggested">suggested from the {g.followerFromCode ? 'code (a follower)' : 'names'}: confirm</span>{/if}
         </p>
         <p class="meta limits-line">
           Limits:
