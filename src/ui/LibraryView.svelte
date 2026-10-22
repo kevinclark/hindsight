@@ -7,7 +7,10 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { hub, LibraryFile, type LibrarySnapshot, type Progress } from '../hub/bridge.ts'
+  import { hub, LibraryFile, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
+  import DriveFolderPicker from './DriveFolderPicker.svelte'
+  import type { IngestPlan } from '../hub/ingest.ts'
+  import type { FetchReport, SyncReport } from '../hub/sync.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
   import { FACETS, FACET_LABELS, facetCounts, facetValues, filterEntries, type FacetId, type Selection } from '../hub/facets.ts'
@@ -25,22 +28,71 @@
   let problem = $state<string | null>(null)
   let expanded = $state<Record<string, boolean>>({})
 
-  async function refresh() { if (api) snapshot = await api.library() }
+  let drive = $state<DriveStatus | null>(null)
+  let picking = $state<null | 'team' | 'ingest'>(null)
+  let plan = $state<null | { kind: 'ingest'; folder: string; plan: IngestPlan } | { kind: 'sync'; plan: SyncPlan }>(null)
+  let syncReport = $state.raw<SyncReport | null>(null)
+  let fetchReport = $state.raw<FetchReport | null>(null)
+  let clientId = $state('')
+  let clientSecret = $state('')
+  let robotAddress = $state((() => { try { return localStorage.getItem('hindsight.robotAddress') ?? '' } catch { return '' } })())
+  const driveBusy = $derived(!!progress)
+
+  async function refresh() {
+    if (!api) return
+    snapshot = await api.library()
+    drive = await api.driveStatus()
+  }
+  /** Run something that can fail with words for the user; shows the progress bar while it works. */
+  async function work<T>(label: string, body: () => Promise<T>): Promise<T | undefined> {
+    if (!api || progress) return undefined
+    problem = null
+    progress = { job: label, done: 0, total: 0, current: '' }
+    try { return await body() } catch (e) { problem = e instanceof Error ? e.message : String(e); return undefined } finally { progress = null; await refresh().catch(() => {}) }
+  }
+  const signIn = () => work('Signing in', () => api!.driveSignIn())
+  const signOut = () => work('Signing out', () => api!.driveSignOut())
+  const saveClient = () => work('Saving', () => api!.setGoogleClient(clientId, clientSecret))
+  async function chooseTeam(idOrLink: string) { picking = null; await work('Checking the folder', () => api!.setTeamFolder(idOrLink)) }
+  async function planIngest(idOrLink: string) {
+    picking = null
+    const p = await work('Looking at the folder', () => api!.driveIngestPlan(idOrLink))
+    if (p) plan = { kind: 'ingest', folder: idOrLink, plan: p }
+  }
+  async function planSync() {
+    const p = await work('Looking at the team folder', () => api!.syncPlan())
+    if (p) plan = { kind: 'sync', plan: p }
+  }
+  async function confirm() {
+    const p = plan
+    plan = null
+    if (!p) return
+    if (p.kind === 'ingest') { const r = await work('Reading Drive folder', () => api!.addFromDrive(p.folder)); if (r) report = r }
+    else { const r = await work('Syncing', () => api!.sync()); if (r) syncReport = r }
+  }
+  async function download() {
+    const paths = filtered.filter((e) => !e.local && e.shared).map((e) => e.record.path)
+    const r = await work('Downloading', () => api!.fetchLogs(paths))
+    if (r) fetchReport = r
+  }
+  async function addRobot() {
+    try { localStorage.setItem('hindsight.robotAddress', robotAddress) } catch { /* private window */ }
+    const r = await work('Reading robot', () => api!.addFromRobot(robotAddress))
+    if (!r) return
+    if ('refused' in r) problem = r.refused; else report = r.report
+  }
+  let update = $state<{ version: string; url: string } | null>(null)
+
   onMount(() => {
     void refresh().catch((e) => { problem = String(e) })
-    return api?.onProgress((p) => { progress = p })
+    void api?.updateInfo().then((u) => { update = u })
+    return api?.onProgress((p) => { if (progress) progress = p })
   })
 
   async function addFolder() {
-    if (!api || progress) return
-    problem = null
-    progress = { job: 'folder', done: 0, total: 0, current: 'Choosing…' }
-    try {
-      const r = await api.addFromFolder()
-      if (r) report = r
-    } catch (e) { problem = e instanceof Error ? e.message : String(e) }
-    progress = null
-    await refresh()
+    if (!api) return
+    const r = await work('Reading folder', () => api.addFromFolder())
+    if (r) report = r
   }
 
   async function tag(target: TagTarget, field: TagField, value: string) {
@@ -55,6 +107,8 @@
   const counts = $derived(facetCounts(base, selection))
   const bytes = $derived(filtered.reduce((n, e) => n + e.record.size, 0))
   const local = $derived(filtered.filter((e) => e.local))
+  /** Logs the team has that this computer lacks: what a download would fetch. */
+  const remoteOnly = $derived(filtered.filter((e) => !e.local && e.shared))
   const attachments = $derived(filtered.reduce((n, e) => n + e.attached.dslog.length + e.attached.dsevents.length + e.attached.hoot.length, 0))
 
   const days = $derived.by(() => {
@@ -96,9 +150,11 @@
 {:else}
 <section class="bar">
   <button class="primary" onclick={addFolder} disabled={!!progress}>Add logs from a folder…</button>
+  {#if drive?.signedIn}<button class="primary" onclick={() => (picking = 'ingest')} disabled={driveBusy}>Add logs from a Drive folder…</button>{/if}
+  <span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={addRobot} disabled={driveBusy || !robotAddress.trim()}>Add logs from the robot</button></span>
   {#if progress}
     <span class="progress" role="status">
-      {progress.job === 'folder' ? 'Reading' : progress.job} {progress.done} of {progress.total}{progress.current ? ` · ${progress.current}` : ''}
+      {progress.job}{progress.total ? ` ${progress.done} of ${progress.total}` : '…'}{progress.current ? ` · ${progress.current}` : ''}
       <button class="link" onclick={() => api.cancel()}>Stop</button>
     </span>
   {/if}
@@ -106,6 +162,54 @@
 </section>
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
+
+<details class="team" open={drive !== null && !drive.teamFolder}>
+  <summary>Team Drive: {#if !drive}…{:else if !drive.configured}not set up{:else if !drive.signedIn}not signed in{:else if !drive.teamFolder}signed in, no team folder yet{:else}<strong>{drive.teamFolder.name}</strong>{drive.lastSync ? ` · synced ${new Date(drive.lastSync).toLocaleString()}` : ' · not synced yet'}{/if}</summary>
+  {#if drive && !drive.configured}
+    <p class="meta">This build has no Google client. A team can make its own (a Desktop-app OAuth client in its Google Cloud project) and paste it here.</p>
+    <p class="row"><input bind:value={clientId} placeholder="client id" aria-label="Google client id" /><input bind:value={clientSecret} placeholder="client secret" aria-label="Google client secret" /><button class="primary" onclick={saveClient} disabled={!clientId.trim()}>Save</button></p>
+  {:else if drive && !drive.signedIn}
+    <p class="meta">Signing in opens Google in your browser. Google shows a warning that Hindsight is an unverified app: choose <em>Advanced</em>, then <em>Go to Hindsight</em>.</p>
+    <p><button class="primary" onclick={signIn} disabled={driveBusy}>Sign in with Google</button></p>
+  {:else if drive}
+    <p class="row">
+      <button class="primary" onclick={() => (picking = 'team')} disabled={driveBusy}>{drive.teamFolder ? 'Change team folder…' : 'Choose the team folder…'}</button>
+      {#if drive.teamFolder}<button class="primary" onclick={planSync} disabled={driveBusy}>Sync with the team…</button>{/if}
+      <button class="link" onclick={signOut}>Sign out of Google</button>
+    </p>
+    {#if !drive.keepsSignIn}<p class="problem">{drive.keepWarning}</p>{/if}
+  {/if}
+  {#if picking && api}
+    <DriveFolderPicker {api} label={picking === 'team' ? 'Use as team folder' : 'Read logs from'} onPick={(id) => (picking === 'team' ? chooseTeam(id) : planIngest(id))} onCancel={() => (picking = null)} />
+  {/if}
+  {#if plan}
+    <p class="confirm" role="alert">
+      {#if plan.kind === 'ingest'}
+        {plan.plan.logs} log file{plan.plan.logs === 1 ? '' : 's'} there; {plan.plan.alreadyKnown} already in the library (not downloaded). <strong>Downloads {plan.plan.toRead} file{plan.plan.toRead === 1 ? '' : 's'}, {size(plan.plan.bytesToRead)}, in full, once.</strong> Nothing on Drive is changed; the copies go in this computer's library.
+      {:else}
+        <strong>Uploads {plan.plan.uploads} log{plan.plan.uploads === 1 ? '' : 's'}, {size(plan.plan.uploadBytes)}</strong> to the team folder (a log that came from Drive is copied inside Drive instead), brings in teammates' lists, and publishes this computer's. Nothing is deleted or overwritten.
+      {/if}
+      <button class="primary" onclick={confirm}>Go ahead</button> <button class="link" onclick={() => (plan = null)}>Cancel</button>
+    </p>
+  {/if}
+</details>
+
+{#if syncReport}
+  <section class="report" aria-label="What was synced">
+    <h2>Synced: {syncReport.uploaded.length} uploaded · {syncReport.alreadyThere} already there · {syncReport.failed.length} failed</h2>
+    <p class="meta">{syncReport.manifests.length} teammate list{syncReport.manifests.length === 1 ? '' : 's'} brought in{syncReport.unrecorded.length ? ` · ${syncReport.unrecorded.length} file${syncReport.unrecorded.length === 1 ? '' : 's'} in the team folder that no list mentions` : ''}.</p>
+    {#each syncReport.problems as p (p)}<p class="problem">{p}</p>{/each}
+    {#if syncReport.failed.length}<details open><summary>Failed ({syncReport.failed.length})</summary><ul class="rows">{#each syncReport.failed as f (f.path)}<li><code>{f.path}</code> <span class="problem">{f.reason}</span></li>{/each}</ul></details>{/if}
+    <button class="link" onclick={() => (syncReport = null)}>Dismiss</button>
+  </section>
+{/if}
+{#if fetchReport}
+  <section class="report" aria-label="What was downloaded">
+    <h2>Downloaded {fetchReport.fetched.length} · failed {fetchReport.failed.length}</h2>
+    {#each fetchReport.failed as f (f.path)}<p class="problem"><code>{f.path}</code> {f.reason}</p>{/each}
+    <button class="link" onclick={() => (fetchReport = null)}>Dismiss</button>
+  </section>
+{/if}
 
 {#if report}
   <section class="report" aria-label="What was added">
@@ -160,6 +264,7 @@
   <section class="list">
     <div class="summary" role="status">
       <strong>{filtered.length}</strong> log{filtered.length === 1 ? '' : 's'} · {size(bytes)} · <strong>{local.length}</strong> on this computer{filtered.length - local.length ? ` (${filtered.length - local.length} not)` : ''}{attachments ? ` · ${attachments} DS or hoot files attached` : ''}
+      {#if remoteOnly.length}<button class="primary" onclick={download} disabled={driveBusy}>Download {remoteOnly.length} ({size(remoteOnly.reduce((n, e) => n + e.record.size, 0))})</button>{/if}
       <button class="primary" onclick={openInSession} disabled={local.length === 0}>Open in Session view</button>
     </div>
     {#if all.length === 0}
@@ -215,6 +320,11 @@
   .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-bottom: 0.75rem; }
   .meta { color: var(--muted); font-size: 0.85rem; margin: 0; overflow-wrap: anywhere; }
   .where { margin-left: auto; }
+  .robot { display: inline-flex; gap: 0.3rem; }
+  .team { margin-bottom: 0.75rem; font-size: 0.9rem; }
+  .team summary { cursor: pointer; min-height: 24px; }
+  .row { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: center; }
+  .confirm { border: 1px solid var(--warning); border-radius: 6px; padding: 0.4rem 0.75rem; max-width: 52rem; }
   button { font: inherit; color: var(--fg); }
   .primary { padding: 0.35rem 0.9rem; border: 1px solid var(--focus); border-radius: 6px; background: none; cursor: pointer; }
   .primary:disabled { border-color: var(--border); color: var(--muted); cursor: default; }

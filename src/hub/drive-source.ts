@@ -7,6 +7,13 @@ import type { DriveAdapter } from './drive-adapter.ts'
 import type { SourceFile } from './ingest.ts'
 import { kindOf } from './types.ts'
 
+/** A folder id from what was pasted: a bare id, or a drive.google.com/drive/folders/<id> link. */
+export function folderIdFrom(text: string): string | null {
+  const t = text.trim()
+  const fromLink = /\/folders\/([\w-]+)/.exec(t)?.[1] ?? /[?&]id=([\w-]+)/.exec(t)?.[1]
+  return fromLink ?? (/^[\w-]{10,}$/.test(t) ? t : null)
+}
+
 export async function driveFolderFiles(drive: DriveAdapter, folderId: string, tempRoot = tmpdir()): Promise<SourceFile[]> {
   const out: SourceFile[] = []
   const walk = async (id: string, where: string) => {

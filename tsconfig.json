@@ -21,6 +21,8 @@
     "src/**/*.svelte",
     "tests/**/*.ts",
     "scripts/**/*.ts",
-    "vite.config.ts"
+    "electron/**/*.ts",
+    "vite.config.ts",
+    "vite.electron.config.ts"
   ]
 }

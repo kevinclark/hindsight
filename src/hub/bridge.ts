@@ -3,7 +3,9 @@
  * opened from disk, which has no library). Everything crossing is plain data.
  */
 import type { Entry } from './catalog.ts'
-import type { IngestReport } from './ingest.ts'
+import type { IngestPlan, IngestReport } from './ingest.ts'
+import type { FetchReport, SyncReport } from './sync.ts'
+import type { Update } from './update.ts'
 import type { TagField, TagTarget } from './types.ts'
 
 export interface Progress { job: string; done: number; total: number; current: string }
@@ -16,6 +18,22 @@ export interface LibrarySnapshot {
   machineId: string
 }
 
+export interface DriveStatus {
+  /** The build (or the team) supplied a Google client. */
+  configured: boolean
+  signedIn: boolean
+  teamFolder: { id: string; name: string } | null
+  /** Whether the sign-in is kept between runs, and if not, why. */
+  keepsSignIn: boolean
+  keepWarning: string | null
+  /** When the last sync finished (ms), if any. */
+  lastSync: number | null
+}
+
+export interface SyncPlan { uploads: number; uploadBytes: number }
+
+export type RobotResult = { refused: string } | { report: IngestReport }
+
 export interface HubApi {
   info(): Promise<{ version: string; machineId: string; libraryDir: string }>
   library(): Promise<LibrarySnapshot>
@@ -26,6 +44,24 @@ export interface HubApi {
   /** The bytes of a log in the library (path as in the manifest). */
   readLog(path: string): Promise<Uint8Array>
   onProgress(callback: (p: Progress) => void): () => void
+
+  driveStatus(): Promise<DriveStatus>
+  driveSignIn(): Promise<void>
+  driveSignOut(): Promise<void>
+  setGoogleClient(id: string, secret: string): Promise<void>
+  /** Folders under a folder ('roots' for My Drive and the shared drives). */
+  driveFolders(parentId: string): Promise<{ id: string; name: string }[]>
+  /** Remember the team folder (an id or a link). Throws if it can't be seen. */
+  setTeamFolder(idOrLink: string): Promise<{ id: string; name: string }>
+  /** What bringing a Drive folder in would cost, before any file is downloaded. */
+  driveIngestPlan(folderIdOrLink: string): Promise<IngestPlan>
+  addFromDrive(folderIdOrLink: string): Promise<IngestReport>
+  syncPlan(): Promise<SyncPlan>
+  sync(): Promise<SyncReport>
+  /** Download logs the team has and this computer lacks (library paths). */
+  fetchLogs(paths: string[]): Promise<FetchReport>
+  addFromRobot(address: string): Promise<RobotResult>
+  updateInfo(): Promise<Update | null>
 }
 
 export function hub(): HubApi | undefined {

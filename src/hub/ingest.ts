@@ -84,6 +84,8 @@ async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOpt
     options.seen?.set(fingerprint, d.sha256)
     const again = lib.catalog.bySha(d.sha256)
     if (again) return noteAlready(lib, file, again, report, now)
+    // A hoot file with no time in its name, pulled from the robot: the roboRIO's modified time, recorded at the pull, is its date.
+    if (d.meta.kind === 'hoot' && d.meta.playedAt === null && file.from === 'robot' && file.modifiedTime) d.meta = { ...d.meta, playedAt: file.modifiedTime, dateSource: 'file time' }
 
     // 3. File a copy.
     const path = await freePath(lib.store, libraryPath(d.meta, file.name), d.sha256)

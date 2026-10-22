@@ -14,7 +14,7 @@ export function kindOf(name: string): LogKind | null {
   return dot < 0 ? null : LOG_EXTENSIONS[name.slice(dot).toLowerCase()] ?? null
 }
 
-export type DateSource = 'robot clock' | 'file name' | 'driver station clock' | 'unknown'
+export type DateSource = 'robot clock' | 'file name' | 'driver station clock' | 'file time' | 'unknown'
 
 /** What reading a log (src/hub/describe.ts) says about it. */
 export interface LogMeta {

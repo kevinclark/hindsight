@@ -1,15 +1,19 @@
 /** What the page may ask the app to do: a small, named set, never Node itself. Types: src/hub/bridge.ts. */
 import { contextBridge, ipcRenderer } from 'electron'
 
-const call = (channel: string) => (...args: unknown[]) => ipcRenderer.invoke(`hub:${channel}`, ...args)
+/** An error from the main process arrives wrapped in Electron's own words; the page shows only what was said. */
+const call = (channel: string) => (...args: unknown[]) => ipcRenderer.invoke(`hub:${channel}`, ...args).catch((e: Error) => {
+  throw new Error(String(e.message).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+})
+
+const CHANNELS = [
+  'info', 'library', 'addFromFolder', 'cancel', 'setTag', 'readLog',
+  'driveStatus', 'driveSignIn', 'driveSignOut', 'setGoogleClient', 'driveFolders', 'setTeamFolder', 'driveIngestPlan', 'addFromDrive',
+  'syncPlan', 'sync', 'fetchLogs', 'addFromRobot', 'updateInfo',
+] as const
 
 contextBridge.exposeInMainWorld('hub', {
-  info: call('info'),
-  library: call('library'),
-  addFromFolder: call('addFromFolder'),
-  cancel: call('cancel'),
-  setTag: call('setTag'),
-  readLog: call('readLog'),
+  ...Object.fromEntries(CHANNELS.map((c) => [c, call(c)])),
   onProgress: (callback: (p: unknown) => void) => {
     const listener = (_e: unknown, p: unknown) => callback(p)
     ipcRenderer.on('hub:progress', listener)

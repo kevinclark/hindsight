@@ -57,6 +57,9 @@
     { id: 'snapshot', label: 'Robot snapshot' }, { id: 'profile', label: 'Robot profile' }, { id: 'foresight', label: 'Foresight' },
   ] as const
   if (hub()) document.getElementById('app')?.classList.add('wide')
+  // The desktop app asks GitHub once on start whether a newer release is out.
+  let update = $state<{ version: string; url: string } | null>(null)
+  void hub()?.updateInfo().then((u) => { update = u })
   let sessionView = $state<{ addFiles(files: File[]): Promise<void> }>()
   // From the Library: the filtered logs, in the Session view.
   async function openInSession(files: File[]) {
@@ -263,6 +266,7 @@
   {#if !(mode === 'review' && current)}<p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>{/if}
 </header>
 
+{#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
   {#each MODES as m (m.id)}<button class:active={mode === m.id} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
 </nav>
@@ -424,6 +428,7 @@
   .top.compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1.25rem; }
   .top.compact .modes { margin-bottom: 0.5rem; }
   header h1 { margin: 0; font-size: 1.5rem; }
+  .update { margin: 0 0 0.5rem; padding: 0.3rem 0.75rem; border: 1px solid var(--focus); border-radius: 6px; }
   .tag { margin: 0.1rem 0 1rem; color: var(--muted); }
   .drop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.9rem 1rem; border: 1.5px dashed var(--border); border-radius: 8px; }
   .drop.compact { padding: 0.25rem 0.75rem; gap: 0.25rem 0.75rem; }
