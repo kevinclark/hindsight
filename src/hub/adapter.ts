@@ -26,6 +26,8 @@ export interface ByteSource {
 export interface WriteOptions {
   /** The log's sha-256. A store that can check before it commits does (the local folder); one that can't (Drive) checks the answer and throws ChecksumMismatch. */
   sha256?: string
+  /** The file's own time to keep (ms): a log's modified time, so Drive's modifiedTime isn't the upload time. */
+  modifiedTime?: number
   /** Called with the bytes sent so far. */
   onProgress?: (sent: number, total: number) => void
 }

@@ -1,6 +1,6 @@
 /** A StorageAdapter over a folder on this machine: the local library, and later any synced folder (Drive for desktop, a NAS share). */
 import { createReadStream } from 'node:fs'
-import { mkdir, open, readdir, rename, rm, stat as fsStat, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, rename, rm, stat as fsStat, readFile, utimes, writeFile } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isManifestPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
@@ -73,6 +73,7 @@ export class LocalFolderAdapter implements StorageAdapter {
       if (options.sha256 && got !== options.sha256) throw new ChecksumMismatch(path, options.sha256, got)
       // A file made since we looked is not overwritten: link-then-rename is not portable, so check once more.
       if (await this.stat(path)) throw new AlreadyExists(path)
+      if (options.modifiedTime) await utimes(temp, new Date(), new Date(options.modifiedTime))
       await rename(temp, target)
     } catch (e) {
       await handle.close().catch(() => {})
