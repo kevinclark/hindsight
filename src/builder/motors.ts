@@ -81,7 +81,16 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
   }
   type Stem = { folder: string; part: string; keys: { kind: 'supply' | 'stator' | 'current'; name: string }[]; element?: { index: number; count: number } }
   const stems = new Map<string, Stem>()
-  const stem = (path: string, s: Omit<Stem, 'keys'>) => { if (!stems.has(path)) stems.set(path, { ...s, keys: [] }); return stems.get(path)! }
+  const stem = (path: string, s: Omit<Stem, 'keys'>) => {
+    if (!stems.has(path)) stems.set(path, { ...s, keys: [] })
+    return stems.get(path)!
+  }
+  // Arrays: one length per entry (each read decodes every record).
+  const lengths = new Map<string, number>()
+  const longest = (key: string) => {
+    if (!lengths.has(key)) lengths.set(key, longestArray(log, key))
+    return lengths.get(key)!
+  }
   for (const e of entries) {
     const i = e.name.lastIndexOf('/')
     const leaf = e.name.slice(i + 1)
@@ -94,7 +103,9 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
     const path = part ? `${folder}/${part}` : folder
     const kind = m[1] === 'Supply' ? 'supply' : m[1] === 'Stator' ? 'stator' : 'current'
     if (NUMERIC.has(e.type)) { stem(path, { folder, part }).keys.push({ kind, name: e.name }); continue }
-    const count = longestArray(log, e.name)
+    // No log in hand has an empty current array, a float[] or int64[] current, or a scalar and an array current for one
+    // motor (which would draft it once more than its elements): no data covers those cases yet.
+    const count = longest(e.name)
     if (count === 0) { notUsed.push({ key: e.name, why: 'an array that is always empty' }); continue }
     if (count === 1) { stem(path, { folder, part }).keys.push({ kind, name: `${e.name}[0]` }); continue }
     for (let k = 0; k < count; k++) stem(`${path}[${k}]`, { folder, part, element: { index: k, count } }).keys.push({ kind, name: `${e.name}[${k}]` })
@@ -117,7 +128,7 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
     const keyOf = (e: WpilogEntry) => (e.type.endsWith('[]') ? `${e.name}[${index}]` : e.name)
     const fits = (e: WpilogEntry, types: Set<string>) => {
       if (types.has(e.type)) return !s.element
-      return e.type.endsWith('[]') && types.has(e.type.slice(0, -2)) && longestArray(log, e.name) === (s.element?.count ?? 1)
+      return e.type.endsWith('[]') && types.has(e.type.slice(0, -2)) && longest(e.name) === (s.element?.count ?? 1)
     }
     const pick = (re: RegExp, types: Set<string>, avoid?: RegExp) => own.filter((e) => re.test(rest(e)) && fits(e, types) && !(avoid && avoid.test(rest(e)))).map(keyOf).sort((a, b) => a.length - b.length)[0]
     const find = (kind: string) => s.keys.find((k) => k.kind === kind)?.name

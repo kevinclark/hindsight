@@ -94,7 +94,11 @@ export function groupMotors(motors: LogMotor[]): DraftGroup[] {
 
   // One array: its elements, in order, named by the array's motor path and a number from 1.
   const arrays = new Map<string, LogMotor[]>()
-  for (const m of motors) if (m.element) { if (!arrays.has(m.element.of)) arrays.set(m.element.of, []); arrays.get(m.element.of)!.push(m) }
+  for (const m of motors) {
+    if (!m.element) continue
+    if (!arrays.has(m.element.of)) arrays.set(m.element.of, [])
+    arrays.get(m.element.of)!.push(m)
+  }
   const arrayNames = shortNames([...arrays.keys(), ...motors.filter((m) => !m.element).map((m) => m.path)])
   for (const [of, ms] of arrays) {
     const name = arrayNames.get(of)!

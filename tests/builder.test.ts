@@ -506,6 +506,13 @@ describe('backtest against the hand profiles (real logs)', () => {
     expect(r.builtGroups.filter((g) => g.evidence !== 'one motor')).toEqual([{ name: 'Drive', size: 4, evidence: 'swerve' }, { name: 'Turn', size: 4, evidence: 'swerve' }])
     expect(r.notUsed).toEqual([])
   })
+  const galileo = `${PUBLIC}/4322-galileo/Q98/akit_26-05-01_19-10-06_galileo_q98.wpilog`
+  it.skipIf(!existsSync(galileo))('4322 (…StatorAmps / …SupplyAmps keys): 18 motors, swerve and three leader/follower groups', () => {
+    const r = bt(galileo)
+    expect(r.falsePositives).toHaveLength(18)
+    expect(r.builtGroups.filter((g) => g.evidence !== 'one motor').map((g) => `${g.name} ${g.size}`)).toEqual(['Drive 4', 'Turn 4', 'Rollers 2', 'Flywheel 2', 'Spindexer 2'])
+    expect(r.confirmKind).toEqual([])
+  })
   it.skipIf(!publicLog('3602-MICMP2-Q3'))('3602: 0 motors (2 dashboard copies listed, not used)', () => {
     const r = bt(publicLog('3602-MICMP2-Q3')!)
     expect(r.builtGroups).toEqual([])
