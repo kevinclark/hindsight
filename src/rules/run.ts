@@ -204,12 +204,19 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
   // A pit check has nothing to judge in a match log (no disabled stretch): it stays quiet.
   if (rule.foresightOnly && view.beforeEnable.length === 0) return { findings, notChecked, items: 0, itemsSkipped: 0 }
   let items: ReturnType<typeof itemsFor>
+  let listed: number
   try {
     items = itemsFor(rule, view)
+    // `only`: the things this rule is for. The others aren't its business: not checked, and not counted as checked.
+    listed = items.length
+    items = items.filter((i) => i.applies?.() ?? true)
   } catch (error) {
     // e.g. no Alerts in the log at all: the rule couldn't look.
     if (!(error instanceof MissingSignal)) throw error
     return { findings, notChecked: [`missing ${error.key}`], items: 1, itemsSkipped: 1 }
+  }
+  if (items.length === 0 && listed > 0) {
+    return { findings, notChecked: [`the robot profile has no ${rule.forEach === 'motorGroup' ? 'motor group' : rule.forEach} this rule is for`], items: 1, itemsSkipped: 1 }
   }
   // No alerts raised is a clean result; no motors or cameras in the profile means the rule couldn't look.
   if (items.length === 0 && rule.forEach !== 'alert') {
@@ -261,7 +268,7 @@ export function motorGroup(g: ProfileGroup, view: MatchView): GroupView {
 }
 
 /** The things a rule checks, each with its name and a call to the rule's check. */
-function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: () => Answer }[] {
+function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: () => Answer; applies?: () => boolean }[] {
   const p = view.profile
   const motor = (m: ProfileMotor, group: string) => motorView(m, group, view)
   switch (rule.forEach) {
@@ -269,11 +276,14 @@ function itemsFor(rule: Rule, view: MatchView): { name: string | null; check: ()
     case 'match':
       return [{ name: null, check: () => rule.check(view) }]
     case 'motor':
-      return p.motorGroups.flatMap((g) => g.motors.map((m) => ({ name: m.name, check: () => rule.check(motor(m, g.name), view) })))
+      return p.motorGroups.flatMap((g) => g.motors.map((m) => {
+        const one = motor(m, g.name)
+        return { name: m.name, applies: () => rule.only?.(one, view) ?? true, check: () => rule.check(one, view) }
+      }))
     case 'motorGroup':
       return p.motorGroups.map((g) => {
         const group = motorGroup(g, view)
-        return { name: g.name, check: () => rule.check(group, view) }
+        return { name: g.name, applies: () => rule.only?.(group, view) ?? true, check: () => rule.check(group, view) }
       })
     case 'device': {
       // On a log the profile doesn't fit, only the companion's devices (runRules lets this rule through for them).

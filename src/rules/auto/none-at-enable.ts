@@ -32,10 +32,11 @@ export default rule({
 
   check(match) {
     const first = match.enabled[0]
-    if (!first || !match.has('fmsAttached')) return
+    if (!first) return match.couldNotCheck('the robot was never enabled')
+    if (!match.has('fmsAttached')) return match.couldNotCheck('the log has no FMS-attached flag')
     const onField = match.signal('fmsAttached').at(first.start) > 0.5
     const autonomous = match.auto[0]?.start === first.start
-    if (!onField || !autonomous) return
+    if (!onField || !autonomous) return match.couldNotCheck('the first enable was not auto on the field')
 
     const chooser = match.text('autoChoice')
     const chosen = chooser.at(first.start)

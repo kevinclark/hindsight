@@ -10,8 +10,8 @@
  * Why: CalGames 2026 Q21: flywheel followers 17 and 18 dropped 25 % below the leader while shooting. It was a belt
  * slipping, fixed just before elims. The velocity loop only sees the leader, so nothing corrected it.
  */
-import { median, round, rule } from '../rule.ts'
-import { FOLLOWER_LINE_SECONDS, mostOffLeader, secondsOffLeader, traceGroup } from './follower-trace.ts'
+import { median, round, rule, secs } from '../rule.ts'
+import { FOLLOWER_LINE_SECONDS, MIN_STEADY_SECONDS, mostOffLeader, secondsOffLeader, traceGroup } from './follower-trace.ts'
 
 export default rule({
   id: 'mech/follower-mismatch',
@@ -29,15 +29,21 @@ export default rule({
   incident: 'CalGames 2026 Q21: flywheel followers 17/18 ran 25 % slow while shooting, a slipping belt (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 1)',
   forEach: 'motorGroup',
 
+  // Only a group whose followers copy the leader's output should spin at the leader's speed.
+  only: (group) => group.sameLoop,
   check(group, match) {
-    if (!group.sameLoop) return
     // The trace code is shared with the Session view's Trends (follower-trace.ts).
     const motors = traceGroup(group, match)
 
     const worst = mostOffLeader(motors)
+    const steadySeconds = motors[0].ratios.length * motors[0].weight
+    // The leader never held a steady speed for long: the followers weren't compared, so this match says nothing.
+    if (steadySeconds < MIN_STEADY_SECONDS && worst.secondsOff < FOLLOWER_LINE_SECONDS) {
+      const held = secs(steadySeconds)
+      return match.couldNotCheck(`the leader held a steady speed for only ${held} (needs ${MIN_STEADY_SECONDS} s)`)
+    }
     if (worst.secondsOff < FOLLOWER_LINE_SECONDS) return
 
-    const steadySeconds = motors[0].ratios.length * motors[0].weight
     const evidence: Record<string, number> = { 'steady seconds compared': round(steadySeconds, 1) }
     for (const m of motors) {
       evidence[`${m.name}: median speed vs leader (%)`] = round(100 * median(m.ratios), 0)

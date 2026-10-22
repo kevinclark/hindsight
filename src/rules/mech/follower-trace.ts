@@ -19,7 +19,7 @@ export const OFF_FRACTION = 0.15
 /** Seconds off the leader at which the rule fires. */
 export const FOLLOWER_LINE_SECONDS = 1
 /** Less steady running than this (unless the rule fires) is too little to call the group measured. */
-const MIN_STEADY_SECONDS = 1
+export const MIN_STEADY_SECONDS = 1
 
 /** One motor's speed on the grid, plus its speed as a fraction of the leader's at each steady moment. */
 export interface MotorTrace {

@@ -28,19 +28,22 @@ const EPOCH_LINE = /([^\t]+?\(\)): (\d+(?:\.\d+)?)s\s*$/
 export function slowSteps(match: MatchView, window: Window): SlowStep[] {
   if (!match.has('console')) return []
   const console = match.text('console').series
+  const lines = console.v.filter((_, i) => inside(window, console.t[i])).flatMap((text) => text.split(/\r?\n/))
+  return slowStepsIn(lines)
+}
+
+/** The same from plain console lines (sim-run reads them from the simulator, not a log). */
+export function slowStepsIn(lines: string[]): SlowStep[] {
   const byName = new Map<string, SlowStep>()
-  for (let i = 0; i < console.t.length; i++) {
-    if (!inside(window, console.t[i])) continue
-    for (const line of console.v[i].split(/\r?\n/)) {
-      const epoch = EPOCH_LINE.exec(line)
-      if (!epoch) continue
-      const ms = 1000 * Number(epoch[2])
-      if (ms <= SLOW_STEP_MS) continue
-      const step = byName.get(epoch[1]) ?? { name: epoch[1], loops: 0, worstMs: 0 }
-      step.loops++
-      step.worstMs = Math.max(step.worstMs, ms)
-      byName.set(epoch[1], step)
-    }
+  for (const line of lines) {
+    const epoch = EPOCH_LINE.exec(line)
+    if (!epoch) continue
+    const ms = 1000 * Number(epoch[2])
+    if (ms <= SLOW_STEP_MS) continue
+    const step = byName.get(epoch[1]) ?? { name: epoch[1], loops: 0, worstMs: 0 }
+    step.loops++
+    step.worstMs = Math.max(step.worstMs, ms)
+    byName.set(epoch[1], step)
   }
   const steps = [...byName.values()]
   const others = steps.filter((s) => s.name !== OUTER_STEP)

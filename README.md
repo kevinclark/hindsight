@@ -273,6 +273,15 @@ snapshot shows exactly what changed. The collector only reads (five allowlisted 
 also list, copy and convert Phoenix `.hoot` logs with the owlet AdvantageScope already cached. Student guide:
 `docs/robot-snapshot.md`.
 
+## sim-run: robot code in the desktop simulator
+
+`node scripts/sim-run.ts <robot-code folder>` builds a copy of the code, runs it in WPILib's desktop simulator with no
+window, and drives it like a Driver Station: start up and enable twice, every auto in the chooser on blue and red, and
+drive forward on both alliances, plus the team's own scenarios. It reports crashes (with the line in your code), zeroes
+cut off by another command or never finished, autos that don't finish or don't move, red behaving like blue, and the
+team's own expectations; Hindsight's rules run on each run's log. It never changes the robot-code folder. How to write
+a scenario file: [docs/sim-run.md](docs/sim-run.md).
+
 ## Foresight: the pre-match go/no-go, live (phase 1)
 
 Built to `8033/robot/foresight-phase1-brief.md`. **Foresight** (top of the page) connects to the robot over a tether

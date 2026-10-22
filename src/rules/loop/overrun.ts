@@ -28,6 +28,9 @@ export default rule({
     const loop = match.signal('loopCycleMs')
     const auto = loop.samples(match.auto)
     const teleop = loop.samples(match.teleop)
+    if (auto.length === 0 && teleop.length === 0) {
+      return match.couldNotCheck(match.enabled.length === 0 ? 'the robot was never enabled' : 'no loop times logged in auto or teleop')
+    }
     const autoShare = shareOver20ms(auto)
     const teleopShare = shareOver20ms(teleop)
 

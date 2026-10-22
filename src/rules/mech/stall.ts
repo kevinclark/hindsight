@@ -14,11 +14,14 @@
  * 0.2 rot/s lines come from the jam; for any other motor they are assumed. The 10° line is assumed.
  * Why: 2026-02-21 practice: a screw jammed the turret, and no rule caught it.
  */
-import { above, nearZero, plural, round, rule, secs, totalSeconds } from '../rule.ts'
+import { above, beyond, nearZero, plural, round, rule, secs, totalSeconds } from '../rule.ts'
 import type { Episode, MatchView, MotorView } from '../view.ts'
 
 const STALL_AMPS = 30 // stator current; measured (the turret jam peaked at 45–53 A)
 const STILL_ROT_PER_S = 0.2 // speed, in the units the velocity key logs (turret rotations/s for the 2026 turret)
+// Faster than this at any moment while enabled, the motor was used in the match. Assumed: of 45 local logs whose turret
+// never passed STILL_ROT_PER_S, 31 read exactly 0 and 14 peaked at 0.012–0.178 rot/s (12 of them above 0.05).
+const TURNED_ROT_PER_S = 0.05
 const LONGER_THAN_SECONDS = 0.5 // measured: jam stalls 0.9–13.4 s, every other mid-travel turret stall 0.18 s or less
 const AT_SETPOINT_DEGREES = 10 // closer than this to its setpoint, it is pushing a stop, not jammed; assumed
 
@@ -37,15 +40,18 @@ export default rule({
   incident: '2026-02-21 practice: a screw jammed the turret, stalled 13.4 s at 45 A (failure-detection-measurements §6)',
   forEach: 'motor',
 
+  // Only motors the robot profile says never push a hard stop: any stall there is a jam.
+  only: (motor, match) => !!groupOf(motor, match)?.neverStalls,
   check(motor, match) {
-    const group = match.profile.motorGroups.find((g) => g.name === motor.group)
-    if (!group?.neverStalls) return
+    const setpoint = groupOf(motor, match)?.setpoint
     const found = stalls(motor, match)
+    // A motor that never turned while enabled was never asked to: it can't show it doesn't stall.
+    if (found.length === 0 && !turned(motor, match)) return match.couldNotCheck('it never turned while enabled')
     if (found.length === 0) return
 
     const longest = found.reduce((a, b) => (b.seconds > a.seconds ? b : a))
     const highest = motor.stator().highest(match.between(longest.start, longest.end)).value
-    const short = group.setpoint ? degreesShort(group.setpoint, longest, match) : NaN
+    const short = setpoint ? degreesShort(setpoint, longest, match) : NaN
     const likely: string[] = []
     if (short > AT_SETPOINT_DEGREES) likely.push('jam')
     if (short <= AT_SETPOINT_DEGREES) likely.push('hard-stop')
@@ -73,6 +79,13 @@ export default rule({
 function stalls(motor: MotorView, match: MatchView): Episode[] {
   const pushing = motor.stator().episodes(above(STALL_AMPS), { during: match.enabled })
   return motor.velocity().episodes(nearZero(STILL_ROT_PER_S), { during: pushing, longerThan: LONGER_THAN_SECONDS })
+}
+
+const groupOf = (motor: MotorView, match: MatchView) => match.profile.motorGroups.find((g) => g.name === motor.group)
+
+/** Did the motor turn at all while enabled? */
+function turned(motor: MotorView, match: MatchView): boolean {
+  return motor.velocity().episodes(beyond(TURNED_ROT_PER_S), { during: match.enabled }).length > 0
 }
 
 /** How far the mechanism sat from its setpoint, in degrees, halfway through a stall (NaN if either isn't logged). */

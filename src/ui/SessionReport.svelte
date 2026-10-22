@@ -41,7 +41,8 @@
             <span class={`sev ${f.severity}`}>{f.sevWord}</span>
             <span class={`conf ${f.confidence.replace(/ /g, '-')}`}>{f.confidenceWord}</span>
             <span class="t">{#if f.cameBack.length}<span class="badge">Came back after a fix ({f.cameBack.join(', ')})</span> {/if}<strong class="ttl">{f.title}</strong>
-              <span class="small">{f.rateText}{f.measured ? ` · ${f.measured}` : ''}{f.marks ? ` · ${f.marks}` : ''} · <code>{f.key}</code></span></span>
+              <span class="small">{f.rateText}{f.measured ? ` · ${f.measured}` : ''}{f.marks ? ` · ${f.marks}` : ''} · <code>{f.key}</code></span>
+              {#if f.stopped}<span class="stopped" class:sunk={f.sinks}>{f.stopped}</span>{/if}</span>
           </li>
         {/each}
       </ul>
@@ -128,6 +129,8 @@
   .t { display: block; }
   .ttl { font-size: 8pt; }
   .t .small { display: block; overflow-wrap: anywhere; font-size: 7pt; line-height: 1.08; }
+  .stopped { display: block; font-size: 7.5pt; line-height: 1.1; overflow-wrap: anywhere; }
+  .stopped.sunk { font-weight: 700; }
   .badge { font-size: 7.5pt; font-weight: 700; padding: 0 0.3rem; border: 1px solid var(--error); border-radius: 3px; color: var(--error); }
   .multiples { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.15rem 0.4rem; margin-top: 0.15rem; }
   figure { margin: 0; break-inside: avoid; }

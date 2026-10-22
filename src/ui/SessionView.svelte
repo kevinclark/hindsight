@@ -28,6 +28,7 @@
   import { buildCard } from '../report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
   import { allMarked, crashedNote, gridCells, marksText, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
+  import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks).
   let { marks, onOpen, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
@@ -117,11 +118,17 @@
   // "Once" rows (one match only, low confidence) fold under one summary; the rest stay listed. Same order inside each.
   // A row that came back after a fix stays listed whatever its confidence: it is the news, never folded away.
   const folds = (f: (typeof merged)[number]) => f.confidence === 'once' && cameBack(f.key, f.matches).length === 0
+  // Whether each finding stopped firing (session/stopped.ts): the student's fixed mark, or "not seen since".
+  const stopped = $derived(new Map(merged.map((f) => [f.key, stoppedFiring(shown!, f, issues.get(f.key))])))
+  // Potentially fixed warnings (never errors) sit below the live findings, in their own list.
+  const sunk = (f: (typeof merged)[number]) => sinks(stopped.get(f.key) ?? null, f.severity)
   // Marked "not a real problem" in every match it fired in: listed apart, like Match review's known issues.
   const filedRows = $derived(merged.filter(allMarked))
   const unfiled = $derived(merged.filter((f) => !allMarked(f)))
-  const listed = $derived(unfiled.filter((f) => !folds(f)))
-  const onceRows = $derived(unfiled.filter(folds))
+  const live = $derived(unfiled.filter((f) => !sunk(f)))
+  const listed = $derived(live.filter((f) => !folds(f)))
+  const onceRows = $derived(live.filter(folds))
+  const stoppedRows = $derived(unfiled.filter(sunk))
   // What the fold holds, counted from its rows: "43 errors, 4 warnings".
   const onceHolds = $derived((['error', 'warning', 'info'] as const).map((sev) => [sev, onceRows.filter((f) => f.severity === sev).length] as const).filter(([, n]) => n > 0).map(([sev, n]) => (sev === 'info' ? `${n} info` : `${n} ${sev}${n === 1 ? '' : 's'}`)).join(', '))
   // Rule × match rows: most matches fired first, then the worse severity, then the rules' own order.
@@ -404,6 +411,7 @@
 {#snippet row(f: (typeof merged)[number])}
   {@const back = cameBack(f.key, f.matches)}
   {@const marked = marksText(shown!, f)}
+  {@const stop = stopped.get(f.key)}
   <li class={f.severity} class:filed={allMarked(f)}>
     <span class="lead"><span class="sev"><span aria-hidden="true">{SEV_ICON[f.severity]}</span> {SEV_WORD[f.severity]}</span><span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span></span>
     <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
@@ -411,6 +419,7 @@
       <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
     {/if}
     {#if marked}<span class="marked">↳ {marked}</span>{/if}
+    {#if stop}<span class="stopped" class:sunk={sunk(f)} data-stopped>{stoppedText(shown!, stop, f)}</span>{/if}
     <span class="latest">Latest: {f.title}</span>
   </li>
 {/snippet}
@@ -536,6 +545,15 @@
       </ul>
     </details>
   {/if}
+  {#if stoppedRows.length}
+    <h4 class="stopped-head" data-stopped-list>Stopped firing: potentially fixed ({stoppedRows.length})</h4>
+    <p class="hint">Not seen in the later matches, and a run that clean rarely happens with no fix (1 time in 20 or less). Only a student's fixed mark says "fixed": the log can't see a pit repair. Errors stay in the list above whatever this says.</p>
+    <ul class="merged">
+      {#each stoppedRows as f (f.key)}
+        {@render row(f)}
+      {/each}
+    </ul>
+  {/if}
   {#if filedRows.length}
     <details class="once-fold filed-fold">
       <summary>{filedRows.length} marked not a real problem in every match {filedRows.length === 1 ? 'it' : 'they'} fired in</summary>
@@ -618,6 +636,10 @@
   .merged { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--border); }
   .merged li { display: grid; grid-template-columns: 8rem 1fr; gap: 0.1rem 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
   .merged .measured, .merged .latest, .merged .marked { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
+  /* Stopped firing: the text carries it (no colour of its own); bold when it is what put the row below the live ones. */
+  .merged .stopped { grid-column: 2; overflow-wrap: anywhere; }
+  .merged .stopped.sunk { font-weight: 600; }
+  .stopped-head { font-size: 0.9rem; margin: 1rem 0 0.1rem; }
   /* Marked not a real problem in every match it fired in: muted like Match review's known issues; the words still say its severity. */
   .merged .title { overflow-wrap: anywhere; }
   .merged .title code { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
@@ -653,5 +675,5 @@
   .list thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   input:not([type='file']), select { min-height: 24px; box-sizing: border-box; }
   input, select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; max-width: 100%; }
-  @media (max-width: 640px) { .merged li { grid-template-columns: 1fr; } .merged .measured, .merged .latest, .merged .marked { grid-column: 1; } }
+  @media (max-width: 640px) { .merged li { grid-template-columns: 1fr; } .merged .measured, .merged .latest, .merged .marked, .merged .stopped { grid-column: 1; } }
 </style>

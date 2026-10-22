@@ -34,6 +34,7 @@ export default rule({
   incident: 'CalGames 2026 Q13: comms lost at 417.4 s (7.4 s dead) and 426.4 s (4.3 s) (2026-10-17-calgames-q13-log-analysis.md §2)',
 
   check(match) {
+    if (match.wholeMatch.length === 0) return match.couldNotCheck('no match in this log')
     const losses = commsLosses(match)
     if (losses.length === 0) return
     // Extra evidence, each optional: how long the outputs stayed off, the battery, the radio, the DS log.

@@ -23,7 +23,7 @@ import { coverage, worstAcross, type LoggedState } from '../coverage/coverage.ts
  * shape is the same as this one's. Bump it whenever MatchSummary changes in a way old code can't be drawn from
  * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it.
  */
-export const SUMMARY_SHAPE = 2
+export const SUMMARY_SHAPE = 3
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 

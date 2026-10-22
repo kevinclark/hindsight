@@ -36,7 +36,8 @@ export default rule({
 
   check(match) {
     const autoStart = match.autoStart
-    if (!match.onField || autoStart === null) return
+    if (!match.onField) return match.couldNotCheck('not a match on the field')
+    if (autoStart === null) return match.couldNotCheck('the robot never enabled in auto')
     const attached = match.signal('dsAttached')
     const autoEnd = autoStart + match.profile.game.autoSeconds
     const autoPeriods = match.auto.filter((a) => a.start >= autoStart && a.start < autoEnd)
