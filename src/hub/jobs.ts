@@ -8,6 +8,8 @@ export interface JobHandle { cancelled: boolean }
 export type Work<T> = (job: JobHandle, progress: (done: number, total: number, current: string) => void) => Promise<T>
 
 export class JobRunner {
+  /** The job that finished last: its report, or the words of its error. Kept so a page that reloaded can still show it. */
+  lastFinished: { job: string; report?: unknown; error?: string; at: number } | null = null
   private running: { handle: JobHandle; name: string; latest: JobProgress | null } | null = null
 
   /** `send` gets every progress event, and `null` when the job ends, so a page can clear its bar. */
@@ -19,7 +21,12 @@ export class JobRunner {
     if (this.running) throw new Error('Another job is running. Wait for it or stop it first.')
     const mine: { handle: JobHandle; name: string; latest: JobProgress | null } = (this.running = { handle: { cancelled: false }, name, latest: null })
     try {
-      return await work(mine.handle, (done, total, current) => { mine.latest = { job: name, done, total, current }; send(mine.latest) })
+      const report = await work(mine.handle, (done, total, current) => { mine.latest = { job: name, done, total, current }; send(mine.latest) })
+      this.lastFinished = { job: name, report, at: Date.now() }
+      return report
+    } catch (e) {
+      this.lastFinished = { job: name, error: e instanceof Error ? e.message : String(e), at: Date.now() }
+      throw e
     } finally {
       this.running = null
       send(null)

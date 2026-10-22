@@ -7,13 +7,13 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { describeLog, robotIdentity } from '../src/hub/describe.ts'
 import { describeFile, type Described } from '../src/hub/describe-file.ts'
-import { Catalog } from '../src/hub/catalog.ts'
+import { Catalog, newerReading } from '../src/hub/catalog.ts'
 import { fmsPlace, facetValues, robotIsGuess } from '../src/hub/facets.ts'
 import { resolveEvent, eventTableYears } from '../src/hub/events.ts'
 import { ingest, localFolderFiles } from '../src/hub/ingest.ts'
 import { JobRunner } from '../src/hub/jobs.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
-import { redescribe } from '../src/hub/redescribe.ts'
+import { readingOf, redescribe } from '../src/hub/redescribe.ts'
 import { parseManifest, serializeRecord, type LogRecord, type MetaRecord } from '../src/hub/types.ts'
 import { PROFILES } from '../src/profiles/index.ts'
 import { robotLog } from './helpers/hub-logs.ts'
@@ -59,7 +59,7 @@ const base = (over: Partial<LogRecord> = {}): LogRecord => ({
   onField: false, batteryId: null, robot: { profileId: 'p', name: 'Robot A', how: 'signals', fit: 0.2 }, build: null, stub: false, hardwareId: null,
   sha256: 'a1', size: 1, path: 'logs/2026-2027/2026-10-17/a.wpilog', names: ['a.wpilog'], modifiedTime: null, from: 'folder', recordedAt: 10, machine: 'm1', ...over,
 })
-const meta = (m: Partial<LogRecord>, recordedAt: number, sha256 = 'a1'): MetaRecord => ({ type: 'meta', sha256, meta: m, recordedAt, machine: 'm2' })
+const meta = (m: Partial<LogRecord>, recordedAt: number, sha256 = 'a1', describer = 'D'): MetaRecord => ({ type: 'meta', sha256, meta: m, describer, recordedAt, machine: 'm2' })
 
 describe('a later reading laid over a log record', () => {
   it('parses a meta record and skips a malformed one', () => {
@@ -88,6 +88,22 @@ describe('a later reading laid over a log record', () => {
     expect(c.bySha('a1')!.event).toBe('')
     expect(c.bySha('zz')).toBeUndefined()
     expect(c.size).toBe(2)
+  })
+  it('prefers the reading of the newer app version; with the same version, the later one', () => {
+    const c = new Catalog()
+    c.add(base())
+    c.add(meta({ event: 'from 0.2.0' }, 20, 'a1', '0.2.0+aaaa'))
+    c.add(meta({ event: 'from 0.1.0, later' }, 90, 'a1', '0.1.0+bbbb')) // written later by an older app
+    expect(c.bySha('a1')!.event).toBe('from 0.2.0')
+    c.add(meta({ event: 'from 0.2.0, rebuilt' }, 30, 'a1', '0.2.0+cccc'))
+    expect(c.bySha('a1')!.event).toBe('from 0.2.0, rebuilt')
+    c.add(meta({ event: 'from 0.10.0' }, 5, 'a1', '0.10.0+dddd')) // numeric, not text, order
+    expect(c.bySha('a1')!.event).toBe('from 0.10.0')
+    expect(newerReading(meta({}, 1, 'a1', ''), meta({}, 2, 'a1', '0.1.0'))).toBe(false) // a record naming no describer is the oldest
+  })
+  it('reads a meta line that names no describer (written by a build before the field)', () => {
+    const { records } = parseManifest('{"type":"meta","sha256":"a1","meta":{"event":"TEST"},"recordedAt":3,"machine":"m"}\n')
+    expect(records).toHaveLength(1)
   })
   it('keeps names from a second machine\'s record of the same bytes', () => {
     const c = new Catalog()
@@ -144,6 +160,16 @@ describe('the job runner', () => {
     expect(events).toEqual([{ job: 'First', done: 1, total: 4, current: 'a.wpilog' }, null])
     expect(await runner.run('Third', async () => 3)).toBe(3)
   })
+  it('keeps how the last job ended: its report, or its error', async () => {
+    const runner = new JobRunner()
+    expect(runner.lastFinished).toBeNull()
+    await runner.run('Reading', async () => ({ added: [1, 2], skipped: 3 }))
+    expect(runner.lastFinished).toMatchObject({ job: 'Reading', report: { added: [1, 2], skipped: 3 } })
+    await expect(runner.run('Syncing', async () => { throw new Error('offline') })).rejects.toThrow('offline')
+    expect(runner.lastFinished).toMatchObject({ job: 'Syncing', error: 'offline' })
+    expect(runner.lastFinished!.report).toBeUndefined()
+    await expect(runner.run('Another', async () => 1, () => {})).resolves.toBe(1)
+  })
   it('reports a job that has not sent progress yet by its name', async () => {
     const runner = new JobRunner()
     let seen: unknown
@@ -184,16 +210,16 @@ describe('reading a library\'s logs again', () => {
       return real
     }
     const seen: string[] = []
-    const report = await redescribe(lib, { describe: fake, onProgress: (_d, _t, current) => seen.push(current) })
+    const report = await redescribe(lib, { describer: 'T1', describe: fake, onProgress: (_d, _t, current) => seen.push(current) })
     expect(report).toEqual({
-      wpilogs: 5, changed: 1, unchanged: 1, missing: 1,
+      wpilogs: 5, changed: 1, unchanged: 1, skipped: 0, missing: 1,
       failed: [{ path: pathOf('d'), reason: 'unreadable test log' }, { path: pathOf('e'), reason: expect.stringContaining('sha-256') }],
     })
     expect(seen.at(-1)).toBe('')
     const after = await manifestLines()
     expect(after.slice(0, before.length)).toEqual(before)
-    expect(after).toHaveLength(before.length + 1)
-    const written = JSON.parse(after.at(-1)!) as MetaRecord
+    expect(after).toHaveLength(before.length + 2) // the changed log, and b stamped as read by this describer
+    const written = after.slice(before.length).map((l) => JSON.parse(l) as MetaRecord).find((m) => m.sha256 === record('a').sha256)!
     expect(written).toMatchObject({ type: 'meta', sha256: record('a').sha256, machine: 'm1' })
     // The fields that decide where the file lives are not in what was written, and the catalog keeps them.
     expect(Object.keys(written.meta)).not.toContain('playedAt')
@@ -209,17 +235,53 @@ describe('reading a library\'s logs again', () => {
 
   it('finds nothing to change the second time', async () => {
     const before = await manifestLines()
-    const same = await redescribe(lib, { describe: async (path, name) => {
+    const same = await redescribe(lib, { describer: 'T1', describe: async (path, name) => {
       const real = await describeFile(path, name)
       return name === 'a.wpilog' ? { ...real, meta: { ...real.meta, event: 'cacg', robot: { profileId: null, name: 'TestCode', how: 'signals', fit: 0.1 } } } : real
     } })
-    expect(same).toMatchObject({ wpilogs: 5, changed: 0, unchanged: 4, missing: 1, failed: [] })
-    expect(await manifestLines()).toEqual(before)
+    expect(same).toMatchObject({ wpilogs: 5, changed: 0, unchanged: 2, skipped: 2, missing: 1, failed: [] }) // a and b are skipped; d and e failed before, so they are read now
+    const after = await manifestLines()
+    expect(after.slice(0, before.length)).toEqual(before)
+    expect(after).toHaveLength(before.length + 2) // d and e could be read this time: stamped, not changed
+    expect((await redescribe(lib, { describer: 'T1', describe: describeFile })).skipped).toBe(4) // a third run reads nothing
+    expect(await manifestLines()).toEqual(after)
+  })
+
+  it('carries a code link through a later re-reading by another describer', async () => {
+    const a = lib.catalog.all().find((r) => r.names[0] === 'a.wpilog')!
+    const code = { repo: 'testorg/robot-main', linkedBy: 'codebase' as const, checkedAt: 5 }
+    // What linking code writes: the log's current reading plus the link, naming the describer it copied.
+    await lib.append({ type: 'meta', sha256: a.sha256, meta: { ...readingOf(a), code }, describer: lib.catalog.metaOf(a.sha256)!.describer, recordedAt: Date.now(), machine: lib.machine })
+    expect(lib.catalog.bySha(a.sha256)!.code).toEqual(code)
+    expect((await redescribe(lib, { describer: 'T1', describe: describeFile })).skipped).toBe(4) // the link did not make it look unread
+    const report = await redescribe(lib, { describer: 'T2', describe: async (path, name) => {
+      const real = await describeFile(path, name)
+      return name === 'a.wpilog' ? { ...real, meta: { ...real.meta, event: 'again' } } : real
+    } })
+    expect(report).toMatchObject({ changed: 1, unchanged: 3, skipped: 0 })
+    const now = lib.catalog.bySha(a.sha256)!
+    expect(now).toMatchObject({ event: 'again', code })
+    expect(lib.catalog.metaOf(a.sha256)!.describer).toBe('T2')
+    expect((await LocalLibrary.open(libRoot, 'm1')).catalog.bySha(a.sha256)).toEqual(now)
+  })
+
+  it('sees a record another process appended to this machine\'s own manifest, after reload', async () => {
+    const other = await LocalLibrary.open(libRoot, 'm1') // a second process on the same library
+    const a = other.catalog.all().find((r) => r.names[0] === 'a.wpilog')!
+    await other.append({ type: 'meta', sha256: a.sha256, meta: { event: 'from another process' }, describer: 'T3', recordedAt: Date.now(), machine: 'm1' })
+    expect(lib.catalog.bySha(a.sha256)!.event).toBe('again')
+    await lib.reload()
+    expect(lib.catalog.bySha(a.sha256)!.event).toBe('from another process')
+    // Appending after a reload continues the file that is on disk, not an older copy of it.
+    await lib.append({ type: 'meta', sha256: a.sha256, meta: { event: 'then this' }, describer: 'T3', recordedAt: Date.now(), machine: 'm1' })
+    const lines = await manifestLines()
+    expect(lines.filter((l) => l.includes('from another process') || l.includes('then this'))).toHaveLength(2)
+    expect(lib.ownLines()).toEqual(lines)
   })
 
   it('stops when cancelled', async () => {
     let calls = 0
-    const report = await redescribe(lib, { describe: describeFile, cancelled: () => calls++ >= 1 })
+    const report = await redescribe(lib, { describer: 'T1', describe: describeFile, cancelled: () => calls++ >= 1 })
     expect(report.changed + report.unchanged + report.missing + report.failed.length).toBeLessThan(5)
   })
 })

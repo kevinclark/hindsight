@@ -41,6 +41,26 @@ function overlay(base: LogRecord, meta: MetaRecord | undefined): LogRecord {
   return { ...base, ...later } as LogRecord
 }
 
+/** The dotted numbers at the start of a describer id ("0.1.0+3fa9…" -> [0, 1, 0]); [] for none. */
+function versionOf(describer: string | undefined): number[] {
+  const m = /^(\d+(?:\.\d+)*)/.exec(describer ?? '')
+  return m ? m[1].split('.').map(Number) : []
+}
+
+/**
+ * Whether reading `a` should replace reading `b`. The app version in the describer id decides when they differ (a newer
+ * Hindsight reads better). The source hash after the "+" is not ordered, so with the same version (or none) the later
+ * recordedAt decides, which is also what lets linking code, which copies a describer id, win over the reading it copied.
+ */
+export function newerReading(a: MetaRecord, b: MetaRecord): boolean {
+  const [x, y] = [versionOf(a.describer), versionOf(b.describer)]
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0)
+    if (d !== 0) return d > 0
+  }
+  return a.recordedAt >= b.recordedAt
+}
+
 export class Catalog {
   /** Each log as the library shows it: the earliest record of its sha-256 with the latest reading laid over it. */
   private logs = new Map<string, LogRecord>()
@@ -72,7 +92,7 @@ export class Catalog {
     } else if (r.type === 'meta') {
       // The latest reading of a log wins, whichever machine wrote it; it may arrive before the log's own record.
       const have = this.metas.get(r.sha256)
-      if (!have || r.recordedAt >= have.recordedAt) { this.metas.set(r.sha256, r); this.show(r.sha256) }
+      if (!have || newerReading(r, have)) { this.metas.set(r.sha256, r); this.show(r.sha256) }
     } else if (r.type === 'alias') {
       const set = this.extraNames.get(r.sha256) ?? new Set()
       set.add(r.name)
@@ -87,6 +107,8 @@ export class Catalog {
 
   /** The log recorded at a library path, if any (another machine may have filed a different log there). */
   byPath(path: string): LogRecord | undefined { return this.all().find((r) => r.path === path) }
+  /** The reading laid over a log, if any. */
+  metaOf(sha256: string): MetaRecord | undefined { return this.metas.get(sha256) }
   bySha(sha256: string): LogRecord | undefined { return this.logs.get(sha256) }
   byMd5(md5: string): LogRecord | undefined { const sha = this.md5s.get(md5); return sha ? this.logs.get(sha) : undefined }
   namesOf(sha256: string): string[] {

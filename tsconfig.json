@@ -23,6 +23,7 @@
     "scripts/**/*.ts",
     "electron/**/*.ts",
     "vite.config.ts",
-    "vite.electron.config.ts"
+    "vite.electron.config.ts",
+    "vite.build-id.ts"
   ]
 }

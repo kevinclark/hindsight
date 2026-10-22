@@ -36,8 +36,9 @@ export class LocalLibrary {
     return lib
   }
 
-  /** Read every manifest in the folder again (after sync brought teammates' in). */
+  /** Read every manifest in the folder again, this machine's own too (after sync brought teammates' in, or another process appended). */
   async reload(): Promise<void> {
+    this.own = (await readText(this.store, this.ownManifestPath)) ?? ''
     const texts: string[] = []
     for (const f of await this.store.list('manifests')) if (f.path.endsWith('.jsonl')) texts.push((await readText(this.store, f.path)) ?? '')
     this.catalog = Catalog.from(texts)

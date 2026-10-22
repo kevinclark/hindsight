@@ -16,6 +16,19 @@ export function kindOf(name: string): LogKind | null {
 
 export type DateSource = 'robot clock' | 'file name' | 'driver station clock' | 'file time' | 'unknown'
 
+/** The repository whose code a log ran, found by the Library view's "Link code" (src/hub/codelink.ts). */
+export interface CodeLink {
+  /** "owner/name" on GitHub. */
+  repo: string
+  /** 'sha': the log's build commit is in that repo. 'codebase': only the log's Codebase text is recorded by that repo's code. */
+  linkedBy: 'sha' | 'codebase'
+  /** The full 40-character commit, when linkedBy is 'sha'. */
+  sha?: string
+  /** Other repos that record the same Codebase text and lost the tie-break. */
+  candidates?: string[]
+  checkedAt: number
+}
+
 export interface LogRobot {
   profileId: string | null
   name: string
@@ -47,6 +60,8 @@ export interface LogMeta {
    */
   robot: LogRobot | null
   build: { sha: string; branch: string } | null
+  /** Set by linking code, never by reading the log. */
+  code?: CodeLink
   /** Under 1 MB with no enabled time: a log the robot started and abandoned (akit_<hex>.wpilog on Drive today). */
   stub: boolean
   /** Hoot files: the part of the name before the timestamp ("rio", or a CANivore serial). */
@@ -86,7 +101,15 @@ export interface TagRecord { type: 'tag'; target: TagTarget; field: TagField; va
  * A later reading of a log already in the library (the describer improved). The catalog overlays the latest one on the log
  * record, except the fields that decide the file's path or identity (`kind`, `playedAt`, `dateSource`), which never change.
  */
-export interface MetaRecord { type: 'meta'; sha256: string; meta: Partial<LogMeta>; recordedAt: number; machine: string }
+export interface MetaRecord {
+  type: 'meta'
+  sha256: string
+  meta: Partial<LogMeta>
+  /** Which build of the describer wrote it: "<app version>+<source hash>" (a record from linking code carries the one it copied; '' when it copied none). */
+  describer: string
+  recordedAt: number
+  machine: string
+}
 
 export type ManifestRecord = LogRecord | AliasRecord | TagRecord | MetaRecord
 

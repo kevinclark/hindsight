@@ -7,18 +7,22 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { Described } from './describe-file.ts'
 import type { LocalLibrary } from './library-store.ts'
-import type { LogMeta } from './types.ts'
+import type { LogMeta, LogRecord } from './types.ts'
 
 export interface RedescribeReport {
   wpilogs: number
   changed: number
   unchanged: number
+  /** Already read by this build of the describer (the log's latest meta carries its id): not read again. */
+  skipped: number
   /** Recorded in the library but not on this computer. */
   missing: number
   failed: { path: string; reason: string }[]
 }
 
 export interface RedescribeOptions {
+  /** This build's describer id, written on every record and compared with the latest meta of each log. */
+  describer: string
   describe(path: string, name: string): Promise<Described>
   cancelled?(): boolean
   onProgress?(done: number, total: number, current: string): void
@@ -31,24 +35,33 @@ export function describable(meta: LogMeta): Partial<LogMeta> {
   return Object.fromEntries(Object.entries(meta).filter(([k]) => !FIXED.has(k))) as Partial<LogMeta>
 }
 
+const META_KEYS = ['matchWindow', 'wall', 'event', 'matchType', 'matchNumber', 'onField', 'batteryId', 'robot', 'build', 'stub', 'hardwareId', 'code'] as const
+
+/** What a log record shows of a reading (no path, hashes or names), as a `meta` record carries it, `code` included. */
+export function readingOf(r: LogRecord): Partial<LogMeta> {
+  return Object.fromEntries(META_KEYS.filter((k) => r[k] !== undefined).map((k) => [k, r[k]])) as Partial<LogMeta>
+}
+
 export async function redescribe(lib: LocalLibrary, options: RedescribeOptions): Promise<RedescribeReport> {
   const records = lib.catalog.all().filter((r) => r.kind === 'wpilog').sort((a, b) => a.path.localeCompare(b.path))
-  const report: RedescribeReport = { wpilogs: records.length, changed: 0, unchanged: 0, missing: 0, failed: [] }
+  const report: RedescribeReport = { wpilogs: records.length, changed: 0, unchanged: 0, skipped: 0, missing: 0, failed: [] }
   let done = 0
   for (const r of records) {
     if (options.cancelled?.()) break
     options.onProgress?.(done++, records.length, r.path.split('/').pop() ?? r.path)
+    if (options.describer && lib.catalog.metaOf(r.sha256)?.describer === options.describer) { report.skipped++; continue }
     if ((await lib.store.stat(r.path)) === null) { report.missing++; continue }
     try {
       const read = await options.describe(lib.store.at(r.path), r.names[0] ?? r.path.split('/').pop()!)
       if (read.sha256 !== r.sha256) { report.failed.push({ path: r.path, reason: 'the file on disk is not the one the library recorded (its sha-256 differs)' }); continue }
       const meta = describable(read.meta)
-      if (Object.entries(meta).every(([k, v]) => isDeepStrictEqual(v, (r as unknown as Record<string, unknown>)[k]))) report.unchanged++
-      else {
-        // The whole reading, not only the differences: the catalog keeps the latest meta record per log, whole.
-        await lib.append({ type: 'meta', sha256: r.sha256, meta, recordedAt: Date.now(), machine: lib.machine })
-        report.changed++
-      }
+      const same = Object.entries(meta).every(([k, v]) => isDeepStrictEqual(v, (r as unknown as Record<string, unknown>)[k]))
+      // The whole reading, not only the differences: the catalog keeps the latest meta record per log, whole. A code link
+      // is not something reading a log can find, so it is carried over from what the library shows now.
+      const whole = r.code ? { ...meta, code: r.code } : meta
+      // Unchanged logs get a record too, so that the next run knows this build has read them and skips them.
+      await lib.append({ type: 'meta', sha256: r.sha256, meta: whole, describer: options.describer, recordedAt: Date.now(), machine: lib.machine })
+      if (same) report.unchanged++; else report.changed++
     } catch (e) {
       report.failed.push({ path: r.path, reason: e instanceof Error ? e.message : String(e) })
     }
