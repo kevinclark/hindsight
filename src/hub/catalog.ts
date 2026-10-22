@@ -54,6 +54,8 @@ export class Catalog {
     } else this.tagRecords.push(r)
   }
 
+  /** The log recorded at a library path, if any (another machine may have filed a different log there). */
+  byPath(path: string): LogRecord | undefined { return this.all().find((r) => r.path === path) }
   bySha(sha256: string): LogRecord | undefined { return this.logs.get(sha256) }
   byMd5(md5: string): LogRecord | undefined { const sha = this.md5s.get(md5); return sha ? this.logs.get(sha) : undefined }
   namesOf(sha256: string): string[] {

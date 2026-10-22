@@ -79,7 +79,11 @@
     try { localStorage.setItem('hindsight.robotAddress', robotAddress) } catch { /* private window */ }
     const r = await work('Reading robot', () => api!.addFromRobot(robotAddress))
     if (!r) return
-    if ('refused' in r) problem = r.refused; else report = r.report
+    if ('refused' in r) problem = r.refused
+    else {
+      report = r.report
+      if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Add logs from the robot again later.`
+    }
   }
   let update = $state<{ version: string; url: string } | null>(null)
 

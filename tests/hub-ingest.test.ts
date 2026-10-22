@@ -16,6 +16,7 @@ const ENABLED: [number, number] = [20, 55]
 
 let work: string
 let source: string
+let sourceBefore: string[]
 let libRoot: string
 
 async function put(rel: string, bytes: Uint8Array | string, mtime = new Date(CLOCK)): Promise<void> {
@@ -67,6 +68,7 @@ describe('ingesting a folder of unorganized logs', () => {
     await put('ds/overlaps.dsevents', dsEvents(wall - 3, 40))
     await put('ds/rio_2026-10-17_19-00-05.hoot', 'hoot bytes, never opened')
     lib = await LocalLibrary.open(libRoot, 'machine-a')
+    sourceBefore = await snapshot(source)
     first = await run(lib)
   })
   afterAll(() => rm(work, { recursive: true, force: true }))
@@ -119,6 +121,7 @@ describe('ingesting a folder of unorganized logs', () => {
   })
 
   it('never touches the originals', async () => {
+    expect(await snapshot(source)).toEqual(sourceBefore) // every file's size and modified time, and no new file
     const files = await localFolderFiles(source)
     expect(files.length).toBe(12)
     expect((await readFile(join(source, 'misc/notes.txt'), 'utf8'))).toBe('ignore me')
@@ -146,6 +149,16 @@ describe('ingesting a folder of unorganized logs', () => {
     const report = await run(lib)
     const added = report.added.find((a) => a.name === 'akit_26-10-17_19-00-00_test_q7.wpilog')!
     expect(added.path).toMatch(/^logs\/2026-2027\/2026-10-17\/akit_26-10-17_19-00-00_test_q7-[0-9a-f]{8}\.wpilog$/)
+  })
+
+  it("does not file a log at a path another machine's log holds, though that file is not on this disk", async () => {
+    const lib4 = await LocalLibrary.open(join(work, 'library-four'), 'machine-d')
+    const theirs = robotLog({ enabled: ENABLED, seed: 'theirs' })
+    await lib4.append({ type: 'log', kind: 'wpilog', playedAt: null, dateSource: 'unknown', wall: null, matchWindow: null, event: '', matchType: null, matchNumber: null, onField: false, batteryId: null, robot: null, build: null, stub: false, hardwareId: null,
+      sha256: 'ee'.repeat(32), size: theirs.length, path: 'logs/undated/Log_2.wpilog', names: ['Log_2.wpilog'], modifiedTime: null, from: 'folder', recordedAt: 1, machine: 'someone-else' })
+    const rep = await ingest(lib4, (await localFolderFiles(join(source, 'misc'))).filter((f) => f.name === 'Log_2.wpilog'), options)
+    expect(rep.added[0].path).toMatch(/^logs\/undated\/Log_2-[0-9a-f]{8}\.wpilog$/)
+    expect(lib4.catalog.byPath('logs/undated/Log_2.wpilog')!.sha256).toBe('ee'.repeat(32))
   })
 
   it('does not read a file again that would not read, until it changes', async () => {

@@ -148,7 +148,10 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const idle = await checkRobotIdle(where)
     if (!idle.ok) return { refused: idle.reason }
     const fs = await connectRobotFs(where)
-    try { return { report: await runIngest('Reading robot', await robotFiles(fs, { tempRoot: app.getPath('temp') })) } } finally { fs.close() }
+    try {
+      const { files, stillWriting } = await robotFiles(fs, { tempRoot: app.getPath('temp') })
+      return { report: await runIngest('Reading robot', files), stillWriting }
+    } finally { fs.close() }
   })
 
   ipcMain.handle('hub:updateInfo', () => update)

@@ -73,6 +73,12 @@ export interface TagRecord { type: 'tag'; target: TagTarget; field: TagField; va
 
 export type ManifestRecord = LogRecord | AliasRecord | TagRecord
 
+function validTarget(t: unknown): boolean {
+  if (typeof t !== 'object' || t === null) return false
+  const x = t as { log?: unknown; day?: unknown }
+  return typeof x.log === 'string' || typeof x.day === 'string'
+}
+
 export function parseManifest(text: string): { records: ManifestRecord[]; skipped: number } {
   const records: ManifestRecord[] = []
   let skipped = 0
@@ -80,7 +86,7 @@ export function parseManifest(text: string): { records: ManifestRecord[]; skippe
     if (line.trim() === '') continue
     try {
       const r = JSON.parse(line) as ManifestRecord
-      if ((r.type === 'log' && typeof r.sha256 === 'string' && typeof r.path === 'string') || (r.type === 'alias' && typeof r.sha256 === 'string') || (r.type === 'tag' && typeof r.field === 'string')) records.push(r)
+      if ((r.type === 'log' && typeof r.sha256 === 'string' && typeof r.path === 'string') || (r.type === 'alias' && typeof r.sha256 === 'string') || (r.type === 'tag' && typeof r.field === 'string' && typeof r.value === 'string' && validTarget(r.target))) records.push(r)
       else skipped++
     } catch { skipped++ }
   }

@@ -94,6 +94,11 @@ describe('manifests', () => {
     expect(records).toEqual([r])
     expect(skipped).toBe(2)
   })
+  it('skips a tag with no usable target instead of letting it break every teammate\'s library', () => {
+    const bad = ['null', '{}', '"x"', '{"log":5}'].map((t) => `{"type":"tag","field":"driver","value":"v","target":${t},"recordedAt":1,"machine":"m"}`).join('\n')
+    expect(parseManifest(bad)).toEqual({ records: [], skipped: 4 })
+    expect(() => Catalog.from([bad]).entries()).not.toThrow()
+  })
   it('keeps the earliest record of the same bytes and all its names, from any machine', () => {
     const a = log({ sha256: 'aa', names: ['one.wpilog'], recordedAt: 5, machine: 'm2', path: 'logs/a/one.wpilog' })
     const b = log({ sha256: 'aa', names: ['two.wpilog'], recordedAt: 3, machine: 'm1', path: 'logs/b/two.wpilog' })

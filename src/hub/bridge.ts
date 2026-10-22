@@ -32,7 +32,7 @@ export interface DriveStatus {
 
 export interface SyncPlan { uploads: number; uploadBytes: number }
 
-export type RobotResult = { refused: string } | { report: IngestReport }
+export type RobotResult = { refused: string } | { report: IngestReport; stillWriting: string[] }
 
 export interface HubApi {
   info(): Promise<{ version: string; machineId: string; libraryDir: string }>

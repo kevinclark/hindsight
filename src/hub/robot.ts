@@ -12,7 +12,7 @@ import { createWriteStream } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Nt4Client, nt4Url, type SocketLike } from '../foresight/nt4-client.ts'
+import { Nt4Client, isFieldLocked, nt4Url, type SocketLike } from '../foresight/nt4-client.ts'
 import { GUARD_CONTROL_DATA } from '../foresight/keys.ts'
 import type { SourceFile } from './ingest.ts'
 import { kindOf } from './types.ts'
@@ -35,6 +35,8 @@ export type Idle = { ok: true } | { ok: false; reason: string }
 
 /** Whether the robot may be pulled from: connected, disabled, field not attached. Anything else, or not knowing, is a refusal. */
 export function checkRobotIdle(address: string, options: { waitMs?: number; makeSocket?: (url: string, protocols: string[]) => SocketLike } = {}): Promise<Idle> {
+  // The field guard locks for the rest of the run (Foresight's rule): say so, rather than wait and time out.
+  if (isFieldLocked()) return Promise.resolve({ ok: false, reason: 'This robot was on the field earlier in this run. Restart Hindsight before pulling logs in the pit.' })
   return new Promise((resolve) => {
     const waitMs = options.waitMs ?? 8000
     let settled = false
@@ -59,7 +61,7 @@ export function checkRobotIdle(address: string, options: { waitMs?: number; make
 }
 
 /** Every log on the robot that is finished being written, as ingest sources (a download happens only when ingest must read one). */
-export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?: (ms: number) => Promise<void>; tempRoot?: string } = {}): Promise<SourceFile[]> {
+export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?: (ms: number) => Promise<void>; tempRoot?: string } = {}): Promise<{ files: SourceFile[]; stillWriting: string[] }> {
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   const walk = async (dir: string, depth: number, out: Map<string, RobotEntry>) => {
@@ -80,9 +82,10 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
   await sleep(1500)
   const second = await scan()
   const out: SourceFile[] = []
+  const stillWriting: string[] = []
   for (const [path, e] of second) {
-    // Still being written: changed since the first listing, or modified in the last 30 s.
-    if (first.get(path)?.size !== e.size || now() - e.mtimeMs < RECENT_MS) continue
+    // Still being written: changed since the first listing, or modified within 30 s of now by either clock (the robot's clock comes from the DS laptop and can be ahead of this one).
+    if (first.get(path)?.size !== e.size || Math.abs(now() - e.mtimeMs) < RECENT_MS) { stillWriting.push(path); continue }
     out.push({
       name: e.name, where: `robot:${path}`, size: e.size, modifiedTime: Math.round(e.mtimeMs), from: 'robot',
       open: async () => {
@@ -93,7 +96,7 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
       },
     })
   }
-  return out.sort((a, b) => a.where.localeCompare(b.where))
+  return { files: out.sort((a, b) => a.where.localeCompare(b.where)), stillWriting }
 }
 
 /**

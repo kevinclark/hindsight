@@ -63,6 +63,14 @@ refuses). It skips files modified in the last 30 s or still growing. It never de
 On start the app asks the public repository's releases once. When a newer app release (`vX.Y.Z`) exists, a banner says
 "Hindsight X.Y is out: download". Unsigned Mac builds cannot update themselves.
 
+## Limits
+
+- Drive can hold two files of one name, and "does it exist, then create it" is not atomic: two computers uploading the same
+  path at once can leave two files (the library reads one). Sync from one computer at a time.
+- The robot's idle check runs once, before the pull; an enable during the pull is not noticed.
+- An upload is resumed within a run, not after Hindsight is closed (the upload session address is not kept).
+- Phoenix `.hoot` names are read as UTC (assumed, not compared with a hoot file's own clock).
+
 ## Not verified
 
 See the session note for what was exercised live and what only in tests. In short: the Drive adapter has been run against a

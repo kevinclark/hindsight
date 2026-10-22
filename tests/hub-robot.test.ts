@@ -62,17 +62,25 @@ describe('what is on the robot', () => {
       '/media/sda1': [dir('logs')],
       '/media/sda1/logs': [file('e.dslog')],
     }, { 'growing.wpilog': 50 })
-    const files = await robotFiles(fs, { now: () => NOW, sleep: async () => {} })
+    const { files, stillWriting } = await robotFiles(fs, { now: () => NOW, sleep: async () => {} })
     expect(files.map((f) => f.where)).toEqual([
       'robot:/home/lvuser/logs/a.wpilog', 'robot:/home/lvuser/logs/b.hoot', 'robot:/home/lvuser/logs/old/c.wpilog', 'robot:/media/sda1/logs/e.dslog', 'robot:/U/logs/d.wpilog',
     ])
     expect(files[0]).toMatchObject({ from: 'robot', modifiedTime: NOW - 3600e3, size: 100 })
+    expect(stillWriting).toEqual(['/home/lvuser/logs/fresh.wpilog', '/home/lvuser/logs/growing.wpilog'])
     expect(fs.downloads).toEqual([]) // listing downloads nothing
+  })
+
+  it('skips a file whose time is ahead of this computer\'s clock too, and says so', async () => {
+    const fs = fakeRobot({ '/home/lvuser/logs': [file('ahead.wpilog', 100, -20_000)] })
+    const { files, stillWriting } = await robotFiles(fs, { now: () => NOW, sleep: async () => {} })
+    expect(files).toEqual([])
+    expect(stillWriting).toEqual(['/home/lvuser/logs/ahead.wpilog'])
   })
 
   it('downloads a file to a temp folder only when opened, and removes it when done', async () => {
     const fs = fakeRobot({ '/home/lvuser/logs': [file('a.wpilog')] })
-    const [f] = await robotFiles(fs, { now: () => NOW, sleep: async () => {}, tempRoot: await mkdtemp(join(tmpdir(), 'hindsight-robot-test-')) })
+    const { files: [f] } = await robotFiles(fs, { now: () => NOW, sleep: async () => {}, tempRoot: await mkdtemp(join(tmpdir(), 'hindsight-robot-test-')) })
     const opened = await f.open()
     expect(await readFile(opened.path, 'utf8')).toBe('bytes of /home/lvuser/logs/a.wpilog')
     await opened.done()

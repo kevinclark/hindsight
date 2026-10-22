@@ -6,7 +6,7 @@
  *  - a re-run of the same ingest finds everything already there and writes nothing.
  */
 import { stat } from 'node:fs/promises'
-import { LocalFolderAdapter, fileSource, hashFile } from './local-adapter.ts'
+import { fileSource, hashFile } from './local-adapter.ts'
 import type { Described } from './describe-file.ts'
 import { libraryPath, withShaSuffix } from './layout.ts'
 import type { LocalLibrary } from './library-store.ts'
@@ -101,7 +101,7 @@ async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOpt
     if (d.meta.kind === 'hoot' && d.meta.playedAt === null && file.from === 'robot' && file.modifiedTime) d.meta = { ...d.meta, playedAt: file.modifiedTime, dateSource: 'file time' }
 
     // 3. File a copy.
-    const path = await freePath(lib.store, libraryPath(d.meta, file.name), d.sha256)
+    const path = await freePath(lib, libraryPath(d.meta, file.name), d.sha256)
     if (!(await lib.store.stat(path))) {
       const from = await fileSource(source.path)
       try { await lib.store.writeNew(path, from, { sha256: d.sha256 }) } finally { await from.close() }
@@ -119,10 +119,13 @@ async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOpt
 }
 
 /** The path to file under: the layout path if free; else with the content's first 8 digits added. A copy of this very content already there (a crash before its record was written) is reused. */
-async function freePath(store: LocalFolderAdapter, path: string, sha256: string): Promise<string> {
+async function freePath(lib: LocalLibrary, path: string, sha256: string): Promise<string> {
   for (const candidate of [path, withShaSuffix(path, sha256)]) {
-    if (!(await store.stat(candidate))) return candidate
-    if ((await hashFile(store.at(candidate))).sha256 === sha256) return candidate
+    // Taken by another log this library knows (a teammate's, not downloaded here): its file is not on this disk, but the path is theirs.
+    const recorded = lib.catalog.byPath(candidate)
+    if (recorded && recorded.sha256 !== sha256) continue
+    if (!(await lib.store.stat(candidate))) return candidate
+    if ((await hashFile(lib.store.at(candidate))).sha256 === sha256) return candidate
   }
   throw new Error(`${path} and ${withShaSuffix(path, sha256)} are both taken by other logs`)
 }
