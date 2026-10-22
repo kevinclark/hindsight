@@ -24,7 +24,7 @@ export default rule({
   check(match) {
     if (match.dsLogs.length === 0) return match.couldNotCheck('no .dslog loaded for this match (drop the .dslog together with the .wpilog)')
     const { autoStart, matchEnd } = match
-    if (autoStart === null || matchEnd === null) return
+    if (autoStart === null || matchEnd === null) return match.couldNotCheck('no match in this log')
 
     // Every DS log that stops inside the match counts, including the first of two when the DS app restarted.
     const cutLogs = match.dsLogs.filter((log) => log.endTime > autoStart && log.endTime < matchEnd - 1)

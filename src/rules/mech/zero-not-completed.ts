@@ -42,6 +42,8 @@ export default rule({
       const moved = position.episodes((deg) => (deg - startAngle) * away > mechanism.moveDegrees, { during: [period] })
       if (moved.length) { movedAt = moved[0].start; break }
     }
+    // Never moved and never zeroed: nothing was measured in a wrong frame, and nothing shows the zero worked.
+    if (movedAt === null && !Number.isFinite(doneAt)) return match.couldNotCheck('it never moved while enabled, and never zeroed')
     if (movedAt === null || movedAt >= doneAt) return
     const plot = { signals: [position], unit: '°', from: movedAt - 2, to: movedAt + 6, marks: [movedAt] }
 

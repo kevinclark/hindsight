@@ -36,14 +36,14 @@ export default rule({
   incident: 'Main-breaker trips while being pushed are a known FRC failure (Chief Delphi threads on main-breaker trips, 2024 and 2026).',
 
   check(match) {
-    if (match.wholeMatch.length === 0) return
+    if (match.wholeMatch.length === 0) return match.couldNotCheck('no match in this log')
     // Heating needs current only, so this runs on a log with motor currents and no battery voltage too.
     const grid = match.currents()
     const load = heating(grid.amps, TAU_SECONDS)
     // The peak is looked for inside the match only: heat builds up over the whole log, but a reading held after the
     // match ended is not the match. (No match, no finding: the guard above also leaves out Foresight's pit stretch.)
     const peakAt = indexOfHighest(load, grid.t, match.wholeMatch)
-    if (peakAt < 0) return
+    if (peakAt < 0) return match.couldNotCheck('no motor current logged during the match')
     const share = load[peakAt] / MAIN_BREAKER_A
     if (share < TRIP_BAND[0]) return
 

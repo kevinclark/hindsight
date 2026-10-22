@@ -14,7 +14,7 @@
  * 0.2 rot/s lines come from the jam; for any other motor they are assumed. The 10° line is assumed.
  * Why: 2026-02-21 practice: a screw jammed the turret, and no rule caught it.
  */
-import { above, nearZero, plural, round, rule, secs, totalSeconds } from '../rule.ts'
+import { above, beyond, nearZero, plural, round, rule, secs, totalSeconds } from '../rule.ts'
 import type { Episode, MatchView, MotorView } from '../view.ts'
 
 const STALL_AMPS = 30 // stator current; measured (the turret jam peaked at 45–53 A)
@@ -37,10 +37,13 @@ export default rule({
   incident: '2026-02-21 practice: a screw jammed the turret, stalled 13.4 s at 45 A (failure-detection-measurements §6)',
   forEach: 'motor',
 
+  // Only motors the robot profile says never push a hard stop: any stall there is a jam.
+  only: (motor, match) => !!groupOf(motor, match)?.neverStalls,
   check(motor, match) {
-    const group = match.profile.motorGroups.find((g) => g.name === motor.group)
-    if (!group?.neverStalls) return
+    const group = groupOf(motor, match)!
     const found = stalls(motor, match)
+    // A motor that never turned while enabled was never asked to: it can't show it doesn't stall.
+    if (found.length === 0 && !turned(motor, match)) return match.couldNotCheck('it never turned while enabled')
     if (found.length === 0) return
 
     const longest = found.reduce((a, b) => (b.seconds > a.seconds ? b : a))
@@ -73,6 +76,13 @@ export default rule({
 function stalls(motor: MotorView, match: MatchView): Episode[] {
   const pushing = motor.stator().episodes(above(STALL_AMPS), { during: match.enabled })
   return motor.velocity().episodes(nearZero(STILL_ROT_PER_S), { during: pushing, longerThan: LONGER_THAN_SECONDS })
+}
+
+const groupOf = (motor: MotorView, match: MatchView) => match.profile.motorGroups.find((g) => g.name === motor.group)
+
+/** Did the motor turn at all while enabled? */
+function turned(motor: MotorView, match: MatchView): boolean {
+  return motor.velocity().episodes(beyond(STILL_ROT_PER_S), { during: match.enabled }).length > 0
 }
 
 /** How far the mechanism sat from its setpoint, in degrees, halfway through a stall (NaN if either isn't logged). */
