@@ -13,7 +13,7 @@
   import type { FetchReport, SyncReport } from '../hub/sync.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
-  import { FACETS, FACET_LABELS, facetCounts, facetValues, filterEntries, type FacetId, type Selection } from '../hub/facets.ts'
+  import { FACETS, FACET_LABELS, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, type FacetId, type Selection } from '../hub/facets.ts'
   import { baseName, dayText, withShaSuffix } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
 
@@ -37,6 +37,9 @@
   let clientSecret = $state('')
   let robotAddress = $state((() => { try { return localStorage.getItem('hindsight.robotAddress') ?? '' } catch { return '' } })())
   const driveBusy = $derived(!!progress)
+  /** Whether this page started the job whose bar is showing (else another start, or a page load mid-job, and the page polls). */
+  let ownWork = $state(false)
+  const foreign = $derived(!!progress && !ownWork)
 
   async function refresh() {
     if (!api) return
@@ -48,7 +51,8 @@
     if (!api || progress) return undefined
     problem = null
     progress = { job: label, done: 0, total: 0, current: '' }
-    try { return await body() } catch (e) { problem = e instanceof Error ? e.message : String(e); return undefined } finally { progress = null; await refresh().catch(() => {}) }
+    ownWork = true
+    try { return await body() } catch (e) { problem = e instanceof Error ? e.message : String(e); return undefined } finally { ownWork = false; progress = null; await refresh().catch(() => {}) }
   }
   const signIn = () => work('Signing in', () => api!.driveSignIn())
   const signOut = () => work('Signing out', () => api!.driveSignOut())
@@ -90,8 +94,26 @@
   onMount(() => {
     void refresh().catch((e) => { problem = String(e) })
     void api?.updateInfo().then((u) => { update = u })
-    return api?.onProgress((p) => { if (progress) progress = p })
+    // A job already running (the page was reloaded, or something else started it) gets the same bar.
+    void api?.runningJob().then((p) => { if (p && !progress) progress = p }).catch(() => {})
+    return api?.onProgress((p) => {
+      if (p) progress = p
+      else if (!ownWork && progress) { progress = null; void refresh().catch(() => {}) } // the job ended
+    })
   })
+  // Safety net for a bar this page did not start: ask the app every 2 s whether the job is still running.
+  $effect(() => {
+    if (!foreign || !api) return
+    const timer = setInterval(() => {
+      void api.runningJob().then((p) => { if (!p) { progress = null; void refresh().catch(() => {}) } else if (!ownWork) progress = p }).catch(() => {})
+    }, 2000)
+    return () => clearInterval(timer)
+  })
+  async function readAgain() {
+    const r = await work('Reading logs again', () => api!.redescribe())
+    if (r) rereadReport = r
+  }
+  let rereadReport = $state.raw<import('../hub/redescribe.ts').RedescribeReport | null>(null)
 
   async function addFolder() {
     if (!api) return
@@ -149,6 +171,18 @@
   }
   const dayTarget = (day: string): TagTarget => ({ day })
   const typed = (e: Event) => (e.currentTarget as HTMLInputElement).value
+  /**
+   * What a day's header shows for place. All logs on the field with one resolved event name: that name, no input. Otherwise an
+   * input, labelled for what a person types there: the practice place (no log on the field) or the event (some are, but the
+   * FMS name is not known, or differs).
+   */
+  function dayHeader(rows: Entry[]): { fixed: string } | { label: string; placeholder: string } {
+    const field = rows.filter((e) => e.record.onField)
+    if (field.length === 0) return { label: 'practice place', placeholder: 'where' }
+    const names = new Set(rows.map((e) => fmsPlace(e.record)).map((p) => (p?.resolved ? p.name : null)))
+    if (field.length === rows.length && names.size === 1 && !names.has(null)) return { fixed: [...names][0]! }
+    return { label: 'event', placeholder: 'name' }
+  }
   /** The place typed for a day (from its first log: every log of the day shares it). */
   const dayPlace = (rows: Entry[]) => rows[0].tags.place ?? ''
 </script>
@@ -159,6 +193,7 @@
 <section class="bar">
   <button class="primary" onclick={addFolder} disabled={!!progress}>Add logs from a folder…</button>
   {#if drive?.signedIn}<button class="primary" onclick={() => (picking = 'ingest')} disabled={driveBusy}>Add logs from a Drive folder…</button>{/if}
+  <button class="primary" onclick={readAgain} disabled={driveBusy} title="Read every log on this computer again with this version of Hindsight and update what the list says about it (robot, event). Nothing in the logs changes.">Read logs again</button>
   <span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={addRobot} disabled={driveBusy || !robotAddress.trim()}>Add logs from the robot</button></span>
   {#if progress}
     <span class="progress" role="status">
@@ -202,6 +237,13 @@
   {/if}
 </details>
 
+{#if rereadReport}
+  <section class="report" aria-label="What was read again">
+    <h2>Read again: {rereadReport.changed} updated · {rereadReport.unchanged} the same · {rereadReport.missing} not on this computer · {rereadReport.failed.length} failed</h2>
+    {#each rereadReport.failed as f (f.path)}<p class="problem"><code>{f.path}</code> {f.reason}</p>{/each}
+    <button class="link" onclick={() => (rereadReport = null)}>Dismiss</button>
+  </section>
+{/if}
 {#if syncReport}
   <section class="report" aria-label="What was synced">
     <h2>Synced: {syncReport.uploaded.length} uploaded · {syncReport.alreadyThere} already there · {syncReport.failed.length} failed</h2>
@@ -251,7 +293,7 @@
   </section>
 {/if}
 
-<datalist id="places">{#each counts.place as [value] (value)}{#if !all.some((e) => e.record.onField && e.record.event === value)}<option {value}></option>{/if}{/each}</datalist>
+<datalist id="places">{#each counts.place as [value] (value)}{#if !all.some((e) => fmsPlace(e.record)?.name === value)}<option {value}></option>{/if}{/each}</datalist>
 <div class="layout">
   <aside aria-label="Filters">
     {#each FACETS as f (f)}
@@ -284,7 +326,12 @@
       <div class="day">
         <h3>{day}<span class="meta"> · {rows.length}</span></h3>
         {#if day !== 'No date'}
-          <label class="tagfield">place <input list="places" value={dayPlace(rows)} placeholder="where (practice days)" onchange={(e) => tag(dayTarget(day), 'place', typed(e))} /></label>
+          {@const head = dayHeader(rows)}
+          {#if 'fixed' in head}
+            <span class="tagfield fixed">{head.fixed}</span>
+          {:else}
+            <label class="tagfield">{head.label} <input list="places" value={dayPlace(rows)} placeholder={head.placeholder} onchange={(e) => tag(dayTarget(day), 'place', typed(e))} /></label>
+          {/if}
           <label class="tagfield">driver <input value={rows[0].tags.driver ?? ''} placeholder="for the day" onchange={(e) => tag(dayTarget(day), 'driver', typed(e))} /></label>
         {/if}
       </div>
@@ -295,9 +342,9 @@
             <tr class:remote={!e.local}>
               <td class="time">{clock(e.record.playedAt)}</td>
               <td class="name"><code title={e.record.path}>{baseName(e.record.path)}</code></td>
-              <td>{e.record.onField && e.record.event ? e.record.event : ''} {matchText(e)}</td>
+              <td>{fmsPlace(e.record)?.name ?? ''} {matchText(e)}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
-              <td>{v.robot === 'Unknown robot' ? '' : v.robot}</td>
+              <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if !e.tags.robot && robotIsGuess(e.record)}<span class="meta"> {e.record.robot?.profileId === null ? '(code name)' : '(guess)'}</span>{/if}</td>
               <td><input class="driver" aria-label="Driver for this log" value={e.tags.driver ?? ''} placeholder="driver" onchange={(ev) => tag({ log: e.record.sha256 }, 'driver', typed(ev))} /></td>
               <td class="num">{size(e.record.size)}</td>
               <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
@@ -364,6 +411,7 @@
   .num { text-align: right; }
   .name { max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .driver { width: 7rem; }
+  .fixed { color: var(--fg); font-size: 0.85rem; }
   .remote { color: var(--muted); }
   .flag { width: 1.2rem; }
   .more td { border-bottom: 1px solid var(--border); }

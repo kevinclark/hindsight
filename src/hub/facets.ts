@@ -5,6 +5,8 @@
 import type { Entry } from './catalog.ts'
 import { schoolYear } from './layout.ts'
 import { seasonOf } from './season.ts'
+import { resolveEvent } from './events.ts'
+import type { LogMeta } from './types.ts'
 
 export const FACETS = ['schoolYear', 'season', 'place', 'matchType', 'battery', 'robot', 'driver'] as const
 export type FacetId = (typeof FACETS)[number]
@@ -19,6 +21,18 @@ export const UNKNOWN: Record<FacetId, string> = {
 
 const MATCH_TYPES = ['Not a match', 'Practice match', 'Qualification', 'Elimination']
 
+/** The event name the FMS gave a log, as people say it: the table's name for the code when it has one, else the FMS text. Null when the log is not on the field or names nothing. */
+export function fmsPlace(r: Pick<LogMeta, 'onField' | 'event' | 'playedAt'>): { name: string; resolved: boolean } | null {
+  if (!r.onField || !r.event) return null
+  const name = resolveEvent(r.event, r.playedAt)
+  return name ? { name, resolved: true } : { name: r.event, resolved: false }
+}
+
+/** A robot the log only names by its own Codebase text, or a profile that was a best guess: shown with a plain marker. */
+export function robotIsGuess(r: Pick<LogMeta, 'robot'>): boolean {
+  return !!r.robot && (r.robot.profileId === null || r.robot.how === 'signals')
+}
+
 /** The value of each facet for one log. */
 export function facetValues(e: Entry): Record<FacetId, string> {
   const r = e.record
@@ -28,7 +42,7 @@ export function facetValues(e: Entry): Record<FacetId, string> {
     schoolYear: r.playedAt === null ? UNKNOWN.schoolYear : schoolYear(r.playedAt),
     season: r.playedAt === null ? UNKNOWN.season : seasonOf(r.playedAt) === 'season' ? 'Season' : 'Off-season',
     // On the field the FMS names the event; anywhere else a person types where the practice was.
-    place: r.onField && r.event ? r.event : e.tags.place ?? UNKNOWN.place,
+    place: fmsPlace(r)?.name ?? e.tags.place ?? UNKNOWN.place,
     matchType: r.matchType !== null ? MATCH_TYPES[r.matchType] ?? UNKNOWN.matchType : UNKNOWN.matchType,
     battery: e.tags.battery ?? r.batteryId ?? UNKNOWN.battery,
     robot: robotName,

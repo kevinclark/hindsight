@@ -34,6 +34,15 @@ panel. Neither is committed.
 - **Filters** (within a facet OR, across facets AND): school year, season or off-season, event or practice place, match
   type, battery, robot, driver. Place (per day), driver (per day or per log), battery and robot (per log) are typed in the
   list and saved as tags. Season is kickoff to the end of Championship (`src/hub/season.ts`: only 2026 is checked).
+- **Robot** is named from a profile only when the log's own Codebase (and branch) matched one, or a profile fit by signals.
+  A best guess that does not fit is not an identity: the list shows the log's Codebase text marked "(code name)", or nothing.
+- **Event** shown for an on-field log is the name from `src/hub/events/<year>.json` (TBA event code, or an FMS division word,
+  to name) when the table has it; a day whose logs are all on the field with one such name shows it with no input. The table
+  is generated with `TBA_READ_KEY=… node --experimental-strip-types scripts/build-event-table.ts <year>`; the committed
+  files hold a seed (`_source`) until that has been run. A typed place never overrides an FMS name.
+- **Read logs again** re-describes every robot log on this computer with this version and appends a `meta` record to this
+  computer's manifest for each that reads differently (the catalog lays the latest over the log record; `kind`, `playedAt`
+  and `dateSource` never change, as they decide the file's path). It is a job like the others: one at a time, with a bar.
 - **Open in Session view** reads the filtered logs one at a time into the Session view.
 
 ## Sharing through the team's Drive
