@@ -113,7 +113,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
     if (sources.length === 0) throw new Error('Add a GitHub organization or repository first.')
     return job('Linking code', async (j, progress) => {
       const found = await linkCode(sources, lib.catalog.all(), { cancelled: () => j.cancelled, onProgress: progress })
-      const { written, unchanged } = await applyLinks(lib, found.links, describerId(app.getVersion()))
+      // A log with no reading yet is stamped with this version but not this describer: it ranks as current, yet "Read logs again" still reads it.
+      const { written, unchanged } = await applyLinks(lib, found.links, `${app.getVersion()}+linked`)
       return { linked: found.links.size, written, unchanged, unmatched: found.unmatched, repos: found.repos, requests: found.requests, rateLimitedUntil: found.rateLimitedUntil, problems: found.problems }
     })
   })
