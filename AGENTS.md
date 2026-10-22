@@ -18,6 +18,10 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 - A new rule adds a "not checked" entry, and one to meta/not-checked's count and evidence, on every log that
   lacks its keys, so golden can't stay byte-identical. Prove it adds nothing else: strip those from both runs and
   require zero residual differences per log (2026-10-20: 264 logs, can/device-rebooted).
+- A session counts a quiet match as clean ("not seen since", src/session/stopped.ts), so a `check` whose early
+  return means "this didn't happen in the match" (never enabled, not on the field, never moved) calls
+  `match.couldNotCheck`, never a bare `return`. A rule for only some motors or groups declares `only`: an item
+  that returns nothing counts as checked (2026-10-21: 12 rules changed, 264-log golden 0 residual).
 
 ## Plain-node scripts
 
