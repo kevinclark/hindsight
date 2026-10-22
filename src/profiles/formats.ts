@@ -25,6 +25,12 @@ export interface LogFormat {
   sameOnEveryRobot: 'all' | (keyof SignalKeys)[]
   /** Folders where this type of log keeps the roboRIO's own readings: not the robot's motors or devices (builder/). */
   roboRioFolders: string[]
+  /**
+   * How this type of log names a device's "is it answering" flag, for rules that look at devices the robot profile
+   * doesn't list (can/input-disconnected): a boolean input whose name ends in `suffix`. `notDevices`: folders whose
+   * flags are not devices (outputs the code computed). Leave out for a type whose logs have no such convention.
+   */
+  deviceFlag?: { suffix: string; notDevices: string[] }
 }
 
 export const LOG_FORMATS: LogFormat[] = [
@@ -38,6 +44,7 @@ export const LOG_FORMATS: LogFormat[] = [
       ...(Object.keys(DRIVER_STATION_SIGNALS) as (keyof SignalKeys)[]),
     ],
     roboRioFolders: ['/SystemStats', '/PowerDistribution', '/RadioStatus'],
+    deviceFlag: { suffix: 'Connected', notDevices: ['/RealOutputs'] },
   },
   {
     name: 'DogLog',
@@ -62,6 +69,19 @@ export const NAMES_SAME_ON_EVERY_ROBOT = new Set(LOG_FORMATS.flatMap((f) => (f.s
 export const KEYS_SAME_ON_EVERY_ROBOT = new Set(
   LOG_FORMATS.filter((f) => f.sameOnEveryRobot === 'all').flatMap((f) => Object.values(f.signals)).flatMap(keysOf),
 )
+
+/**
+ * Keys of the log's device flags ("<device>Connected" inputs) that are not the roboRIO's own readings (SystemStats'
+ * network clients, the radio), not outputs the code computed, and not NetworkTables copies. Empty for a log type with
+ * no such convention (deviceFlag).
+ */
+export function deviceFlagKeys(log: WpilogFile, keysEndingWith: (suffix: string, type: string) => string[]): string[] {
+  const flag = formatOf(log)?.deviceFlag
+  if (!flag) return []
+  const under = (key: string, folder: string) => key === folder || key.startsWith(`${folder}/`)
+  return keysEndingWith(flag.suffix, 'boolean').filter((key) =>
+    !key.startsWith('NT:') && !isRoboRioReading(key) && !flag.notDevices.some((f) => under(key, f)))
+}
 
 /** The first log type whose marker the log has. */
 export function formatOf(log: WpilogFile): LogFormat | undefined {
