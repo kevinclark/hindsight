@@ -1,8 +1,9 @@
 /**
  * A stand-in for the parts of the Google Drive API v3 that DriveAdapter uses, as a `fetch`: folders and files by id,
  * listing with paging, ranged reads, resumable uploads with status queries, server-side copy, media updates, and
- * faults (a dropped connection, a refused token). Built from Google's documented shapes; not compared with the live API
- * until live step 1 (the session note says what the live run showed).
+ * faults (a dropped connection, a refused token). Built from Google's documented shapes, then compared with the live API at
+ * live step 2 (2026-10-22): folder create, listing with allDrives, resumable upload, in-place manifest update and ranged reads
+ * behaved as modelled. Live Google also answered one request with 403 userRateLimitExceeded (tests/hub-drive.test.ts builds that answer).
  */
 import { createHash, randomUUID } from 'node:crypto'
 

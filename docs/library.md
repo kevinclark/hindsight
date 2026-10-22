@@ -73,6 +73,7 @@ On start the app asks the public repository's releases once. When a newer app re
 
 ## Not verified
 
-See the session note for what was exercised live and what only in tests. In short: the Drive adapter has been run against a
-fake of the Drive API, not Google; the robot pull has not touched a roboRIO; the Windows and Linux installers were built but
-not launched.
+See the session note for what was exercised live and what only in tests. In short: the Drive adapter has been run live once
+(2026-10-22: a first sync of four logs, a second that wrote nothing, a tag update in place, a second library that downloaded
+them and matched every sha-256), and Drive answered one request with a 403 rate limit, which the adapter now waits out; the
+robot pull has not touched a roboRIO; the Windows and Linux installers were built but not launched.
