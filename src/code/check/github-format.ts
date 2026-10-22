@@ -72,11 +72,12 @@ export function fileUrl(f: Marked, link: Linker): string | null {
   return `${link.blob}/${f.file.split('/').map(encodeURIComponent).join('/')}${anchor}`
 }
 
-/**
- * Text safe inside a Markdown table cell or list item: no HTML, no emphasis or code from the code's own characters, one
- * line. An "@name" or "#123" in it would mention a person or link an issue, so those are put in code.
- */
-export const cell = (text: string) =>
-  text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\\|`*_[\]]/g, '\\$&').replace(/\s*\n\s*/g, ' ')
-    .replace(/(^|[^\w`])(@[\w-]+|#\d+)/g, '$1`$2`')
+/** Escapes what Markdown or HTML would read as markup: no HTML, no emphasis or code from the code's own characters, one line. */
+export const escapeMarkdown = (text: string) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\\|`*_[\]]/g, '\\$&').replace(/\s*\n\s*/g, ' ')
+
+/** Puts "@name" and "#123" in code, so they mention nobody and link no issue. Run it on escaped text (raw backticks are already "\`"). */
+export const mentionsInCode = (text: string) => text.replace(/(^|\W)(@[\w-]+|#\d+)/g, '$1`$2`')
+
+/** Text safe inside a Markdown table cell or list item. */
+export const cell = (text: string) => mentionsInCode(escapeMarkdown(text))

@@ -9,7 +9,7 @@
  * when nothing is new, NOTE (blue) when nothing could be compared. Older findings are plain, folded, grey.
  */
 import type { FailOn } from './cli-options.ts'
-import { cell, fileUrl, type Linker, type Marked } from './github-format.ts'
+import { cell, escapeMarkdown, fileUrl, mentionsInCode, type Linker, type Marked } from './github-format.ts'
 
 /** The hidden first line that says "this comment is the code check's". */
 export const MARKER = '<!-- hindsight-code-check -->'
@@ -44,14 +44,14 @@ export function hasNews(findings: Marked[], fixed: number | null): boolean {
   return findings.some((f) => f.isNew) || (fixed ?? 0) > 0
 }
 
-/** GitHub refuses a comment over 65,536 characters; with ordinary text 50 findings take about 15,000. */
+/** GitHub refuses a comment over 65,536 characters (counted here in bytes, the stricter way); with ordinary text 50 findings take about 15,000. */
 const SAFE_LENGTH = 60_000
 
 /** The whole comment. If odd text (very long, all-encoded paths) makes it too long, fewer findings are listed. */
 export function commentBody(input: CommentInput): string {
   let rows = MAX_ROWS
   let text = build(input, rows)
-  while (text.length > SAFE_LENGTH && rows > 1) {
+  while (Buffer.byteLength(text, 'utf8') > SAFE_LENGTH && rows > 1) {
     rows = Math.floor(rows / 2)
     text = build(input, rows)
   }
@@ -68,9 +68,9 @@ function build(input: CommentInput, maxRows: number): string {
   const parts = [MARKER, header(input, news.length)]
   parts.push(...cautions(input, news.length))
   if (notCompared) parts.push(box('NOTE', [cell(notCompared)]))
-  else if (news.length > 0) parts.push(newBox(shownNews, news.length, input.link))
-  else parts.push(box('TIP', [cleanLine(input.fixed)]))
-  if (olds.length > 0) parts.push(oldFindings(shownOlds, olds.length, notCompared !== null, input.link))
+  else if (news.length > 0) parts.push(newBox(shownNews, news, input.link))
+  else parts.push(input.fails ? cleanLine(input.fixed) : box('TIP', [cleanLine(input.fixed)]))      // not green next to a red box
+  if (shownOlds.length > 0) parts.push(oldFindings(shownOlds, olds, notCompared !== null, input.link))
   const hidden = findings.length - shownNews.length - shownOlds.length
   if (hidden > 0) parts.push(moreLine(hidden, input.runUrl))
   parts.push(footer(input.runUrl))
@@ -98,8 +98,8 @@ function cautions({ findings, failOn, fails, crashed }: CommentInput, newCount: 
 }
 
 /** The amber box with what the change adds. */
-function newBox(shown: Marked[], total: number, link: Linker): string {
-  return box('WARNING', [`**${total} new in this change**`, '', ...groupBlocks(shown, link)])
+function newBox(shown: Marked[], all: Marked[], link: Linker): string {
+  return box('WARNING', [`**${all.length} new in this change**`, '', ...groupBlocks(shown, all, link)])
 }
 
 /** The green line: nothing new, and how many were fixed. */
@@ -108,9 +108,10 @@ function cleanLine(fixed: number | null): string {
 }
 
 /** The older findings, folded away and plain (grey), so they don't crowd the new ones. */
-function oldFindings(shown: Marked[], total: number, notCompared: boolean, link: Linker): string {
+function oldFindings(shown: Marked[], all: Marked[], notCompared: boolean, link: Linker): string {
+  const total = all.length
   const summary = `ℹ️ ${total} ${noun(total)}${notCompared ? '' : ' already in the code'}`
-  return ['<details>', `<summary>${summary}</summary>`, '', groupBlocks(shown, link).join('\n'), '', '</details>'].join('\n')
+  return ['<details>', `<summary>${summary}</summary>`, '', groupBlocks(shown, all, link).join('\n'), '', '</details>'].join('\n')
 }
 
 /** A GitHub alert: a quote whose first line names its level, followed by the lines. */
@@ -119,20 +120,22 @@ function box(level: 'CAUTION' | 'WARNING' | 'TIP' | 'NOTE', lines: string[]): st
 }
 
 /** The findings as blocks, one per check (blank lines between them): the sites of one check share a title and next step. */
-function groupBlocks(findings: Marked[], link: Linker): string[] {
+function groupBlocks(shown: Marked[], all: Marked[], link: Linker): string[] {
+  const totals = new Map<string, number>()
+  for (const f of all) totals.set(groupKey(f), (totals.get(groupKey(f)) ?? 0) + 1)
   const groups = new Map<string, Marked[]>()
-  for (const f of findings) {
-    const key = `${f.rule}\n${f.title}\n${f.nextStep}`
-    groups.set(key, [...(groups.get(key) ?? []), f])
-  }
-  const blocks = [...groups.values()].map((sites) => groupBlock(sites, link))
+  for (const f of shown) groups.set(groupKey(f), [...(groups.get(groupKey(f)) ?? []), f])
+  const blocks = [...groups.entries()].map(([key, sites]) => groupBlock(sites, totals.get(key) ?? sites.length, link))
   return blocks.flatMap((lines, i) => (i === 0 ? lines : ['', ...lines]))
 }
 
-/** One check: its title (and how many places), one line per place, then the next step once. */
-function groupBlock(sites: Marked[], link: Linker): string[] {
+/** What makes two findings one block: the same check with the same title and next step. */
+const groupKey = (f: Marked) => `${f.rule}\n${f.title}\n${f.nextStep}`
+
+/** One check: its title (and how many places, "50 of 60" when the cap cut some), one line per place, then the next step once. */
+function groupBlock(sites: Marked[], total: number, link: Linker): string[] {
   const first = sites[0]
-  const count = sites.length > 1 ? ` (${sites.length})` : ''
+  const count = total === 1 ? '' : sites.length < total ? ` (${sites.length} of ${total})` : ` (${total})`
   const lines = sites.map((f) => `- ${placeOf(f, link)} — ${sentence(clip(f.message, MAX_MESSAGE))}`)
   return [`**${clip(first.title, MAX_TITLE)}**${count}`, ...lines, '', `*Next step:* ${sentence(clip(first.nextStep, MAX_MESSAGE))}`]
 }
@@ -159,11 +162,11 @@ function footer(runUrl: string | null): string {
 
 const noun = (n: number) => (n === 1 ? 'finding' : 'findings')
 
-/** Safe Markdown, and not longer than `limit` characters (plus a "…"; a cut never leaves half an entity or a lone backslash). */
+/** Safe Markdown, and not longer than `limit` characters (plus a "…"). Cut before @names are put in code, and never mid-entity. */
 function clip(text: string, limit: number): string {
-  const safe = cell(text)
-  if (safe.length <= limit) return safe
-  return `${safe.slice(0, limit).replace(/&[a-z#0-9]*$|\\$/, '')}…`
+  const safe = escapeMarkdown(text)
+  if (safe.length <= limit) return mentionsInCode(safe)
+  return `${mentionsInCode(safe.slice(0, limit).replace(/&[a-z#0-9]*$|\\$/, ''))}…`
 }
 
 /** The text with a full stop at the end, unless it already ends like a sentence. */

@@ -89,6 +89,32 @@ describe('the comment text', () => {
     expect(cell('a@b.com and v#1')).toBe('a@b.com and v#1')
     expect(body([found({ message: 'ask @someone, see #12' })])).toContain('ask `@someone`, see `#12`.')
   })
+  it('"see `@someone` now" (raw backticks are escaped) still gets the mention put in code', () => {
+    expect(cell('see `@someone` now')).toBe("see \\``@someone`\\` now")
+  })
+  it('a cut just after a mention leaves no unclosed backtick and no bare @', () => {
+    const text = body([found({ message: `${'x'.repeat(244)} @someone` })])
+    const message = text.split('\n').find((l) => l.startsWith('> - '))?.split(' — ')[1] ?? ''
+    expect(message.split('`').length % 2).toBe(1)                       // backticks come in pairs
+    expect(message.replace(/`@[^`]*`/g, '')).not.toContain('@')
+    const whole = body([found({ message: `${'x'.repeat(200)} @someone` })])
+    expect(whole).toContain('`@someone`')
+  })
+  it('the run fails with nothing new: the clean line is plain text, not a green box', () => {
+    const text = body([found({ isNew: false })], 0, null, { failOn: 'any', fails: true })
+    expect(text).toContain('> [!CAUTION]')
+    expect(text).not.toContain('[!TIP]')
+    expect(text).toContain('\n\n**Nothing new in this change.**\n\n')
+  })
+  it('50 new and 5 old: no empty fold, and the more-line carries the count', () => {
+    const text = body([...Array.from({ length: 50 }, (_, i) => found({ line: i + 1 })), ...Array.from({ length: 5 }, () => found({ isNew: false }))])
+    expect(text).not.toContain('<details>')
+    expect(text).toContain('… and 5 more on')
+  })
+  it('a group cut by the cap says how many of how many', () => {
+    const text = body(Array.from({ length: 60 }, (_, i) => found({ line: i + 1 })))
+    expect(text).toContain('**Whole-number division** (50 of 60)')
+  })
   it('a cut never leaves half an entity or a lone backslash', () => {
     const text = body([found({ message: `${'x'.repeat(246)}<<<` })])      // "&lt;" cut after "&l"
     expect(text).not.toMatch(/&l?t?…/)
