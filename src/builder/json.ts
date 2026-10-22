@@ -16,7 +16,7 @@ import type { CurrentLimits, Motor, MotorGroup, RobotProfile, ZeroingMechanism }
 export const PROFILE_SCHEMA = 'hindsight.profile/1'
 
 /** Where a value came from, shown beside it in the builder. */
-export type Source = 'log' | 'snapshot' | 'code hint' | 'you'
+export type Source = 'log' | 'snapshot' | 'code' | 'code hint' | 'you'
 
 export interface MotorJson extends Motor {
   /** Where the motor is in the log (its struct entry or key stem): how the builder knows it. */
@@ -27,6 +27,8 @@ export interface MotorJson extends Motor {
   current?: string
   /** Where its CAN ID came from. */
   canIdFrom?: Source
+  /** Who said which current is supply and which stator, when the key's name doesn't: the code, or the student. */
+  kindFrom?: 'code' | 'you'
 }
 
 export interface GroupJson extends Omit<MotorGroup, 'motors' | 'limits'> {
@@ -34,8 +36,12 @@ export interface GroupJson extends Omit<MotorGroup, 'motors' | 'limits'> {
   limits?: CurrentLimits
   /** sameLoop was ticked by the builder (from leader/follower names), not yet by the student. */
   sameLoopSuggested?: boolean
-  /** Why these motors are one group: the builder's evidence, or the student's say. */
-  groupedBy?: 'swerve' | 'one array' | 'leader/follower' | 'one motor' | 'you'
+  /** Why these motors are one group: the builder's evidence (the code, or the log's names), or the student's say. */
+  groupedBy?: 'code' | 'swerve' | 'one array' | 'leader/follower' | 'one motor' | 'you'
+  /** The robot code builds these motors together (one place, one folder, or a leader and its followers). */
+  groupFromCode?: true
+  /** The limits were read from the robot code (a snapshot's are marked by limitsFrom on the profile). */
+  limitsFromCode?: true
 }
 
 export type ZeroingJson = Omit<ZeroingMechanism, 'doneMessage'> & { doneMessage: { source: string; flags: string } }
@@ -87,10 +93,10 @@ export function toProfile(json: ProfileJson): RobotProfile {
     signals: { ...EMPTY_SIGNALS, ...(signals ? formatOfSignals(signals)?.signals : undefined), ...signals },
     battery: { ...EMPTY_BATTERY, ...battery },
     zeroing: (zeroing ?? []).map((z) => ({ ...z, doneMessage: new RegExp(z.doneMessage.source, z.doneMessage.flags) })),
-    motorGroups: motorGroups.map(({ sameLoopSuggested: _ss, groupedBy: _g, motors, limits, ...g }) => ({
+    motorGroups: motorGroups.map(({ sameLoopSuggested: _ss, groupedBy: _g, groupFromCode: _gc, limitsFromCode: _lc, motors, limits, ...g }) => ({
       ...g,
       limits: limits ?? NO_LIMITS,
-      motors: motors.map(({ bus: _bus, current: _c, canIdFrom: _f, logPath: _p, ...m }) => m),
+      motors: motors.map(({ bus: _bus, current: _c, canIdFrom: _f, kindFrom: _k, logPath: _p, ...m }) => m),
     })),
   }
 }

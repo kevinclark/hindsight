@@ -12,6 +12,8 @@ import { matchByName, groupLimits } from './snapshot.ts'
 import { toProfile, PROFILE_SCHEMA, type GroupJson, type MotorJson, type ProfileJson } from './json.ts'
 import type { CodeHints } from './code-hints.ts'
 import { idFromDeviceKey } from '../match/companion.ts'
+import { firstText } from '../profiles/formats.ts'
+import { applyCode } from './code-draft.ts'
 
 /** What the builder couldn't settle from the files, for the confirm step. */
 export interface Draft {
@@ -21,6 +23,9 @@ export interface Draft {
   limits: string[]
   /** Signals picked by their shape (the student confirms), with the other candidates. */
   guessed: { signal: string; key: string; alternatives: string[] }[]
+  /** What the student should know about the files themselves: logs left out, what the code says the log lacks. */
+  notes: string[]
+  /** The notes, then draftWarnings on the draft's groups (which the builder recomputes as the student edits). */
   warnings: string[]
 }
 
@@ -159,11 +164,14 @@ export function draftProfile(input: { logs: DraftLog[]; snapshot?: Snapshot; hin
     cameras: [],
     builtFrom: { log: logs.map((l) => l.fileName).join(', '), at: new Date().toISOString() },
   }
+  // The code's word on kinds, IDs, groups and limits; then a snapshot's, which says what the robot actually holds.
+  const fromCode = input.hints ? applyCode(json, input.hints, log, /uncom+itted/i.test(firstText(log, sig.signals.gitDirty))) : []
   if (input.snapshot) applySnapshot(json, input.snapshot)
   if (input.hints) json.builtFrom = { ...json.builtFrom!, code: input.hints.sha ?? 'unknown commit' }
   const guessed = sig.guessed.map((s) => ({ signal: s, key: sig.signals[s] as string, alternatives: sig.alternatives[s] ?? [] }))
   const leftOut = others.length ? [`${others.length} log${others.length === 1 ? ' is' : 's are'} from another robot (${[...new Set(others.map((l) => codebaseOf(l.log) || 'no code name'))].join(', ')}) and ${others.length === 1 ? 'was' : 'were'} left out: ${others.map((l) => l.fileName).join(', ')}.`] : []
-  return { json, notUsed: found.notUsed, limits: found.limits, guessed, warnings: [...leftOut, ...draftWarnings(motorGroups)] }
+  const notes = [...leftOut, ...fromCode]
+  return { json, notUsed: found.notUsed, limits: found.limits, guessed, notes, warnings: [...notes, ...draftWarnings(json.motorGroups)] }
 }
 
 /** The robot's wall clock at the end of the log (µs), or 0 when the log never had it set. */

@@ -24,8 +24,11 @@ import { readValues, type WpilogFile } from '../readers/wpilog.ts'
 
 export type CurrentKind = 'supply' | 'stator' | 'torque'
 
-/** A folder as the code builds it: text, an inputs field's value, or a part it can't tell (`*` in a pattern). */
-export type FolderPart = string | { field: string } | { open: string }
+/**
+ * A folder as the code builds it: text, an inputs field's value, a method of the IO object (`io.getModuleName()`), or a
+ * part it can't tell (`*` in a pattern).
+ */
+export type FolderPart = string | { field: string } | { call: string } | { open: string }
 
 export interface CodeCurrent {
   /** The folder (from processInputs) and the key below it (`PivotAmps`, `CurrentAmps[1]`). */
@@ -43,7 +46,10 @@ export interface CodeMotor {
   /** As devices.ts names it: "canivore", "*", "the roboRIO bus"; null when it can't tell. */
   bus: string | null
   currents: CodeCurrent[]
-  /** The values its IO gives inputs fields that are fixed for that IO ("Prefix" → "Front Left", "ModuleNumber" → 0). */
+  /**
+   * The values its IO gives inputs fields that are fixed for that IO ("Prefix" → "Front Left", "ModuleNumber" → 0), and
+   * what the IO's methods a folder calls return for it ("getModuleName()" → "Front Left").
+   */
   marks: Record<string, string | number>
   /** The object that built it: its chain of calls, as a key. Two motors one IO object builds share it. */
   instance: string
@@ -86,11 +92,20 @@ export function codeMotors(project: Project): CodeMotor[] {
       const value = valueAlong(a.value, chain, project)?.value
       if (value !== undefined) marks[keyOf(a.field)] = value
     }
+    const called = new Set([...folders.values()].flat().flatMap((f) => f.folder.flatMap((p) => (typeof p === 'object' && 'call' in p ? [p.call] : []))))
+    for (const method of called) {
+      const [declared] = project.membersNamed(cls, 'method', method).filter((m) => parts(m, 'parameters').length === 0)
+      const returns = declared?.descendantsOfType('return_statement') ?? []
+      const value = returns.length === 1 && returns[0] ? valueAlong(parts(returns[0])[0] ?? null, chain, project)?.value : undefined
+      if (value !== undefined) marks[`${method}()`] = value
+    }
     return marks
   }
   const motorAt = (site: Node, chain: Node[]) => {
-    const instance = chain.map((n) => label(n, project)).join(' < ')
-    const key = `${label(site, project)} | ${instance}`
+    // Keyed by place in the file, not line: two IOs can be built on one line.
+    const at = (n: Node) => `${project.fileOf(n).path}@${n.startIndex}`
+    const instance = chain.map(at).join(' < ')
+    const key = `${at(site)} | ${instance}`
     if (!motors.has(key)) {
       const device = deviceAlong(site, chain, project)
       const motor = { site: label(site, project), id: device?.id ?? null, bus: device?.bus ?? null, currents: [], marks: marksOf(site, chain), instance, group: '' }
@@ -207,6 +222,9 @@ function folderOf(expr: Node, chain: Node[], project: Project, inputs: Map<strin
     }
   }
   if (expr.type === 'field_access' && inputsTypeOf(field(expr, 'object'), project, inputs)) return [{ field: field(expr, 'field')!.text }]
+  // `io.getModuleName()`: a method of a project class or interface, answered by each IO object (marks).
+  const receiver = expr.type === 'method_invocation' && parts(expr, 'arguments').length === 0 ? field(expr, 'object') : null
+  if (receiver && project.ownersNamed(typeOf(receiver, project)).length) return [{ call: nameOf(expr)! }]
   const value = valueAlong(expr, chain, project)?.value
   return value === undefined ? [{ open: expr.text }] : [String(value)]
 }
@@ -328,7 +346,8 @@ export interface PlacedCurrent extends CodeCurrent { key: string }
  */
 export function placeInLog(motor: CodeMotor, log: WpilogFile): PlacedCurrent[] {
   return motor.currents.flatMap((c) => {
-    const parts = c.folder.map((p) => (typeof p === 'string' ? p : 'field' in p && motor.marks[keyOf(p.field)] !== undefined ? String(motor.marks[keyOf(p.field)]) : p))
+    const markOf = (p: Exclude<FolderPart, string>) => ('field' in p ? motor.marks[keyOf(p.field)] : 'call' in p ? motor.marks[`${p.call}()`] : undefined)
+    const parts = c.folder.map((p) => (typeof p === 'string' ? p : markOf(p) !== undefined ? String(markOf(p)) : p))
     const fixed = parts.every((p) => typeof p === 'string')
     const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const pattern = new RegExp(`^/${parts.map((p) => (typeof p === 'string' ? escape(p) : '([^/]+)')).join('')}/${escape(c.leaf)}$`)

@@ -13,6 +13,8 @@ import { GitUnreadable, type GitRepo } from '../code/git.ts'
 import { javaFilesAt, type CodeSource } from '../code/source.ts'
 import { valueAlong, waysToReach } from '../code/check/flow.ts'
 import { deviceBuilt, inSimulation } from '../code/check/devices.ts'
+import { deviceSettings, type DeviceSetting } from '../code/check/device-settings.ts'
+import { codeMotors, isTestCode, type CodeMotor } from './code-motors.ts'
 import { codeOf, fileName, lineOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, Project } from '../code/check/project.ts'
 
@@ -31,6 +33,10 @@ export interface TalonSite {
 
 export interface CodeHints {
   sites: TalonSite[]
+  /** The Talon FX the code builds on the robot, with their log keys and current kinds (code-motors.ts). */
+  motors: CodeMotor[]
+  /** The settings the code applies to each device: current limits among them (code/check/device-settings.ts). */
+  settings: DeviceSetting[]
   /** The commit the folder is on (from .git), if it could be read. */
   sha: string | null
   branch: string | null
@@ -41,19 +47,21 @@ export interface CodeHints {
 export type CodeHead = { sha: string; branch: string | null } | { why: string }
 
 export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
-  const sites = talonSites(files.filter((f) => f.path.endsWith('.java')))
-  const notes: string[] = []
-  if (sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java files.')
-  const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
-  return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), ...git, notes: [...notes, ...git.notes] }
-}
-
-/** Every `new TalonFX(…)` in these Java files, with its IDs. */
-function talonSites(java: CodeFile[]): TalonSite[] {
-  const project = new Project(java)
+  const project = new Project(files.filter((f) => f.path.endsWith('.java')))
   try {
-    const talons = project.nodes('object_creation_expression').filter((n) => deviceBuilt(n, project)?.kind === 'TalonFX')
-    return talons.flatMap((talon) => sitesOf(talon, project))
+    // Tests build Talon FX with made-up IDs (Crescendo's PhoenixOdometryThreadTest): not the robot's.
+    const talons = project.nodes('object_creation_expression').filter((n) => deviceBuilt(n, project)?.kind === 'TalonFX' && !isTestCode(project.fileOf(n).path))
+    const sites = talons.flatMap((talon) => sitesOf(talon, project))
+    const notes: string[] = []
+    if (sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java files.')
+    const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
+    return {
+      sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)),
+      motors: codeMotors(project),
+      settings: deviceSettings(project),
+      ...git,
+      notes: [...notes, ...git.notes],
+    }
   } finally {
     project.close()
   }

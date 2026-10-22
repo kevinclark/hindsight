@@ -25,6 +25,9 @@ import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import { GitRepo } from '../src/code/git.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
 import { backtestLog } from '../src/builder/backtest.ts'
+import { codeMotors, placeInLog, type CodeMotor } from '../src/builder/code-motors.ts'
+import { deviceSettings } from '../src/code/check/device-settings.ts'
+import { Project } from '../src/code/check/project.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
 import type { Finding } from '../src/rules/types.ts'
 import { packDoubles, writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
@@ -371,6 +374,144 @@ describe('code hints', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// The code's motors and their log keys (code-motors.ts), and the draft they fill in (code-draft.ts). Invented code.
+
+const java = (path: string, ...lines: string[]): CodeFile => ({ path: `src/main/java/frc/robot/${path}`, text: `${lines.join('\n')}\n` })
+const motorsOf = (files: CodeFile[]) => { const p = new Project(files); try { return { motors: codeMotors(p), settings: deviceSettings(p) } } finally { p.close() } }
+const show = (m: CodeMotor) => [m.site, m.id, m.currents.map((c) => `${c.kind} ${c.folder.map((x) => (typeof x === 'string' ? x : 'field' in x ? `{${x.field}}` : '*')).join('')}/${c.leaf}`)]
+
+describe('the code\'s motors and their log keys', () => {
+  const shooter = [
+    java('ShooterIO.java', 'public interface ShooterIO {', '  @AutoLog', '  public static class ShooterIOInputs {', '    public double pivotAmps = 0.0;', '    public double[] rollerCurrentAmps = new double[] {};', '  }', '}'),
+    java('ShooterIOReal.java',
+      'public class ShooterIOReal implements ShooterIO {',
+      '  private final TalonFX pivot = new TalonFX(10, "canivore");',
+      '  private final Falcon leader = new Falcon(11);',
+      '  private final Falcon follower = new Falcon(12);',
+      '  private final StatusSignal<Double> pivotAmps = pivot.getStatorCurrent();',
+      '  public ShooterIOReal() { follower.setControl(new Follower(leader.getDeviceID(), false)); }',
+      '  public void updateInputs(ShooterIOInputsAutoLogged inputs) {',
+      '    inputs.pivotAmps = pivotAmps.getValueAsDouble();',
+      '    inputs.rollerCurrentAmps = new double[] {leader.getSupplyCurrent().getValueAsDouble(), follower.getSupplyCurrent().getValueAsDouble()};',
+      '  }',
+      '}'),
+    java('Falcon.java', 'public class Falcon extends TalonFX {', '  public Falcon(int id) { super(id, "rio"); }', '}'),
+    java('Shooter.java', 'public class Shooter extends SubsystemBase {', '  ShooterIOInputsAutoLogged inputs = new ShooterIOInputsAutoLogged();', '  ShooterIO io = new ShooterIOReal();', '  public void periodic() { io.updateInputs(inputs); Logger.processInputs("Shooter", inputs); }', '}'),
+    java('Robot.java', 'public class Robot extends LoggedRobot {', '  Shooter shooter = new Shooter();', '}'),
+  ]
+
+  it('maps each inputs field to its key, current kind and motor, through a subclass\'s super(id) and an array', () => {
+    const { motors } = motorsOf(shooter)
+    expect(motors.map(show)).toEqual([
+      ['ShooterIOReal.java:2', 10, ['stator Shooter/PivotAmps']],
+      ['ShooterIOReal.java:3', 11, ['supply Shooter/RollerCurrentAmps[0]']],
+      ['ShooterIOReal.java:4', 12, ['supply Shooter/RollerCurrentAmps[1]']],
+    ])
+    const [, leader, follower] = motors
+    expect([follower.follows, follower.group === leader.group]).toEqual(['ShooterIOReal.java:3', true])
+  })
+
+  it('follows IDs through a record\'s accessors and a folder built from an inputs field; a loop\'s counter is open', () => {
+    const files = [
+      java('ModuleIO.java', 'public interface ModuleIO {', '  @AutoLog', '  class ModuleIOInputs { public String prefix = ""; public int moduleNumber = 0; public double driveStatorCurrentAmps = 0.0; }', '}'),
+      java('Module.java', 'public class Module {', '  public record ModuleConstants(int id, String prefix, int driveID) {}', '  ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();', '  public void periodic() { Logger.processInputs(String.format("Swerve/%s Module", inputs.prefix), inputs); }', '}'),
+      java('ModuleIOReal.java',
+        'public class ModuleIOReal implements ModuleIO {',
+        '  private final TalonFX drive;',
+        '  private final ModuleConstants constants;',
+        '  public ModuleIOReal(ModuleConstants constants) { this.constants = constants; drive = new TalonFX(constants.driveID()); }',
+        '  public void updateInputs(ModuleIOInputsAutoLogged inputs) { inputs.prefix = constants.prefix(); inputs.moduleNumber = constants.id(); inputs.driveStatorCurrentAmps = drive.getStatorCurrent().getValueAsDouble(); }',
+        '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Robot() {', '    new ModuleIOReal(new ModuleConstants(0, "Front Left", 3));', '    new ModuleIOReal(new ModuleConstants(1, "Front Right", 5));', '  }', '}'),
+    ]
+    const { motors } = motorsOf(files)
+    expect(motors.map((m) => [m.id, m.marks.Prefix])).toEqual([[3, 'Front Left'], [5, 'Front Right']])
+    expect(motors[0].currents[0].folder).toEqual(['Swerve/', { field: 'prefix' }, ' Module'])
+    expect(new Set(motors.map((m) => m.group)).size).toBe(1)
+    const log = openWpilog(writeWpilog([d('/Swerve/Front Left Module/DriveStatorCurrentAmps'), d('/Swerve/Front Right Module/DriveStatorCurrentAmps')]))
+    expect(motors.map((m) => placeInLog(m, log).map((k) => k.key))).toEqual([['/Swerve/Front Left Module/DriveStatorCurrentAmps'], ['/Swerve/Front Right Module/DriveStatorCurrentAmps']])
+
+    // `"Swerve Module " + i` is open; the log's ModuleNumber for each folder tells the modules apart.
+    const loop = files.map((f) => (f.path.endsWith('Module.java') ? { ...f, text: f.text.replace('String.format("Swerve/%s Module", inputs.prefix)', '"Swerve Module " + i').replace('public void periodic() {', 'public void periodic() { for (int i = 0; i < 2; i++)') } : f))
+    const open = motorsOf(loop).motors
+    expect(open[0].currents[0].folder).toEqual(['Swerve Module ', { open: 'i' }])
+    const numbered = openWpilog(writeWpilog([0, 1].flatMap((n) => [d(`/Swerve Module ${n}/DriveStatorCurrentAmps`), { name: `/Swerve Module ${n}/ModuleNumber`, type: 'int64', records: [[1, n]] } as FixtureEntry])))
+    expect(open.map((m) => placeInLog(m, numbered).map((k) => k.key))).toEqual([['/Swerve Module 0/DriveStatorCurrentAmps'], ['/Swerve Module 1/DriveStatorCurrentAmps']])
+  })
+
+  it('names a folder by a method of the IO object (`io.getName()`), answered by each IO', () => {
+    const files = [
+      java('ModuleIO.java', 'public interface ModuleIO {', '  @AutoLog', '  class ModuleIOInputs { public double driveStatorCurrentAmps = 0.0; }', '  String getName();', '}'),
+      java('Module.java', 'public class Module {', '  private final ModuleIO io;', '  ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();', '  public Module(ModuleIO io) { this.io = io; }', '  public void periodic() { Logger.processInputs(String.format("Swerve/%s Module", io.getName()), inputs); }', '}'),
+      java('ModuleIOReal.java', 'public class ModuleIOReal implements ModuleIO {', '  private final TalonFX drive;', '  private final String name;', '  public ModuleIOReal(String name, int id) { this.name = name; drive = new TalonFX(id); }', '  public String getName() { return name; }', '  public void updateInputs(ModuleIOInputsAutoLogged inputs) { inputs.driveStatorCurrentAmps = drive.getStatorCurrent().getValueAsDouble(); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Robot() { new Module(new ModuleIOReal("Back Left", 4)); new Module(new ModuleIOReal("Back Right", 6)); }', '}'),
+    ]
+    const { motors } = motorsOf(files)
+    expect(motors[0].currents[0].folder).toEqual(['Swerve/', { call: 'getName' }, ' Module'])
+    const log = openWpilog(writeWpilog([d('/Swerve/Back Left Module/DriveStatorCurrentAmps'), d('/Swerve/Back Right Module/DriveStatorCurrentAmps')]))
+    expect(motors.map((m) => [m.id, placeInLog(m, log).map((k) => k.key)])).toEqual([[4, ['/Swerve/Back Left Module/DriveStatorCurrentAmps']], [6, ['/Swerve/Back Right Module/DriveStatorCurrentAmps']]])
+  })
+
+  it('names a shared subsystem\'s folder per object, through a subclass\'s super(io, NAME), and pairs it with its IO', () => {
+    const files = [
+      java('RollerIO.java', 'public interface RollerIO {', '  @AutoLog', '  class RollerIOInputs { public double statorCurrentAmps = 0.0; }', '}'),
+      java('RollerIOReal.java', 'public class RollerIOReal implements RollerIO {', '  private final TalonFX motor;', '  public RollerIOReal(int motorID) { motor = new TalonFX(motorID); }', '  public void updateInputs(RollerIOInputsAutoLogged inputs) { inputs.statorCurrentAmps = motor.getStatorCurrent().getValueAsDouble(); }', '}'),
+      java('RollerSubsystem.java', 'public class RollerSubsystem extends SubsystemBase {', '  private final String name;', '  RollerIOInputsAutoLogged inputs = new RollerIOInputsAutoLogged();', '  public RollerSubsystem(RollerIO io, String name) { this.io = io; this.name = name; }', '  public void periodic() { Logger.processInputs(name, inputs); }', '}'),
+      java('Funnel.java', 'public class Funnel extends RollerSubsystem {', '  public static final String NAME = "Funnel";', '  public Funnel(RollerIO io) { super(io, NAME); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Funnel funnel = new Funnel(new RollerIOReal(19));', '  RollerSubsystem intake = new RollerSubsystem(new RollerIOReal(13), "Intake");', '}'),
+    ]
+    expect(motorsOf(files).motors.map(show)).toEqual([['RollerIOReal.java:3', 19, ['stator Funnel/StatorCurrentAmps']], ['RollerIOReal.java:3', 13, ['stator Intake/StatorCurrentAmps']]])
+  })
+
+  it('reads current limits: Phoenix 6 fields, a .withCurrentLimits builder, and Phoenix 5 limit configs', () => {
+    const files = [
+      java('Arm.java',
+        'public class Arm {',
+        '  static final double SUPPLY = 40.0;',
+        '  TalonFX pivot = new TalonFX(9);',
+        '  TalonFX roller = new TalonFX(8);',
+        '  TalonFX hood = new TalonFX(7);',
+        '  Arm() {',
+        '    var config = new TalonFXConfiguration();',
+        '    config.CurrentLimits.SupplyCurrentLimit = SUPPLY;',
+        '    config.CurrentLimits.SupplyCurrentLimitEnable = true;',
+        '    pivot.getConfigurator().apply(config);',
+        '    roller.getConfigurator().apply(new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimit(80.0).withStatorCurrentLimitEnable(true)));',
+        '    hood.configSupplyCurrentLimit(new SupplyCurrentLimitConfiguration(true, 30.0, 45.0, 0.5));',
+        '  }',
+        '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Arm arm = new Arm();', '}'),
+    ]
+    const limits = (id: number) => motorsOf(files).settings.filter((s) => s.id === id).map((s) => `${s.field}=${s.value}@${s.where}`)
+    expect(limits(9)).toEqual(['SupplyCurrentLimit=40@Arm.java:8', 'SupplyCurrentLimitEnable=true@Arm.java:9'])
+    expect(limits(8)).toEqual(['StatorCurrentLimit=80@Arm.java:11', 'StatorCurrentLimitEnable=true@Arm.java:11'])
+    expect(limits(7)).toEqual(['SupplyCurrentLimit=30@Arm.java:12', 'SupplyCurrentLimitEnable=true@Arm.java:12'])
+  })
+
+  it('fills the draft: kinds, IDs, the follower\'s group and limits marked "from code", and what the log lacks', async () => {
+    const files = [...shooter]
+    files[1] = { ...files[1], text: files[1].text.replace('public ShooterIOReal() {', 'public ShooterIOReal() { var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 30.0; leader.getConfigurator().apply(c); follower.getConfigurator().apply(c);') }
+    const hints = codeHints(files, { sha: 'abc1234def', branch: 'main' })
+    const log = openWpilog(writeWpilog([
+      ...DS, { name: '/RealMetadata/GitDirty', type: 'string', records: [[0, 'Uncommitted changes']] },
+      { name: '/Shooter/RollerCurrentAmps', type: 'double[]', records: [[1, [1, 2] as never]] }, d('/Shooter/RollerVelocity'),
+    ]))
+    const draft = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints })
+    const g = draft.json.motorGroups.find((x) => x.motors.length === 2)!
+    expect(g.motors.map((m) => [m.supplyCurrent, m.kindFrom, m.canId, m.canIdFrom])).toEqual([
+      ['/Shooter/RollerCurrentAmps[0]', 'code', 11, 'code'], ['/Shooter/RollerCurrentAmps[1]', 'code', 12, 'code'],
+    ])
+    expect([g.groupFromCode, g.sameLoop, g.sameLoopSuggested, g.limitsFromCode, g.limits?.supplyA]).toEqual([true, true, true, true, 30])
+    expect(draft.notes).toEqual([
+      'The code builds 1 more Talon FX that this log has no current for: ShooterIOReal.java:2 (ID 10). Their current isn\'t in the battery model.',
+      'The robot ran uncommitted changes on top of abc1234: this draft is from the commit, so check what the changes touched.',
+    ])
+    // Builder-only marks never reach the profile the rules use.
+    expect(toProfile(draft.json).motorGroups[0]).not.toHaveProperty('limitsFromCode')
   })
 })
 

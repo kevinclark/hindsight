@@ -1,0 +1,121 @@
+/**
+ * What the robot code adds to a draft from the logs: which current is supply and which stator, the CAN IDs, groups
+ * the code builds together, and the current limits it applies. Each value says it came from the code; the student
+ * confirms the draft before anything uses it.
+ *
+ * A log motor is the code's motor when one of its current keys is a key the code reads that motor into
+ * (code-motors.ts). The code is read at one commit: when the log says the robot ran uncommitted changes, the draft says
+ * so, since those changes aren't in any commit.
+ */
+import type { WpilogFile } from '../readers/wpilog.ts'
+import type { CodeHints } from './code-hints.ts'
+import { placeInLog, type CodeMotor, type PlacedCurrent } from './code-motors.ts'
+import { allMotors } from './draft.ts'
+import type { GroupJson, MotorJson, ProfileJson } from './json.ts'
+import type { CurrentLimits } from '../profiles/types.ts'
+
+/** Apply the code to a draft, in place. Returns what the student should know (motors the log lacks, a dirty tree). */
+export function applyCode(json: ProfileJson, hints: CodeHints, log: WpilogFile, dirty: boolean): string[] {
+  const placed = hints.motors.map((motor) => ({ motor, keys: placeInLog(motor, log) }))
+  const byKey = new Map<string, { motor: CodeMotor; keys: PlacedCurrent[] }>()
+  for (const p of placed) for (const k of p.keys) byKey.set(k.key, p)
+  const codeOf = new Map<MotorJson, CodeMotor>()
+
+  for (const { motor } of allMotors(json)) {
+    const hit = [motor.supplyCurrent, motor.statorCurrent, motor.current].map((k) => (k ? byKey.get(k) : undefined)).find(Boolean)
+    if (!hit) continue
+    codeOf.set(motor, hit.motor)
+    const kind = hit.keys.find((k) => k.key === motor.current)?.kind
+    if (motor.current && kind === 'supply' && !motor.supplyCurrent) { motor.supplyCurrent = motor.current; delete motor.current; motor.kindFrom = 'code' }
+    if (motor.current && kind === 'stator' && !motor.statorCurrent) { motor.statorCurrent = motor.current; delete motor.current; motor.kindFrom = 'code' }
+    if (hit.motor.id !== null && (motor.canIdFrom === undefined || motor.canIdFrom === 'code hint')) { motor.canId = hit.motor.id; motor.canIdFrom = 'code' }
+  }
+
+  regroup(json, codeOf)
+  for (const g of json.motorGroups) {
+    const limits = limitsFromCode(g, codeOf, hints)
+    if (limits && !g.limits?.where.startsWith('as running')) { g.limits = limits; g.limitsFromCode = true }
+  }
+
+  const notes: string[] = []
+  const unmatched = placed.filter((p) => ![...codeOf.values()].includes(p.motor))
+  if (unmatched.length) {
+    const list = unmatched.map((p) => `${p.motor.site}${p.motor.id !== null ? ` (ID ${p.motor.id})` : ''}`).join(', ')
+    notes.push(`The code builds ${unmatched.length} more Talon FX that this log has no current for: ${list}. Their current isn't in the battery model.`)
+  }
+  if (dirty) notes.push(`The robot ran uncommitted changes on top of ${hints.sha?.slice(0, 7) ?? 'its commit'}: this draft is from the commit, so check what the changes touched.`)
+  return notes
+}
+
+/**
+ * Groups as the code builds them: the motors one place builds for one folder (four modules' drive motors), and a
+ * follower with its leader. Log groups the code splits are merged (grouped by the code), and a group the code agrees
+ * with says so (groupFromCode), keeping the log's evidence for it. A
+ * follower's group is ticked "same loop", as a suggestion the student confirms.
+ */
+function regroup(json: ProfileJson, codeOf: Map<MotorJson, CodeMotor>): void {
+  const groupOf = (m: MotorJson) => json.motorGroups.find((g) => g.motors.includes(m))!
+  const byCode = new Map<string, MotorJson[]>()
+  for (const [m, c] of codeOf) byCode.set(c.group, [...(byCode.get(c.group) ?? []), m])
+  for (const members of byCode.values()) {
+    const target = groupOf(members[0])
+    for (const m of members.slice(1)) {
+      const from = groupOf(m)
+      if (from === target) continue
+      from.motors = from.motors.filter((x) => x !== m)
+      target.motors.push(m)
+      target.groupedBy = 'code'
+      target.groupFromCode = true
+    }
+  }
+  json.motorGroups = json.motorGroups.filter((g) => g.motors.length > 0)
+  for (const g of json.motorGroups) {
+    const codes = g.motors.map((m) => codeOf.get(m))
+    if (codes.every((c) => c && c.group === codes[0]!.group)) g.groupFromCode = true
+    if (codes.some((c) => c?.follows)) { g.sameLoop = true; g.sameLoopSuggested = true }
+  }
+}
+
+/** The limits the code gives every motor of a group, when they agree; null when the code sets none or they differ. */
+function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: CodeHints): CurrentLimits | null {
+  const each = g.motors.map((m) => {
+    const c = codeOf.get(m)
+    return c && c.id !== null ? hints.settings.filter((s) => s.kind === 'TalonFX' && s.id === c.id && s.bus === c.bus && /Current/.test(s.field)) : null
+  })
+  if (each.some((s) => !s || s.length === 0)) return null
+  const value = (f: string) => {
+    const values = each.map((s) => [...new Set(s!.filter((x) => x.field === f).map((x) => x.value))])
+    return values.every((v) => v.length === 1 && v[0] === values[0][0]) ? values[0][0] : values.every((v) => v.length === 0) ? undefined : null
+  }
+  const fields = { supplyA: value('SupplyCurrentLimit'), supplyEnabled: value('SupplyCurrentLimitEnable'), statorA: value('StatorCurrentLimit'), statorEnabled: value('StatorCurrentLimitEnable') }
+  if (Object.values(fields).includes(null)) return null
+  const where = lines(each.flat().map((s) => s!.where))
+  const supplyLines = lines(each.flat().filter((s) => s!.field.startsWith('Supply')).map((s) => s!.where))
+  return {
+    ...(fields.supplyA !== undefined ? { supplyA: fields.supplyA as number } : {}),
+    ...(fields.supplyEnabled !== undefined ? { supplyEnabled: fields.supplyEnabled as boolean } : {}),
+    ...(fields.statorA !== undefined ? { statorA: fields.statorA as number } : {}),
+    ...(fields.statorEnabled !== undefined ? { statorEnabled: fields.statorEnabled as boolean } : {}),
+    where,
+    ...(supplyLines ? { supplyLines } : {}),
+  }
+}
+
+/** "ElevatorIOReal.java:59", "…:60", "Robot.java:608" → "ElevatorIOReal.java:59-60, Robot.java:608". */
+export function lines(wheres: string[]): string {
+  const byFile = new Map<string, number[]>()
+  for (const w of wheres) {
+    const [file, line] = w.split(':')
+    byFile.set(file, [...new Set([...(byFile.get(file) ?? []), Number(line)])].sort((a, b) => a - b))
+  }
+  return [...byFile].map(([file, ls]) => {
+    const runs: string[] = []
+    for (let i = 0; i < ls.length; i++) {
+      let j = i
+      while (j + 1 < ls.length && ls[j + 1] === ls[j] + 1) j++
+      runs.push(i === j ? `${ls[i]}` : `${ls[i]}-${ls[j]}`)
+      i = j
+    }
+    return `${file}:${runs.join(',')}`
+  }).join(', ')
+}

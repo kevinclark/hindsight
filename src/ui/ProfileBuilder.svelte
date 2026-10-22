@@ -1,8 +1,9 @@
 <!--
   Robot profile builder: drop match logs (and optionally a robot snapshot and the robot code: a folder, or a public
-  GitHub repo) and get a draft
+  GitHub repo at the log's commit) and get a draft
   robot profile the student confirms, keeps in this browser, or saves as profile.json. Everything stays in this page.
-  The draft says where each value came from; what no file can show is listed under "Not checked with this profile".
+  The draft says where each value came from (the code, the log, the snapshot, a guess from names, or the student);
+  what no file can show is listed under "Not checked with this profile".
 -->
 <script lang="ts">
   import { openWpilog, type WpilogFile } from '../readers/wpilog.ts'
@@ -29,20 +30,23 @@
   let githubSpec = $state('')
   let json = $state<ProfileJson | null>(null)
   let notUsed = $state<{ key: string; why: string }[]>([])
+  let guessedSignals = $state<{ signal: string; key: string; alternatives: string[] }[]>([])
   let seenLimits = $state<string[]>([])
   let problems = $state<string[]>([])
   let busy = $state(false)
   let dragging = $state(false)
   let keptNote = $state('')
-  let draftWarningsAtDraft = $state<string[]>([])
+  let draftNotes = $state<string[]>([])
   let kept = $state<ProfileJson[]>(keptProfiles())
   // The keptId of the kept profile being edited (opened from the list, or kept since): keeping replaces it, renamed or not.
   let keptAs = $state<string | null>(null)
 
-  const SOURCE_WORDS: Record<string, string> = { log: 'log', snapshot: 'snapshot', you: 'you', 'code hint': 'code hint' }
+  const SOURCE_WORDS: Record<string, string> = { log: 'log', snapshot: 'snapshot', code: 'code', you: 'you', 'code hint': 'code hint' }
+  /** Why a group is one, as the builder shows it: the code, or a guess from the log's key names. */
+  const GROUP_WORDS: Record<string, string> = { code: 'the code', swerve: 'guess: swerve names', 'one array': 'guess: one array key', 'leader/follower': 'guess: leader and follower names', you: 'you' }
   const talons = $derived((snapshot?.devices ?? []).filter((d) => d.isMotor))
-  // Logs left out (another robot) come from the draft; the rest follow the student's edits.
-  const warnings = $derived(json ? [...draftWarningsAtDraft.filter((w) => w.includes('from another robot')), ...draftWarnings(json.motorGroups)] : [])
+  // Notes on the files (logs left out, what the code says the log lacks) come from the draft; the rest follow the student's edits.
+  const warnings = $derived(json ? [...draftNotes, ...draftWarnings(json.motorGroups)] : [])
   const shaProblem = $derived(hints && json?.code ? shaWarning(hints, json.code.sha) : null)
   const framework = $derived(json?.signals ? formatOfSignals(json.signals)?.name ?? 'unknown' : 'unknown')
   // Computed on a copy: refreshLimits fills in the group's limits, and here only its reason for leaving them out is wanted.
@@ -65,8 +69,9 @@
     copy.game ??= { name: '', autoSeconds: 15, teleopSeconds: 135 }
     copy.code ??= { repo: '', branch: '', sha: '' }
     json = copy
-    draftWarningsAtDraft = []
+    draftNotes = []
     notUsed = []
+    guessedSignals = []
     seenLimits = []
     keptNote = ''
   }
@@ -77,8 +82,9 @@
     // Another log was dropped: keep what the student already confirmed.
     if (json) { carryConfirmations($state.snapshot(json) as ProfileJson, d.json); if (snapshot) refreshLimits(d.json, snapshot) }
     json = d.json
-    draftWarningsAtDraft = d.warnings
+    draftNotes = d.notes
     notUsed = d.notUsed
+    guessedSignals = d.guessed
     seenLimits = d.limits
     keptNote = ''
   }
@@ -142,14 +148,15 @@
   }
 
   /**
-   * Pre-fills "Use GitHub" with the profile's repo and branch. A draft from logs knows the codebase and branch but not
-   * the repo: then the repo of a built-in profile for the same codebase.
+   * Pre-fills "Use GitHub" with the profile's repo at the commit the log ran (else its branch). A draft from logs knows
+   * the codebase and commit but not the repo: then the repo of a built-in profile for the same codebase.
    */
   function askGitHub() {
     const realRepo = (repo?: string) => !!repo && /^[\w.-]+\/[\w.-]+$/.test(repo)
     const sameCodebase = PROFILES.find((p) => p.codebase === json?.codebase && realRepo(p.code.repo))
     const repo = realRepo(json?.code?.repo) ? json?.code?.repo : sameCodebase?.code.repo
-    if (repo) githubSpec = `${repo}@${json?.code?.branch || sameCodebase?.code.branch || 'main'}`
+    const sha = /^[0-9a-f]{7,40}$/i.test(json?.code?.sha ?? '') ? json!.code!.sha.slice(0, 7) : ''
+    if (repo) githubSpec = `${repo}@${sha || json?.code?.branch || sameCodebase?.code.branch || 'main'}`
     askingGitHub = !askingGitHub
   }
 
@@ -169,10 +176,12 @@
     busy = false
   }
 
+  /** The code: its CAN ID hints label the choices, and a draft from logs is drafted again with what the code says. */
   function useHints(found: CodeHints, from: string) {
     hints = found
     hintsFrom = from
-    if (json) json.builtFrom = { ...json.builtFrom, at: json.builtFrom?.at ?? new Date().toISOString(), code: found.sha ?? 'unknown commit' }
+    if (logs.length) redraft()
+    else if (json) json.builtFrom = { ...json.builtFrom, at: json.builtFrom?.at ?? new Date().toISOString(), code: found.sha ?? 'unknown commit' }
   }
 
   const groupOf = (m: MotorJson) => json?.motorGroups.find((g) => g.motors.includes(m))
@@ -198,6 +207,7 @@
     if ((kind === 'supply' && motor.supplyCurrent) || (kind === 'stator' && motor.statorCurrent)) return
     if (kind === 'supply') motor.supplyCurrent = motor.current; else motor.statorCurrent = motor.current
     delete motor.current
+    motor.kindFrom = 'you'
   }
 
   function moveMotor(motor: MotorJson, to: string) {
@@ -255,7 +265,8 @@
 <p class="intro">
   Drop your match logs (<code>.wpilog</code>, several is better), your robot snapshot (<code>snapshot.json</code>), or a saved <code>profile.json</code>
   to draft a robot profile you can check and keep. Optionally choose your robot-code folder (only its <code>.java</code> files and
-  <code>.git</code> branch files are read) or a public GitHub repo, to label the CAN ID choices. Files never leave the computer.
+  <code>.git</code> branch files are read) or a public GitHub repo at the log's commit: the code fills in CAN IDs, which current is
+  supply and which stator, groups and current limits, each marked "from code" for you to confirm. Files never leave the computer.
 </p>
 
 <section class="drop" class:dragging aria-label="Drop files" aria-busy={busy}
@@ -316,13 +327,16 @@
         <h4>
           <label>Group <input type="text" bind:value={g.name} /></label>
         </h4>
+        {#if g.motors.length > 1 && (g.groupFromCode || GROUP_WORDS[g.groupedBy ?? ''])}
+          <p class="meta" data-grouped>Grouped by {g.groupFromCode ? 'the code' : GROUP_WORDS[g.groupedBy!]}{g.groupFromCode && g.groupedBy !== 'code' && GROUP_WORDS[g.groupedBy ?? ''] ? ` (and ${GROUP_WORDS[g.groupedBy!].replace('guess: ', 'the ')})` : ''}</p>
+        {/if}
         <p class="row">
           <label class="check"><input type="checkbox" bind:checked={g.sameLoop} onchange={() => confirmLoop(g)} /> these motors run one control loop (leader + followers)</label>
-          {#if g.sameLoop && g.sameLoopSuggested}<span class="suggested">suggested from the names: confirm</span>{/if}
+          {#if g.sameLoop && g.sameLoopSuggested}<span class="suggested">suggested from the {g.groupFromCode ? 'code (a follower)' : 'names'}: confirm</span>{/if}
         </p>
         <p class="meta limits-line">
           Limits:
-          {#if limitText(g)}{limitText(g)}
+          {#if limitText(g)}{limitText(g)}{#if g.limitsFromCode}<small class="tag">from code: confirm</small>{/if}
           {:else if limitProblems.get(g.name)}<span class="warn">{limitProblems.get(g.name)}</span>
           {:else}not known: drop a robot snapshot{/if}
         </p>
@@ -348,6 +362,7 @@
                       </div>
                     {/if}
                     {#if !motor.supplyCurrent && !motor.statorCurrent && !motor.current}<span class="muted">none</span>{/if}
+                    {#if motor.kindFrom}<small class="tag" data-kind-from>supply or stator: from {SOURCE_WORDS[motor.kindFrom]}</small>{/if}
                   </td>
                   <td>
                     <select data-canid aria-label="CAN ID of {motor.name}" onchange={(e) => pickDevice(motor, (e.currentTarget as HTMLSelectElement).value)}>
@@ -382,6 +397,15 @@
     {/each}
     {#if allMotors(json).length === 0}<p class="note">No motors in this profile.</p>{/if}
   </section>
+
+  {#if guessedSignals.length}
+    <section class="guessed">
+      <h3>Signals picked by their shape: confirm</h3>
+      <ul>
+        {#each guessedSignals as g (g.signal)}<li data-guessed={g.signal}><strong>{g.signal}</strong>: <code>{g.key}</code><small class="tag">guess</small>{#if g.alternatives.length}<span class="muted"> (also seen: {#each g.alternatives as a, i (a)}{i ? ', ' : ''}<code>{a}</code>{/each})</span>{/if}</li>{/each}
+      </ul>
+    </section>
+  {/if}
 
   {#if notUsed.length || seenLimits.length}
     <section class="not-used">
@@ -457,6 +481,7 @@
   input[type='text'], input[type='number'], select { font: inherit; font-size: 0.8rem; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; max-width: 100%; }
   input[type='text'] { padding: 0.15rem 0.3rem; }
   .num { width: 4.5rem; }
+  select[data-canid] { width: 22ch; }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 1.5rem; }
   .link { border: none; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; padding: 0 0.3rem; }
   li { font-size: 0.85rem; margin-bottom: 0.2rem; max-width: 85ch; }
