@@ -314,6 +314,16 @@ commit, reseat a controller).
 First time on a robot: [docs/foresight-first-robot.md](docs/foresight-first-robot.md). Not yet run on a roboRIO; tested
 against the CalGames logs replayed as NT4 and against desktop ntcore (pyntcore 2025.3.2) in Chrome from `file://`.
 
+## Build checks in your robot's build (Gradle plugin)
+
+One line in a WPILib robot's `plugins {}` (`id "io.github.kevinclark.hindsight"`) adds checks to every build: a short
+allowlist of Error Prone warnings, integer division (`50 / 12` is 4) and a few style slips fixed in place on laptop
+builds and never during a deploy, the three alerts that have only found real bugs failing CI, a check that the robot builds and runs through
+disabled, auto, teleop and disabled in simulation, and a pre-commit format hook. Each is off by name in
+`hindsight {}`. Not on the Plugin Portal yet; details, costs and the off switches:
+[companion/gradle-plugin/README.md](companion/gradle-plugin/README.md). It pairs with the code check below, which
+reports on pull requests.
+
 ## Code check in your team's CI
 
 The code check (Foresight's "does the robot code have a mistake that costs matches") also runs as a GitHub Action: on

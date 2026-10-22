@@ -45,7 +45,8 @@ ext {
     }
 }
 
-subprojects {
+// The vendordeps; gradle-plugin is a Gradle plugin and has its own build file
+configure([project(':core'), project(':battery')]) {
     apply plugin: 'java-library'
     apply plugin: 'maven-publish'
 

@@ -2,3 +2,5 @@ rootProject.name = 'hindsight-companion'
 
 // Two vendordeps: core (HindsightCompanion) and battery (HindsightCompanionBattery, needs PlayingWithFusion)
 include 'core', 'battery'
+// The Gradle plugin a robot project applies (io.github.kevinclark.hindsight): build checks, not a vendordep
+include 'gradle-plugin'
