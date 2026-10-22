@@ -16,7 +16,7 @@ const at = (y: number, mo: number, d: number, h = 12) => new Date(y, mo - 1, d, 
 function log(over: Partial<LogRecord> & { sha256: string }): LogRecord {
   return {
     type: 'log', kind: 'wpilog', playedAt: at(2026, 10, 17), dateSource: 'robot clock', wall: null, matchWindow: null, event: '', matchType: null, matchNumber: null,
-    onField: false, batteryId: null, robot: { profileId: 'p', name: 'Robot A' }, build: null, stub: false, hardwareId: null,
+    onField: false, batteryId: null, robot: { profileId: 'p', name: 'Robot A', how: 'codebase', fit: 1 }, build: null, stub: false, hardwareId: null,
     size: 1, path: `logs/x/${over.sha256}.wpilog`, names: [`${over.sha256}.wpilog`], modifiedTime: null, from: 'folder', recordedAt: 1, machine: 'm1', ...over,
   }
 }
@@ -115,7 +115,7 @@ describe('tags and facets', () => {
   const logs = [
     log({ sha256: 'a1', onField: true, event: 'TEST', matchType: 2, matchNumber: 7, batteryId: 'B01' }),
     log({ sha256: 'a2', playedAt: at(2026, 10, 17, 15) }),
-    log({ sha256: 'a3', playedAt: at(2027, 2, 20), onField: true, event: 'TEST', matchType: 3, batteryId: 'B02', robot: { profileId: 'q', name: 'Robot B' } }),
+    log({ sha256: 'a3', playedAt: at(2027, 2, 20), onField: true, event: 'TEST', matchType: 3, batteryId: 'B02', robot: { profileId: 'q', name: 'Robot B', how: 'codebase', fit: 1 } }),
     log({ sha256: 'a4', playedAt: null, dateSource: 'unknown', stub: false }),
     log({ sha256: 'h1', kind: 'hoot', playedAt: at(2026, 10, 17), hardwareId: 'ABC123' }),
   ]

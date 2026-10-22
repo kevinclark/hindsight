@@ -9,11 +9,13 @@ import { readDslog, dslogEndEpoch } from '../readers/dslog.ts'
 import { readDsevents, dseventsEndEpoch } from '../readers/dsevents.ts'
 import { buildMatch, has, num, values } from '../match/match.ts'
 import { heldAt } from '../match/series.ts'
-import { chooseProfile } from '../profiles/choose.ts'
+import { chooseProfile, type ProfileChoice } from '../profiles/choose.ts'
+import { codeIdentity } from '../profiles/formats.ts'
+import type { RobotProfile } from '../profiles/types.ts'
 import { PROFILES, profileId } from '../profiles/index.ts'
 import { playedAt } from '../session/summary.ts'
 import { hootName, nameInstant } from './dates.ts'
-import { kindOf, type LogMeta } from './types.ts'
+import { kindOf, type LogMeta, type LogRobot } from './types.ts'
 
 /** A robot log this small with no enabled time is a stub. */
 export const STUB_BYTES = 1 << 20
@@ -66,10 +68,22 @@ function describeWpilog(name: string, bytes: Uint8Array): LogMeta {
     matchWindow: mStart !== null && mEnd !== null ? { start: mStart, end: mEnd } : null,
     event: match.event, matchType: type, matchNumber: number, onField: match.fms,
     batteryId: atStart || null,
-    robot: { profileId: profileId(match.profile), name: match.profile.name },
+    robot: robotIdentity(profile, choice, codeIdentity(log).codebase),
     build: match.build.sha ? { sha: match.build.sha.slice(0, 7), branch: match.build.branch } : null,
     stub: bytes.length < STUB_BYTES && match.enabled.length === 0,
   }
+}
+
+/**
+ * The robot a log is from. The profile names it when the log's own Codebase matched a profile (with or without the branch),
+ * or when no profile was named but one fit the log's signals. A best guess that does not fit (`misfit`) is not an identity:
+ * the log's own Codebase text is recorded instead, with no profile, or null when the log has none.
+ */
+export function robotIdentity(profile: RobotProfile, choice: ProfileChoice, codebase: string): LogRobot | null {
+  const fit = choice.fit && choice.fit.total > 0 ? choice.fit.present / choice.fit.total : null
+  const named = choice.how === 'codebase and branch' || choice.how === 'codebase' || (choice.how === 'signals' && !choice.misfit)
+  if (named) return { profileId: profileId(profile), name: profile.name, how: choice.how, fit }
+  return codebase ? { profileId: null, name: codebase, how: choice.how, fit } : null
 }
 
 const last = (series: { v: ArrayLike<number> } | null): number | null => (series && series.v.length ? series.v[series.v.length - 1] : null)

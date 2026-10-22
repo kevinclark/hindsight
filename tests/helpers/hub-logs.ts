@@ -11,6 +11,9 @@ export interface RobotLogOptions {
   matchNumber?: number
   fms?: boolean
   battery?: string
+  /** The code's name for itself (/RealMetadata/Codebase) and the branch it ran. */
+  codebase?: string
+  branch?: string
   /** Makes two otherwise equal logs differ. */
   seed?: string
 }
@@ -28,6 +31,8 @@ export function robotLog(o: RobotLogOptions = {}): Uint8Array {
   if (o.matchType !== undefined) entries.push({ name: '/DriverStation/MatchType', type: 'int64', records: [[0, o.matchType]] })
   if (o.matchNumber !== undefined) entries.push({ name: '/DriverStation/MatchNumber', type: 'int64', records: [[0, o.matchNumber]] })
   if (o.battery) entries.push({ name: '/RealOutputs/Battery/Id', type: 'string', records: [[0, o.battery]] })
+  if (o.codebase) entries.push({ name: '/RealMetadata/Codebase', type: 'string', records: [[0, o.codebase]] })
+  if (o.branch) entries.push({ name: '/RealMetadata/GitBranch', type: 'string', records: [[0, o.branch]] })
   if (o.clockMs !== undefined) {
     entries.push(
       { name: '/SystemStats/SystemTimeValid', type: 'boolean', records: [[0, true]] },

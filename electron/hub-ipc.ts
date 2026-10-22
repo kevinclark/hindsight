@@ -11,7 +11,9 @@ import { driveFolderFiles, folderIdFrom } from '../src/hub/drive-source.ts'
 import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
 import { checkForUpdate } from '../src/hub/update.ts'
-import type { DriveStatus, LibrarySnapshot, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
+import { JobRunner, type Work } from '../src/hub/jobs.ts'
+import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
+import type { DriveStatus, LibrarySnapshot, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
 import { Describer } from './describer.ts'
 import { driveToken, googleClient, keeping, signIn, signOut, signedIn } from './google-auth.ts'
@@ -20,7 +22,7 @@ import { loadSettings, saveSettings } from './settings.ts'
 export function registerHub(window: () => BrowserWindow | null): void {
   const describer = new Describer()
   let library: Promise<LocalLibrary> | null = null
-  let running: { cancelled: boolean } | null = null
+  const jobs = new JobRunner()
   const open = () => (library ??= loadSettings().then((s) => LocalLibrary.open(s.libraryDir, s.machineId)))
   const seenFile = () => join(app.getPath('userData'), 'seen.json')
   const send = (channel: string, payload: unknown) => window()?.webContents.send(channel, payload)
@@ -29,11 +31,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
   const update = checkForUpdate(app.getVersion())
 
   /** One job at a time (an import, a sync, a download): they share the library's manifest and the user's attention. */
-  async function job<T>(name: string, work: (job: { cancelled: boolean }, progress: (done: number, total: number, current: string) => void) => Promise<T>): Promise<T> {
-    if (running) throw new Error('Another job is running. Wait for it or stop it first.')
-    const mine = (running = { cancelled: false })
-    try { return await work(mine, (done, total, current) => send('hub:progress', { job: name, done, total, current })) } finally { running = null }
-  }
+  const job = <T>(name: string, work: Work<T>): Promise<T> =>
+    jobs.run(name, work, (p) => send('hub:progress', p))
 
   async function teamStore(): Promise<DriveAdapter> {
     const folder = (await loadSettings()).teamFolder
@@ -79,7 +78,14 @@ export function registerHub(window: () => BrowserWindow | null): void {
     return picked ? runIngest('Reading folder', await localFolderFiles(picked)) : null
   })
 
-  ipcMain.handle('hub:cancel', () => { if (running) running.cancelled = true })
+  ipcMain.handle('hub:cancel', () => jobs.cancel())
+  ipcMain.handle('hub:runningJob', (): Progress | null => jobs.current())
+
+  /** Read every robot log in this library again with the current describer; appends a `meta` record for each that reads differently. */
+  ipcMain.handle('hub:redescribe', async (): Promise<RedescribeReport> => {
+    const lib = await open()
+    return job('Reading logs again', (j, progress) => redescribe(lib, { describe: describer.describe, cancelled: () => j.cancelled, onProgress: progress }))
+  })
 
   ipcMain.handle('hub:setTag', async (_e, target: TagTarget, field: TagField, value: string) => {
     const goodTarget = ('log' in target && /^[0-9a-f]{64}$/.test(target.log)) || ('day' in target && /^\d{4}-\d{2}-\d{2}$/.test(target.day))

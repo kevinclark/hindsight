@@ -4,7 +4,7 @@
  * files it holds and from a listing of `logs/`.
  */
 import { dayText } from './layout.ts'
-import { parseManifest, type LogRecord, type ManifestRecord, type TagField, type TagRecord } from './types.ts'
+import { parseManifest, type LogRecord, type ManifestRecord, type MetaRecord, type TagField, type TagRecord } from './types.ts'
 
 export type Tags = Partial<Record<TagField, string>>
 
@@ -30,8 +30,22 @@ export function filesToFetch(e: Pick<Entry, 'record' | 'attached'>, held: Readon
   return [e.record, ...e.attached.dslog, ...e.attached.dsevents, ...e.attached.hoot].filter((r) => shared.has(r.path) && !held.has(r.path))
 }
 
+/** What a later reading may never change: it decides the file's path (and so its identity in the library). */
+const FIXED_BY_FIRST_READING = ['kind', 'playedAt', 'dateSource'] as const
+
+/** The log record with a later reading laid over it, minus the fields that decide where the file lives. */
+function overlay(base: LogRecord, meta: MetaRecord | undefined): LogRecord {
+  if (!meta) return base
+  const later = { ...meta.meta } as Record<string, unknown>
+  for (const k of FIXED_BY_FIRST_READING) delete later[k]
+  return { ...base, ...later } as LogRecord
+}
+
 export class Catalog {
+  /** Each log as the library shows it: the earliest record of its sha-256 with the latest reading laid over it. */
   private logs = new Map<string, LogRecord>()
+  private bases = new Map<string, LogRecord>()
+  private metas = new Map<string, MetaRecord>()
   private extraNames = new Map<string, Set<string>>()
   private tagRecords: TagRecord[] = []
   private md5s = new Map<string, string>()
@@ -49,16 +63,26 @@ export class Catalog {
 
   add(r: ManifestRecord): void {
     if (r.type === 'log') {
-      const have = this.logs.get(r.sha256)
+      const have = this.bases.get(r.sha256)
       // Two machines that brought in the same bytes: the earlier record stands, the other's names are kept.
-      if (!have || r.recordedAt < have.recordedAt) this.logs.set(r.sha256, { ...r, names: [...new Set([...r.names, ...(have?.names ?? [])])] })
+      if (!have || r.recordedAt < have.recordedAt) this.bases.set(r.sha256, { ...r, names: [...new Set([...r.names, ...(have?.names ?? [])])] })
       else have.names = [...new Set([...have.names, ...r.names])]
       if (r.md5) this.md5s.set(r.md5, r.sha256)
+      this.show(r.sha256)
+    } else if (r.type === 'meta') {
+      // The latest reading of a log wins, whichever machine wrote it; it may arrive before the log's own record.
+      const have = this.metas.get(r.sha256)
+      if (!have || r.recordedAt >= have.recordedAt) { this.metas.set(r.sha256, r); this.show(r.sha256) }
     } else if (r.type === 'alias') {
       const set = this.extraNames.get(r.sha256) ?? new Set()
       set.add(r.name)
       this.extraNames.set(r.sha256, set)
     } else this.tagRecords.push(r)
+  }
+
+  private show(sha256: string): void {
+    const base = this.bases.get(sha256)
+    if (base) this.logs.set(sha256, overlay(base, this.metas.get(sha256)))
   }
 
   /** The log recorded at a library path, if any (another machine may have filed a different log there). */

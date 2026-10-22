@@ -6,6 +6,7 @@ import type { Entry } from './catalog.ts'
 import type { IngestPlan, IngestReport } from './ingest.ts'
 import type { FetchReport, SyncReport } from './sync.ts'
 import type { Update } from './update.ts'
+import type { RedescribeReport } from './redescribe.ts'
 import type { TagField, TagTarget } from './types.ts'
 
 export interface Progress { job: string; done: number; total: number; current: string }
@@ -40,10 +41,15 @@ export interface HubApi {
   /** Choose a folder on this machine and bring its logs in. Resolves with the report, or null if the dialog was cancelled. */
   addFromFolder(): Promise<IngestReport | null>
   cancel(): Promise<void>
+  /** The running job's latest progress, or null when none runs (a page that loads mid-job asks this). */
+  runningJob(): Promise<Progress | null>
+  /** Read this library's robot logs again with the current describer; resolves with what changed. */
+  redescribe(): Promise<RedescribeReport>
   setTag(target: TagTarget, field: TagField, value: string): Promise<void>
   /** The bytes of a log in the library (path as in the manifest). */
   readLog(path: string): Promise<Uint8Array>
-  onProgress(callback: (p: Progress) => void): () => void
+  /** Progress of any job; `null` when the job ended. */
+  onProgress(callback: (p: Progress | null) => void): () => void
 
   driveStatus(): Promise<DriveStatus>
   driveSignIn(): Promise<void>
