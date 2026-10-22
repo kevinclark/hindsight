@@ -35,7 +35,7 @@ export interface GroupJson extends Omit<MotorGroup, 'motors' | 'limits'> {
   /** sameLoop was ticked by the builder (from leader/follower names), not yet by the student. */
   sameLoopSuggested?: boolean
   /** Why these motors are one group: the builder's evidence, or the student's say. */
-  groupedBy?: 'swerve' | 'leader/follower' | 'one motor' | 'you'
+  groupedBy?: 'swerve' | 'one array' | 'leader/follower' | 'one motor' | 'you'
 }
 
 export type ZeroingJson = Omit<ZeroingMechanism, 'doneMessage'> & { doneMessage: { source: string; flags: string } }

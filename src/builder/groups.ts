@@ -1,7 +1,9 @@
 /**
  * Motor groups from motor paths alone. One group per motor, merged only on clear evidence:
  *  - a swerve layout: the same motor name (`Drive`, `Turn`, `moveMotor`) in 3 or more sibling folders under one
- *    parent, where the folders differ only by a number or a corner (`Module0..3`, `Front Left Module`, `frontLeft`);
+ *    parent, where the folders differ only by a number or a corner (`Module0..3`, `Front Left Module`, `frontLeft`).
+ *    The parent may be the log's root only when the folders say "module" or "swerve" (`/Swerve Module 0/Drive`);
+ *  - one array: the motors of one current array (`/Elevator/CurrentAmps` with two elements), logged by one IO class;
  *  - leader and followers: `Leader` / `Lead` / `Follower N` / `Follow` in the motors' names, in one folder.
  * Everything else (merge, split, rename) is the student's call: groups carry current limits and "same loop", which a
  * log can't show.
@@ -12,7 +14,7 @@ export interface DraftGroup {
   name: string
   motors: { name: string; motor: LogMotor }[]
   /** Why these motors are one group. */
-  evidence: 'swerve' | 'leader/follower' | 'one motor'
+  evidence: 'swerve' | 'one array' | 'leader/follower' | 'one motor'
 }
 
 const CORNERS = new Set(['front', 'back', 'rear', 'left', 'right', 'fl', 'fr', 'bl', 'br', 'rl', 'rr'])
@@ -42,7 +44,7 @@ export function humanize(s: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** Words that name no mechanism: a tail made only of these ("motor") takes one more segment. */
+/** Words that name no mechanism: a tail made only of these or of sides ("motor", "Left") takes one more segment. */
 const GENERIC_TAIL = new Set(['motor', 'talon', 'talonfx', 'io', 'inputs', 'hardware'])
 
 const segments = (path: string) => path.replace(/^NT:/, '').split('/').filter(Boolean)
@@ -54,7 +56,7 @@ function shortNames(paths: string[]): Map<string, string> {
     const segs = segments(p)
     for (let n = 1; n <= segs.length; n++) {
       const tail = segs.slice(-n).join('/')
-      if (n < segs.length && tokens(segs.slice(-n).join(' ')).every((t) => GENERIC_TAIL.has(t))) continue
+      if (n < segs.length && tokens(segs.slice(-n).join(' ')).every((t) => GENERIC_TAIL.has(t) || CORNERS.has(t))) continue
       if (n === segs.length || paths.filter((q) => q !== p && segments(q).slice(-n).join('/') === tail).length === 0) {
         out.set(p, humanize(segs.slice(-n).join(' ')))
         break
@@ -73,8 +75,10 @@ export function groupMotors(motors: LogMotor[]): DraftGroup[] {
   const candidates = new Map<string, LogMotor[]>()
   for (const m of motors) {
     const segs = segments(m.path)
-    if (segs.length < 3) continue // the parent G must not be the log's root
+    if (segs.length < 2 || m.element) continue
     const g = segs.slice(0, -2).join('/'), x = segs[segs.length - 2], t = segs[segs.length - 1]
+    // At the log's root only folders named as modules: `/Shooter 1/Motor`, `/Shooter 2/Motor`... are not a drive.
+    if (segs.length === 2 && !tokens(x).some((w) => w === 'module' || w === 'swerve')) continue
     const k = JSON.stringify([m.path.startsWith('NT:'), g, template(x), t])
     if (!candidates.has(k)) candidates.set(k, [])
     candidates.get(k)!.push(m)
@@ -85,6 +89,17 @@ export function groupMotors(motors: LogMotor[]): DraftGroup[] {
     if (ms.length < 3 || xs.size !== ms.length) continue
     const sorted = [...ms].sort((a, b) => a.path.localeCompare(b.path))
     groups.push({ name: humanize(t), evidence: 'swerve', motors: sorted.map((m) => ({ name: humanize(`${segments(m.path).at(-2)} ${t}`), motor: m })) })
+    ms.forEach((m) => used.add(m))
+  }
+
+  // One array: its elements, in order, named by the array's motor path and a number from 1.
+  const arrays = new Map<string, LogMotor[]>()
+  for (const m of motors) if (m.element) { if (!arrays.has(m.element.of)) arrays.set(m.element.of, []); arrays.get(m.element.of)!.push(m) }
+  const arrayNames = shortNames([...arrays.keys(), ...motors.filter((m) => !m.element).map((m) => m.path)])
+  for (const [of, ms] of arrays) {
+    const name = arrayNames.get(of)!
+    const sorted = [...ms].sort((a, b) => a.element!.index - b.element!.index)
+    groups.push({ name, evidence: 'one array', motors: sorted.map((m) => ({ name: `${name} ${m.element!.index + 1}`, motor: m })) })
     ms.forEach((m) => used.add(m))
   }
 

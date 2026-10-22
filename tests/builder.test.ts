@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { openWpilog } from '../src/readers/wpilog.ts'
+import { openWpilog, readNumbers } from '../src/readers/wpilog.ts'
 import { chooseProfile } from '../src/profiles/choose.ts'
 import { ADVANTAGEKIT_SIGNALS } from '../src/profiles/advantagekit.ts'
 import { offseason2025 } from '../src/profiles/2025-offseason.ts'
@@ -120,7 +120,9 @@ describe('motors and groups from a log', () => {
     ].sort())
     expect(notUsed.map((n) => n.key)).toContain('NT:/SmartDashboard/Climber/CurrentAmps')
     expect(notUsed.find((n) => n.key === '/Arm/Position/Current')?.why).toMatch(/no velocity/)
-    expect(limits.join(' ')).toMatch(/arrays/)
+    // An array with nothing beside it is no motor either: each element is listed.
+    expect(notUsed.map((n) => n.key)).toEqual(expect.arrayContaining(['/Elevator/CurrentAmps[0]', '/Elevator/CurrentAmps[1]']))
+    expect(limits).toEqual([])
   })
 
   it('marks a current that doesn\'t say supply or stator, and reads siblings', () => {
@@ -167,6 +169,84 @@ describe('motors and groups from a log', () => {
     const drive = toProfile(draft.json).motorGroups.find((g) => g.name === 'Drive')!.motors[0]
     expect(drive.supplyCurrent).toBeUndefined()
     expect(drive.statorCurrent).toBeUndefined()
+  })
+})
+
+describe('older AdvantageKit logs (the shapes of 8033\'s 2023 and 2024 robots)', () => {
+  const arr = (name: string, ...values: number[][]): FixtureEntry => ({ name, type: 'double[]', records: values.map((v, i) => [i + 1, v as never]) })
+
+  it('reads `Amps` without "Current", and percent output or speed as a motor\'s sibling', () => {
+    const log = openWpilog(writeWpilog([
+      d('/Shooter/PivotAmps'), d('/Shooter/PivotVoltage'), d('/Shooter/PivotTempC'),
+      d('/Grabber/RollersCurrentAmps'), d('/Grabber/RollersPercentOut'), d('/Grabber/RollersSpeedRPS'),
+      d('/Intake/CurrentAmps'), d('/Intake/PercentOut'),
+      d('/Vision/Amps'), d('/Vision/latency'),
+    ]))
+    const { motors, notUsed } = motorsFromLog(log)
+    expect(motors.map((m) => [m.path, m.current, m.velocity])).toEqual([
+      ['/Grabber/Rollers', '/Grabber/RollersCurrentAmps', '/Grabber/RollersSpeedRPS'],
+      ['/Intake', '/Intake/CurrentAmps', undefined],
+      ['/Shooter/Pivot', '/Shooter/PivotAmps', undefined],
+    ])
+    expect(notUsed.map((n) => n.key)).toEqual(['/Vision/Amps'])
+  })
+
+  it('reads an array of one as the motor itself, beside its supply current and an array temperature', () => {
+    const log = openWpilog(writeWpilog([
+      arr('/Swerve/Front Left Module/DriveCurrentAmps', [3], [4]), d('/Swerve/Front Left Module/DriveSupplyCurrentAmps'),
+      d('/Swerve/Front Left Module/DriveVelocityMetersPerSec'), arr('/Swerve/Front Left Module/DriveTempCelsius', [30]),
+    ]))
+    expect(motorsFromLog(log).motors).toEqual([{
+      path: '/Swerve/Front Left Module/Drive', from: 'keys',
+      supplyCurrent: '/Swerve/Front Left Module/DriveSupplyCurrentAmps', current: '/Swerve/Front Left Module/DriveCurrentAmps[0]',
+      velocity: '/Swerve/Front Left Module/DriveVelocityMetersPerSec', temperature: '/Swerve/Front Left Module/DriveTempCelsius[0]',
+    }])
+  })
+
+  it('reads an array of two as two motors of one mechanism, each with its own element', () => {
+    const log = openWpilog(writeWpilog([
+      arr('/Elevator/CurrentAmps', [], [1, 2], [3, 4]), arr('/Elevator/TempCelsius', [30, 31]), d('/Elevator/PercentOut'),
+      arr('/Climber/CurrentAmps', []), d('/Climber/PercentOut'),
+    ]))
+    const { motors, notUsed } = motorsFromLog(log)
+    expect(motors.map((m) => [m.path, m.current, m.temperature, m.velocity])).toEqual([
+      ['/Elevator[0]', '/Elevator/CurrentAmps[0]', '/Elevator/TempCelsius[0]', undefined],
+      ['/Elevator[1]', '/Elevator/CurrentAmps[1]', '/Elevator/TempCelsius[1]', undefined],
+    ])
+    expect(notUsed).toEqual([{ key: '/Climber/CurrentAmps', why: 'an array that is always empty' }])
+    const groups = groupMotors(motors)
+    expect(groups.map((g) => [g.name, g.evidence, g.motors.map((m) => m.name)])).toEqual([['Elevator', 'one array', ['Elevator 1', 'Elevator 2']]])
+    expect(Array.from(readNumbers(log, motors[1].current!)!.v)).toEqual([2, 4])
+  })
+
+  it('groups `/Swerve Module N/` folders at the log\'s root as swerve, and no other numbered root folders', () => {
+    const log = openWpilog(writeWpilog([
+      ...[0, 1, 2, 3].flatMap((n) => ['Drive', 'Steer'].flatMap((t) => [d(`/Swerve Module ${n}/${t}CurrentAmps`), d(`/Swerve Module ${n}/${t}SpeedRPS`)])),
+      ...[1, 2, 3].flatMap((n) => [d(`/Shooter ${n}/MotorCurrentAmps`), d(`/Shooter ${n}/MotorVelocityRPS`)]),
+      d('/Routing/LeftCurrentAmps'), d('/Routing/LeftPercentOut'),
+    ]))
+    const groups = groupMotors(motorsFromLog(log).motors)
+    expect(groups.filter((g) => g.evidence === 'swerve').map((g) => [g.name, g.motors.map((m) => m.name)])).toEqual([
+      ['Drive', ['Swerve module 0 drive', 'Swerve module 1 drive', 'Swerve module 2 drive', 'Swerve module 3 drive']],
+      ['Steer', ['Swerve module 0 steer', 'Swerve module 1 steer', 'Swerve module 2 steer', 'Swerve module 3 steer']],
+    ])
+    // Three shooters are three groups, and a side alone ("Left") is no name: it takes its folder.
+    expect(groups.filter((g) => g.evidence === 'one motor').map((g) => g.name)).toEqual(['Routing left', 'Shooter 1 motor', 'Shooter 2 motor', 'Shooter 3 motor'])
+    expect(draftWarnings(groups.map((g) => ({ ...g, groupedBy: g.evidence })))).toEqual([])
+  })
+
+  it('takes the power board\'s total current when its channels report (100+ plausible records), not one record of garbage', () => {
+    const board = (records: [number, number[]][], total: [number, number][]): FixtureEntry[] => [
+      ...DS, { name: '/PowerDistribution/ChannelCurrent', type: 'double[]', records: records as never }, { name: '/PowerDistribution/TotalCurrent', type: 'double', records: total },
+    ]
+    const live = Array.from({ length: 120 }, (_, i): [number, number[]] => [i * 0.02, [i % 7, 2]])
+    const reporting = draftProfile({ logs: [{ log: openWpilog(writeWpilog(board(live, [[0, 2], [1, 8]]))), fileName: 'live.wpilog' }] })
+    expect(reporting.json.signals?.totalCurrent).toBe('/PowerDistribution/TotalCurrent')
+    expect(reporting.guessed.map((g) => g.signal)).toContain('totalCurrent')
+    for (const records of [[[0, [8.7e245, 0]]], live.slice(0, 99), live.map(([t]) => [t, [0, 0]])] as [number, number[]][][]) {
+      const quiet = draftProfile({ logs: [{ log: openWpilog(writeWpilog(board(records, [[0, 0], [1, 0]]))), fileName: 'quiet.wpilog' }] })
+      expect(quiet.json.signals?.totalCurrent).toBe('')
+    }
   })
 })
 
@@ -382,6 +462,8 @@ describe('deferred review fixes', () => {
 
 const PUBLIC = `${homedir()}/code/makers/8033/robot/public-logs`
 const MTTD = `${homedir()}/Downloads/hindsight-test/2025-11-event`
+const LIBRARY = `${homedir()}/.hindsight/app-data-a/library/logs`
+const OLDER = { charged: `${LIBRARY}/2023-2024/2023-10-07/Log_23-10-07_10-06-26_q13.wpilog`, crescendo: `${LIBRARY}/2024-2025/2024-09-28/Log_24-09-28_10-57-20_q9.wpilog` }
 const publicLog = (dir: string) => { const p = `${PUBLIC}/${dir}`; return existsSync(p) ? readdirSync(p).filter((f) => f.endsWith('.wpilog')).map((f) => `${p}/${f}`)[0] : undefined }
 const bt = (path: string) => backtestLog(openWpilog(new Uint8Array(readFileSync(path))), PROFILES)
 
@@ -407,6 +489,22 @@ describe('backtest against the hand profiles (real logs)', () => {
     const r = bt(publicLog('2151-ILCH-Q19')!)
     expect(r.builtGroups).toEqual([{ name: 'Drive', size: 4, evidence: 'swerve' }, { name: 'Turn', size: 4, evidence: 'swerve' }])
     expect(r.confirmKind).toHaveLength(8)
+  })
+  // No hand profile for these robots: the motor counts come from their code (Charged-Up and Crescendo, counted by hand
+  // on 2026-10-22). 2024 logs its elevator's two motors as one value and its climber not at all, so 16 of 18.
+  it.skipIf(!existsSync(OLDER.charged))('8033 2023 CalGames Q13: all 15 motors in the code, swerve and the elevator grouped', () => {
+    const r = bt(OLDER.charged)
+    expect(r.falsePositives).toHaveLength(15)
+    expect(r.builtGroups.filter((g) => g.evidence !== 'one motor')).toEqual([
+      { name: 'Drive', size: 4, evidence: 'swerve' }, { name: 'Steer', size: 4, evidence: 'swerve' }, { name: 'Elevator', size: 2, evidence: 'one array' },
+    ])
+    expect(r.warnings).toEqual([])
+  })
+  it.skipIf(!existsSync(OLDER.crescendo))('8033 2024 Chezy Q9: 16 of the code\'s 18 motors, every one the log has', () => {
+    const r = bt(OLDER.crescendo)
+    expect(r.falsePositives).toHaveLength(16)
+    expect(r.builtGroups.filter((g) => g.evidence !== 'one motor')).toEqual([{ name: 'Drive', size: 4, evidence: 'swerve' }, { name: 'Turn', size: 4, evidence: 'swerve' }])
+    expect(r.notUsed).toEqual([])
   })
   it.skipIf(!publicLog('3602-MICMP2-Q3'))('3602: 0 motors (2 dashboard copies listed, not used)', () => {
     const r = bt(publicLog('3602-MICMP2-Q3')!)
