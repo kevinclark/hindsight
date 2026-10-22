@@ -18,7 +18,7 @@ export default codeRule({
   id: 'code/integer-division',
   title: 'Whole-number division where a decimal was meant',
   meaning: 'Java divides two whole numbers as whole numbers and drops the remainder: 50 / 12 is 4, not 4.17. The answer then goes into a decimal, so the code looks right but the number is off.',
-  nextStep: 'Write one side as a decimal (50.0 / 12), then check what used the old value.',
+  nextStep: 'Write one side as a decimal, for example 50.0 / 12 instead of 50 / 12, then check what used the old value.',
   incident: '2026-Offseason-Robot dd1f33c fixed KICKER_GEAR_RATIO = 30 / 12 and left GEAR_RATIO = 50 / 12 on the line above',
   forEach: 'binary_expression',
 

@@ -89,30 +89,28 @@ function cautions({ findings, failOn, fails, crashed }: CommentInput, newCount: 
   const boxes: string[] = []
   if (fails) {
     const what = failOn === 'new' ? `this change adds ${newCount} ${noun(newCount)}` : `the code has ${findings.length} ${noun(findings.length)}`
-    boxes.push(box('CAUTION', [`❌ **This run fails:** fail-on is set to ${failOn} and ${what}.`]))
+    boxes.push(box('CAUTION', [`**This run fails:** fail-on is set to ${failOn} and ${what}.`]))
   }
   if (crashed.length > 0) {
-    boxes.push(box('CAUTION', [`❌ **A check crashed** (a bug in Hindsight, not in your code): ${crashed.map(cell).join(', ')}.`]))
+    boxes.push(box('CAUTION', [`**A check crashed** (a bug in Hindsight, not in your code): ${crashed.map(cell).join(', ')}.`]))
   }
   return boxes
 }
 
 /** The amber box with what the change adds. */
 function newBox(shown: Marked[], total: number, link: Linker): string {
-  const blocks = shown.map((f) => findingBlock(f, link))
-  return box('WARNING', [`⚠️ **${total} new in this change**`, '', ...blocks.flatMap((lines, i) => (i === 0 ? lines : ['', ...lines]))])
+  return box('WARNING', [`**${total} new in this change**`, '', ...groupBlocks(shown, link)])
 }
 
 /** The green line: nothing new, and how many were fixed. */
 function cleanLine(fixed: number | null): string {
-  return (fixed ?? 0) > 0 ? `✅ **Nothing new in this change.** ${fixed} fixed.` : '✅ **Nothing new in this change.**'
+  return (fixed ?? 0) > 0 ? `**Nothing new in this change.** ${fixed} fixed.` : '**Nothing new in this change.**'
 }
 
 /** The older findings, folded away and plain (grey), so they don't crowd the new ones. */
 function oldFindings(shown: Marked[], total: number, notCompared: boolean, link: Linker): string {
   const summary = `ℹ️ ${total} ${noun(total)}${notCompared ? '' : ' already in the code'}`
-  const blocks = shown.map((f) => findingBlock(f, link).join('\n'))
-  return ['<details>', `<summary>${summary}</summary>`, '', blocks.join('\n\n'), '', '</details>'].join('\n')
+  return ['<details>', `<summary>${summary}</summary>`, '', groupBlocks(shown, link).join('\n'), '', '</details>'].join('\n')
 }
 
 /** A GitHub alert: a quote whose first line names its level, followed by the lines. */
@@ -120,19 +118,31 @@ function box(level: 'CAUTION' | 'WARNING' | 'TIP' | 'NOTE', lines: string[]): st
   return [`> [!${level}]`, ...lines.map((line) => (line === '' ? '>' : `> ${line}`))].join('\n')
 }
 
-/** One finding in three short lines: its name and place, what it found, and the next step. */
-function findingBlock(f: Marked, link: Linker): string[] {
-  const place = placeOf(f, link)
-  return [`**${clip(f.title, MAX_TITLE)}** · ${place}`, sentence(clip(f.message, MAX_MESSAGE)), `*Next step:* ${sentence(clip(f.nextStep, MAX_MESSAGE))}`]
+/** The findings as blocks, one per check (blank lines between them): the sites of one check share a title and next step. */
+function groupBlocks(findings: Marked[], link: Linker): string[] {
+  const groups = new Map<string, Marked[]>()
+  for (const f of findings) {
+    const key = `${f.rule}\n${f.title}\n${f.nextStep}`
+    groups.set(key, [...(groups.get(key) ?? []), f])
+  }
+  const blocks = [...groups.values()].map((sites) => groupBlock(sites, link))
+  return blocks.flatMap((lines, i) => (i === 0 ? lines : ['', ...lines]))
 }
 
-/** `[File.java:90](link "full/path/File.java")`, or the plain path and line when there is no link (or the path is very long). */
+/** One check: its title (and how many places), one line per place, then the next step once. */
+function groupBlock(sites: Marked[], link: Linker): string[] {
+  const first = sites[0]
+  const count = sites.length > 1 ? ` (${sites.length})` : ''
+  const lines = sites.map((f) => `- ${placeOf(f, link)} — ${sentence(clip(f.message, MAX_MESSAGE))}`)
+  return [`**${clip(first.title, MAX_TITLE)}**${count}`, ...lines, '', `*Next step:* ${sentence(clip(first.nextStep, MAX_MESSAGE))}`]
+}
+
+/** `[File.java:90](link "full/path/File.java")`, or `File.java:90` in code when there is no link (or the path is very long). */
 function placeOf(f: Marked, link: Linker): string {
-  const path = clip(f.file, MAX_PATH)
+  const name = (f.file.split('/').pop() ?? f.file).replace(/`/g, '')
   const url = f.file.length <= MAX_PATH ? fileUrl(f, link) : null          // a huge path would make a huge link
-  if (!url) return `\`${path.replace(/`/g, '')}:${f.line}\``
-  const name = f.file.split('/').pop() ?? f.file
-  return `[${cell(name)}:${f.line}](${url} "${path.replace(/["\\]/g, '')}")`
+  if (!url) return `\`${name.slice(0, MAX_PATH)}:${f.line}\``
+  return `[${cell(name)}:${f.line}](${url} "${clip(f.file, MAX_PATH).replace(/["\\]/g, '')}")`
 }
 
 /** The line that says how many findings are not listed, and where all of them are. */

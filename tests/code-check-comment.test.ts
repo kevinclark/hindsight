@@ -28,36 +28,44 @@ describe('the comment text', () => {
     const text = body([found(), found({ isNew: false, file: 'src/B.java', line: 3 })], 2)
     expect(text).toContain([
       '> [!WARNING]',
-      '> ⚠️ **1 new in this change**',
+      '> **1 new in this change**',
       '>',
-      '> **Whole-number division** · [A.java:7](https://github.com/o/r/blob/abc/src/A.java#L7 "src/A.java")',
-      '> 50 / 12 is 4 (-4.0 %).',
+      '> **Whole-number division**',
+      '> - [A.java:7](https://github.com/o/r/blob/abc/src/A.java#L7 "src/A.java") — 50 / 12 is 4 (-4.0 %).',
+      '>',
       '> *Next step:* Write 50.0 / 12.',
     ].join('\n'))
     expect(text).not.toContain('Nothing new')
   })
-  it('a blank quoted line separates findings in the box', () => {
-    const text = body([found(), found({ line: 9 })])
-    expect(text).toMatch(/Write 50\.0 \/ 12\.\n>\n> \*\*Whole-number division\*\*/)
+  it('sites of one check share one block: the title with a count, a line per site, the next step once', () => {
+    const text = body([found(), found({ line: 9 }), found({ rule: 'code/other', title: 'Other check', nextStep: 'Do other.' })])
+    expect(text.split('Whole-number division**').length).toBe(2)               // the title once
+    expect(text).toContain('> **Whole-number division** (2)\n> - [A.java:7]')
+    expect(text.match(/Write 50\.0 \/ 12\./g)).toHaveLength(1)              // the next step once
+    expect(text).toContain('Write 50.0 / 12.\n>\n> **Other check**\n> - [A.java:7]')
+  })
+  it('the same check in the folded section is grouped there too', () => {
+    const text = body([found({ isNew: false }), found({ isNew: false, line: 9 })])
+    expect(text).toContain('**Whole-number division** (2)\n- [A.java:7]')
   })
   it('clean: a green box with an icon and words, and fixed when more than 0', () => {
-    expect(body([found({ isNew: false })], 0)).toContain('> [!TIP]\n> ✅ **Nothing new in this change.**\n')
-    expect(body([found({ isNew: false })], 2)).toContain('> [!TIP]\n> ✅ **Nothing new in this change.** 2 fixed.')
+    expect(body([found({ isNew: false })], 0)).toContain('> [!TIP]\n> **Nothing new in this change.**\n')
+    expect(body([found({ isNew: false })], 2)).toContain('> [!TIP]\n> **Nothing new in this change.** 2 fixed.')
   })
   it('older findings: folded, plain (no box), with the same short blocks', () => {
     const text = body([found(), found({ isNew: false, file: 'src/B.java', line: 3 })])
-    expect(text).toContain('<details>\n<summary>ℹ️ 1 finding already in the code</summary>\n\n**Whole-number division** · [B.java:3](https://github.com/o/r/blob/abc/src/B.java "src/B.java")')
+    expect(text).toContain('<details>\n<summary>ℹ️ 1 finding already in the code</summary>\n\n**Whole-number division**\n- [B.java:3](https://github.com/o/r/blob/abc/src/B.java "src/B.java") — ')
     expect(text.slice(text.indexOf('<details>'))).not.toContain('> ')
   })
   it('the run fails because of fail-on new: a red box that says why', () => {
     const text = body([found(), found()], 0, null, { failOn: 'new', fails: true })
-    expect(text).toContain('> [!CAUTION]\n> ❌ **This run fails:** fail-on is set to new and this change adds 2 findings.')
+    expect(text).toContain('> [!CAUTION]\n> **This run fails:** fail-on is set to new and this change adds 2 findings.')
     expect(body([found({ isNew: false })], 0, null, { failOn: 'any', fails: true })).toContain('fail-on is set to any and the code has 1 finding.')
     expect(body([found()])).not.toContain('CAUTION')
   })
   it('a check crashed: a red box that says it is not their code', () => {
     const text = body([found({ isNew: false })], 0, null, { crashed: ['code/x', 'code/y'] })
-    expect(text).toContain('> [!CAUTION]\n> ❌ **A check crashed** (a bug in Hindsight, not in your code): code/x, code/y.')
+    expect(text).toContain('> [!CAUTION]\n> **A check crashed** (a bug in Hindsight, not in your code): code/x, code/y.')
   })
   it('not compared: a blue note with the reason, and every finding folded as info', () => {
     const text = body([found({ isNew: null })], null, 'Not compared with abc1234: the base is not here')
@@ -69,9 +77,9 @@ describe('the comment text', () => {
     expect(body([found()]).trimEnd().split('\n').pop()).toBe(
       `<sub>Context for the team, not a verdict on the change or on anyone · Hindsight code check · [full report](${runUrl})</sub>`)
   })
-  it('no link when the linker has none: the plain path and line', () => {
+  it('no link when the linker has none: the short name and line in code', () => {
     const text = body([found()].map((f) => f), 0, null, { link: { blob: null, sameText: new Set() } })
-    expect(text).toContain('**Whole-number division** · `src/A.java:7`')
+    expect(text).toContain('- `A.java:7` — 50 / 12 is 4')
   })
   it('keeps a message from adding HTML', () => {
     expect(body([found({ message: '<script>x</script>' })])).toContain('&lt;script&gt;x&lt;/script&gt;')
@@ -94,9 +102,9 @@ describe('the comment text', () => {
   })
   it('500 findings: 50 rows, the rest pointed at the run, far under the 65,536-character cap', () => {
     const long = 'x'.repeat(5000)
-    const many = Array.from({ length: 500 }, (_, i) => found({ line: i + 1, message: long, nextStep: long, title: long, file: `${long}.java`, isNew: i < 20 }))
+    const many = Array.from({ length: 500 }, (_, i) => found({ line: i + 1, message: long, nextStep: long, title: `${long}${i % 7}`, file: `${long}.java`, isNew: i < 20 }))
     const text = body(many, 3)
-    expect(text.split('\n').filter((l) => /^(> )?\*\*x/.test(l)).length).toBe(MAX_ROWS)
+    expect(text.split('\n').filter((l) => /^(> )?- /.test(l)).length).toBe(MAX_ROWS)
     expect(text).toContain(`… and 450 more on [the run's summary page](${runUrl}).`)
     expect(text).toContain('<summary>ℹ️ 480 findings already in the code</summary>')
     expect(text.length).toBeLessThan(45_000)
@@ -110,8 +118,8 @@ describe('the comment text', () => {
   it('more than 50 new: only 50 of the new are listed', () => {
     const many = Array.from({ length: 60 }, (_, i) => found({ line: i + 1 }))
     const text = body(many)
-    expect(text.split('\n').filter((l) => l.startsWith('> **Whole')).length).toBe(50)
-    expect(text).toContain('⚠️ **60 new in this change**')
+    expect(text.split('\n').filter((l) => l.startsWith('> - [A.java')).length).toBe(50)
+    expect(text).toContain('**60 new in this change**')
     expect(text).toContain('… and 10 more on')
   })
 })
