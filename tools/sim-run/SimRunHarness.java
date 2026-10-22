@@ -210,8 +210,9 @@ public class SimRunHarness {
       }
       log.writer.getClass().getMethod("close").invoke(log.writer);
     }
-    // exit, not halt, so WPILib and the vendors shut their threads down: Runtime.halt() aborted in native code after
-    // 21 of 121 runs (measured 2026-10-21), each leaving a macOS crash report. A watchdog halts if shutdown hangs.
+    // exit, not halt, so WPILib and the vendors run their own shutdown. Either way about one run in five then aborts in
+    // native code ("libc++abi ... mutex lock failed"), after "end" is said and the log is closed, so no result is lost
+    // (measured 2026-10-21: 21 of 121 runs with halt, 36 of 210 with exit). A watchdog halts if shutdown hangs.
     Thread watchdog = new Thread(() -> {
       try {
         Thread.sleep(EXIT_WATCHDOG_MS);

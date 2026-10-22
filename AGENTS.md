@@ -115,6 +115,9 @@ npx vitest run tests/companion-keys.test.ts               # the key list, Hindsi
   synchronous `DataLogWriter` stalled the robot loop inside NetworkTables (measured).
 - **The harness is compiled against each robot's own jar** (`--release 11`): `Command` is an interface in 2022 and a
   class from 2024, so a prebuilt class breaks on the other years. Calls that differ by year go through reflection.
+- **About one run in five aborts in native code after `end`** (`libc++abi: ... mutex lock failed`, a macOS crash
+  report at most): WPILib's or a vendor's shutdown, measured with both `halt()` and `exit()`. Nothing is lost: the log
+  is closed and `end` printed first. Don't read it as a crash; the crash check never does.
 - **A crash is a missing `end` line plus WPILib's "Unhandled exception" text**, never the exit code: `RobotBase`
   exits 0 after an exception.
 - Fixtures in `tests/simrun.test.ts` are made-up harness lines. Runs against real robot code are 8033's backtest, not
