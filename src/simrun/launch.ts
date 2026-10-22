@@ -40,7 +40,8 @@ const JCENTER_MIRROR_SCRIPT = `settingsEvaluated { s -> s.pluginManagement.repos
  * own download (measured: a public repo's Eclipse formatter fetch got an HTML page and the build stopped).
  */
 const NO_FORMATTER = [
-  // Builds wire spotlessApply into compileJava; without that link the Spotless tasks are never even created.
+  // Builds wire spotlessApply into compileJava: the first line cuts that link, the second skips any Spotless task
+  // that still gets created.
   "allprojects { afterEvaluate { p -> p.tasks.configureEach { t -> t.setDependsOn(t.dependsOn.findAll { !it.toString().contains('spotless') }) } } }",
   "gradle.taskGraph.whenReady { g -> g.allTasks.findAll { it.name.startsWith('spotless') }.each { it.enabled = false } }",
 ].join('\n')

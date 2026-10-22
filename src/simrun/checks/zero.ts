@@ -11,7 +11,7 @@
  * zero, so the hood ran unzeroed all of auto. The sim shows the same thing on a laptop (2026-10-21).
  */
 
-import { describeCommand, isEnabled, signature, type CommandRef, type Lifetime, type RunRecord } from '../events.ts'
+import { describeCommand, isEnabled, signature, type CommandRef, type Lifetime, type Period, type RunRecord } from '../events.ts'
 import type { Zero } from '../scenario.ts'
 import { duration, runsLabel, type Check, type Finding, type RunResult } from './types.ts'
 
@@ -29,8 +29,10 @@ export const zeroes: Check = ({ results, zeroes }) => zeroes.flatMap((zero) => {
     const tries = zeroCommand ? r.record.lives.filter((l) => signature(l.command) === zeroCommand) : []
     const undone = tries.filter((l) => !done.some((d) => d >= l.start && d <= l.end + FINISHES_AFTER_MESSAGE_SECONDS))
     findings.push(...undone.map((tried) => notDone(zero, tried, r)))
-    // Enables the zero ran in: its command started (whether or not it finished), else its message printed.
-    const ran = r.record.periods.filter(isEnabled).filter((p) => tries.some((l) => l.start >= p.start && l.start <= p.end)).length
+    // Enables the zero ran in: its command started and lasted past one loop (whether or not it finished; a zero that
+    // checks it's already done ends at once), else its message printed.
+    const ranIn = (p: Period) => tries.some((l) => l.start >= p.start && l.start <= p.end && l.end - l.start > ONE_LOOP_SECONDS)
+    const ran = r.record.periods.filter(isEnabled).filter(ranIn).length
     const enables = Math.max(ran, enablesDone(r.record, zero))
     if (zero.once && enables > 1) {
       findings.push({

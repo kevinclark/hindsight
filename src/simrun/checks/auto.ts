@@ -22,11 +22,15 @@ const AUTO_START_SECONDS = 0.07
 
 export const autos: Check = ({ results, poseKey }) => {
   const autoRuns = results.filter((r) => r.run.scenario.kind === 'auto')
-  return autoRuns.filter((r) => !r.run.scenario.auto?.isDefault && r.record.ended).flatMap((r): Finding[] => {
+  const chosen = autoRuns.filter((r) => !r.run.scenario.auto?.isDefault && r.record.ended)
+  const unselected = chosen.filter((r) => selectionNotTaken(r))
+  // None took: sim-run can't select on this robot, which is one thing to say, not one per run.
+  if (unselected.length > 1 && unselected.length === chosen.length) return [noneTaken(unselected)]
+  return chosen.flatMap((r): Finding[] => {
     const period = r.record.periods.find((p) => p.mode === 'auto')
     if (!period) return []
-    const notTaken = selectionNotTaken(r)
-    if (notTaken) return [notTaken]
+    const notSelected = selectionNotTaken(r)
+    if (notSelected) return [notSelected]
     const baseline = autoRuns.find((b) => b.run.scenario.auto?.isDefault && b.run.alliance === r.run.alliance)
     const baselineStarts = baseline ? autoCommands(baseline.record, []).map((l) => signature(l.command)) : []
     const findings: Finding[] = []
@@ -68,7 +72,22 @@ export function selectionNotTaken(r: RunResult): Finding | null {
     check: 'auto/not-selected', severity: 'warning', run: r.run.label,
     message: `The robot didn't take the auto sim-run selected: its chooser still said "${lastSeen.active}" when auto started, so this run says nothing about "${wanted.option}".`,
     details: [],
-    look: 'how the robot code reads the chooser (a chooser read once at start-up, or a custom one sim-run can\'t set)',
+    look: NOT_TAKEN_LOOK,
+  }
+}
+
+/**
+ * WPILib 2022's chooser listens only for a dashboard's write, not one made inside the robot program, which is how
+ * sim-run selects (measured: on a 2022 robot all 16 runs kept the default; read from WPILib 2022's SendableBuilderImpl).
+ */
+const NOT_TAKEN_LOOK = "on WPILib 2022 and earlier sim-run can't select a SendableChooser (it listens only for a dashboard), so this is sim-run's limit, not your code; from 2023 on: how the code reads the chooser (read once at start-up, or a custom chooser)"
+
+function noneTaken(runs: RunResult[]): Finding {
+  return {
+    check: 'auto/not-selected', severity: 'warning', run: `${runs.length} auto runs`,
+    message: `The robot didn't take any auto sim-run selected, so the auto runs say nothing about the autos they were for.`,
+    details: [],
+    look: NOT_TAKEN_LOOK,
   }
 }
 

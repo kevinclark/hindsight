@@ -41,7 +41,8 @@ export function report(result: SessionResult, title: string): string {
     const enables = r.record.periods.filter(isEnabled).length
     const how = r.record.ended ? `${plural(enables, 'enable')}, ${lives.length} commands started, ${cutOff} cut off by another` : 'stopped early'
     const zeroes = result.zeroes.map((z) => `${z.name} zero done in ${enablesDone(r.record, z)} of ${enables}`)
-    out.push(`- ${r.run.label}: ${[how, ...zeroes].join('; ')} (${r.wallSeconds.toFixed(0)} s)`)
+    const slept = r.sleptSeconds > 0 ? `; the computer slept ${r.sleptSeconds.toFixed(0)} s, not checked` : ''
+    out.push(`- ${r.run.label}: ${[how, ...zeroes].join('; ')}${slept} (${r.wallSeconds.toFixed(0)} s)`)
   }
   if (result.hindsight.length) {
     out.push('', `HINDSIGHT'S LOG RULES (robot profile: ${result.facts?.profileName ?? 'none'}; left out: ${Object.keys(LEFT_OUT).join(', ')})`)

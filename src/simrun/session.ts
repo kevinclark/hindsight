@@ -22,8 +22,6 @@ import { findPoseKey } from './checks/pose.ts'
 import type { Check, Finding, RunResult } from './checks/types.ts'
 import { zeroes } from './checks/zero.ts'
 
-/** Assumed: under this, a run's clocks agree (timer jitter); over it, the computer slept. */
-const SLEEP_SECONDS = 2
 /** A .wpilog's header alone (no records): a run that crashed before its log got anything. */
 const WPILOG_HEADER_BYTES = 12
 
@@ -117,7 +115,9 @@ async function playRun(got: Collected, run: Run, n: number, index: number): Prom
   const log = bytes && bytes.length > WPILOG_HEADER_BYTES ? openWpilog(bytes) : null
   const read = bytes && log ? hindsightOn(`${label}.wpilog`, bytes) : null
   if (read && !got.facts) got.facts = profileFacts(read.match)
-  for (const f of read?.findings ?? []) {
+  // A run the computer slept through says nothing, Hindsight's rules on its log included (a 4-minute gap).
+  const findings = sleptSeconds > 0 ? [] : read?.findings ?? []
+  for (const f of findings) {
     const seen = got.hindsight.get(f.key) ?? { finding: f, runs: [] }
     seen.runs.push(label)
     got.hindsight.set(f.key, seen)
@@ -130,17 +130,24 @@ async function playRun(got: Collected, run: Run, n: number, index: number): Prom
 /** Every check over all the runs. */
 function finish(got: Collected, team: TeamFile): SessionResult {
   const { built, facts, notes } = got
-  // A run the computer slept through says nothing: the robot's clock ran on while the scenario stood still.
-  const slept = got.results.filter((r) => r.sleptSeconds > SLEEP_SECONDS)
-  if (slept.length) notes.push(`The computer slept during ${slept.map((r) => r.run.label).join(', ')}; those runs were not checked. Run again with it awake.`)
-  const results = got.results.filter((r) => !slept.includes(r))
+  const results = awakeRuns(got.results, notes)
   const zeroList = mergeZeroes(team.zeroes, facts?.zeroes ?? [])
   const poseKey = findPoseKey(results.find((r) => r.log)?.log ?? null, facts?.poseKey ?? null)
   if (!poseKey && results.some((r) => r.record.ended)) notes.push('No robot pose in the log, so "did it move" and red-vs-blue were not checked.')
-  if (results.every((r) => r.record.noLog)) notes.push(`No log was recorded: ${results[0].record.noLog}`)
+  if (results.length && results.every((r) => r.record.noLog)) notes.push(`No log was recorded: ${results[0].record.noLog}`)
   const context = { results, zeroes: zeroList, teamPackage: teamPackage(built.mainClass), poseKey }
   const findings = CHECKS.flatMap((check) => check(context))
   return { built, results: got.results, findings, hindsight: [...got.hindsight.values()], facts, zeroes: zeroList, notes }
+}
+
+/**
+ * The runs to check: a run the computer slept through says nothing (the robot's clock ran on while the scenario stood
+ * still), so it is named in a note and left out. Can be none.
+ */
+export function awakeRuns(results: RunResult[], notes: string[]): RunResult[] {
+  const slept = results.filter((r) => r.sleptSeconds > 0)
+  if (slept.length) notes.push(`The computer slept during ${slept.map((r) => r.run.label).join(', ')}; those runs were not checked. Run again with it awake.`)
+  return results.filter((r) => r.sleptSeconds === 0)
 }
 
 /** Runs the jobs, at most `size` at a time. */
@@ -159,7 +166,11 @@ function chooserOf(startup: RunResult, team: TeamFile, got: Collected): Chooser 
   const wantedKey = team.autos.chooser ?? got.facts?.chooser
   const named = wantedKey ? choosers.find((c) => c.key === wantedKey) : undefined
   if (named) return named
-  if (!wantedKey && choosers.length === 1) return choosers[0]
+  if (choosers.length === 1) {
+    // The robot profile's key can be another commit's name for the same chooser.
+    if (wantedKey) notes.push(`No chooser "${wantedKey}" on SmartDashboard; used its only chooser, "${choosers[0].key}".`)
+    return choosers[0]
+  }
   if (wantedKey) {
     const keys = choosers.map((c) => c.key).join(', ') || 'none'
     notes.push(`No chooser "${wantedKey}" on SmartDashboard (found: ${keys}), so auto ran once, unselected.`)

@@ -10,6 +10,7 @@ import { alliances } from '../src/simrun/checks/alliance.ts'
 import { autos } from '../src/simrun/checks/auto.ts'
 import type { Context, RunResult } from '../src/simrun/checks/types.ts'
 import { openWpilog } from '../src/readers/wpilog.ts'
+import { awakeRuns } from '../src/simrun/session.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 
 /** One harness line: time, kind, fields. */
@@ -99,6 +100,16 @@ describe('zero checks', () => {
     ])
     const checks = zeroes(context([result(secondStalls)], { zeroes: [{ ...HOOD, once: true }] })).map((f) => f.check)
     expect(checks).toEqual(['zero/unfinished', 'zero/every-enable'])
+  })
+})
+
+describe('a computer that slept', () => {
+  it('leaves out every run it slept through, even all of them, and says so', () => {
+    const notes: string[] = []
+    const slept = { ...result(healthy, run('startup')), sleptSeconds: 240 }
+    expect(awakeRuns([slept], notes)).toEqual([])
+    expect(notes).toEqual(['The computer slept during startup; those runs were not checked. Run again with it awake.'])
+    expect(crash(context(awakeRuns([slept], [])))).toEqual([])
   })
 })
 
@@ -212,6 +223,14 @@ describe('autos and alliances', () => {
     const deg = Math.PI / 180
     expect(alliances(context([turning(blue, -89 * deg, 94 * deg), turning(red, 88 * deg, 77 * deg)]))).toEqual([])
     expect(alliances(context([turning(blue, 0, 178 * deg), turning(red, 0, 179 * deg)])).map((f) => f.check)).toEqual(['alliance/same-on-both'])
+  })
+
+  it('says once that no selection took, and leaves those runs out of red-vs-blue', () => {
+    const [blue, red] = runsOf(auto)
+    const kept = (r: Run, dx: number) => autoRun(r, dx, [[4.9, 'chooser', 'Autos', 'Left|None', 'None', 'None']])
+    const runs = [kept(blue, 3), kept(red, 3)]
+    expect(autos(context(runs)).map((f) => [f.check, f.run])).toEqual([['auto/not-selected', '2 auto runs']])
+    expect(alliances(context(runs))).toEqual([])
   })
 
   it("reports the auto's own command still running at the end, not wrappers or a state machine's later commands", () => {
