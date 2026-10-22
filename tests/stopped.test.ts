@@ -106,8 +106,8 @@ describe('only a potentially fixed warning sinks; an error never does', () => {
   })
   it('the report sorts the sunk warning last and puts it in a "Stopped" group of the bottom line; the error stays', () => {
     const warn = sessionModel(session('XXXX...'))
-    expect(warn.findings[0]).toMatchObject({ sinks: true, stoppedShort: 'not seen since Q4, 1 in 35' })
-    expect(warn.bottomLine).toMatch(/Stopped: Battery not fully charged, not seen since Q4, 1 in 35\.$/)
+    expect(warn.findings[0]).toMatchObject({ sinks: true, stoppedShort: 'not seen since Q4, 1\u00a0in\u00a035' })
+    expect(warn.bottomLine).toMatch(/Stopped: Battery not fully charged, not seen since Q4, 1\u00a0in\u00a035\.$/)
     expect(warn.bottomLine).not.toMatch(/Consistent|Intermittent/)
     const err = sessionModel(session('XXXX...', { severity: 'error' }))
     expect(err.findings[0]).toMatchObject({ sinks: false, stopped: expect.stringMatching(/^Potentially fixed: not seen since Q4/) })
@@ -116,7 +116,7 @@ describe('only a potentially fixed warning sinks; an error never does', () => {
   it('the phone card shows potentially fixed for an error too, and a fixed mark; plain "not seen since" stays off', () => {
     const errCard = sessionCard(sessionModel(session('XXXX...', { severity: 'error' }))).items[0]
     expect(errCard.word).toMatch(/^ERROR · CONSISTENT · POTENTIALLY FIXED$/)
-    expect(errCard.number).toMatch(/ · potentially fixed: not seen since Q4, 1 in 35$/)
+    expect(errCard.number).toMatch(/ · potentially fixed: not seen since Q4, 1\u00a0in\u00a035$/)
     expect(sessionCard(sessionModel(session('X......'))).items[0].number).not.toMatch(/seen since|fixed/)
     const marked = session('XX.....')
     const card = sessionCard(sessionModel(marked, new Map([[RULE, fixed(START + 3.5 * HOUR)]]))).items[0]

@@ -59,7 +59,8 @@ const ADVANCE_BOLD = 0.54
 /** Word-wrap `text` into at most `maxLines` lines that fit `width` px at `size` px; the last line ends in "…" if cut. */
 export function wrap(text: string, size: number, width: number, maxLines: number, bold = false): string[] {
   const perLine = Math.max(4, Math.floor(width / (size * (bold ? ADVANCE_BOLD : ADVANCE))))
-  const words = text.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  // A no-break space (\u00a0) keeps its words together: "1 in 35" never splits across lines.
+  const words = text.replace(/[^\S\u00a0]+/g, ' ').trim().split(' ').filter(Boolean)
   const lines: string[] = []
   let cur = ''
   for (let w of words) {

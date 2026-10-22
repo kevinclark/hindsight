@@ -78,6 +78,11 @@ describe('wrap', () => {
     const lines = wrap('x'.repeat(200), 32, 400, 5)
     expect(lines.every((l) => l.length <= 25)).toBe(true)
   })
+  it('never splits words joined by a no-break space ("1 in 35")', () => {
+    // 25 characters a line: a plain space would leave "1 in" on the first line and "35" on the next.
+    const lines = wrap('potentially fixed: since Q21, 1\u00a0in\u00a035', 32, 400, 3)
+    expect(lines.some((l) => l.endsWith('1\u00a0in\u00a035'))).toBe(true)
+  })
 })
 
 describe('report model, from the real CalGames fixtures', () => {

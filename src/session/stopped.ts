@@ -169,9 +169,10 @@ export function stoppedText(session: Session, s: Stopped, f?: Pick<MergedFinding
   return `${since} · ${clean} · a run this clean happens ${chanceText(s)} with no fix${code}`
 }
 
-/** For the bottom line and the card: "not seen since Q21, 1 in 35". */
+/** For the bottom line and the card: "not seen since Q21, 1 in 35", the chance with no-break spaces so it never wraps. */
 export function stoppedShort(session: Session, s: NotSeenSince): string {
-  return `not seen since ${matchName(session, s.last)}, ${chanceText(s).replace(/ times? in /, ' in ')}`
+  const chance = chanceText(s).replace(/ times? in /, ' in ').replace(/ /g, '\u00a0')
+  return `not seen since ${matchName(session, s.last)}, ${chance}`
 }
 
 /**
