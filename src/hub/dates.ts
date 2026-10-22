@@ -1,6 +1,6 @@
 /**
  * The time in an AdvantageKit file name (akit_YY-MM-DD_HH-MM-SS…). It is UTC in 2026 logs and Pacific in the 2024-25
- * ones (three events, 8033 notes), so a name from 2025 or earlier is read as Pacific. Assumed from those events: a
+ * ones (seen in the logs of three events), so a name from 2025 or earlier is read as Pacific. Assumed from those events: a
  * robot team elsewhere would set `zoneFor`. Only used when the robot clock was never set (describe.ts).
  */
 

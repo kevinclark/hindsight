@@ -32,11 +32,12 @@ try {
   const files = await localFolderFiles(source)
   const gb = files.reduce((n, f) => n + f.size, 0) / 2 ** 30
   const lib = await LocalLibrary.open(join(work, 'library'), 'bench')
-  const run = async () => {
+  const seen = new Map<string, string>()
+  const run = async (cache?: Map<string, string>) => {
     const t = performance.now()
-    const report = await ingest(lib, files, { describe: describeFile })
+    const report = await ingest(lib, files, { describe: describeFile, seen: cache })
     const s = (performance.now() - t) / 1000
     return { seconds: +s.toFixed(2), secondsPerGB: +(s / gb).toFixed(2), added: report.added.length, already: report.already.length, unreadable: report.unreadable.length }
   }
-  console.log(JSON.stringify({ files: files.length, gigabytes: +gb.toFixed(3), first: await run(), second: await run() }, null, 1))
+  console.log(JSON.stringify({ files: files.length, gigabytes: +gb.toFixed(3), first: await run(seen), 'second, remembering each file (the app)': await run(seen), 'third, every file read again': await run() }, null, 1))
 } finally { await rm(work, { recursive: true, force: true }) }
