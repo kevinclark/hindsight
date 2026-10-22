@@ -16,6 +16,8 @@ const FIELDS = 'id,name,mimeType,size,modifiedTime,md5Checksum,sha256Checksum'
 /** A multiple of 256 KiB, as Drive requires for all but the last chunk. */
 const CHUNK = 8 << 20
 const RETRIES = 5
+/** A per-user rate limit asks for a longer wait: up to a minute in all, backing off 1, 2, 4, 8, 16, 30 s (Google's own advice). */
+const RATE_RETRIES = 7
 
 export interface DriveOptions {
   /** The folder everything lives under (the team folder's id). */
@@ -291,9 +293,11 @@ export class DriveAdapter implements StorageAdapter {
       }
       if (res.ok || okStatuses.includes(res.status)) return res
       if (res.status === 401 && !refreshed) { refreshed = true; continue }
-      if ((res.status === 429 || res.status >= 500) && attempt < RETRIES - 1) { await this.sleep(2 ** attempt * 500); continue }
+      const limited = res.status === 429 || (res.status === 403 && (await isRateLimit(res)))
+      if (limited && attempt < RATE_RETRIES - 1) { await this.sleep(Math.min(2 ** attempt, 30) * 1000 + Math.random() * 250); continue }
+      if (res.status >= 500 && attempt < RETRIES - 1) { await this.sleep(2 ** attempt * 500); continue }
       if (res.status === 401) throw new SignInAgain()
-      throw new DriveError(res.status, `Google Drive said ${res.status}: ${(await res.text()).slice(0, 300)}`)
+      throw new DriveError(res.status, `Google Drive said ${res.status} to ${method} ${url.split('?')[0]}: ${(await res.text()).slice(0, 300)}`)
     }
   }
 }
@@ -311,6 +315,11 @@ export function isAllowedRequest(method: string, url: string, sessions: Readonly
   if (method === 'PUT') return sessions.has(url)
   if (method === 'PATCH') return u.startsWith(`${UPLOAD}/files/`) && url.includes('uploadType=media')
   return false
+}
+
+/** Drive answers a per-user or per-folder rate limit with 403 (not only 429); the reason is in the body. Other 403s are refusals. */
+async function isRateLimit(res: Response): Promise<boolean> {
+  try { return /userRateLimitExceeded|rateLimitExceeded|sharingRateLimitExceeded/.test(await res.clone().text()) } catch { return false }
 }
 
 function splitPath(path: string): { parent: string; name: string } {

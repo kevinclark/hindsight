@@ -97,6 +97,25 @@ describe('Drive adapter', () => {
     await expect(denied.list('logs')).rejects.toBeInstanceOf(DriveError)
   })
 
+  it('waits and retries a 403 that is a rate limit (userRateLimitExceeded), and names the request when it gives up', async () => {
+    const drive = new FakeDrive()
+    const limit = JSON.stringify({ error: { code: 403, errors: [{ domain: 'usageLimits', reason: 'userRateLimitExceeded' }] } })
+    let n = 0
+    const slept: number[] = []
+    const limited: typeof fetch = async (input, init) => (++n <= 3 ? new Response(limit, { status: 403 }) : drive.fetch(input, init))
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: limited, sleep: async (ms) => { slept.push(ms) } })
+    expect(await store.list('logs')).toEqual([])
+    expect(slept.length).toBe(3)
+    expect(slept[2]).toBeGreaterThan(slept[0]) // backing off
+    const always = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: async () => new Response(limit, { status: 403 }), sleep: noSleep })
+    await expect(always.list('logs')).rejects.toThrow(/403 to GET .*\/files/)
+    // A 403 that is a refusal (no rate-limit reason) is still final.
+    let refused = 0
+    const denied = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: async () => { refused++; return new Response('{"error":{"errors":[{"reason":"forbidden"}]}}', { status: 403 }) }, sleep: noSleep })
+    await expect(denied.list('logs')).rejects.toBeInstanceOf(DriveError)
+    expect(refused).toBe(1)
+  })
+
   it('copies a file inside Drive (no upload) into the layout, and reads folder choices for the picker', async () => {
     const { drive, store } = setup()
     const elsewhere = drive.addFolder('root', 'other')
