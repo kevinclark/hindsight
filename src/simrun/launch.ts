@@ -50,6 +50,8 @@ const NO_FORMATTER = [
  * plugin it had never fetched: "could not resolve plugin artifact", lower case).
  */
 const NOT_DOWNLOADED = /offline mode|No cached version|could not resolve|could not find|could not download|was not found in any of the following sources/i
+/** Assumed: the event loop never stalls 10 s on its own (reading a run's log takes about a second). */
+const SUSPENDED_GAP_SECONDS = 10
 /** Measured: a run's robot program is ready 2–2.5 s after its JVM starts; Phoenix's first start can take 11 s. */
 const START_ALLOWANCE_SECONDS = 45
 
@@ -156,7 +158,15 @@ export function runTimeline(built: Built, timeline: string[], seconds: number, l
   const out = openSync(outFile, 'w')
   const java = spawn(join(built.javaHome, 'bin', 'java'), args, { cwd: built.folder, env, stdio: ['ignore', out, out] })
   const started = Date.now()
-  const awakeStart = performance.now()
+  // A 1 s heartbeat: a gap far longer than that means this process was suspended (the computer slept). Measured: a
+  // closed lid stopped a run for 4 minutes, and Node's monotonic clock kept counting through it, so only gaps show it.
+  let lastBeat = Date.now()
+  let sleptSeconds = 0
+  const heartbeat = setInterval(() => {
+    const gap = (Date.now() - lastBeat) / 1000
+    if (gap > SUSPENDED_GAP_SECONDS) sleptSeconds += gap - 1
+    lastBeat = Date.now()
+  }, 1000)
   return new Promise((done, fail) => {
     let failed = false
     java.on('error', (error) => {
@@ -171,11 +181,9 @@ export function runTimeline(built: Built, timeline: string[], seconds: number, l
     java.on('close', () => {
       clearTimeout(deadline)
       closeSync(out) // once, here: 'close' follows 'error' too
-      if (failed) return
+      if (failed) return clearInterval(heartbeat)
+      clearInterval(heartbeat)
       const wallSeconds = (Date.now() - started) / 1000
-      // The clock performance.now() reads stops while the computer sleeps; the wall clock doesn't (measured: a Mac
-      // that slept mid-run gave a 451 s run whose 69 s deadline fired on time by the stopped clock).
-      const sleptSeconds = Math.max(0, wallSeconds - (performance.now() - awakeStart) / 1000)
       done({ output: readFileSync(outFile, 'utf8'), killed, wallSeconds, sleptSeconds })
     })
   })
