@@ -29,6 +29,10 @@
  * argument; the report names the thing ("Flywheel follower 16 dropped off CAN"), and a thing whose signals are
  * missing is listed under "Not checked" without stopping the others. 'watchedDevice' is each CTRE device the robot
  * code gave to the Hindsight companion's HindsightDevices.watch (from the log, not the profile).
+ *
+ * `only` (for 'motor' and 'motorGroup') picks the things the rule is for, when it isn't all of them: a same-loop
+ * group, a motor that must never stall. The others aren't checked and don't count as checked; with none, the rule is
+ * listed under "Not checked".
  */
 
 import type { AlertView, CameraView, DeviceView, Episode, GroupView, MatchView, MechanismView, MotorView, Signal, WatchedDeviceView } from './view.ts'
@@ -133,8 +137,8 @@ export interface Cause {
 
 export type Rule = About & (
   | { forEach?: 'match'; check: (match: MatchView) => Answer }
-  | { forEach: 'motor'; check: (motor: MotorView, match: MatchView) => Answer }
-  | { forEach: 'motorGroup'; check: (group: GroupView, match: MatchView) => Answer }
+  | { forEach: 'motor'; only?: (motor: MotorView, match: MatchView) => boolean; check: (motor: MotorView, match: MatchView) => Answer }
+  | { forEach: 'motorGroup'; only?: (group: GroupView, match: MatchView) => boolean; check: (group: GroupView, match: MatchView) => Answer }
   | { forEach: 'device'; check: (device: DeviceView, match: MatchView) => Answer }
   | { forEach: 'watchedDevice'; check: (device: WatchedDeviceView, match: MatchView) => Answer }
   | { forEach: 'camera'; check: (camera: CameraView, match: MatchView) => Answer }

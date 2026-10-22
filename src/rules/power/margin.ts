@@ -29,7 +29,9 @@ export default rule({
     const battery = match.signal('batteryVoltage')
     const setting = match.signal('brownoutVoltage').last()
     const low = battery.lowest(match.enabled)
-    if (Number.isNaN(low.value)) return
+    if (Number.isNaN(low.value)) {
+      return match.couldNotCheck(match.enabled.length === 0 ? 'the robot was never enabled' : 'no battery voltage logged while enabled')
+    }
     const margin = low.value - setting
     if (margin >= MARGIN_VOLTS) return
     const rest = restBeforeAuto(match)

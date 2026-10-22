@@ -14,6 +14,7 @@ import {
   type Confidence, type MergedFinding, type RuleRow, type Session,
 } from '../session/session.ts'
 import { SESSION_FINDINGS_SCHEMA } from '../session/export.ts'
+import { sinks, stoppedCard, stoppedFiring, stoppedShort, stoppedText } from '../session/stopped.ts'
 import type { MatchSummary, RuleStatus } from '../session/summary.ts'
 import type { Severity } from '../rules/types.ts'
 import { trendRows } from '../session/trends.ts'
@@ -57,6 +58,16 @@ export interface ReportFinding {
   measured: string
   /** Matches played after a fix was recorded, where it fired again. */
   cameBack: string[]
+  /** "Not seen since Q21 · 3 clean checked matches · …" or "Marked fixed after Q21 · …" (session/stopped.ts); empty when neither. */
+  stopped: string
+  /** Potentially fixed, and not an error: it sorts below the live findings, in the bottom line's "Stopped" group. */
+  sinks: boolean
+  /** "not seen since Q21, 1 in 35", for the bottom line; empty unless it sinks. */
+  stoppedShort: string
+  /** The card's stopped line (session/stopped.ts stoppedCard): potentially fixed, errors too, or a fixed mark; else empty. */
+  cardStopped: string
+  /** Potentially fixed, whatever its severity: the card's word says so. */
+  potentiallyFixed: boolean
   /** Labels of the matches it fired in. */
   matchLabels: string[]
   /** The first measured quantity, for the card; empty when the title already says its number. */
@@ -272,7 +283,9 @@ export const PAGE1_ROWS = 24
  * rule, errors first: "Once (47 in 6 rules): can/device-dropout ×30 (Qualification 2); …". The full rows stay in the JSON.
  */
 export function fold(findings: ReportFinding[]): { rows: ReportFinding[]; onceFold: SessionModel['onceFold'] } {
-  const once = findings.filter((f) => f.confidence === 'once')
+  // A finding that stopped firing stays a row: it is the news.
+  const folds = (f: ReportFinding) => f.confidence === 'once' && !f.sinks
+  const once = findings.filter(folds)
   if (findings.length <= PAGE1_ROWS || once.length === 0) return { rows: findings, onceFold: null }
   const groups = new Map<string, { n: number; errors: number; labels: Set<string> }>()
   for (const f of once) {
@@ -289,24 +302,31 @@ export function fold(findings: ReportFinding[]): { rows: ReportFinding[]; onceFo
   }
   const shown = sorted.slice(0, 10).map(part).join('; ')
   const more = sorted.length > 10 ? `; +${sorted.length - 10} more rules` : ''
-  return { rows: findings.filter((f) => f.confidence !== 'once'), onceFold: { count: once.length, rules: groups.size, text: `${shown}${more}` } }
+  return { rows: findings.filter((f) => !folds(f)), onceFold: { count: once.length, rules: groups.size, text: `${shown}${more}` } }
 }
 
 const ORDER: Confidence[] = ['consistent', 'intermittent', 'once', 'not enough data']
 
-/** "3 matches. Consistent: flywheel followers slow, 3 of 3. Once: brownout, 1 of 3." One clause per confidence, worst first. */
+/**
+ * "3 matches. Consistent: flywheel followers slow, 3 of 3. Once: brownout, 1 of 3. Stopped: hood zeroed late, not seen
+ * since Q21, 1 in 35." One clause per confidence, worst first, then the potentially fixed warnings.
+ */
 export function bottomLine(matchCount: number, findings: ReportFinding[], filed = 0): string {
   const head = `${plural(matchCount, 'match')}.`
   const marked = filed ? ` ${filed} marked not a real problem in every match ${filed === 1 ? 'it' : 'they'} fired in.` : ''
   if (findings.length === 0) return `${head} No ${filed ? 'other ' : ''}errors or warnings in any match.${marked}`
-  const clauses = ORDER.flatMap((c) => {
-    const here = findings.filter((f) => f.confidence === c)
+  // The first two by rule name (several findings can share a rule), then how many more.
+  const clause = (word: string, here: ReportFinding[], what: (f: ReportFinding) => string) => {
     if (!here.length) return []
-    // The first two by rule name (several findings can share a rule), then how many more.
     const named = [...new Map(here.map((f) => [f.ruleTitle, f])).values()].slice(0, 2)
     const more = here.length - named.length
-    return [`${CONFIDENCE_WORDS[c]}: ${named.map((f) => `${f.ruleTitle}, ${f.ratio}`).join('; ')}${more ? ` (+${more} more)` : ''}.`]
-  })
+    return [`${word}: ${named.map((f) => `${f.ruleTitle}, ${what(f)}`).join('; ')}${more ? ` (+${more} more)` : ''}.`]
+  }
+  const live = findings.filter((f) => !f.sinks)
+  const clauses = [
+    ...ORDER.flatMap((c) => clause(CONFIDENCE_WORDS[c], live.filter((f) => f.confidence === c), (f) => f.ratio)),
+    ...clause('Stopped', findings.filter((f) => f.sinks), (f) => f.stoppedShort),
+  ]
   return `${head} ${clauses.join(' ')}${marked}`
 }
 
@@ -315,16 +335,22 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
   // The report's order (not the view's): how sure we are first, then how serious, then in how many matches.
   const rank = (c: Confidence) => ORDER.indexOf(c)
   const sev = { error: 0, warning: 1 }
-  const ordered = mergeFindings(session).filter((f): f is MergedFinding & { severity: 'error' | 'warning' } => f.severity !== 'info')
-    .sort((a, b) => rank(a.confidence) - rank(b.confidence) || sev[a.severity] - sev[b.severity] || b.matches.length - a.matches.length)
+  const merged = mergeFindings(session).filter((f): f is MergedFinding & { severity: 'error' | 'warning' } => f.severity !== 'info')
+  const stopped = new Map(merged.map((f) => [f.key, stoppedFiring(session, f, issues.get(f.key))]))
+  const sunk = (f: MergedFinding) => sinks(stopped.get(f.key) ?? null, f.severity)
+  // Potentially fixed warnings go below the live findings.
+  const ordered = merged.sort((a, b) => Number(sunk(a)) - Number(sunk(b)) || rank(a.confidence) - rank(b.confidence) || sev[a.severity] - sev[b.severity] || b.matches.length - a.matches.length)
   const all = ordered.map((f): ReportFinding => {
     const ratio = `${f.matches.length} of ${f.checkable}`
+    const s = stopped.get(f.key) ?? null
     return {
       key: f.key, rule: f.rule, severity: f.severity, sevWord: f.severity === 'error' ? 'Error' : 'Warning',
       confidence: f.confidence, confidenceWord: CONFIDENCE_WORDS[f.confidence], ruleTitle: ruleById(f.rule)?.title ?? f.rule, title: cardTitle(f.title),
       ratio,
       rateText: `fired in ${ratio} where it could be checked (${interval(f.interval)})`,
       measured: measuredText(f), cameBack: cameBack(session, issues, f.key, f.matches),
+      stopped: s ? stoppedText(session, s, f) : '', sinks: sunk(f), stoppedShort: s?.kind === 'not seen' && sunk(f) ? stoppedShort(session, s) : '',
+      cardStopped: stoppedCard(session, s), potentiallyFixed: s?.kind === 'not seen' && s.potentiallyFixed,
       matchLabels: f.matches.map((i) => matchLabel(session.matches[i])),
       cardMeasured: f.measured[0] && !(f.measured[0].min === f.measured[0].max && titleHasValue(cardTitle(f.title), f.measured[0].min)) ? measuredText({ measured: [f.measured[0]] }) : '',
       marks: marksText(session, f), wrongIn: wrongIn(session, f),
@@ -387,18 +413,19 @@ export function buildText(m: SessionModel): string {
 
 /** The phone card for a session: the match count, the counts by confidence, then merged errors and warnings. */
 export function sessionCard(m: SessionModel): CardModel {
-  const count = (c: Confidence) => m.findings.filter((f) => f.confidence === c).length
-  const parts = ORDER.filter(count).map((c) => `${count(c)} ${c}`)
+  const count = (c: Confidence) => m.findings.filter((f) => f.confidence === c && !f.sinks).length
+  const stoppedCount = m.findings.filter((f) => f.sinks).length
+  const parts = [...ORDER.filter(count).map((c) => `${count(c)} ${c}`), ...(stoppedCount ? [`${stoppedCount} stopped`] : [])]
   return {
     context: [m.label, m.dates].filter(Boolean).join(' · '),
     heading: plural(m.matchCount, 'match'),
     headingTone: 'muted' as Tone,
     subheading: [parts.length ? parts.join(' · ') : m.filed.length ? 'No other errors or warnings' : 'No errors or warnings in any match', m.filed.length ? `${m.filed.length} not a real problem` : ''].filter(Boolean).join(' · '),
     items: m.findings.map((f) => ({
-      word: `${f.sevWord.toUpperCase()}${f.confidence === 'quiet' ? '' : ` · ${f.confidenceWord.toUpperCase()}`}${f.cameBack.length ? ' · CAME BACK' : ''}`,
+      word: `${f.sevWord.toUpperCase()}${f.confidence === 'quiet' ? '' : ` · ${f.confidenceWord.toUpperCase()}`}${f.cameBack.length ? ' · CAME BACK' : ''}${f.potentiallyFixed ? ' · POTENTIALLY FIXED' : ''}`,
       tone: (f.severity === 'error' ? 'error' : 'warning') as Tone,
       title: f.title,
-      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured, f.wrongIn.length ? `not a real problem in ${f.wrongIn.join(', ')}` : ''].filter(Boolean).join(' · '),
+      number: [`${f.ratio} ${f.ratio.endsWith(' of 1') ? 'match' : 'matches'}`, f.cardMeasured, f.wrongIn.length ? `not a real problem in ${f.wrongIn.join(', ')}` : '', f.cardStopped].filter(Boolean).join(' · '),
       short: `${f.ruleTitle} (${f.matchLabels.join(', ')})`,
     })),
     emptyText: 'Nothing to fix from these logs.',

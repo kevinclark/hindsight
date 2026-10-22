@@ -27,7 +27,7 @@ export default rule({
   check(match) {
     // Before auto in a match log; in Foresight, now (the end of the disabled stretch).
     const at = match.autoStart ?? match.beforeEnable.at(-1)?.end ?? null
-    if (at === null) return
+    if (at === null) return match.couldNotCheck('the robot was never enabled')
     const inMatchLog = match.autoStart !== null
     const when = inMatchLog ? 'before auto' : 'at rest, last 2 s'
     const rest = match.signal('batteryVoltage').median(match.before(at, 2))

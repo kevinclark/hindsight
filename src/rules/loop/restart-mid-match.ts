@@ -31,7 +31,7 @@ export default rule({
   incident: 'MTTD 2025 Q28: two restarts in teleop, three logs, no program for ~63 s of the last ~84 s (mttd-2025-context.md §1)',
 
   check(match) {
-    if (!match.onField) return
+    if (!match.onField) return match.couldNotCheck('not a match on the field')
     const startsMid = startsLive(match)
     const endsMid = live(match, match.logEnd)
     if (!startsMid && !endsMid) return
