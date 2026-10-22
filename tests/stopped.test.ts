@@ -1,7 +1,7 @@
 // A session says when a finding stopped firing: the student's fixed mark first, else "not seen since" with the exact
 // chance of a run that clean with no fix. Invented TEST matches only.
 import { describe, expect, it } from 'vitest'
-import { cleanRunChance, notSeenSince, sinks, stoppedFiring, stoppedText } from '../src/session/stopped.ts'
+import { chanceText, cleanRunChance, notSeenSince, sinks, stoppedFiring, stoppedText } from '../src/session/stopped.ts'
 import { mergeFindings, type Session } from '../src/session/session.ts'
 import type { MatchSummary, RuleStatus } from '../src/session/summary.ts'
 import { bottomLine, sessionModel } from '../src/report/session-model.ts'
@@ -57,13 +57,27 @@ describe('the chance of a run this clean with no fix, C(n, k) / C(N, k)', () => 
     // 30 firings in the first 30 of 200: C(30, 30) / C(200, 30), far below 1e-30.
     const big = cleanRunChance(30, 30, 200)
     expect(big.potentiallyFixed).toBe(true)
+    expect(big.chance).toBeGreaterThan(0)
     expect(big.chance).toBeLessThan(1e-30)
+    expect(chanceText(big)).toBe('fewer than 1 time in a billion')
+    // 4 firings in the first 4 of 30: 1 in 27,405.
+    expect(chanceText(cleanRunChance(4, 4, 30))).toBe('about 1 time in 27,405')
   })
   it('reads "a run this clean happens 1 time in 35 with no fix"', () => {
     const s = session('XXXX...')
     expect(stoppedText(s, notSeenSince(s, RULE)!)).toBe('Potentially fixed: not seen since Q4 · 3 clean checked matches · a run this clean happens 1 time in 35 with no fix')
     const t = session('..X....')
     expect(stoppedText(t, notSeenSince(t, RULE)!)).toBe('Not seen since Q3 · 4 clean checked matches · a run this clean happens 3 times in 7 with no fix')
+  })
+})
+
+describe('the run is the rule\'s own row', () => {
+  it('a row whose own issue last fired earlier than the rule says so', () => {
+    const s = session('XX.X...', { about: 'TEST item' })
+    // Match 4 fired for another item of the same rule.
+    s.matches[3].rules[RULE].findings = [{ ...s.matches[0].rules[RULE].findings[0], key: `${RULE} · other`, about: 'other' }]
+    const f = mergeFindings(s).find((x) => x.key === `${RULE} · TEST item`)!
+    expect(stoppedText(s, notSeenSince(s, RULE)!, f)).toMatch(/^Not seen since Q4 \(this one last in Q2\) · 3 clean checked matches/)
   })
 })
 

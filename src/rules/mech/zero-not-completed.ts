@@ -13,7 +13,7 @@
  * all auto, and the hood hit the trench in Q13. Fixed in 8ba92cb (zero at boot); P0 must stay quiet.
  */
 import { rule, round, secs } from '../rule.ts'
-import type { MechanismView, Signal } from '../view.ts'
+import type { MatchView, MechanismView, Signal } from '../view.ts'
 
 export default rule({
   id: 'mech/zero-not-completed',
@@ -42,8 +42,8 @@ export default rule({
       const moved = position.episodes((deg) => (deg - startAngle) * away > mechanism.moveDegrees, { during: [period] })
       if (moved.length) { movedAt = moved[0].start; break }
     }
-    // Never moved and never zeroed: nothing was measured in a wrong frame, and nothing shows the zero worked.
-    if (movedAt === null && !Number.isFinite(doneAt)) return match.couldNotCheck('it never moved while enabled, and never zeroed')
+    // Never moved while enabled, before or after the zero: the match never put the zero to the test.
+    if (movedAt === null && !movedWhileEnabled(mechanism, position, match)) return match.couldNotCheck('it never moved while enabled')
     if (movedAt === null || movedAt >= doneAt) return
     const plot = { signals: [position], unit: '°', from: movedAt - 2, to: movedAt + 6, marks: [movedAt] }
 
@@ -72,6 +72,14 @@ export default rule({
     }
   },
 })
+
+/** Did the mechanism move more than `moveDegrees` (either way) in any enabled stretch, before or after its zero? */
+function movedWhileEnabled(mechanism: MechanismView, position: Signal, match: MatchView): boolean {
+  return match.enabled.some((period) => {
+    const startAngle = position.at(period.start)
+    return position.episodes((deg) => Math.abs(deg - startAngle) > mechanism.moveDegrees, { during: [period] }).length > 0
+  })
+}
 
 /** Does the log start at the angle the zero sets? (2026-02-21: 15 logs started at 23.8°, the zero kept.) */
 function startsZeroed(mechanism: MechanismView, position: Signal): boolean {

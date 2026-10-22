@@ -39,7 +39,8 @@ export default rule({
     const steadySeconds = motors[0].ratios.length * motors[0].weight
     // The leader never held a steady speed for long: the followers weren't compared, so this match says nothing.
     if (steadySeconds < MIN_STEADY_SECONDS && worst.secondsOff < FOLLOWER_LINE_SECONDS) {
-      return match.couldNotCheck(`the leader held a steady speed for only ${secs(steadySeconds)} (needs ${MIN_STEADY_SECONDS} s)`)
+      const held = secs(steadySeconds)
+      return match.couldNotCheck(`the leader held a steady speed for only ${held} (needs ${MIN_STEADY_SECONDS} s)`)
     }
     if (worst.secondsOff < FOLLOWER_LINE_SECONDS) return
 

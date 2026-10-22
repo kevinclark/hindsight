@@ -37,10 +37,10 @@ describe('a log with no match on the field (never enabled)', () => {
     ['auto/none-at-enable', /never enabled/],
     ['loop/restart-mid-match', /not a match on the field/],
     ['power/main-breaker-margin', /no match in this log/],
-    ['power/margin', /no battery voltage logged while enabled/],
+    ['power/margin', /the robot was never enabled/],
     ['power/rest-voltage', /the robot was never enabled/],
     ['comms/loss', /no match in this log/],
-    ['loop/overrun', /no loop times logged in auto or teleop/],
+    ['loop/overrun', /the robot was never enabled/],
   ])('%s: not checked', (rule, reason) => {
     expect(notChecked(r, rule)).toMatch(reason)
   })
@@ -51,9 +51,18 @@ describe('mechanisms that never did the thing the rule judges', () => {
   const [from, to] = [Math.min(...enabled), Math.max(...enabled) + 20]
   const base = q13.entries.filter((e) => !['/Drum/Hood/PositionRotations', '/RealOutputs/Console'].includes(e.name))
 
-  it('mech/zero-not-completed: the hood never moved and never zeroed', () => {
-    const r = report([...base, flat('/Drum/Hood/PositionRotations', 2 / 360, 'double', from, to), { name: '/RealOutputs/Console', type: 'string', records: [[from, 'Robot program startup complete']] }])
-    expect(notChecked(r, 'mech/zero-not-completed')).toMatch(/Hood: it never moved while enabled, and never zeroed/)
+  const hoodRun = (hood: FixtureEntry, consoleLines: [number, string][]) =>
+    report([...base, hood, { name: '/RealOutputs/Console', type: 'string', records: consoleLines }])
+  it('mech/zero-not-completed: the hood never moved, zeroed or not', () => {
+    const still = flat('/Drum/Hood/PositionRotations', 2 / 360, 'double', from, to)
+    expect(notChecked(hoodRun(still, [[from, 'Robot program startup complete']]), 'mech/zero-not-completed')).toMatch(/^Hood: it never moved while enabled/)
+    // Zeroed at boot, before the first enable, then never moved: the match never tested the zero.
+    expect(notChecked(hoodRun(still, [[from, 'Rezeroed hood']]), 'mech/zero-not-completed')).toMatch(/^Hood: it never moved while enabled/)
+  })
+  it('mech/zero-not-completed: zeroed at boot and moved later in the match reads quiet (the zero was in time)', () => {
+    const moves = { name: '/Drum/Hood/PositionRotations', type: 'double', records: [[from, 2 / 360], [300, 2 / 360], [301, 30 / 360], [to, 30 / 360]] } as FixtureEntry // enabled 293–422 s
+    const r = hoodRun(moves, [[from - 50, 'Rezeroed hood']])
+    expect(notChecked(r, 'mech/zero-not-completed')).toBeUndefined()
   })
   it('mech/follower-mismatch: the flywheel leader never held a steady speed', () => {
     const flywheel = offseason2026.motorGroups.find((g) => g.sameLoop)!

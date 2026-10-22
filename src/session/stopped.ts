@@ -36,6 +36,8 @@ export interface NotSeenSince {
   times: number
   outOf: number
   chance: number
+  /** 1 / chance, rounded: "about 1 time in `about`" when `outOf` is too big to say. */
+  about: number
   /** The chance is 0.05 or less. */
   potentiallyFixed: boolean
   /** The log's own build differs between the last firing and the next clean match. */
@@ -116,15 +118,16 @@ function codeChange(matches: MatchSummary[], a: number | undefined, b: number | 
  * C(n, k) / C(N, k): with k firings among N checked matches placed at random, the chance that all of them fall in
  * the first n. Exact (big integers), in lowest terms; `potentiallyFixed` compares the fractions, not rounded numbers.
  */
-export function cleanRunChance(n: number, k: number, total: number): { times: number; outOf: number; chance: number; potentiallyFixed: boolean } {
+export function cleanRunChance(n: number, k: number, total: number): { times: number; outOf: number; chance: number; about: number; potentiallyFixed: boolean } {
   const a = binomial(n, k)
   const b = binomial(total, k)
   const g = gcd(a, b)
-  const scale = 10n ** 15n
   return {
     times: Number(a / g),
     outOf: Number(b / g),
-    chance: Number((a * scale) / b) / 1e15,
+    // Both as plain numbers: exact enough for any session (a 1e-30 chance stays 1e-30, never 0).
+    chance: Number(a) / Number(b),
+    about: Number((b + a / 2n) / a),
     potentiallyFixed: a * BigInt(Math.round(1 / POTENTIALLY_FIXED_AT)) <= b,
   }
 }
@@ -141,9 +144,10 @@ function gcd(a: bigint, b: bigint): bigint {
   return a
 }
 
-/** "1 time in 35", "3 times in 7"; past 1000 in the denominator, "about 1 time in 1,234". */
-export function chanceText(s: Pick<NotSeenSince, 'times' | 'outOf' | 'chance'>): string {
-  if (s.outOf > 1000) return `about 1 time in ${Math.round(1 / s.chance).toLocaleString('en-US')}`
+/** "1 time in 35", "3 times in 7"; past 1000 in the denominator, "about 1 time in 1,234"; "fewer than 1 time in a billion". */
+export function chanceText(s: Pick<NotSeenSince, 'times' | 'outOf' | 'about'>): string {
+  if (s.about > 1e9) return 'fewer than 1 time in a billion'
+  if (s.outOf > 1000) return `about 1 time in ${s.about.toLocaleString('en-US')}`
   return `${s.times} time${s.times === 1 ? '' : 's'} in ${s.outOf}`
 }
 
@@ -151,14 +155,18 @@ export function chanceText(s: Pick<NotSeenSince, 'times' | 'outOf' | 'chance'>):
  * The finding's line in the Session view, the report and the JSON: "Not seen since Q21 · 3 clean checked matches · a
  * run this clean happens 4 times in 7 with no fix", or "Marked fixed after Q21 · quiet in 3 checked matches since".
  */
-export function stoppedText(session: Session, s: Stopped): string {
+export function stoppedText(session: Session, s: Stopped, f?: Pick<MergedFinding, 'matches'>): string {
   const code = s.codeChanged ? ` · code changed in between: ${s.codeChanged.from} → ${s.codeChanged.to}` : ''
   if (s.kind === 'fixed mark') {
     const since = s.quiet ? `quiet in ${s.quiet} checked match${s.quiet === 1 ? '' : 'es'} since` : 'no match checked since'
     return `Marked fixed${s.before === null ? '' : ` after ${matchName(session, s.before)}`} · ${since}${code}`
   }
   const clean = `${s.clean} clean checked match${s.clean === 1 ? '' : 'es'}`
-  return `${s.potentiallyFixed ? 'Potentially fixed: not' : 'Not'} seen since ${matchName(session, s.last)} · ${clean} · a run this clean happens ${chanceText(s)} with no fix${code}`
+  // The run is the rule's own row; this issue may have last fired earlier than the rule did.
+  const own = f?.matches.at(-1)
+  const ownLast = own !== undefined && own !== s.last ? ` (this one last in ${matchName(session, own)})` : ''
+  const since = `${s.potentiallyFixed ? 'Potentially fixed: not' : 'Not'} seen since ${matchName(session, s.last)}${ownLast}`
+  return `${since} · ${clean} · a run this clean happens ${chanceText(s)} with no fix${code}`
 }
 
 /** For the bottom line and the card: "not seen since Q21, 1 in 35". */

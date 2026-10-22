@@ -345,7 +345,7 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
       ratio,
       rateText: `fired in ${ratio} where it could be checked (${interval(f.interval)})`,
       measured: measuredText(f), cameBack: cameBack(session, issues, f.key, f.matches),
-      stopped: s ? stoppedText(session, s) : '', sinks: sunk(f), stoppedShort: s?.kind === 'not seen' && sunk(f) ? stoppedShort(session, s) : '',
+      stopped: s ? stoppedText(session, s, f) : '', sinks: sunk(f), stoppedShort: s?.kind === 'not seen' && sunk(f) ? stoppedShort(session, s) : '',
       matchLabels: f.matches.map((i) => matchLabel(session.matches[i])),
       cardMeasured: f.measured[0] && !(f.measured[0].min === f.measured[0].max && titleHasValue(cardTitle(f.title), f.measured[0].min)) ? measuredText({ measured: [f.measured[0]] }) : '',
       marks: marksText(session, f), wrongIn: wrongIn(session, f),

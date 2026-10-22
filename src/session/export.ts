@@ -29,7 +29,7 @@ export function buildSessionJson(session: Session, issues: Map<string, IssueEven
       matches: f.matches.map((i) => session.matches[i].fileName),
       ...(f.wrong ? { wrong: f.wrong.map((w) => ({ match: session.matches[w.match].fileName, note: w.reason, since: w.when })) } : {}),
       issue: issues.get(f.key) ? { status: issues.get(f.key)!.status, note: issues.get(f.key)!.note, since: issues.get(f.key)!.when } : null,
-      ...stoppedJson(session, f.severity, stoppedFiring(session, f, issues.get(f.key))),
+      ...stoppedJson(session, f, stoppedFiring(session, f, issues.get(f.key))),
     })),
     // Only after "Read again": what that changed in the findings (additive; the schema id stays /1).
     ...(changedOnReread ? { changedOnReread: { hindsightVersion: VERSION, changes: changedOnReread } } : {}),
@@ -40,17 +40,17 @@ export function buildSessionJson(session: Session, issues: Map<string, IssueEven
  * Whether the finding stopped firing (session/stopped.ts), with the line the view shows. Only when it did, so the
  * file is unchanged otherwise. Matches by file name, like the rest of this file.
  */
-function stoppedJson(session: Session, severity: MergedFinding['severity'], s: Stopped | null): object {
+function stoppedJson(session: Session, f: MergedFinding, s: Stopped | null): object {
   if (!s) return {}
   const file = (i: number | null) => (i === null ? null : session.matches[i].fileName)
-  const text = stoppedText(session, s)
+  const text = stoppedText(session, s, f)
   const codeChanged = s.codeChanged ?? null
   if (s.kind === 'fixed mark') return { stopped: { kind: s.kind, markedAfter: file(s.before), quietSince: s.quiet, codeChanged, text } }
   return {
     stopped: {
       kind: s.kind, lastFired: file(s.last), cleanAfter: s.clean,
-      chance: { times: s.times, outOf: s.outOf, value: s.chance }, potentiallyFixed: s.potentiallyFixed,
-      sortsBelowLive: sinks(s, severity), codeChanged, text,
+      chance: { times: s.times, outOf: s.outOf, value: s.chance, about: s.about }, potentiallyFixed: s.potentiallyFixed,
+      sortsBelowLive: sinks(s, f.severity), codeChanged, text,
     },
   }
 }

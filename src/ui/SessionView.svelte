@@ -419,7 +419,7 @@
       <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
     {/if}
     {#if marked}<span class="marked">↳ {marked}</span>{/if}
-    {#if stop}<span class="stopped" class:sunk={sunk(f)} data-stopped>{stoppedText(shown!, stop)}</span>{/if}
+    {#if stop}<span class="stopped" class:sunk={sunk(f)} data-stopped>{stoppedText(shown!, stop, f)}</span>{/if}
     <span class="latest">Latest: {f.title}</span>
   </li>
 {/snippet}

@@ -204,16 +204,17 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
   // A pit check has nothing to judge in a match log (no disabled stretch): it stays quiet.
   if (rule.foresightOnly && view.beforeEnable.length === 0) return { findings, notChecked, items: 0, itemsSkipped: 0 }
   let items: ReturnType<typeof itemsFor>
+  let listed: number
   try {
     items = itemsFor(rule, view)
+    // `only`: the things this rule is for. The others aren't its business: not checked, and not counted as checked.
+    listed = items.length
+    items = items.filter((i) => i.applies?.() ?? true)
   } catch (error) {
     // e.g. no Alerts in the log at all: the rule couldn't look.
     if (!(error instanceof MissingSignal)) throw error
     return { findings, notChecked: [`missing ${error.key}`], items: 1, itemsSkipped: 1 }
   }
-  // `only`: the things this rule is for. The others aren't its business: not checked, and not counted as checked.
-  const listed = items.length
-  items = items.filter((i) => i.applies?.() ?? true)
   if (items.length === 0 && listed > 0) {
     return { findings, notChecked: [`the robot profile has no ${rule.forEach === 'motorGroup' ? 'motor group' : rule.forEach} this rule is for`], items: 1, itemsSkipped: 1 }
   }
