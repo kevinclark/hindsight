@@ -25,6 +25,13 @@ export interface CodePlan {
   unstamped: boolean
 }
 
+/** The saved team number (null: none) and GitHub sources; `setTeam` also returns the link pass it ran when sources are set. */
+export interface TeamSettingSaved {
+  team: number | null
+  sources: string[]
+  linkReport?: LinkReport
+}
+
 export interface LinkReport {
   /** Logs that found a repo. */
   linked: number
@@ -77,6 +84,10 @@ export interface HubApi {
   codePlan(): Promise<CodePlan>
   /** Save the GitHub orgs (name) and repos (owner/name) to link code from. */
   setCodeSources(sources: string[]): Promise<CodePlan>
+  /** The saved team number and GitHub sources. */
+  team(): Promise<TeamSettingSaved>
+  /** Save the team number (null: none) and the GitHub sources together. With sources set it then links every log it can to its code (the Link code pass; GitHub requests), and returns that report. Throws if either is not valid. */
+  setTeam(team: number | null, sources: string[]): Promise<TeamSettingSaved>
   /** Find, for logs that name only a code name, the repo that holds that code; makes GitHub requests (see codePlan). */
   linkCode(): Promise<LinkReport>
   /** Read this library's robot logs again with the current describer; resolves with what changed. */

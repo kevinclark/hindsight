@@ -45,6 +45,12 @@ export interface IngestReport {
   ignored: number
   bytesAdded: number
   durationMs: number
+  /** Set by the app when code linking ran after the add (src/hub/ingest-link.ts): logs linked, GitHub API requests made, and whether the cap stopped it. */
+  linked?: number
+  linkRequests?: number
+  linkCapped?: boolean
+  /** Why linking could not finish, in words; the logs were added all the same. */
+  linkProblem?: string
 }
 
 export interface IngestOptions {

@@ -1,8 +1,9 @@
 // Library logs named for the Session view, and found again by those names (summaries restored without their file).
 import { describe, expect, it } from 'vitest'
-import { findByName, sessionNames } from '../src/hub/session-files.ts'
+import { codeSpec, findByName, libraryLinks, sessionNames } from '../src/hub/session-files.ts'
+import type { HubApi } from '../src/hub/bridge.ts'
 import type { Entry } from '../src/hub/catalog.ts'
-import type { LogRecord } from '../src/hub/types.ts'
+import type { CodeLink, LogRecord } from '../src/hub/types.ts'
 
 function entry(sha256: string, path: string, over: { names?: string[]; local?: boolean } = {}): Entry {
   const record = { type: 'log', kind: 'wpilog', sha256, path, size: 1, modifiedTime: 5, recordedAt: 1 } as LogRecord
@@ -32,5 +33,25 @@ describe('finding logs by a session name', () => {
   })
   it('finds nothing for a name two logs share, a log not on this computer, or an unknown name', () => {
     expect(found(['Log_1.wpilog', 'akit_26-02-22_q3.wpilog', 'nope.wpilog'])).toEqual([])
+  })
+})
+
+describe('code links of library logs', () => {
+  const sha = 'a'.repeat(40)
+  const linked: CodeLink = { repo: 'example-org/robot-9999', linkedBy: 'sha', sha, checkedAt: 1 }
+  const withLink = (e: Entry, code: unknown, build: LogRecord['build'] = { sha: 'abc1234', branch: 'main' }): Entry => ({ ...e, record: { ...e.record, code, build } as LogRecord })
+  const api = (entries: Entry[]) => ({ library: async () => ({ entries, skipped: 0, libraryDir: '', machineId: '' }) }) as unknown as HubApi
+
+  it('returns the link and build of each named log that has a well-formed link, keeping the session name', async () => {
+    const entries = [withLink(a, linked), b1, withLink(renamed, { repo: 'not a repo' }), withLink(remote, linked)]
+    expect(await libraryLinks(api(entries), ['akit_26-02-19_q1.wpilog', 'Log_1.wpilog', 'akit_26-02-21_q2.wpilog', 'akit_26-02-22_q3.wpilog'])).toEqual([
+      { name: 'akit_26-02-19_q1.wpilog', code: linked, build: { sha: 'abc1234', branch: 'main' } },
+    ])
+  })
+  it('names the GitHub ref the builder reads: the commit when GitHub has it, else the branch the log ran, else main', () => {
+    expect(codeSpec({ code: linked, build: null })).toBe(`example-org/robot-9999@${sha}`)
+    const byName: CodeLink = { repo: 'example-org/robot-9999', linkedBy: 'codebase', checkedAt: 1 }
+    expect(codeSpec({ code: byName, build: { sha: 'abc1234', branch: 'event-test' } })).toBe('example-org/robot-9999@event-test')
+    expect(codeSpec({ code: byName, build: null })).toBe('example-org/robot-9999@main')
   })
 })

@@ -5,6 +5,7 @@
 import { LibraryFile, type HubApi } from './bridge.ts'
 import type { Entry } from './catalog.ts'
 import { baseName, withShaSuffix } from './layout.ts'
+import { isCodeLink, type CodeLink } from './types.ts'
 
 export interface Named { entry: Entry; name: string }
 
@@ -44,3 +45,15 @@ export async function libraryLogs(api: HubApi, names: string[]): Promise<File[]>
   const { entries } = await api.library()
   return findByName(entries, names).map((n) => asFile(n, api))
 }
+
+/** A library log's link to the repo that holds its code, with the commit the log says it ran. */
+export interface LibraryLink { name: string; code: CodeLink; build: { sha: string; branch: string } | null }
+
+/** The code links of the named logs (those the library holds once, on this computer, that have a well-formed link). */
+export async function libraryLinks(api: HubApi, names: string[]): Promise<LibraryLink[]> {
+  const { entries } = await api.library()
+  return findByName(entries, names).flatMap(({ entry, name }) => (isCodeLink(entry.record.code) ? [{ name, code: entry.record.code, build: entry.record.build ?? null }] : []))
+}
+
+/** "owner/repo@ref" for the profile builder's "Use GitHub": the commit when GitHub has it, else the branch the log ran on (main if it names none). */
+export const codeSpec = ({ code, build }: Pick<LibraryLink, 'code' | 'build'>): string => `${code.repo}@${code.linkedBy === 'sha' && code.sha ? code.sha : build?.branch || 'main'}`
