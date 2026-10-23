@@ -23,6 +23,15 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   `match.couldNotCheck`, never a bare `return`. A rule for only some motors or groups declares `only`: an item
   that returns nothing counts as checked (2026-10-21: 12 rules changed, 264-log golden 0 residual).
 
+## Profile builder (`src/builder/`)
+
+- Golden doesn't cover the builder. Prove a builder change by diffing `scripts/builder-backtest.ts` output (and a
+  motors/groups survey) over every library and public log before and after; read every line that changed.
+- Drafts from code (`code-motors.ts`, `code-draft.ts`) never guess: a folder pairs with the IO whose
+  `updateInputs(inputs)` fills it, else the nearest chain; a tie, or a key two code motors claim, gives nothing.
+  Score with `builder-backtest.ts --code <clone>` on every robot, the 2026 logs included (2026-10-22: a shared
+  outer chain gave all four drive motors ID 6, caught only on 2026).
+
 ## Plain-node scripts
 
 - `src/version.ts` imports `package.json`, which plain node (`--experimental-strip-types`: golden, check, scripts) can't load without a JSON import attribute. Code those scripts reach (rules, coverage, session) must not import it, even through `src/report/review-model.ts`; shared report helpers go in their own file (`src/report/repo-paths.ts`).
