@@ -1,6 +1,6 @@
 /**
  * Robot profile for team 8033's 2026 competition robot (HighlanderRobotics/Rebuilt): the REBUILT robot with a turret
- * shooter, its "COMP" edition (the code picks it from the roboRIO's serial number; logs say /RealOutputs/Robot Edition).
+ * shooter, its "COMP" edition (the code picks it from the roboRIO's serial number; logs say /RealMetadata/Robot Edition, and /RealOutputs/Robot Edition).
  *
  * Copied from the robot code on branch `comp-bring-up`, commit 2cd2843 (2026-02-21 13:41 PST). The practice logs of
  * 2026-02-20/21 ran 13 commits of that branch (7525889 to b675b5d, and two of them from `comp-bring-up-2-21`); none of
@@ -49,6 +49,8 @@ const rollerMotor = (name: string, prefix: string, canId: number) => ({
 export const competition2026: RobotProfile = {
   name: '2026 competition robot',
   codebase: 'Rebuilt',
+  // Robot.java records which robot it built with recordMetadata("Robot Edition", …).
+  editionKey: '/RealMetadata/Robot Edition',
   code: { repo: 'HighlanderRobotics/Rebuilt', branch: 'comp-bring-up', sha: '2cd2843', alsoBranches: ['comp-bring-up-2-21'] },
 
   // The code loads WPILib's default field (SwerveConstants.java:39): k2026RebuiltWelded in WPILib 2026.2.1, the

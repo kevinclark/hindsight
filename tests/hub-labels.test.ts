@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { describeLog, robotIdentity } from '../src/hub/describe.ts'
 import { describeFile, type Described } from '../src/hub/describe-file.ts'
 import { Catalog, newerReading } from '../src/hub/catalog.ts'
-import { fmsPlace, facetValues, robotIsGuess } from '../src/hub/facets.ts'
+import { fmsPlace, facetValues, robotIsGuess, robotLabels } from '../src/hub/facets.ts'
 import table2026 from '../src/hub/events/2026.json' with { type: 'json' }
 import { resolveEvent, resolveIn, eventTableYears, withYear } from '../src/hub/events.ts'
 import { ingest, localFolderFiles } from '../src/hub/ingest.ts'
@@ -58,7 +58,7 @@ describe('the robot a log is from', () => {
 
 const base = (over: Partial<LogRecord> = {}): LogRecord => ({
   type: 'log', kind: 'wpilog', playedAt: Date.UTC(2026, 9, 17, 19), dateSource: 'robot clock', wall: null, matchWindow: null, event: '', matchType: null, matchNumber: null,
-  onField: false, batteryId: null, robot: { profileId: 'p', name: 'Robot A', how: 'signals', fit: 0.2 }, build: null, stub: false, hardwareId: null,
+  onField: false, batteryId: null, roboRio: null, edition: null, robot: { profileId: 'p', name: 'Robot A', how: 'signals', fit: 0.2 }, build: null, stub: false, hardwareId: null,
   sha256: 'a1', size: 1, path: 'logs/2026-2027/2026-10-17/a.wpilog', names: ['a.wpilog'], modifiedTime: null, from: 'folder', recordedAt: 10, machine: 'm1', ...over,
 })
 const meta = (m: Partial<LogRecord>, recordedAt: number, sha256 = 'a1', describer = 'D'): MetaRecord => ({ type: 'meta', sha256, meta: m, describer, recordedAt, machine: 'm2' })
@@ -123,7 +123,7 @@ describe('a later reading laid over a log record', () => {
     expect(r).toMatchObject({ robot: { profileId: 'p', name: 'Robot A' }, build: null, event: '', wall: null, matchType: null, onField: false, stub: false, batteryId: null })
     expect(r.code).toBeUndefined()
     expect(r).toMatchObject({ matchWindow: { start: 1, end: 2 }, matchNumber: 4 }) // the good fields still apply
-    expect(() => facetValues(c.entries()[0])).not.toThrow()
+    expect(() => facetValues(c.entries()[0], robotLabels(c.entries()))).not.toThrow()
     c.add(meta('not an object' as never, 30, 'a1', 'D2'))
     expect(c.bySha('a1')!.event).toBe('')
   })
@@ -175,7 +175,7 @@ describe('event names from the FMS table', () => {
     const c = new Catalog()
     c.add(base({ onField: true, event: code }))
     c.add({ type: 'tag', target: { log: 'a1' }, field: 'place', value: 'Shop', recordedAt: 50, machine: 'm1' })
-    expect(facetValues(c.entries()[0]).place).toBe(withYear(name, new Date(c.entries()[0].record.playedAt!).getUTCFullYear()))
+    expect(facetValues(c.entries()[0], robotLabels(c.entries())).place).toBe(withYear(name, new Date(c.entries()[0].record.playedAt!).getUTCFullYear()))
   })
 })
 

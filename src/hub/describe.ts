@@ -7,7 +7,7 @@
 import { openWpilog } from '../readers/wpilog.ts'
 import { readDslog, dslogEndEpoch } from '../readers/dslog.ts'
 import { readDsevents, dseventsEndEpoch } from '../readers/dsevents.ts'
-import { buildMatch, has, num, values } from '../match/match.ts'
+import { buildMatch, has, num, values, type Match } from '../match/match.ts'
 import { heldAt } from '../match/series.ts'
 import { chooseProfile, type ProfileChoice } from '../profiles/choose.ts'
 import { codeIdentity } from '../profiles/formats.ts'
@@ -22,7 +22,7 @@ export const STUB_BYTES = 1 << 20
 
 const NOTHING: Omit<LogMeta, 'kind'> = {
   playedAt: null, dateSource: 'unknown', wall: null, matchWindow: null, event: '', matchType: null, matchNumber: null,
-  onField: false, batteryId: null, robot: null, build: null, stub: false, hardwareId: null,
+  onField: false, batteryId: null, roboRio: null, edition: null, robot: null, build: null, stub: false, hardwareId: null,
 }
 
 /** Read one log. Throws, with a reason a student can read, when the file is not what its name says. */
@@ -68,6 +68,7 @@ function describeWpilog(name: string, bytes: Uint8Array): LogMeta {
     matchWindow: mStart !== null && mEnd !== null ? { start: mStart, end: mEnd } : null,
     event: match.event, matchType: type, matchNumber: number, onField: match.fms,
     batteryId: atStart || null,
+    roboRio: firstText(match, ROBORIO_SERIAL), edition: profile.editionKey ? firstText(match, profile.editionKey) : null,
     robot: robotIdentity(profile, choice, codeIdentity(log).codebase),
     build: match.build.sha ? { sha: match.build.sha.slice(0, 7), branch: match.build.branch } : null,
     stub: bytes.length < STUB_BYTES && match.enabled.length === 0,
@@ -84,6 +85,14 @@ export function robotIdentity(profile: RobotProfile, choice: ProfileChoice, code
   const named = choice.how === 'codebase and branch' || choice.how === 'codebase' || (choice.how === 'signals' && !choice.misfit)
   if (named) return { profileId: profileId(profile), name: profile.name, how: choice.how, fit }
   return codebase ? { profileId: null, name: codebase, how: choice.how, fit } : null
+}
+
+/** AdvantageKit writes the roboRIO's serial number into every log it records. */
+const ROBORIO_SERIAL = '/SystemStats/SerialNumber'
+
+/** The first non-empty text the log holds under a key, or null when the key is missing or only ever empty. */
+function firstText(match: Match, key: string): string | null {
+  return (has(match, key) ? values<string>(match, key)?.v.find((x) => typeof x === 'string' && x !== '') : undefined) ?? null
 }
 
 const last = (series: { v: ArrayLike<number> } | null): number | null => (series && series.v.length ? series.v[series.v.length - 1] : null)

@@ -726,6 +726,11 @@ describe('the code\'s motors and their log keys', () => {
     const again = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints: codeHints(oneSided, { sha: 'abc1234def', branch: 'main' }) })
     const roller = allMotors(again.json).find(({ motor }) => motor.statorCurrent === '/Indexer/Roller/StatorCurrentAmps')!.motor
     expect([roller.canId, again.json.motorGroups.find((g) => g.motors.includes(roller))!.limitsFromCode ?? false]).toEqual([9, false])
+    // The student is told, at the top of the draft, which groups have no limits and why: here, the two versions.
+    const rollerGroup = draft.json.motorGroups.find((g) => g.motors.includes(byKey('/Indexer/Roller/StatorCurrentAmps')))!
+    expect(draftWarnings(draft.json.motorGroups)).toContain(`${rollerGroup.name}: no current limits (the code builds it in more than one robot version, and a setting doesn't say which version applies it). Drop a robot snapshot to read them from the motors, or set them in the profile.`)
+    // The reason is the builder's: it never reaches a profile the rules read.
+    expect(toProfile(draft.json).motorGroups.find((g) => g.name === rollerGroup.name)).not.toHaveProperty('limitsWhy')
   })
 
   it('follows a ternary only when it asks real or sim and exactly one arm is real code', () => {
@@ -839,6 +844,18 @@ describe('current limits the builder missed (2026-10-23)', () => {
     expect(motorsOf(other).settings.map((s) => s.field)).toEqual(['SupplyCurrentLimit'])
   })
 
+  it('says why the code gave no limits: none set, or its motors\' limits differ', () => {
+    const draft = (files: CodeFile[]) => draftProfile({ logs: [{ log: towerLog(), fileName: 'test.wpilog' }], hints: codeHints(files, { sha: 'abc1234def', branch: 'main' }) })
+    const why = (files: CodeFile[]) => draft(files).json.motorGroups.find((g) => g.motors.some((m) => m.supplyCurrent === '/Tower/SupplyCurrent'))!.limitsWhy
+    expect(why([...library(), robot, tower('config.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;')])).toBe('the code sets no current limits on it that the builder can read')
+    // One motor whose CAN ID gets two supply limits in two places (another robot version's subsystem, say).
+    const elsewhere = java('OldTower.java', 'public class OldTower {', '  TalonFX motor = new TalonFX(20);',
+      '  OldTower() { var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 30.0; motor.getConfigurator().apply(c); }', '}')
+    const both = [...library(), java('Robot.java', 'public class Robot extends LoggedRobot {', '  Mechanism tower = TowerConstants.mechanism();', '  OldTower old = new OldTower();', '}'),
+      tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;'), elsewhere]
+    expect(why(both)).toBe('the code sets different limits for its CAN ID in different places')
+  })
+
   it('follows a constructor with varargs (followers passed after the motor\'s ID)', () => {
     const files = [...library('String name, TalonFXConfiguration config, int id, Follower... followers'), robot,
       tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;', 'new MotorIOTalonFX(NAME, config(), 20, new Follower(21, false), new Follower(22, true))')]
@@ -899,6 +916,21 @@ describe('deferred review fixes', () => {
     const m = (path: string) => ({ path, from: 'keys' as const, supplyCurrent: `${path}/SupplyCurrentAmps` })
     const names = groupMotors([m('/A/X/Roller'), m('/B/X/Roller'), m('/A/Y/X/Roller')]).map((g) => g.name)
     expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(3)
+  })
+
+  it('lists the groups with no current limits once, when nothing says why', () => {
+    const groups = [{ name: 'Drive', groupedBy: 'swerve', motors: [{}, {}, {}, {}] }, { name: 'Shooter', motors: [{}] }, { name: 'Hood', motors: [{}], limits: { supplyA: 30, where: 'Hood.java:9' } }]
+    expect(draftWarnings(groups).filter((w) => /current limits/.test(w))).toEqual(['No current limits for Drive, Shooter: drop a robot snapshot to read them from the motors, or set them in the profile.'])
+    // A profile opened in the builder whose limits say only where they'd be ("not read from the code") has none either.
+    const opened = [...groups, { name: 'Climber', motors: [{}], limits: { where: 'not read from the robot code' } }]
+    expect(draftWarnings(opened).filter((w) => /current limits/.test(w))).toEqual(['No current limits for Drive, Shooter, Climber: drop a robot snapshot to read them from the motors, or set them in the profile.'])
+  })
+
+  it('fills a group whose limits aren\'t known from a dropped snapshot, as it does a group with none', () => {
+    const json = parseProfileJson(readFileSync('fixtures/robot-snapshot/example-profile.json', 'utf8'))
+    json.motorGroups[2].limits = { where: 'not read from the robot code' }
+    applySnapshot(json, makeSnapshot([1, 2, 3, 4, 10, 11, 12, 20].map((id) => ({ id }))))
+    expect(json.motorGroups.map((g) => g.limits?.where.startsWith('as running') ?? 'none')).toEqual([false, false, true])
   })
 
   it('warns when the student names two groups alike', () => {

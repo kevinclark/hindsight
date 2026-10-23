@@ -7,7 +7,7 @@ import { hootName, nameInstant } from '../src/hub/dates.ts'
 import { seasonOf } from '../src/hub/season.ts'
 import { describeLog } from '../src/hub/describe.ts'
 import { Catalog, filesToFetch } from '../src/hub/catalog.ts'
-import { countLabel, facetCounts, facetValues, filterEntries } from '../src/hub/facets.ts'
+import { countLabel, facetCounts, facetValues, filterEntries, robotLabels } from '../src/hub/facets.ts'
 import { kindOf, parseManifest, serializeRecord, type LogRecord, type TagRecord } from '../src/hub/types.ts'
 import { robotLog } from './helpers/hub-logs.ts'
 
@@ -16,7 +16,7 @@ const at = (y: number, mo: number, d: number, h = 12) => new Date(y, mo - 1, d, 
 function log(over: Partial<LogRecord> & { sha256: string }): LogRecord {
   return {
     type: 'log', kind: 'wpilog', playedAt: at(2026, 10, 17), dateSource: 'robot clock', wall: null, matchWindow: null, event: '', matchType: null, matchNumber: null,
-    onField: false, batteryId: null, robot: { profileId: 'p', name: 'Robot A', how: 'codebase', fit: 1 }, build: null, stub: false, hardwareId: null,
+    onField: false, batteryId: null, roboRio: null, edition: null, robot: { profileId: 'p', name: 'Robot A', how: 'codebase', fit: 1 }, build: null, stub: false, hardwareId: null,
     size: 1, path: `logs/x/${over.sha256}.wpilog`, names: [`${over.sha256}.wpilog`], modifiedTime: null, from: 'folder', recordedAt: 1, machine: 'm1', ...over,
   }
 }
@@ -135,17 +135,17 @@ describe('tags and facets', () => {
 
   it('computes the seven facets; a typed battery or robot replaces the logged one; the field names the event', () => {
     const c = catalog([tag({ log: 'a2' }, 'battery', 'B77', 1), tag({ day }, 'place', 'Shop', 1), tag({ log: 'a2' }, 'robot', 'Practice bot', 1)])
-    const v = Object.fromEntries(c.entries().map((e) => [e.record.sha256, facetValues(e)]))
+    const v = Object.fromEntries(c.entries().map((e) => [e.record.sha256, facetValues(e, robotLabels(c.entries()))]))
     expect(v.a1).toEqual({ schoolYear: '2026-2027', season: 'Off-season', place: 'TEST', matchType: 'Qualification', battery: 'B01', robot: 'Robot A', driver: 'No driver' })
     expect(v.a2).toMatchObject({ place: 'Shop', matchType: 'Not a match', battery: 'B77', robot: 'Practice bot' })
     expect(v.a3).toMatchObject({ schoolYear: '2026-2027', season: 'Season', matchType: 'Elimination' })
     expect(v.a4).toMatchObject({ schoolYear: 'No date', season: 'No date' })
   })
 
-  it('shows the CANivore serial of a hoot file attached to the robot log in the robot facet', () => {
+  it('does not put the CANivore serial of an attached hoot file in the robot facet', () => {
     const wall = { start: at(2026, 10, 17, 11), end: at(2026, 10, 17, 13) }
     const c = Catalog.from([[log({ sha256: 'b1', wall, matchWindow: wall }), log({ sha256: 'h2', kind: 'hoot', playedAt: at(2026, 10, 17, 12), hardwareId: 'ABC123', wall: null })].map(serializeRecord).join('')])
-    expect(facetValues(c.entries()[0]).robot).toBe('Robot A · CANivore ABC123')
+    expect(facetValues(c.entries()[0], robotLabels(c.entries())).robot).toBe('Robot A')
   })
 
   it('a download fetches the log and the DS and hoot files attached to it, only those the team has and this computer lacks', () => {
@@ -165,7 +165,7 @@ describe('tags and facets', () => {
 
   it('ORs picks within a facet and ANDs across facets', () => {
     const entries = catalog().entries()
-    const names = (sel: Parameters<typeof filterEntries>[1]) => filterEntries(entries, sel).map((e) => e.record.sha256).sort()
+    const names = (sel: Parameters<typeof filterEntries>[1]) => filterEntries(entries, sel, robotLabels(entries)).map((e) => e.record.sha256).sort()
     expect(names({})).toEqual(['a1', 'a2', 'a3', 'a4'])
     expect(names({ matchType: ['Qualification', 'Elimination'] })).toEqual(['a1', 'a3'])
     expect(names({ matchType: ['Qualification', 'Elimination'], season: ['Season'] })).toEqual(['a3'])
@@ -176,7 +176,7 @@ describe('tags and facets', () => {
 
   it('counts a facet without its own picks, and keeps a picked value at zero', () => {
     const entries = catalog().entries()
-    const counts = facetCounts(entries, { matchType: ['Qualification'], robot: ['Robot B'] })
+    const counts = facetCounts(entries, { matchType: ['Qualification'], robot: ['Robot B'] }, robotLabels(entries))
     expect(Object.fromEntries(counts.matchType)).toEqual({ Elimination: 1, Qualification: 0 }) // robot B narrows it; Qualification stays listed
     expect(Object.fromEntries(counts.robot)).toEqual({ 'Robot A': 1, 'Robot B': 0 })
   })

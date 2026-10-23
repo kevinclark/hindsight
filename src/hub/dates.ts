@@ -35,11 +35,13 @@ function offsetMs(instant: number, zone: string): number {
 }
 
 /**
- * A Phoenix .hoot name: "<rio or CANivore serial>_2026-10-17_20-07-34[_more].hoot". The time is read as UTC (assumed:
+ * A Phoenix .hoot name: "<rio or CANivore serial>_2026-10-17_20-07-34[_more].hoot", sometimes with a match prefix
+ * ("<event><P|Q|E><match>_<serial>_..."): the id is the token before the first time (a lazy optional prefix, so a
+ * second time in the suffix is never taken for the first). The time is read as UTC (assumed:
  * not yet compared with a hoot log's own clock).
  */
 export function hootName(name: string): { hardwareId: string; at: number } | null {
-  const m = /^(.+?)_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/.exec(name)
+  const m = /^(?:.*?_)??([^_]+)_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/.exec(name)
   if (!m) return null
   const [, id, y, mo, d, h, mi, s] = m
   const at = Date.UTC(+y, +mo - 1, +d, +h, +mi, +s)

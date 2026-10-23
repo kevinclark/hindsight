@@ -346,7 +346,7 @@
           Limits:
           {#if limitText(g)}{limitText(g)}{#if g.limitsFromCode}<small class="tag">from code: confirm</small>{/if}
           {:else if limitProblems.get(g.name)}<span class="warn">{limitProblems.get(g.name)}</span>
-          {:else}not known: drop a robot snapshot{/if}
+          {:else}<span class="warn">not known{g.limitsWhy ? ` (${g.limitsWhy})` : ''}: drop a robot snapshot</span>{/if}
         </p>
         <div class="wrap">
           <table class="list">

@@ -224,6 +224,11 @@ export interface RobotProfile<Signals = SignalSources, Battery = BatterySources>
    * the robot code sets). Several profiles may share one codebase, each pinned to a different branch.
    */
   codebase: string
+  /**
+   * An AdvantageKit metadata key whose text names which physical robot this is, when the code builds more than one robot
+   * from one codebase (e.g. "/RealMetadata/Robot Edition").
+   */
+  editionKey?: string
   code: CodePin
   /** `field`: the field's length (x) and width (y) in meters, from the season's AprilTag layout, for "is this pose on the field". */
   game: { name: string; autoSeconds: number; teleopSeconds: number; field?: { length: number; width: number } }

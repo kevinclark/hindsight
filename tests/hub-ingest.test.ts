@@ -154,7 +154,7 @@ describe('ingesting a folder of unorganized logs', () => {
   it("does not file a log at a path another machine's log holds, though that file is not on this disk", async () => {
     const lib4 = await LocalLibrary.open(join(work, 'library-four'), 'machine-d')
     const theirs = robotLog({ enabled: ENABLED, seed: 'theirs' })
-    await lib4.append({ type: 'log', kind: 'wpilog', playedAt: null, dateSource: 'unknown', wall: null, matchWindow: null, event: '', matchType: null, matchNumber: null, onField: false, batteryId: null, robot: null, build: null, stub: false, hardwareId: null,
+    await lib4.append({ type: 'log', kind: 'wpilog', playedAt: null, dateSource: 'unknown', wall: null, matchWindow: null, event: '', matchType: null, matchNumber: null, onField: false, batteryId: null, roboRio: null, edition: null, robot: null, build: null, stub: false, hardwareId: null,
       sha256: 'ee'.repeat(32), size: theirs.length, path: 'logs/undated/Log_2.wpilog', names: ['Log_2.wpilog'], modifiedTime: null, from: 'folder', recordedAt: 1, machine: 'someone-else' })
     const rep = await ingest(lib4, (await localFolderFiles(join(source, 'misc'))).filter((f) => f.name === 'Log_2.wpilog'), options)
     expect(rep.added[0].path).toMatch(/^logs\/undated\/Log_2-[0-9a-f]{8}\.wpilog$/)
