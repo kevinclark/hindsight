@@ -194,6 +194,21 @@ describe('older AdvantageKit logs (the shapes of 8033\'s 2023 and 2024 robots)',
     expect(notUsed.map((n) => n.key)).toEqual(['/Vision/Amps'])
   })
 
+  it('reads `SupplyAmpsAbs` as a motor\'s supply current, leaves out its running average, and says the draw is |current|', () => {
+    const keys = ['DriveStatorAmps', 'DriveSupplyAmpsAbs', 'DriveSupplyAmpsAbsAvg', 'TurnStatorAmps', 'TurnSupplyAmpsAbs', 'TurnSupplyAmpsAbsAvg', 'DriveVelocityRadPerSec', 'DriveAppliedVolts', 'DriveTempCelcius', 'DriveConnected', 'TurnVelocityRadPerSec', 'TurnAppliedVolts']
+    const abs = openWpilog(writeWpilog(keys.map((k) => d(`/Drive/Module0/${k}`))))
+    const { motors, notUsed } = motorsFromLog(abs)
+    expect(motors.map((m) => [m.path, m.supplyCurrent, m.statorCurrent])).toEqual([
+      ['/Drive/Module0/Drive', '/Drive/Module0/DriveSupplyAmpsAbs', '/Drive/Module0/DriveStatorAmps'],
+      ['/Drive/Module0/Turn', '/Drive/Module0/TurnSupplyAmpsAbs', '/Drive/Module0/TurnStatorAmps'],
+    ])
+    expect(notUsed).toEqual([
+      { key: '/Drive/Module0/DriveSupplyAmpsAbsAvg', why: 'an average, not the current' },
+      { key: '/Drive/Module0/TurnSupplyAmpsAbsAvg', why: 'an average, not the current' },
+    ])
+    expect(draftProfile({ logs: [{ log: abs, fileName: 'example.wpilog' }] }).notes.join(' ')).toMatch(/absolute value.*regenerative current then counts as draw/)
+  })
+
   it('reads an array of one as the motor itself, beside its supply current and an array temperature', () => {
     const log = openWpilog(writeWpilog([
       arr('/Swerve/Front Left Module/DriveCurrentAmps', [3], [4]), d('/Swerve/Front Left Module/DriveSupplyCurrentAmps'),
@@ -501,6 +516,22 @@ describe('the code\'s motors and their log keys', () => {
     const { motors } = motorsOf(files)
     expect(motors.map((m) => [m.id, m.bus, m.follows ?? null])).toEqual([[25, 'the roboRIO bus', null], [26, 'canivore', 'Lift.java:3']])
     expect(motors[1].group).toBe(motors[0].group)
+  })
+
+  it('reads a CAN bus built from a constant\'s name, and CTRE\'s two-argument form', () => {
+    const files = [
+      java('Constants.java', 'public class Constants {', '  public static class Bus { public static final String busName = "Example"; public static final CANBus BUS = new CANBus(Constants.Bus.busName); public static final CANBus LOGGED = new CANBus("", "./logs/example.hoot"); public static final CANBus ROBORIO = new CANBus(); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  TalonFX a = new TalonFX(1, Constants.Bus.BUS);', '  TalonFX b = new TalonFX(2, Constants.Bus.LOGGED);', '  TalonFX c = new TalonFX(3, Constants.Bus.ROBORIO);', '}'),
+    ]
+    expect(motorsOf(files).motors.map((m) => [m.id, m.bus])).toEqual([[1, 'Example'], [2, 'the roboRIO bus'], [3, 'the roboRIO bus']])
+  })
+
+  it('gives no device for a CAN bus whose argument it can\'t work out, never the roboRIO bus', () => {
+    const files = [
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  TalonFX a = new TalonFX(1, new CANBus(Config.busName()));', '}'),
+    ]
+    // The motor is still listed (it is built), but with no ID or bus: deviceAlong gave no device.
+    expect(motorsOf(files).motors.map((m) => [m.id, m.bus])).toEqual([[null, null]])
   })
 
   it('reads current limits: Phoenix 6 fields, a .withCurrentLimits builder, and Phoenix 5 limit configs', () => {
