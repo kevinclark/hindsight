@@ -32,7 +32,7 @@
     'limits not known': 'limits not known: no snapshot or code gave them',
   }
   const capText = (g: GroupLimits) => (Number.isNaN(g.capPerMotorA) ? 'not known' : Number.isFinite(g.capPerMotorA) ? `${g.capPerMotorA} A per motor` : 'nothing: both limits switched off')
-  const limitText = (l: LimitView) => (l.limitA === null ? 'not set' : `${l.limitA} A, ${l.on ? 'on' : 'OFF'}`)
+  const limitText = (g: GroupLimits, l: LimitView) => (g.verdict === 'limits not known' ? 'not known' : l.limitA === null ? 'not set' : `${l.limitA} A, ${l.on ? 'on' : 'OFF'}`)
 </script>
 
 <table class="summary" aria-label="Summary of the groups below">
@@ -63,8 +63,8 @@
   <section class="group">
     <h3>{g.group} <span class={`chip ${g.verdict.replace(/ /g, '-')}`}>{VERDICT[g.verdict]}</span></h3>
     <dl class="config">
-      <div><dt>Supply limit</dt><dd class:off={g.supply.limitA !== null && !g.supply.on}>{limitText(g.supply)}</dd><dd class="note">{g.supply.note}</dd></div>
-      <div><dt>Stator limit</dt><dd class:off={g.stator.limitA !== null && !g.stator.on}>{limitText(g.stator)}</dd><dd class="note">{g.stator.note}</dd></div>
+      <div><dt>Supply limit</dt><dd class:off={g.supply.limitA !== null && !g.supply.on}>{limitText(g, g.supply)}</dd><dd class="note">{g.supply.note}</dd></div>
+      <div><dt>Stator limit</dt><dd class:off={g.stator.limitA !== null && !g.stator.on}>{limitText(g, g.stator)}</dd><dd class="note">{g.stator.note}</dd></div>
       <div><dt>Battery draw capped at</dt><dd class:off={g.capPerMotorA === Infinity}>{capText(g)}</dd><dd class="note">{g.motorCount} motors{g.verdict === 'limits not known' ? '' : ` · at the limit ${(100 * g.shareAtLimit).toFixed(1)} % of enabled time`}</dd></div>
       <div><dt>Set in</dt><dd><code>{g.where}</code></dd></div>
     </dl>
@@ -168,7 +168,7 @@
   .group { margin: 1.25rem 0; padding-top: 0.75rem; border-top: 1px solid var(--border); }
   h3 { font-size: 1rem; margin: 0 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
   .chip { font-size: 0.75rem; font-weight: normal; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
-  .chip.limit-bound { border-color: var(--warning); color: var(--warning); }
+  .chip.limit-bound, .chip.limits-not-known { border-color: var(--warning); color: var(--warning); }
   .config { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.5rem 1.25rem; margin: 0 0 0.75rem; }
   .config dt { font-size: 0.8rem; color: var(--muted); }
   .config dd { margin: 0; }

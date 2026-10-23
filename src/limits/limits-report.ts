@@ -87,7 +87,7 @@ function groupLimits(match: Match, g: MotorGroup): GroupLimits {
   }
   // Limits not known: no note claims a default, and currents are shown with no limit to compare them with.
   const known = limitsKnown(L)
-  const unknown = `not known: ${L.where}`
+  const unknown = L.where.startsWith('not known') ? L.where : `not known: ${L.where}`
   const supply: LimitView = {
     kind: 'supply', limitA: supplyLimit, on: supplyOn,
     note: !known ? unknown : supplyOn && lowerLimitOff(L) ? `capped at ${supplyLimit} A; no lower limit (the code sets its time to 0)`

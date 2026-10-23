@@ -168,7 +168,15 @@ describe('burst / sustained pair', () => {
     // The Limits tab says so, instead of "not set: Phoenix's default 70 A applies".
     const unlogged = { ...profile, motorGroups: profile.motorGroups.map((g) => ({ ...g, motors: g.motors.map(({ name }) => ({ name })) })) }
     const report = limitsReport({ profile: unlogged, enabled: [], logEnd: 0 } as unknown as Parameters<typeof limitsReport>[0]).find((g) => g.group === 'Drive')!
-    expect([report.supply.note, report.stator.note, report.verdict, report.capPerMotorA]).toEqual([`not known: ${unknown.where}`, `not known: ${unknown.where}`, 'limits not known', NaN])
+    // A builder profile's "not known: …" isn't said twice; another profile's reason gets "not known:" in front.
+    expect([report.supply.note, report.stator.note, report.verdict, report.capPerMotorA]).toEqual([unknown.where, unknown.where, 'limits not known', NaN])
+    const notRead = { ...unlogged, motorGroups: unlogged.motorGroups.map((g) => (g.name === 'Drive' ? { ...g, limits: { where: 'not read from the code' } } : g)) }
+    expect(limitsReport({ profile: notRead, enabled: [], logEnd: 0 } as unknown as Parameters<typeof limitsReport>[0]).find((g) => g.group === 'Drive')!.supply.note).toBe('not known: not read from the code')
+    // The pinned push isn't worked out from a default stator limit nobody read.
+    expect(p.pinnedDrive).toBeNull()
+    // The wizard's own group: no "today's 70 A" to compare a burst cap with.
+    const own = checkPair(profile, profile.motorGroups.find((g) => g.name === 'Drive')!, 80, 30, 1)
+    expect([own.todaySupplyA, own.todayKnown, own.raisesBurst]).toEqual([null, false, false])
   })
   it('warns not to raise a burst cap above today\'s', () => {
     expect(checkPair(offseason2026, drive, 70, 30, 1).raisesBurst).toBe(true)

@@ -47,9 +47,9 @@ export function applyCode(json: ProfileJson, hints: CodeHints, log: WpilogFile, 
   regroup(json, codeOf)
   for (const g of json.motorGroups) {
     const builtTwoWays = g.motors.some((m) => codeOf.has(m) && twoWays.has(device(codeOf.get(m)!)))
-    const limits = builtTwoWays ? null : limitsFromCode(g, codeOf, hints)
-    if (limits && !g.limits?.where.startsWith('as running')) { g.limits = limits; g.limitsFromCode = true }
-    else if (!limits && g.motors.some((m) => codeOf.has(m))) g.limitsWhy = builtTwoWays ? 'the code builds it in more than one robot version, and a setting doesn\'t say which version applies it' : 'the code gives its motors limits the builder can\'t read as one set'
+    const limits = builtTwoWays ? 'the code builds it in more than one robot version, and a setting doesn\'t say which version applies it' : limitsFromCode(g, codeOf, hints)
+    if (typeof limits !== 'string') { if (!g.limits?.where.startsWith('as running')) { g.limits = limits; g.limitsFromCode = true } }
+    else if (g.motors.some((m) => codeOf.has(m))) g.limitsWhy = limits
   }
 
   // One line per motor: a site and ID reached along two chains of calls is still one motor. A motor whose keys are in
@@ -97,13 +97,14 @@ function regroup(json: ProfileJson, codeOf: Map<MotorJson, CodeMotor>): void {
   }
 }
 
-/** The limits the code gives every motor of a group, when they agree; null when the code sets none or they differ. */
-function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: CodeHints): CurrentLimits | null {
+/** The limits the code gives every motor of a group, when they agree; otherwise why it gives none (for the student). */
+function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: CodeHints): CurrentLimits | string {
   const each = g.motors.map((m) => {
     const c = codeOf.get(m)
     return c && c.id !== null ? hints.settings.filter((s) => s.kind === 'TalonFX' && s.id === c.id && s.bus === c.bus && /Current/.test(s.field)) : null
   })
-  if (each.some((s) => !s || s.length === 0)) return null
+  if (each.some((s) => !s)) return 'the builder couldn\'t tell which motor in the code each one is, or its CAN ID'
+  if (each.some((s) => s!.length === 0)) return 'the code sets no current limits on it that the builder can read'
   const value = (f: string) => {
     const values = each.map((s) => [...new Set(s!.filter((x) => x.field === f).map((x) => x.value))])
     return values.every((v) => v.length === 1 && v[0] === values[0][0]) ? values[0][0] : values.every((v) => v.length === 0) ? undefined : null
@@ -112,7 +113,7 @@ function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: 
     supplyA: value('SupplyCurrentLimit'), supplyEnabled: value('SupplyCurrentLimitEnable'), statorA: value('StatorCurrentLimit'), statorEnabled: value('StatorCurrentLimitEnable'),
     supplyLowerA: value('SupplyCurrentLowerLimit'), supplyLowerSeconds: value('SupplyCurrentLowerTime'),
   }
-  if (Object.values(fields).includes(null)) return null
+  if (Object.values(fields).includes(null)) return 'the code gives its motors different limits'
   const where = lines(each.flat().map((s) => s!.where))
   const supplyLines = lines(each.flat().filter((s) => s!.field.startsWith('Supply')).map((s) => s!.where))
   return {
