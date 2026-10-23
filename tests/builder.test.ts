@@ -528,6 +528,110 @@ describe('the code\'s motors and their log keys', () => {
     expect(limits(7)).toEqual(['SupplyCurrentLimit=30@Arm.java:12', 'SupplyCurrentLimitEnable=true@Arm.java:12'])
   })
 
+  // The shape of AdvantageKit's TalonFX swerve template with CTRE's generated TunerConstants: the module folder is
+  // `"Drive/Module" + Integer.toString(index)`, the IDs come from `createModuleConstants(steer, drive, encoder, …)`, and
+  // the drive's limits from the factory's initial configs plus what ModuleIOTalonFX writes on them.
+  const swerveTemplate = [
+    java('generated/TunerConstants.java',
+      'public class TunerConstants {',
+      '  private static final Current kSlipCurrent = Amps.of(110.0);',
+      '  private static final TalonFXConfiguration driveInitialConfigs = new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimit(kSlipCurrent).withStatorCurrentLimitEnable(true));',
+      '  private static final TalonFXConfiguration steerInitialConfigs = new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimit(Amps.of(50)).withStatorCurrentLimitEnable(true));',
+      '  public static final CANBus kCANBus = new CANBus("canivore", "./logs/example.hoot");',
+      '  private static final SwerveModuleConstantsFactory<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> ConstantCreator =',
+      '      new SwerveModuleConstantsFactory<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration>()',
+      '          .withSlipCurrent(kSlipCurrent).withDriveMotorInitialConfigs(driveInitialConfigs).withSteerMotorInitialConfigs(steerInitialConfigs);',
+      '  private static final int kFrontLeftDriveMotorId = 41;',
+      '  private static final int kFrontLeftSteerMotorId = 42;',
+      '  public static final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> FrontLeft =',
+      '      ConstantCreator.createModuleConstants(kFrontLeftSteerMotorId, kFrontLeftDriveMotorId, 43, Rotations.of(0.1), Inches.of(10), Inches.of(10), false, false, false);',
+      '  public static final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> FrontRight =',
+      '      ConstantCreator.createModuleConstants(52, 51, 53, Rotations.of(0.2), Inches.of(10), Inches.of(-10), true, false, false);',
+      '}'),
+    java('subsystems/drive/ModuleIO.java', 'public interface ModuleIO {', '  @AutoLog', '  public static class ModuleIOInputs { public double driveCurrentAmps = 0.0; public double driveSupplyAmpsAbs = 0.0; public double turnCurrentAmps = 0.0; }', '  public default void updateInputs(ModuleIOInputs inputs) {}', '}'),
+    java('subsystems/drive/ModuleIOTalonFX.java',
+      'public class ModuleIOTalonFX implements ModuleIO {',
+      '  private final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants;',
+      '  private final TalonFX driveTalon;',
+      '  private final TalonFX turnTalon;',
+      '  private final StatusSignal<Current> driveCurrent;',
+      '  private final StatusSignal<Current> driveSupply;',
+      '  private final StatusSignal<Current> turnCurrent;',
+      '  public ModuleIOTalonFX(SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants) {',
+      '    this.constants = constants;',
+      '    driveTalon = new TalonFX(constants.DriveMotorId, TunerConstants.kCANBus);',
+      '    turnTalon = new TalonFX(constants.SteerMotorId, TunerConstants.kCANBus);',
+      '    var driveConfig = constants.DriveMotorInitialConfigs;',
+      '    driveConfig.CurrentLimits.StatorCurrentLimit = constants.SlipCurrent;',
+      '    driveConfig.CurrentLimits.StatorCurrentLimitEnable = true;',
+      '    driveConfig.CurrentLimits.SupplyCurrentLimit = 45.0;',
+      '    driveConfig.CurrentLimits.SupplyCurrentLimitEnable = true;',
+      '    tryUntilOk(5, () -> driveTalon.getConfigurator().apply(driveConfig, 0.25));',
+      '    var turnConfig = new TalonFXConfiguration();',
+      '    tryUntilOk(5, () -> turnTalon.getConfigurator().apply(turnConfig, 0.25));',
+      '    driveCurrent = driveTalon.getStatorCurrent();',
+      '    driveSupply = driveTalon.getSupplyCurrent();',
+      '    turnCurrent = turnTalon.getStatorCurrent();',
+      '  }',
+      '  public void updateInputs(ModuleIOInputs inputs) {',
+      '    inputs.driveCurrentAmps = driveCurrent.getValueAsDouble();',
+      '    inputs.driveSupplyAmpsAbs = Math.abs(driveSupply.getValueAsDouble());',
+      '    inputs.turnCurrentAmps = turnCurrent.getValueAsDouble();',
+      '  }',
+      '}'),
+    java('subsystems/drive/Module.java',
+      'public class Module {',
+      '  private final ModuleIO io;',
+      '  private final ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();',
+      '  private final int index;',
+      '  private final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants;',
+      '  public Module(ModuleIO io, int index, SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants) { this.io = io; this.index = index; this.constants = constants; }',
+      '  public void periodic() { io.updateInputs(inputs); Logger.processInputs("Drive/Module" + Integer.toString(index), inputs); }',
+      '}'),
+    java('subsystems/drive/Drive.java',
+      'public class Drive extends SubsystemBase {',
+      '  private final Module[] modules = new Module[2];',
+      '  public Drive(ModuleIO flModuleIO, ModuleIO frModuleIO) {',
+      '    modules[0] = new Module(flModuleIO, 0, TunerConstants.FrontLeft);',
+      '    modules[1] = new Module(frModuleIO, 1, TunerConstants.FrontRight);',
+      '  }',
+      '  public void periodic() { for (var module : modules) { module.periodic(); } }',
+      '}'),
+    java('RobotContainer.java',
+      'public class RobotContainer {',
+      '  private final Drive drive;',
+      '  public RobotContainer() {',
+      '    switch (Constants.currentMode) {',
+      '      case REAL -> drive = new Drive(new ModuleIOTalonFX(TunerConstants.FrontLeft), new ModuleIOTalonFX(TunerConstants.FrontRight));',
+      '      default -> drive = new Drive(new ModuleIO() {}, new ModuleIO() {});',
+      '    }',
+      '  }',
+      '}'),
+    java('Robot.java', 'public class Robot extends LoggedRobot {', '  private final RobotContainer robotContainer = new RobotContainer();', '}'),
+  ]
+
+  it('reads AdvantageKit\'s TalonFX swerve template: module folders by index, IDs from createModuleConstants, the drive\'s limits', () => {
+    const { motors, settings } = motorsOf(swerveTemplate)
+    expect(motors.map(show)).toEqual([
+      ['ModuleIOTalonFX.java:10', 41, ['stator Drive/Module0/DriveCurrentAmps', 'supply Drive/Module0/DriveSupplyAmpsAbs']],
+      ['ModuleIOTalonFX.java:10', 51, ['stator Drive/Module1/DriveCurrentAmps', 'supply Drive/Module1/DriveSupplyAmpsAbs']],
+      ['ModuleIOTalonFX.java:11', 42, ['stator Drive/Module0/TurnCurrentAmps']],
+      ['ModuleIOTalonFX.java:11', 52, ['stator Drive/Module1/TurnCurrentAmps']],
+    ])
+    expect(new Set(motors.map((m) => m.bus))).toEqual(new Set(['canivore']))
+    const log = openWpilog(writeWpilog([0, 1].flatMap((n) => [d(`/Drive/Module${n}/DriveCurrentAmps`), d(`/Drive/Module${n}/DriveSupplyAmpsAbs`), d(`/Drive/Module${n}/TurnCurrentAmps`)])))
+    expect(motors.map((m) => placeInLog(m, log).map((k) => k.key))).toEqual([
+      ['/Drive/Module0/DriveCurrentAmps', '/Drive/Module0/DriveSupplyAmpsAbs'], ['/Drive/Module1/DriveCurrentAmps', '/Drive/Module1/DriveSupplyAmpsAbs'],
+      ['/Drive/Module0/TurnCurrentAmps'], ['/Drive/Module1/TurnCurrentAmps'],
+    ])
+    // The drive: the factory's stator limit (the slip current), then ModuleIOTalonFX's own writes on that config. The
+    // turn motor's config sets no limit, so none is listed (Phoenix's defaults run).
+    const limits = (id: number) => settings.filter((s) => s.id === id).map((s) => `${s.field}=${s.value}`).sort()
+    expect(limits(41)).toEqual(['StatorCurrentLimit=110', 'StatorCurrentLimitEnable=true', 'SupplyCurrentLimit=45', 'SupplyCurrentLimitEnable=true'])
+    expect(limits(51)).toEqual(limits(41))
+    expect(limits(42)).toEqual([])
+  })
+
   it('fills the draft: kinds, IDs, the follower\'s group and limits marked "from code", and what the log lacks', async () => {
     const files = [...shooter]
     files[1] = { ...files[1], text: files[1].text.replace('public ShooterIOReal() {', 'public ShooterIOReal() { var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 30.0; leader.getConfigurator().apply(c); follower.getConfigurator().apply(c);') }

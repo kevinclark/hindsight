@@ -193,20 +193,24 @@ function processedFolders(project: Project, inputs: Map<string, string>): Map<st
 }
 
 /**
- * The chains of calls that reach this code, as waysToReach gives them, except that a method nothing in the project calls
- * (`periodic()`, which the scheduler runs) runs once for each object of its class: then the chains that reach its
- * constructors, a subclass's `super(…)` included. RollerSubsystem's `processInputs(name, inputs)` is "Funnel" for one
- * and "Manipulator" for the other. A class with no constructor written keeps waysToReach's answer.
+ * The chains of calls that reach this code, as waysToReach gives them, except that a method of an object runs once for
+ * each object of its class when the chains don't say which object it is: a method nothing in the project calls
+ * (`periodic()`, which the scheduler runs), or one called on an object the caller can't name (`module.periodic()` for
+ * each of a Drive's modules). Then the chains that reach its constructors, a subclass's `super(…)` included.
+ * RollerSubsystem's `processInputs(name, inputs)` is "Funnel" for one and "Manipulator" for the other; a Module's
+ * `"Drive/Module" + Integer.toString(index)` is "Drive/Module0" for the one built with index 0. A class with no
+ * constructor written keeps waysToReach's answer.
  */
 function instanceChains(node: Node, project: Project): Node[][] {
   const chains = (waysToReach(node, project) ?? [[]]).filter((c) => !c.some(inSimulation))
   const method = enclosing(node, ['method_declaration'])
-  if (chains.length !== 1 || chains[0].length > 0 || !method || modifiersOf(method).includes('static')) return chains
+  if (!method || modifiersOf(method).includes('static')) return chains
   // Each constructor's callers: `new RollerSubsystem(…)`, or a subclass's `super(io, NAME)` and what builds that.
   const cls = classAround(method)
   const constructors = parts(cls && field(cls, 'body')).filter((c) => c.type === 'constructor_declaration')
   const reached = constructors.flatMap((c) => (waysToReach(field(c, 'body') ?? c, project) ?? []).filter((chain) => chain.length && !chain.some(inSimulation)))
-  return reached.length ? reached : chains
+  const namesObject = chains.some((chain) => chain.some((call) => reached.some((r) => r[0].equals(call))))
+  return reached.length && !namesObject ? reached : chains
 }
 
 /** A folder expression as parts: text the code says, inputs fields, and open parts. */
@@ -235,6 +239,11 @@ function folderOf(expr: Node, chain: Node[], project: Project, inputs: Map<strin
       const start = parts(at, 'arguments')[0]
       return [...(start ? [start] : []), ...pieces].reduce<FolderPart[]>((acc, piece) => join(acc, folderOf(piece, chain, project, inputs)), [])
     }
+  }
+  // `Integer.toString(index)`, `String.valueOf(index)`: the number as text.
+  if (expr.type === 'method_invocation' && ((nameOf(expr) === 'toString' && field(expr, 'object')?.text === 'Integer') || (nameOf(expr) === 'valueOf' && field(expr, 'object')?.text === 'String'))) {
+    const [arg] = parts(expr, 'arguments')
+    if (arg && parts(expr, 'arguments').length === 1) return folderOf(arg, chain, project, inputs)
   }
   if (expr.type === 'field_access' && inputsTypeOf(field(expr, 'object'), project, inputs)) return [{ field: field(expr, 'field')!.text }]
   // `io.getModuleName()`: a method of a project class or interface, answered by each IO object (marks).

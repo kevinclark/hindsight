@@ -79,7 +79,7 @@ const MOST_STEPS = 24
 export function madeAlong(expr: Node | null, chain: Node[], project: Project, options: FollowOptions = { throughCalls: false }, steps = 0): { at: Node; chain: Node[] } | null {
   if (!expr || steps > MOST_STEPS) return null
   const along = (next: Node | null, nextChain: Node[]) => madeAlong(next, nextChain, project, options, steps + 1)
-  if (valueOf(expr, project) || expr.type === 'string_literal' || expr.type === 'object_creation_expression' || options.stopAt?.(expr)) return { at: expr, chain }
+  if (valueOf(expr, project) || expr.type === 'string_literal' || expr.type === 'object_creation_expression' || isModuleConstants(expr) || options.stopAt?.(expr)) return { at: expr, chain }
   if (expr.type === 'parenthesized_expression') return along(parts(expr)[0] ?? null, chain)
   if (expr.type === 'method_invocation' && options.throughCalls && chain.length < MOST_CALLS) {
     const returned = returnedBy(expr, project)
@@ -133,6 +133,7 @@ function memberAlong(
     }
   }
   const built = along(object, chain)
+  if (built && !isCall && isModuleConstants(built.at)) return moduleConstant(built.at, member, built.chain, project, along)
   if (built?.at.type !== 'object_creation_expression' && built?.at.type !== 'enum_constant') return null
   const passed = argumentsOf(built.at)
   const declaration = built.at.type === 'enum_constant' ? enclosing(built.at, ['enum_declaration']) : builtClass(baseType(typeNamed(built.at)), project)
@@ -158,6 +159,29 @@ function memberAlong(
   if (!stored) return null
   const index = parametersOf(constructor!).findIndex((p) => p.equals(stored))
   return index >= 0 ? along(passed[index] ?? null, built.chain) : along(stored, built.chain)
+}
+
+/**
+ * CTRE's swerve module constants, as Tuner X generates them: `ConstantCreator.createModuleConstants(steerMotorId,
+ * driveMotorId, encoderId, …)` (Phoenix 6, the order of 2024 to 2026), from a `SwerveModuleConstantsFactory` set up with
+ * `.withSlipCurrent(…)`, `.withDriveMotorInitialConfigs(…)` and the like. The robot code reads them as fields
+ * (`constants.DriveMotorId`). A library call, so it is where these values are made.
+ */
+const MODULE_IDS: Record<string, number> = { SteerMotorId: 0, DriveMotorId: 1, EncoderId: 2, CANcoderId: 2 }
+const isModuleConstants = (expr: Node) => expr.type === 'method_invocation' && nameOf(expr) === 'createModuleConstants'
+const isWithCall = (expr: Node) => expr.type === 'method_invocation' && /^with[A-Z]/.test(nameOf(expr) ?? '')
+
+/** A field of module constants: an ID passed to createModuleConstants, or what the factory's `.with<Field>(…)` set. */
+function moduleConstant(
+  made: Node, member: string, chain: Node[], project: Project, along: (next: Node | null, chain: Node[]) => { at: Node; chain: Node[] } | null,
+): { at: Node; chain: Node[] } | null {
+  if (member in MODULE_IDS) return along(argumentsOf(made)[MODULE_IDS[member]] ?? null, chain)
+  const factory = madeAlong(field(made, 'object'), chain, project, { throughCalls: false, stopAt: isWithCall })
+  // The outermost `.with<Field>(…)` is the one that holds: each replaces what an earlier one set.
+  for (let at = factory?.at ?? null; at && isWithCall(at); at = field(at, 'object')) {
+    if (nameOf(at) === `with${member}`) return along(argumentsOf(at)[0] ?? null, factory!.chain)
+  }
+  return null
 }
 
 /** The one record, or class, in the project with this name (records and enums aren't in the class index). */
