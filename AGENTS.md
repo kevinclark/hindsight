@@ -39,6 +39,10 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   but no limits.
   Score with `builder-backtest.ts --code <clone>` on every robot, the 2026 logs included (2026-10-22: a shared
   outer chain gave all four drive motors ID 6, caught only on 2026).
+- A change only on the code side (`src/code/check/flow.ts`, `code-hints.ts`, `code-motors.ts`) changes a draft only
+  through `codeHints(repo @ commit)`. Diff that JSON, before and after, for each distinct commit the library and
+  public logs ran (2026-10-23: 146 commits in 3 min, against ~50 min a side for builder-backtest over 857 logs).
+  Then run builder-backtest only on the logs whose commit's hints changed, and read every changed hint.
 
 ## Plain-node scripts
 
