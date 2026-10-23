@@ -8,6 +8,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 
 - After CI passes on a branch tip, land it with `git merge --no-ff` so the tested commits are the ones on main. If
   you must rebase, re-run every suite on the rebased result before pushing (165e7dd and 9875905 did).
+- CI (`code-check-action`) runs only when `src/code/**`, `action.yml`, `scripts/code-check.ts` or `package*.json`
+  change; a branch that touches none of them gets no run at all, so waiting for one never ends. Then run `npx vitest
+  run` and `npm run check` on `git archive <tip> | tar -x` of the tip before landing (ad9ccd9, 2026-10-23).
 
 ## Rules (`src/rules/`)
 
