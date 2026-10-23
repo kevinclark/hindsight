@@ -4,6 +4,7 @@
  */
 
 import type { Analysis } from '../analyze.ts'
+import { isUncommitted } from '../match/git-dirty.ts'
 import { makerOf } from '../rules/index.ts'
 import type { Finding, Severity } from '../rules/types.ts'
 import type { IssueEvent } from '../triage/history.ts'
@@ -85,7 +86,7 @@ export interface BuildLine { sha: string; branch: string; uncommitted: boolean; 
 
 export function buildLine(b: { sha: string; branch: string; dirty: string }): BuildLine {
   const sha = b.sha.slice(0, 7)
-  const uncommitted = /uncommitted/i.test(b.dirty)
+  const uncommitted = isUncommitted(b.dirty)
   const text = !sha && !b.branch ? 'code build not recorded in this log' : `code ${sha || '?'} on ${b.branch || '?'}${uncommitted ? ' (UNCOMMITTED changes)' : ''}`
   return { sha, branch: b.branch, uncommitted, text }
 }
