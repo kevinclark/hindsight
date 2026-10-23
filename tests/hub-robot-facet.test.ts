@@ -87,11 +87,15 @@ describe('robot labels', () => {
 })
 
 describe('the hoot file name', () => {
-  it('takes the last token before the time as the id, dropping a match prefix', () => {
+  it('takes the token before the time as the id, dropping a match prefix', () => {
     expect(hootName('TEST_Q43_0ABC1234_2025-07-06_14-38-23.hoot')?.hardwareId).toBe('0ABC1234')
     expect(hootName('TESTQ13_rio_2025-07-06_14-38-23.hoot')?.hardwareId).toBe('rio')
     expect(hootName('rio_2026-10-17_20-07-34.hoot')?.hardwareId).toBe('rio')
     expect(hootName('0ABC1234_2026-10-17_20-07-34_more.hoot')?.hardwareId).toBe('0ABC1234')
+  })
+
+  it('reads the first time when the suffix holds a second one', () => {
+    expect(hootName('rio_2026-10-17_20-07-34_2026-10-17_20-37-34.hoot')).toEqual({ hardwareId: 'rio', at: Date.UTC(2026, 9, 17, 20, 7, 34) })
   })
 })
 

@@ -143,7 +143,7 @@ export function facetCounts(entries: Entry[], selection: Selection, labels: Robo
   return out
 }
 
-/** The robot facet's order: robots by their logs in all (biggest first), and within one robot its plain name first, then by count. */
+/** The robot facet's order: robots by their counted logs (biggest first), and within one robot its plain name first, then by count. */
 function robotOrder(counts: Map<string, number>, labels: RobotLabels): (a: [string, number], b: [string, number]) => number {
   const group = new Map<string, string>()
   for (const l of labels.values()) group.set(l.label, l.group)
