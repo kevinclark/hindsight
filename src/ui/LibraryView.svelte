@@ -401,14 +401,19 @@
         <tbody>
           {#each rows as e (e.record.sha256)}
             {@const v = facetValues(e, labels)}
-            {@const guessed = labels.get(e.record.sha256)?.guess}
             {@const code = describeCodeLink(e.record)}
+            {@const profileMark = !e.tags.robot && robotIsGuess(e.record) ? (e.record.robot?.profileId === null ? 'code name' : 'guess') : null}
+            <!-- One mark for both guesses (the profile by fit, the edition by roboRIO), so a row never reads "(guess)(guess)". -->
+            {@const guessWhy = [
+              profileMark === 'guess' ? 'The robot was picked by how well the log fits its profile' : '',
+              labels.get(e.record.sha256)?.guess ? `No edition in this log; same roboRIO as the other ${v.robot.split(' · ').pop()} logs of this robot` : '',
+            ].filter(Boolean).join('. ')}
             <tr class:remote={!e.local}>
               <td class="time">{clock(e.record.playedAt)}</td>
               <td class="name"><code title={e.record.path}>{baseName(e.record.path)}</code></td>
               <td>{fmsPlace(e.record)?.name ?? ''} {matchText(e)}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
-              <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if guessed}<span class="meta" title="No edition in this log; same roboRIO as the other {v.robot.split(' · ').pop()} logs of this robot"> (guess)</span>{/if}{#if code}<span class="meta"> · <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}{#if !e.tags.robot && robotIsGuess(e.record)}<span class="meta"> {e.record.robot?.profileId === null ? '(code name)' : '(guess)'}</span>{/if}</td>
+              <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}{#if code}<span class="meta">{' · '}<a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}</td>
               <td><input class="driver" aria-label="Driver for this log" value={e.tags.driver ?? ''} placeholder="driver" onchange={(ev) => tag({ log: e.record.sha256 }, 'driver', typed(ev))} /></td>
               <td class="num">{size(e.record.size)}</td>
               <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
