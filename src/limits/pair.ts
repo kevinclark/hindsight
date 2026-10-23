@@ -11,7 +11,7 @@
  * the supply limit, so the lower limit never engages and only the stator limit governs it.
  */
 import type { MotorGroup, RobotProfile } from '../profiles/types.ts'
-import { PHOENIX_DEFAULTS, lowerLimitOff } from './limits-report.ts'
+import { PHOENIX_DEFAULTS, limitsKnown, lowerLimitOff } from './limits-report.ts'
 
 const MAIN_BREAKER_A = 120
 /** Winding resistance of a Kraken X60 (12 V / 483 A FOC stall to 12 V / 366 A trapezoidal): 25–33 mΩ. Assumed for every motor. */
@@ -26,7 +26,9 @@ export interface PairCheck {
   lowerIsDefault: boolean
   /** The burst cap is above the limit the code has today: say plainly not to raise it yet. */
   raisesBurst: boolean
+  /** Today's supply limit: null when switched off, or when the profile doesn't know it (todayKnown false). */
   todaySupplyA: number | null
+  todayKnown: boolean
   /** Sustained caps of the groups that run together added up (this group with the new pair), against the main breaker. */
   sustained: { rows: { group: string; motors: number; perMotorA: number; totalA: number }[]; totalA: number; ok: boolean }
   /**
@@ -34,12 +36,20 @@ export interface PairCheck {
    * against the main breaker. Null when the profile has no group named like a drive.
    */
   pinnedDrive: { group: string; motors: number; perMotorA: [number, number]; totalA: [number, number]; ok: boolean } | null
+  /** The drive group, when the profile doesn't know its limits: the pinned push isn't worked out (pinnedDrive null). */
+  driveNotKnown: string | null
   /** Groups with no supply limit at all (nothing caps their sustained current). */
   unlimited: string[]
+  /** Groups whose limits the profile doesn't know: left out of the sum (perMotorA NaN), so it is a lower bound. */
+  notKnown: string[]
 }
 
-/** The sustained cap per motor of a group as configured: its lower limit (Phoenix's default if unset), never above its supply limit. */
+/**
+ * The sustained cap per motor of a group as configured: its lower limit (Phoenix's default if unset), never above its
+ * supply limit. NaN when the profile doesn't know its limits.
+ */
 function sustainedPerMotor(g: MotorGroup): number {
+  if (!limitsKnown(g.limits)) return NaN
   if (g.limits.supplyEnabled === false) return Infinity // no supply limit at all: nothing caps it
   if (lowerLimitOff(g.limits)) return g.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA
   return Math.min(g.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA, g.limits.supplyLowerA ?? PHOENIX_DEFAULTS.supplyLowerA)
@@ -56,9 +66,11 @@ export function checkPair(profile: RobotProfile, group: MotorGroup, burstA: numb
     const perMotorA = g.name === group.name ? lower : sustainedPerMotor(g)
     return { group: g.name, motors: g.motors.length, perMotorA, totalA: perMotorA * g.motors.length }
   })
-  const totalA = rows.reduce((s, r) => s + r.totalA, 0)
-  const today = group.limits.supplyEnabled === false ? null : (group.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA)
+  const totalA = rows.reduce((s, r) => s + (Number.isNaN(r.totalA) ? 0 : r.totalA), 0)
+  const todayKnown = limitsKnown(group.limits)
+  const today = !todayKnown || group.limits.supplyEnabled === false ? null : (group.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA)
   const pinned = (g: MotorGroup): [number, number] | null => {
+    if (!limitsKnown(g.limits)) return null
     const st = g.limits.statorEnabled === false ? null : (g.limits.statorA ?? PHOENIX_DEFAULTS.statorA)
     return st === null ? null : [st * st * MOTOR_OHMS[0] / BUS_VOLTS, st * st * MOTOR_OHMS[1] / BUS_VOLTS]
   }
@@ -68,12 +80,15 @@ export function checkPair(profile: RobotProfile, group: MotorGroup, burstA: numb
     burstA, lowerA: lower, lowerSeconds: lowerIsDefault ? PHOENIX_DEFAULTS.supplyLowerSeconds : lowerSeconds!, lowerIsDefault,
     raisesBurst: today !== null && burstA > today,
     todaySupplyA: today,
+    todayKnown,
     sustained: { rows, totalA, ok: totalA <= MAIN_BREAKER_A },
     pinnedDrive: drive && drivePinned ? {
       group: drive.name, motors: drive.motors.length, perMotorA: drivePinned,
       totalA: [drivePinned[0] * drive.motors.length, drivePinned[1] * drive.motors.length],
       ok: drivePinned[1] * drive.motors.length <= MAIN_BREAKER_A,
     } : null,
-    unlimited: rows.filter((r) => !Number.isFinite(r.perMotorA)).map((r) => r.group),
+    driveNotKnown: drive && !limitsKnown(drive.limits) ? drive.name : null,
+    unlimited: rows.filter((r) => r.perMotorA === Infinity).map((r) => r.group),
+    notKnown: rows.filter((r) => Number.isNaN(r.perMotorA)).map((r) => r.group),
   }
 }

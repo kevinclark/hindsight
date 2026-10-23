@@ -43,7 +43,7 @@ export function robotBudget(match: Match, caps: Record<string, number> = {}): Bu
     const l = limits.find((x) => x.group === g.name)!
     const capPerMotorA = caps[g.name] ?? l.capPerMotorA
     const observedA = g.amps[worst]
-    // No limit at all (both switched off): there is no cap to add up, so count what it drew then.
+    // No limit at all (both switched off), or limits not known (NaN): there is no cap to add up, so count what it drew then.
     const capTotalA = Number.isFinite(capPerMotorA) ? capPerMotorA * l.motorCount : observedA
     return { group: g.name, motors: l.motorCount, observedA, capPerMotorA, capTotalA, active: observedA > 5 }
   })
