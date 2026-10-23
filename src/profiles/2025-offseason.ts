@@ -184,8 +184,9 @@ export const offseason2025: RobotProfile = {
       }],
       // createPivotConfig is called with 20 A supply / 120 A stator (Robot.java:261-262), then
       // `.withCurrentLimits(new CurrentLimitsConfigs()...Enable(false))` replaces that block with both limits off
-      // ("Disable both current limits!!!!!!!!!"), so the 20 A was never applied: the motor ran with no limit.
-      limits: { supplyA: 20, supplyEnabled: false, statorA: 120, statorEnabled: false, where: 'Robot.java:261-262,270-274' },
+      // ("Disable both current limits!!!!!!!!!"), so the 20 A was never applied: the motor ran with no limit. The new
+      // block's stator value is Phoenix's default, 120 A; its supply value isn't 20 A, so none is listed.
+      limits: { supplyEnabled: false, statorA: 120, statorEnabled: false, where: 'Robot.java:270-274' },
     },
     {
       name: 'Climber roller',
