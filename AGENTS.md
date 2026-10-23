@@ -22,6 +22,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   return means "this didn't happen in the match" (never enabled, not on the field, never moved) calls
   `match.couldNotCheck`, never a bare `return`. A rule for only some motors or groups declares `only`: an item
   that returns nothing counts as checked (2026-10-21: 12 rules changed, 264-log golden 0 residual).
+- Read AdvantageKit's GitDirty only through `isUncommitted()` (`src/match/git-dirty.ts`), never a regex of your
+  own: older AdvantageKit writes "Uncomitted changes" (one m), and `/uncommitted/i` missed 10 of 520 library
+  logs (2026-10-22).
 
 ## Profile builder (`src/builder/`)
 
