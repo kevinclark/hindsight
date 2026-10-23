@@ -12,7 +12,7 @@
  * 141b8cd each fixed devices built with an ID another device already had.
  */
 import { fileName, lineOf, parts, typeNamed, type Node } from '../java.ts'
-import { deviceAlong, PHOENIX_DEVICES, type Device } from '../devices.ts'
+import { deviceAlong, deviceBuilt, type Device } from '../devices.ts'
 import { ANY_CANIVORE, RIO } from '../bus-names.ts'
 import { canBothHappen, waysToReach } from '../flow.ts'
 import { baseType, type Project } from '../project.ts'
@@ -34,8 +34,8 @@ export default codeRule({
 
 /** The devices one `new TalonFX(…)` builds: one for each chain of calls that reaches it. Ones it can't follow aren't judged. */
 function devicesBuiltAt(site: Node, project: Project): Device[] {
-  const kind = baseType(typeNamed(site))
-  if (!kind || !PHOENIX_DEVICES.includes(kind) || parts(site, 'arguments').length === 0) return []
+  const kind = deviceBuilt(site, project)?.kind
+  if (!kind || parts(site, 'arguments').length === 0) return []
   const ways = waysToReach(site, project)
   if (!ways) {
     project.couldNotJudge(`this ${kind} is built along too many paths to follow`, site)

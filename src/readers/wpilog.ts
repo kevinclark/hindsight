@@ -57,6 +57,8 @@ interface Resolved {
   field?: { offset: number; field: StructField; recordSize: number }
   /** One bit of an integer entry. */
   bit?: number
+  /** One element of a numeric array entry. */
+  index?: number
 }
 
 /** One field of a struct, laid out as WPILib packs it: no padding, bit-fields packed into their integer type. */
@@ -206,10 +208,11 @@ export function hasEntry(log: WpilogFile, name: string): boolean {
 }
 
 /**
- * Find the entry behind a key: the entry itself, a field of a struct entry ("<entry>/<field>"), or a bit of an
- * integer entry ("<entry>:bit<n>"). Null when the log has none of these.
+ * Find the entry behind a key: the entry itself, a field of a struct entry ("<entry>/<field>"), a bit of an
+ * integer entry ("<entry>:bit<n>"), or an element of a numeric array entry ("<entry>[n]", from 0). Null when the log
+ * has none of these.
  */
-/** The entry a key reads from: itself, or the entry behind a bit ("<entry>:bit4") or a struct field ("<entry>/x"). */
+/** The entry a key reads from: itself, or the entry behind a bit ("<entry>:bit4"), a struct field ("<entry>/x") or an element ("<entry>[0]"). */
 export function entryNameFor(log: WpilogFile, name: string): string | null {
   return resolveKey(log, name)?.entry.name ?? null
 }
@@ -221,6 +224,9 @@ function resolveKey(log: WpilogFile, name: string): Resolved | null {
   if (entry) found = { entry }
   const bit = /^(.*):bit(\d+)$/.exec(name)
   if (!found && bit && log.entries.get(bit[1])?.type === 'int64') found = { entry: log.entries.get(bit[1])!, bit: Number(bit[2]) }
+  const element = /^(.*)\[(\d+)\]$/.exec(name)
+  const array = element ? log.entries.get(element[1]) : undefined
+  if (!found && array && ARRAY_ELEMENT_SIZES[array.type]) found = { entry: array, index: Number(element![2]) }
   // A struct field: try each "/" from the right as the end of the entry name (with and without the slash, since
   // some loggers name struct entries with a trailing "/").
   for (let i = name.lastIndexOf('/'); !found && i > 0; i = name.lastIndexOf('/', i - 1)) {
@@ -370,7 +376,7 @@ export function readNumbers(log: WpilogFile, name: string): NumberSeries | null 
   const found = resolveKey(log, name)
   if (!found) return null
   const entry = found.entry
-  const decode = found.field ? fieldDecoder(log, found.field) : found.bit !== undefined ? bitDecoder(log, found.bit) : numberDecoder(log, entry.type)
+  const decode = found.field ? fieldDecoder(log, found.field) : found.bit !== undefined ? bitDecoder(log, found.bit) : found.index !== undefined ? elementDecoder(log, entry.type, found.index) : numberDecoder(log, entry.type)
   if (!decode) throw new Error(`${name} has type ${entry.type}, which is not a single number`)
   const n = (log.entryStart[entry.id + 1] ?? 0) - (log.entryStart[entry.id] ?? 0)
   const t = new Float64Array(n)
@@ -408,6 +414,15 @@ function bitDecoder(log: WpilogFile, bit: number): (pos: number, size: number) =
   return (pos, size) => (size === 8 ? Number((log.view.getBigUint64(pos, true) >> BigInt(bit)) & 1n) : null)
 }
 
+const ARRAY_ELEMENT_SIZES: Record<string, number> = { 'double[]': 8, 'float[]': 4, 'int64[]': 8, 'boolean[]': 1 }
+
+/** Element `index` of each record of a numeric array; null for a record too short to have it. */
+function elementDecoder(log: WpilogFile, type: string, index: number): (pos: number, size: number) => number | null {
+  const n = ARRAY_ELEMENT_SIZES[type]
+  const read = numberDecoder(log, type.slice(0, -2))!
+  return (pos, size) => (size >= (index + 1) * n ? read(pos + index * n, n) : null)
+}
+
 function numberDecoder(log: WpilogFile, type: string): ((pos: number, size: number) => number | null) | null {
   const view = log.view
   switch (type) {
@@ -429,7 +444,7 @@ function numberDecoder(log: WpilogFile, type: string): ((pos: number, size: numb
 export function readValues<T = unknown>(log: WpilogFile, name: string): ValueSeries<T> | null {
   const found = resolveKey(log, name)
   if (!found) return null
-  if (found.field || found.bit !== undefined) {
+  if (found.field || found.bit !== undefined || found.index !== undefined) {
     const n = readNumbers(log, name)!
     return { name, t: n.t, v: Array.from(n.v) as T[] }
   }
