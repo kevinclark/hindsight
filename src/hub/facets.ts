@@ -61,6 +61,15 @@ export function filterEntries(entries: Entry[], selection: Selection): Entry[] {
 }
 
 /**
+ * A value's count as the filter column shows it. In a facet that already has a pick, an unpicked value would join the
+ * list (picks within a facet are OR), so its count is what it adds: "+12". Anywhere else it is what the list would hold.
+ */
+export function countLabel(selection: Selection, f: FacetId, value: string, n: number): string {
+  const picks = selection[f] ?? []
+  return picks.length && !picks.includes(value) ? `+${n}` : `${n}`
+}
+
+/**
  * Each facet's values with how many logs have them. A facet's counts ignore its own picks (so picking a second school year
  * shows what it would add) but respect every other facet's.
  */

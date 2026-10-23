@@ -31,7 +31,8 @@ panel. Neither is committed.
   else the roboRIO's modified time recorded at the pull.
 - The **report** after an import lists what was added, what was already there (under which name), what could not be read
   (and why), logs with no date, and stubs (under 1 MB, never enabled).
-- **Filters** (within a facet OR, across facets AND): school year, season or off-season, event or practice place, match
+- **Filters** (within a facet OR, across facets AND; a count is how many logs with that value the list would hold, shown
+  as "+N", what it would add, beside a pick in the same facet): school year, season or off-season, event or practice place, match
   type, battery, robot, driver. Place (per day), driver (per day or per log), battery and robot (per log) are typed in the
   list and saved as tags. Season is kickoff to the end of Championship (`src/hub/season.ts`: only 2026 is checked).
 - **Robot** is named from a profile only when the log's own Codebase (and branch) matched one, or a profile fit by signals.

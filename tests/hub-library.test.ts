@@ -7,7 +7,7 @@ import { hootName, nameInstant } from '../src/hub/dates.ts'
 import { seasonOf } from '../src/hub/season.ts'
 import { describeLog } from '../src/hub/describe.ts'
 import { Catalog, filesToFetch } from '../src/hub/catalog.ts'
-import { facetCounts, facetValues, filterEntries } from '../src/hub/facets.ts'
+import { countLabel, facetCounts, facetValues, filterEntries } from '../src/hub/facets.ts'
 import { kindOf, parseManifest, serializeRecord, type LogRecord, type TagRecord } from '../src/hub/types.ts'
 import { robotLog } from './helpers/hub-logs.ts'
 
@@ -179,5 +179,12 @@ describe('tags and facets', () => {
     const counts = facetCounts(entries, { matchType: ['Qualification'], robot: ['Robot B'] })
     expect(Object.fromEntries(counts.matchType)).toEqual({ Elimination: 1, Qualification: 0 }) // robot B narrows it; Qualification stays listed
     expect(Object.fromEntries(counts.robot)).toEqual({ 'Robot A': 1, 'Robot B': 0 })
+  })
+  it('labels a count "+N" only beside a pick in the same facet', () => {
+    const selection = { robot: ['Robot B'] }
+    expect(countLabel(selection, 'robot', 'Robot A', 3)).toBe('+3') // would join the list: picks within a facet are OR
+    expect(countLabel(selection, 'robot', 'Robot B', 2)).toBe('2')
+    expect(countLabel(selection, 'battery', 'B1', 2)).toBe('2') // another facet narrows the list
+    expect(countLabel({}, 'robot', 'Robot A', 3)).toBe('3')
   })
 })

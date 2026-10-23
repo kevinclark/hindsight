@@ -2,7 +2,7 @@
   Library: every log the team has brought in, filtered by facet, opened in the Session view. Desktop app only (the page
   has no library when opened from disk).
   Design: the filter column is small multiples of one control (a checkbox list with a count), so facets are compared by
-  eye and a pick shows what it would leave (Tufte, small multiples; NN/g, filters show result counts). The log list is
+  eye and a pick shows what it would leave, or "+N" for what it would add beside a pick in the same facet (Tufte, small multiples; NN/g, filters show result counts). The log list is
   a dense table grouped by day with the numbers right-aligned (Tufte, data-ink; NN/g, row actions only where used).
 -->
 <script lang="ts">
@@ -13,7 +13,7 @@
   import type { FetchReport, SyncReport } from '../hub/sync.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
-  import { FACETS, FACET_LABELS, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, type FacetId, type Selection } from '../hub/facets.ts'
+  import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, type FacetId, type Selection } from '../hub/facets.ts'
   import { baseName, dayText, withShaSuffix } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
   import { describeCodeLink } from '../hub/codelink.ts'
@@ -362,7 +362,7 @@
         {#each counts[f] as [value, n] (value)}
           <label class:zero={n === 0}>
             <input type="checkbox" checked={selection[f]?.includes(value) ?? false} onchange={() => toggle(f, value)} />
-            <span>{value}</span><span class="n">{n}</span>
+            <span>{value}</span><span class="n">{countLabel(selection, f, value, n)}</span>
           </label>
         {:else}<span class="meta">nothing yet</span>{/each}
       </fieldset>
