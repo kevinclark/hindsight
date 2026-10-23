@@ -18,6 +18,7 @@ public class HindsightPlugin implements Plugin<Project> {
     settings.getStrictInCi().convention(true);
     settings.getNullAway().convention(false);
     settings.getRobotStarts().convention(true);
+    settings.getRobotStartsOnLaptop().convention(false);
     settings.getRobotClass().convention("frc.robot.Robot");
     settings.getFormatHook().convention(true);
 
@@ -31,7 +32,7 @@ public class HindsightPlugin implements Plugin<Project> {
         ErrorProneChecks.apply(p, settings, build);
         if (!build.ci()) AutoFix.apply(p, settings, build);
       }
-      if (settings.getRobotStarts().get()) RobotStartsCheck.apply(p, settings);
+      if (settings.getRobotStarts().get()) RobotStartsCheck.apply(p, settings, build);
       if (!build.ci()) FormatHook.apply(p, settings.getFormatHook().get());
     });
   }

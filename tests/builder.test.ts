@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { openWpilog } from '../src/readers/wpilog.ts'
+import { openWpilog, readNumbers } from '../src/readers/wpilog.ts'
 import { chooseProfile } from '../src/profiles/choose.ts'
 import { ADVANTAGEKIT_SIGNALS } from '../src/profiles/advantagekit.ts'
 import { offseason2025 } from '../src/profiles/2025-offseason.ts'
@@ -25,6 +25,9 @@ import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import { GitRepo } from '../src/code/git.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
 import { backtestLog } from '../src/builder/backtest.ts'
+import { codeMotors, placeInLog, type CodeMotor } from '../src/builder/code-motors.ts'
+import { deviceSettings } from '../src/code/check/device-settings.ts'
+import { Project } from '../src/code/check/project.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
 import type { Finding } from '../src/rules/types.ts'
 import { packDoubles, writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
@@ -120,7 +123,9 @@ describe('motors and groups from a log', () => {
     ].sort())
     expect(notUsed.map((n) => n.key)).toContain('NT:/SmartDashboard/Climber/CurrentAmps')
     expect(notUsed.find((n) => n.key === '/Arm/Position/Current')?.why).toMatch(/no velocity/)
-    expect(limits.join(' ')).toMatch(/arrays/)
+    // An array with nothing beside it is no motor either: each element is listed.
+    expect(notUsed.map((n) => n.key)).toEqual(expect.arrayContaining(['/Elevator/CurrentAmps[0]', '/Elevator/CurrentAmps[1]']))
+    expect(limits).toEqual([])
   })
 
   it('marks a current that doesn\'t say supply or stator, and reads siblings', () => {
@@ -167,6 +172,99 @@ describe('motors and groups from a log', () => {
     const drive = toProfile(draft.json).motorGroups.find((g) => g.name === 'Drive')!.motors[0]
     expect(drive.supplyCurrent).toBeUndefined()
     expect(drive.statorCurrent).toBeUndefined()
+  })
+})
+
+describe('older AdvantageKit logs (the shapes of 8033\'s 2023 and 2024 robots)', () => {
+  const arr = (name: string, ...values: number[][]): FixtureEntry => ({ name, type: 'double[]', records: values.map((v, i) => [i + 1, v as never]) })
+
+  it('reads `Amps` without "Current", and percent output or speed as a motor\'s sibling', () => {
+    const log = openWpilog(writeWpilog([
+      d('/Shooter/PivotAmps'), d('/Shooter/PivotVoltage'), d('/Shooter/PivotTempC'),
+      d('/Grabber/RollersCurrentAmps'), d('/Grabber/RollersPercentOut'), d('/Grabber/RollersSpeedRPS'),
+      d('/Intake/CurrentAmps'), d('/Intake/PercentOut'),
+      d('/Vision/Amps'), d('/Vision/latency'),
+    ]))
+    const { motors, notUsed } = motorsFromLog(log)
+    expect(motors.map((m) => [m.path, m.current, m.velocity])).toEqual([
+      ['/Grabber/Rollers', '/Grabber/RollersCurrentAmps', '/Grabber/RollersSpeedRPS'],
+      ['/Intake', '/Intake/CurrentAmps', undefined],
+      ['/Shooter/Pivot', '/Shooter/PivotAmps', undefined],
+    ])
+    expect(notUsed.map((n) => n.key)).toEqual(['/Vision/Amps'])
+  })
+
+  it('reads `SupplyAmpsAbs` as a motor\'s supply current, leaves out its running average, and says the draw is |current|', () => {
+    const keys = ['DriveStatorAmps', 'DriveSupplyAmpsAbs', 'DriveSupplyAmpsAbsAvg', 'TurnStatorAmps', 'TurnSupplyAmpsAbs', 'TurnSupplyAmpsAbsAvg', 'DriveVelocityRadPerSec', 'DriveAppliedVolts', 'DriveTempCelcius', 'DriveConnected', 'TurnVelocityRadPerSec', 'TurnAppliedVolts']
+    const abs = openWpilog(writeWpilog(keys.map((k) => d(`/Drive/Module0/${k}`))))
+    const { motors, notUsed } = motorsFromLog(abs)
+    expect(motors.map((m) => [m.path, m.supplyCurrent, m.statorCurrent])).toEqual([
+      ['/Drive/Module0/Drive', '/Drive/Module0/DriveSupplyAmpsAbs', '/Drive/Module0/DriveStatorAmps'],
+      ['/Drive/Module0/Turn', '/Drive/Module0/TurnSupplyAmpsAbs', '/Drive/Module0/TurnStatorAmps'],
+    ])
+    expect(notUsed).toEqual([
+      { key: '/Drive/Module0/DriveSupplyAmpsAbsAvg', why: 'an average, not the current' },
+      { key: '/Drive/Module0/TurnSupplyAmpsAbsAvg', why: 'an average, not the current' },
+    ])
+    expect(draftProfile({ logs: [{ log: abs, fileName: 'example.wpilog' }] }).notes.join(' ')).toMatch(/absolute value.*regenerative current then counts as draw/)
+  })
+
+  it('reads an array of one as the motor itself, beside its supply current and an array temperature', () => {
+    const log = openWpilog(writeWpilog([
+      arr('/Swerve/Front Left Module/DriveCurrentAmps', [3], [4]), d('/Swerve/Front Left Module/DriveSupplyCurrentAmps'),
+      d('/Swerve/Front Left Module/DriveVelocityMetersPerSec'), arr('/Swerve/Front Left Module/DriveTempCelsius', [30]),
+    ]))
+    expect(motorsFromLog(log).motors).toEqual([{
+      path: '/Swerve/Front Left Module/Drive', from: 'keys',
+      supplyCurrent: '/Swerve/Front Left Module/DriveSupplyCurrentAmps', current: '/Swerve/Front Left Module/DriveCurrentAmps[0]',
+      velocity: '/Swerve/Front Left Module/DriveVelocityMetersPerSec', temperature: '/Swerve/Front Left Module/DriveTempCelsius[0]',
+    }])
+  })
+
+  it('reads an array of two as two motors of one mechanism, each with its own element', () => {
+    const log = openWpilog(writeWpilog([
+      arr('/Elevator/CurrentAmps', [], [1, 2], [3, 4]), arr('/Elevator/TempCelsius', [30, 31]), d('/Elevator/PercentOut'),
+      arr('/Climber/CurrentAmps', []), d('/Climber/PercentOut'),
+    ]))
+    const { motors, notUsed } = motorsFromLog(log)
+    expect(motors.map((m) => [m.path, m.current, m.temperature, m.velocity])).toEqual([
+      ['/Elevator[0]', '/Elevator/CurrentAmps[0]', '/Elevator/TempCelsius[0]', undefined],
+      ['/Elevator[1]', '/Elevator/CurrentAmps[1]', '/Elevator/TempCelsius[1]', undefined],
+    ])
+    expect(notUsed).toEqual([{ key: '/Climber/CurrentAmps', why: 'an array that is always empty' }])
+    const groups = groupMotors(motors)
+    expect(groups.map((g) => [g.name, g.evidence, g.motors.map((m) => m.name)])).toEqual([['Elevator', 'one array', ['Elevator 1', 'Elevator 2']]])
+    expect(Array.from(readNumbers(log, motors[1].current!)!.v)).toEqual([2, 4])
+  })
+
+  it('groups `/Swerve Module N/` folders at the log\'s root as swerve, and no other numbered root folders', () => {
+    const log = openWpilog(writeWpilog([
+      ...[0, 1, 2, 3].flatMap((n) => ['Drive', 'Steer'].flatMap((t) => [d(`/Swerve Module ${n}/${t}CurrentAmps`), d(`/Swerve Module ${n}/${t}SpeedRPS`)])),
+      ...[1, 2, 3].flatMap((n) => [d(`/Shooter ${n}/MotorCurrentAmps`), d(`/Shooter ${n}/MotorVelocityRPS`)]),
+      d('/Routing/LeftCurrentAmps'), d('/Routing/LeftPercentOut'),
+    ]))
+    const groups = groupMotors(motorsFromLog(log).motors)
+    expect(groups.filter((g) => g.evidence === 'swerve').map((g) => [g.name, g.motors.map((m) => m.name)])).toEqual([
+      ['Drive', ['Swerve module 0 drive', 'Swerve module 1 drive', 'Swerve module 2 drive', 'Swerve module 3 drive']],
+      ['Steer', ['Swerve module 0 steer', 'Swerve module 1 steer', 'Swerve module 2 steer', 'Swerve module 3 steer']],
+    ])
+    // Three shooters are three groups, and a side alone ("Left") is no name: it takes its folder.
+    expect(groups.filter((g) => g.evidence === 'one motor').map((g) => g.name)).toEqual(['Routing left', 'Shooter 1 motor', 'Shooter 2 motor', 'Shooter 3 motor'])
+    expect(draftWarnings(groups.map((g) => ({ ...g, groupedBy: g.evidence })))).toEqual([])
+  })
+
+  it('takes the power board\'s total current when its channels report (100+ plausible records), not one record of garbage', () => {
+    const board = (records: [number, number[]][], total: [number, number][]): FixtureEntry[] => [
+      ...DS, { name: '/PowerDistribution/ChannelCurrent', type: 'double[]', records: records as never }, { name: '/PowerDistribution/TotalCurrent', type: 'double', records: total },
+    ]
+    const live = Array.from({ length: 120 }, (_, i): [number, number[]] => [i * 0.02, [i % 7, 2]])
+    const reporting = draftProfile({ logs: [{ log: openWpilog(writeWpilog(board(live, [[0, 2], [1, 8]]))), fileName: 'live.wpilog' }] })
+    expect(reporting.json.signals?.totalCurrent).toBe('/PowerDistribution/TotalCurrent')
+    expect(reporting.guessed.map((g) => g.signal)).toContain('totalCurrent')
+    for (const records of [[[0, [8.7e245, 0]]], live.slice(0, 99), live.map(([t]) => [t, [0, 0]])] as [number, number[]][][]) {
+      const quiet = draftProfile({ logs: [{ log: openWpilog(writeWpilog(board(records, [[0, 0], [1, 0]]))), fileName: 'quiet.wpilog' }] })
+      expect(quiet.json.signals?.totalCurrent).toBe('')
+    }
   })
 })
 
@@ -294,6 +392,463 @@ describe('code hints', () => {
   })
 })
 
+// ---------------------------------------------------------------------------------------------------------------
+// The code's motors and their log keys (code-motors.ts), and the draft they fill in (code-draft.ts). Invented code.
+
+const java = (path: string, ...lines: string[]): CodeFile => ({ path: `src/main/java/frc/robot/${path}`, text: `${lines.join('\n')}\n` })
+const motorsOf = (files: CodeFile[]) => { const p = new Project(files); try { return { motors: codeMotors(p), settings: deviceSettings(p) } } finally { p.close() } }
+const show = (m: CodeMotor) => [m.site, m.id, m.currents.map((c) => `${c.kind} ${c.folder.map((x) => (typeof x === 'string' ? x : 'field' in x ? `{${x.field}}` : '*')).join('')}/${c.leaf}`)]
+
+describe('the code\'s motors and their log keys', () => {
+  const shooter = [
+    java('ShooterIO.java', 'public interface ShooterIO {', '  @AutoLog', '  public static class ShooterIOInputs {', '    public double pivotAmps = 0.0;', '    public double[] rollerCurrentAmps = new double[] {};', '  }', '}'),
+    java('ShooterIOReal.java',
+      'public class ShooterIOReal implements ShooterIO {',
+      '  private final TalonFX pivot = new TalonFX(10, "canivore");',
+      '  private final Falcon leader = new Falcon(11);',
+      '  private final Falcon follower = new Falcon(12);',
+      '  private final StatusSignal<Double> pivotAmps = pivot.getStatorCurrent();',
+      '  public ShooterIOReal() { follower.setControl(new Follower(leader.getDeviceID(), false)); }',
+      '  public void updateInputs(ShooterIOInputsAutoLogged inputs) {',
+      '    inputs.pivotAmps = pivotAmps.getValueAsDouble();',
+      '    inputs.rollerCurrentAmps = new double[] {leader.getSupplyCurrent().getValueAsDouble(), follower.getSupplyCurrent().getValueAsDouble()};',
+      '  }',
+      '}'),
+    java('Falcon.java', 'public class Falcon extends TalonFX {', '  public Falcon(int id) { super(id, "rio"); }', '}'),
+    java('Shooter.java', 'public class Shooter extends SubsystemBase {', '  ShooterIOInputsAutoLogged inputs = new ShooterIOInputsAutoLogged();', '  ShooterIO io = new ShooterIOReal();', '  public void periodic() { io.updateInputs(inputs); Logger.processInputs("Shooter", inputs); }', '}'),
+    java('Robot.java', 'public class Robot extends LoggedRobot {', '  Shooter shooter = new Shooter();', '}'),
+  ]
+
+  it('maps each inputs field to its key, current kind and motor, through a subclass\'s super(id) and an array', () => {
+    const { motors } = motorsOf(shooter)
+    expect(motors.map(show)).toEqual([
+      ['ShooterIOReal.java:2', 10, ['stator Shooter/PivotAmps']],
+      ['ShooterIOReal.java:3', 11, ['supply Shooter/RollerCurrentAmps[0]']],
+      ['ShooterIOReal.java:4', 12, ['supply Shooter/RollerCurrentAmps[1]']],
+    ])
+    const [, leader, follower] = motors
+    expect([follower.follows, follower.group === leader.group]).toEqual(['ShooterIOReal.java:3', true])
+  })
+
+  it('follows IDs through a record\'s accessors and a folder built from an inputs field; a loop\'s counter is open', () => {
+    const files = [
+      java('ModuleIO.java', 'public interface ModuleIO {', '  @AutoLog', '  class ModuleIOInputs { public String prefix = ""; public int moduleNumber = 0; public double driveStatorCurrentAmps = 0.0; }', '}'),
+      java('Module.java', 'public class Module {', '  public record ModuleConstants(int id, String prefix, int driveID) {}', '  ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();', '  public void periodic() { Logger.processInputs(String.format("Swerve/%s Module", inputs.prefix), inputs); }', '}'),
+      java('ModuleIOReal.java',
+        'public class ModuleIOReal implements ModuleIO {',
+        '  private final TalonFX drive;',
+        '  private final ModuleConstants constants;',
+        '  public ModuleIOReal(ModuleConstants constants) { this.constants = constants; drive = new TalonFX(constants.driveID()); }',
+        '  public void updateInputs(ModuleIOInputsAutoLogged inputs) { inputs.prefix = constants.prefix(); inputs.moduleNumber = constants.id(); inputs.driveStatorCurrentAmps = drive.getStatorCurrent().getValueAsDouble(); }',
+        '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Robot() {', '    new ModuleIOReal(new ModuleConstants(0, "Front Left", 3));', '    new ModuleIOReal(new ModuleConstants(1, "Front Right", 5));', '  }', '}'),
+    ]
+    const { motors } = motorsOf(files)
+    expect(motors.map((m) => [m.id, m.marks.Prefix])).toEqual([[3, 'Front Left'], [5, 'Front Right']])
+    expect(motors[0].currents[0].folder).toEqual(['Swerve/', { field: 'prefix' }, ' Module'])
+    expect(new Set(motors.map((m) => m.group)).size).toBe(1)
+    const log = openWpilog(writeWpilog([d('/Swerve/Front Left Module/DriveStatorCurrentAmps'), d('/Swerve/Front Right Module/DriveStatorCurrentAmps')]))
+    expect(motors.map((m) => placeInLog(m, log).map((k) => k.key))).toEqual([['/Swerve/Front Left Module/DriveStatorCurrentAmps'], ['/Swerve/Front Right Module/DriveStatorCurrentAmps']])
+
+    // `"Swerve Module " + i` is open; the log's ModuleNumber for each folder tells the modules apart.
+    const loop = files.map((f) => (f.path.endsWith('Module.java') ? { ...f, text: f.text.replace('String.format("Swerve/%s Module", inputs.prefix)', '"Swerve Module " + i').replace('public void periodic() {', 'public void periodic() { for (int i = 0; i < 2; i++)') } : f))
+    const open = motorsOf(loop).motors
+    expect(open[0].currents[0].folder).toEqual(['Swerve Module ', { open: 'i' }])
+    const numbered = openWpilog(writeWpilog([0, 1].flatMap((n) => [d(`/Swerve Module ${n}/DriveStatorCurrentAmps`), { name: `/Swerve Module ${n}/ModuleNumber`, type: 'int64', records: [[1, n]] } as FixtureEntry])))
+    expect(open.map((m) => placeInLog(m, numbered).map((k) => k.key))).toEqual([['/Swerve Module 0/DriveStatorCurrentAmps'], ['/Swerve Module 1/DriveStatorCurrentAmps']])
+  })
+
+  it('names a folder by a method of the IO object (`io.getName()`), answered by each IO', () => {
+    const files = [
+      java('ModuleIO.java', 'public interface ModuleIO {', '  @AutoLog', '  class ModuleIOInputs { public double driveStatorCurrentAmps = 0.0; }', '  String getName();', '}'),
+      java('Module.java', 'public class Module {', '  private final ModuleIO io;', '  ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();', '  public Module(ModuleIO io) { this.io = io; }', '  public void periodic() { Logger.processInputs(String.format("Swerve/%s Module", io.getName()), inputs); }', '}'),
+      java('ModuleIOReal.java', 'public class ModuleIOReal implements ModuleIO {', '  private final TalonFX drive;', '  private final String name;', '  public ModuleIOReal(String name, int id) { this.name = name; drive = new TalonFX(id); }', '  public String getName() { return name; }', '  public void updateInputs(ModuleIOInputsAutoLogged inputs) { inputs.driveStatorCurrentAmps = drive.getStatorCurrent().getValueAsDouble(); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Robot() { new Module(new ModuleIOReal("Back Left", 4)); new Module(new ModuleIOReal("Back Right", 6)); }', '}'),
+    ]
+    const { motors } = motorsOf(files)
+    expect(motors[0].currents[0].folder).toEqual(['Swerve/', { call: 'getName' }, ' Module'])
+    const log = openWpilog(writeWpilog([d('/Swerve/Back Left Module/DriveStatorCurrentAmps'), d('/Swerve/Back Right Module/DriveStatorCurrentAmps')]))
+    expect(motors.map((m) => [m.id, placeInLog(m, log).map((k) => k.key)])).toEqual([[4, ['/Swerve/Back Left Module/DriveStatorCurrentAmps']], [6, ['/Swerve/Back Right Module/DriveStatorCurrentAmps']]])
+  })
+
+  it('names a shared subsystem\'s folder per object, through a subclass\'s super(io, NAME), and pairs it with its IO', () => {
+    const files = [
+      java('RollerIO.java', 'public interface RollerIO {', '  @AutoLog', '  class RollerIOInputs { public double statorCurrentAmps = 0.0; }', '}'),
+      java('RollerIOReal.java', 'public class RollerIOReal implements RollerIO {', '  private final TalonFX motor;', '  public RollerIOReal(int motorID) { motor = new TalonFX(motorID); }', '  public void updateInputs(RollerIOInputsAutoLogged inputs) { inputs.statorCurrentAmps = motor.getStatorCurrent().getValueAsDouble(); }', '}'),
+      java('RollerSubsystem.java', 'public class RollerSubsystem extends SubsystemBase {', '  private final String name;', '  RollerIOInputsAutoLogged inputs = new RollerIOInputsAutoLogged();', '  public RollerSubsystem(RollerIO io, String name) { this.io = io; this.name = name; }', '  public void periodic() { Logger.processInputs(name, inputs); }', '}'),
+      java('Funnel.java', 'public class Funnel extends RollerSubsystem {', '  public static final String NAME = "Funnel";', '  public Funnel(RollerIO io) { super(io, NAME); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Funnel funnel = new Funnel(new RollerIOReal(19));', '  RollerSubsystem intake = new RollerSubsystem(new RollerIOReal(13), "Intake");', '}'),
+    ]
+    expect(motorsOf(files).motors.map(show)).toEqual([['RollerIOReal.java:3', 19, ['stator Funnel/StatorCurrentAmps']], ['RollerIOReal.java:3', 13, ['stator Intake/StatorCurrentAmps']]])
+  })
+
+  it('pairs each folder with the IO object whose updateInputs fills it, and gives no key when that can\'t be told', () => {
+    const rollerIO = [
+      java('RollerIO.java', 'public interface RollerIO {', '  @AutoLog', '  class RollerIOInputs { public double statorCurrentAmps = 0.0; public Rotation2d angle = new Rotation2d(); }', '}'),
+      java('RollerIOReal.java', 'public class RollerIOReal implements RollerIO {', '  private final TalonFX motor;', '  public RollerIOReal(int motorID) { motor = new TalonFX(motorID); }',
+        '  public void updateInputs(RollerIOInputsAutoLogged inputs) { inputs.angle = new Rotation2d(); inputs.statorCurrentAmps = motor.getStatorCurrent().getValueAsDouble(); }', '}'),
+    ]
+    const intake = (body: string[]) => [...rollerIO, java('Intake.java', 'public class Intake extends SubsystemBase {', ...body, '}'), java('Robot.java', 'public class Robot extends LoggedRobot {', '  Intake intake = new Intake(new RollerIOReal(13), new RollerIOReal(14));', '}')]
+    const paired = motorsOf(intake([
+      '  RollerIOInputsAutoLogged leaderInputs = new RollerIOInputsAutoLogged();', '  RollerIOInputsAutoLogged followerInputs = new RollerIOInputsAutoLogged();',
+      '  private final RollerIO leader;', '  private final RollerIO follower;', '  public Intake(RollerIO leader, RollerIO follower) { this.leader = leader; this.follower = follower; }',
+      '  public void periodic() { leader.updateInputs(leaderInputs); follower.updateInputs(followerInputs); Logger.processInputs("Intake/Leader", leaderInputs); Logger.processInputs("Intake/Follower", followerInputs); }',
+    ])).motors
+    expect(paired.map(show)).toEqual([['RollerIOReal.java:3', 13, ['stator Intake/Leader/StatorCurrentAmps']], ['RollerIOReal.java:3', 14, ['stator Intake/Follower/StatorCurrentAmps']]])
+    // An object the IO puts in its inputs (`angle`, a Rotation2d) is no mark: it never stops a key being placed.
+    const log = openWpilog(writeWpilog([d('/Intake/Leader/StatorCurrentAmps'), { name: '/Intake/Leader/Angle', type: 'struct:Rotation2d', records: [[1, 0.5]] }]))
+    expect(placeInLog(paired[0], log).map((k) => k.key)).toEqual(['/Intake/Leader/StatorCurrentAmps'])
+    // The same two folders with nothing tying an IO object to either: no keys, rather than one motor's ID on the other's.
+    const unpaired = motorsOf(intake([
+      '  RollerIOInputsAutoLogged leaderInputs = new RollerIOInputsAutoLogged();', '  RollerIOInputsAutoLogged followerInputs = new RollerIOInputsAutoLogged();',
+      '  public Intake(RollerIO leader, RollerIO follower) {}', '  public void periodic() { Logger.processInputs("Intake/Leader", leaderInputs); Logger.processInputs("Intake/Follower", followerInputs); }',
+    ])).motors
+    expect(unpaired.map((m) => m.currents)).toEqual([[], []])
+  })
+
+  it('tells a subclass\'s constructors of one length apart by what the arguments work out to, and joins a Phoenix 5 follower', () => {
+    const files = [
+      java('Falcon.java', 'public class Falcon extends TalonFX {', '  public Falcon(int id, double gearing) { super(id); }', '  public Falcon(int id, String canbus) { super(id, canbus); }', '}'),
+      java('Lift.java', 'public class Lift {', '  static final String BUS = "canivore";', '  Falcon leader = new Falcon(25, 5.45 / 1.0);', '  Falcon follower = new Falcon(26, BUS);',
+        '  Lift() { follower.set(ControlMode.Follower, 25); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Lift lift = new Lift();', '}'),
+    ]
+    const { motors } = motorsOf(files)
+    expect(motors.map((m) => [m.id, m.bus, m.follows ?? null])).toEqual([[25, 'the roboRIO bus', null], [26, 'canivore', 'Lift.java:3']])
+    expect(motors[1].group).toBe(motors[0].group)
+  })
+
+  it('reads a CAN bus built from a constant\'s name, and CTRE\'s two-argument form', () => {
+    const files = [
+      java('Constants.java', 'public class Constants {', '  public static class Bus { public static final String busName = "Example"; public static final CANBus BUS = new CANBus(Constants.Bus.busName); public static final CANBus LOGGED = new CANBus("", "./logs/example.hoot"); public static final CANBus ROBORIO = new CANBus(); public static final CANBus QUALIFIED = new com.ctre.phoenix6.CANBus("other"); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  TalonFX a = new TalonFX(1, Constants.Bus.BUS);', '  TalonFX b = new TalonFX(2, Constants.Bus.LOGGED);', '  TalonFX c = new TalonFX(3, Constants.Bus.ROBORIO);', '  TalonFX d = new TalonFX(4, Constants.Bus.QUALIFIED);', '}'),
+    ]
+    expect(motorsOf(files).motors.map((m) => [m.id, m.bus])).toEqual([[1, 'Example'], [2, 'the roboRIO bus'], [3, 'the roboRIO bus'], [4, 'other']])
+  })
+
+  it('gives no device for a CAN bus whose argument it can\'t work out, never the roboRIO bus', () => {
+    const files = [
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  TalonFX a = new TalonFX(1, new CANBus(Config.busName()));', '}'),
+    ]
+    // The motor is still listed (it is built), but with no ID or bus: deviceAlong gave no device.
+    expect(motorsOf(files).motors.map((m) => [m.id, m.bus])).toEqual([[null, null]])
+  })
+
+  it('reads current limits: Phoenix 6 fields, a .withCurrentLimits builder, and Phoenix 5 limit configs', () => {
+    const files = [
+      java('Arm.java',
+        'public class Arm {',
+        '  static final double SUPPLY = 40.0;',
+        '  TalonFX pivot = new TalonFX(9);',
+        '  TalonFX roller = new TalonFX(8);',
+        '  TalonFX hood = new TalonFX(7);',
+        '  Arm() {',
+        '    var config = new TalonFXConfiguration();',
+        '    config.CurrentLimits.SupplyCurrentLimit = SUPPLY;',
+        '    config.CurrentLimits.SupplyCurrentLimitEnable = true;',
+        '    pivot.getConfigurator().apply(config);',
+        '    roller.getConfigurator().apply(new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimit(80.0).withStatorCurrentLimitEnable(true)));',
+        '    hood.configSupplyCurrentLimit(new SupplyCurrentLimitConfiguration(true, 30.0, 45.0, 0.5));',
+        '  }',
+        '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Arm arm = new Arm();', '}'),
+    ]
+    const limits = (id: number) => motorsOf(files).settings.filter((s) => s.id === id).map((s) => `${s.field}=${s.value}@${s.where}`)
+    expect(limits(9)).toEqual(['SupplyCurrentLimit=40@Arm.java:8', 'SupplyCurrentLimitEnable=true@Arm.java:9'])
+    expect(limits(8)).toEqual(['StatorCurrentLimit=80@Arm.java:11', 'StatorCurrentLimitEnable=true@Arm.java:11'])
+    expect(limits(7)).toEqual(['SupplyCurrentLimit=30@Arm.java:12', 'SupplyCurrentLimitEnable=true@Arm.java:12'])
+  })
+
+  // The shape of AdvantageKit's TalonFX swerve template with CTRE's generated TunerConstants: the module folder is
+  // `"Drive/Module" + Integer.toString(index)`, the IDs come from `createModuleConstants(steer, drive, encoder, …)`, and
+  // the drive's limits from the factory's initial configs plus what ModuleIOTalonFX writes on them.
+  const swerveTemplate = [
+    java('generated/TunerConstants.java',
+      'public class TunerConstants {',
+      '  private static final Current kSlipCurrent = Amps.of(110.0);',
+      '  private static final TalonFXConfiguration driveInitialConfigs = new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimit(kSlipCurrent).withStatorCurrentLimitEnable(true));',
+      '  private static final TalonFXConfiguration steerInitialConfigs = new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimit(Amps.of(50)).withStatorCurrentLimitEnable(true));',
+      '  public static final CANBus kCANBus = new CANBus("canivore", "./logs/example.hoot");',
+      '  private static final SwerveModuleConstantsFactory<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> ConstantCreator =',
+      '      new SwerveModuleConstantsFactory<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration>()',
+      '          .withSlipCurrent(kSlipCurrent).withDriveMotorInitialConfigs(driveInitialConfigs).withSteerMotorInitialConfigs(steerInitialConfigs);',
+      '  private static final int kFrontLeftDriveMotorId = 41;',
+      '  private static final int kFrontLeftSteerMotorId = 42;',
+      '  public static final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> FrontLeft =',
+      '      ConstantCreator.createModuleConstants(kFrontLeftSteerMotorId, kFrontLeftDriveMotorId, 43, Rotations.of(0.1), Inches.of(10), Inches.of(10), false, false, false);',
+      '  public static final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> FrontRight =',
+      '      ConstantCreator.createModuleConstants(52, 51, 53, Rotations.of(0.2), Inches.of(10), Inches.of(-10), true, false, false);',
+      '}'),
+    java('subsystems/drive/ModuleIO.java', 'public interface ModuleIO {', '  @AutoLog', '  public static class ModuleIOInputs { public double driveCurrentAmps = 0.0; public double driveSupplyAmpsAbs = 0.0; public double turnCurrentAmps = 0.0; }', '  public default void updateInputs(ModuleIOInputs inputs) {}', '}'),
+    java('subsystems/drive/ModuleIOTalonFX.java',
+      'public class ModuleIOTalonFX implements ModuleIO {',
+      '  private final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants;',
+      '  private final TalonFX driveTalon;',
+      '  private final TalonFX turnTalon;',
+      '  private final StatusSignal<Current> driveCurrent;',
+      '  private final StatusSignal<Current> driveSupply;',
+      '  private final StatusSignal<Current> turnCurrent;',
+      '  public ModuleIOTalonFX(SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants) {',
+      '    this.constants = constants;',
+      '    driveTalon = new TalonFX(constants.DriveMotorId, TunerConstants.kCANBus);',
+      '    turnTalon = new TalonFX(constants.SteerMotorId, TunerConstants.kCANBus);',
+      '    var driveConfig = constants.DriveMotorInitialConfigs;',
+      '    driveConfig.CurrentLimits.StatorCurrentLimit = constants.SlipCurrent;',
+      '    driveConfig.CurrentLimits.StatorCurrentLimitEnable = true;',
+      '    driveConfig.CurrentLimits.SupplyCurrentLimit = 45.0;',
+      '    driveConfig.CurrentLimits.SupplyCurrentLimitEnable = true;',
+      '    tryUntilOk(5, () -> driveTalon.getConfigurator().apply(driveConfig, 0.25));',
+      '    var turnConfig = constants.SteerMotorInitialConfigs;',
+      '    turnConfig.CurrentLimits.SupplyCurrentLimit = 30.0;',
+      '    turnConfig.CurrentLimits.SupplyCurrentLimitEnable = true;',
+      '    tryUntilOk(5, () -> turnTalon.getConfigurator().apply(turnConfig, 0.25));',
+      '    driveCurrent = driveTalon.getStatorCurrent();',
+      '    driveSupply = driveTalon.getSupplyCurrent();',
+      '    turnCurrent = turnTalon.getStatorCurrent();',
+      '  }',
+      '  public void updateInputs(ModuleIOInputs inputs) {',
+      '    inputs.driveCurrentAmps = driveCurrent.getValueAsDouble();',
+      '    inputs.driveSupplyAmpsAbs = Math.abs(driveSupply.getValueAsDouble());',
+      '    inputs.turnCurrentAmps = turnCurrent.getValueAsDouble();',
+      '  }',
+      '}'),
+    java('subsystems/drive/Module.java',
+      'public class Module {',
+      '  private final ModuleIO io;',
+      '  private final ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();',
+      '  private final int index;',
+      '  private final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants;',
+      '  public Module(ModuleIO io, int index, SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants) { this.io = io; this.index = index; this.constants = constants; }',
+      '  public void periodic() { io.updateInputs(inputs); Logger.processInputs("Drive/Module" + Integer.toString(index), inputs); }',
+      '}'),
+    java('subsystems/drive/Drive.java',
+      'public class Drive extends SubsystemBase {',
+      '  private final Module[] modules = new Module[2];',
+      '  public Drive(ModuleIO flModuleIO, ModuleIO frModuleIO) {',
+      '    modules[0] = new Module(flModuleIO, 0, TunerConstants.FrontLeft);',
+      '    modules[1] = new Module(frModuleIO, 1, TunerConstants.FrontRight);',
+      '  }',
+      '  public void periodic() { for (var module : modules) { module.periodic(); } }',
+      '}'),
+    java('RobotContainer.java',
+      'public class RobotContainer {',
+      '  private final Drive drive;',
+      '  public RobotContainer() {',
+      '    switch (Constants.currentMode) {',
+      '      case REAL -> drive = new Drive(new ModuleIOTalonFX(TunerConstants.FrontLeft), new ModuleIOTalonFX(TunerConstants.FrontRight));',
+      '      default -> drive = new Drive(new ModuleIO() {}, new ModuleIO() {});',
+      '    }',
+      '  }',
+      '}'),
+    java('Robot.java', 'public class Robot extends LoggedRobot {', '  private final RobotContainer robotContainer = new RobotContainer();', '}'),
+  ]
+
+  it('reads AdvantageKit\'s TalonFX swerve template: module folders by index, IDs from createModuleConstants, the drive\'s limits', () => {
+    const { motors, settings } = motorsOf(swerveTemplate)
+    expect(motors.map(show)).toEqual([
+      ['ModuleIOTalonFX.java:10', 41, ['stator Drive/Module0/DriveCurrentAmps', 'supply Drive/Module0/DriveSupplyAmpsAbs']],
+      ['ModuleIOTalonFX.java:10', 51, ['stator Drive/Module1/DriveCurrentAmps', 'supply Drive/Module1/DriveSupplyAmpsAbs']],
+      ['ModuleIOTalonFX.java:11', 42, ['stator Drive/Module0/TurnCurrentAmps']],
+      ['ModuleIOTalonFX.java:11', 52, ['stator Drive/Module1/TurnCurrentAmps']],
+    ])
+    expect(new Set(motors.map((m) => m.bus))).toEqual(new Set(['canivore']))
+    const log = openWpilog(writeWpilog([0, 1].flatMap((n) => [d(`/Drive/Module${n}/DriveCurrentAmps`), d(`/Drive/Module${n}/DriveSupplyAmpsAbs`), d(`/Drive/Module${n}/TurnCurrentAmps`)])))
+    expect(motors.map((m) => placeInLog(m, log).map((k) => k.key))).toEqual([
+      ['/Drive/Module0/DriveCurrentAmps', '/Drive/Module0/DriveSupplyAmpsAbs'], ['/Drive/Module1/DriveCurrentAmps', '/Drive/Module1/DriveSupplyAmpsAbs'],
+      ['/Drive/Module0/TurnCurrentAmps'], ['/Drive/Module1/TurnCurrentAmps'],
+    ])
+    // The drive: the factory's stator limit (the slip current), then ModuleIOTalonFX's own writes on that config. The
+    // turn: the factory's steer config keeps its stator limit, and ModuleIOTalonFX adds a supply limit.
+    const limits = (id: number) => settings.filter((s) => s.id === id).map((s) => `${s.field}=${s.value}`).sort()
+    expect(limits(41)).toEqual(['StatorCurrentLimit=110', 'StatorCurrentLimitEnable=true', 'SupplyCurrentLimit=45', 'SupplyCurrentLimitEnable=true'])
+    expect(limits(51)).toEqual(limits(41))
+    expect(limits(42)).toEqual(['StatorCurrentLimit=50', 'StatorCurrentLimitEnable=true', 'SupplyCurrentLimit=30', 'SupplyCurrentLimitEnable=true'])
+  })
+
+  it('reads the template\'s variations without guessing: a team\'s own createModuleConstants, a sum, String.valueOf', () => {
+    const edit = (path: string, from: string, to: string) => swerveTemplate.map((f) => (f.path.endsWith(path) ? { ...f, text: f.text.replace(from, to) } : f))
+    // A project method of that name is the team's own: its argument order is not CTRE's, so no ID rather than a swapped one.
+    const own = [...swerveTemplate, java('ModuleMaker.java', 'public class ModuleMaker {', '  public static Object createModuleConstants(int drive, int steer, int encoder) { return null; }', '}')]
+    expect(motorsOf(own).motors.map((m) => m.id)).toEqual([null, null, null, null])
+    // `Integer.toString(index + 1)` is a sum it can't work out here: open, never "Module01".
+    const sum = motorsOf(edit('drive/Module.java', 'Integer.toString(index)', 'Integer.toString(index + 1)')).motors
+    expect(sum[0].currents[0].folder).toEqual(['Drive/Module', { open: 'Integer.toString(index + 1)' }])
+    const valueOf = motorsOf(edit('drive/Module.java', 'Integer.toString(index)', 'String.valueOf(index)')).motors
+    expect(valueOf.map(show)[1]).toEqual(['ModuleIOTalonFX.java:10', 51, ['stator Drive/Module1/DriveCurrentAmps', 'supply Drive/Module1/DriveSupplyAmpsAbs']])
+  })
+
+  it('a folder passed to a method of the object is open when the constructor chains stand in for the call chains (no guess)', () => {
+    const files = [
+      java('RollerIO.java', 'public interface RollerIO {', '  @AutoLog', '  class RollerIOInputs { public double statorCurrentAmps = 0.0; }', '}'),
+      java('RollerIOReal.java', 'public class RollerIOReal implements RollerIO {', '  private final TalonFX motor;', '  public RollerIOReal(int id) { motor = new TalonFX(id); }', '  public void updateInputs(RollerIOInputsAutoLogged inputs) { inputs.statorCurrentAmps = motor.getStatorCurrent().getValueAsDouble(); }', '}'),
+      java('Roller.java', 'public class Roller {', '  private final RollerIO io;', '  RollerIOInputsAutoLogged inputs = new RollerIOInputsAutoLogged();', '  public Roller(RollerIO io) { this.io = io; }', '  public void log(String name) { io.updateInputs(inputs); Logger.processInputs(name, inputs); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  Roller intake = new Roller(new RollerIOReal(11));', '  Roller feeder = new Roller(new RollerIOReal(12));', '  public void robotPeriodic() { intake.log("Intake"); feeder.log("Feeder"); }', '}'),
+    ]
+    // Pinned as it is: the folder is the call's argument, which the constructor chains don't carry, so it stays open
+    // for both rollers rather than pairing "Intake" with the feeder's motor.
+    const { motors } = motorsOf(files)
+    expect(motors.map((m) => [m.id, m.currents.map((c) => c.folder)])).toEqual([[11, [[{ open: 'name' }]]], [12, [[{ open: 'name' }]]]])
+  })
+
+  it('reads a robot built two ways (two robot versions in a switch, real or sim IO by a ternary): one motor when both agree', () => {
+    const files = [
+      java('RollerIO.java', 'public class RollerIO {', '  @AutoLog', '  public static class RollerIOInputs { public double statorCurrentAmps = 0.0; public double velocityRPS = 0.0; }',
+        '  private final TalonFX motor;', '  public RollerIO(int id, TalonFXConfiguration config) { motor = new TalonFX(id, "canivore"); motor.getConfigurator().apply(config); }',
+        '  public void updateInputs(RollerIOInputsAutoLogged inputs) { inputs.statorCurrentAmps = motor.getStatorCurrent().getValueAsDouble(); }', '}'),
+      java('RollerIOSim.java', 'public class RollerIOSim extends RollerIO {', '  public RollerIOSim(int id, TalonFXConfiguration config) { super(id, config); }', '}'),
+      java('Indexer.java', 'public class Indexer extends SubsystemBase {',
+        '  private final RollerIO rollerIO;', '  private final RollerIO kickerIO;',
+        '  private final RollerIOInputsAutoLogged rollerInputs = new RollerIOInputsAutoLogged();', '  private final RollerIOInputsAutoLogged kickerInputs = new RollerIOInputsAutoLogged();',
+        '  public Indexer(RollerIO rollerIO, RollerIO kickerIO) { this.rollerIO = rollerIO; this.kickerIO = kickerIO; }',
+        '  public static TalonFXConfiguration alphaConfig() { var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 30.0; return c; }',
+        '  public static TalonFXConfiguration compConfig() { var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 40.0; return c; }',
+        '  public void periodic() { rollerIO.updateInputs(rollerInputs); kickerIO.updateInputs(kickerInputs); Logger.processInputs("Indexer/Roller", rollerInputs); Logger.processInputs("Indexer/Kicker", kickerInputs); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  static final boolean REAL = true;', '  static final Edition EDITION = Edition.COMP;', '  private final Indexer indexer;', '  public Robot() {', '    switch (EDITION) {',
+        '      case ALPHA:', '        indexer = new Indexer(REAL ? new RollerIO(9, Indexer.alphaConfig()) : new RollerIOSim(9, Indexer.alphaConfig()), REAL ? new RollerIO(10, Indexer.alphaConfig()) : new RollerIOSim(10, Indexer.alphaConfig()));', '        break;',
+        '      default:', '        indexer = new Indexer(REAL ? new RollerIO(9, Indexer.compConfig()) : new RollerIOSim(9, Indexer.compConfig()), REAL ? new RollerIO(11, Indexer.compConfig()) : new RollerIOSim(11, Indexer.compConfig()));', '        break;',
+        '    }', '  }', '}'),
+    ]
+    const hints = codeHints(files, { sha: 'abc1234def', branch: 'main' })
+    const log = openWpilog(writeWpilog([...DS, d('/Indexer/Roller/StatorCurrentAmps'), d('/Indexer/Roller/VelocityRPS'), d('/Indexer/Kicker/StatorCurrentAmps'), d('/Indexer/Kicker/VelocityRPS')]))
+    const draft = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints })
+    const byKey = (k: string) => allMotors(draft.json).find(({ motor }) => motor.statorCurrent === k)!.motor
+    // Both versions build the roller as ID 9: one motor, ID 9. Its limits differ between them (30 A, 40 A): none.
+    expect([byKey('/Indexer/Roller/StatorCurrentAmps').canId, byKey('/Indexer/Roller/StatorCurrentAmps').canIdFrom]).toEqual([9, 'code'])
+    expect(draft.json.motorGroups.find((g) => g.motors.includes(byKey('/Indexer/Roller/StatorCurrentAmps')))!.limitsFromCode).toBeFalsy()
+    // The kicker is ID 10 on one version and 11 on the other: no ID rather than a guess.
+    expect(byKey('/Indexer/Kicker/StatorCurrentAmps').canId).toBeUndefined()
+    // The log has every motor's current: none is "a Talon FX this log has no current for". The kicker's key says which
+    // IDs it could be, for the student to pick.
+    expect(draft.notes.join(' ')).not.toMatch(/no current for/)
+    expect(draft.notes).toContain('/Indexer/Kicker/StatorCurrentAmps is read from 2 motors in the code (RollerIO.java:5 (ID 10), RollerIO.java:5 (ID 11)), as ID 10 and ID 11: pick its CAN ID by hand.')
+    // One version sets a limit and the other sets none: still none, since a setting doesn't say which version it is.
+    const oneSided = files.map((f) => (f.path.endsWith('Indexer.java') ? { ...f, text: f.text.replace('c.CurrentLimits.SupplyCurrentLimit = 30.0; ', '') } : f))
+    const again = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints: codeHints(oneSided, { sha: 'abc1234def', branch: 'main' }) })
+    const roller = allMotors(again.json).find(({ motor }) => motor.statorCurrent === '/Indexer/Roller/StatorCurrentAmps')!.motor
+    expect([roller.canId, again.json.motorGroups.find((g) => g.motors.includes(roller))!.limitsFromCode ?? false]).toEqual([9, false])
+  })
+
+  it('follows a ternary only when it asks real or sim and exactly one arm is real code', () => {
+    const files = (arg: string) => [
+      java('FlywheelIO.java', 'public class FlywheelIO {', '  @AutoLog', '  public static class FlywheelIOInputs { public double statorCurrentAmps = 0.0; }', '  private final TalonFX motor;',
+        '  public FlywheelIO(int id) { motor = new TalonFX(id); }', '  public void updateInputs(FlywheelIOInputsAutoLogged inputs) { inputs.statorCurrentAmps = motor.getStatorCurrent().getValueAsDouble(); }', '}'),
+      java('FlywheelIOSim.java', 'public class FlywheelIOSim extends FlywheelIO {', '  public FlywheelIOSim(int id) { super(id); }', '}'),
+      java('Shooter.java', 'public class Shooter extends SubsystemBase {', '  private final FlywheelIO left;', '  private final FlywheelIO right;',
+        '  private final FlywheelIOInputsAutoLogged leftInputs = new FlywheelIOInputsAutoLogged();', '  private final FlywheelIOInputsAutoLogged rightInputs = new FlywheelIOInputsAutoLogged();',
+        '  public Shooter(FlywheelIO left, FlywheelIO right) { this.left = left; this.right = right; }',
+        '  public void periodic() { left.updateInputs(leftInputs); right.updateInputs(rightInputs); Logger.processInputs("Shooter/Left", leftInputs); Logger.processInputs("Shooter/Right", rightInputs); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  static final boolean REAL = true;', '  static final boolean COMP = true;', `  Shooter shooter = new Shooter(${arg}, new FlywheelIO(30));`, '}'),
+    ]
+    // The left IO's folder, for each motor the left argument builds: paired only when the ternary can be read.
+    const leftFolders = (arg: string) => motorsOf(files(arg)).motors.filter((m) => m.id !== 30).map((m) => [m.id, m.currents.map((c) => c.folder.join(''))])
+    expect(leftFolders('REAL ? new FlywheelIO(12) : new FlywheelIOSim(12)')).toEqual([[12, ['Shooter/Left']]])
+    // Both arms real (two robot versions), an anonymous arm, or a condition about something else: no pairing.
+    expect(leftFolders('COMP ? new FlywheelIO(12) : new FlywheelIO(22)')).toEqual([[12, []], [22, []]])
+    expect(leftFolders('REAL ? new FlywheelIO(12) : new FlywheelIO(0) {}')).toEqual([[12, []], [0, []]])
+    expect(leftFolders('COMP ? new FlywheelIOSim(12) : new FlywheelIO(22)')).toEqual([[22, []]])
+  })
+
+
+  it('fills the draft: kinds, IDs, the follower\'s group and limits marked "from code", and what the log lacks', async () => {
+    const files = [...shooter]
+    files[1] = { ...files[1], text: files[1].text.replace('public ShooterIOReal() {', 'public ShooterIOReal() { var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 30.0; leader.getConfigurator().apply(c); follower.getConfigurator().apply(c);') }
+    const hints = codeHints(files, { sha: 'abc1234def', branch: 'main' })
+    const log = openWpilog(writeWpilog([
+      ...DS, { name: '/RealMetadata/GitDirty', type: 'string', records: [[0, 'Uncommitted changes']] },
+      { name: '/Shooter/RollerCurrentAmps', type: 'double[]', records: [[1, [1, 2] as never]] }, d('/Shooter/RollerVelocity'),
+    ]))
+    const draft = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints })
+    const g = draft.json.motorGroups.find((x) => x.motors.length === 2)!
+    expect(g.motors.map((m) => [m.supplyCurrent, m.kindFrom, m.canId, m.canIdFrom])).toEqual([
+      ['/Shooter/RollerCurrentAmps[0]', 'code', 11, 'code'], ['/Shooter/RollerCurrentAmps[1]', 'code', 12, 'code'],
+    ])
+    expect([g.groupFromCode, g.sameLoop, g.sameLoopSuggested, g.limitsFromCode, g.limits?.supplyA]).toEqual([true, true, true, true, 30])
+    expect(draft.notes).toEqual([
+      'The code builds 1 more Talon FX that this log has no current for: ShooterIOReal.java:2 (ID 10). Their current isn\'t in the battery model.',
+      'The robot ran uncommitted changes on top of abc1234: this draft is from the commit, so check what the changes touched.',
+    ])
+    // Builder-only marks never reach the profile the rules use.
+    expect(toProfile(draft.json).motorGroups[0]).not.toHaveProperty('limitsFromCode')
+    // Code read again (another commit): its IDs replace the old code's; a student's pick is kept.
+    const other = codeHints(files.map((f) => ({ ...f, text: f.text.replace('new Falcon(11)', 'new Falcon(21)') })), { sha: 'fedcba9876', branch: 'main' })
+    const again = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints: other })
+    const picked = structuredClone(draft.json)
+    allMotors(picked).find(({ motor }) => motor.canId === 12)!.motor.canIdFrom = 'you'
+    carryConfirmations(picked, again.json)
+    expect(allMotors(again.json).map(({ motor }) => [motor.canId, motor.canIdFrom])).toEqual([[21, 'code'], [12, 'you']])
+  })
+})
+
+describe('current limits the builder missed (2026-10-23)', () => {
+  // A team library's motor IO, built by each mechanism with its own config: `new MotorIOTalonFX(NAME, config(), id)`.
+  const library = (ctor = 'String name, TalonFXConfiguration config, int id') => [
+    java('lib/MotorIO.java', 'public interface MotorIO {', '  @AutoLog', '  public static class MotorIOInputs { public double supplyCurrent = 0.0; }', '}'),
+    java('lib/MotorIOTalonFX.java', 'public class MotorIOTalonFX implements MotorIO {', '  private final TalonFX motor;',
+      `  public MotorIOTalonFX(${ctor}) { motor = new TalonFX(id); motor.getConfigurator().apply(config); }`,
+      '  public void updateInputs(MotorIOInputsAutoLogged inputs) { inputs.supplyCurrent = motor.getSupplyCurrent().getValueAsDouble(); }', '}'),
+    java('lib/Mechanism.java', 'public class Mechanism extends SubsystemBase {', '  private final String name;', '  private final MotorIO io;',
+      '  private final MotorIOInputsAutoLogged inputs = new MotorIOInputsAutoLogged();',
+      '  public Mechanism(String name, MotorIO io) { this.name = name; this.io = io; }',
+      '  public void periodic() { io.updateInputs(inputs); Logger.processInputs(name, inputs); }', '}'),
+  ]
+  // `config` is the lines that set fields on `var config`, or the one `return` that builds it.
+  const tower = (config: string, build = 'new MotorIOTalonFX(NAME, config(), 20)') => java('TowerConstants.java', 'public class TowerConstants {', '  static final String NAME = "Tower";',
+    '  public static TalonFXConfiguration config() {',
+    ...(config.startsWith('return ') ? [`    ${config}`] : ['    var config = new TalonFXConfiguration();', ...config.split('\n').map((l) => `    ${l}`), '    return config;']), '  }',
+    `  public static Mechanism mechanism() { return new Mechanism(NAME, ${build}); }`, '}')
+  const robot = java('Robot.java', 'public class Robot extends LoggedRobot {', '  Mechanism tower = TowerConstants.mechanism();', '}')
+  const towerLog = () => openWpilog(writeWpilog([...DS, d('/Tower/SupplyCurrent'), d('/Tower/Velocity')]))
+  const towerLimits = (files: CodeFile[]) => {
+    const draft = draftProfile({ logs: [{ log: towerLog(), fileName: 'test.wpilog' }], hints: codeHints(files, { sha: 'abc1234def', branch: 'main' }) })
+    const g = draft.json.motorGroups.find((x) => x.motors.some((m) => m.supplyCurrent === '/Tower/SupplyCurrent'))!
+    return { id: g.motors[0].canId, fromCode: g.limitsFromCode ?? false, limits: g.limits && { ...g.limits } }
+  }
+
+  it('reads the supply lower limit into the draft, and leaves Foresight\'s snapshot settings as they were', () => {
+    const files = [...library(), robot, tower([
+      'config.CurrentLimits.SupplyCurrentLimit = 45.0;', 'config.CurrentLimits.SupplyCurrentLimitEnable = true;',
+      'config.CurrentLimits.SupplyCurrentLowerLimit = 35.0;', 'config.CurrentLimits.SupplyCurrentLowerTime = 0.5;',
+    ].join('\n'))]
+    expect(towerLimits(files)).toEqual({ id: 20, fromCode: true, limits: { supplyA: 45, supplyEnabled: true, supplyLowerA: 35, supplyLowerSeconds: 0.5, where: 'TowerConstants.java:5-8', supplyLines: 'TowerConstants.java:5-8' } })
+    // Foresight compares only the fields the snapshot check knows: the lower limit isn't one of them.
+    expect(motorsOf(files).settings.map((s) => s.field)).toEqual(['SupplyCurrentLimit', 'SupplyCurrentLimitEnable'])
+    // The builder form: `.withCurrentLimits(new CurrentLimitsConfigs()….withSupplyCurrentLowerLimit(Amps.of(35)))`.
+    const built = [...library(), robot, tower('return new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withSupplyCurrentLimit(45.0).withSupplyCurrentLowerLimit(Amps.of(35)).withSupplyCurrentLowerTime(0.5));')]
+    expect(towerLimits(built).limits).toMatchObject({ supplyA: 45, supplyLowerA: 35, supplyLowerSeconds: 0.5 })
+  })
+
+  it('a test that builds the robot or a mechanism is not another way the robot is built: the limits still come through', () => {
+    const tests = [
+      { path: 'src/test/java/frc/robot/RobotTest.java', text: 'public class RobotTest {\n  @Test void builds() { new Robot(); }\n}\n' },
+      { path: 'src/test/java/frc/robot/TowerTest.java', text: 'public class TowerTest {\n  @Test void tower() { var t = TowerConstants.mechanism(); }\n}\n' },
+    ]
+    const files = [...library(), robot, tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;\nconfig.CurrentLimits.SupplyCurrentLimitEnable = false;'), ...tests]
+    expect(towerLimits(files)).toEqual({ id: 20, fromCode: true, limits: { supplyA: 40, supplyEnabled: false, where: 'TowerConstants.java:5-6', supplyLines: 'TowerConstants.java:5-6' } })
+    // One motor, not three: the tests' chains aren't instances of it.
+    expect(motorsOf(files).motors.map((m) => m.id)).toEqual([20])
+  })
+
+  it('reads `Robot.isReal()` as true on the robot, in the draft and for Foresight', () => {
+    for (const flag of ['Robot.isReal()', 'RobotBase.isReal()']) {
+      const files = [...library(), robot, tower(`config.CurrentLimits.SupplyCurrentLimit = 40.0;\nconfig.CurrentLimits.SupplyCurrentLimitEnable = ${flag};`)]
+      expect(towerLimits(files).limits).toMatchObject({ supplyA: 40, supplyEnabled: true })
+      expect(motorsOf(files).settings.map((s) => `${s.field}=${s.value}`)).toEqual(['SupplyCurrentLimit=40', 'SupplyCurrentLimitEnable=true'])
+    }
+    // Anything else called there is still unknown: no enable flag rather than a guess.
+    const other = [...library(), robot, tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;\nconfig.CurrentLimits.SupplyCurrentLimitEnable = Robot.isCompetition();')]
+    expect(motorsOf(other).settings.map((s) => s.field)).toEqual(['SupplyCurrentLimit'])
+  })
+
+  it('follows a constructor with varargs (followers passed after the motor\'s ID)', () => {
+    const files = [...library('String name, TalonFXConfiguration config, int id, Follower... followers'), robot,
+      tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;', 'new MotorIOTalonFX(NAME, config(), 20, new Follower(21, false), new Follower(22, true))')]
+    expect(towerLimits(files)).toMatchObject({ id: 20, fromCode: true, limits: { supplyA: 40 } })
+    // With no follower passed, too.
+    const none = [...library('String name, TalonFXConfiguration config, int id, Follower... followers'), robot, tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;')]
+    expect(towerLimits(none)).toMatchObject({ id: 20, fromCode: true })
+  })
+})
+
 describe('review fixes', () => {
   const robotLog = (codebase: string, paths: string[], epoch: number) => openWpilog(writeWpilog([
     ...DS.filter((e) => !e.name.startsWith('/RealMetadata')),
@@ -382,6 +937,8 @@ describe('deferred review fixes', () => {
 
 const PUBLIC = `${homedir()}/code/makers/8033/robot/public-logs`
 const MTTD = `${homedir()}/Downloads/hindsight-test/2025-11-event`
+const LIBRARY = `${homedir()}/.hindsight/app-data-a/library/logs`
+const OLDER = { charged: `${LIBRARY}/2023-2024/2023-10-07/Log_23-10-07_10-06-26_q13.wpilog`, crescendo: `${LIBRARY}/2024-2025/2024-09-28/Log_24-09-28_10-57-20_q9.wpilog` }
 const publicLog = (dir: string) => { const p = `${PUBLIC}/${dir}`; return existsSync(p) ? readdirSync(p).filter((f) => f.endsWith('.wpilog')).map((f) => `${p}/${f}`)[0] : undefined }
 const bt = (path: string) => backtestLog(openWpilog(new Uint8Array(readFileSync(path))), PROFILES)
 
@@ -407,6 +964,29 @@ describe('backtest against the hand profiles (real logs)', () => {
     const r = bt(publicLog('2151-ILCH-Q19')!)
     expect(r.builtGroups).toEqual([{ name: 'Drive', size: 4, evidence: 'swerve' }, { name: 'Turn', size: 4, evidence: 'swerve' }])
     expect(r.confirmKind).toHaveLength(8)
+  })
+  // No hand profile for these robots: the motor counts come from their code (Charged-Up and Crescendo, counted by hand
+  // on 2026-10-22). 2024 logs its elevator's two motors as one value and its climber not at all, so 16 of 18.
+  it.skipIf(!existsSync(OLDER.charged))('8033 2023 CalGames Q13: all 15 motors in the code, swerve and the elevator grouped', () => {
+    const r = bt(OLDER.charged)
+    expect(r.falsePositives).toHaveLength(15)
+    expect(r.builtGroups.filter((g) => g.evidence !== 'one motor')).toEqual([
+      { name: 'Drive', size: 4, evidence: 'swerve' }, { name: 'Steer', size: 4, evidence: 'swerve' }, { name: 'Elevator', size: 2, evidence: 'one array' },
+    ])
+    expect(r.warnings).toEqual([])
+  })
+  it.skipIf(!existsSync(OLDER.crescendo))('8033 2024 Chezy Q9: 16 of the code\'s 18 motors, every one the log has', () => {
+    const r = bt(OLDER.crescendo)
+    expect(r.falsePositives).toHaveLength(16)
+    expect(r.builtGroups.filter((g) => g.evidence !== 'one motor')).toEqual([{ name: 'Drive', size: 4, evidence: 'swerve' }, { name: 'Turn', size: 4, evidence: 'swerve' }])
+    expect(r.notUsed).toEqual([])
+  })
+  const galileo = `${PUBLIC}/4322-galileo/Q98/akit_26-05-01_19-10-06_galileo_q98.wpilog`
+  it.skipIf(!existsSync(galileo))('4322 (…StatorAmps / …SupplyAmps keys): 18 motors, swerve and three leader/follower groups', () => {
+    const r = bt(galileo)
+    expect(r.falsePositives).toHaveLength(18)
+    expect(r.builtGroups.filter((g) => g.evidence !== 'one motor').map((g) => `${g.name} ${g.size}`)).toEqual(['Drive 4', 'Turn 4', 'Rollers 2', 'Flywheel 2', 'Spindexer 2'])
+    expect(r.confirmKind).toEqual([])
   })
   it.skipIf(!publicLog('3602-MICMP2-Q3'))('3602: 0 motors (2 dashboard copies listed, not used)', () => {
     const r = bt(publicLog('3602-MICMP2-Q3')!)

@@ -8,6 +8,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 
 - After CI passes on a branch tip, land it with `git merge --no-ff` so the tested commits are the ones on main. If
   you must rebase, re-run every suite on the rebased result before pushing (165e7dd and 9875905 did).
+- CI (`code-check-action`) runs only when `src/code/**`, `action.yml`, `scripts/code-check.ts` or `package*.json`
+  change; a branch that touches none of them gets no run at all, so waiting for one never ends. Then run `npx vitest
+  run` and `npm run check` on `git archive <tip> | tar -x` of the tip before landing (ad9ccd9, 2026-10-23).
 
 ## Rules (`src/rules/`)
 
@@ -22,6 +25,24 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   return means "this didn't happen in the match" (never enabled, not on the field, never moved) calls
   `match.couldNotCheck`, never a bare `return`. A rule for only some motors or groups declares `only`: an item
   that returns nothing counts as checked (2026-10-21: 12 rules changed, 264-log golden 0 residual).
+- Read AdvantageKit's GitDirty only through `isUncommitted()` (`src/match/git-dirty.ts`), never a regex of your
+  own: older AdvantageKit writes "Uncomitted changes" (one m), and `/uncommitted/i` missed 10 of 520 library
+  logs (2026-10-22).
+
+## Profile builder (`src/builder/`)
+
+- Golden doesn't cover the builder. Prove a builder change by diffing `scripts/builder-backtest.ts` output (and a
+  motors/groups survey) over every library and public log before and after; read every line that changed.
+- Drafts from code (`code-motors.ts`, `code-draft.ts`) never guess: a folder pairs with the IO whose
+  `updateInputs(inputs)` fills it, else the nearest chain; a tie, or a key two code motors claim, gives nothing,
+  unless those motors agree on ID, bus, kind and leader (one motor built in each robot version's arm): then the ID,
+  but no limits.
+  Score with `builder-backtest.ts --code <clone>` on every robot, the 2026 logs included (2026-10-22: a shared
+  outer chain gave all four drive motors ID 6, caught only on 2026).
+- A change only on the code side (`src/code/check/flow.ts`, `code-hints.ts`, `code-motors.ts`) changes a draft only
+  through `codeHints(repo @ commit)`. Diff that JSON, before and after, for each distinct commit the library and
+  public logs ran (2026-10-23: 146 commits in 3 min, against ~50 min a side for builder-backtest over 857 logs).
+  Then run builder-backtest only on the logs whose commit's hints changed, and read every changed hint.
 
 ## Plain-node scripts
 

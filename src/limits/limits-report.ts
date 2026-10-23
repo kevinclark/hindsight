@@ -10,11 +10,14 @@
  */
 
 import { has, num, type Match } from '../match/match.ts'
-import type { MotorGroup } from '../profiles/types.ts'
+import type { CurrentLimits, MotorGroup } from '../profiles/types.ts'
 import { percentile, type Interval, type NumberSeries } from '../match/series.ts'
 
 /** Phoenix 6 defaults for a TalonFX, used when the code switches a limit off or doesn't set it. */
 export const PHOENIX_DEFAULTS = { supplyA: 70, statorA: 120, supplyLowerA: 40, supplyLowerSeconds: 1.0 }
+
+/** Phoenix 6 ignores SupplyCurrentLowerLimit when SupplyCurrentLowerTime is 0 (CurrentLimitsConfigs, 26.x): the supply limit holds. */
+export const lowerLimitOff = (l: CurrentLimits) => l.supplyLowerSeconds === 0
 
 export const OVER_MARGIN_A = 5
 export const CATCH_UP_SECONDS = 0.2
@@ -78,7 +81,8 @@ function groupLimits(match: Match, g: MotorGroup): GroupLimits {
   }
   const supply: LimitView = {
     kind: 'supply', limitA: supplyLimit, on: supplyOn,
-    note: supplyOn ? `capped at ${supplyLimit} A; after ${lower.seconds} s at the cap it drops to ${lower.limitA} A${lower.fromDefaults ? ' (Phoenix defaults: the code doesn\'t set these)' : ''}`
+    note: supplyOn && lowerLimitOff(L) ? `capped at ${supplyLimit} A; no lower limit (the code sets its time to 0)`
+      : supplyOn ? `capped at ${supplyLimit} A; after ${lower.seconds} s at the cap it drops to ${lower.limitA} A${lower.fromDefaults ? ' (Phoenix defaults: the code doesn\'t set these)' : ''}`
       : supplyLimit !== null ? `switched off in code: this removes Phoenix's default ${PHOENIX_DEFAULTS.supplyA} A supply limit` : `not set: Phoenix's default ${PHOENIX_DEFAULTS.supplyA} A applies`,
     motors: g.motors.flatMap((m) => (m.supplyCurrent && has(match, m.supplyCurrent) ? [stats(match, m.name, num(match, m.supplyCurrent)!, supplyLimit ?? PHOENIX_DEFAULTS.supplyA)] : [])),
   }

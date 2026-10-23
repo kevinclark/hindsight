@@ -11,6 +11,7 @@
  * Every check here starts amber and has no proof yet (proven.ts): no snapshot of 8033's robot has been taken, so none
  * has been backtested or has caught a real fault. Response shapes are still CTRE's simulator's (snapshot.ts).
  */
+import { isUncommitted } from '../match/git-dirty.ts'
 import type { Report, SkippedRule } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import { definedOnly, groupBy } from '../rules/run.ts'
@@ -299,7 +300,7 @@ function codeSettingsCheck(snapshot: Snapshot, profile: RobotProfile, expected: 
   if (!code) return c.cannot('no robot-code folder or GitHub repo chosen in the Code panel')
   const sameCommit = !!robot?.sha && code.commit.toLowerCase().startsWith(robot.sha.toLowerCase())
   if (!sameCommit) return c.cannot(`the Code panel read ${code.commit.slice(0, 7)}, not the commit the robot runs (${robot?.sha.slice(0, 7) || 'not reported'})`)
-  if (/uncommitted/i.test(robot.dirty)) return c.cannot('the robot runs uncommitted changes, and the Code panel reads only commits')
+  if (isUncommitted(robot.dirty)) return c.cannot('the robot runs uncommitted changes, and the Code panel reads only commits')
   const covered = profileChecks(profile, expected)
   const settings = code.settings.filter((s) => !covered.has(`${s.kind} ${s.id} ${s.field}`))
   for (const ofDevice of groupBy(settings, (s) => `${s.kind} ${s.id} ${s.bus}`).values()) {

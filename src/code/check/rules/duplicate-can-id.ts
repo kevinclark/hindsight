@@ -8,11 +8,13 @@
  * the same written number reached two ways (whether one class is built twice isn't judged: no bug so far was). A TalonFX and a
  * CANcoder may share an ID (CTRE IDs are per kind of device). The bus `"*"` (any CANivore) counts as the project's
  * one named CANivore when it has exactly one. An ID or bus it can't follow is listed as not judged.
+ * A simulation class gets no pass of its own: only the arms decide. A `…IOSim` built on the robot still builds a real
+ * device on the bus, and two sim IOs built in one run clash in simulation (Rebuilt 3eca5e5).
  * Why: 2026-Offseason-Robot fd8fa0d and 427d98e, Rebuilt 505d4f1, 39dec94 and f7edbfe, and Charged-Up-Offseason-Training
  * 141b8cd each fixed devices built with an ID another device already had.
  */
 import { fileName, lineOf, parts, typeNamed, type Node } from '../java.ts'
-import { deviceAlong, PHOENIX_DEVICES, type Device } from '../devices.ts'
+import { deviceAlong, deviceBuilt, type Device } from '../devices.ts'
 import { ANY_CANIVORE, RIO } from '../bus-names.ts'
 import { canBothHappen, waysToReach } from '../flow.ts'
 import { baseType, type Project } from '../project.ts'
@@ -34,8 +36,8 @@ export default codeRule({
 
 /** The devices one `new TalonFX(…)` builds: one for each chain of calls that reaches it. Ones it can't follow aren't judged. */
 function devicesBuiltAt(site: Node, project: Project): Device[] {
-  const kind = baseType(typeNamed(site))
-  if (!kind || !PHOENIX_DEVICES.includes(kind) || parts(site, 'arguments').length === 0) return []
+  const kind = deviceBuilt(site, project)?.kind
+  if (!kind || parts(site, 'arguments').length === 0) return []
   const ways = waysToReach(site, project)
   if (!ways) {
     project.couldNotJudge(`this ${kind} is built along too many paths to follow`, site)

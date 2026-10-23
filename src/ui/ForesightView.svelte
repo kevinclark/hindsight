@@ -13,6 +13,7 @@
   import { FORESIGHT_RULES } from '../rules/index.ts'
   import { profileId } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
+  import { isUncommitted } from '../match/git-dirty.ts'
   import { downloadText } from './download.ts'
   import { ASSISTED_RULES, checklistLines, groupSteps, wantedLines, type ChecklistLine } from '../foresight/onchecks.ts'
   import { SNAPSHOT_RULES, type CodeSettings } from '../foresight/snapshot-checks.ts'
@@ -79,7 +80,7 @@
     if (recorded || s.result?.state !== 'checked' || s.result.verdict.verdict !== 'GO') return
     recorded = true
     const m = s.result.match
-    onPitCheck({ type: 'pit-check', verdict: 'GO', sha: m.build.sha, dirty: /uncommitted/i.test(m.build.dirty), robot: profileId(m.profile), when: new Date().toISOString() })
+    onPitCheck({ type: 'pit-check', verdict: 'GO', sha: m.build.sha, dirty: isUncommitted(m.build.dirty), robot: profileId(m.profile), when: new Date().toISOString() })
   }
 
   const result = $derived(status?.result ?? null)
@@ -259,7 +260,7 @@
     </section>
   {/if}
 
-  <CodeCheck robotSha={checked?.match.build.sha || null} robotDirty={!!checked && /uncommitted/i.test(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
+  <CodeCheck robotSha={checked?.match.build.sha || null} robotDirty={!!checked && isUncommitted(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
 
   {#if status && status.state !== 'closed'}
     <details class="readings" open>

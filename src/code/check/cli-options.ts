@@ -14,9 +14,11 @@ export interface Options {
   /** Rule ids to leave out, e.g. 'code/integer-division'. */
   excluded: string[]
   github: boolean
+  /** Post the report as one pull-request comment (needs --github and CODE_CHECK_TOKEN). */
+  comment: boolean
 }
 
-export const USAGE = `usage: code-check.ts <robot-code folder> [commit] [--base <commit>] [--fail-on none|new|any] [--exclude-rules a,b] [--github]
+export const USAGE = `usage: code-check.ts <robot-code folder> [commit] [--base <commit>] [--fail-on none|new|any] [--exclude-rules a,b] [--github] [--comment]
        code-check.ts --tree <folder> File.java:50`
 
 /** The options, or what is wrong with the command line (the caller prints it and USAGE). */
@@ -31,13 +33,15 @@ export function parseOptions(argv: string[]): Options | string {
         'fail-on': { type: 'string' },
         'exclude-rules': { type: 'string' },
         github: { type: 'boolean' },
+        comment: { type: 'boolean' },
       },
     })
     const failOn = values['fail-on'] || 'any'
     if (failOn !== 'none' && failOn !== 'new' && failOn !== 'any') return `--fail-on must be none, new or any, not "${failOn}"`
     const excluded = (values['exclude-rules'] ?? '').split(',').map((id) => id.trim()).filter(Boolean)
+    if (values.comment && !values.github) return '--comment needs --github'
     const [folder, wanted] = positionals
-    return { tree: Boolean(values.tree), folder, wanted, base: values.base || undefined, failOn, excluded, github: Boolean(values.github) }
+    return { tree: Boolean(values.tree), folder, wanted, base: values.base || undefined, failOn, excluded, github: Boolean(values.github), comment: Boolean(values.comment) }
   } catch (error) {
     return error instanceof Error ? error.message : String(error)
   }

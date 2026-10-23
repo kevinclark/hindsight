@@ -23,8 +23,8 @@ import org.gradle.api.tasks.compile.JavaCompile;
 /**
  * The robot-starts check: builds the team's robot in simulation, connects a Driver Station after it boots (as at the
  * field) and runs the real robot loop through disabled, auto, teleop and disabled. It fails on any exception, or on
- * a loop that stops or never reaches a mode. It runs in {@code check}, so on every "Build Robot Code" and in CI, never
- * on deploy.
+ * a loop that stops or never reaches a mode. It runs in {@code check} in CI by default and on a laptop only when the
+ * team opts in ({@code robotStartsOnLaptop}); the task is always there to run by hand. Never on deploy.
  *
  * <p>The check ({@code HindsightRobotStarts.java}, a resource of this plugin) is written into {@code build/} and
  * compiled against the robot's own WPILib, because WPILib's classes change between years; the team writes no file.
@@ -40,7 +40,7 @@ final class RobotStartsCheck {
 
   private RobotStartsCheck() {}
 
-  static void apply(Project project, HindsightExtension settings) {
+  static void apply(Project project, HindsightExtension settings, BuildContext build) {
     if (!project.getPluginManager().hasPlugin("edu.wpi.first.GradleRIO")) {
       project.getLogger().info("Hindsight's robot-starts check needs GradleRIO (a WPILib robot project); skipped.");
       return;
@@ -74,7 +74,14 @@ final class RobotStartsCheck {
       reportInPlainWords(project, task, dir.get().file("output.txt").getAsFile(),
           dir.get().file("result.txt").getAsFile());
     });
-    project.getTasks().named("check").configure(task -> task.dependsOn(run));
+    if (inCheck(build.ci(), settings.getRobotStartsOnLaptop().get())) {
+      project.getTasks().named("check").configure(task -> task.dependsOn(run));
+    }
+  }
+
+  /** Whether {@code check} runs the check: always in CI, on a laptop only when the team asked. */
+  static boolean inCheck(boolean ci, boolean onLaptop) {
+    return ci || onLaptop;
   }
 
   private static TaskProvider<Task> registerSource(Project project, Provider<Directory> sourceDir) {

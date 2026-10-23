@@ -59,13 +59,25 @@ export function summary(findings: Marked[], fixed: number | null, link: Linker, 
 }
 
 /** `file:line`, linked to the file on GitHub (to the line too, when the line number holds there). */
-function where(f: Marked, link: Linker): string {
+export function where(f: Marked, link: Linker): string {
   const text = `\`${f.file.replace(/`/g, '')}:${f.line}\``
-  if (!link.blob) return text
-  const anchor = link.sameText.has(f.file) ? `#L${f.line}` : ''
-  return `[${text}](${link.blob}/${f.file.split('/').map(encodeURIComponent).join('/')}${anchor})`
+  const url = fileUrl(f, link)
+  return url ? `[${text}](${url})` : text
 }
 
-/** Text safe inside a Markdown table cell: no HTML, no emphasis or code from the code's own characters, one line. */
-const cell = (text: string) =>
+/** The file's address on GitHub, with "#L<line>" when the line number holds there; null when there are no links. */
+export function fileUrl(f: Marked, link: Linker): string | null {
+  if (!link.blob) return null
+  const anchor = link.sameText.has(f.file) ? `#L${f.line}` : ''
+  return `${link.blob}/${f.file.split('/').map(encodeURIComponent).join('/')}${anchor}`
+}
+
+/** Escapes what Markdown or HTML would read as markup: no HTML, no emphasis or code from the code's own characters, one line. */
+export const escapeMarkdown = (text: string) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\\|`*_[\]]/g, '\\$&').replace(/\s*\n\s*/g, ' ')
+
+/** Puts "@name" and "#123" in code, so they mention nobody and link no issue. Run it on escaped text (raw backticks are already "\`"). */
+export const mentionsInCode = (text: string) => text.replace(/(^|\W)(@[\w-]+|#\d+)/g, '$1`$2`')
+
+/** Text safe inside a Markdown table cell or list item. */
+export const cell = (text: string) => mentionsInCode(escapeMarkdown(text))

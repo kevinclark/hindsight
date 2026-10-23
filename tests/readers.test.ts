@@ -39,6 +39,15 @@ describe('wpilog reader', () => {
     expect(readValues(log, '/da')!.v).toEqual([[1, 2, 3]])
     expect(readValues(log, '/pose')!.v).toEqual([{ x: 1, y: 2, rot: 0.5 }])
   })
+  it('reads one element of a number array as a signal ("<key>[n]"), skipping records too short to have it', () => {
+    const arrays = openWpilog(writeWpilog([{ name: '/amps', type: 'double[]', records: [[1, [4, 5] as never], [2, [6] as never], [3, [7, 8] as never]] }]))
+    expect(Array.from(readNumbers(arrays, '/amps[1]')!.v)).toEqual([5, 8])
+    expect(Array.from(readNumbers(arrays, '/amps[1]')!.t)).toEqual([1, 3])
+    expect(readValues(arrays, '/amps[0]')!.v).toEqual([4, 6, 7])
+    expect(hasEntry(arrays, '/amps[0]')).toBe(true)
+    expect(readNumbers(arrays, '/amps[2]')!.v.length).toBe(0)
+    expect(readNumbers(log, '/s[0]')).toBeNull()
+  })
   it('returns null for a missing entry, so rules can say "not checked"', () => {
     expect(readNumbers(log, '/nope')).toBeNull()
     expect(hasEntry(log, '/nope')).toBe(false)

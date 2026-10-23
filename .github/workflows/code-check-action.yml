@@ -22,6 +22,12 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write          # for the step that tests the comment
+
+# Two overlapping runs on one pull request could each find no comment and post one: the newer run replaces the older.
+concurrency:
+  group: code-check-action-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   sample:
@@ -88,3 +94,32 @@ jobs:
         run: |
           echo "fail-on: new outcome: $OUTCOME"
           test "$OUTCOME" = failure
+
+      # The comment. On a push it must print "not a pull request" and post nothing. On a pull request it posts on this
+      # pull request (the sample has 12 new findings): the live test of posting, and of editing on the second run.
+      - name: Run the action with comment true
+        id: comment
+        uses: ./
+        with:
+          path: ${{ runner.temp }}/sample
+          base: ${{ steps.sample.outputs.base }}
+          comment: 'true'
+
+      - name: Check the comment
+        env:
+          OUTCOME: ${{ steps.comment.outcome }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "comment step outcome: $OUTCOME"
+          test "$OUTCOME" = success
+          # A pull request from a fork gets no comment (read-only token), so only ours are checked.
+          if [ "$EVENT" = pull_request ] && [ "$HEAD_REPO" = "$GH_REPO" ]; then
+            count=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+              --jq '.[] | select(.body | startswith("<!-- hindsight-code-check -->")) | .id' | wc -l | tr -d ' ')
+            echo "comments with the marker: $count"
+            test "$count" = 1
+          fi

@@ -56,6 +56,26 @@ const BATTERY_LEAVES: Record<keyof Battery, RegExp> = {
 /** Not motors or devices this builder reads: cameras are out of scope, and their connected flags belong to them. */
 const CAMERA_FOLDER = /vision|camera|photon|limelight|apriltag/i
 
+/** Fewest channel-current records that count as a board reporting (the 8033 2024 logs have 2,000 to 3,500). */
+const BOARD_REPORTING_RECORDS = 100
+
+/**
+ * The power distribution board's own total current, when its channel currents say it reports over CAN: at least
+ * BOARD_REPORTING_RECORDS records, each a plausible robot current (0 to 1,000 A summed), not all zero. A board that
+ * isn't on CAN logs one record of zeros (a REV PDH on the 2025 and 2026 robots) or of garbage (8033 2023: 8.7e245 A).
+ * On the 13 logs where the board reports (11 of 8033's 2024 season, one each of two public teams), its total and the
+ * channels' sum differ by 0.6 A at the median. power/pd-not-reporting asks something else (did the board go silent in
+ * this match: 2 records or fewer), so a board with 3 to 99 records reports there and gives no total here.
+ */
+function boardTotal(log: WpilogFile, channelsKey: string): WpilogEntry[] {
+  const channels = channelsKey ? readValues<number[]>(log, channelsKey)?.v ?? [] : []
+  const sums = channels.map((a) => a.reduce((x, y) => x + y, 0))
+  if (sums.length < BOARD_REPORTING_RECORDS || !sums.every((x) => x >= 0 && x <= 1000) || !sums.some((x) => x > 0)) return []
+  const total = log.entries.get(`${channelsKey.slice(0, channelsKey.lastIndexOf('/'))}/TotalCurrent`)
+  return total && NUMBERS.has(total.type) && records(log, total) > 1 ? [total] : []
+}
+const NUMBERS = new Set(['double', 'float'])
+
 export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalDraft {
   const format = formatOf(log)
   const framework = format?.name ?? 'unknown'
@@ -82,6 +102,8 @@ export function signalsFromLog(log: WpilogFile, motorKeys: Set<string>): SignalD
   const odometry = poses.filter((e) => /\/Odometry\/Robot$/.test(e.name))
   choose('odometryPose', odometry.length ? odometry : poses.filter((e) => /odometry|estimat|robotpose|\/pose$/i.test(e.name) && !CAMERA_FOLDER.test(e.name)))
   choose('autoChoice', entries.filter((e) => e.type === 'string' && /^(\/NetworkInputs\/SmartDashboard|\/DashboardInputs|NT:\/SmartDashboard)\/[^/]*auto[^/]*$/i.test(e.name)))
+  const channelsKey = [signals.powerDistributionCurrents].flat().find((k) => log.entries.has(k)) ?? ''
+  if (!signals.totalCurrent) choose('totalCurrent', boardTotal(log, channelsKey))
 
   const battery = Object.fromEntries((Object.keys(BATTERY_LEAVES) as (keyof Battery)[]).map((k) => [k, entries.filter((e) => BATTERY_LEAVES[k].test(e.name)).map((e) => e.name).sort()])) as Battery
 

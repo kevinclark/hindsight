@@ -11,7 +11,7 @@
  * the supply limit, so the lower limit never engages and only the stator limit governs it.
  */
 import type { MotorGroup, RobotProfile } from '../profiles/types.ts'
-import { PHOENIX_DEFAULTS } from './limits-report.ts'
+import { PHOENIX_DEFAULTS, lowerLimitOff } from './limits-report.ts'
 
 const MAIN_BREAKER_A = 120
 /** Winding resistance of a Kraken X60 (12 V / 483 A FOC stall to 12 V / 366 A trapezoidal): 25–33 mΩ. Assumed for every motor. */
@@ -41,6 +41,7 @@ export interface PairCheck {
 /** The sustained cap per motor of a group as configured: its lower limit (Phoenix's default if unset), never above its supply limit. */
 function sustainedPerMotor(g: MotorGroup): number {
   if (g.limits.supplyEnabled === false) return Infinity // no supply limit at all: nothing caps it
+  if (lowerLimitOff(g.limits)) return g.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA
   return Math.min(g.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA, g.limits.supplyLowerA ?? PHOENIX_DEFAULTS.supplyLowerA)
 }
 

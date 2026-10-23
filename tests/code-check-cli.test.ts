@@ -94,6 +94,13 @@ describe('code-check.ts on the sample repo', () => {
     expect(out).toContain('13 findings; ')            // nothing was left out
   })
 
+  it('--github --comment on a push: the "not a pull request" line, the exit code unchanged', () => {
+    const env = { ...process.env, GITHUB_STEP_SUMMARY: '', GITHUB_OUTPUT: '', GITHUB_EVENT_NAME: 'push', CODE_CHECK_TOKEN: 'unused' }
+    const done = spawnSync(process.execPath, ['--experimental-strip-types', 'scripts/code-check.ts', sample, '--base', base, '--github', '--comment', '--fail-on', 'none'], { encoding: 'utf8', env })
+    expect(done.stdout).toContain('PR comment: not a pull request, nothing posted.')
+    expect(done.status).toBe(0)
+  })
+
   it('a repo with no commits: the reason on stderr, exit 2, no stack trace', () => {
     const empty = mkdtempSync(join(tmpdir(), 'code-check-empty-'))
     spawnSync('git', ['init', '-q', empty])

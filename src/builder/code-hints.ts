@@ -11,8 +11,10 @@
  */
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
 import { javaFilesAt, type CodeSource } from '../code/source.ts'
-import { valueAlong, waysToReach } from '../code/check/flow.ts'
-import { inSimulation } from '../code/check/devices.ts'
+import { isTestCode, valueAlong, waysToReach } from '../code/check/flow.ts'
+import { deviceBuilt, inSimulation } from '../code/check/devices.ts'
+import { readSettings, type DeviceSetting, type ReadField } from '../code/check/device-settings.ts'
+import { codeMotors, type CodeMotor } from './code-motors.ts'
 import { codeOf, fileName, lineOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, Project } from '../code/check/project.ts'
 
@@ -31,6 +33,10 @@ export interface TalonSite {
 
 export interface CodeHints {
   sites: TalonSite[]
+  /** The Talon FX the code builds on the robot, with their log keys and current kinds (code-motors.ts). */
+  motors: CodeMotor[]
+  /** The settings the code applies to each device: current limits among them (code/check/device-settings.ts). */
+  settings: DeviceSetting<ReadField>[]
   /** The commit the folder is on (from .git), if it could be read. */
   sha: string | null
   branch: string | null
@@ -41,19 +47,23 @@ export interface CodeHints {
 export type CodeHead = { sha: string; branch: string | null } | { why: string }
 
 export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
-  const sites = talonSites(files.filter((f) => f.path.endsWith('.java')))
-  const notes: string[] = []
-  if (sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java files.')
-  const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
-  return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), ...git, notes: [...notes, ...git.notes] }
-}
-
-/** Every `new TalonFX(…)` in these Java files, with its IDs. */
-function talonSites(java: CodeFile[]): TalonSite[] {
-  const project = new Project(java)
+  const project = new Project(files.filter((f) => f.path.endsWith('.java')))
   try {
-    const talons = project.nodes('object_creation_expression').filter((n) => baseType(typeNamed(n)) === 'TalonFX')
-    return talons.flatMap((talon) => sitesOf(talon, project))
+    // Tests build Talon FX with made-up IDs (Crescendo's PhoenixOdometryThreadTest): not the robot's.
+    const talons = project.nodes('object_creation_expression').filter((n) => deviceBuilt(n, project)?.kind === 'TalonFX' && !isTestCode(project.fileOf(n).path))
+    const sites = talons.flatMap((talon) => sitesOf(talon, project))
+    const notes: string[] = []
+    if (sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java files.')
+    const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
+    // The CAN ID hints worked before the code model did: code it can't read loses the draft's code values, not them.
+    let motors: CodeMotor[] = [], settings: DeviceSetting<ReadField>[] = []
+    try {
+      motors = codeMotors(project)
+      settings = readSettings(project)
+    } catch (error) {
+      notes.push(`Couldn't read the motors' log keys from the code (${error instanceof Error ? error.message : error}): only the CAN ID choices are labelled.`)
+    }
+    return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), motors, settings, ...git, notes: [...notes, ...git.notes] }
   } finally {
     project.close()
   }
@@ -68,15 +78,20 @@ function talonSites(java: CodeFile[]): TalonSite[] {
  * arguments only.
  */
 function sitesOf(talon: Node, project: Project): TalonSite[] {
-  const [idArgument, busArgument] = parts(talon, 'arguments')
-  if (!idArgument) return []
+  const built = deviceBuilt(talon, project)
+  const idArgument = built?.id
+  if (!built || !idArgument) return []
+  // As the `new` is written: a subclass's own arguments, not its constructor's `super(id, canbus)`.
+  const [writtenId, busArgument] = parts(talon, 'arguments')
   const onRobot = (waysToReach(talon, project) ?? []).filter((chain) => !chain.some(inSimulation))
   // Nothing on the robot builds it (or too many ways do): read the ID as written, with no call to look through.
   const chains = onRobot.length ? onRobot : [[]]
-  const ids = chains.map((chain) => valueAlong(idArgument, chain, project)?.value)
+  const ids = chains.map((chain) => valueAlong(idArgument, [...built.through, ...chain], project)?.value)
   const each = [...new Set(ids.map((id) => (typeof id === 'number' ? id : null)))]
-  const bus = busArgument ? codeOf(busArgument) : null
-  const where = { expr: codeOf(idArgument), bus, file: project.fileOf(talon).path, line: lineOf(talon) }
+  // A subclass's bus is what its constructor hands on (none: the roboRIO's bus), not its own second argument.
+  const handedOn = built.through.length ? (built.bus ? valueAlong(built.bus, [...built.through, ...chains[0]], project)?.value : null) : undefined
+  const bus = handedOn !== undefined ? (handedOn === null ? null : JSON.stringify(handedOn)) : busArgument ? codeOf(busArgument) : null
+  const where = { expr: codeOf(writtenId ?? idArgument), bus, file: project.fileOf(talon).path, line: lineOf(talon) }
   return each.map((id) => ({ id, ...where }))
 }
 
