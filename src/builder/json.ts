@@ -44,6 +44,8 @@ export interface GroupJson extends Omit<MotorGroup, 'motors' | 'limits'> {
   followerFromCode?: true
   /** The limits were read from the robot code (a snapshot's are marked by limitsFrom on the profile). */
   limitsFromCode?: true
+  /** Why the code gave no limits for this group, when the builder knows (code-draft.ts): shown while it has none. */
+  limitsWhy?: string
 }
 
 export type ZeroingJson = Omit<ZeroingMechanism, 'doneMessage'> & { doneMessage: { source: string; flags: string } }
@@ -95,7 +97,7 @@ export function toProfile(json: ProfileJson): RobotProfile {
     signals: { ...EMPTY_SIGNALS, ...(signals ? formatOfSignals(signals)?.signals : undefined), ...signals },
     battery: { ...EMPTY_BATTERY, ...battery },
     zeroing: (zeroing ?? []).map((z) => ({ ...z, doneMessage: new RegExp(z.doneMessage.source, z.doneMessage.flags) })),
-    motorGroups: motorGroups.map(({ sameLoopSuggested: _ss, groupedBy: _g, groupFromCode: _gc, followerFromCode: _fc, limitsFromCode: _lc, motors, limits, ...g }) => ({
+    motorGroups: motorGroups.map(({ sameLoopSuggested: _ss, groupedBy: _g, groupFromCode: _gc, followerFromCode: _fc, limitsFromCode: _lc, limitsWhy: _lw, motors, limits, ...g }) => ({
       ...g,
       limits: limits ?? NO_LIMITS,
       motors: motors.map(({ bus: _bus, current: _c, canIdFrom: _f, kindFrom: _k, logPath: _p, ...m }) => m),

@@ -46,8 +46,10 @@ export function applyCode(json: ProfileJson, hints: CodeHints, log: WpilogFile, 
 
   regroup(json, codeOf)
   for (const g of json.motorGroups) {
-    const limits = g.motors.some((m) => codeOf.has(m) && twoWays.has(device(codeOf.get(m)!))) ? null : limitsFromCode(g, codeOf, hints)
+    const builtTwoWays = g.motors.some((m) => codeOf.has(m) && twoWays.has(device(codeOf.get(m)!)))
+    const limits = builtTwoWays ? null : limitsFromCode(g, codeOf, hints)
     if (limits && !g.limits?.where.startsWith('as running')) { g.limits = limits; g.limitsFromCode = true }
+    else if (!limits && g.motors.some((m) => codeOf.has(m))) g.limitsWhy = builtTwoWays ? 'the code builds it in more than one robot version, and a setting doesn\'t say which version applies it' : 'the code gives its motors limits the builder can\'t read as one set'
   }
 
   // One line per motor: a site and ID reached along two chains of calls is still one motor. A motor whose keys are in

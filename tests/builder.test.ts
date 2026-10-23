@@ -726,6 +726,11 @@ describe('the code\'s motors and their log keys', () => {
     const again = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints: codeHints(oneSided, { sha: 'abc1234def', branch: 'main' }) })
     const roller = allMotors(again.json).find(({ motor }) => motor.statorCurrent === '/Indexer/Roller/StatorCurrentAmps')!.motor
     expect([roller.canId, again.json.motorGroups.find((g) => g.motors.includes(roller))!.limitsFromCode ?? false]).toEqual([9, false])
+    // The student is told, at the top of the draft, which groups have no limits and why: here, the two versions.
+    const rollerGroup = draft.json.motorGroups.find((g) => g.motors.includes(byKey('/Indexer/Roller/StatorCurrentAmps')))!
+    expect(draftWarnings(draft.json.motorGroups)).toContain(`${rollerGroup.name}: no current limits (the code builds it in more than one robot version, and a setting doesn't say which version applies it). Drop a robot snapshot to read them from the motors, or set them in the profile.`)
+    // The reason is the builder's: it never reaches a profile the rules read.
+    expect(toProfile(draft.json).motorGroups.find((g) => g.name === rollerGroup.name)).not.toHaveProperty('limitsWhy')
   })
 
   it('follows a ternary only when it asks real or sim and exactly one arm is real code', () => {
@@ -899,6 +904,11 @@ describe('deferred review fixes', () => {
     const m = (path: string) => ({ path, from: 'keys' as const, supplyCurrent: `${path}/SupplyCurrentAmps` })
     const names = groupMotors([m('/A/X/Roller'), m('/B/X/Roller'), m('/A/Y/X/Roller')]).map((g) => g.name)
     expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(3)
+  })
+
+  it('lists the groups with no current limits once, when nothing says why', () => {
+    const groups = [{ name: 'Drive', groupedBy: 'swerve', motors: [{}, {}, {}, {}] }, { name: 'Shooter', motors: [{}] }, { name: 'Hood', motors: [{}], limits: { supplyA: 30, where: 'Hood.java:9' } }]
+    expect(draftWarnings(groups).filter((w) => /current limits/.test(w))).toEqual(['No current limits for Drive, Shooter: drop a robot snapshot to read them from the motors, or set them in the profile.'])
   })
 
   it('warns when the student names two groups alike', () => {

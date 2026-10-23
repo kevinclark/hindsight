@@ -158,6 +158,18 @@ describe('burst / sustained pair', () => {
     const note = limitsReport(match).find((g) => g.group === 'Drive')!.supply.note
     expect(note).toBe('capped at 60 A; no lower limit (the code sets its time to 0)')
   })
+  it('a group whose limits aren\'t known is "not known", never Phoenix\'s defaults', () => {
+    const unknown = { where: 'not known: drop a robot snapshot, or set them in the profile' }
+    const profile = { ...offseason2026, motorGroups: offseason2026.motorGroups.map((g) => (g === drive ? { ...g, limits: unknown } : g)) }
+    // The pair leaves the drive out of the sum and names it, instead of counting 4 × 40 A it doesn't know.
+    const p = checkPair(profile, flywheel, 60, 25, 1, ['Drive'])
+    expect(p.sustained.rows.find((r) => r.group === 'Drive')!.perMotorA).toBeNaN()
+    expect([p.sustained.totalA, p.notKnown]).toEqual([100, ['Drive']])
+    // The Limits tab says so, instead of "not set: Phoenix's default 70 A applies".
+    const unlogged = { ...profile, motorGroups: profile.motorGroups.map((g) => ({ ...g, motors: g.motors.map(({ name }) => ({ name })) })) }
+    const report = limitsReport({ profile: unlogged, enabled: [], logEnd: 0 } as unknown as Parameters<typeof limitsReport>[0]).find((g) => g.group === 'Drive')!
+    expect([report.supply.note, report.stator.note, report.verdict, report.capPerMotorA]).toEqual([`not known: ${unknown.where}`, `not known: ${unknown.where}`, 'limits not known', NaN])
+  })
   it('warns not to raise a burst cap above today\'s', () => {
     expect(checkPair(offseason2026, drive, 70, 30, 1).raisesBurst).toBe(true)
     expect(checkPair(offseason2026, drive, 40, 30, 1).raisesBurst).toBe(false)

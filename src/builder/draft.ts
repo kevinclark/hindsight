@@ -33,7 +33,7 @@ export interface Draft {
  * What the student should look at before trusting the draft. A log that names only a few motors (a dashboard's pick,
  * or a robot that logs only its drive) would make the battery model and the main breaker's heating far too light.
  */
-export function draftWarnings(groups: { name: string; groupedBy?: string; motors: unknown[] }[]): string[] {
+export function draftWarnings(groups: { name: string; groupedBy?: string; motors: unknown[]; limits?: unknown; limitsWhy?: string }[]): string[] {
   const motors = groups.reduce((n, g) => n + g.motors.length, 0)
   const out: string[] = []
   if (motors === 0) out.push('No motors found in this log: rules about motors and currents will be "not checked".')
@@ -44,6 +44,14 @@ export function draftWarnings(groups: { name: string; groupedBy?: string; motors
   const repeated = [...new Set(names.filter((n, i) => n && names.indexOf(n) !== i).map((n) => groups[names.indexOf(n)].name.trim()))]
   for (const n of repeated) out.push(`Two groups are called "${n}": give each group its own name, or move the motors into one group.`)
   if (groups.some((g) => !g.name.trim())) out.push('A group has no name: findings name a group by it.')
+  // A group with no limits isn't checked against them, and the Limits tab says "not known": the student should see
+  // which and why. With no snapshot or code read, no group has any, and the builder's snapshot note already says so.
+  const ASK = 'drop a robot snapshot to read them from the motors, or set them in the profile.'
+  const noLimits = groups.filter((g) => g.motors.length > 0 && !g.limits)
+  for (const g of noLimits.filter((x) => x.limitsWhy)) out.push(`${g.name}: no current limits (${g.limitsWhy}). ${ASK.charAt(0).toUpperCase()}${ASK.slice(1)}`)
+  const unexplained = noLimits.filter((g) => !g.limitsWhy).map((g) => g.name)
+  const someRead = groups.some((g) => g.limits || g.limitsWhy)
+  if (unexplained.length && someRead) out.push(`No current limits for ${unexplained.join(', ')}: ${ASK}`)
   return out
 }
 
