@@ -106,7 +106,10 @@ function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: 
     const values = each.map((s) => [...new Set(s!.filter((x) => x.field === f).map((x) => x.value))])
     return values.every((v) => v.length === 1 && v[0] === values[0][0]) ? values[0][0] : values.every((v) => v.length === 0) ? undefined : null
   }
-  const fields = { supplyA: value('SupplyCurrentLimit'), supplyEnabled: value('SupplyCurrentLimitEnable'), statorA: value('StatorCurrentLimit'), statorEnabled: value('StatorCurrentLimitEnable') }
+  const fields = {
+    supplyA: value('SupplyCurrentLimit'), supplyEnabled: value('SupplyCurrentLimitEnable'), statorA: value('StatorCurrentLimit'), statorEnabled: value('StatorCurrentLimitEnable'),
+    supplyLowerA: value('SupplyCurrentLowerLimit'), supplyLowerSeconds: value('SupplyCurrentLowerTime'),
+  }
   if (Object.values(fields).includes(null)) return null
   const where = lines(each.flat().map((s) => s!.where))
   const supplyLines = lines(each.flat().filter((s) => s!.field.startsWith('Supply')).map((s) => s!.where))
@@ -115,6 +118,8 @@ function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: 
     ...(fields.supplyEnabled !== undefined ? { supplyEnabled: fields.supplyEnabled as boolean } : {}),
     ...(fields.statorA !== undefined ? { statorA: fields.statorA as number } : {}),
     ...(fields.statorEnabled !== undefined ? { statorEnabled: fields.statorEnabled as boolean } : {}),
+    ...(fields.supplyLowerA !== undefined ? { supplyLowerA: fields.supplyLowerA as number } : {}),
+    ...(fields.supplyLowerSeconds !== undefined ? { supplyLowerSeconds: fields.supplyLowerSeconds as number } : {}),
     where,
     ...(supplyLines ? { supplyLines } : {}),
   }

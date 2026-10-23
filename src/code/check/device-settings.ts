@@ -16,21 +16,29 @@ import { valueOf } from './values.ts'
 /** The Phoenix 6 config fields compared with the snapshot (MagnetSensorConfigs, FeedbackConfigs, CurrentLimitsConfigs). */
 export const SETTING_FIELDS = ['MagnetOffset', 'SensorToMechanismRatio', 'StatorCurrentLimit', 'StatorCurrentLimitEnable', 'SupplyCurrentLimit', 'SupplyCurrentLimitEnable'] as const
 export type SettingField = (typeof SETTING_FIELDS)[number]
+/** Those, and the supply lower limit, which the profile builder reads but the snapshot check doesn't compare. */
+export const READ_FIELDS = [...SETTING_FIELDS, 'SupplyCurrentLowerLimit', 'SupplyCurrentLowerTime'] as const
+export type ReadField = (typeof READ_FIELDS)[number]
 
 /** One setting the code gives one device. Plain data: it is handed from the Code panel to the Foresight check. */
-export interface DeviceSetting {
+export interface DeviceSetting<F extends ReadField = SettingField> {
   kind: string
   id: number
   /** As devices.ts names it: "canivore", "*", or "the roboRIO bus". */
   bus: string
-  field: SettingField
+  field: F
   value: number | boolean
   /** Where the code sets it: "TurretSubsystem.java:576". */
   where: string
 }
 
-/** Every setting the code applies to a device it builds on the robot (not in simulation), each once. */
+/** Every setting the snapshot check compares that the code applies to a device it builds on the robot (not in simulation), each once. */
 export function deviceSettings(project: Project): DeviceSetting[] {
+  return readSettings(project).filter((s): s is DeviceSetting => (SETTING_FIELDS as readonly string[]).includes(s.field))
+}
+
+/** Every setting read, the supply lower limit included: the profile builder's. */
+export function readSettings(project: Project): DeviceSetting<ReadField>[] {
   const applied = project.nodes('method_invocation').filter((call) => deviceOfApply(call)).flatMap((apply) => settingsApplied(apply, project))
   const unique = new Map(applied.map((s) => [JSON.stringify(s), s]))
   return [...unique.values()]
@@ -54,7 +62,7 @@ function deviceOfApply(call: Node): Node | null {
 }
 
 /** The settings one apply call gives, along each chain of calls that reaches it on the robot. */
-function settingsApplied(apply: Node, project: Project): DeviceSetting[] {
+function settingsApplied(apply: Node, project: Project): DeviceSetting<ReadField>[] {
   const device = deviceOfApply(apply)
   const [config] = parts(apply, 'arguments')
   const ways = (waysToReach(apply, project) ?? []).filter((chain) => ![apply, ...chain].some(inSimulation))
@@ -66,8 +74,8 @@ function settingsApplied(apply: Node, project: Project): DeviceSetting[] {
   })
 }
 
-type Set = { field: SettingField; value: number | boolean; where: string }
-const CURRENT_FIELDS: SettingField[] = ['StatorCurrentLimit', 'StatorCurrentLimitEnable', 'SupplyCurrentLimit', 'SupplyCurrentLimitEnable']
+type Set = { field: ReadField; value: number | boolean; where: string }
+const CURRENT_FIELDS: ReadField[] = ['StatorCurrentLimit', 'StatorCurrentLimitEnable', 'SupplyCurrentLimit', 'SupplyCurrentLimitEnable', 'SupplyCurrentLowerLimit', 'SupplyCurrentLowerTime']
 const isWith = (expr: Node) => expr.type === 'method_invocation' && /^with[A-Z]/.test(nameOf(expr) ?? '')
 
 /**
@@ -98,8 +106,8 @@ function phoenix5Limit(made: Node, chain: Node[], project: Project): Set[] {
   const on = settingValue(enable ?? null, chain, project)
   const amps = settingValue(limit ?? null, chain, project)
   return [
-    ...(typeof amps === 'number' ? [{ field: `${kind}CurrentLimit` as SettingField, value: amps, where }] : []),
-    ...(typeof on === 'boolean' ? [{ field: `${kind}CurrentLimitEnable` as SettingField, value: on, where }] : []),
+    ...(typeof amps === 'number' ? [{ field: `${kind}CurrentLimit` as ReadField, value: amps, where }] : []),
+    ...(typeof on === 'boolean' ? [{ field: `${kind}CurrentLimitEnable` as ReadField, value: on, where }] : []),
   ]
 }
 
@@ -108,7 +116,7 @@ function builtLimits(expr: Node | null, chain: Node[], project: Project): Set[] 
   const out: Set[] = []
   let at = expr
   for (; at && isWith(at); at = field(at, 'object')) {
-    const setting = SETTING_FIELDS.find((f) => `with${f}` === nameOf(at!))
+    const setting = READ_FIELDS.find((f) => `with${f}` === nameOf(at!))
     const value = setting ? settingValue(parts(at, 'arguments')[0] ?? null, chain, project) : null
     if (setting && value !== null) out.unshift({ field: setting, value, where: `${fileName(project.fileOf(at).path)}:${lineOf(at)}` })
   }
@@ -150,7 +158,7 @@ function fieldsSetOnVariable(variable: Node, chain: Node[], project: Project): S
       const limit = madeAlong(field(assignment, 'right'), chain, project)
       return limit?.at.type === 'object_creation_expression' && PHOENIX5_LIMITS[typeNamed(limit.at) ?? ''] ? phoenix5Limit(limit.at, limit.chain, project) : []
     }
-    const setting = SETTING_FIELDS.find((f) => f === field(target, 'field')?.text)
+    const setting = READ_FIELDS.find((f) => f === field(target, 'field')?.text)
     if (!setting) return []
     const value = settingValue(field(assignment, 'right'), chain, project)
     // A value passed in (`createRollerConfig(…, 20)`) is changed where it is passed: that line, not the helper's.
@@ -177,18 +185,21 @@ function setsOn(target: Node, variable: Node, project: Project): boolean {
   return declarationOf(root, root.text, project)?.equals(variable) === true
 }
 
-const isFlag = (n: Node) => n.type === 'true' || n.type === 'false'
+/** `Robot.isReal()` or `RobotBase.isReal()` (WPILib): true on the robot, the only place the settings are compared. */
+const isReal = (n: Node) => n.type === 'method_invocation' && nameOf(n) === 'isReal' && parts(n, 'arguments').length === 0 && /^(Robot|RobotBase)$/.test(field(n, 'object')?.text ?? '')
+const isFlag = (n: Node) => n.type === 'true' || n.type === 'false' || isReal(n)
 /** `Amps.of(110.0)` (WPILib units, 2025 on): a current in amps. */
 const isAmps = (n: Node) => n.type === 'method_invocation' && nameOf(n) === 'of' && /^(Units\.)?Amps$/.test(field(n, 'object')?.text ?? '')
 
 /**
  * A setting's value: `true`, `false`, or a number it can work out (values.ts), through names and what calls passed. A
- * current given as `Amps.of(…)` is its number of amps.
+ * current given as `Amps.of(…)` is its number of amps; `Robot.isReal()` is true.
  */
 function settingValue(written: Node | null, chain: Node[], project: Project): number | boolean | null {
   const made = madeAlong(written, chain, project, { throughCalls: false, stopAt: (n) => isFlag(n) || isAmps(n) })
   const flag = made?.at
   if (flag?.type === 'true' || flag?.type === 'false') return flag.type === 'true'
+  if (flag && isReal(flag)) return true
   if (made && isAmps(made.at)) return settingValue(parts(made.at, 'arguments')[0] ?? null, made.chain, project)
   const number = valueOf(written, project)?.number ?? valueAlong(written, chain, project)?.value
   return typeof number === 'number' ? number : null

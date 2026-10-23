@@ -238,7 +238,8 @@
     const l = g.limits
     if (!l) return null
     const part = (what: string, a?: number, on?: boolean) => (a === undefined && on === undefined ? null : `${what} ${a === undefined ? '?' : `${a} A`} ${on === false ? 'off' : on ? 'on' : ''}`.trim())
-    const nums = [part('supply', l.supplyA, l.supplyEnabled), part('stator', l.statorA, l.statorEnabled)].filter(Boolean).join(', ')
+    const lower = l.supplyLowerA === undefined && l.supplyLowerSeconds === undefined ? null : `supply lower ${l.supplyLowerA ?? '?'} A after ${l.supplyLowerSeconds ?? '?'} s`
+    const nums = [part('supply', l.supplyA, l.supplyEnabled), lower, part('stator', l.statorA, l.statorEnabled)].filter(Boolean).join(', ')
     return `${l.where}${nums ? `: ${nums}` : ''}`
   }
 

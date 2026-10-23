@@ -248,13 +248,18 @@ export function canBothHappen(a: Node[], b: Node[]): boolean {
   return !a.some((x) => b.some((y) => inDifferentArms(x, y)))
 }
 
-/** The calls that run a constructor, method or field's starting value: `new X(…)`, `super(…)`, `x.method(…)`. */
+/** A file of the project's tests (`src/test/java/…`): it builds the robot's classes, but never runs on the robot. */
+export const isTestCode = (path: string) => /(^|\/)src\/test\//.test(path)
+
+/**
+ * The calls that run a constructor, method or field's starting value: `new X(…)`, `super(…)`, `x.method(…)`. A call
+ * in the project's tests isn't one: a test that builds the robot or a mechanism isn't another way the robot runs.
+ */
 function callersOf(declaration: Node, project: Project): Node[] {
   const cls = classAround(declaration)
   const className = cls && nameOf(cls)
   if (!cls || !className) return []
-  const count = parametersOf(declaration).length
-  const fits = (call: Node) => declaration.type === 'field_declaration' || argumentsOf(call).length === count
+  const fits = (call: Node) => !isTestCode(project.fileOf(call).path) && (declaration.type === 'field_declaration' || takes(declaration, argumentsOf(call).length))
   if (declaration.type === 'method_declaration') {
     const method = nameOf(declaration)
     return project.nodes('method_invocation').filter((call) => nameOf(call) === method && fits(call) && callsInto(call, cls, project))
@@ -290,9 +295,8 @@ function runsUncalled(declaration: Node, project: Project): boolean {
 function argumentFor(parameter: Node, call: Node | undefined, project: Project): Node | null {
   const declaration = enclosing(parameter, ['constructor_declaration', 'method_declaration'])
   if (!call || !declaration || !callersOf(declaration, project).some((c) => c.equals(call))) return null
-  const parameters = parametersOf(declaration)
   const passed = argumentsOf(call)
-  return passed.length === parameters.length ? (passed[parameters.findIndex((p) => p.equals(parameter))] ?? null) : null
+  return takes(declaration, passed.length) ? (passed[parametersOf(declaration).findIndex((p) => p.equals(parameter))] ?? null) : null
 }
 
 /** The one value a local ever gets (its starting value, when nothing assigns it again), or null. */
@@ -332,6 +336,9 @@ function onlyValueIn(declared: Node, name: string): Node | null {
 /** The field name in `this.name`, or null. */
 const thisField = (node: Node) => (node.type === 'field_access' && field(node, 'object')?.type === 'this' ? (field(node, 'field')?.text ?? null) : null)
 const parametersOf = (declaration: Node) => parts(declaration, 'parameters').filter((p) => p.type === 'formal_parameter')
+/** Can a call pass this many arguments: one per parameter, and any number for a last `Follower... followers`? */
+const takes = (declaration: Node, count: number) =>
+  parts(declaration, 'parameters').some((p) => p.type === 'spread_parameter') ? count >= parametersOf(declaration).length : count === parametersOf(declaration).length
 const argumentsOf = (call: Node) => parts(call, 'arguments')
 
 /** The class a `super(…)` call goes to: the superclass of the class it is in. */
