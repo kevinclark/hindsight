@@ -1,7 +1,7 @@
 /**
  * Did the robot run code that isn't committed?
  *
- * Checks: /RealMetadata/GitDirty says "Uncommitted changes".
+ * Checks: /RealMetadata/GitDirty says "Uncommitted changes" (older AdvantageKit spells it "Uncomitted changes").
  * Why: CalGames 2026 P0 ran uncommitted code, so nobody can say exactly what was on the robot.
  */
 import { rule } from '../rule.ts'
@@ -21,7 +21,7 @@ export default rule({
 
   check(match) {
     const dirty = match.text('gitDirty').last()
-    if (!/uncommitted/i.test(dirty)) return
+    if (!/uncom+itted/i.test(dirty)) return
     return {
       message: `Robot ran uncommitted changes on top of ${match.build.sha.slice(0, 7) || 'an unknown commit'}`,
       evidence: { GitDirty: dirty, 'git sha': match.build.sha, branch: match.build.branch, built: match.build.date },
