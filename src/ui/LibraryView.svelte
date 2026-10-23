@@ -7,19 +7,21 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { hub, LibraryFile, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
+  import { hub, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
   import DriveFolderPicker from './DriveFolderPicker.svelte'
   import type { IngestPlan } from '../hub/ingest.ts'
   import type { FetchReport, SyncReport } from '../hub/sync.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
   import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, type FacetId, type Selection } from '../hub/facets.ts'
-  import { baseName, dayText, withShaSuffix } from '../hub/layout.ts'
+  import { baseName, dayText } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
   import { describeCodeLink } from '../hub/codelink.ts'
   import type { CodePlan, LastJob, LinkReport } from '../hub/bridge.ts'
+  import { asFile, sessionNames } from '../hub/session-files.ts'
 
-  let { onOpenSession }: { onOpenSession: (files: File[]) => void } = $props()
+  // `onOpenSession`: the filtered logs, in the Session view. `onOpenMatch`: one log, in Match review.
+  let { onOpenSession, onOpenMatch }: { onOpenSession: (files: File[]) => void; onOpenMatch: (files: File[]) => void } = $props()
   const api = hub()
 
   let snapshot = $state.raw<LibrarySnapshot | null>(null)
@@ -191,12 +193,10 @@
 
   function openInSession() {
     if (!api) return
-    // The Session view tells logs apart by name: two logs filed under the same name on different days get their sha-256 start added.
-    const count = new Map<string, number>()
-    for (const e of local) count.set(baseName(e.record.path), (count.get(baseName(e.record.path)) ?? 0) + 1)
-    const nameOf = (e: Entry) => (count.get(baseName(e.record.path)) === 1 ? baseName(e.record.path) : withShaSuffix(baseName(e.record.path), e.record.sha256))
-    const files = local.map((e) => new LibraryFile(nameOf(e), e.record.size, e.record.modifiedTime ?? e.record.recordedAt, e.record.path, api) as unknown as File)
-    onOpenSession(files)
+    onOpenSession(sessionNames(local).map((n) => asFile(n, api)))
+  }
+  function openMatch(e: Entry) {
+    if (api) onOpenMatch([asFile({ entry: e, name: baseName(e.record.path) }, api)])
   }
 
   const size = (n: number) => (n >= 2 ** 30 ? `${(n / 2 ** 30).toFixed(1)} GB` : `${(n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0)} MB`)
@@ -402,7 +402,7 @@
             {@const code = describeCodeLink(e.record)}
             <tr class:remote={!e.local}>
               <td class="time">{clock(e.record.playedAt)}</td>
-              <td class="name"><code title={e.record.path}>{baseName(e.record.path)}</code></td>
+              <td class="name">{#if e.local}<button class="link open" title={`Open ${e.record.path} in Match review`} onclick={() => openMatch(e)}><code>{baseName(e.record.path)}</code></button>{:else}<code title={e.record.path}>{baseName(e.record.path)}</code>{/if}</td>
               <td>{fmsPlace(e.record)?.name ?? ''} {matchText(e)}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
               <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if code}<span class="meta"> · <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}{#if !e.tags.robot && robotIsGuess(e.record)}<span class="meta"> {e.record.robot?.profileId === null ? '(code name)' : '(guess)'}</span>{/if}</td>
@@ -471,6 +471,8 @@
   .time, .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .num { text-align: right; }
   .name { max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .open { padding: 0; color: var(--fg); text-decoration-color: var(--border); }
+  .open:hover { text-decoration-color: currentColor; }
   .driver { width: 7rem; }
   .fixed { color: var(--fg); font-size: 0.85rem; }
   .remote { color: var(--muted); }

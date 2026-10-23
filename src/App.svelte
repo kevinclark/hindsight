@@ -18,6 +18,7 @@
   import ForesightView from './ui/ForesightView.svelte'
   import LibraryView from './ui/LibraryView.svelte'
   import { hub } from './hub/bridge.ts'
+  import { libraryLogs } from './hub/session-files.ts'
   import ReviewReport from './ui/ReviewReport.svelte'
   import { buildCard } from './report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from './report/card-png.ts'
@@ -62,6 +63,8 @@
   let update = $state<{ version: string; url: string } | null>(null)
   void hub()?.updateInfo().then((u) => { update = u })
   let sessionView = $state<{ addFiles(files: File[]): Promise<void> }>()
+  // Session summaries restored without their file read the library's copy (desktop app only).
+  const findInLibrary = hub() ? (names: string[]) => libraryLogs(hub()!, names) : undefined
   // From the Library: the filtered logs, in the Session view.
   async function openInSession(files: File[]) {
     mode = 'session'
@@ -282,8 +285,8 @@
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
-{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} /></div>{/if}
-<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} onOpen={openFromSession} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
+{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} /></div>{/if}
+<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} onOpen={openFromSession} findLogs={findInLibrary} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 {#if !current || dragging}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>

@@ -30,8 +30,9 @@
   import { allMarked, crashedNote, gridCells, marksText, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
 
-  // `marks`: the team's history (known, fixed and "not a real problem" marks).
-  let { marks, onOpen, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
+  // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
+  // copies of logs by name, for summaries restored without their file.
+  let { marks, onOpen, findLogs, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; hasSession?: boolean; sessionsOut?: Session[] } = $props()
   const issues = $derived(marks.issues)
 
   let summaries = $state<MatchSummary[]>([])
@@ -183,8 +184,23 @@
     return queue
   }
 
-  /** From the Library: read these logs into the session, as if chosen with "Choose logs…". */
-  export function addFiles(list: File[]): Promise<void> { return load(list) }
+  /** From the Library: read these logs into the session, as if chosen with "Choose logs…", and show the session that holds them. */
+  export async function addFiles(list: File[]): Promise<void> {
+    await load(list)
+    const shown = sessionHolding(list.map((f) => f.name))
+    if (shown) selectedId = shown.id
+  }
+  /** The session holding most of these logs. */
+  function sessionHolding(names: string[]): Session | undefined {
+    const holds = (x: Session) => logsOf(x).filter((n) => names.includes(n)).length
+    return sessions.reduce<Session | undefined>((best, x) => (holds(x) > (best ? holds(best) : 0) ? x : best), undefined)
+  }
+  /** These logs' files: those chosen on this visit, then (desktop app) the library's copies. */
+  async function filesFor(names: string[]): Promise<File[]> {
+    const have = names.map((n) => files.get(n)).filter((f): f is File => !!f)
+    const missing = names.filter((n) => !files.has(n))
+    return missing.length && findLogs ? [...have, ...(await findLogs(missing))] : have
+  }
 
   async function loadNow(list: File[], gen: number, { fresh = false }: { fresh?: boolean } = {}) {
     await ready
@@ -272,25 +288,29 @@
   // What the last "Read again" changed, for the session it was run on (until dismissed or a new session starts).
   let reread = $state<{ sessionId: string; changes: FindingChange[]; dismissed: boolean; note: string | null } | null>(null)
   // A "Read again" waiting for the student to choose the folder, with the findings as they stood when it was pressed.
-  let pendingReread: { names: string[]; before: FindingSnapshot[]; count: number } | null = null
+  let pendingReread: { names: string[]; before: FindingSnapshot[]; count: number; found: File[] } | null = null
   let rereadInput: HTMLInputElement | undefined = $state()
 
-  /** Read every log of this session again with this Hindsight, ignoring the saved summaries, and see what changed. */
-  function readAgain(s: Session) {
+  /**
+   * Read every log of this session again with this Hindsight, ignoring the saved summaries, and see what changed. Logs
+   * this page has no file for come from the library (desktop app), else from a folder the student chooses.
+   */
+  async function readAgain(s: Session) {
     if (loading) return
     const names = logsOf(s)
     const before = snapshotFindings(mergeFindings(s))
-    if (names.every((n) => files.has(n))) void rereadLogs(names, before, s.matches.length, [])
+    const found = await filesFor(names)
+    if (found.length === names.length) void rereadLogs(names, before, s.matches.length, found)
     else {
-      // The button press is the click the browser needs to open the folder chooser.
-      pendingReread = { names, before, count: s.matches.length }
+      // The button press is the click the browser needs to open the folder chooser (still in force: the library answers in milliseconds).
+      pendingReread = { names, before, count: s.matches.length, found }
       rereadInput?.click()
     }
   }
   async function rereadChosen(list: FileList | null) {
     const pending = pendingReread
     pendingReread = null
-    if (pending) await rereadLogs(pending.names, pending.before, pending.count, Array.from(list ?? []))
+    if (pending) await rereadLogs(pending.names, pending.before, pending.count, [...pending.found, ...Array.from(list ?? [])])
     if (rereadInput) rereadInput.value = ''
   }
   async function rereadLogs(names: string[], before: FindingSnapshot[], matchCount: number, chosen: File[]) {
@@ -301,8 +321,7 @@
     await load(use, { fresh: true })
     const missing = names.filter((n) => !picked.has(n) && !files.has(n))
     if (missing.length) problems = [...problems, `${missing.length} of this session's logs were not in what you chose, so they were not read again: ${missing.join(', ')}.`]
-    const holds = (x: Session) => logsOf(x).filter((n) => names.includes(n)).length
-    const after = sessions.reduce<Session | undefined>((best, x) => (holds(x) > (best ? holds(best) : 0) ? x : best), undefined)
+    const after = sessionHolding(names)
     if (!after) return
     selectedId = after.id
     const note = after.matches.length === matchCount ? null : `These logs are now in ${after.label}; the comparison covers that whole session.`
@@ -313,7 +332,7 @@
   async function setRobot(s: Session, id: string) {
     const names = logsOf(s)
     chooseRobot(names, id === 'auto' ? null : id)
-    const have = names.map((n) => files.get(n)).filter((f): f is File => !!f)
+    const have = await filesFor(names)
     if (have.length < names.length) problems = ['To read these logs again with that robot, choose them again ("Choose logs…"): between visits this page keeps summaries, not logs.']
     if (have.length) await load(have)
   }
@@ -327,9 +346,9 @@
     if (have.length) load(have)
   })
 
-  /** Open a match in Match review. A summary restored after a reload has no file: ask for it again. */
-  function open(m: MatchSummary) {
-    const fs = (m.pieces ?? [m.fileName]).map((n) => files.get(n)).filter((f): f is File => !!f)
+  /** Open a match in Match review. A summary restored after a reload has no file: the library's copy, else ask for it again. */
+  async function open(m: MatchSummary) {
+    const fs = await filesFor(m.pieces ?? [m.fileName])
     if (fs.length) onOpen(fs)
     else problems = [`To open ${m.fileName} in Match review, choose it again ("Choose logs…"): between visits this page keeps each log's summary, not the log.`]
   }
@@ -446,7 +465,7 @@
 {#each problems as p (p)}<p class="problem">{p}</p>{/each}
 {#if restored || savedCount || saveFailed}
   <p class="note">
-    {#if restored}Restored {restored.count} log summar{restored.count === 1 ? 'y' : 'ies'} saved in this browser (from {new Date(restored.savedAt).toLocaleString()}).{withoutFile ? ` The logs themselves aren't kept: choose them again (${withoutFile} without a file now) to open one in Match review.` : ''}{:else if savedCount}{savedCount} log summar{savedCount === 1 ? 'y' : 'ies'} saved in this browser, so a reload keeps this session.{/if}
+    {#if restored}Restored {restored.count} log summar{restored.count === 1 ? 'y' : 'ies'} saved in this browser (from {new Date(restored.savedAt).toLocaleString()}).{withoutFile && !findLogs ? ` The logs themselves aren't kept: choose them again (${withoutFile} without a file now) to open one in Match review.` : ''}{:else if savedCount}{savedCount} log summar{savedCount === 1 ? 'y' : 'ies'} saved in this browser, so a reload keeps this session.{/if}
     {#if saveFailed} This browser won't save them (a private window, or a browser that blocks storage for pages opened from disk), so a reload will start empty.{/if}
     {#if savedCount || restored}<button class="link" onclick={forget}>Clear saved copies</button>{/if}
   </p>
@@ -466,7 +485,7 @@
   <section class="head">
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
     <span class="actions">
-      <button class="button" disabled={loading} class:prominent={sessionIsStale} onclick={() => readAgain(session)} title="Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, it asks for the folder.">Read again</button>
+      <button class="button" disabled={loading} class:prominent={sessionIsStale} onclick={() => readAgain(session)} title={`Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, ${findLogs ? 'it reads the library\'s copies' : 'it asks for the folder'}.`}>Read again</button>
       <button class="button" onclick={download}>Download for Claude</button>
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
