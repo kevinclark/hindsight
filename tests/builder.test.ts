@@ -779,6 +779,76 @@ describe('the code\'s motors and their log keys', () => {
   })
 })
 
+describe('current limits the builder missed (2026-10-23)', () => {
+  // A team library's motor IO, built by each mechanism with its own config: `new MotorIOTalonFX(NAME, config(), id)`.
+  const library = (ctor = 'String name, TalonFXConfiguration config, int id') => [
+    java('lib/MotorIO.java', 'public interface MotorIO {', '  @AutoLog', '  public static class MotorIOInputs { public double supplyCurrent = 0.0; }', '}'),
+    java('lib/MotorIOTalonFX.java', 'public class MotorIOTalonFX implements MotorIO {', '  private final TalonFX motor;',
+      `  public MotorIOTalonFX(${ctor}) { motor = new TalonFX(id); motor.getConfigurator().apply(config); }`,
+      '  public void updateInputs(MotorIOInputsAutoLogged inputs) { inputs.supplyCurrent = motor.getSupplyCurrent().getValueAsDouble(); }', '}'),
+    java('lib/Mechanism.java', 'public class Mechanism extends SubsystemBase {', '  private final String name;', '  private final MotorIO io;',
+      '  private final MotorIOInputsAutoLogged inputs = new MotorIOInputsAutoLogged();',
+      '  public Mechanism(String name, MotorIO io) { this.name = name; this.io = io; }',
+      '  public void periodic() { io.updateInputs(inputs); Logger.processInputs(name, inputs); }', '}'),
+  ]
+  // `config` is the lines that set fields on `var config`, or the one `return` that builds it.
+  const tower = (config: string, build = 'new MotorIOTalonFX(NAME, config(), 20)') => java('TowerConstants.java', 'public class TowerConstants {', '  static final String NAME = "Tower";',
+    '  public static TalonFXConfiguration config() {',
+    ...(config.startsWith('return ') ? [`    ${config}`] : ['    var config = new TalonFXConfiguration();', ...config.split('\n').map((l) => `    ${l}`), '    return config;']), '  }',
+    `  public static Mechanism mechanism() { return new Mechanism(NAME, ${build}); }`, '}')
+  const robot = java('Robot.java', 'public class Robot extends LoggedRobot {', '  Mechanism tower = TowerConstants.mechanism();', '}')
+  const towerLog = () => openWpilog(writeWpilog([...DS, d('/Tower/SupplyCurrent'), d('/Tower/Velocity')]))
+  const towerLimits = (files: CodeFile[]) => {
+    const draft = draftProfile({ logs: [{ log: towerLog(), fileName: 'test.wpilog' }], hints: codeHints(files, { sha: 'abc1234def', branch: 'main' }) })
+    const g = draft.json.motorGroups.find((x) => x.motors.some((m) => m.supplyCurrent === '/Tower/SupplyCurrent'))!
+    return { id: g.motors[0].canId, fromCode: g.limitsFromCode ?? false, limits: g.limits && { ...g.limits } }
+  }
+
+  it('reads the supply lower limit into the draft, and leaves Foresight\'s snapshot settings as they were', () => {
+    const files = [...library(), robot, tower([
+      'config.CurrentLimits.SupplyCurrentLimit = 45.0;', 'config.CurrentLimits.SupplyCurrentLimitEnable = true;',
+      'config.CurrentLimits.SupplyCurrentLowerLimit = 35.0;', 'config.CurrentLimits.SupplyCurrentLowerTime = 0.5;',
+    ].join('\n'))]
+    expect(towerLimits(files)).toEqual({ id: 20, fromCode: true, limits: { supplyA: 45, supplyEnabled: true, supplyLowerA: 35, supplyLowerSeconds: 0.5, where: 'TowerConstants.java:5-8', supplyLines: 'TowerConstants.java:5-8' } })
+    // Foresight compares only the fields the snapshot check knows: the lower limit isn't one of them.
+    expect(motorsOf(files).settings.map((s) => s.field)).toEqual(['SupplyCurrentLimit', 'SupplyCurrentLimitEnable'])
+    // The builder form: `.withCurrentLimits(new CurrentLimitsConfigs()….withSupplyCurrentLowerLimit(Amps.of(35)))`.
+    const built = [...library(), robot, tower('return new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withSupplyCurrentLimit(45.0).withSupplyCurrentLowerLimit(Amps.of(35)).withSupplyCurrentLowerTime(0.5));')]
+    expect(towerLimits(built).limits).toMatchObject({ supplyA: 45, supplyLowerA: 35, supplyLowerSeconds: 0.5 })
+  })
+
+  it('a test that builds the robot or a mechanism is not another way the robot is built: the limits still come through', () => {
+    const tests = [
+      { path: 'src/test/java/frc/robot/RobotTest.java', text: 'public class RobotTest {\n  @Test void builds() { new Robot(); }\n}\n' },
+      { path: 'src/test/java/frc/robot/TowerTest.java', text: 'public class TowerTest {\n  @Test void tower() { var t = TowerConstants.mechanism(); }\n}\n' },
+    ]
+    const files = [...library(), robot, tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;\nconfig.CurrentLimits.SupplyCurrentLimitEnable = false;'), ...tests]
+    expect(towerLimits(files)).toEqual({ id: 20, fromCode: true, limits: { supplyA: 40, supplyEnabled: false, where: 'TowerConstants.java:5-6', supplyLines: 'TowerConstants.java:5-6' } })
+    // One motor, not three: the tests' chains aren't instances of it.
+    expect(motorsOf(files).motors.map((m) => m.id)).toEqual([20])
+  })
+
+  it('reads `Robot.isReal()` as true on the robot, in the draft and for Foresight', () => {
+    for (const flag of ['Robot.isReal()', 'RobotBase.isReal()']) {
+      const files = [...library(), robot, tower(`config.CurrentLimits.SupplyCurrentLimit = 40.0;\nconfig.CurrentLimits.SupplyCurrentLimitEnable = ${flag};`)]
+      expect(towerLimits(files).limits).toMatchObject({ supplyA: 40, supplyEnabled: true })
+      expect(motorsOf(files).settings.map((s) => `${s.field}=${s.value}`)).toEqual(['SupplyCurrentLimit=40', 'SupplyCurrentLimitEnable=true'])
+    }
+    // Anything else called there is still unknown: no enable flag rather than a guess.
+    const other = [...library(), robot, tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;\nconfig.CurrentLimits.SupplyCurrentLimitEnable = Robot.isCompetition();')]
+    expect(motorsOf(other).settings.map((s) => s.field)).toEqual(['SupplyCurrentLimit'])
+  })
+
+  it('follows a constructor with varargs (followers passed after the motor\'s ID)', () => {
+    const files = [...library('String name, TalonFXConfiguration config, int id, Follower... followers'), robot,
+      tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;', 'new MotorIOTalonFX(NAME, config(), 20, new Follower(21, false), new Follower(22, true))')]
+    expect(towerLimits(files)).toMatchObject({ id: 20, fromCode: true, limits: { supplyA: 40 } })
+    // With no follower passed, too.
+    const none = [...library('String name, TalonFXConfiguration config, int id, Follower... followers'), robot, tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;')]
+    expect(towerLimits(none)).toMatchObject({ id: 20, fromCode: true })
+  })
+})
+
 describe('review fixes', () => {
   const robotLog = (codebase: string, paths: string[], epoch: number) => openWpilog(writeWpilog([
     ...DS.filter((e) => !e.name.startsWith('/RealMetadata')),

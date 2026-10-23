@@ -64,7 +64,7 @@ async function withCode(log: ReturnType<typeof openWpilog>, fileName: string) {
   console.log(`  code @ ${sha.slice(0, 7)}: ${hints.motors.length} Talon FX built, ${motors.length} in the draft; kind from code ${kinds}, still "supply or stator?" ${unknownKind}; CAN ID from code ${ids}`)
   for (const g of json.motorGroups) {
     const l = g.limits
-    const limits = g.limitsFromCode && l ? ` limits ${[l.supplyA !== undefined || l.supplyEnabled !== undefined ? `supply ${l.supplyA ?? '?'} A ${l.supplyEnabled === false ? 'off' : 'on'}` : '', l.statorA !== undefined || l.statorEnabled !== undefined ? `stator ${l.statorA ?? '?'} A ${l.statorEnabled === false ? 'off' : 'on'}` : ''].filter(Boolean).join(', ')} (${l.where})` : ' limits: none from code'
+    const limits = g.limitsFromCode && l ? ` limits ${[l.supplyA !== undefined || l.supplyEnabled !== undefined ? `supply ${l.supplyA ?? '?'} A ${l.supplyEnabled === false ? 'off' : 'on'}` : '', l.statorA !== undefined || l.statorEnabled !== undefined ? `stator ${l.statorA ?? '?'} A ${l.statorEnabled === false ? 'off' : 'on'}` : '', l.supplyLowerA !== undefined || l.supplyLowerSeconds !== undefined ? `lower ${l.supplyLowerA ?? '?'} A after ${l.supplyLowerSeconds ?? '?'} s` : ''].filter(Boolean).join(', ')} (${l.where})` : ' limits: none from code'
     console.log(`    group ${g.name} (${g.motors.length}, ${g.groupedBy}${g.groupFromCode ? ', code agrees' : ''}${g.sameLoop ? ', same loop' : ''}):${limits}`)
   }
   for (const w of warnings) console.log(`    note: ${w}`)
@@ -82,7 +82,7 @@ async function withCode(log: ReturnType<typeof openWpilog>, fileName: string) {
     const d = json.motorGroups.find((x) => x.motors.some((m) => g.motors.some((h) => [m.supplyCurrent, m.statorCurrent].includes(h.supplyCurrent ?? h.statorCurrent))))
     const same = (a?: number | boolean, b?: number | boolean) => a === b
     const l = d?.limits, h = g.limits
-    const agree = !!l && d!.limitsFromCode && same(l.supplyA, h.supplyA) && same(l.supplyEnabled, h.supplyEnabled) && same(l.statorA, h.statorA) && same(l.statorEnabled, h.statorEnabled)
-    console.log(`    ${g.name}: hand supply ${h.supplyA ?? '-'}/${h.supplyEnabled ?? '-'} stator ${h.statorA ?? '-'}/${h.statorEnabled ?? '-'} (${h.where}); draft ${d ? `${d.name} (${d.motors.length})` : 'none'} ${l && d!.limitsFromCode ? `supply ${l.supplyA ?? '-'}/${l.supplyEnabled ?? '-'} stator ${l.statorA ?? '-'}/${l.statorEnabled ?? '-'} (${l.where})` : 'no code limits'}${agree ? '  ✓' : ''}${d && d.motors.length === g.motors.length ? '' : '  size differs'}`)
+    const agree = !!l && d!.limitsFromCode && same(l.supplyA, h.supplyA) && same(l.supplyEnabled, h.supplyEnabled) && same(l.statorA, h.statorA) && same(l.statorEnabled, h.statorEnabled) && same(l.supplyLowerA, h.supplyLowerA) && same(l.supplyLowerSeconds, h.supplyLowerSeconds)
+    console.log(`    ${g.name}: hand supply ${h.supplyA ?? '-'}/${h.supplyEnabled ?? '-'} stator ${h.statorA ?? '-'}/${h.statorEnabled ?? '-'} lower ${h.supplyLowerA ?? '-'}/${h.supplyLowerSeconds ?? '-'} (${h.where}); draft ${d ? `${d.name} (${d.motors.length})` : 'none'} ${l && d!.limitsFromCode ? `supply ${l.supplyA ?? '-'}/${l.supplyEnabled ?? '-'} stator ${l.statorA ?? '-'}/${l.statorEnabled ?? '-'} lower ${l.supplyLowerA ?? '-'}/${l.supplyLowerSeconds ?? '-'} (${l.where})` : 'no code limits'}${agree ? '  ✓' : ''}${d && d.motors.length === g.motors.length ? '' : '  size differs'}`)
   }
 }

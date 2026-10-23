@@ -14,7 +14,7 @@
  * tell (`"Swerve Module " + i`) stays open, and placeInLog picks the log's folder whose logged inputs match what the
  * code gives that IO (its `ModuleNumber`). Simulation code and tests are left out.
  */
-import { valueAlong, waysToReach } from '../code/check/flow.ts'
+import { isTestCode, valueAlong, waysToReach } from '../code/check/flow.ts'
 import { deviceAlong, deviceBuilt, inSimulation } from '../code/check/devices.ts'
 import { classAround, enclosing, field, fileName, lineOf, modifiersOf, nameOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, type Project } from '../code/check/project.ts'
@@ -67,7 +67,6 @@ const CURRENT_READS: Record<string, CurrentKind> = { getStatorCurrent: 'stator',
 /** Calls that pass a current on unchanged: a status signal's value, its refresh, a sign dropped. */
 const PASS_ON = ['getValue', 'getValueAsDouble', 'refresh', 'abs']
 
-export const isTestCode = (path: string) => /(^|\/)src\/test\//.test(path)
 const label = (node: Node, project: Project) => `${fileName(project.fileOf(node).path)}:${lineOf(node)}`
 /** AdvantageKit's key for an inputs field: its name with a capital first letter. */
 const keyOf = (fieldName: string) => fieldName.charAt(0).toUpperCase() + fieldName.slice(1)

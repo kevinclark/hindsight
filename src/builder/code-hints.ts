@@ -11,10 +11,10 @@
  */
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
 import { javaFilesAt, type CodeSource } from '../code/source.ts'
-import { valueAlong, waysToReach } from '../code/check/flow.ts'
+import { isTestCode, valueAlong, waysToReach } from '../code/check/flow.ts'
 import { deviceBuilt, inSimulation } from '../code/check/devices.ts'
-import { deviceSettings, type DeviceSetting } from '../code/check/device-settings.ts'
-import { codeMotors, isTestCode, type CodeMotor } from './code-motors.ts'
+import { readSettings, type DeviceSetting, type ReadField } from '../code/check/device-settings.ts'
+import { codeMotors, type CodeMotor } from './code-motors.ts'
 import { codeOf, fileName, lineOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, Project } from '../code/check/project.ts'
 
@@ -36,7 +36,7 @@ export interface CodeHints {
   /** The Talon FX the code builds on the robot, with their log keys and current kinds (code-motors.ts). */
   motors: CodeMotor[]
   /** The settings the code applies to each device: current limits among them (code/check/device-settings.ts). */
-  settings: DeviceSetting[]
+  settings: DeviceSetting<ReadField>[]
   /** The commit the folder is on (from .git), if it could be read. */
   sha: string | null
   branch: string | null
@@ -56,10 +56,10 @@ export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
     if (sites.length === 0) notes.push('No `new TalonFX(...)` in the folder\'s Java files.')
     const git = 'why' in head ? { sha: null, branch: null, notes: [head.why] } : { ...head, notes: [] }
     // The CAN ID hints worked before the code model did: code it can't read loses the draft's code values, not them.
-    let motors: CodeMotor[] = [], settings: DeviceSetting[] = []
+    let motors: CodeMotor[] = [], settings: DeviceSetting<ReadField>[] = []
     try {
       motors = codeMotors(project)
-      settings = deviceSettings(project)
+      settings = readSettings(project)
     } catch (error) {
       notes.push(`Couldn't read the motors' log keys from the code (${error instanceof Error ? error.message : error}): only the CAN ID choices are labelled.`)
     }

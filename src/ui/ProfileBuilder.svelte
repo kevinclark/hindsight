@@ -18,6 +18,7 @@
   import { PROFILES } from '../profiles/index.ts'
   import { formatOfSignals } from '../profiles/formats.ts'
   import { deviceLabel } from '../builder/snapshot.ts'
+  import { lowerLimitOff } from '../limits/limits-report.ts'
   import { downloadText } from './download.ts'
   import { changed } from './kept-profiles.svelte.ts'
 
@@ -238,7 +239,9 @@
     const l = g.limits
     if (!l) return null
     const part = (what: string, a?: number, on?: boolean) => (a === undefined && on === undefined ? null : `${what} ${a === undefined ? '?' : `${a} A`} ${on === false ? 'off' : on ? 'on' : ''}`.trim())
-    const nums = [part('supply', l.supplyA, l.supplyEnabled), part('stator', l.statorA, l.statorEnabled)].filter(Boolean).join(', ')
+    const lower = l.supplyEnabled === false || (l.supplyLowerA === undefined && l.supplyLowerSeconds === undefined) ? null
+      : lowerLimitOff(l) ? 'no supply lower limit (time 0)' : `supply lower ${l.supplyLowerA ?? '?'} A after ${l.supplyLowerSeconds ?? '?'} s`
+    const nums = [part('supply', l.supplyA, l.supplyEnabled), lower, part('stator', l.statorA, l.statorEnabled)].filter(Boolean).join(', ')
     return `${l.where}${nums ? `: ${nums}` : ''}`
   }
 

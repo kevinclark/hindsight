@@ -248,32 +248,37 @@ export function canBothHappen(a: Node[], b: Node[]): boolean {
   return !a.some((x) => b.some((y) => inDifferentArms(x, y)))
 }
 
+/** A file of the project's tests (`src/test/java/…`): it builds the robot's classes, but never runs on the robot. */
+export const isTestCode = (path: string) => /(^|\/)src\/test\//.test(path)
+
 /**
  * The calls that run a constructor, method or field's starting value: `new X(…)`, `super(…)`, `this(…)`,
- * `x.method(…)`, and Java's unwritten `super()` (buildersOf).
+ * `x.method(…)`, and Java's unwritten `super()` (buildersOf). A call in the project's tests isn't one: a test that
+ * builds the robot or a mechanism isn't another way the robot runs.
  */
 function callersOf(declaration: Node, project: Project): Node[] {
   const cls = classAround(declaration)
   if (!cls || !nameOf(cls)) return []
-  const count = parametersOf(declaration).length
+  const onRobot = (call: Node) => !isTestCode(project.fileOf(call).path)
   if (declaration.type === 'method_declaration') {
     const method = nameOf(declaration)
-    const fits = (call: Node) => argumentsOf(call).length === count
-    return project.nodes('method_invocation').filter((call) => nameOf(call) === method && fits(call) && callsInto(call, cls, project))
+    return project.nodes('method_invocation').filter((call) => nameOf(call) === method && takes(declaration, argumentsOf(call).length) && callsInto(call, cls, project) && onRobot(call))
   }
-  return buildersOf(cls, declaration.type === 'field_declaration' ? null : count, project)
+  return buildersOf(cls, declaration.type === 'field_declaration' ? null : declaration, project).filter(onRobot)
 }
 
 /**
- * The calls that build a class with this many arguments (null: any number, for a field's starting value): `new X(…)`,
+ * The calls that build a class through this constructor (null: any, for a field's starting value; 0: the one with no
+ * parameters), by their number of arguments: `new X(…)`,
  * `super(…)` in a subclass, `this(…)` in another of X's constructors, and Java's unwritten `super()`. A subclass with
  * no constructor of its own runs X's no-argument constructor whenever it is built (`new IndexerIOReal()` or
  * `IndexerIOReal::new`, in the switch arm that builds it), and a subclass constructor that starts with neither
  * `super(…)` nor `this(…)` runs it first, so the chain goes on from that constructor's body.
  */
-function buildersOf(cls: Node, count: number | null, project: Project, depth = 0): Node[] {
+function buildersOf(cls: Node, constructor: Node | 0 | null, project: Project, depth = 0): Node[] {
   const name = nameOf(cls)
-  const fits = (call: Node) => count === null || argumentsOf(call).length === count
+  const count = constructor === null || constructor === 0 ? constructor : parametersOf(constructor).length
+  const fits = (call: Node) => constructor === null || (constructor === 0 ? argumentsOf(call).length === 0 : takes(constructor, argumentsOf(call).length))
   const creates = project.nodes('object_creation_expression').filter((n) => baseType(typeNamed(n)) === name && fits(n))
   const supers = project.nodes('explicit_constructor_invocation').filter((n) => superclassOf(n) === name && fits(n))
   // A field's starting value runs once per object, in the constructor that calls super(…), never again for this(…).
@@ -317,9 +322,8 @@ function runsUncalled(declaration: Node, project: Project): boolean {
 function argumentFor(parameter: Node, call: Node | undefined, project: Project): Node | null {
   const declaration = enclosing(parameter, ['constructor_declaration', 'method_declaration'])
   if (!call || !declaration || !callersOf(declaration, project).some((c) => c.equals(call))) return null
-  const parameters = parametersOf(declaration)
   const passed = argumentsOf(call)
-  return passed.length === parameters.length ? (passed[parameters.findIndex((p) => p.equals(parameter))] ?? null) : null
+  return takes(declaration, passed.length) ? (passed[parametersOf(declaration).findIndex((p) => p.equals(parameter))] ?? null) : null
 }
 
 /** The one value a local ever gets (its starting value, when nothing assigns it again), or null. */
@@ -359,6 +363,9 @@ function onlyValueIn(declared: Node, name: string): Node | null {
 /** The field name in `this.name`, or null. */
 const thisField = (node: Node) => (node.type === 'field_access' && field(node, 'object')?.type === 'this' ? (field(node, 'field')?.text ?? null) : null)
 const parametersOf = (declaration: Node) => parts(declaration, 'parameters').filter((p) => p.type === 'formal_parameter')
+/** Can a call pass this many arguments: one per parameter, and any number for a last `Follower... followers`? */
+const takes = (declaration: Node, count: number) =>
+  parts(declaration, 'parameters').some((p) => p.type === 'spread_parameter') ? count >= parametersOf(declaration).length : count === parametersOf(declaration).length
 const argumentsOf = (call: Node) => parts(call, 'arguments')
 
 /** The class a `super(…)` call goes to: the superclass of the class it is in. */
