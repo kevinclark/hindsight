@@ -16,7 +16,7 @@ export interface AddLinkOptions {
   onProgress?: (done: number, total: number, current: string) => void
 }
 
-export type AddLinkResult = Pick<IngestReport, 'linked' | 'linkRequests' | 'linkCapped'>
+export type AddLinkResult = Pick<IngestReport, 'linked' | 'linkRequests' | 'linkCapped' | 'linkRateLimitedUntil'>
 
 /** Nothing is asked of GitHub when no source is set or no added log is linkable. Returns null for an ingest that was cancelled (`report` is then partial): nothing is linked. */
 export async function linkAdded(lib: LocalLibrary, report: IngestReport, sources: string[], describer: string, options: AddLinkOptions = {}): Promise<AddLinkResult | null> {
@@ -28,5 +28,5 @@ export async function linkAdded(lib: LocalLibrary, report: IngestReport, sources
   if (sources.length === 0 || todo.length === 0) return { linked: 0, linkRequests: 0, linkCapped: false }
   const found = await linkCode(sources, todo, { ...options, maxRequests: options.maxRequests ?? ADD_LINK_REQUESTS })
   await applyLinks(lib, found.links, describer, options.now)
-  return { linked: found.links.size, linkRequests: found.requests.api, linkCapped: found.capped }
+  return { linked: found.links.size, linkRequests: found.requests.api, linkCapped: found.capped, ...(found.rateLimitedUntil !== null ? { linkRateLimitedUntil: found.rateLimitedUntil } : {}) }
 }

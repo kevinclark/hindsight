@@ -19,3 +19,12 @@ export function checkTeamSetting(team: unknown, sources: unknown): TeamSetting {
   if (bad) throw new Error(`"${bad}" is not a GitHub organization (name) or repository (owner/name).`)
   return { team: validTeam(team) ? team : null, sources: clean }
 }
+
+/** Whether two source lists name the same sources (order and repeats do not matter). */
+export function sameSources(a: readonly string[], b: readonly string[]): boolean {
+  const x = new Set(a), y = new Set(b)
+  return x.size === y.size && [...x].every((s) => y.has(s))
+}
+
+/** Saving runs the full link pass only when there are sources and they differ from those saved before: a new team number alone asks GitHub nothing. */
+export const needsLinkPass = (before: readonly string[], after: readonly string[]): boolean => after.length > 0 && !sameSources(before, after)

@@ -1,6 +1,6 @@
 // The team number and GitHub sources a user saves: what is accepted, and the words for what is not. Team 9999 and example-org are invented.
 import { describe, expect, it } from 'vitest'
-import { checkTeamSetting, validTeam } from '../src/hub/team-setting.ts'
+import { checkTeamSetting, needsLinkPass, sameSources, validTeam } from '../src/hub/team-setting.ts'
 
 describe('team number', () => {
   it('is a whole number from 1 to 99999', () => {
@@ -28,5 +28,21 @@ describe('saving the team setting', () => {
   })
   it('treats sources that are not a list as none', () => {
     expect(checkTeamSetting(9999, 'example-org')).toEqual({ team: 9999, sources: [] })
+  })
+})
+
+describe('when saving runs the link pass', () => {
+  it('compares sources as a set: order and repeats do not matter', () => {
+    expect(sameSources(['example-org', 'example-org/robot-9999'], ['example-org/robot-9999', 'example-org', 'example-org'])).toBe(true)
+    expect(sameSources(['example-org'], ['example-org', 'other-org'])).toBe(false)
+  })
+  it('runs when the sources changed', () => {
+    expect(needsLinkPass([], ['example-org'])).toBe(true)
+    expect(needsLinkPass(['example-org'], ['example-org', 'other-org'])).toBe(true)
+  })
+  it('does not run when only the team number changed, or when no source is left', () => {
+    expect(needsLinkPass(['example-org'], ['example-org'])).toBe(false)
+    expect(needsLinkPass(['a-org', 'b-org'], ['b-org', 'a-org'])).toBe(false)
+    expect(needsLinkPass(['example-org'], [])).toBe(false)
   })
 })

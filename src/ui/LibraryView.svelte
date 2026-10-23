@@ -342,7 +342,7 @@
     <p class="meta">
       {size(report.bytesAdded)} copied in {(report.durationMs / 1000).toFixed(1)} s. The originals were not moved, renamed or deleted.
       {#if report.ignored}{report.ignored} other file{report.ignored === 1 ? '' : 's'} ignored.{/if}
-      {#if report.linked !== undefined}Linked {report.linked} new log{report.linked === 1 ? '' : 's'} to their code with {report.linkRequests} GitHub request{report.linkRequests === 1 ? '' : 's'}.{#if report.linkCapped} Stopped after {ADD_LINK_REQUESTS} GitHub requests; Link code finishes the rest.{/if}{/if}
+      {#if report.linked !== undefined}Linked {report.linked} new log{report.linked === 1 ? '' : 's'} to their code with {report.linkRequests} GitHub request{report.linkRequests === 1 ? '' : 's'}.{#if report.linkCapped} Stopped after {ADD_LINK_REQUESTS} GitHub requests; Link code finishes the rest.{/if}{#if report.linkRateLimitedUntil} GitHub's request limit was reached: stopped, and what was found is kept. Try again after {new Date(report.linkRateLimitedUntil).toLocaleTimeString()}.{/if}{/if}
       {#if report.linkProblem}<span class="problem">Linking code did not finish: {report.linkProblem}</span>{/if}
     </p>
     <ul class="flags">

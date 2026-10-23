@@ -78,8 +78,9 @@ panel. Neither is committed.
   (`hub:setTeam`; both are checked first). With the number set, the Session view's and Match review's robot lists show that
   team's built-in robots and the kept profiles that are its or have no team; other teams' robots are left out, except those
   the session's own logs use. With no number (or the page opened from disk, which has no settings) every robot is listed,
-  grouped by team. Automatic robot choice is unchanged and still sees every profile. Saving with sources set runs the full
-  Link code pass once, uncapped, because saving is the user's own action.
+  grouped by team. Automatic robot choice is unchanged and still sees every profile. Saving runs the full
+  Link code pass once, uncapped, because saving is the user's own action, but only when the sources changed (a new team number
+  alone asks GitHub nothing).
 - **Logs are linked when they are added.** After an add (folder, Drive or robot) that was not stopped, the logs it added that
   name only their code and have no link yet are linked in the same job, with at most 20 GitHub API requests (one listing per
   source plus one commit check per new build commit; the raw `Robot.java` reads are not counted). At the cap it stops, keeps

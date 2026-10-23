@@ -16,7 +16,7 @@ import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
 import { estimateRequests, linkable, linkCode } from '../src/hub/codelink.ts'
 import { linkAdded } from '../src/hub/ingest-link.ts'
-import { checkTeamSetting } from '../src/hub/team-setting.ts'
+import { checkTeamSetting, needsLinkPass } from '../src/hub/team-setting.ts'
 import type { CodePlan, DriveStatus, TeamSettingSaved, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
 import { Describer } from './describer.ts'
@@ -128,11 +128,12 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const s = await loadSettings()
     return { team: s.team ?? null, sources: s.codeSources ?? [] }
   })
-  /** Save the team number and GitHub sources together (both checked first). With sources set, the full link pass runs once: saving is the user's own action, like the button. */
+  /** Save the team number and GitHub sources together (both checked first). When the sources changed, the full link pass runs once: saving is the user's own action, like the button. */
   ipcMain.handle('hub:setTeam', async (_e, team: number | null, sources: string[]): Promise<TeamSettingSaved> => {
     const checked = checkTeamSetting(team, sources)
+    const before = (await loadSettings()).codeSources ?? []
     await saveSettings({ team: checked.team ?? undefined, codeSources: checked.sources })
-    return { ...checked, ...(checked.sources.length > 0 ? { linkReport: await linkPass() } : {}) }
+    return { ...checked, ...(needsLinkPass(before, checked.sources) ? { linkReport: await linkPass() } : {}) }
   })
 
   /** Read every robot log in this library again with the current describer; appends a `meta` record for each that reads differently. */

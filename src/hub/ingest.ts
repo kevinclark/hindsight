@@ -49,6 +49,8 @@ export interface IngestReport {
   linked?: number
   linkRequests?: number
   linkCapped?: boolean
+  /** When GitHub's own request limit stopped the linking: when it resets (ms since 1970). Not the same as the cap. */
+  linkRateLimitedUntil?: number
   /** Why linking could not finish, in words; the logs were added all the same. */
   linkProblem?: string
 }

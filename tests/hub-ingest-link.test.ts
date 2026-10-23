@@ -94,6 +94,20 @@ describe('linking the logs an ingest added', () => {
     expect(added.map((r) => !!lib.catalog.bySha(r.sha256)!.code).filter(Boolean)).toHaveLength(2)
   })
 
+  it('carries GitHub\'s rate-limit time in the report, separate from the cap', async () => {
+    const added = [0, 1].map((n) => record(n, { sha256: `r${n}`, path: `logs/x/r${n}.wpilog`, names: [`r${n}.wpilog`] }))
+    for (const r of added) await lib.append(r)
+    const base = fakeGitHub()
+    // The listing answers, then every API request is refused with 403 and a reset time.
+    let api = 0
+    const get = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).startsWith('https://api.github.com/') && ++api > 1) return new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1800000000' } })
+      return base.get(input, init)
+    }) as typeof fetch
+    const out = await linkAdded(lib, reportOf(added), ['example-org'], 'test+linked', { get })
+    expect(out).toEqual({ linked: 0, linkRequests: 2, linkCapped: false, linkRateLimitedUntil: 1800000000 * 1000 })
+  })
+
   it('uses a cap of 20 API requests by default', () => {
     expect(ADD_LINK_REQUESTS).toBe(20)
   })
