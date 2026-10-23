@@ -17,10 +17,19 @@ import type { CurrentLimits } from '../profiles/types.ts'
 /** Apply the code to a draft, in place. Returns what the student should know (motors the log lacks, a dirty tree). */
 export function applyCode(json: ProfileJson, hints: CodeHints, log: WpilogFile, dirty: boolean): string[] {
   const placed = hints.motors.map((motor) => ({ motor, keys: placeInLog(motor, log) }))
-  // A key two code motors claim tells nothing: neither gets it.
+  // A key two code motors claim tells nothing, so neither gets it, unless they are one motor built two ways (a robot
+  // version per arm of a switch): the same ID on the same bus, read the same way, following the same leader. Then the
+  // first stands for both. That ID's limits aren't read: a setting doesn't say which version applies it, so one
+  // version's limit would pass for both.
   const claims = new Map<string, { motor: CodeMotor; keys: PlacedCurrent[] }[]>()
   for (const p of placed) for (const k of p.keys) claims.set(k.key, [...(claims.get(k.key) ?? []), p])
-  const byKey = new Map([...claims].filter(([, ps]) => ps.length === 1).map(([k, ps]) => [k, ps[0]]))
+  const kindOf = (p: { keys: PlacedCurrent[] }, key: string) => p.keys.find((k) => k.key === key)?.kind
+  const oneMotor = (key: string, ps: { motor: CodeMotor; keys: PlacedCurrent[] }[]) =>
+    ps.length === 1 || (ps[0].motor.id !== null && ps.every((p) => p.motor.id === ps[0].motor.id && p.motor.bus === ps[0].motor.bus && p.motor.follows === ps[0].motor.follows && kindOf(p, key) === kindOf(ps[0], key)))
+  const byKey = new Map([...claims].filter(([k, ps]) => oneMotor(k, ps)).map(([k, ps]) => [k, ps[0]]))
+  const device = (m: CodeMotor) => `${m.id} on ${m.bus}`
+  const twoWays = new Set([...claims].flatMap(([k, ps]) => (ps.length > 1 && oneMotor(k, ps) ? [device(ps[0].motor)] : [])))
+  const sameMotor = new Map([...claims].flatMap(([k, ps]) => (oneMotor(k, ps) ? ps.slice(1).map((p) => [p.motor, ps[0].motor] as const) : [])))
   const codeOf = new Map<MotorJson, CodeMotor>()
   const notes: string[] = []
 
@@ -37,13 +46,22 @@ export function applyCode(json: ProfileJson, hints: CodeHints, log: WpilogFile, 
 
   regroup(json, codeOf)
   for (const g of json.motorGroups) {
-    const limits = limitsFromCode(g, codeOf, hints)
+    const limits = g.motors.some((m) => codeOf.has(m) && twoWays.has(device(codeOf.get(m)!))) ? null : limitsFromCode(g, codeOf, hints)
     if (limits && !g.limits?.where.startsWith('as running')) { g.limits = limits; g.limitsFromCode = true }
   }
 
-  // One line per motor: a site and ID reached along two chains of calls is still one motor.
-  const unmatched = [...new Set(placed.filter((p) => ![...codeOf.values()].includes(p.motor)).map((p) => `${p.motor.site}${p.motor.id !== null ? ` (ID ${p.motor.id})` : ''}`))]
+  // One line per motor: a site and ID reached along two chains of calls is still one motor. A motor whose keys are in
+  // the log isn't missing from it, even when they couldn't be told apart from another motor's.
+  const label = (m: CodeMotor) => `${m.site}${m.id !== null ? ` (ID ${m.id})` : ''}`
+  const matched = new Set(codeOf.values())
+  const matchedLabels = new Set([...matched].map(label))
+  const unmatched = [...new Set(placed.filter((p) => !p.keys.length && !matched.has(p.motor) && !matched.has(sameMotor.get(p.motor)!)).map((p) => label(p.motor)))].filter((l) => !matchedLabels.has(l))
   if (unmatched.length) notes.push(`The code builds ${unmatched.length} more Talon FX that this log has no current for: ${unmatched.join(', ')}. Their current isn't in the battery model.`)
+  for (const [key, ps] of claims) {
+    if (oneMotor(key, ps)) continue
+    const ids = [...new Set(ps.map((p) => (p.motor.id === null ? 'no ID' : `ID ${p.motor.id}`)))]
+    notes.push(`${key} is read from ${ps.length} motors in the code (${[...new Set(ps.map((p) => label(p.motor)))].join(', ')})${ids.length > 1 ? `, as ${ids.join(' and ')}` : ''}: pick its CAN ID by hand.`)
+  }
   if (dirty) notes.push(`The robot ran uncommitted changes on top of ${hints.sha?.slice(0, 7) ?? 'its commit'}: this draft is from the commit, so check what the changes touched.`)
   return notes
 }

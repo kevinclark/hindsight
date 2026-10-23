@@ -34,7 +34,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 - Golden doesn't cover the builder. Prove a builder change by diffing `scripts/builder-backtest.ts` output (and a
   motors/groups survey) over every library and public log before and after; read every line that changed.
 - Drafts from code (`code-motors.ts`, `code-draft.ts`) never guess: a folder pairs with the IO whose
-  `updateInputs(inputs)` fills it, else the nearest chain; a tie, or a key two code motors claim, gives nothing.
+  `updateInputs(inputs)` fills it, else the nearest chain; a tie, or a key two code motors claim, gives nothing,
+  unless those motors agree on ID, bus, kind and leader (one motor built in each robot version's arm): then the ID,
+  but no limits.
   Score with `builder-backtest.ts --code <clone>` on every robot, the 2026 logs included (2026-10-22: a shared
   outer chain gave all four drive motors ID 6, caught only on 2026).
 
