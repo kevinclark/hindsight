@@ -100,6 +100,24 @@ npx vitest run tests/foresight-snapshot.test.ts                  # Foresight's s
 npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.ts <out-dir>   # rendered check
 ```
 
+## Log library and desktop app (`src/hub/`, `electron/`, `docs/library.md`)
+
+- **The storage interface has no delete and no overwrite, on purpose** (`src/hub/adapter.ts`). Never add one, and never give
+  the Drive client a delete call: a delete touches only items a person approved by name. `tests/helpers/adapter-contract.ts`
+  runs against every adapter; a new adapter passes it.
+- **Originals are only read.** Ingest copies; `localFolderFiles`, Drive and the robot sources never write to their source.
+  `tests/hub-ingest.test.ts` checks the folder is unchanged and a re-run writes nothing.
+- **No Drive ids, team folder names, client ids or secrets in this repository.** The Google client is injected at build time
+  (`vite.electron.config.ts`) or pasted in the app; the team folder is chosen at run time and kept in the app's settings.
+  Fixtures are invented (event `TEST`).
+- **Never read Electron's `safeStorage` at start-up** (`electron/google-auth.ts`): on a Mac an ad-hoc signed app makes the
+  Keychain ask, and the main thread blocks until the user answers (packaged build, 2026-10-21).
+- Code under `src/hub/` that the page imports (`catalog`, `facets`, `bridge`, `types`) stays free of `node:` imports; the rest
+  runs in the main process, the utility process (`electron/describe-worker.ts`) and tests.
+- Check the built app with `npm run build:app && node --experimental-strip-types scripts/electron-check.ts <log folder>
+  <shots folder>` (a throwaway library; `HINDSIGHT_APP=<packaged executable>` runs an installed build). Measure ingest with
+  `scripts/ingest-bench.ts`.
+
 ## Gradle plugin (`companion/gradle-plugin/`)
 
 - Plugin id `io.github.kevinclark.hindsight`, applied by a team's robot `build.gradle`. It runs inside their Gradle

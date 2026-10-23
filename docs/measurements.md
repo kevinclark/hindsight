@@ -133,3 +133,13 @@ enable, "after" = 10 s after the last disable to the end of the log):
   code), and closed when FMSAttached turned true at 45 s. The connection stayed up 45–60 s with no NT4 clock-sync pings
   from the page. ntcore kept the metadata's publish timestamp for a late subscriber, so code start came "from the
   metadata". Not measured: a roboRIO, a real field, Windows.
+
+## Library and desktop app (2026-10-22, M5 Max, macOS 26)
+
+- **Ingest** (`scripts/ingest-bench.ts`, 16 logs, 0.795 GB, folder on the same SSD; read, sha-256, describe, copy): 2.42 s first
+  run = **3.0 s per GB**. A second run that remembers each file's size and modified time (what the app does): 0 s. A run that
+  reads every file again: 2.0 s = 2.5 s per GB. Logs of about 52 MB; a 672 MB practice log was not measured (it is read whole into
+  the utility process, one at a time).
+- **Installers** (Electron 45, unsigned, from `npm run dist:app` on this Mac): macOS arm64 dmg 120.7 MB, zip 120.8 MB (the
+  installed app is 263 MB); Windows x64 NSIS installer 113.7 MB; Linux x64 AppImage 127.9 MB. Only the Mac build was launched.
+- **Page from `file://`** (`scripts/chrome-session-check.ts`, Chrome 155, 2 logs): 268 ms per log, longest stall 272 ms, as before.
