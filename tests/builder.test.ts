@@ -194,6 +194,21 @@ describe('older AdvantageKit logs (the shapes of 8033\'s 2023 and 2024 robots)',
     expect(notUsed.map((n) => n.key)).toEqual(['/Vision/Amps'])
   })
 
+  it('reads `SupplyAmpsAbs` as a motor\'s supply current, leaves out its running average, and says the draw is |current|', () => {
+    const keys = ['DriveStatorAmps', 'DriveSupplyAmpsAbs', 'DriveSupplyAmpsAbsAvg', 'TurnStatorAmps', 'TurnSupplyAmpsAbs', 'TurnSupplyAmpsAbsAvg', 'DriveVelocityRadPerSec', 'DriveAppliedVolts', 'DriveTempCelcius', 'DriveConnected', 'TurnVelocityRadPerSec', 'TurnAppliedVolts']
+    const abs = openWpilog(writeWpilog(keys.map((k) => d(`/Drive/Module0/${k}`))))
+    const { motors, notUsed } = motorsFromLog(abs)
+    expect(motors.map((m) => [m.path, m.supplyCurrent, m.statorCurrent])).toEqual([
+      ['/Drive/Module0/Drive', '/Drive/Module0/DriveSupplyAmpsAbs', '/Drive/Module0/DriveStatorAmps'],
+      ['/Drive/Module0/Turn', '/Drive/Module0/TurnSupplyAmpsAbs', '/Drive/Module0/TurnStatorAmps'],
+    ])
+    expect(notUsed).toEqual([
+      { key: '/Drive/Module0/DriveSupplyAmpsAbsAvg', why: 'an average, not the current' },
+      { key: '/Drive/Module0/TurnSupplyAmpsAbsAvg', why: 'an average, not the current' },
+    ])
+    expect(draftProfile({ logs: [{ log: abs, fileName: 'example.wpilog' }] }).notes.join(' ')).toMatch(/absolute value.*regenerative current then counts as draw/)
+  })
+
   it('reads an array of one as the motor itself, beside its supply current and an array temperature', () => {
     const log = openWpilog(writeWpilog([
       arr('/Swerve/Front Left Module/DriveCurrentAmps', [3], [4]), d('/Swerve/Front Left Module/DriveSupplyCurrentAmps'),

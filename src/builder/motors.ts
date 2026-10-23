@@ -3,7 +3,8 @@
  *
  *  - Every `struct:TalonFX` entry is one motor (the struct carries its currents, velocity and temperature).
  *  - Otherwise a key ending in a current (`SupplyCurrentAmps`, `StatorCurrentAmp`, `CurrentA`, a bare `Current`, or
- *    `Amps` alone: `/Shooter/PivotAmps`) is a motor's current when the same folder also has that motor's velocity or
+ *    `Amps` alone: `/Shooter/PivotAmps`; with `Abs` after it, the absolute value: `DriveSupplyAmpsAbs`, while
+ *    `…AbsAvg` is an average and is listed as not used) is a motor's current when the same folder also has that motor's velocity or
  *    speed, voltage or percent output, temperature or connected flag. The motor is the key without the current part,
  *    so `/X/DriveSupplyCurrentAmps` and `/X/DriveStatorCurrentAmps` are one motor, `/X/Drive`.
  *  - A current that is an array (`double[]`) is one motor per element, as many as its longest record has: AdvantageKit
@@ -39,7 +40,11 @@ export interface LogMotors {
   limits: string[]
 }
 
-const CURRENT = /(Supply|Stator)?(Current(Amps?|A)?|Amps)$/
+const CURRENT = /(Supply|Stator)?(Current(Amps?|A)?|Amps)(Abs)?$/
+/** A running average of the absolute current (`DriveSupplyAmpsAbsAvg`): not a current to read. */
+const AVERAGE = /(Current(Amps?|A)?|Amps)AbsAvg$/
+/** A current logged as its absolute value (`DriveSupplyAmpsAbs`): regenerative current then reads as draw. */
+export const ABSOLUTE = /Abs(\[\d+\])?$/
 const SKIP = /^(NT:)?\/(RealOutputs|\.schema)(\/|$)/
 const DASHBOARD = /^(NT:)?\/(SmartDashboard|Shuffleboard|Elastic|NetworkInputs\/SmartDashboard|DashboardInputs)(\/|$)/
 const NUMERIC = new Set(['double', 'float', 'int64'])
@@ -94,6 +99,7 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
   for (const e of entries) {
     const i = e.name.lastIndexOf('/')
     const leaf = e.name.slice(i + 1)
+    if (AVERAGE.test(leaf) && NUMERIC.has(e.type) && !SKIP.test(e.name) && !isRoboRioReading(e.name) && !DASHBOARD.test(e.name)) { notUsed.push({ key: e.name, why: 'an average, not the current' }); continue }
     const m = CURRENT.exec(leaf)
     if (!m || SKIP.test(e.name) || isRoboRioReading(e.name)) continue
     if (DASHBOARD.test(e.name)) { if (NUMERIC.has(e.type)) notUsed.push({ key: e.name, why: 'a dashboard copy' }); continue }
