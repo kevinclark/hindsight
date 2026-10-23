@@ -1,8 +1,10 @@
-// build/dirty reads AdvantageKit's GitDirty text. Older AdvantageKit versions spell it "Uncomitted changes" (one m),
-// so the rule must accept both spellings. Made-up logs: event TEST, an invented commit.
+// build/dirty, and everything else that reads AdvantageKit's GitDirty text: older AdvantageKit versions spell it
+// "Uncomitted changes" (one m), so both spellings must count. Made-up logs: event TEST, an invented commit.
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
+import { isUncommitted } from '../src/match/git-dirty.ts'
 import { offseason2025 } from '../src/profiles/2025-offseason.ts'
+import { buildLine } from '../src/report/review-model.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 
 const WALL = 1762637000 // epoch seconds
@@ -34,5 +36,20 @@ describe('build/dirty: both spellings of AdvantageKit\'s GitDirty', () => {
 
   it('stays quiet on "All changes committed"', () => {
     expect(findings(log('All changes committed'))).toEqual([])
+  })
+})
+
+describe('isUncommitted: the one test every reader of GitDirty uses', () => {
+  it.each([
+    ['Uncommitted changes', true],
+    ['Uncomitted changes', true],
+    ['All changes committed', false],
+    ['', false],
+  ])('"%s" → %s', (text, expected) => {
+    expect(isUncommitted(text)).toBe(expected)
+  })
+
+  it('the report header says UNCOMMITTED for the one-m spelling', () => {
+    expect(buildLine({ sha: '1a2b3c4d5e6f', branch: 'main', dirty: 'Uncomitted changes' }).text).toBe('code 1a2b3c4 on main (UNCOMMITTED changes)')
   })
 })

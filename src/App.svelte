@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
   import { analyzeFilesWithCode, type Analysis, type InputFile } from './analyze.ts'
+  import { isUncommitted } from './match/git-dirty.ts'
   import { buildFindingsJson, findingsFileName } from './report/findings-json.ts'
   import MatchTab from './ui/MatchTab.svelte'
   import Menu from './ui/Menu.svelte'
@@ -325,7 +326,7 @@
       <p class="meta">
         <code>{current.match.fileName}</code>{#each current.match.ds as d (d.fileName)}{' + '}<code>{d.fileName}</code>{/each} ·
         {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}
-        {#if /uncommitted/i.test(current.match.build.dirty)}<strong class="dirty">(uncommitted changes)</strong>{/if}
+        {#if isUncommitted(current.match.build.dirty)}<strong class="dirty">(uncommitted changes)</strong>{/if}
       </p>
       <details class="more">
         <summary>Robot: <strong>{current.match.profile.name}</strong></summary>

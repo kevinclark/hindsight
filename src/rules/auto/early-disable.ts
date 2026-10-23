@@ -12,6 +12,7 @@
  * loaded logs (a judgment: a new build is a suspect, not a proof). Two builds of one commit with different
  * uncommitted changes can't be told apart.
  */
+import { isUncommitted } from '../../match/git-dirty.ts'
 import { rule, round, secs } from '../rule.ts'
 import type { MatchView, Signal, Window } from '../view.ts'
 
@@ -96,7 +97,7 @@ interface Run {
 function runsOf(log: MatchView, name: string, until: number): Run[] {
   if (!log.has('autoChoice')) return []
   const choice = log.text('autoChoice')
-  const dirty = /uncommitted/i.test(log.build.dirty)
+  const dirty = isUncommitted(log.build.dirty)
   return log.auto.filter((iv) => iv.start < until && choice.at(iv.start) === name).map((iv) => ({
     log,
     start: iv.start,
@@ -141,7 +142,7 @@ function autoHistory(match: MatchView, start: number) {
   const onlyThisLog = match.otherLogs().length === 0
   const sha = match.build.sha.slice(0, 7)
   const runs = [...others, ...here]
-  const buildIsDirty = /uncommitted/i.test(match.build.dirty)
+  const buildIsDirty = isUncommitted(match.build.dirty)
   const onBuild = runs.filter((r) => r.sha === match.build.sha && r.dirty === buildIsDirty).length
   const last = runs.at(-1)
 

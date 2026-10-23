@@ -7,6 +7,7 @@ import { analyzeFiles, analyzeFilesWithCode, type AnalyzeResult, type InputFile 
 import type { CodeFolder } from '../code/limit-lines.ts'
 import { has, num, values, type Match } from '../match/match.ts'
 import { heldAt } from '../match/series.ts'
+import { isUncommitted } from '../match/git-dirty.ts'
 import { MatchView } from '../rules/view.ts'
 import { worstFollowerSecondsOff } from '../rules/mech/follower-trace.ts'
 import { powerReport } from '../power/power-report.ts'
@@ -157,7 +158,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
     fileName: match.fileName, fileSize, ...when,
     event: match.event, matchLabel: match.matchLabel, matchType: matchTypeOf(match), onField: match.fms,
     batteryId: atStart || null,
-    build: { sha: match.build.sha.slice(0, 7), branch: match.build.branch, uncommitted: /uncommitted/i.test(match.build.dirty) },
+    build: { sha: match.build.sha.slice(0, 7), branch: match.build.branch, uncommitted: isUncommitted(match.build.dirty) },
     rules, metrics: metrics(match), timing, problems: [],
     robot: robotOf(match),
     logging: coverage(match, report).lines.map((l) => ({ what: l.what, key: l.key, state: l.state })),
