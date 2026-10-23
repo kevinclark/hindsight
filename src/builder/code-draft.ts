@@ -113,7 +113,11 @@ function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: 
     supplyA: value('SupplyCurrentLimit'), supplyEnabled: value('SupplyCurrentLimitEnable'), statorA: value('StatorCurrentLimit'), statorEnabled: value('StatorCurrentLimitEnable'),
     supplyLowerA: value('SupplyCurrentLowerLimit'), supplyLowerSeconds: value('SupplyCurrentLowerTime'),
   }
-  if (Object.values(fields).includes(null)) return 'the code gives its motors different limits'
+  if (Object.values(fields).includes(null)) {
+    // One motor's CAN ID given two values of one field (another robot version's subsystem, say), or motors that differ.
+    const twoValues = each.some((s) => new Set(s!.map((x) => x.field)).size < new Set(s!.map((x) => `${x.field}=${x.value}`)).size)
+    return twoValues ? 'the code sets different limits for its CAN ID in different places' : 'the code gives its motors different limits'
+  }
   const where = lines(each.flat().map((s) => s!.where))
   const supplyLines = lines(each.flat().filter((s) => s!.field.startsWith('Supply')).map((s) => s!.where))
   return {

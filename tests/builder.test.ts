@@ -848,6 +848,12 @@ describe('current limits the builder missed (2026-10-23)', () => {
     const draft = (files: CodeFile[]) => draftProfile({ logs: [{ log: towerLog(), fileName: 'test.wpilog' }], hints: codeHints(files, { sha: 'abc1234def', branch: 'main' }) })
     const why = (files: CodeFile[]) => draft(files).json.motorGroups.find((g) => g.motors.some((m) => m.supplyCurrent === '/Tower/SupplyCurrent'))!.limitsWhy
     expect(why([...library(), robot, tower('config.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;')])).toBe('the code sets no current limits on it that the builder can read')
+    // One motor whose CAN ID gets two supply limits in two places (another robot version's subsystem, say).
+    const elsewhere = java('OldTower.java', 'public class OldTower {', '  TalonFX motor = new TalonFX(20);',
+      '  OldTower() { var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 30.0; motor.getConfigurator().apply(c); }', '}')
+    const both = [...library(), java('Robot.java', 'public class Robot extends LoggedRobot {', '  Mechanism tower = TowerConstants.mechanism();', '  OldTower old = new OldTower();', '}'),
+      tower('config.CurrentLimits.SupplyCurrentLimit = 40.0;'), elsewhere]
+    expect(why(both)).toBe('the code sets different limits for its CAN ID in different places')
   })
 
   it('follows a constructor with varargs (followers passed after the motor\'s ID)', () => {
