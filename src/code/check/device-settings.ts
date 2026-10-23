@@ -62,7 +62,7 @@ function settingsApplied(apply: Node, project: Project): DeviceSetting[] {
     const site = madeAlong(device, chain, project)
     const built = site ? deviceAlong(site.at, site.chain, project) : null
     if (!built) return []
-    return configSettings(config ?? null, chain, project).map((s) => ({ kind: built.kind, id: built.id, bus: built.bus, ...s }))
+    return withOwnWrites(config ?? null, configSettings(config ?? null, chain, project), chain, project).map((s) => ({ kind: built.kind, id: built.id, bus: built.bus, ...s }))
   })
 }
 
@@ -116,12 +116,30 @@ function builtLimits(expr: Node | null, chain: Node[], project: Project): Set[] 
 }
 
 /**
+ * A config the apply call names by a variable of its own that starts from another config
+ * (`var driveConfig = constants.DriveMotorInitialConfigs`): the fields written on that variable come after, so they
+ * replace what the config it started from set.
+ */
+function withOwnWrites(config: Node | null, base: Set[], chain: Node[], project: Project): Set[] {
+  const variable = config?.type === 'identifier' ? declarationOf(config, config.text, project) : null
+  const start = variable?.type === 'variable_declarator' ? field(variable, 'value') : null
+  if (!variable || !start || start.type === 'object_creation_expression') return base
+  const own = fieldsSetOnVariable(variable, chain, project)
+  return [...base.filter((s) => !own.some((o) => o.field === s.field)), ...own]
+}
+
+/**
  * The setting fields assigned on the config a `new TalonFXConfiguration()` starts, where its variable is seen. A value
  * passed in is read along the calls that made the config (`createRollerConfig(…, 20)` sets the supply limit to 20).
  */
-function fieldsSetOn(made: Node, chain: Node[], project: Project): { field: SettingField; value: number | boolean; where: string }[] {
+function fieldsSetOn(made: Node, chain: Node[], project: Project): Set[] {
   const variable = configVariable(made, project)
-  const name = variable && nameOf(variable)
+  return variable ? fieldsSetOnVariable(variable, chain, project) : []
+}
+
+/** The setting fields assigned on this variable (or field), where it is seen. */
+function fieldsSetOnVariable(variable: Node, chain: Node[], project: Project): Set[] {
+  const name = nameOf(variable)
   const scope = variable && visibleIn(variable)
   if (!name || !scope) return []
   return scope.descendantsOfType('assignment_expression').flatMap((assignment) => {
@@ -160,11 +178,18 @@ function setsOn(target: Node, variable: Node, project: Project): boolean {
 }
 
 const isFlag = (n: Node) => n.type === 'true' || n.type === 'false'
+/** `Amps.of(110.0)` (WPILib units, 2025 on): a current in amps. */
+const isAmps = (n: Node) => n.type === 'method_invocation' && nameOf(n) === 'of' && /^(Units\.)?Amps$/.test(field(n, 'object')?.text ?? '')
 
-/** A setting's value: `true`, `false`, or a number it can work out (values.ts), through names and what calls passed. */
+/**
+ * A setting's value: `true`, `false`, or a number it can work out (values.ts), through names and what calls passed. A
+ * current given as `Amps.of(…)` is its number of amps.
+ */
 function settingValue(written: Node | null, chain: Node[], project: Project): number | boolean | null {
-  const flag = madeAlong(written, chain, project, { throughCalls: false, stopAt: isFlag })?.at
+  const made = madeAlong(written, chain, project, { throughCalls: false, stopAt: (n) => isFlag(n) || isAmps(n) })
+  const flag = made?.at
   if (flag?.type === 'true' || flag?.type === 'false') return flag.type === 'true'
+  if (made && isAmps(made.at)) return settingValue(parts(made.at, 'arguments')[0] ?? null, made.chain, project)
   const number = valueOf(written, project)?.number ?? valueAlong(written, chain, project)?.value
   return typeof number === 'number' ? number : null
 }

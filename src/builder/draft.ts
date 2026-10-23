@@ -5,7 +5,7 @@
 import { readNumbers, readValues, type WpilogFile } from '../readers/wpilog.ts'
 import { buildMatch } from '../match/match.ts'
 import type { Snapshot, Device } from '../snapshot/snapshot.ts'
-import { motorsFromLog, type LogMotor } from './motors.ts'
+import { ABSOLUTE, motorsFromLog, type LogMotor } from './motors.ts'
 import { groupMotors } from './groups.ts'
 import { codebaseOf, signalsFromLog } from './signals.ts'
 import { matchByName, groupLimits } from './snapshot.ts'
@@ -170,7 +170,9 @@ export function draftProfile(input: { logs: DraftLog[]; snapshot?: Snapshot; hin
   if (input.hints) json.builtFrom = { ...json.builtFrom!, code: input.hints.sha ?? 'unknown commit' }
   const guessed = sig.guessed.map((s) => ({ signal: s, key: sig.signals[s] as string, alternatives: sig.alternatives[s] ?? [] }))
   const leftOut = others.length ? [`${others.length} log${others.length === 1 ? ' is' : 's are'} from another robot (${[...new Set(others.map((l) => codebaseOf(l.log) || 'no code name'))].join(', ')}) and ${others.length === 1 ? 'was' : 'were'} left out: ${others.map((l) => l.fileName).join(', ')}.`] : []
-  const notes = [...leftOut, ...fromCode]
+  const absolute = [...new Set(found.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.current]).filter((k): k is string => !!k && ABSOLUTE.test(k)))]
+  const absNote = absolute.length ? [`${absolute.length} current key${absolute.length === 1 ? ' is' : 's are'} logged as the absolute value (${absolute[0].replace(/^.*\//, '')}${absolute.length > 1 ? ', …' : ''}): regenerative current then counts as draw.`] : []
+  const notes = [...leftOut, ...fromCode, ...absNote]
   return { json, notUsed: found.notUsed, limits: found.limits, guessed, notes, warnings: [...notes, ...draftWarnings(json.motorGroups)] }
 }
 

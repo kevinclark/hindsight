@@ -4,7 +4,7 @@
  * snapshot's code-settings check finds them on the bus, and the profile builder's hints leave out simulation code.
  */
 import { classAround, field, nameOf, parts, superclassName, typeNamed, type Node } from './java.ts'
-import { valueAlong } from './flow.ts'
+import { madeAlong, valueAlong } from './flow.ts'
 import { baseType, type Project } from './project.ts'
 import { busName, RIO } from './bus-names.ts'
 
@@ -26,9 +26,27 @@ export function deviceAlong(site: Node, chain: Node[], project: Project): Device
   if (!built?.id) return null
   const through = [...built.through, ...chain]
   const id = valueAlong(built.id, through, project)
-  const bus = built.bus ? valueAlong(built.bus, through, project) : { value: RIO, at: site }
+  const bus = built.bus ? busAlong(built.bus, through, project) : { value: RIO, at: site }
   if (!id || !bus || typeof id.value !== 'number') return null
   return { kind: built.kind, id: id.value, bus: busName(bus.value), at: id.at, path: [id.at, bus.at, site, ...chain] }
+}
+
+/**
+ * The bus a device is built on, as a name: a string, or a `new CANBus(…)` whose first argument (the name; CTRE's
+ * second is a hoot log path) is worked out along the same chain, so `new CANBus(Constants.CANivore.name)` is the
+ * name that constant holds. `new CANBus()` is the roboRIO's bus; an argument that can't be worked out gives null, never the roboRIO's.
+ */
+function busAlong(expr: Node, through: Node[], project: Project): { value: string; at: Node } | null {
+  const made = madeAlong(expr, through, project)
+  if (!made) return null
+  if (made.at.type !== 'object_creation_expression' || baseType(typeNamed(made.at)) !== 'CANBus') {
+    const found = valueAlong(expr, through, project)
+    return found ? { value: String(found.value), at: found.at } : null
+  }
+  const [name] = parts(made.at, 'arguments')
+  if (!name) return { value: RIO, at: made.at }
+  const named = valueAlong(name, made.chain, project)
+  return typeof named?.value === 'string' ? { value: named.value, at: made.at } : null
 }
 
 /**
