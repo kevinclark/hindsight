@@ -251,17 +251,35 @@ export function canBothHappen(a: Node[], b: Node[]): boolean {
 /** The calls that run a constructor, method or field's starting value: `new X(…)`, `super(…)`, `x.method(…)`. */
 function callersOf(declaration: Node, project: Project): Node[] {
   const cls = classAround(declaration)
-  const className = cls && nameOf(cls)
-  if (!cls || !className) return []
+  if (!cls || !nameOf(cls)) return []
   const count = parametersOf(declaration).length
-  const fits = (call: Node) => declaration.type === 'field_declaration' || argumentsOf(call).length === count
   if (declaration.type === 'method_declaration') {
     const method = nameOf(declaration)
-    return project.nodes('method_invocation').filter((call) => nameOf(call) === method && fits(call) && callsInto(call, cls, project))
+    return project.nodes('method_invocation').filter((call) => nameOf(call) === method && argumentsOf(call).length === count && callsInto(call, cls, project))
   }
-  const creates = project.nodes('object_creation_expression').filter((n) => baseType(typeNamed(n)) === className && fits(n))
-  const supers = project.nodes('explicit_constructor_invocation').filter((n) => superclassOf(n) === className && fits(n))
-  return [...creates, ...supers]
+  return buildersOf(cls, declaration.type === 'field_declaration' ? null : count, project)
+}
+
+/**
+ * The calls that build a class with this many arguments (null: any number, for a field's starting value): `new X(…)`,
+ * `super(…)` in a subclass, and Java's unwritten `super()`. A subclass with no constructor of its own runs X's
+ * no-argument constructor whenever it is built (`new IndexerIOReal()`, in the switch arm that builds it), and a
+ * subclass constructor that starts with neither `super(…)` nor `this(…)` runs it first, so the chain goes on from that
+ * constructor's body.
+ */
+function buildersOf(cls: Node, count: number | null, project: Project, depth = 0): Node[] {
+  const name = nameOf(cls)
+  const fits = (call: Node) => count === null || argumentsOf(call).length === count
+  const creates = project.nodes('object_creation_expression').filter((n) => baseType(typeNamed(n)) === name && fits(n))
+  const supers = project.nodes('explicit_constructor_invocation').filter((n) => superclassOf(n) === name && fits(n))
+  if ((count !== null && count > 0) || depth >= MOST_CALLS) return [...creates, ...supers]
+  const unwritten = project.nodes('class_declaration').filter((c) => superclassName(c) === name).flatMap((sub) => {
+    const constructors = constructorsOf(sub)
+    if (constructors.length === 0) return buildersOf(sub, 0, project, depth + 1)
+    const startsWithCall = (c: Node) => parts(field(c, 'body')).some((s) => s.type === 'explicit_constructor_invocation')
+    return constructors.filter((c) => !startsWithCall(c)).flatMap((c) => field(c, 'body') ?? [])
+  })
+  return [...creates, ...supers, ...unwritten]
 }
 
 /** Does this call go to a method of `cls`: `Cls.method()`, `this.method()`, `method()` inside it, or on a value of its type? */
