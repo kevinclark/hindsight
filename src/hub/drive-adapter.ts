@@ -295,7 +295,8 @@ export class DriveAdapter implements StorageAdapter {
       if (res.status === 401 && !refreshed) { refreshed = true; continue }
       const limited = res.status === 429 || (res.status === 403 && (await isRateLimit(res)))
       if (limited && attempt < RATE_RETRIES - 1) { await this.sleep(Math.min(2 ** attempt, 30) * 1000 + Math.random() * 250); continue }
-      if (res.status >= 500 && attempt < RETRIES - 1) { await this.sleep(2 ** attempt * 500); continue }
+      // A 5xx can come after Drive made the folder or copy, so those POSTs are not repeated either.
+      if (res.status >= 500 && retryNetwork && attempt < RETRIES - 1) { await this.sleep(2 ** attempt * 500); continue }
       if (res.status === 401) throw new SignInAgain()
       throw new DriveError(res.status, `Google Drive said ${res.status} to ${method} ${url.split('?')[0]}: ${(await res.text()).slice(0, 300)}`)
     }

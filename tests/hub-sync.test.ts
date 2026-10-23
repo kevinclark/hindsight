@@ -193,18 +193,72 @@ describe('Drive to Drive', () => {
     expect((await stat(a.store.at(a.catalog.all()[0].path))).size).toBeGreaterThan(0)
   })
 
-  it('falls back to uploading when the copy inside Drive is refused', async () => {
+  // A Drive-sourced log is only ever copied: a refused or wrong copy fails that log instead of uploading it.
+  async function copiedOnce(seed: string) {
     const drive = new FakeDrive()
     const teamFolder = drive.addFolder('root', 'team-folder')
     const old = drive.addFolder('root', 'old logs')
-    drive.addFile(old, 'one.wpilog', robotLog({ clockMs: CLOCK, enabled: [20, 55], seed: 'x' }))
+    drive.addFile(old, 'one.wpilog', robotLog({ clockMs: CLOCK, enabled: [20, 55], seed }))
     const mk = (root: string) => new DriveAdapter({ rootId: root, token: async () => 'good', fetch: drive.fetch, sleep: async () => {} })
     const a = await machine('ma')
     await ingest(a, await driveFolderFiles(mk(old), old, work), options)
-    // Make every record's source id unusable (the file was moved to a drive this user can't copy from).
-    const team = mk(teamFolder)
+    return { a, team: mk(teamFolder) }
+  }
+  const ownLogsIn = async (team: DriveAdapter, a: LocalLibrary) =>
+    parseManifest((await readText(team, a.ownManifestPath)) ?? '').records.filter((r) => r.type === 'log').length
+
+  it('fails a log whose copy inside Drive is refused, without uploading it or publishing its record', async () => {
+    const { a, team } = await copiedOnce('x')
     team.copyInto = async () => { throw new Error('403') }
     const synced = await syncWithTeam(a, team)
-    expect(synced.uploaded.map((u) => u.how)).toEqual(['upload'])
+    expect(synced.uploaded).toEqual([])
+    expect(synced.failed).toEqual([{ path: a.catalog.all()[0].path, reason: '403' }])
+    expect(team.calls.upload).toBe(0) // no log, and no manifest: it would have held nothing
+    expect(await ownLogsIn(team, a)).toBe(0)
+  })
+
+  it('fails a log whose copy inside Drive reports other checksums; the next sync, finding the right bytes there, publishes it', async () => {
+    const { a, team } = await copiedOnce('y')
+    const copy = team.copyInto!.bind(team)
+    team.copyInto = async (id, path) => ({ ...(await copy(id, path)), sha256: '0'.repeat(64) })
+    const synced = await syncWithTeam(a, team)
+    expect(synced.uploaded).toEqual([])
+    expect(synced.failed.map((f) => f.reason)).toEqual([expect.stringContaining('not the library')])
+    expect(await ownLogsIn(team, a)).toBe(0)
+    // Drive itself holds the right bytes here, so the next sync finds the file there and publishes it.
+    team.copyInto = copy
+    expect((await syncWithTeam(a, team)).failed).toEqual([])
+    expect(await ownLogsIn(team, a)).toBe(1)
+  })
+
+  it('fails a log whose copy really holds other bytes, and leaves it unpublished on every later sync', async () => {
+    const drive = new FakeDrive()
+    const teamFolder = drive.addFolder('root', 'team-folder')
+    const old = drive.addFolder('root', 'old logs')
+    drive.addFile(old, 'one.wpilog', robotLog({ clockMs: CLOCK, enabled: [20, 55], seed: 'w' }))
+    const otherId = drive.addFile(old, 'other.wpilog', robotLog({ clockMs: CLOCK + 3600e3, enabled: [20, 55], seed: 'z' }))
+    const mk = (root: string) => new DriveAdapter({ rootId: root, token: async () => 'good', fetch: drive.fetch, sleep: async () => {} })
+    const a = await machine('ma')
+    const source = mk(old)
+    await ingest(a, (await driveFolderFiles(source, old, work)).filter((f) => f.name === 'one.wpilog'), options)
+    const team = mk(teamFolder)
+    const copy = team.copyInto!.bind(team)
+    team.copyInto = async (_id, path) => copy(otherId, path) // the source id now names a different file
+    const first = await syncWithTeam(a, team)
+    expect(first.failed.map((f) => f.reason)).toEqual([expect.stringContaining('not the library')])
+    const second = await syncWithTeam(a, team)
+    expect(second.failed.map((f) => f.reason)).toEqual([expect.stringContaining('different file at this path')])
+    expect(await ownLogsIn(team, a)).toBe(0)
+    expect(team.calls.upload).toBe(0)
+  })
+
+  it('fails a log whose copy Drive reports without checksums, then publishes it once the listing has them', async () => {
+    const { a, team } = await copiedOnce('v')
+    const copy = team.copyInto!.bind(team)
+    team.copyInto = async (id, path) => { const { sha256: _s, md5: _m, ...bare } = await copy(id, path); return bare }
+    expect((await syncWithTeam(a, team)).failed.map((f) => f.reason)).toEqual([expect.stringContaining('no checksum')])
+    expect(await ownLogsIn(team, a)).toBe(0)
+    expect((await syncWithTeam(a, team)).failed).toEqual([])
+    expect(await ownLogsIn(team, a)).toBe(1)
   })
 })

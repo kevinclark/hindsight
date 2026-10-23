@@ -97,6 +97,18 @@ describe('Drive adapter', () => {
     await expect(denied.list('logs')).rejects.toBeInstanceOf(DriveError)
   })
 
+  it('does not repeat a copy that Drive answered with a 5xx (it may have made the copy): no duplicate', async () => {
+    const drive = new FakeDrive()
+    const id = drive.addFile('root', 'source.wpilog', pattern(10))
+    const afterCopy: typeof fetch = async (input, init) => {
+      const res = await drive.fetch(input, init)
+      return String(input).includes('/copy') ? new Response('backend error', { status: 503 }) : res
+    }
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: afterCopy, sleep: noSleep })
+    await expect(store.copyInto(id, 'logs/y/d/one.wpilog')).rejects.toBeInstanceOf(DriveError)
+    expect((await store.list('logs')).map((f) => f.path)).toEqual(['logs/y/d/one.wpilog'])
+  })
+
   it('waits and retries a 403 that is a rate limit (userRateLimitExceeded), and names the request when it gives up', async () => {
     const drive = new FakeDrive()
     const limit = JSON.stringify({ error: { code: 403, errors: [{ domain: 'usageLimits', reason: 'userRateLimitExceeded' }] } })

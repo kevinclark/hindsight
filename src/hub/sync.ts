@@ -1,7 +1,8 @@
 /**
  * Sharing the library through the team's store. Each machine writes only its own manifest; sync
  *  1. brings teammates' manifests down (they are append-only, so a copy is replaced only by a longer one),
- *  2. uploads the logs this machine brought in that the team store lacks (one at a time, each checked on arrival),
+ *  2. puts up the logs this machine brought in that the team store lacks (one at a time, each checked on arrival): copied
+ *     inside Drive when they came from there, else uploaded,
  *  3. publishes this machine's records for them: the remote manifest is read first, must hold nothing this copy lacks,
  *     and a log's record is written only after its file is there, so a failed upload leaves no record.
  * Nothing is deleted or overwritten on either side.
@@ -119,10 +120,19 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   return report
 }
 
-/** One log up: inside Drive when it came from there (and that works), else uploaded from the local copy. */
+/**
+ * One log up: copied inside Drive when it came from there, else uploaded from the local copy. A copy that fails is not
+ * uploaded instead: the log fails (unpublished, tried again next sync), so a rate limit can't quietly turn into uploading
+ * every remaining log. A copy Drive reports without a checksum fails too, and is published by the next sync once Drive
+ * lists its checksums. A copy whose size or checksums differ from the library's file fails and stays at its path: later
+ * syncs report it as a different file there until it is removed by hand.
+ */
 async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord): Promise<SyncReport['uploaded'][number]> {
   if (r.sourceId && team.copyInto) {
-    try { return { path: r.path, size: (await team.copyInto(r.sourceId, r.path)).size, how: 'copy inside Drive' } } catch { /* another drive, or no right to copy: upload it */ }
+    const copy = await team.copyInto(r.sourceId, r.path)
+    if (!isThere(copy, r)) throw new Error(`the copy inside Drive is not the library's file (${copy.size} bytes, or other checksums); left there and not published`)
+    if (!copy.sha256 && !copy.md5) throw new Error('Drive reported no checksum for the copy; not published until the next sync can check it')
+    return { path: r.path, size: copy.size, how: 'copy inside Drive' }
   }
   const from = await fileSource(lib.store.at(r.path))
   try {
