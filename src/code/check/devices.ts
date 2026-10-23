@@ -75,12 +75,4 @@ export function deviceBuilt(site: Node, project: Project): { kind: string; id?: 
   return { kind, id, bus, through: [site] }
 }
 
-/**
- * Is this call simulation code: in a class whose name ends in "Sim", or building one (`new FlywheelIOSim(…, 11, 12)`)?
- * AdvantageKit's IO pattern names them so, and their IDs needn't match the robot's: Rebuilt 3eca5e5 gives the
- * simulated flywheel 11 and 12, the real hood's and flywheel's IDs.
- */
-export function inSimulation(call: Node): boolean {
-  const named = (name: string | null | undefined) => !!name?.endsWith('Sim')
-  return named(nameOf(classAround(call) ?? call)) || (call.type === 'object_creation_expression' && named(baseType(typeNamed(call))))
-}
+export { inSimulation } from './flow.ts'
