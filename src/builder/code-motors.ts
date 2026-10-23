@@ -67,7 +67,6 @@ const CURRENT_READS: Record<string, CurrentKind> = { getStatorCurrent: 'stator',
 /** Calls that pass a current on unchanged: a status signal's value, its refresh, a sign dropped. */
 const PASS_ON = ['getValue', 'getValueAsDouble', 'refresh', 'abs']
 
-export { isTestCode }
 const label = (node: Node, project: Project) => `${fileName(project.fileOf(node).path)}:${lineOf(node)}`
 /** AdvantageKit's key for an inputs field: its name with a capital first letter. */
 const keyOf = (fieldName: string) => fieldName.charAt(0).toUpperCase() + fieldName.slice(1)

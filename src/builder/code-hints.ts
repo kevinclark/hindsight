@@ -11,10 +11,10 @@
  */
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
 import { javaFilesAt, type CodeSource } from '../code/source.ts'
-import { valueAlong, waysToReach } from '../code/check/flow.ts'
+import { isTestCode, valueAlong, waysToReach } from '../code/check/flow.ts'
 import { deviceBuilt, inSimulation } from '../code/check/devices.ts'
 import { readSettings, type DeviceSetting, type ReadField } from '../code/check/device-settings.ts'
-import { codeMotors, isTestCode, type CodeMotor } from './code-motors.ts'
+import { codeMotors, type CodeMotor } from './code-motors.ts'
 import { codeOf, fileName, lineOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, Project } from '../code/check/project.ts'
 

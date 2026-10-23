@@ -146,6 +146,18 @@ describe('burst / sustained pair', () => {
     expect(p.sustained.totalA).toBe(260)
     expect(p.sustained.ok).toBe(false)
   })
+  it('reads a lower time of 0 as no lower limit (Phoenix 6 ignores the lower limit then): the supply limit is the sustained cap', () => {
+    // A code-set `SupplyCurrentLimit = 60; SupplyCurrentLowerTime = 0;` on the drive: 4 × 60 A sustained, not 4 × 40 A.
+    const profile = { ...offseason2026, motorGroups: offseason2026.motorGroups.map((g) => (g === drive ? { ...g, limits: { supplyA: 60, supplyEnabled: true, supplyLowerSeconds: 0, where: 'Drive.java:10' } } : g)) }
+    const p = checkPair(profile, flywheel, 60, 25, 1, ['Drive'])
+    expect(p.sustained.rows.find((r) => r.group === 'Drive')!.perMotorA).toBe(60)
+    // The Limits tab says so, instead of "after 0 s at the cap it drops to 40 A".
+    // A match with no current logged: only the configured limits are read.
+    const unlogged = { ...profile, motorGroups: profile.motorGroups.map((g) => ({ ...g, motors: g.motors.map(({ name }) => ({ name })) })) }
+    const match = { profile: unlogged, enabled: [], logEnd: 0 } as unknown as Parameters<typeof limitsReport>[0]
+    const note = limitsReport(match).find((g) => g.group === 'Drive')!.supply.note
+    expect(note).toBe('capped at 60 A; no lower limit (the code sets its time to 0)')
+  })
   it('warns not to raise a burst cap above today\'s', () => {
     expect(checkPair(offseason2026, drive, 70, 30, 1).raisesBurst).toBe(true)
     expect(checkPair(offseason2026, drive, 40, 30, 1).raisesBurst).toBe(false)
