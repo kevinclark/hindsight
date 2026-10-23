@@ -4,7 +4,7 @@
  * snapshot's code-settings check finds them on the bus, and the profile builder's hints leave out simulation code.
  */
 import { classAround, field, nameOf, parts, superclassName, typeNamed, type Node } from './java.ts'
-import { valueAlong } from './flow.ts'
+import { madeAlong, valueAlong } from './flow.ts'
 import { baseType, type Project } from './project.ts'
 import { busName, RIO } from './bus-names.ts'
 
@@ -26,9 +26,25 @@ export function deviceAlong(site: Node, chain: Node[], project: Project): Device
   if (!built?.id) return null
   const through = [...built.through, ...chain]
   const id = valueAlong(built.id, through, project)
-  const bus = built.bus ? valueAlong(built.bus, through, project) : { value: RIO, at: site }
+  const bus = built.bus ? busAlong(built.bus, through, project) : { value: RIO, at: site }
   if (!id || !bus || typeof id.value !== 'number') return null
   return { kind: built.kind, id: id.value, bus: busName(bus.value), at: id.at, path: [id.at, bus.at, site, ...chain] }
+}
+
+/**
+ * The bus a device is built on, as a name: a string, or a `new CANBus(…)` whose first argument (the name; CTRE's
+ * second is a hoot log path) is worked out along the same chain, so `new CANBus(Constants.CANivore.canbusName)` is
+ * "Clockwork". `new CANBus()` is the roboRIO's bus; an argument that can't be worked out gives null, never the roboRIO's.
+ */
+function busAlong(expr: Node, through: Node[], project: Project): { value: string; at: Node } | null {
+  const made = madeAlong(expr, through, project)
+  const found = valueAlong(expr, through, project)
+  if (!made || !found) return null
+  if (typeof found.value !== 'string' || !found.value.startsWith('new CANBus(')) return { value: String(found.value), at: found.at }
+  const [name] = parts(made.at, 'arguments')
+  if (!name) return { value: RIO, at: found.at }
+  const named = valueAlong(name, made.chain, project)
+  return typeof named?.value === 'string' ? { value: named.value, at: found.at } : null
 }
 
 /**
