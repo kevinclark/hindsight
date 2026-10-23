@@ -8,6 +8,7 @@
   import { offseason2026 } from '../profiles/2026-offseason.ts'
   import { checkStep, comparability, groupOf, newSession, parseSession, serializeSession, SESSION_FILE_NAME, sweepResult, type LimitsSession } from '../limits/session.ts'
   import { zeroingChecks } from '../limits/zeroing.ts'
+  import { limitsKnown } from '../limits/limits-report.ts'
   import { matchWhen } from '../match/match.ts'
   import { downloadText } from './download.ts'
   import Scatter from './Scatter.svelte'
@@ -101,7 +102,11 @@
     <h3>1. Pick the mechanism</h3>
     <label>Mechanism <select bind:value={groupName}>{#each sweepable as g (g.name)}<option value={g.name}>{g.name}</option>{/each}</select></label>
     {#if group}
-      <p>Now: supply limit {group.limits.supplyA ?? '—'} A, <strong>{group.limits.supplyEnabled ? 'on' : 'switched off'}</strong>; stator limit {group.limits.statorA ?? '—'} A ({group.limits.statorEnabled ? 'on' : 'off'}). Set in <code>{group.limits.where}</code>.</p>
+      {#if limitsKnown(group.limits)}
+        <p>Now: supply limit {group.limits.supplyA ?? '—'} A, <strong>{group.limits.supplyEnabled ? 'on' : 'switched off'}</strong>; stator limit {group.limits.statorA ?? '—'} A ({group.limits.statorEnabled ? 'on' : 'off'}). Set in <code>{group.limits.where}</code>.</p>
+      {:else}
+        <p>Now: <strong>limits not known</strong> ({group.limits.where}). Drop a robot snapshot in the builder, or set them in the profile, to compare with today's.</p>
+      {/if}
     {/if}
     <label>Sweep (A, "none" = no limit) <input bind:value={sweepText} size="28" /></label>
     <p class="why"><strong>Why:</strong> a supply limit trades spin-up time for battery voltage. Measuring a few values shows where it starts to cost real time: the "knee".</p>
@@ -208,10 +213,13 @@
           {#if pr.raisesBurst}
             <p class="warn"><strong>Don't raise the burst cap yet.</strong> {pr.burstA} A is above today's {pr.todaySupplyA} A. Raise burst caps only after the robot code sheds load as the battery voltage falls (a voltage-aware current budget); raising them first causes more brownouts, not fewer. Until then keep {pr.todaySupplyA} A, or make sure this spin-up never overlaps the drive accelerating.</p>
           {/if}
-          {#if pr.todaySupplyA === null}
+          {#if pr.todaySupplyA === null && pr.todayKnown}
             <p class="note">The {session.group.toLowerCase()} has no supply limit today (switched off), so {pr.burstA} A lowers it. Still, don't raise any other group's burst cap until the robot code sheds load as the battery voltage falls.</p>
           {/if}
-          <p class:warn={!pr.sustained.ok}><strong>Main breaker, a slipping push or long run</strong> (motors held at their limit, spinning): the sustained caps of the groups {result.budget ? 'that were running together at the worst moment of the loaded match' : 'on the robot (load a match log to count only those that run together)'}: {pr.sustained.rows.map((r) => `${r.group} ${Number.isFinite(r.perMotorA) ? `${r.motors} × ${r.perMotorA} A` : 'no limit'}`).join(' + ')}{Number.isFinite(pr.sustained.totalA) ? ` = ${Math.round(pr.sustained.totalA)} A, ${pr.sustained.ok ? 'at or under' : 'over'} 120 A.` : '.'}{pr.unlimited.length ? ` ${pr.unlimited.join(', ')} ${pr.unlimited.length === 1 ? 'has' : 'have'} no supply limit, so nothing caps ${pr.unlimited.length === 1 ? 'it' : 'them'}: give ${pr.unlimited.length === 1 ? 'it' : 'each'} a supply limit first.` : ''}{!pr.sustained.ok && Number.isFinite(pr.sustained.totalA) ? ' Lower the sustained caps of the groups that run at the same time (the drive most of all), or make sure they never all run hard together.' : ''}</p>
+          <p class:warn={!pr.sustained.ok || pr.notKnown.length > 0}><strong>Main breaker, a slipping push or long run</strong> (motors held at their limit, spinning): the sustained caps of the groups {result.budget ? 'that were running together at the worst moment of the loaded match' : 'on the robot (load a match log to count only those that run together)'}: {pr.sustained.rows.map((r) => `${r.group} ${Number.isNaN(r.perMotorA) ? 'limits not known' : Number.isFinite(r.perMotorA) ? `${r.motors} × ${r.perMotorA} A` : 'no limit'}`).join(' + ')}{Number.isFinite(pr.sustained.totalA) ? ` = ${pr.notKnown.length ? 'at least ' : ''}${Math.round(pr.sustained.totalA)} A, ${pr.sustained.ok ? (pr.notKnown.length ? 'under 120 A without them' : 'at or under 120 A') : 'over 120 A'}.` : '.'}{pr.notKnown.length ? ` ${pr.notKnown.join(', ')}: limits not known (drop a robot snapshot in the builder, or set them in the profile).` : ''}{pr.unlimited.length ? ` ${pr.unlimited.join(', ')} ${pr.unlimited.length === 1 ? 'has' : 'have'} no supply limit, so nothing caps ${pr.unlimited.length === 1 ? 'it' : 'them'}: give ${pr.unlimited.length === 1 ? 'it' : 'each'} a supply limit first.` : ''}{!pr.sustained.ok && Number.isFinite(pr.sustained.totalA) ? ' Lower the sustained caps of the groups that run at the same time (the drive most of all), or make sure they never all run hard together.' : ''}</p>
+          {#if pr.driveNotKnown}
+            <p class="warn"><strong>Main breaker, a pinned push:</strong> not checked: the {pr.driveNotKnown.toLowerCase()} group's limits aren't known.</p>
+          {/if}
           {#if pr.pinnedDrive}
             {@const pd = pr.pinnedDrive}
             <p class:warn={!pd.ok}><strong>Main breaker, a pinned push</strong> (wheels stalled against a robot): a stalled {pd.group.toLowerCase()} motor at its stator limit draws about {pd.perMotorA[0].toFixed(0)}–{pd.perMotorA[1].toFixed(0)} A of supply (stator² × motor resistance ÷ 12 V, Kraken X60 figures; more on a sagging battery), so {pd.motors} of them draw {pd.totalA[0].toFixed(0)}–{pd.totalA[1].toFixed(0)} A, {pd.ok ? 'at or under' : 'up to'} {pd.ok ? '120 A' : `${Math.round((100 * pd.totalA[1]) / 120)} % of the 120 A main`}. {pd.perMotorA[1] < pr.lowerA ? 'That is under the sustained cap, so the supply limits never engage: only the drive\'s stator limit governs a pinned push.' : 'That reaches the sustained cap, so the supply lower limit can help here.'}{pd.ok ? '' : ' Lower the drive stator limit (and measure the push before and after) to bring it under 120 A.'}</p>

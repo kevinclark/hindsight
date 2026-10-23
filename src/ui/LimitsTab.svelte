@@ -29,9 +29,10 @@
     'reaches the limit': 'reaches its limit sometimes',
     unconstrained: 'unconstrained: never near its limit',
     'no current logged': 'no current logged',
+    'limits not known': 'limits not known: no snapshot or code gave them',
   }
-  const capText = (g: GroupLimits) => (Number.isFinite(g.capPerMotorA) ? `${g.capPerMotorA} A per motor` : 'nothing: both limits switched off')
-  const limitText = (l: LimitView) => (l.limitA === null ? 'not set' : `${l.limitA} A, ${l.on ? 'on' : 'OFF'}`)
+  const capText = (g: GroupLimits) => (Number.isNaN(g.capPerMotorA) ? 'not known' : Number.isFinite(g.capPerMotorA) ? `${g.capPerMotorA} A per motor` : 'nothing: both limits switched off')
+  const limitText = (g: GroupLimits, l: LimitView) => (g.verdict === 'limits not known' ? 'not known' : l.limitA === null ? 'not set' : `${l.limitA} A, ${l.on ? 'on' : 'OFF'}`)
 </script>
 
 <table class="summary" aria-label="Summary of the groups below">
@@ -41,8 +42,8 @@
       <tr>
         <th scope="row">{g.group}</th>
         <td><span class={`chip ${g.verdict.replace(/ /g, '-')}`}>{VERDICT[g.verdict]}</span></td>
-        <td class="share">{g.verdict === 'no current logged' ? '—' : `${(100 * g.shareAtLimit).toFixed(1)} %`}</td>
-        <td class="cap" class:off={!Number.isFinite(g.capPerMotorA)}>{capText(g)}</td>
+        <td class="share">{g.verdict === 'no current logged' || g.verdict === 'limits not known' ? '—' : `${(100 * g.shareAtLimit).toFixed(1)} %`}</td>
+        <td class="cap" class:off={g.capPerMotorA === Infinity}>{capText(g)}</td>
       </tr>
     {/each}
   </tbody>
@@ -62,9 +63,9 @@
   <section class="group">
     <h3>{g.group} <span class={`chip ${g.verdict.replace(/ /g, '-')}`}>{VERDICT[g.verdict]}</span></h3>
     <dl class="config">
-      <div><dt>Supply limit</dt><dd class:off={g.supply.limitA !== null && !g.supply.on}>{limitText(g.supply)}</dd><dd class="note">{g.supply.note}</dd></div>
-      <div><dt>Stator limit</dt><dd class:off={g.stator.limitA !== null && !g.stator.on}>{limitText(g.stator)}</dd><dd class="note">{g.stator.note}</dd></div>
-      <div><dt>Battery draw capped at</dt><dd class:off={!Number.isFinite(g.capPerMotorA)}>{capText(g)}</dd><dd class="note">{g.motorCount} motors · at the limit {(100 * g.shareAtLimit).toFixed(1)} % of enabled time</dd></div>
+      <div><dt>Supply limit</dt><dd class:off={g.supply.limitA !== null && !g.supply.on}>{limitText(g, g.supply)}</dd><dd class="note">{g.supply.note}</dd></div>
+      <div><dt>Stator limit</dt><dd class:off={g.stator.limitA !== null && !g.stator.on}>{limitText(g, g.stator)}</dd><dd class="note">{g.stator.note}</dd></div>
+      <div><dt>Battery draw capped at</dt><dd class:off={g.capPerMotorA === Infinity}>{capText(g)}</dd><dd class="note">{g.motorCount} motors{g.verdict === 'limits not known' ? '' : ` · at the limit ${(100 * g.shareAtLimit).toFixed(1)} % of enabled time`}</dd></div>
       <div><dt>Set in</dt><dd><code>{g.where}</code></dd></div>
     </dl>
     {#each [g.supply, g.stator] as l (l.kind)}
@@ -74,9 +75,10 @@
           <tbody>
             {#each l.motors as m (m.motor)}
               <tr>
-                <th scope="row">{m.motor}</th><td>{m.peak.toFixed(0)} A</td><td>{m.p99.toFixed(0)} A</td><td>{f2(m.secondsOver)} s</td>
+                <th scope="row">{m.motor}</th><td>{m.peak.toFixed(0)} A</td><td>{m.p99.toFixed(0)} A</td>
+                {#if g.verdict === 'limits not known'}<td>—</td><td>—</td><td>—</td><td>—</td>{:else}<td>{f2(m.secondsOver)} s</td>
                 <td class:bad={m.longestOver > CATCH_UP_SECONDS}>{f2(m.longestOver)} s</td>
-                <td class:bad={m.secondsOverSustained > 0}>{f2(m.secondsOverSustained)} s</td><td>{f1(m.secondsAtLimit)} s</td>
+                <td class:bad={m.secondsOverSustained > 0}>{f2(m.secondsOverSustained)} s</td><td>{f1(m.secondsAtLimit)} s</td>{/if}
               </tr>
             {/each}
           </tbody>
@@ -116,7 +118,7 @@
       <thead><tr><th>group</th><th>drawing then</th><th>allowed (limits now)</th>{#if budgetWhatIf}<th>allowed ({whatIfGroup} at {whatIfCap} A)</th>{/if}</tr></thead>
       <tbody>
         {#each budgetNow.rows as r, i (r.group)}
-          <tr><th scope="row">{r.group}</th><td>{r.observedA.toFixed(0)} A</td><td>{r.capTotalA.toFixed(0)} A</td>{#if budgetWhatIf}<td>{budgetWhatIf.rows[i].capTotalA.toFixed(0)} A</td>{/if}</tr>
+          <tr><th scope="row">{r.group}</th><td>{r.observedA.toFixed(0)} A</td><td>{r.capTotalA.toFixed(0)} A{#if Number.isNaN(r.capPerMotorA)} <small>(limits not known: what it drew)</small>{/if}</td>{#if budgetWhatIf}<td>{budgetWhatIf.rows[i].capTotalA.toFixed(0)} A</td>{/if}</tr>
         {/each}
       </tbody>
     </table>
@@ -166,7 +168,7 @@
   .group { margin: 1.25rem 0; padding-top: 0.75rem; border-top: 1px solid var(--border); }
   h3 { font-size: 1rem; margin: 0 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
   .chip { font-size: 0.75rem; font-weight: normal; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
-  .chip.limit-bound { border-color: var(--warning); color: var(--warning); }
+  .chip.limit-bound, .chip.limits-not-known { border-color: var(--warning); color: var(--warning); }
   .config { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.5rem 1.25rem; margin: 0 0 0.75rem; }
   .config dt { font-size: 0.8rem; color: var(--muted); }
   .config dd { margin: 0; }
