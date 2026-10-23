@@ -186,6 +186,33 @@ describe('code/duplicate-can-id', () => {
         'TalonFX 7 on the roboRIO bus is also built at IndexerIOSim.java:1',
       ])
     })
+    const clash = ['TalonFX 7 on the roboRIO bus is also built at IndexerIOTalonFX.java:1', 'TalonFX 7 on the roboRIO bus is also built at IndexerIOSim.java:1']
+    it('still fires through a subclass constructor that hands on with this(…)', () => {
+      const real = 'public class IndexerIOReal extends IndexerIOTalonFX { private int n; public IndexerIOReal(int a) { this(); } public IndexerIOReal() { n = 1; } }'
+      const robot = 'class Robot extends TimedRobot { IndexerIO a = new IndexerIOReal(5); IndexerIO b = new IndexerIOSim(); }'
+      expect(messages(duplicateCanId, files(robot, real))).toEqual(clash)
+    })
+    it('still fires when a subclass is built by reference and its sibling with new', () => {
+      const java = {
+        ...files('class Robot extends TimedRobot { Supplier<IndexerIO> s = IndexerIOReal::new; IndexerIO a = isReal() ? new IndexerIOSpare() : null; IndexerIO b = isReal() ? null : new IndexerIOSim(); }'),
+        'IndexerIOSpare.java': 'public class IndexerIOSpare extends IndexerIOTalonFX {}',
+      }
+      expect(messages(duplicateCanId, java)).toEqual(clash)
+    })
+    it('builds nothing from a base whose subclasses nothing builds, with or without a constructor', () => {
+      const robot = 'class Robot extends TimedRobot { TalonFX b = new TalonFX(7); }'
+      const withConstructor = 'public class IndexerIOReal extends IndexerIOTalonFX { private int n; public IndexerIOReal() { n = 1; } }'
+      expect(messages(duplicateCanId, files(robot))).toEqual([])
+      expect(messages(duplicateCanId, files(robot, withConstructor))).toEqual([])
+    })
+    it('keeps the arm of a field set in the base, two subclasses down', () => {
+      const java = {
+        ...files(switched, 'public class IndexerIOReal extends IndexerIOMiddle {}'),
+        'IndexerIOMiddle.java': 'public abstract class IndexerIOMiddle extends IndexerIOTalonFX {}',
+        'IndexerIOTalonFX.java': 'public abstract class IndexerIOTalonFX implements IndexerIO { private TestTalonFX m = new TestTalonFX(Ids.INDEXER, "indexer"); }',
+      }
+      expect(messages(duplicateCanId, java)).toEqual([])
+    })
   })
   it('lists a device whose ID it can\'t follow as not judged', () => {
     expect(run(duplicateCanId, 'class M { TalonFX m; void make(Constants c) { m = new TalonFX(c.driveId()); } }').notJudged.map((n) => n.why))

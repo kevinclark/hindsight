@@ -248,39 +248,49 @@ export function canBothHappen(a: Node[], b: Node[]): boolean {
   return !a.some((x) => b.some((y) => inDifferentArms(x, y)))
 }
 
-/** The calls that run a constructor, method or field's starting value: `new X(…)`, `super(…)`, `x.method(…)`. */
+/**
+ * The calls that run a constructor, method or field's starting value: `new X(…)`, `super(…)`, `this(…)`,
+ * `x.method(…)`, and Java's unwritten `super()` (buildersOf).
+ */
 function callersOf(declaration: Node, project: Project): Node[] {
   const cls = classAround(declaration)
   if (!cls || !nameOf(cls)) return []
   const count = parametersOf(declaration).length
   if (declaration.type === 'method_declaration') {
     const method = nameOf(declaration)
-    return project.nodes('method_invocation').filter((call) => nameOf(call) === method && argumentsOf(call).length === count && callsInto(call, cls, project))
+    const fits = (call: Node) => argumentsOf(call).length === count
+    return project.nodes('method_invocation').filter((call) => nameOf(call) === method && fits(call) && callsInto(call, cls, project))
   }
   return buildersOf(cls, declaration.type === 'field_declaration' ? null : count, project)
 }
 
 /**
  * The calls that build a class with this many arguments (null: any number, for a field's starting value): `new X(…)`,
- * `super(…)` in a subclass, and Java's unwritten `super()`. A subclass with no constructor of its own runs X's
- * no-argument constructor whenever it is built (`new IndexerIOReal()`, in the switch arm that builds it), and a
- * subclass constructor that starts with neither `super(…)` nor `this(…)` runs it first, so the chain goes on from that
- * constructor's body.
+ * `super(…)` in a subclass, `this(…)` in another of X's constructors, and Java's unwritten `super()`. A subclass with
+ * no constructor of its own runs X's no-argument constructor whenever it is built (`new IndexerIOReal()` or
+ * `IndexerIOReal::new`, in the switch arm that builds it), and a subclass constructor that starts with neither
+ * `super(…)` nor `this(…)` runs it first, so the chain goes on from that constructor's body.
  */
 function buildersOf(cls: Node, count: number | null, project: Project, depth = 0): Node[] {
   const name = nameOf(cls)
   const fits = (call: Node) => count === null || argumentsOf(call).length === count
   const creates = project.nodes('object_creation_expression').filter((n) => baseType(typeNamed(n)) === name && fits(n))
   const supers = project.nodes('explicit_constructor_invocation').filter((n) => superclassOf(n) === name && fits(n))
-  if ((count !== null && count > 0) || depth >= MOST_CALLS) return [...creates, ...supers]
+  // A field's starting value runs once per object, in the constructor that calls super(…), never again for this(…).
+  const isDelegation = (n: Node) => count !== null && n.text.startsWith('this') && classAround(n)?.equals(cls) === true && fits(n)
+  const delegations = project.nodes('explicit_constructor_invocation').filter(isDelegation)
+  if ((count !== null && count > 0) || depth >= MOST_CALLS) return [...creates, ...supers, ...delegations]
   const unwritten = project.nodes('class_declaration').filter((c) => superclassName(c) === name).flatMap((sub) => {
     const constructors = constructorsOf(sub)
-    if (constructors.length === 0) return buildersOf(sub, 0, project, depth + 1)
+    if (constructors.length === 0) return [...buildersOf(sub, 0, project, depth + 1), ...builtByReference(sub, project)]
     const startsWithCall = (c: Node) => parts(field(c, 'body')).some((s) => s.type === 'explicit_constructor_invocation')
     return constructors.filter((c) => !startsWithCall(c)).flatMap((c) => field(c, 'body') ?? [])
   })
-  return [...creates, ...supers, ...unwritten]
+  return [...creates, ...supers, ...delegations, ...unwritten]
 }
+
+/** Each `X::new` in the project: a class built by reference (`Supplier<IndexerIO> io = IndexerIOReal::new`). */
+const builtByReference = (cls: Node, project: Project) => project.nodes('method_reference').filter((r) => r.text.replace(/\s+/g, '') === `${nameOf(cls)}::new`)
 
 /** Does this call go to a method of `cls`: `Cls.method()`, `this.method()`, `method()` inside it, or on a value of its type? */
 function callsInto(call: Node, cls: Node, project: Project): boolean {
@@ -292,16 +302,15 @@ function callsInto(call: Node, cls: Node, project: Project): boolean {
 
 /**
  * Code nothing in the project calls still runs when it is a method (WPILib calls robotPeriodic), a static field, the
- * robot class (WPILib builds it: `Robot::new`), or a class with subclasses (built through them). Otherwise the class
- * is never built: an old IO class left in the code.
+ * robot class (WPILib builds it: `Robot::new`), or a class built by reference. Otherwise the class is never built: an
+ * old IO class left in the code. A class built through its subclasses has callers (buildersOf), so one whose
+ * subclasses nothing builds isn't built either.
  */
 function runsUncalled(declaration: Node, project: Project): boolean {
   const cls = classAround(declaration)
-  const name = cls && nameOf(cls)
-  if (!cls || !name || declaration.type === 'method_declaration' || modifiersOf(declaration).includes('static')) return true
+  if (!cls || !nameOf(cls) || declaration.type === 'method_declaration' || modifiersOf(declaration).includes('static')) return true
   if (ROBOT_BASES.includes(superclassName(project.lineage(cls).at(-1) ?? cls) ?? '')) return true
-  const builtByReference = project.nodes('method_reference').some((r) => r.text.replace(/\s+/g, '') === `${name}::new`)
-  return builtByReference || project.nodes('class_declaration').some((c) => superclassName(c) === name)
+  return builtByReference(cls, project).length > 0
 }
 
 /** What `call` passes for a parameter of the constructor or method it calls; null when it calls something else. */
