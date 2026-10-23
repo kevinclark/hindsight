@@ -1,24 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { viteSingleFile } from 'vite-plugin-singlefile'
-import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
-// A hash of the app's source: a build that reads logs the same way keeps the browser's saved summaries.
-function sourceHash(dir = 'src'): string {
-  const hash = createHash('sha256')
-  const walk = (d: string) => {
-    for (const name of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (name.name.startsWith('.')) continue // .DS_Store and the like aren't code
-      const path = join(d, name.name)
-      if (name.isDirectory()) walk(path)
-      else { hash.update(path); hash.update(readFileSync(path)) }
-    }
-  }
-  walk(dir)
-  return hash.digest('hex').slice(0, 16)
-}
+import { sourceHash } from './vite.build-id.ts'
 
 // web-tree-sitter finds its .wasm with `new URL(..., import.meta.url)`, which would inline a second 279 KB copy: the code
 // check passes the bytes itself (src/code/check/browser-java.ts), so that reference goes. Fails if a new version moved it.

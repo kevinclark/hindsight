@@ -12,3 +12,5 @@ out-report/
 ux-shots/
 dist-snapshot/
 hindsight-history*.jsonl
+dist-electron/
+release/

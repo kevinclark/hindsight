@@ -436,6 +436,8 @@ skips with a message when they aren't there; `fixtures/*.json` are small cuts th
 | `src/power/` | battery model, resistance from current steps, open-circuit curve, what-ifs, fleet reference |
 | `src/report/` | `findings.json`, the Match review, Foresight and Session report models, the phone card |
 | `src/foresight/` | the live pit check: read-only NT4 client and field guard, record store, engine, verdict, earned reds |
+| `src/hub/` | the log library: manifests, catalog, facets, ingest, Drive adapter, sync, robot pull ([docs/library.md](docs/library.md)) |
+| `electron/` | the desktop app: window, the page's way into the library, Google sign-in, readers in a utility process |
 | `src/ui/`, `src/App.svelte` | the page |
 
 Adding a rule: [CONTRIBUTING.md](CONTRIBUTING.md).
