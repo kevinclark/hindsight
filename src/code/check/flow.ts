@@ -81,8 +81,9 @@ export function madeAlong(expr: Node | null, chain: Node[], project: Project, op
   const along = (next: Node | null, nextChain: Node[]) => madeAlong(next, nextChain, project, options, steps + 1)
   if (valueOf(expr, project) || expr.type === 'string_literal' || expr.type === 'object_creation_expression' || isModuleConstants(expr, project) || options.stopAt?.(expr)) return { at: expr, chain }
   if (expr.type === 'parenthesized_expression') return along(parts(expr)[0] ?? null, chain)
-  // `isReal ? new RollerIO(9) : new RollerIOSim(9)`: on the robot, the arm that isn't simulation.
-  if (expr.type === 'ternary_expression') {
+  // `isReal ? new RollerIO(9) : new RollerIOSim(9)`: on the robot, the arm that isn't simulation, when the condition
+  // asks whether the code runs on the robot (real, sim or replay), not anything else (a robot version).
+  if (expr.type === 'ternary_expression' && /real|sim|replay/i.test(field(expr, 'condition')?.text ?? '')) {
     const arms = [field(expr, 'consequence'), field(expr, 'alternative')].map((arm) => along(arm, chain))
     const real = arms.filter((a) => a && !inSimulation(a.at))
     return arms.every(Boolean) && real.length === 1 ? real[0] : null

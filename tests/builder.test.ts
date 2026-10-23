@@ -717,14 +717,37 @@ describe('the code\'s motors and their log keys', () => {
     expect(draft.json.motorGroups.find((g) => g.motors.includes(byKey('/Indexer/Roller/StatorCurrentAmps')))!.limitsFromCode).toBeFalsy()
     // The kicker is ID 10 on one version and 11 on the other: no ID rather than a guess.
     expect(byKey('/Indexer/Kicker/StatorCurrentAmps').canId).toBeUndefined()
-    // Neither version's roller is "a Talon FX this log has no current for".
-    expect(draft.notes.join(' ')).not.toMatch(/RollerIO\.java:5 \(ID 9\)/)
+    // The log has every motor's current: none is "a Talon FX this log has no current for". The kicker's key says which
+    // IDs it could be, for the student to pick.
+    expect(draft.notes.join(' ')).not.toMatch(/no current for/)
+    expect(draft.notes).toContain('/Indexer/Kicker/StatorCurrentAmps is read from 2 motors in the code (RollerIO.java:5 (ID 10), RollerIO.java:5 (ID 11)), as ID 10 and ID 11: pick its CAN ID by hand.')
     // One version sets a limit and the other sets none: still none, since a setting doesn't say which version it is.
     const oneSided = files.map((f) => (f.path.endsWith('Indexer.java') ? { ...f, text: f.text.replace('c.CurrentLimits.SupplyCurrentLimit = 30.0; ', '') } : f))
     const again = draftProfile({ logs: [{ log, fileName: 'test.wpilog' }], hints: codeHints(oneSided, { sha: 'abc1234def', branch: 'main' }) })
     const roller = allMotors(again.json).find(({ motor }) => motor.statorCurrent === '/Indexer/Roller/StatorCurrentAmps')!.motor
     expect([roller.canId, again.json.motorGroups.find((g) => g.motors.includes(roller))!.limitsFromCode ?? false]).toEqual([9, false])
   })
+
+  it('follows a ternary only when it asks real or sim and exactly one arm is real code', () => {
+    const files = (arg: string) => [
+      java('FlywheelIO.java', 'public class FlywheelIO {', '  @AutoLog', '  public static class FlywheelIOInputs { public double statorCurrentAmps = 0.0; }', '  private final TalonFX motor;',
+        '  public FlywheelIO(int id) { motor = new TalonFX(id); }', '  public void updateInputs(FlywheelIOInputsAutoLogged inputs) { inputs.statorCurrentAmps = motor.getStatorCurrent().getValueAsDouble(); }', '}'),
+      java('FlywheelIOSim.java', 'public class FlywheelIOSim extends FlywheelIO {', '  public FlywheelIOSim(int id) { super(id); }', '}'),
+      java('Shooter.java', 'public class Shooter extends SubsystemBase {', '  private final FlywheelIO left;', '  private final FlywheelIO right;',
+        '  private final FlywheelIOInputsAutoLogged leftInputs = new FlywheelIOInputsAutoLogged();', '  private final FlywheelIOInputsAutoLogged rightInputs = new FlywheelIOInputsAutoLogged();',
+        '  public Shooter(FlywheelIO left, FlywheelIO right) { this.left = left; this.right = right; }',
+        '  public void periodic() { left.updateInputs(leftInputs); right.updateInputs(rightInputs); Logger.processInputs("Shooter/Left", leftInputs); Logger.processInputs("Shooter/Right", rightInputs); }', '}'),
+      java('Robot.java', 'public class Robot extends LoggedRobot {', '  static final boolean REAL = true;', '  static final boolean COMP = true;', `  Shooter shooter = new Shooter(${arg}, new FlywheelIO(30));`, '}'),
+    ]
+    // The left IO's folder, for each motor the left argument builds: paired only when the ternary can be read.
+    const leftFolders = (arg: string) => motorsOf(files(arg)).motors.filter((m) => m.id !== 30).map((m) => [m.id, m.currents.map((c) => c.folder.join(''))])
+    expect(leftFolders('REAL ? new FlywheelIO(12) : new FlywheelIOSim(12)')).toEqual([[12, ['Shooter/Left']]])
+    // Both arms real (two robot versions), an anonymous arm, or a condition about something else: no pairing.
+    expect(leftFolders('COMP ? new FlywheelIO(12) : new FlywheelIO(22)')).toEqual([[12, []], [22, []]])
+    expect(leftFolders('REAL ? new FlywheelIO(12) : new FlywheelIO(0) {}')).toEqual([[12, []], [0, []]])
+    expect(leftFolders('COMP ? new FlywheelIOSim(12) : new FlywheelIO(22)')).toEqual([[22, []]])
+  })
+
 
   it('fills the draft: kinds, IDs, the follower\'s group and limits marked "from code", and what the log lacks', async () => {
     const files = [...shooter]
