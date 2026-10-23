@@ -34,7 +34,7 @@ export const GITHUB_SOURCE = /^[\w.-]+(\/[\w.-]+)?$/
 export const validSource = (text: string): boolean => GITHUB_SOURCE.test(text) && !text.includes('..')
 
 /** The fields of a log record that a later reading (a `meta` record) may set. Nothing else in a meta is ever laid over a log. */
-export const DESCRIBABLE_KEYS = ['wall', 'matchWindow', 'event', 'matchType', 'matchNumber', 'onField', 'batteryId', 'robot', 'build', 'stub', 'hardwareId', 'code'] as const
+export const DESCRIBABLE_KEYS = ['wall', 'matchWindow', 'event', 'matchType', 'matchNumber', 'onField', 'batteryId', 'roboRio', 'edition', 'robot', 'build', 'stub', 'hardwareId', 'code'] as const
 /** The fields that decide where a file lives (and so its identity in the library): set by the first reading, never by a later one. */
 export const FIXED_KEYS = ['kind', 'playedAt', 'dateSource'] as const
 export type DescribableKey = (typeof DESCRIBABLE_KEYS)[number]
@@ -56,7 +56,7 @@ const SHAPES: Record<DescribableKey, (v: unknown) => boolean> = {
   event: (v) => typeof v === 'string',
   matchType: orNull(finite), matchNumber: orNull(finite),
   onField: (v) => typeof v === 'boolean', stub: (v) => typeof v === 'boolean',
-  batteryId: orNull((v) => typeof v === 'string'), hardwareId: orNull((v) => typeof v === 'string'),
+  batteryId: orNull((v) => typeof v === 'string'), roboRio: orNull((v) => typeof v === 'string'), edition: orNull((v) => typeof v === 'string'), hardwareId: orNull((v) => typeof v === 'string'),
   robot: orNull((v) => isObject(v) && typeof v.name === 'string' && (v.profileId === null || typeof v.profileId === 'string') && (v.how === undefined || typeof v.how === 'string') && (v.fit === undefined || v.fit === null || finite(v.fit))),
   build: orNull((v) => isObject(v) && typeof v.sha === 'string' && typeof v.branch === 'string'),
   code: (v) => isCodeLink(v),
@@ -95,6 +95,10 @@ export interface LogMeta {
   matchNumber: number | null
   onField: boolean
   batteryId: string | null
+  /** The roboRIO's serial number, as AdvantageKit logs it (/SystemStats/SerialNumber): which controller ran, null when the log has none. */
+  roboRio: string | null
+  /** The robot's own name for which physical robot it is (its profile's `editionKey`), when the code builds more than one robot; null otherwise. */
+  edition: string | null
   /**
    * The robot the log is from. A profile names it only when the log's own Codebase (and branch) matched one, or the profile
    * fit by signals; otherwise `profileId` is null and `name` is the Codebase text the log carries. Null when the log says nothing.

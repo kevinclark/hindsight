@@ -14,6 +14,9 @@ export interface RobotLogOptions {
   /** The code's name for itself (/RealMetadata/Codebase) and the branch it ran. */
   codebase?: string
   branch?: string
+  /** The roboRIO's serial (/SystemStats/SerialNumber) and the robot's own edition (/RealMetadata/Robot Edition). */
+  roboRio?: string
+  edition?: string
   /** Makes two otherwise equal logs differ. */
   seed?: string
 }
@@ -33,6 +36,8 @@ export function robotLog(o: RobotLogOptions = {}): Uint8Array {
   if (o.battery) entries.push({ name: '/RealOutputs/Battery/Id', type: 'string', records: [[0, o.battery]] })
   if (o.codebase) entries.push({ name: '/RealMetadata/Codebase', type: 'string', records: [[0, o.codebase]] })
   if (o.branch) entries.push({ name: '/RealMetadata/GitBranch', type: 'string', records: [[0, o.branch]] })
+  if (o.roboRio) entries.push({ name: '/SystemStats/SerialNumber', type: 'string', records: [[0, ''], [1, o.roboRio]] })
+  if (o.edition) entries.push({ name: '/RealMetadata/Robot Edition', type: 'string', records: [[0, o.edition]] })
   if (o.clockMs !== undefined) {
     entries.push(
       { name: '/SystemStats/SystemTimeValid', type: 'boolean', records: [[0, true]] },

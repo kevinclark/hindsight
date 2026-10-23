@@ -13,7 +13,7 @@
   import type { FetchReport, SyncReport } from '../hub/sync.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
-  import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, type FacetId, type Selection } from '../hub/facets.ts'
+  import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Selection } from '../hub/facets.ts'
   import { baseName, dayText, withShaSuffix } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
   import { describeCodeLink } from '../hub/codelink.ts'
@@ -156,8 +156,10 @@
   const all = $derived(snapshot?.entries ?? [])
   const stubs = $derived(all.filter((e) => e.record.stub))
   const base = $derived(showStubs ? all : all.filter((e) => !e.record.stub))
-  const filtered = $derived(filterEntries(base, selection))
-  const counts = $derived(facetCounts(base, selection))
+  /** Decided over every log, so a filter or the stubs switch never renames a robot. */
+  const labels = $derived(robotLabels(all))
+  const filtered = $derived(filterEntries(base, selection, labels))
+  const counts = $derived(facetCounts(base, selection, labels))
   const bytes = $derived(filtered.reduce((n, e) => n + e.record.size, 0))
   const local = $derived(filtered.filter((e) => e.local))
   /** Logs the team has that this computer lacks: what a download would fetch. */
@@ -398,14 +400,15 @@
       <table>
         <tbody>
           {#each rows as e (e.record.sha256)}
-            {@const v = facetValues(e)}
+            {@const v = facetValues(e, labels)}
+            {@const guessed = labels.get(e.record.sha256)?.guess}
             {@const code = describeCodeLink(e.record)}
             <tr class:remote={!e.local}>
               <td class="time">{clock(e.record.playedAt)}</td>
               <td class="name"><code title={e.record.path}>{baseName(e.record.path)}</code></td>
               <td>{fmsPlace(e.record)?.name ?? ''} {matchText(e)}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
-              <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if code}<span class="meta"> · <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}{#if !e.tags.robot && robotIsGuess(e.record)}<span class="meta"> {e.record.robot?.profileId === null ? '(code name)' : '(guess)'}</span>{/if}</td>
+              <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if guessed}<span class="meta" title="No edition in this log; same roboRIO as the other {v.robot.split(' · ').pop()} logs of this robot"> (guess)</span>{/if}{#if code}<span class="meta"> · <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}{#if !e.tags.robot && robotIsGuess(e.record)}<span class="meta"> {e.record.robot?.profileId === null ? '(code name)' : '(guess)'}</span>{/if}</td>
               <td><input class="driver" aria-label="Driver for this log" value={e.tags.driver ?? ''} placeholder="driver" onchange={(ev) => tag({ log: e.record.sha256 }, 'driver', typed(ev))} /></td>
               <td class="num">{size(e.record.size)}</td>
               <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
@@ -420,6 +423,8 @@
                   {#if e.attached.dslog.length}DS log: {e.attached.dslog.map((r) => r.names[0]).join(', ')}. {/if}
                   {#if e.attached.dsevents.length}DS events: {e.attached.dsevents.map((r) => r.names[0]).join(', ')}. {/if}
                   {#if e.attached.hoot.length}Hoot: {e.attached.hoot.map((r) => r.names[0]).join(', ')}. {/if}
+                  {#if e.record.roboRio}roboRIO {e.record.roboRio}. {/if}
+                  {#if e.record.edition}Edition {e.record.edition}. {/if}
                   Date from {e.record.dateSource}. <code>{e.record.sha256.slice(0, 12)}</code>
                 </p>
               </td></tr>

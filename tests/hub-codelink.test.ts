@@ -59,7 +59,7 @@ function fakeGitHub(opts: { repos?: Repo[]; limitAfter?: number; remaining?: num
 
 const log = (sha256: string, over: Partial<LogRecord> = {}): LogRecord => ({
   type: 'log', sha256, kind: 'wpilog', playedAt: 1, dateSource: 'robot clock', wall: null, matchWindow: null, event: '', matchType: null, matchNumber: null, onField: false,
-  batteryId: null, robot: { profileId: null, name: 'TestCode', how: 'signals', fit: 0.2 }, build: null, stub: false, hardwareId: null,
+  batteryId: null, roboRio: null, edition: null, robot: { profileId: null, name: 'TestCode', how: 'signals', fit: 0.2 }, build: null, stub: false, hardwareId: null,
   size: 1, path: `logs/x/${sha256}.wpilog`, names: [`${sha256}.wpilog`], modifiedTime: null, from: 'folder', recordedAt: 1, machine: 'm', ...over,
 })
 

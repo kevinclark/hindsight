@@ -49,6 +49,8 @@ const rollerMotor = (name: string, prefix: string, canId: number) => ({
 export const competition2026: RobotProfile = {
   name: '2026 competition robot',
   codebase: 'Rebuilt',
+  // Robot.java records which robot it built with recordMetadata("Robot Edition", …).
+  editionKey: '/RealMetadata/Robot Edition',
   code: { repo: 'HighlanderRobotics/Rebuilt', branch: 'comp-bring-up', sha: '2cd2843', alsoBranches: ['comp-bring-up-2-21'] },
 
   // The code loads WPILib's default field (SwerveConstants.java:39): k2026RebuiltWelded in WPILib 2026.2.1, the
