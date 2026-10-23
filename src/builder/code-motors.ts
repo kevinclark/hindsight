@@ -240,10 +240,12 @@ function folderOf(expr: Node, chain: Node[], project: Project, inputs: Map<strin
       return [...(start ? [start] : []), ...pieces].reduce<FolderPart[]>((acc, piece) => join(acc, folderOf(piece, chain, project, inputs)), [])
     }
   }
-  // `Integer.toString(index)`, `String.valueOf(index)`: the number as text.
+  // `Integer.toString(index)`, `String.valueOf(index)`: the number as text, or open when it can't be worked out
+  // (`index + 1` is a sum, not text to join).
   if (expr.type === 'method_invocation' && ((nameOf(expr) === 'toString' && field(expr, 'object')?.text === 'Integer') || (nameOf(expr) === 'valueOf' && field(expr, 'object')?.text === 'String'))) {
-    const [arg] = parts(expr, 'arguments')
-    if (arg && parts(expr, 'arguments').length === 1) return folderOf(arg, chain, project, inputs)
+    const passed = parts(expr, 'arguments')
+    const value = passed.length === 1 ? valueAlong(passed[0], chain, project)?.value : undefined
+    return typeof value === 'number' ? [String(value)] : [{ open: expr.text }]
   }
   if (expr.type === 'field_access' && inputsTypeOf(field(expr, 'object'), project, inputs)) return [{ field: field(expr, 'field')!.text }]
   // `io.getModuleName()`: a method of a project class or interface, answered by each IO object (marks).

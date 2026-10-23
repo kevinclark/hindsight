@@ -33,18 +33,20 @@ export function deviceAlong(site: Node, chain: Node[], project: Project): Device
 
 /**
  * The bus a device is built on, as a name: a string, or a `new CANBus(…)` whose first argument (the name; CTRE's
- * second is a hoot log path) is worked out along the same chain, so `new CANBus(Constants.CANivore.canbusName)` is
- * "Clockwork". `new CANBus()` is the roboRIO's bus; an argument that can't be worked out gives null, never the roboRIO's.
+ * second is a hoot log path) is worked out along the same chain, so `new CANBus(Constants.CANivore.name)` is the
+ * name that constant holds. `new CANBus()` is the roboRIO's bus; an argument that can't be worked out gives null, never the roboRIO's.
  */
 function busAlong(expr: Node, through: Node[], project: Project): { value: string; at: Node } | null {
   const made = madeAlong(expr, through, project)
-  const found = valueAlong(expr, through, project)
-  if (!made || !found) return null
-  if (typeof found.value !== 'string' || !found.value.startsWith('new CANBus(')) return { value: String(found.value), at: found.at }
+  if (!made) return null
+  if (made.at.type !== 'object_creation_expression' || baseType(typeNamed(made.at)) !== 'CANBus') {
+    const found = valueAlong(expr, through, project)
+    return found ? { value: String(found.value), at: found.at } : null
+  }
   const [name] = parts(made.at, 'arguments')
-  if (!name) return { value: RIO, at: found.at }
+  if (!name) return { value: RIO, at: made.at }
   const named = valueAlong(name, made.chain, project)
-  return typeof named?.value === 'string' ? { value: named.value, at: found.at } : null
+  return typeof named?.value === 'string' ? { value: named.value, at: made.at } : null
 }
 
 /**
