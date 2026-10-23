@@ -11,6 +11,10 @@
   import { PROFILES, profileId } from '../profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
   import { profilesNow } from './kept-profiles.svelte.ts'
+  import { teamNow } from './team-setting.svelte.ts'
+  import { robotChoices } from './robot-list.ts'
+  import { codeSpec, type LibraryLink } from '../hub/session-files.ts'
+  import RobotOptions from './RobotOptions.svelte'
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
   import { clearCached, fileKey, loadCached, saveCached } from '../session/cache.ts'
@@ -31,8 +35,9 @@
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
-  // copies of logs by name, for summaries restored without their file.
-  let { marks, onOpen, findLogs, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; hasSession?: boolean; sessionsOut?: Session[] } = $props()
+  // copies of logs by name, for summaries restored without their file. `linksFor` (desktop app): the library's code links for
+  // logs by name; `onDraft` opens the profile builder on one.
+  let { marks, onOpen, findLogs, linksFor, onDraft, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; linksFor?: (names: string[]) => Promise<LibraryLink[]>; onDraft?: (link: LibraryLink) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
   const issues = $derived(marks.issues)
 
   let summaries = $state<MatchSummary[]>([])
@@ -158,6 +163,18 @@
   // The robot the student chose for this whole session, if every match has the same choice.
   const chosenId = $derived(session && session.matches.every((m) => m.robot.how === 'chosen by you') && robots.length === 1 ? robots[0].robot.profileId : null)
   const notes = $derived([...new Set(session ? session.matches.map((m) => m.robot.note).filter((n): n is string => !!n) : [])])
+
+  // Logs whose robot was only guessed (by signals, or by the code's name) and whose library record links them to a GitHub repo:
+  // one offer per repo and commit, to draft a profile from that code.
+  let codeLinks = $state.raw<LibraryLink[]>([])
+  $effect(() => {
+    const names = (session?.matches ?? []).filter((m) => m.robot.how === 'signals' || m.robot.how === 'codebase').flatMap((m) => m.pieces ?? [m.fileName])
+    if (!linksFor || names.length === 0) { codeLinks = []; return }
+    let stale = false
+    void linksFor(names).then((found) => { if (!stale) codeLinks = found }).catch(() => { if (!stale) codeLinks = [] })
+    return () => { stale = true }
+  })
+  const draftOffers = $derived([...new Map(codeLinks.map((l) => [codeSpec(l), l])).values()])
 
   /** Every log file in a session, counting the pieces of a match recorded in several logs. */
   const logsOf = (s: Session) => s.matches.flatMap((m) => m.pieces ?? [m.fileName])
@@ -509,9 +526,12 @@
   {#each robots as r (r.robot.profileId)}
     <p class="note">Robot: <strong>{r.robot.name}</strong>, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
   {/each}
+  {#if onDraft}{#each draftOffers as l (codeSpec(l))}
+    <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>
+  {/each}{/if}
   <p class="note"><label>Robot for this session: <select onchange={(e) => setRobot(session, (e.currentTarget as HTMLSelectElement).value)}>
     <option value="auto" selected={!chosenId}>automatic (from each log)</option>
-    {#each [...PROFILES, ...stored] as p (profileId(p))}<option value={profileId(p)} selected={profileId(p) === chosenId}>{profileId(p)}</option>{/each}
+    <RobotOptions groups={robotChoices(PROFILES, stored, teamNow(), robots.map((r) => r.robot.profileId))} selectedId={chosenId} />
   </select></label></p>
   {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
   {#if crashedNote(session)}<p class="note warn">{crashedNote(session)}</p>{/if}

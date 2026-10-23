@@ -65,6 +65,7 @@ const base: Omit<RobotProfile, 'name' | 'code' | 'motorGroups' | 'whatIfGroup'> 
 export const frc340Nyro2026: RobotProfile = {
   ...base,
   name: "Team 340's 2026 robot (NYRO, March)",
+  team: 340,
   code: { repo: 'unknown (profile read from a public log)', branch: 'unknown', sha: 'unknown' },
   motorGroups: [
     ...swerve,
@@ -82,6 +83,7 @@ export const frc340Nyro2026: RobotProfile = {
 export const frc340Daly2026: RobotProfile = {
   ...base,
   name: "Team 340's 2026 robot (DALY, May)",
+  team: 340,
   code: { repo: 'unknown (profile read from a public log)', branch: 'unknown', sha: 'unknown' },
   motorGroups: [
     ...swerve,

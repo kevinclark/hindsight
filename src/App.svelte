@@ -18,7 +18,10 @@
   import ForesightView from './ui/ForesightView.svelte'
   import LibraryView from './ui/LibraryView.svelte'
   import { hub } from './hub/bridge.ts'
-  import { libraryLogs } from './hub/session-files.ts'
+  import { loadTeam, teamNow } from './ui/team-setting.svelte.ts'
+  import { robotChoices } from './ui/robot-list.ts'
+  import RobotOptions from './ui/RobotOptions.svelte'
+  import { codeSpec, libraryLinks, libraryLogs, type LibraryLink } from './hub/session-files.ts'
   import ReviewReport from './ui/ReviewReport.svelte'
   import { buildCard } from './report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from './report/card-png.ts'
@@ -62,9 +65,18 @@
   // The desktop app asks GitHub once on start whether a newer release is out.
   let update = $state<{ version: string; url: string } | null>(null)
   void hub()?.updateInfo().then((u) => { update = u })
+  void loadTeam()
   let sessionView = $state<{ addFiles(files: File[]): Promise<void> }>()
   // Session summaries restored without their file read the library's copy (desktop app only).
   const findInLibrary = hub() ? (names: string[]) => libraryLogs(hub()!, names) : undefined
+  const linksInLibrary = hub() ? (names: string[]) => libraryLinks(hub()!, names) : undefined
+  let profileBuilder = $state<{ start(files: File[], spec: string): Promise<void> }>()
+  // From a session's "Draft a profile from it": the library's copy of that log, in the profile builder, with the linked code to read.
+  async function draftFromCode(link: LibraryLink) {
+    const files = await libraryLogs(hub()!, [link.name])
+    mode = 'profile'
+    await profileBuilder?.start(files, codeSpec(link))
+  }
   // From the Library: the filtered logs, in the Session view.
   async function openInSession(files: File[]) {
     mode = 'session'
@@ -280,13 +292,13 @@
      the matches in review, the wizard's progress, or a snapshot. -->
 <div hidden={mode !== 'wizard'} class:screen-only={reportable}><Wizard matches={analyses} /></div>
 <div hidden={mode !== 'snapshot'} class:screen-only={reportable}><SnapshotView /></div>
-<div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder /></div>
+<div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder bind:this={profileBuilder} /></div>
 <div hidden={mode !== 'foresight'}>
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
 {#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} /></div>{/if}
-<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} onOpen={openFromSession} findLogs={findInLibrary} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
+<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 {#if !current || dragging}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
@@ -354,7 +366,7 @@
           ({HOW_WORDS[current.match.profileChoice.how]}) ·
           <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
             <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>
-            {#each [...PROFILES, ...stored] as p (profileId(p))}<option value={profileId(p)} selected={current.match.profileChoice.how === 'chosen by you' && profileId(p) === profileId(current.match.profile)}>{profileId(p)}</option>{/each}
+            <RobotOptions groups={robotChoices(PROFILES, stored, teamNow(), [profileId(current.match.profile)])} selectedId={current.match.profileChoice.how === 'chosen by you' ? profileId(current.match.profile) : null} />
           </select></label>
         </p>
       </details>

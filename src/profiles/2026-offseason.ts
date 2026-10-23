@@ -27,6 +27,7 @@ const swerveCanIds: Record<string, { drive: number; steer: number }> = {
 
 const robot: RobotProfile = {
   name: '2026 offseason robot',
+  team: 8033,
   codebase: '2026 Offseason',
   code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'main', sha: 'cb68b20' },
 

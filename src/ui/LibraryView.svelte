@@ -16,7 +16,8 @@
   import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Selection } from '../hub/facets.ts'
   import { baseName, dayText } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
-  import { describeCodeLink } from '../hub/codelink.ts'
+  import { ADD_LINK_REQUESTS, describeCodeLink } from '../hub/codelink.ts'
+  import { setTeamNow } from './team-setting.svelte.ts'
   import type { CodePlan, LastJob, LinkReport } from '../hub/bridge.ts'
   import { asFile, sessionNames } from '../hub/session-files.ts'
 
@@ -101,6 +102,7 @@
     void api?.updateInfo().then((u) => { update = u })
     // A job already running (the page was reloaded, or something else started it) gets the same bar.
     void api?.codePlan().then((p) => { codePlan = p; codeText = p.sources.join(', ') }).catch(() => {})
+    void api?.team().then((t) => { teamBox = t.team; savedTeam = t.team }).catch(() => {})
     // How the job that finished last ended, for a page that reloaded and did not see it (kept for 30 minutes).
     void api?.lastJob().then((j) => { if (j && Date.now() - j.at < 30 * 60e3) lastJob = j }).catch(() => {})
     void api?.runningJob().then((p) => { if (p && !progress) progress = p }).catch(() => {})
@@ -119,15 +121,23 @@
   })
   let codePlan = $state<CodePlan | null>(null)
   let codeText = $state('')
+  let teamBox = $state<number | null>(null) // a number input binds a number, or null when empty
+  let savedTeam = $state<number | null>(null)
   let linkReport = $state.raw<LinkReport | null>(null)
   let lastJob = $state.raw<LastJob | null>(null)
   const linkLabel = $derived(!codePlan ? 'Link code' : codePlan.logs === 0
     ? `Link code (${codePlan.unstamped ? 'no logs to link; read logs again first?' : 'no logs to link'})`
     : `Link code (at least ${codePlan.requests} requests)`)
-  async function saveSources() {
+  /** Saves the number and the sources together; with sources set, the app then links every log it can (the same pass as Link code). */
+  async function saveTeam() {
     const sources = codeText.split(/[\s,]+/).filter(Boolean)
-    const p = await work('Saving', () => api!.setCodeSources(sources))
-    if (p) { codePlan = p; codeText = p.sources.join(', ') }
+    const saved = await work('Saving', () => api!.setTeam(teamBox ?? null, sources))
+    if (saved) {
+      savedTeam = saved.team; teamBox = saved.team; codeText = saved.sources.join(', ')
+      setTeamNow(saved.team)
+      if (saved.linkReport) linkReport = saved.linkReport
+    }
+    codePlan = await api!.codePlan().catch(() => codePlan)
   }
   async function linkCode() {
     const r = await work('Linking code', () => api!.linkCode())
@@ -246,11 +256,14 @@
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 
-<details class="team">
-  <summary>Code: {codePlan?.sources.length ? codePlan.sources.join(', ') : 'no GitHub source yet'}</summary>
-  <p class="meta">Logs that name only their code (no robot profile) can be linked to the public GitHub repo that holds it. Give an organization or <code>owner/repo</code>, comma separated. Pressing <em>Link code</em> reads each repo's <code>Robot.java</code> and asks GitHub about build commits; nothing is sent but repo and commit names.</p>
-  <p class="row"><input bind:value={codeText} placeholder="organization or owner/repo" aria-label="GitHub sources for code" /><button class="primary" onclick={saveSources} disabled={driveBusy}>Save</button>
+<details class="team" open={savedTeam === null && !codePlan?.sources.length}>
+  <summary>Your team: {savedTeam === null ? 'no team number yet' : savedTeam}{codePlan?.sources.length ? ` · code from ${codePlan.sources.join(', ')}` : ' · no GitHub source yet'}</summary>
+  <p class="meta">With your team number set, the robot lists show your team's robots. Logs that name only their code (no robot profile) can be linked to the public GitHub repo that holds it: give an organization or <code>owner/repo</code>, comma separated. Saving, and <em>Link code</em>, read each repo's <code>Robot.java</code> and ask GitHub about build commits; nothing is sent but repo and commit names.</p>
+  <p class="row"><label>Team number <input type="number" min="1" max="99999" step="1" bind:value={teamBox} placeholder="e.g. 8033" aria-label="Team number" /></label>
+    <label>GitHub organization or repos <input bind:value={codeText} placeholder="organization or owner/repo" aria-label="GitHub sources for code" /></label>
+    <button class="primary" onclick={saveTeam} disabled={driveBusy}>Save</button>
     <button class="primary" onclick={linkCode} disabled={driveBusy || !codePlan?.sources.length || !codePlan.logs}>{linkLabel}</button></p>
+  {#if codePlan?.sources.length}<p class="meta">Logs whose code is in {codePlan.sources.length === 1 ? 'this repo' : 'these repos'} are linked when they are added (at most {ADD_LINK_REQUESTS} GitHub requests each time). Saving links the logs already here, which can take {codePlan.requests} or more requests.</p>{/if}
 </details>
 
 <details class="team" open={drive !== null && !drive.teamFolder}>
@@ -329,6 +342,8 @@
     <p class="meta">
       {size(report.bytesAdded)} copied in {(report.durationMs / 1000).toFixed(1)} s. The originals were not moved, renamed or deleted.
       {#if report.ignored}{report.ignored} other file{report.ignored === 1 ? '' : 's'} ignored.{/if}
+      {#if report.linked !== undefined}Linked {report.linked} new log{report.linked === 1 ? '' : 's'} to their code with {report.linkRequests} GitHub request{report.linkRequests === 1 ? '' : 's'}.{#if report.linkCapped} Stopped after {ADD_LINK_REQUESTS} GitHub requests; Link code finishes the rest.{/if}{/if}
+      {#if report.linkProblem}<span class="problem">Linking code did not finish: {report.linkProblem}</span>{/if}
     </p>
     <ul class="flags">
       <li><strong>{report.added.filter((a) => a.undated).length}</strong> undated <span class="meta">(no robot clock, no date in the name: filed under <code>logs/undated</code>)</span></li>

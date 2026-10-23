@@ -14,6 +14,7 @@ import type { RobotProfile } from './types.ts'
 
 export const frc334_2026: RobotProfile = {
   name: "Team 334's 2026 robot",
+  team: 334,
   codebase: '',
   code: { repo: 'unknown (profile read from a public log)', branch: 'unknown', sha: 'unknown' },
   game: { name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 140 },

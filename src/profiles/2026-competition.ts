@@ -48,6 +48,7 @@ const rollerMotor = (name: string, prefix: string, canId: number) => ({
 
 export const competition2026: RobotProfile = {
   name: '2026 competition robot',
+  team: 8033,
   codebase: 'Rebuilt',
   // Robot.java records which robot it built with recordMetadata("Robot Edition", …).
   editionKey: '/RealMetadata/Robot Edition',
