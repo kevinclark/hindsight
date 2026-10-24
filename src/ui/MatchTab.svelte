@@ -13,8 +13,12 @@
   import { nest, partitionStanding, withParents } from '../report/finding-tree.ts'
   import { cardTitle } from '../report/titles.ts'
   import { ruleOf } from '../triage/track-record.ts'
+  import type { BoardRole } from '../triage/history.ts'
+  import type { CauseMarks } from '../board/debug.ts'
+  import type { Change } from '../board/writes.ts'
+  import DebugWorkspace from './DebugWorkspace.svelte'
 
-  let { analysis, issues, wrong = new Map(), real = new Map(), sure = () => null, standing = new Set<string>(), onMark }: {
+  let { analysis, issues, wrong = new Map(), real = new Map(), sure = () => null, standing = new Set<string>(), onMark, debug }: {
     /** As the team's marks show it (track-record.ts withMarks): a red another match's wrong mark demotes is amber. */
     analysis: Analysis
     issues: Map<string, IssueEvent>
@@ -27,7 +31,14 @@
     /** Issue keys that fired in every match of this match's session (session.ts standingKeys); empty when no loaded session holds it. */
     standing?: Set<string>
     onMark: (finding: Finding, status: IssueStatus, note: string) => void
+    /** The debug workspace's record (ADR 3): what the team found per cause, and how to write it. Without it a finding has no "Debug this". */
+    debug?: { marks: (finding: Finding) => CauseMarks; write: (finding: Finding, changes: Change[]) => void; role: BoardRole | null; setRole: (role: BoardRole) => void }
   } = $props()
+
+  // The finding being debugged: the workspace takes the place of the list until the student goes back.
+  let debugging = $state<Finding | null>(null)
+  const open = (f: Finding) => { debugging = f }
+  const debugRule = $derived(debugging ? makerOf(debugging.rule) : undefined)
 
   // Who is reading: the software team, the pit crew or the drive team see the findings they can act on.
   const AUDIENCES: { id: Audience | 'all'; label: string }[] = [
@@ -88,6 +99,10 @@
   }
 </script>
 
+{#if debugging && debug}
+  <DebugWorkspace title={cardTitle(debugging.title)} rule={debugging.rule} meaning={debugRule?.meaning ?? debugging.title} latest={debugging.title} causes={debugging.causes} likely={debugging.causes.filter((c) => c.likely).map((c) => c.id)} ruledOut={Object.fromEntries(debugging.causes.filter((c) => c.ruledOut).map((c) => [c.id, c.ruledOut!]))} evidence={debugging.evidence}
+    nextStep={debugging.nextStep} marks={debug.marks(debugging)} role={debug.role} backLabel="Findings" onBack={() => (debugging = null)} onChange={(c) => debug.write(debugging!, c)} onRole={debug.setRole} />
+{:else}
 <div class="audience" role="radiogroup" aria-label="Show findings for">
   {#each AUDIENCES as a (a.id)}
     {@const errors = red(a.id)}
@@ -114,7 +129,7 @@
 {:else if mainTree.length}
   <ul class="findings">
     {#each mainTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} onDebug={debug ? open : undefined} />
     {/each}
   </ul>
 {/if}
@@ -130,7 +145,7 @@
     </summary>
     <ul class="findings">
       {#each standingTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} {onMark} />
+        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} {onMark} onDebug={debug ? open : undefined} />
       {/each}
     </ul>
   </details>
@@ -139,7 +154,7 @@
 {#if infoTree.length}
   <ul class="findings">
     {#each infoTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} />
+      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} onDebug={debug ? open : undefined} />
     {/each}
   </ul>
 {/if}
@@ -149,7 +164,7 @@
     <summary><h3>{falseAlarms ? 'Known issues and false alarms' : 'Known issues'} seen this match ({known.length})</h3></summary>
     <ul class="findings">
       {#each knownTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} {wrong} {real} {sure} statusOf={status} {onMark} />
+        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} {wrong} {real} {sure} statusOf={status} {onMark} onDebug={debug ? open : undefined} />
       {/each}
     </ul>
   </details>
@@ -181,6 +196,7 @@
     </table>
   {/if}
 </section>
+{/if}
 
 <style>
   .counts { color: var(--muted); margin: 0 0 0.35rem; }

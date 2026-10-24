@@ -4,7 +4,7 @@
  * appends what comes back (App.svelte keep()).
  */
 import type { Session } from '../session/session.ts'
-import { boardStamp, type BoardEvent, type BoardOp, type BoardRole, type BoardUntil, type EventNote, type EventNoteKind, type HistoryEvent } from '../triage/history.ts'
+import { boardStamp, type BoardEvent, type BoardOp, type BoardRole, type BoardUntil, type CauseState, type EventNote, type EventNoteKind, type HistoryEvent } from '../triage/history.ts'
 import { matchRef } from '../triage/track-record.ts'
 import { lastOnField } from './points.ts'
 import { OWNER_ROLES } from './role.ts'
@@ -13,7 +13,7 @@ import type { BoardIssue } from './model.ts'
 export interface Who { device: string; role: BoardRole }
 
 /** One change to one issue. */
-export interface Change { op: BoardOp; value: string; until?: BoardUntil }
+export interface Change { op: BoardOp; value: string; until?: BoardUntil; cause?: string; test?: string; text?: string }
 
 /** The match a change is made on: the session's latest on-field match, as the other history lines name a match. */
 export function atLatest(session: Pick<Session, 'matches'>): { match?: string; event?: string; played?: string } {
@@ -28,7 +28,7 @@ export function boardLines(history: HistoryEvent[], who: Who, now: Date, issue: 
   const made: BoardEvent[] = []
   for (const c of changes) {
     const stamp = boardStamp([...history, ...made], who.device, now)
-    made.push({ type: 'board', v: 1, key: issue.key, robot: issue.robot, op: c.op, value: c.value, ...(c.until ? { until: c.until } : {}), ...at, by: { device: who.device, role: who.role }, ...stamp })
+    made.push({ type: 'board', v: 1, key: issue.key, robot: issue.robot, op: c.op, value: c.value, ...(c.until ? { until: c.until } : {}), ...(c.cause ? { cause: c.cause, ...(c.test ? { test: c.test } : {}), text: c.text ?? '' } : {}), ...at, by: { device: who.device, role: who.role }, ...stamp })
   }
   return made
 }
@@ -52,3 +52,6 @@ export const greyTake = (role: BoardRole): Change[] => [
   ...((OWNER_ROLES as readonly string[]).includes(role) ? [{ op: 'owner' as const, value: role }] : []),
   { op: 'note', value: `Taken by ${role}` },
 ]
+
+/** The debug workspace's record of one cause: its state; for ruled-out the test and, apart, what it showed (`text`); for the other states a note in `text`. */
+export const causeChange = (cause: string, state: CauseState, text: string, test = ''): Change[] => [{ op: 'cause', value: state, cause, ...(state === 'ruled-out' && test.trim() ? { test: test.trim() } : {}), text: text.trim() }]

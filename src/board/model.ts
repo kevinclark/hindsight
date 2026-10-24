@@ -11,14 +11,15 @@
 import { makerOf } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import { mergeFindings, type MergedFinding, type Session } from '../session/session.ts'
-import { summaryRobot, type MatchSummary, type SummaryFinding } from '../session/summary.ts'
+import { robotIdOf, summaryRobot, type MatchSummary, type SummaryFinding } from '../session/summary.ts'
 import { profileId } from '../profiles/index.ts'
 import type { RobotProfile } from '../profiles/types.ts'
+import { tickAt } from './ticks.ts'
 import { shortMatchLabel } from '../ui/match-label.ts'
 import type { ScheduledMatch } from '../tba/schedule.ts'
-import { boardKey, boardState, compareEvents, eventNotes, type BoardEvent, type BoardRole, type BoardState, type HistoryEvent, type Triage } from '../triage/history.ts'
+import { boardKey, boardState, compareEvents, eventNotes, type BoardEvent, type BoardRole, type BoardState, type CauseState, type HistoryEvent, type Triage } from '../triage/history.ts'
 import { matchRef, ruleOf, trackRecord, type Fire } from '../triage/track-record.ts'
-import { beforeNext, dueByPriority, nextEvent, durText, gapText, qualFromStored, resolveUntil, suggestions, timeline, type DuePoint, type Suggestion, type Timeline } from './points.ts'
+import { beforeNext, dueByPriority, eventOver, nextEvent, durText, gapText, qualFromStored, resolveUntil, suggestions, timeline, type DuePoint, type Suggestion, type Timeline } from './points.ts'
 
 export type Priority = 'red' | 'amber' | 'low'
 export type Status = 'open' | 'fixing' | 'check' | 'deferred' | 'closed'
@@ -95,6 +96,8 @@ export interface BoardIssue {
   latest: SummaryFinding | null
   notes: { text: string; role: BoardRole; match: string | null; when: string }[]
   lastChange: { role: BoardRole; match: string | null; when: string } | null
+  /** What the debug workspace recorded per cause id: possible (with a note), ruled out by a test, or confirmed. A cause not here is possible. */
+  causeMarks: Record<string, { state: CauseState; test: string; text: string; role: BoardRole; when: string; match: string | null }>
   /** Ticks for the queue sheet. */
   checked: { match: string; role: BoardRole; when: string }[]
   merged: MergedFinding
@@ -164,10 +167,7 @@ export interface BoardInput {
 const ms = (iso: string | undefined): number | null => { const t = iso ? Date.parse(iso) : NaN; return Number.isNaN(t) ? null : t }
 
 /** The robot as a board line names it: the profile id, or `summaryRobot()`'s name for a guess that does not fit. */
-export function robotOf(m: MatchSummary): string {
-  const r = summaryRobot(m.robot)
-  return r.named ? m.robot.profileId : r.name
-}
+export function robotOf(m: MatchSummary): string { return robotIdOf(m.robot) }
 
 /** "Q28" from a stored match ("<event> Qualification 28", "Q28") given its event name. */
 export function shortStored(match: string | undefined, event?: string): string | null {
@@ -399,6 +399,7 @@ export function buildBoard(input: BoardInput): Board {
       nextStep: rule === ESTOP_RULE ? ESTOP_STEP : latest?.nextStep ?? maker?.nextStep ?? '', latest,
       notes: (state?.notes ?? []).map((n) => ({ text: n.text, role: n.by.role, match: shortStored(n.match), when: n.when })),
       lastChange: state?.changed ? { role: state.by.role, match: shortStored(state.match), when: state.when } : null,
+      causeMarks: Object.fromEntries(Object.entries(state?.causes ?? {}).map(([id, c]) => [id, { state: c.state, test: c.test, text: c.text, role: c.by.role, when: c.when, match: shortStored(c.match) }])),
       checked: (state?.checked ?? []).filter((c) => inScope(c, scope)).map((c) => ({ match: c.match, role: c.by.role, when: c.when })),
       merged,
     }
@@ -426,7 +427,7 @@ export function buildBoard(input: BoardInput): Board {
     gate: gate.length, nextLabel: tl.next?.label ?? null, minutes: tl.next?.minutes ?? null,
     minutesWord: tl.next?.leftMinutes != null ? `≈ ${durText(tl.next.leftMinutes)} left (est.)` : tl.next?.minutes != null && tl.last ? `≈ ${durText(tl.next.minutes)} after ${tl.last.label} (est.)` : null,
     deferralsDue: rows.filter((i) => i.cls === 'due').length, noOwner: rows.filter((i) => !i.grey && !i.awaitingClean && !i.owner).length,
-    reds: rows.filter(isRed).length, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, awaitingReds: rows.filter((i) => isRed(i) && i.awaitingClean).length, nextGap, over: tl.hasSchedule && !tl.next && tl.hasPlayoffs,
+    reds: rows.filter(isRed).length, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, awaitingReds: rows.filter((i) => isRed(i) && i.awaitingClean).length, nextGap, over: eventOver(tl),
   }
   const tickFor = tl.next?.label ?? `after ${tl.last?.label ?? 'now'}`
   const read = notes.handoffReads.at(-1)
@@ -449,8 +450,10 @@ export function isGate(i: BoardIssue, tl: Timeline): boolean {
   return i.open && i.priority === 'red' && !i.grey && i.status !== 'deferred' && i.due.pos <= tl.nextPos
 }
 
-export function isChecked(i: BoardIssue, tickFor: string): boolean {
-  return i.checked.some((c) => c.match === tickFor)
+/** A tick for the match counts while it is fresh: 90 minutes, as Foresight's ticks (`tickAt`). With no clock (`now` null) it is not aged. */
+export function isChecked(i: BoardIssue, tickFor: string, now: number | null = null): boolean {
+  const c = i.checked.filter((x) => x.match === tickFor).at(-1)
+  return !!c && (now === null || !tickAt(c.role, c.when, now).old)
 }
 
 /** The deferral points to offer for an issue (ADR 6), with Hindsight's pick marked. */

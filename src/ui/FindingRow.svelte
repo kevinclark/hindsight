@@ -15,7 +15,7 @@
   import { shortTitle } from '../report/titles.ts'
   import { keyNumber } from '../report/review-model.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -41,6 +41,8 @@
     statusOf?: (f: Finding) => string | undefined
     /** The list's first active error: its closed row carries the next step and who acts (derived by the list, so it moves when that error is marked known or the audience changes). */
     showNext?: boolean
+    /** Opens the debug workspace for this finding (ADR 3), when the page can record what the team finds. */
+    onDebug?: (finding: Finding) => void
   } = $props()
   const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
   // One level under the headline, in tree order: a finding that hangs off another explained finding says so on its own line instead of opening a disclosure inside a disclosure.
@@ -150,6 +152,7 @@
         <p class="incident"><strong>Who acts:</strong> {who} · <strong>Tracked as:</strong> <code>{finding.key}</code></p>
       {/if}
       <div class="actions">
+        {#if onDebug && rule && 'causes' in rule && rule.causes.length}<button class="debug" onclick={() => onDebug(finding)}>Debug this</button>{/if}
         {#if wrongMark || issue?.status !== 'known'}<button onclick={() => mark('known')}>Mark as known…</button>{/if}
         {#if wrongMark || issue?.status !== 'fixed'}<button onclick={() => mark('fixed')}>Mark as fixed…</button>{/if}
         {#if !realMark}<button onclick={() => mark('real')}>Real problem…</button>{/if}
@@ -164,7 +167,7 @@
       <summary>Explains {under.length} more ({severityWords(under)})</summary>
       <ul>
         {#each flat as { node: c, via } (c.finding.key + c.finding.time)}
-          <FindingRow finding={c.finding} nested {via} {analysis} {issues} {wrong} {real} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} />
+          <FindingRow finding={c.finding} nested {via} {analysis} {issues} {wrong} {real} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} {onDebug} />
         {/each}
       </ul>
     </details>

@@ -15,19 +15,17 @@
   import { changedLine, clockText, dueLine, ownerText, priorityIcon, priorityWord, rowTitle, statusLine, tags } from '../board/words.ts'
   import type { Change } from '../board/writes.ts'
   import type { BoardRole } from '../triage/history.ts'
+  import { CAUSE_TAGS, debugCauses, markText, readReverse } from '../board/debug.ts'
 
-  let { issue, board, rate, role, onBack, onChange }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange: (changes: Change[], note?: string) => void } = $props()
+  let { issue, board, rate, role, onBack, onChange, onDebug }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange: (changes: Change[], note?: string) => void; onDebug: () => void } = $props()
 
   const maker = $derived(makerOf(issue.rule))
   const options = $derived(suggestions(board.tl))
   const evidence = $derived(Object.entries(issue.latest?.evidence ?? {}))
-  const causes = $derived.by(() => {
-    const all = maker?.causes ?? []
-    const likely = new Set(issue.latest?.likely ?? [])
-    // The ones this log points to first, then Hindsight's own order. "Possible", never "likely": no backtest supports a ranking.
-    return [...all].sort((a, b) => Number(likely.has(b.id)) - Number(likely.has(a.id)))
-      .map((c) => ({ ...c, points: likely.has(c.id), ruled: issue.latest?.ruledOut?.[c.id] }))
-  })
+  // The test switch (debug workspace): causes in reverse order, named on screen while on.
+  const reverse = (() => { try { return readReverse(localStorage) } catch { return false } })()
+  // The ones this log points to first, then Hindsight's own order. "Possible", never "likely": no backtest supports a ranking.
+  const causes = $derived(debugCauses(maker?.causes ?? [], { likely: issue.latest?.likely, ruledOut: issue.latest?.ruledOut }, issue.causeMarks, reverse))
 
   // The form starts from what the board holds now.
   let priority = $state<Priority>('red')
@@ -88,7 +86,7 @@
   <span class="small hdr-rate">Not a real problem, for this rule: {rate?.text ?? 'no marks yet'}</span>
 </div>
 {#if issue.deferral?.expired}<p class="note"><b>Deferral ended.</b> The workaround while it held: {issue.deferral.workaround || '(none written)'}</p>{/if}
-<h3 class="screen">{rowTitle(issue)}</h3>
+<div class="titlerow"><h3 class="screen">{rowTitle(issue)}</h3>{#if causes.length}<button type="button" class="primary" data-debug-open onclick={onDebug}>Debug this</button>{/if}</div>
 <p class="muted small"><code>{issue.rule}</code> · seen in {issue.firedIn.length} match{issue.firedIn.length === 1 ? '' : 'es'}{issue.sightings.some((s) => s.kind === 'pit') ? ` and ${issue.sightings.filter((s) => s.kind === 'pit').length} pit run${issue.sightings.filter((s) => s.kind === 'pit').length === 1 ? '' : 's'}` : ''} · on {issue.robot || 'an unknown robot'}</p>
 
 <div class="cols">
@@ -99,11 +97,14 @@
       <p class="muted small">Latest: {issue.title}</p>
       {#if causes.length}
         <h5>Possible causes</h5>
+        {#if reverse}<p class="note" role="status"><b>Test setting on:</b> causes are in reverse order.</p>{/if}
         <ol class="causes">
           {#each causes as c (c.id)}
-            <li class:ruled={!!c.ruled}>
-              <span class="cause">{c.cause}</span> <span class="tag">{c.ruled ? 'ruled out' : 'possible'}</span>{#if c.points && !c.ruled}{' '}<span class="tag">this log points to it</span>{/if}
-              <span class="look">{c.ruled ? c.ruled : `Look at: ${c.look}`}</span>
+            {@const out = c.state === 'ruled-out' || !!c.hindsightRuledOut}
+            <li class:ruled={out}>
+              <span class="cause">{c.cause}</span>{#if c.state !== 'possible' || c.hindsightRuledOut}{' '}<span class="tag">{CAUSE_TAGS[c.state === 'possible' ? 'ruled-out' : c.state]}</span>{/if}{#if c.points && !out}{' '}<span class="tag">this log points to it</span>{/if}
+              <span class="look">{c.state !== 'possible' ? markText(c) : c.hindsightRuledOut ? `Hindsight: ${c.hindsightRuledOut}` : `Look at: ${c.look}`}{#if c.role}{' '}<span class="chip">{c.role}</span>{/if}</span>
+              {#if c.state !== 'possible' && c.hindsightRuledOut}<span class="look">Hindsight: {c.hindsightRuledOut}</span>{/if}
             </li>
           {/each}
         </ol>
@@ -118,6 +119,9 @@
       {/if}
       {#if maker && 'incident' in maker}<p class="small muted"><b>Why this rule exists:</b> {maker.incident}</p>{/if}
     </section>
+    {#if issue.rule.startsWith('code/')}
+      <!-- FIX PREVIEW (slice 15): the code check's fix preview for a `code/` issue goes here (src/ui/FixPreview.svelte). Empty on purpose. -->
+    {/if}
     <section class="panel">
       <h4>Further reading</h4>
       {#if maker && 'sources' in maker && maker.sources.length}

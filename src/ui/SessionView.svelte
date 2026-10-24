@@ -22,9 +22,10 @@
   import { staleNote } from '../session/stale.ts'
   import { changeText, diffFindings, snapshotFindings, type FindingChange, type FindingSnapshot } from '../session/changes.ts'
   import { VERSION } from '../version.ts'
-  import type { HistoryEvent, Triage } from '../triage/history.ts'
+  import { boardState, type HistoryEvent, type Triage } from '../triage/history.ts'
+  import { scopeOf } from '../board/model.ts'
+  import { saveForClaude } from './export-preview.svelte.ts'
   import { sessionWithMarks } from '../triage/track-record.ts'
-  import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
   import { shortMatchLabel } from './match-label.ts'
   import { loggingChanges, neverLogged, type StateRun } from '../coverage/coverage.ts'
@@ -466,9 +467,10 @@
     writeStore('hindsight.typedBatteries', typedBatteries)
   }
   const changesFor = (s: Session) => (reread && reread.sessionId === s.id ? reread.changes : undefined)
-  function download() {
+  async function download() {
     if (!session) return
-    downloadText(`${sessionBase(session.label)}.session-findings.json`, JSON.stringify(buildSessionJson(shown!, issues, typedBatteries, changesFor(session)), null, 1))
+    // Lists what is inside first (ADR 5); the file is saved only on Save.
+    await saveForClaude(`${sessionBase(session.label)}.session-findings.json`, buildSessionJson(shown!, issues, typedBatteries, changesFor(session), { states: boardState(history), scope: scopeOf(shown!) }))
   }
   // "Save for Slack": the phone card as a PNG, then the print dialog (Save as PDF; the title names the file).
   // `s` as the team's marks show it (`shown`).

@@ -18,6 +18,9 @@
   import BoardRow from './BoardRow.svelte'
   import BoardRates from './BoardRates.svelte'
   import BoardIssueDetail from './BoardIssueDetail.svelte'
+  import DebugWorkspace from './DebugWorkspace.svelte'
+  import { makerOf } from '../rules/index.ts'
+  import { rowTitle } from '../board/words.ts'
   import BoardHandoff from './BoardHandoff.svelte'
   import BoardMissed from './BoardMissed.svelte'
   import BoardQueue from './BoardQueue.svelte'
@@ -38,7 +41,7 @@
     if (role && s) writeRole(s, role)
   }
 
-  type View = 'board' | 'issue' | 'handoff' | 'missed' | 'queue'
+  type View = 'board' | 'issue' | 'debug' | 'handoff' | 'missed' | 'queue'
   let view = $state<View>('board')
   let openKey = $state<string | null>(null)
   let group = $state<'urgency' | 'mechanism'>('urgency')
@@ -157,7 +160,10 @@
     {#if scheduleNote && !board.noSchedule}<p class="note">{scheduleNote}</p>{/if}
     <BoardRates {rates} />
   {:else if view === 'issue' && issue}
-    <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} onBack={back} onChange={(c) => change(issue, c)} />
+    <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} onBack={back} onChange={(c) => change(issue, c)} onDebug={() => (view = 'debug')} />
+  {:else if view === 'debug' && issue}
+    <DebugWorkspace title={rowTitle(issue)} rule={issue.rule} meaning={makerOf(issue.rule)?.meaning ?? issue.title} latest={issue.title} causes={makerOf(issue.rule)?.causes ?? []} likely={issue.latest?.likely} ruledOut={issue.latest?.ruledOut} evidence={issue.latest?.evidence}
+      nextStep={issue.nextStep} marks={issue.causeMarks} {role} backLabel="Issue" onBack={() => (view = 'issue')} onChange={(c) => change(issue, c)} />
   {:else if view === 'handoff'}
     <BoardHandoff {board} {role} onBack={back} onOpen={open} onRead={() => note('handoff-read', '')} />
   {:else if view === 'missed'}
@@ -244,6 +250,10 @@
   .board :global(ol.causes li) { margin: 0.5rem 0; }
   .board :global(.look) { display: block; color: var(--muted); font-size: 0.88rem; }
   .board :global(.ruled .cause) { text-decoration: line-through; }
+  .board :global(.titlerow) { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; align-items: center; }
+  .board :global(.titlerow h3) { margin: 0.3rem 0 0.2rem; }
+  .board :global(.readback) { list-style: none; padding: 0 0.5rem 0.4rem 6.8rem; border-bottom: 1px solid var(--border); }
+  .board :global(.causeline) { margin: 0.2rem 0; }
   .board :global(.crumbs) { margin: 0.5rem 0; }
   .board :global(.bigcard) { border: 2px solid var(--fg); border-radius: 6px; padding: 0.6rem 0.9rem; margin: 0.8rem 0; }
   .board :global(.flash) { border: 2px solid var(--fg); border-radius: 6px; padding: 0.5rem 0.8rem; font-weight: 600; }

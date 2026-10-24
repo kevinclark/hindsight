@@ -42,7 +42,14 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
 - **Download for Claude** saves `<log>.findings.json` (schema `hindsight.findings/2`: each finding has robot time,
   match time, meaning, ranked causes and next step): findings, evidence, summary
   statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
-  hashed Wi-Fi key.
+  hashed Wi-Fi key. Before it saves, a list says what is inside (counts of findings, data windows, notes and cause states;
+  no names) with Save and Cancel; the file leaves the laptop only if you upload it. It also carries each rule's public sources
+  and thresholds (`rules`), and, for an issue the team recorded something on, a `board` block (priority, status, deferral and
+  workaround, notes, cause states; who is a role only).
+- **Debug this** (on a finding in Match review, and on a board issue) opens the debug workspace: the finding's meaning and its
+  possible causes in Hindsight's order (never called "likely": no backtest supports a ranking), each with what to look at and a
+  state you record: possible, ruled out by a test (with what it showed), or confirmed. They are board lines (op `cause`) in the
+  team's history. A setting under "Test setting" shows the causes in reverse order, for testing whether answers follow the rank.
 
 - **Save for Slack** (beside each Download for Claude, in Match review and Foresight) opens the print dialog on a
   report layout, not on the app: page 1 is the bottom line, each error with its one number, next step and plot, then
@@ -175,7 +182,7 @@ M5 Max (147 ms per log); the page never stopped responding for more than about 0
   wiring resistance, seconds a follower ran more than 15 % off its leader, auto loop overruns, vision outliers. Each
   row says the verdict ("Under 7 V in 8 of 8 matches"), draws a sparkline (the line as a hairline, one amber dot on the
   worst match), and quotes the rule's own next step. Dots are coloured by battery ID when there are any (logged, or typed in).
-- **Download for Claude** saves `<session>.session-findings.json` (grid, confidence, per-match numbers).
+- **Download for Claude** saves `<session>.session-findings.json` (grid, confidence, per-match numbers, the board records and the rules' sources), after listing what is inside.
 
 Not used in the session view: Driver Station logs (match review only).
 

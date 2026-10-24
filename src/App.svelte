@@ -9,6 +9,8 @@
   import MatchTab from './ui/MatchTab.svelte'
   import Menu from './ui/Menu.svelte'
   import AskText from './ui/AskText.svelte'
+  import ExportPreview from './ui/ExportPreview.svelte'
+  import { saveForClaude } from './ui/export-preview.svelte.ts'
   import PowerTab from './ui/PowerTab.svelte'
   import LimitsTab from './ui/LimitsTab.svelte'
   import LoggingTab from './ui/LoggingTab.svelte'
@@ -31,7 +33,13 @@
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
   import { deviceId } from './triage/device-id.ts'
-  import { HISTORY_FILE_NAME, mergeHistory, migrationLines, parseHistory, serializeHistory, triage, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
+  import { scopeOf } from './board/model.ts'
+  import { robotIdOf, matchRobot } from './session/summary.ts'
+  import { readRole, writeRole } from './board/role.ts'
+  import { boardLines, type Change } from './board/writes.ts'
+  import type { BoardRole } from './triage/history.ts'
+  import type { ExportBoard } from './report/board-export.ts'
+  import { boardKey, boardState, HISTORY_FILE_NAME, mergeHistory, migrationLines, parseHistory, serializeHistory, triage, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
   import { howSure, matchRef, realHere, trackRecord, withMarks, wrongHere, type Fire } from './triage/track-record.ts'
   import type { Finding } from './rules/types.ts'
   import { PROFILES, profileId } from './profiles/index.ts'
@@ -311,11 +319,35 @@
     if (e.dataTransfer?.files) load(e.dataTransfer.files)
   }
 
-  function downloadForClaude() {
-    if (!current || !shownCurrent) return
-    const json = JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow, realNow), null, 1)
-    downloadText(findingsFileName(current.match), json)
+  // What the team recorded on the board for this log's issues (priority, notes, cause states), filed under the robot as the board files it.
+  // The export is scoped like the board: by the session that holds this log (its event and match span), so a deferral made
+  // after a later match of the same event still counts on a log with no event name; a log in no session falls back to itself.
+  const boardFor = (a: Analysis): ExportBoard => {
+    const r = refOf(a)
+    const held = sessions.find((s) => s.kind === 'event' && [...s.matches, ...(s.pitRuns ?? [])].some((m) => m.fileName === a.match.fileName || m.pieces?.includes(a.match.fileName)))
+    return { states: boardState(history), robot: robotIdOf(matchRobot(a.match)), scope: held ? scopeOf(held) : { event: r.event, from: r.played, to: r.played } }
   }
+  async function downloadForClaude() {
+    if (!current || !shownCurrent) return
+    // Lists what is inside first (ADR 5); the file is saved only on Save.
+    await saveForClaude(findingsFileName(current.match), buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow, realNow, boardFor(shownCurrent)))
+  }
+
+  // The debug workspace in Match review (ADR 3): cause states are board lines under this log's robot, written with this laptop's role.
+  const store = (): Storage | null => { try { return localStorage } catch { return null } }
+  let role = $state<BoardRole | null>((() => { const s = store(); return s ? readRole(s) : null })())
+  const debug = $derived(current ? {
+    role,
+    setRole: (r: BoardRole) => { role = r; const s = store(); if (s) writeRole(s, r) },
+    marks: (f: Finding) => boardState(history).get(boardKey(f.key, robotIdOf(matchRobot(current!.match))))?.causes,
+    write: (f: Finding, changes: Change[]) => {
+      const r = role
+      if (!r) return
+      const robot = robotIdOf(matchRobot(current!.match))
+      const at = here ? { match: here.id, ...(here.event ? { event: here.event } : {}), ...(here.played !== null ? { played: new Date(here.played).toISOString() } : {}) } : {}
+      writeBoard((device, h) => boardLines(h, { device, role: r }, new Date(), { key: f.key, robot }, changes, at))
+    },
+  } : undefined)
 
   // "Save for Slack": the browser's print dialog (Save as PDF; the title names the file), then the phone card as a PNG.
   const reviewCardOf = (a: Analysis) => buildCard(reviewCard(reviewModel(marked(a), issues, standing, wrongHere(refOf(a), marks))))
@@ -336,7 +368,7 @@
     load,
     version: VERSION,
     // For scripts/report.ts: the same builders the buttons use, for the log in view.
-    findingsJson: () => (shownCurrent ? JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow, realNow), null, 1) : null),
+    findingsJson: () => (shownCurrent ? JSON.stringify(buildFindingsJson(shownCurrent.match, shownCurrent.report, issues, wrongNow, realNow, boardFor(shownCurrent)), null, 1) : null),
     findingsFile: () => (current ? findingsFileName(current.match) : null),
     reviewCard: () => (current ? reviewCardOf(current) : null),
     reviewCardPng: async () => (current ? await cardToPngDataUrl(reviewCardOf(current)) : null),
@@ -467,7 +499,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={mark} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={mark} debug={debug} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>
@@ -491,6 +523,7 @@
 </div>
 
 <AskText />
+<ExportPreview />
 {#if mode === 'review' && current}<ReviewReport analysis={shownCurrent ?? current} {issues} {standing} wrong={wrongNow} />{/if}
 
 <style>
