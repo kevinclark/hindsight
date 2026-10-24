@@ -13,7 +13,7 @@ import { BUS_DEVICES } from './can/bus-dropout.ts'
 import { GROUP_DEVICES } from './parents.ts'
 
 export const LINKS: Link[] = [
-  // CalGames 2026 P0 and MTTD 2025 Q61: the battery collapsed, so the robot browned out.
+  // Two matches, in 2025 and 2026: the battery collapsed, so the robot browned out.
   link({
     cause: 'power/battery-collapse',
     explains: 'power/brownout',
@@ -21,7 +21,7 @@ export const LINKS: Link[] = [
     when: (collapse, brownout) => mostLikely(brownout, 'weak-battery'),
     why: 'the battery collapsed under load, so the voltage fell below the brownout level',
   }),
-  // CalGames 2026 P0: flywheel follower 16 dropped off CAN 2.5 s after the first brownout, with the battery low.
+  // One 2026 match: flywheel follower 16 dropped off CAN 2.5 s after the first brownout, with the battery low.
   link({
     cause: 'power/brownout',
     explains: 'can/device-dropout',
@@ -29,14 +29,14 @@ export const LINKS: Link[] = [
     when: (brownout, dropout) => likely(dropout, 'battery-sag') && secondsAfter(brownout, dropout) >= -1,
     why: 'the device lost power in the brownout',
   }),
-  // CalGames 2026 P0, MTTD 2025 Q61 and one public log: the lowest voltage was the brownout itself.
+  // Those two matches and one public log: the lowest voltage was the brownout itself.
   link({
     cause: 'power/brownout',
     explains: 'power/margin',
     when: (brownout, margin) => Number(margin.evidence['margin (V)']) <= 0,
     why: 'the voltage went below the brownout setting, so there was no margin left',
   }),
-  // CalGames 2026 Q13: the hood moved before its zero finished, then hit the trench bar 11 s later, in auto.
+  // One 2026 match: the hood moved before its zero finished, then hit the trench bar 11 s later, in auto.
   // A zero that never finished counts only for a tilt in auto: in teleop a tilt is more often a bump or a push.
   link({
     cause: 'mech/zero-not-completed',
@@ -44,35 +44,35 @@ export const LINKS: Link[] = [
     when: (zero, tilt) => duringWrongFrame(zero, tilt),
     why: 'the mechanism was moving from the wrong zero, so it went somewhere it should not have',
   }),
-  // CalGames 2026 Q13: wedged at −24° for 0.8 s, then disabled 0.8 s after the tilt began.
+  // The same match: wedged at −24° for 0.8 s, then disabled 0.8 s after the tilt began.
   link({
     cause: 'collision/tilt',
     explains: 'auto/early-disable',
     when: (tilt, disable) => likely(disable, 'wedged') && isBetween(secondsAfter(tilt, disable), 0, 3),
     why: 'the robot was wedged, so it was disabled',
   }),
-  // CalGames 2026 Q13: the DS log stopped 3 s into the comms loss. It is evidence for the loss, not a second problem.
+  // The same match: the DS log stopped 3 s into the comms loss. It is evidence for the loss, not a second problem.
   link({
     cause: 'comms/loss',
     explains: 'comms/ds-log-truncated',
     when: (loss) => likely(loss, 'ds-laptop'),
     why: 'the Driver Station stopping is what lost comms',
   }),
-  // CalGames 2026 P0: "Flywheel Follower Disconnected" came on at the moment follower 16 dropped off CAN.
+  // One 2026 match: "Flywheel Follower Disconnected" came on at the moment follower 16 dropped off CAN.
   link({
     cause: 'can/device-dropout',
     explains: 'alerts/passthrough',
     when: (dropout, alert) => alertNames(alert, dropout.about) && within(dropout, alert, 1),
     why: 'the robot code saw the same device drop off CAN',
   }),
-  // CalGames 2026 Q21: two Back_Right camera alerts came on at the moment the camera dropped out.
+  // One 2026 match: two Back_Right camera alerts came on at the moment the camera dropped out.
   link({
     cause: 'vision/stale',
     explains: 'alerts/passthrough',
     when: (camera, alert) => alertNames(alert, camera.about) && within(camera, alert, 1),
     why: 'the robot code saw the same camera drop out',
   }),
-  // MTTD 2025 Q41: "Missing Module Data" and "Missing Gyro Data" came on 0.85 s before the bus's devices reported
+  // One 2025 match: "Missing Module Data" and "Missing Gyro Data" came on 0.85 s before the bus's devices reported
   // the drop (the code sees missing values before a device's Connected flag times out). "Using Sync Odometry" came
   // on too, but it also comes on once in 7 of the 14 other matches that log it, with no bus drop. So the alert
   // must name a kind of device on the bus, not just come on at the same time.
@@ -82,7 +82,7 @@ export const LINKS: Link[] = [
     when: (bus, alert) => namesAKindOfDevice(bus.evidence[BUS_DEVICES], alert) && within(bus, alert, 2),
     why: 'the robot code saw the devices on the bus go missing',
   }),
-  // CalGames 2026 Q2 with no CAN bus in the robot profile: the same 12 swerve "Disconnected ... module" alerts and
+  // A 2026 match with no CAN bus in the robot profile: the same 12 swerve "Disconnected ... module" alerts and
   // "Missing Module Data" came on with the 25 devices that dropped together (a parent, parents.ts), as with the bus.
   link({
     cause: 'can/devices-dropped-together',
@@ -131,7 +131,7 @@ function namesAKindOfDevice(devices: number | string | undefined, alert: Finding
 }
 
 /**
- * Words an alert uses for a kind of device that the profile names differently (CalGames 2026 Q2: "Disconnected turn
+ * Words an alert uses for a kind of device that the profile names differently (a 2026 match: "Disconnected turn
  * motor on Back Left module!" is the device the profile calls "Back Left steer"; "turn encoder" is its CANcoder).
  */
 const ALERT_WORDS: Record<string, string[]> = { turn: ['steer'], encoder: ['cancoder'], module: ['steer'] }
