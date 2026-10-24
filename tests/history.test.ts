@@ -8,9 +8,9 @@ describe('known-issue history file', () => {
   it('round-trips through the text file', () => {
     expect(parseHistory(serializeHistory([known, fixed])).events).toEqual([known, fixed])
   })
-  it('skips lines it does not understand instead of failing', () => {
-    const r = parseHistory(`${JSON.stringify(known)}\nnot json\n{"type":"metrics"}\n`)
-    expect(r.events).toEqual([known])
+  it('counts lines that are not JSON objects, and keeps other lines it cannot type as opaque', () => {
+    const r = parseHistory(`${JSON.stringify(known)}\nnot json\n[1]\n{"type":"metrics"}\n`)
+    expect(r.events).toEqual([known, { type: 'opaque', raw: '{"type":"metrics"}', when: '' }])
     expect(r.skipped).toBe(2)
   })
   it('newest line wins, whatever order the files were combined in', () => {
@@ -40,9 +40,11 @@ describe('"not a real problem" marks', () => {
     const old = `${JSON.stringify({ type: 'issue', key: 'k', status: 'known', note: 'n', when: '2026-01-01T00:00:00Z' })}\n`
     expect(parseHistory(old)).toEqual({ events: [{ type: 'issue', key: 'k', status: 'known', note: 'n', when: '2026-01-01T00:00:00Z' }], skipped: 0 })
   })
-  it('a wrong mark with no match is skipped: it would have nothing to apply to', () => {
+  it('a wrong mark with no match is not folded: it would have nothing to apply to', () => {
     const { match: _m, ...noMatch } = wrong
-    expect(parseHistory(JSON.stringify(noMatch)).skipped).toBe(1)
+    const r = parseHistory(JSON.stringify(noMatch))
+    expect(r.events.map((e) => e.type)).toEqual(['opaque'])
+    expect(triage(r.events).wrong.size).toBe(0)
   })
   it('is about its own match only and leaves the issue\'s known or fixed mark alone', () => {
     const t = triage([known, wrong, { ...wrong, key: known.key, when: '2026-10-20T11:00:00Z' }])
@@ -75,7 +77,9 @@ describe('"real problem" marks', () => {
   it('round-trip; need a match; old builds skip them', () => {
     expect(parseHistory(serializeHistory([real])).events).toEqual([real])
     const { match: _m, ...noMatch } = real
-    expect(parseHistory(JSON.stringify(noMatch)).skipped).toBe(1)
+    const r = parseHistory(JSON.stringify(noMatch))
+    expect(r.events.map((e) => e.type)).toEqual(['opaque'])
+    expect(triage(r.events).real.size).toBe(0)
     expect(['known', 'fixed', 'new'].includes(real.status)).toBe(false)
   })
   it('are about their own match, and never file the issue as known', () => {
