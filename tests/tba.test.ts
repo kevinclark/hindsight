@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createTba, isTbaPath, memoryStore, TbaError, type TbaStore } from '../src/tba/source.ts'
 import { blankEventClusters, dayIn, identifyEvents, qualNumber, type EventLog } from '../src/tba/identify.ts'
 import { groupSessions } from '../src/session/session.ts'
+import { gaps, parseSchedule, teamSchedule } from '../src/tba/schedule.ts'
 import { checkTbaKey } from '../src/hub/team-setting.ts'
 import type { MatchSummary } from '../src/session/summary.ts'
 import { facetValues, type RobotLabels } from '../src/hub/facets.ts'
@@ -212,5 +213,51 @@ describe('the Library\'s event facet', () => {
     expect(facetValues(entry('', 'my place'), labels, places).place).toBe('Test Regional 2099')
     expect(facetValues(entry('', 'my place'), labels).place).toBe('my place')
     expect(facetValues(entry('XYZ'), labels, places).place).toBe('XYZ')
+  })
+})
+
+describe('the team schedule', () => {
+  // invented: times in seconds since 1970 from a base, spaced in minutes
+  const base = Date.UTC(2099, 2, 5, 17) / 1000
+  const row = (n: number, minutes: number | null, extra: Record<string, unknown> = {}) => ({ key: `2099x_qm${n}`, comp_level: 'qm', set_number: 1, match_number: n, time: minutes === null ? null : base + minutes * 60, ...extra })
+  const day = (starts: number[], first: number) => starts.map((m, i) => row(first + i, m))
+  // Saturday: 50, 130, 75, 55, 40 minutes apart; the night; Sunday: 55 apart; then the playoffs 200 minutes after the last qualification
+  const SAT = [0, 50, 180, 255, 310, 350], SUN = [24 * 60 - 60 + 600, 24 * 60 - 60 + 655]
+  const raw = [...day(SAT, 2), ...SUN.map((m, i) => row(40 + i, m)), { key: '2099x_sf1m1', comp_level: 'sf', set_number: 4, match_number: 1, time: base + (SUN[1] + 200) * 60 }]
+
+  it('parses in play order and drops what it does not know', () => {
+    const s = parseSchedule([...raw].reverse().concat([{ key: 'x', comp_level: 'zz', match_number: 1, set_number: 1, time: null }]))
+    expect(s.map((m) => m.key)).toEqual([...raw.map((m) => m.key)])
+    expect(s[0]).toMatchObject({ level: 'qm', number: 2, scheduled: base * 1000, predicted: null, actual: null })
+  })
+  it('gives each gap after a match, with an estimated length, and names lunch, overnight and before playoffs', () => {
+    const g = gaps(parseSchedule(raw), 0)
+    expect(g.map((x) => [x.after, x.minutes, x.name])).toEqual([
+      [2, 50, null], [3, 130, 'lunch'], [4, 75, null], [5, 55, null], [6, 40, null], [7, 24 * 60 - 60 + 600 - 350, 'overnight'], [40, 55, null], [41, 200, 'before playoffs'],
+    ])
+    expect(g.at(-1)!.next).toEqual({ level: 'sf', number: 1 })
+  })
+  it('only the gaps after the given match number', () => {
+    expect(gaps(parseSchedule(raw), 6).map((x) => x.after)).toEqual([6, 7, 40, 41])
+    expect(gaps(parseSchedule(raw), 99)).toEqual([])
+  })
+  it('a match that has been played counts at its actual time, not the printed one', () => {
+    const played = raw.map((m) => (m.match_number === 4 && m.comp_level === 'qm' ? { ...m, actual_time: (m.time ?? 0) + 20 * 60 } : m))
+    expect(gaps(parseSchedule(played), 0).find((x) => x.after === 4)!.minutes).toBe(55)
+  })
+  it('without times it still lists the gaps by match number, with no length, and names only the last', () => {
+    const g = gaps(parseSchedule([row(3, null), row(9, null), row(15, null)]), 0)
+    expect(g.map((x) => [x.after, x.minutes, x.name])).toEqual([[3, null, null], [9, null, null], [15, null, 'before playoffs']])
+    expect(g.at(-1)!.next).toBeNull()
+  })
+  it('a day whose gaps are all alike has no lunch, and a day with fewer than three gaps is not judged', () => {
+    const even = gaps(parseSchedule(day([0, 60, 120, 180, 240], 1)), 0)
+    expect(even.map((x) => x.name)).toEqual([null, null, null, null, 'before playoffs'])
+    expect(gaps(parseSchedule(day([0, 200, 400], 1)), 0).map((x) => x.name)).toEqual([null, null, 'before playoffs'])
+  })
+  it('reads the team\'s matches through the client, with the time they were fetched', async () => {
+    const got = await teamSchedule(createTba({ key: KEY, store: memoryStore(), fetch: fakeFetch(), now: () => 42 }), 9999, '2099test')
+    expect(got).toMatchObject({ fetchedAt: 42, fromCache: false })
+    expect(got.data.map((m) => m.key)).toEqual(['2099x_qm5', '2099x_qm12', '2099x_qm19', '2099x_qm26', '2099x_qm33', '2099x_qm40', '2099test_sf1m1'])
   })
 })
