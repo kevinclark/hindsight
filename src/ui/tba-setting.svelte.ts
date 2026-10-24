@@ -5,7 +5,7 @@
  */
 import { hub } from '../hub/bridge.ts'
 import { createTba, localStorageStore, type TbaGet } from '../tba/source.ts'
-import { teamNow } from './team-setting.svelte.ts'
+import { setTeamNow, teamNow } from './team-setting.svelte.ts'
 
 const TEAM = 'hindsight.tba.team'
 const KEY = 'hindsight.tba.key'
@@ -46,4 +46,38 @@ export function tbaGetter(): TbaGet | null {
   const app = hub()
   if (app) return (path, opts) => app.tba(path, opts)
   return createTba({ key: pageKey!, store: localStorageStore() })
+}
+
+/** Bumped after each `saveSetup`, so a form that keeps its own copy of the settings (the Library's) reads them again instead of saving a stale one over a newer save. */
+let savedVersion = $state(0)
+export const setupSaves = (): number => savedVersion
+
+/** What a setup field can change; a missing part is left as it is (a blank key never clears the saved one). */
+export interface SetupPatch { team?: number | null; key?: string; sources?: string[] }
+
+/**
+ * Save from a field that sits beside the thing it unlocks (the board's next-match fields, the setup card). The desktop app
+ * goes through the same call the Library's "Your team" Save uses, keeping the saved GitHub sources; the page uses the
+ * same store as `TbaFields`. Returns words for a refusal, or null. The key is never echoed.
+ */
+export async function saveSetup(patch: SetupPatch): Promise<string | null> {
+  const app = hub()
+  const key = patch.key?.trim() ?? ''
+  if (app) {
+    try {
+      const now = await app.team()
+      const saved = await app.setTeam(patch.team !== undefined ? patch.team : now.team, patch.sources ?? now.sources, key || undefined)
+      setTeamNow(saved.team)
+      setAppHasKey(!!saved.tbaKey)
+      savedVersion++
+      return null
+    } catch (e) { return e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') : 'Could not save.' }
+  }
+  const team = patch.team !== undefined ? patch.team : pageTeam
+  if (team !== null && (!Number.isInteger(team) || team < 1 || team > 99999)) return 'A team number is a whole number from 1 to 99999.'
+  if (key && !/^[A-Za-z0-9_-]{16,128}$/.test(key)) return 'That does not look like a The Blue Alliance read key: it is letters, numbers, - and _ only (account page, Read API Keys).'
+  // `savePageTba` clears the key on an empty string; a field that left it blank means "leave it".
+  savePageTba(team, key || (pageKey ?? ''))
+  savedVersion++
+  return null
 }

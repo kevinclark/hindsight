@@ -25,6 +25,8 @@
   import BoardHandoff from './BoardHandoff.svelte'
   import BoardMissed from './BoardMissed.svelte'
   import BoardQueue from './BoardQueue.svelte'
+  import NextMatchFields from './NextMatchFields.svelte'
+  import { typedNextFor } from './typed-next.svelte.ts'
 
   type Build = (device: string, history: HistoryEvent[]) => HistoryEvent[]
   let { session, history, marks, schedule, scheduleNote, profiles, onWrite, printOut = $bindable(null) }: {
@@ -50,7 +52,7 @@
   // The clock the time left counts from; it moves on every half minute so "≈ 61 min left" stays true while the page is open.
   let now = $state(new Date())
   $effect(() => { const t = setInterval(() => (now = new Date()), 30_000); return () => clearInterval(t) })
-  const board = $derived(buildBoard({ session, history, marks, schedule, profiles, now }))
+  const board = $derived(buildBoard({ session, history, marks, schedule, profiles, now, typedNext: typedNextFor(session) }))
   const rates = $derived(ruleRates(session, marks, history))
   const issue = $derived(openKey ? board.issues.find((i) => i.key === openKey) : undefined)
   const sheet = $derived(queueSheet(board))
@@ -131,6 +133,7 @@
       {#if !role}<span class="small muted">Choose your role to change it.</span>{/if}
     </details>
     </div>
+    {#if board.noSchedule}<NextMatchFields {session} {scheduleNote} />{/if}
     <div class="toolbar">
       <button type="button" class="primary" onclick={() => (view = 'queue')}>Queue sheet (print)</button>
       <button type="button" onclick={() => (view = 'handoff')}>Handoff{board.handoff ? '' : ' (not read yet)'}</button>
@@ -171,7 +174,6 @@
       </details>
     {/if}
 
-    {#if board.noSchedule}<p class="note wide">{board.noSchedule}{#if scheduleNote}{' '}{scheduleNote}{/if}</p>{/if}
     <h4>What we changed in the pit since the last match{board.tl.last ? ` (after ${board.tl.last.label})` : ''}</h4>
     <div class="field">
       <label for="board-pit">One line, shown on the handoff</label>

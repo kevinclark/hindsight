@@ -16,7 +16,7 @@
   import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Places, type Selection } from '../hub/facets.ts'
   import { eventPlaces } from '../hub/event-places.ts'
   import { REFUSED_WORDS, identifyEvents } from '../tba/identify.ts'
-  import { setAppHasKey, tbaGetter, tbaHasKey, tbaMissing } from './tba-setting.svelte.ts'
+  import { setAppHasKey, setupSaves, tbaGetter, tbaHasKey, tbaMissing } from './tba-setting.svelte.ts'
   import { baseName, dayText } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
   import { ADD_LINK_REQUESTS, describeCodeLink } from '../hub/codelink.ts'
@@ -131,6 +131,18 @@
   let savedTeam = $state<number | null>(null)
   let keyBox = $state('') // empty: leave the saved key as it is
   let lookupNote = $state('')
+  /** The setup boxes ("Your team", "Team Drive") sit behind the "This laptop…" link, so the log actions and the list come first. */
+  let setupOpen = $state(false)
+  // A save made beside the board or on the setup card: read the settings again, so this form never saves its older copy over it.
+  let seenSaves = setupSaves()
+  $effect(() => {
+    const n = setupSaves()
+    if (n === seenSaves || !api) return
+    seenSaves = n
+    void api.team().then((t) => { teamBox = t.team; savedTeam = t.team; codeText = t.sources.join(', '); setAppHasKey(!!t.tbaKey) }).catch(() => {})
+    void api.codePlan().then((p) => { codePlan = p }).catch(() => {})
+  })
+  const setupSummary = $derived([savedTeam === null ? 'no team yet' : `team ${savedTeam}`, tbaHasKey() ? 'key saved' : 'no key'].join(', '))
   let linkReport = $state.raw<LinkReport | null>(null)
   let lastJob = $state.raw<LastJob | null>(null)
   const linkLabel = $derived(!codePlan ? 'Link code' : codePlan.logs === 0
@@ -277,6 +289,9 @@
 {#if !api}
   <p class="meta">The library is part of the Hindsight desktop app. This page was opened from a file, so it has none.</p>
 {:else}
+<div class="setup-link">
+  <button type="button" class="link this-laptop" aria-expanded={setupOpen} aria-controls="library-setup" onclick={() => (setupOpen = !setupOpen)}>This laptop…{setupSummary ? ` (${setupSummary})` : ''}</button>
+</div>
 <section class="bar">
   <button class="primary" onclick={addFolder} disabled={!!progress}>Add logs from a folder…</button>
   {#if drive?.signedIn}<button class="primary" onclick={() => (picking = 'ingest')} disabled={driveBusy}>Add logs from a Drive folder…</button>{/if}
@@ -293,6 +308,8 @@
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 
+{#if setupOpen}
+<div id="library-setup" data-library-setup>
 <details class="team" open={savedTeam === null && !codePlan?.sources.length}>
   <summary>Your team: {savedTeam === null ? 'no team number yet' : savedTeam}{codePlan?.sources.length ? ` · code from ${codePlan.sources.join(', ')}` : ' · no GitHub source yet'}</summary>
   <p class="meta">With your team number set, the robot lists show your team's robots. Logs that name only their code (no robot profile) can be linked to the public GitHub repo that holds it: give an organization or <code>owner/repo</code>, comma separated. Saving, and <em>Link code</em>, read each repo's <code>Robot.java</code> and ask GitHub about build commits; nothing is sent but repo and commit names.</p>
@@ -336,6 +353,8 @@
     </p>
   {/if}
 </details>
+</div>
+{/if}
 
 {#if lastJob}
   <section class="report" aria-label="How the last job ended">
@@ -529,7 +548,9 @@
   button { font: inherit; color: var(--fg); }
   .primary { padding: 0.35rem 0.9rem; border: 1px solid var(--focus); border-radius: 6px; background: none; cursor: pointer; }
   .primary:disabled { border-color: var(--border); color: var(--muted); cursor: default; }
+  .setup-link { display: flex; justify-content: flex-end; }
   .link { border: none; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; min-height: 24px; padding: 0 0.3rem; }
+  .this-laptop { min-width: 24px; min-height: 24px; padding: 0.2rem 0.5rem; font: inherit; color: var(--fg); }
   .problem { color: var(--error); margin: 0.25rem 0; }
   .report { border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem; margin-bottom: 1rem; }
   .report h2 { font-size: 1rem; margin: 0.2rem 0; }

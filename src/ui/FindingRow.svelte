@@ -14,6 +14,8 @@
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
   import { shortTitle } from '../report/titles.ts'
   import { keyNumber } from '../report/review-model.ts'
+  import CodeFolderControl from './CodeFolderControl.svelte'
+  import { codeFolder } from './code-folder.svelte.ts'
 
   let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug }: {
     finding: Finding
@@ -54,6 +56,8 @@
   const wrongMark = $derived(wrong?.get(finding.key))
   const realMark = $derived(wrongMark ? undefined : real?.get(finding.key))
   const cameBack = $derived(issue?.status === 'fixed' && !fixedLater && !wrongMark)
+  // The current-limit check ran, but its lines could not be compared with this log's commit because no robot code is linked: offer the code in place (ADR b).
+  const needsCode = $derived(finding.rule === 'power/limit-not-applied' && !finding.evidence["current-limit lines vs the profile's commit"] && String(finding.evidence['limit switched on in code'] ?? '').includes('this log ran') && !codeFolder.current)
   const howSure = $derived(sure?.(finding.rule) ?? null)
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
   const ICON = { error: '●', warning: '▲', info: '○' } as const
@@ -121,6 +125,12 @@
           {/each}
         </tbody>
       </table>
+      {#if needsCode}
+        <div class="code-offer" data-code-offer>
+          <p class="fix">Not compared with this log's code: no robot code is linked. Choosing it links this log to its code to run the code checks.</p>
+          <CodeFolderControl suggest={analysis.match.profile?.code} />
+        </div>
+      {/if}
       {#if finding.plot && open}
         <Plot model={plotModel(analysis.match, finding.plot)} />
       {/if}
