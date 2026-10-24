@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { openWpilog, readNumbers } from '../src/readers/wpilog.ts'
 import { chooseProfile } from '../src/profiles/choose.ts'
@@ -1083,7 +1083,7 @@ describe.skipIf(!haveLogs)('a team with no profile (8033 2026 logs A, B and C, b
     expect(fromBuilt[i].match.profileChoice.misfit).toBe(false)
     const a = compared(builtIn[i].report.findings, false), b = compared(fromBuilt[i].report.findings, true)
     expect(b).toEqual(a)
-    if (i === 1) { // log B
+    if (builtIn[i].match.fileName === basename(LOGS.b)) {
       expect(a.length).toBeGreaterThanOrEqual(2)
       expect(a.map((f) => f.rule)).toContain('mech/follower-mismatch')
     }

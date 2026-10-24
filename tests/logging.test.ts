@@ -219,7 +219,7 @@ describe.skipIf(!haveLogs)('the team\'s 2026 logs A, B and C', () => {
   })
 })
 
-describe.skipIf(localLogs.length < 100)('backtest over every local log', () => {
+describe.skipIf(localLogs.length < 100 || !TEAM.event2025Files?.noneAtEnable)('backtest over every local log', () => {
   it('auto/none-at-enable fires on one 2025 practice match only', () => {
     const fired = localLogs.filter((p) => {
       const a = analyzeFiles([readInput(p)]).analyses[0]

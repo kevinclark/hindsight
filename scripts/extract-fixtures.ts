@@ -1,8 +1,9 @@
 /**
  * Cut small text fixtures from three of the team's 2026 match logs so the core rules can be tested without the 55 MB
  * logs. Run: npm run extract-fixtures   (reads log A, B and C from tests/helpers/team-logs.ts; writes fixtures/*.json)
- * Fixtures never include /RadioStatus/Status (it carries a hashed Wi-Fi key) or IP addresses, and name the event TEST
- * and the match 1, 2 or 3 (log A, B, C) in place of the real ones.
+ * Fixtures never include /RadioStatus/Status (it carries a hashed Wi-Fi key) or IP addresses, and name the event TEST,
+ * the match 1, 2 or 3 (log A, B, C) and an invented robot commit in place of the real ones. Log A's wall clock and its
+ * DS log's start move by the same made-up offset (EPOCH_SHIFT_S), so they still line up but name no real hour.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { openWpilog, readValues } from '../src/readers/wpilog.ts'
@@ -20,6 +21,8 @@ const LOGS = { a: teamPath(TEAM.logA), b: teamPath(TEAM.logB), c: teamPath(TEAM.
 const DSLOG = teamPath(TEAM.logADslog)
 
 const r4 = (x: number) => Math.round(x * 1e4) / 1e4
+/** Moves a wall-clock time off the real match day and hour: 42 days, 3 h 17 min earlier. */
+const EPOCH_SHIFT_S = -(42 * 86400 + 3 * 3600 + 17 * 60)
 
 /** Records of `name` inside any of the windows, plus the last record before each window (hold-last needs it). */
 function cut(log: ReturnType<typeof openWpilog>, name: string, windows: [number, number][] | 'all', keep?: (v: unknown) => boolean, every = 1): FixtureEntry {
@@ -38,7 +41,7 @@ function cut(log: ReturnType<typeof openWpilog>, name: string, windows: [number,
   return { name, type: entry.type, records }
 }
 
-/** Swaps each record's value; the fixtures' event is TEST and their match number made up. */
+/** Swaps each record's value; the fixtures' event is TEST and their match number and commit made up. */
 const swap = (e: FixtureEntry, f: (v: never) => unknown): FixtureEntry => ({ ...e, records: e.records.map(([t, v]) => [t, f(v as never)] as [number, never]) })
 const base = (log: ReturnType<typeof openWpilog>, match: number) => [
   cut(log, '/Timestamp', 'all', undefined, 1000),
@@ -63,14 +66,14 @@ if (!Object.values(LOGS).every(existsSync)) { console.log('logs A, B and C are n
     note: 'Hood zero cancelled in auto, trench hit (pitch −23°), disabled with 7.4 s of auto left, comms lost twice, DS log ends at 420.5 s. DS log is synthetic: same start, length and robot-present span as the real one.',
     entries: [
       ...base(log, 1),
-      cut(log, P.signals.epochMicros, 'all', undefined, 200), cut(log, P.signals.systemTimeValid, 'all'),
+      swap(cut(log, P.signals.epochMicros, 'all', undefined, 200), (v: number) => v + EPOCH_SHIFT_S * 1e6), cut(log, P.signals.systemTimeValid, 'all'),
       cut(log, P.signals.commsDisableCount, 'all'), cut(log, P.signals.systemActive, 'all'),
       cut(log, P.signals.batteryVoltage, [[415, 432]]),
       cut(log, P.signals.gyroPitch, [[268, 290]]), cut(log, P.signals.gyroRoll, [[268, 290]]),
       cut(log, '/Drum/Hood/PositionRotations', [[268, 296]]),
       cut(log, P.signals.console, 'all', isZeroLine),
     ],
-    dslog: { name: 'auto-and-comms.dslog', startEpochSeconds: ds.startEpochSeconds, count: ds.records.length, robotFrom: firstRobot, noRobotFrom: lastRobot + 1 },
+    dslog: { name: 'auto-and-comms.dslog', startEpochSeconds: ds.startEpochSeconds + EPOCH_SHIFT_S, count: ds.records.length, robotFrom: firstRobot, noRobotFrom: lastRobot + 1 },
   })
 }
 { // Log B: flywheel followers 17/18 slow
@@ -115,7 +118,7 @@ if (!Object.values(LOGS).every(existsSync)) { console.log('logs A, B and C are n
       cut(log, P.signals.brownedOut, 'all'), cut(log, P.signals.brownoutVoltage, 'all'),
       cut(log, P.signals.batteryVoltage, [[526, 552]]),
       cut(log, '/Drum/Flywheel/Follower 0/Connected', 'all'),
-      cut(log, P.signals.gitDirty, 'all'), cut(log, P.signals.gitSha, 'all'),
+      cut(log, P.signals.gitDirty, 'all'), swap(cut(log, P.signals.gitSha, 'all'), () => 'c0ffee0123456789abcdef0123456789abcdef01'),
       cut(log, '/Drum/Hood/PositionRotations', 'all', undefined, 1),
       cut(log, P.signals.console, 'all', isZeroLine),
     ],

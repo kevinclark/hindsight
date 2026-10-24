@@ -27,7 +27,7 @@ export interface Proof {
   date: string
 }
 
-const OURS = '2026 offseason event'
+const OURS = 'our 2026 offseason event'
 const RUN = '2026-10-19'
 
 export const PROVEN: Record<string, Proof> = {

@@ -48,7 +48,7 @@ stores in `history.jsonl` and trends per robot, per mechanism, or per battery. �
 | Battery wearing out | open-circuit voltage at 4 Ah, resistance, per battery ID | ✓ voltage/current; battery ID needs the tracker library | a 2026 match |
 | Wiring degrading | battery + wiring resistance per match, rising | ✓ | crimps (brownout cases) |
 | Module wear (swerve) | each module's drive current at a given speed vs its siblings | ✓ | — (not yet seen) |
-| Hits adding up | count of > 3 g hits per match | ✓ since a 2026 match (accelerometer) | fasteners backing out (≥ 14) |
+| Hits adding up | count of > 3 g hits per match | ✓ since log B (accelerometer) | fasteners backing out (≥ 14) |
 
 The thresholds for these are unknown until the 808-log backtest runs; phase 2 shows the trend first and flags only
 what the backtest supports.
@@ -91,11 +91,11 @@ the same problem in five matches is one issue with five sightings, not five rows
   the file, and dropping it in with the logs loads it. findings.json carries each finding's status (`known`, `fixed`
   or `wrong`), and a demoted finding there is a warning with a `demoted` field naming the mark.
 
-Example, the 2026 flywheel belt (known slip, fixed before elims):
+Example, a flywheel follower problem marked known, then fixed (invented notes and times):
 
 ```
-{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"known","note":"belt slipping on the 17/18 shaft","when":"2026-10-17T21:40:00Z"}
-{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"fixed","note":"new belt before elims","when":"2026-10-18T15:00:00Z"}
+{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"known","note":"test reason","when":"2026-01-10T18:00:00Z"}
+{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"fixed","note":"test fix","when":"2026-01-11T15:00:00Z"}
 ```
 
 **Still to build (phase 2):** the pit board (open issues across every loaded match, grouped by mechanism — decision

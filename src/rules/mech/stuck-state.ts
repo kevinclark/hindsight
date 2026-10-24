@@ -10,7 +10,7 @@
  * came before 33 of 33 handoff exits); practice match 2: SCORE_L4_RIGHT for the whole teleop. One match (26 s in the auto's score state,
  * 3 presses) fires; another (23 s) stays quiet: its score request was held from auto, never pressed during the state.
  * Only presses count: a request held from before the state isn't a reaction to it (counting holds would add a third's
- * 24.5 s READY_CORAL_INTAKE and two pit holds for the second). 20 s is assumed: the third's 9 s carry-over stays under it.
+ * 24.5 s READY_CORAL_INTAKE and two pit holds for the held-from-auto match). 20 s is assumed: the third's 9 s carry-over stays under it.
  * The exits are learned across every loaded log of this robot, whatever build each ran.
  */
 import { isTrue, rule, round, type Problem } from '../rule.ts'

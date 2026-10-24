@@ -134,25 +134,25 @@ describe('auto/early-disable: the auto\'s earlier runs', () => {
       { name: '/RealMetadata/GitDirty', type: 'string', records: [[10, dirty]] },
     ],
   })
-  const practice = autoLog(WALL - 3600, '1fcbd9faaaa', 'Uncommitted changes', 35)
+  const practice = autoLog(WALL - 3600, 'b0a7123aaaa', 'Uncommitted changes', 35)
   const match = autoLog(WALL, '0a5a119bbbb', 'All changes committed', 21)
 
   it('names the auto and its last run on another build, and marks "not run before on this build" likely', () => {
-    const [f] = findingsOf({ 'p2.wpilog': practice, 'q4.wpilog': match }, 'q4.wpilog', 'auto/early-disable')
+    const [f] = findingsOf({ 'practice.wpilog': practice, 'match.wpilog': match }, 'match.wpilog', 'auto/early-disable')
     expect(f.evidence.auto).toBe('Left stack auto')
     expect(f.evidence['runs of it in the other logs loaded, earlier']).toBe(1)
     expect(f.evidence['runs of it on this build (0a5a119), in the logs loaded']).toBe(0)
-    expect(f.evidence['its last earlier run']).toBe('p2.wpilog, on the field, build 1fcbd9f with uncommitted changes: ran the whole auto')
+    expect(f.evidence['its last earlier run']).toBe('practice.wpilog, on the field, build b0a7123 with uncommitted changes: ran the whole auto')
     expect(f.causes[0]).toMatchObject({ id: 'new-auto', likely: true })
   })
   it('loaded logs that are all later prove nothing about a first run', () => {
-    const later = autoLog(WALL + 3600, '1fcbd9faaaa', 'All changes committed', 35)
-    const [f] = findingsOf({ 'later.wpilog': later, 'q4.wpilog': match }, 'q4.wpilog', 'auto/early-disable')
+    const later = autoLog(WALL + 3600, 'b0a7123aaaa', 'All changes committed', 35)
+    const [f] = findingsOf({ 'later.wpilog': later, 'match.wpilog': match }, 'match.wpilog', 'auto/early-disable')
     expect(f.evidence['runs of it in the other logs loaded, earlier']).toBe(0)
     expect(f.causes.find((c) => c.id === 'new-auto')?.likely).toBeUndefined()
   })
   it('alone, it says what it cannot know instead of claiming a first run', () => {
-    const [f] = findingsOf({ 'q4.wpilog': match }, 'q4.wpilog', 'auto/early-disable')
+    const [f] = findingsOf({ 'match.wpilog': match }, 'match.wpilog', 'auto/early-disable')
     expect(f.evidence['runs of it in the other logs loaded, earlier']).toBe('not known (only this log is loaded)')
     expect(f.causes.find((c) => c.id === 'new-auto')?.likely).toBeUndefined()
   })
@@ -231,8 +231,9 @@ describe('mech/stuck-state', () => {
 const EVENT = teamPath(TEAM.event2025)
 const F = (TEAM.event2025Files ?? {}) as Record<string, string> & { restartPieces: string[]; estopAtEnable: string[] }
 const eventLogs = existsSync(EVENT) ? readdirSync(EVENT).filter((f) => f.endsWith('.wpilog')).sort() : []
-const haveEvent = eventLogs.length >= 78 && F.restartPieces !== undefined
-if (!haveEvent) console.warn(`SKIPPED part of event-2025-rules.test.ts: list the 78 .wpilog files' folder (event2025) and event2025Files in ${TEAM_LOGS_FILE} to run it`)
+const ROLES = ['restartPieces', 'estopAtEnable', 'estopLate', 'earlierRun', 'earlierRunBuild', 'handoffWait', 'heldFromAuto', 'carryOver', 'busDrop', 'odometryOutliers', 'collapse']
+const haveEvent = eventLogs.length >= 78 && ROLES.every((r) => r in F)
+if (!haveEvent) console.warn(`SKIPPED part of event-2025-rules.test.ts: list the 78 .wpilog files' folder (event2025) and event2025Files (${ROLES.join(', ')}) in ${TEAM_LOGS_FILE} to run it`)
 
 describe.skipIf(!haveEvent)('the 2025 robot\'s event logs', () => {
   const read = (names: string[]) => analyzeFiles(names.map((n) => readInput(`${EVENT}/${n}`))).analyses
@@ -256,7 +257,7 @@ describe.skipIf(!haveEvent)('the 2025 robot\'s event logs', () => {
     expect(third.title).toMatch(/no controller on port 0 after the restart/)
     expect(third.evidence['between logs, program down or starting up (s, ±2)']).toBe('14.7, 48.7')
     const early = byName(list, F.restartPieces[0]).report.findings.find((f) => f.rule === 'auto/early-disable')!
-    expect(early.evidence['its last earlier run']).toContain(`${F.earlierRun}, on the field, build 1fcbd9f with uncommitted changes`)
+    expect(early.evidence['its last earlier run']).toContain(`${F.earlierRun}, on the field, build ${F.earlierRunBuild} with uncommitted changes`)
   })
 
   it('stuck-state: a practice run waits for the arm\'s has-piece flag that never came; two more runs fire; two stay quiet', () => {

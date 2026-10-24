@@ -21,7 +21,18 @@ export type TeamLogs = {
 }
 
 export const TEAM_LOGS_FILE = process.env.HINDSIGHT_TEAM_LOGS ?? `${homedir()}/.hindsight/team-logs.json`
-export const TEAM: TeamLogs = existsSync(TEAM_LOGS_FILE) ? JSON.parse(readFileSync(TEAM_LOGS_FILE, 'utf8')) : {}
+export const TEAM: TeamLogs = readTeamLogs()
+
+/** A list that can't be read counts as empty, with a warning, so it skips the real-log tests instead of failing every file. */
+function readTeamLogs(): TeamLogs {
+  if (!existsSync(TEAM_LOGS_FILE)) return {}
+  try {
+    return JSON.parse(readFileSync(TEAM_LOGS_FILE, 'utf8')) as TeamLogs
+  } catch (e) {
+    console.warn(`IGNORED ${TEAM_LOGS_FILE}: ${(e as Error).message}`)
+    return {}
+  }
+}
 
 /** A listed path, or one that never exists when it isn't listed. */
 export const teamPath = (p: string | undefined): string => p ?? '/not-listed-in-team-logs.json'

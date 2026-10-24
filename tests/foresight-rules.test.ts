@@ -40,7 +40,7 @@ function healthy(): FixtureEntry[] {
   for (let t = START; t <= NOW; t += 0.5) clock.push([t, Math.round(t * 1e6)])
   return [
     { name: '/Timestamp', type: 'int64', records: clock },
-    { name: '/RealMetadata/GitSHA', type: 'string', records: steady('123eec6268b7956526d03c7971a03b6fd8e29b2c') },
+    { name: '/RealMetadata/GitSHA', type: 'string', records: steady('c0ffee0123456789abcdef0123456789abcdef01') },
     { name: '/RealMetadata/GitDirty', type: 'string', records: steady('All changes committed') },
     { name: '/DriverStation/Enabled', type: 'boolean', records: steady(false) },
     { name: '/DriverStation/DSAttached', type: 'boolean', records: steady(true) },
@@ -458,8 +458,8 @@ describe('Foresight record store: fast readings kept only for their last 30 s', 
 describe('Foresight verdict', () => {
   const finding = (rule: string, severity: 'error' | 'warning' | 'info') => ({ rule, severity, title: rule, time: null, matchTime: null, when: null, about: null, key: rule, evidence: {}, meaning: '', causes: [], nextStep: `do ${rule}` })
   const proven = {
-    'power/rest-voltage': { logs: 3, fires: 1, ourFires: 1, base: '2026 offseason event', date: '2026-10-19' },
-    'vision/time-sync': { logs: 8, fires: 0, ourFires: 0, base: '2026 offseason event + others', date: '2026-10-19' },
+    'power/rest-voltage': { logs: 3, fires: 1, ourFires: 1, base: 'our 2026 offseason event', date: '2026-10-19' },
+    'vision/time-sync': { logs: 8, fires: 0, ourFires: 0, base: 'our 2026 offseason event + others', date: '2026-10-19' },
     'build/dirty': { logs: 6, fires: 1, ourFires: 0, base: 'another team', date: '2026-10-19' },
   }
   it('amber unless proven; red only for proven checks; NO-GO on any red', () => {

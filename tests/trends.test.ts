@@ -131,8 +131,8 @@ describe('trend labels', () => {
   it('keeps a labelled match\'s short label, labels an unnumbered log from its MatchType, and never from its file name', () => {
     expect(trendLabel(m(13, {}), 0)).toBe('Q13')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 1 }), 0)).toBe('Pr')
-    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, fileName: 'akit_q13.wpilog' }), 0)).toBe('On field')
-    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: null, fileName: 'akit_q13.wpilog' }), 2)).toBe('#3')
+    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, fileName: 'akit_q4.wpilog' }), 0)).toBe('On field')
+    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: null, fileName: 'akit_q4.wpilog' }), 2)).toBe('#3')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: undefined }), 0)).toBe('#1')
   })
 })
@@ -153,6 +153,7 @@ describe.skipIf(!have)('trendRows on the 8 logs of the team\'s 2026 event', () =
   it('has 8 matches and the numbers the proposal measured', () => {
     expect(matches).toHaveLength(8)
     expect(row(rows, 'minVolts')).toMatchObject({ pastCount: 8, n: 8, latestIsWorst: true, verdict: 'Under 7 V in 8 of 8 matches' })
+    expect(label(LOGS.c)).toMatch(/^Q\d+$/)
     expect(worst('minVolts')).toBe(`${label(LOGS.c)} 5.69`)
     expect(row(rows, 'loopOverrunPct').pastCount).toBe(8)
     expect(worst('loopOverrunPct')).toBe(`${label(LOGS.a)} 26.7`)

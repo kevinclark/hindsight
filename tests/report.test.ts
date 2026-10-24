@@ -195,7 +195,7 @@ describe('shortTitle (the bottom line)', () => {
   it('keeps what happened for the three real titles that lost it', () => {
     expect(shortTitle('Hood moved at 0:00 into the match (auto; robot time 270.9 s) before its zero completed, 22.6 s later')).toMatch(/^Hood moved at 0:00 into the match before its zero…?/)
     expect(shortTitle('Disabled in auto at 0:12 into the match (auto; robot time 282.7 s) with 7.4 s of auto left')).toBe('Disabled in auto at 0:12 into the match with 7.4 s of auto left')
-    const amps = shortTitle('Flywheel supply current reached 77 A against a 40 A limit that is switched off in code (as of event-calgames d339f29; this log ran 123eec6)')
+    const amps = shortTitle('Flywheel supply current reached 77 A against a 40 A limit that is switched off in code (as of event-x d339f29; this log ran c0ffee0)')
     expect(amps.length).toBeLessThanOrEqual(70)
     expect(amps).toMatch(/…$/)
     expect(amps).toMatch(/ (code|in|off|is)…$|[a-z]…$/)
@@ -218,7 +218,7 @@ describe('wording', () => {
   })
   it('shortens a card title without losing what happened', () => {
     expect(cardTitle('Browned out 53 times, first at 2:25 into the match (teleop; robot time 532.8 s)')).toBe('Browned out 53 times, first at 2:25 into the match')
-    expect(cardTitle('Flywheel supply current reached 77 A against a 40 A limit (as of event-x d339f29; this log ran 123eec6)')).toBe('Flywheel supply current reached 77 A against a 40 A limit')
+    expect(cardTitle('Flywheel supply current reached 77 A against a 40 A limit (as of event-x d339f29; this log ran c0ffee0)')).toBe('Flywheel supply current reached 77 A against a 40 A limit')
   })
   it('says "No errors" without claiming a count of zero twice', () => {
     expect(bottomLine([], [], [], 0)).toBe('No errors or warnings. 0 warnings, 0 info.')
@@ -228,20 +228,20 @@ describe('wording', () => {
 describe('Foresight card', () => {
   const base: ForesightReportInput = {
     verdict: 'NO-GO', why: '1 to fix before the robot goes on the field', state: 'connected', message: 'Connected', url: 'ws://x', readAt: new Date(2026, 9, 19, 17, 36, 4),
-    robot: '2026 offseason robot', items: [], onchecks: [], battery: 12.6, controllers: [], build: { sha: '123eec6268b7', branch: 'event-calgames', dirty: 'Uncommitted changes' }, notChecked: [],
+    robot: '2026 offseason robot', items: [], onchecks: [], battery: 12.6, controllers: [], build: { sha: 'c0ffee012345', branch: 'event-x', dirty: 'Uncommitted changes' }, notChecked: [],
   }
   it('puts the verdict word first, stamps the time read, and flags uncommitted code', () => {
     const c = foresightCard(base)
     expect(c.heading).toBe('NO-GO')
     expect(c.context).not.toContain('2026')
     expect(c.footer[0]).toContain('2026-10-19 17:36:04')
-    expect(c.footer.join(' ')).toContain('123eec6')
-    expect(c.footer.join(' ')).not.toContain('123eec6268b7')
+    expect(c.footer.join(' ')).toContain('c0ffee0')
+    expect(c.footer.join(' ')).not.toContain('c0ffee012345')
     expect(c.uncommitted).toBe(true)
     expect(c.uncommittedText).toContain('robot')
   })
   it('shows a 40-character sha as 7 characters in an item\'s number line', () => {
-    const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
+    const sha = 'c0ffee0123456789abcdef0123456789abcdef01'
     const finding = { rule: 'build/dirty', title: `Robot ran uncommitted changes on top of ${sha.slice(0, 7)}`, evidence: { 'git sha': sha } }
     const item = { finding, level: 'red', proof: '', action: 'x', explains: [] } as unknown as ForesightReportInput['items'][number]
     const text = JSON.stringify(foresightCard({ ...base, items: [item] }).items)
@@ -254,12 +254,12 @@ describe('Foresight card', () => {
   })
   it('drops the uncommitted box only when the first item, which is always drawn, says it', () => {
     const mk = (title: string, level = 'red') => ({ finding: { rule: 'x', title, evidence: {} }, level, proof: '', action: 'x', explains: [] }) as unknown as ForesightReportInput['items'][number]
-    expect(foresightCard({ ...base, items: [mk('Robot ran uncommitted changes on top of 123eec6')] }).uncommitted).toBe(false)
-    expect(foresightCard({ ...base, items: [mk('Battery low'), mk('Robot ran uncommitted changes on top of 123eec6', 'amber')] }).uncommitted).toBe(true)
+    expect(foresightCard({ ...base, items: [mk('Robot ran uncommitted changes on top of c0ffee0')] }).uncommitted).toBe(false)
+    expect(foresightCard({ ...base, items: [mk('Battery low'), mk('Robot ran uncommitted changes on top of c0ffee0', 'amber')] }).uncommitted).toBe(true)
   })
   it('shortens shas with one helper and counts the checks that did not run only when there are some', () => {
-    const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
-    expect(shortShas(`${sha} and ${sha.slice(0, 7)}`)).toBe('123eec6 and 123eec6')
+    const sha = 'c0ffee0123456789abcdef0123456789abcdef01'
+    expect(shortShas(`${sha} and ${sha.slice(0, 7)}`)).toBe('c0ffee0 and c0ffee0')
     expect(didNotRun(11, 21)).toBe('11 of 21 checks not fully run')
     expect(didNotRun(0, 21)).toBeNull()
   })
@@ -291,7 +291,7 @@ describe('Foresight printed report component', () => {
   it('prints the did-not-run sub-line, a "–" before Not checked, and no ws URL', async () => {
     const { render } = await import('svelte/server')
     const { default: ForesightReport } = await import('../src/ui/ForesightReport.svelte')
-    const sha = '123eec6268b7956526d03c7971a03b6fd8e29b2c'
+    const sha = 'c0ffee0123456789abcdef0123456789abcdef01'
     const finding = { rule: 'build/dirty', key: 'k', title: 'Robot ran uncommitted changes', evidence: { 'git sha': sha } }
     const checked = { verdict: { verdict: 'NO-GO', items: [{ finding, level: 'red', proof: '', action: 'x', explains: [] }], notChecked: [{ rule: 'a/b', reason: 'r' }], crashed: [] }, match: { build: { sha, branch: 'b', dirty: 'clean' } } }
     const onchecks = [{ line: 'Line A', state: 'ok', detail: '' }, { line: 'Line B', state: 'not checked', detail: '' }]

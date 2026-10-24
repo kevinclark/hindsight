@@ -43,7 +43,7 @@ over 138–345 s of disabled robot on the field. 91 s for all 11 on the M5 Max.
 | Check | Logs it could judge | Fired on | Judged | Verdict colour |
 |---|---|---|---|---|
 | `power/rest-voltage` | 9 | log B (12.45–12.48 V; Hindsight also flags it before auto) | true | **red**, proven on 9 |
-| `build/dirty` | 6 | log C (123eec6, uncommitted) and one other team's public 2026 log (uncommitted) | both true | **red**, proven on 6 |
+| `build/dirty` | 6 | log C (uncommitted) and one other team's public 2026 log (uncommitted) | both true | **red**, proven on 6 |
 | `vision/time-sync` | 8 | none (start-up alerts clear before the 30 s settle) | — | amber: no real fire on our logs yet |
 | `can/device-dropout` | 3 | none | — | amber: no real fire on our logs yet |
 | `foresight/controllers` | 3 | none | — | amber: no real fire on our logs yet |

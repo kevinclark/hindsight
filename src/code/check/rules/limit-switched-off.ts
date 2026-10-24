@@ -11,8 +11,8 @@
  * history): a flag written false only in a method that runs later, a `config.withCurrentLimits(…)` statement that turns
  * it back on after the field write, and a shared constant configuration turned back on from another class. Each would
  * be reported as off.
- * Why: 2026-Offseason-Robot had the drum and slapdown supply limits at 40 A with their enable flags false at a 2026 offseason event
- * 2026, where the flywheel motors drew 78-94 A each. Ten commits in 8033's repos switched such a limit back on
+ * Why: 2026-Offseason-Robot had the drum and slapdown supply limits at 40 A with their enable flags false at a 2026 offseason
+ * event, where the flywheel motors drew 78-94 A each. Ten commits in 8033's repos switched such a limit back on
  * (2026-Offseason-Robot c572443 "Re-enable current limits on all mechanisms").
  */
 import type { Node } from '../java.ts'
