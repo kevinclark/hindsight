@@ -38,6 +38,16 @@ describe('choosing a robot profile', () => {
     expect(choice.misfit).toBe(true)
     expect(choice.note).toMatch(/"2019 Robot".*were not run/)
   })
+  it('a profile no log fits is not applied: the log is read with its own standard signals (Kevin, 2026-10-23)', () => {
+    const { profile, choice } = chooseProfile(log('2019 Robot', 'main'), profiles)
+    expect(profiles).not.toContain(profile)
+    expect(profile.motorGroups).toEqual([])
+    expect(profile.cameras).toEqual([])
+    expect(profile.name).toBe('2019 Robot (code name)')
+    expect(profile.code).toEqual({ repo: '', branch: 'main', sha: '' })
+    expect(profile.signals.batteryVoltage).toBe('/SystemStats/BatteryVoltage')
+    expect(choice.note).toMatch(/none fits it \(the closest, ".*", has \d+ of its \d+ signals in this log\)/)
+  })
   it('a best guess that fits badly is named by the log\'s own code name, not the profile (as in the library)', () => {
     const { profile, choice } = chooseProfile(log('2019 Robot', 'main'), profiles)
     expect(robotName(profile.name, choice)).toBe('2019 Robot (code name)')
@@ -49,6 +59,22 @@ describe('choosing a robot profile', () => {
     const { profile, choice } = chooseProfile(log('2026 Offseason', 'event-x'), profiles, other)
     expect(profile).toBe(other)
     expect(choice.how).toBe('chosen by you')
+  })
+})
+
+describe('a log no profile fits, read with its own signals', () => {
+  it('leaves out a signal the builder would ask a person to pick among several candidates', () => {
+    const twoChoosers = openWpilog(writeWpilog([
+      { name: '/RealMetadata/Codebase', type: 'string', records: [[0, '2019 Robot']] },
+      { name: '/DashboardInputs/Auto Chooser', type: 'string', records: [[0, 'none']] },
+      { name: '/DashboardInputs/Choreo Auto Chooser', type: 'string', records: [[0, '3 Blue Clear']] },
+    ] as Parameters<typeof writeWpilog>[0]))
+    expect(chooseProfile(twoChoosers, profiles).profile.signals.autoChoice).toBe('')
+    const oneChooser = openWpilog(writeWpilog([
+      { name: '/RealMetadata/Codebase', type: 'string', records: [[0, '2019 Robot']] },
+      { name: '/DashboardInputs/Auto Chooser', type: 'string', records: [[0, 'Source 3']] },
+    ] as Parameters<typeof writeWpilog>[0]))
+    expect(chooseProfile(oneChooser, profiles).profile.signals.autoChoice).toBe('/DashboardInputs/Auto Chooser')
   })
 })
 

@@ -7,13 +7,12 @@
   import { summarizeLogWithCode, summaryRobot, type MatchSummary } from '../session/summary.ts'
   import CodeFolderControl from './CodeFolderControl.svelte'
   import { codeFolder } from './code-folder.svelte.ts'
-  import { PROFILE_FIT_MIN } from '../profiles/choose.ts'
   import { PROFILES, profileId } from '../profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
   import { profilesNow } from './kept-profiles.svelte.ts'
   import { teamNow } from './team-setting.svelte.ts'
   import { robotChoices } from './robot-list.ts'
-  import { draftOffers, type LibraryLink } from '../hub/session-files.ts'
+  import { codeSpec, draftOffers, type LibraryLink } from '../hub/session-files.ts'
   import RobotOptions from './RobotOptions.svelte'
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
@@ -31,7 +30,7 @@
   import SessionReport from './SessionReport.svelte'
   import { buildCard } from '../report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
-  import { allMarked, crashedNote, gridCells, marksText, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
+  import { allMarked, crashedNote, gridCells, marksText, misfitNotes, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
@@ -160,8 +159,6 @@
   })
   // The profiles this session's logs name (not a guess that doesn't fit): the code folder's suggestion and the robot list's own robots.
   const namedRobots = $derived(robots.filter((r) => r.named).map((r) => r.robot.profileId))
-  // Logs the robot profile doesn't fit (another robot, or another year's code): their mechanism and timing findings are suspect.
-  const misfits = $derived(session ? session.matches.filter((m) => m.robot.present < PROFILE_FIT_MIN * m.robot.total) : [])
   // The robot the student chose for this whole session, if every match has the same choice.
   const chosenId = $derived(session && session.matches.every((m) => m.robot.how === 'chosen by you') && robots.length === 1 ? robots[0].robot.profileId : null)
   const notes = $derived([...new Set(session ? session.matches.map((m) => m.robot.note).filter((n): n is string => !!n) : [])])
@@ -473,7 +470,7 @@
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
   <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
-  <CodeFolderControl suggest={[...PROFILES, ...stored].find((p) => profileId(p) === namedRobots[0])?.code} />
+  <CodeFolderControl suggest={session ? [...PROFILES, ...stored].find((p) => profileId(p) === namedRobots[0])?.code ?? null : undefined} linked={!namedRobots.length && offers.length ? codeSpec(offers[0].link) : undefined} />
   {#if summaries.length}<button class="button" disabled={loading} onclick={newSession} title="Clears the log summaries on this page and saved in this browser. Moved logs, session names, battery ids and known-issue marks are kept.">New session</button>{/if}
   <input type="file" webkitdirectory multiple hidden data-reread-input bind:this={rereadInput} onchange={(e) => rereadChosen((e.currentTarget as HTMLInputElement).files)} />
   {#if progress}
@@ -539,9 +536,7 @@
   </select></label></p>
   {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
   {#if crashedNote(session)}<p class="note warn">{crashedNote(session)}</p>{/if}
-  {#if misfits.length}
-    <p class="note warn"><strong>{misfits.length} of {session.matches.length} matches don't fit their robot profile</strong>: as few as {Math.min(...misfits.map((m) => m.robot.present))} of its {misfits[0].robot.total} signals are in them. The rules about specific motors, devices, cameras and mechanisms were not run on them, and their auto and teleop lengths are the season's game (measured from a log only when it has no date or predates 2023). Add a profile for this robot, or choose one above.</p>
-  {/if}
+  {#each misfitNotes(session) as n (n.lead)}<p class="note warn"><strong>{n.lead}</strong>: {n.rest}</p>{/each}
   {#each session.matches.filter((m) => m.pieces) as m (m.fileName)}
     <p class="note warn">{m.matchLabel} is in {m.pieces!.length} logs ({m.pieces!.join(', ')}): the robot program restarted during the match. They count as one match here.</p>
   {/each}

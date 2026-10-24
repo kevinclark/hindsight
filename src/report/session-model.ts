@@ -220,14 +220,27 @@ export function crashedNote(session: Session): string | null {
   return `${plural(rules.length, 'rule', 'rules')} crashed in ${plural(inMatches, 'match', 'matches')} (a bug in Hindsight, not the robot): ${rules.join(', ')}. They count as not checked there, so their silence means nothing.`
 }
 
+/**
+ * The matches whose robot profile doesn't fit: those read with no robot's profile (none fits: the best guess by signals is
+ * not applied, profiles/choose.ts) apart from those whose named or chosen profile fits badly. Lead in bold in the Session view.
+ */
+export function misfitNotes(session: Session): { lead: string; rest: string }[] {
+  const misfits = session.matches.filter((m) => m.robot.present < PROFILE_FIT_MIN * m.robot.total)
+  const NOT_RUN = 'The rules about specific motors, devices, cameras and mechanisms were not run on them, and their auto and teleop lengths are the season\'s game (measured from a log only when it has no date or predates 2023).'
+  const fewest = (ms: typeof misfits) => Math.min(...ms.map((m) => m.robot.present))
+  const unprofiled = misfits.filter((m) => m.robot.how === 'signals')
+  const badFit = misfits.filter((m) => m.robot.how !== 'signals')
+  return [
+    ...(unprofiled.length ? [{ lead: `${unprofiled.length} of ${session.matches.length} matches fit no robot profile`, rest: `the closest has as few as ${fewest(unprofiled)} of its ${unprofiled[0].robot.total} signals in them, so they were read with only the standard signals found in them. ${NOT_RUN} Add a profile for this robot, or choose one above.` }] : []),
+    ...(badFit.length ? [{ lead: `${badFit.length} of ${session.matches.length} matches don't fit their robot profile`, rest: `as few as ${fewest(badFit)} of its ${badFit[0].robot.total} signals are in them. ${NOT_RUN} Add a profile for this robot, or choose one above.` }] : []),
+  ]
+}
+
 /** The notes the Session view shows under the header: profile notes, misfits, split matches, clock notes, crashed rules. */
 export function sessionNotes(session: Session): string[] {
   const out: string[] = []
   out.push(...new Set(session.matches.map((m) => m.robot.note).filter((n): n is string => !!n)))
-  const misfits = session.matches.filter((m) => m.robot.present < PROFILE_FIT_MIN * m.robot.total)
-  if (misfits.length) {
-    out.push(`${misfits.length} of ${session.matches.length} matches don't fit their robot profile: as few as ${Math.min(...misfits.map((m) => m.robot.present))} of its ${misfits[0].robot.total} signals are in them. The rules about specific motors, devices, cameras and mechanisms were not run on them.`)
-  }
+  out.push(...misfitNotes(session).map((n) => `${n.lead}: ${n.rest}`))
   for (const m of session.matches.filter((x) => x.pieces)) out.push(`${m.matchLabel} is in ${m.pieces!.length} logs: the robot program restarted during the match. They count as one match here.`)
   for (const m of session.matches.filter((x) => x.clockNote)) out.push(`${matchLabel(m)}: ${m.clockNote}`)
   const crashed = crashedNote(session)
