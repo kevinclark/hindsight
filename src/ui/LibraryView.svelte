@@ -7,19 +7,22 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { hub, LibraryFile, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
+  import { hub, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
   import DriveFolderPicker from './DriveFolderPicker.svelte'
   import type { IngestPlan } from '../hub/ingest.ts'
   import type { FetchReport, SyncReport } from '../hub/sync.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
   import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Selection } from '../hub/facets.ts'
-  import { baseName, dayText, withShaSuffix } from '../hub/layout.ts'
+  import { baseName, dayText } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
-  import { describeCodeLink } from '../hub/codelink.ts'
+  import { ADD_LINK_REQUESTS, describeCodeLink } from '../hub/codelink.ts'
+  import { setTeamNow } from './team-setting.svelte.ts'
   import type { CodePlan, LastJob, LinkReport } from '../hub/bridge.ts'
+  import { asFile, sessionNames } from '../hub/session-files.ts'
 
-  let { onOpenSession }: { onOpenSession: (files: File[]) => void } = $props()
+  // `onOpenSession`: the filtered logs, in the Session view. `onOpenMatch`: one log, in Match review.
+  let { onOpenSession, onOpenMatch }: { onOpenSession: (files: File[]) => void; onOpenMatch: (files: File[]) => void } = $props()
   const api = hub()
 
   let snapshot = $state.raw<LibrarySnapshot | null>(null)
@@ -99,6 +102,7 @@
     void api?.updateInfo().then((u) => { update = u })
     // A job already running (the page was reloaded, or something else started it) gets the same bar.
     void api?.codePlan().then((p) => { codePlan = p; codeText = p.sources.join(', ') }).catch(() => {})
+    void api?.team().then((t) => { teamBox = t.team; savedTeam = t.team }).catch(() => {})
     // How the job that finished last ended, for a page that reloaded and did not see it (kept for 30 minutes).
     void api?.lastJob().then((j) => { if (j && Date.now() - j.at < 30 * 60e3) lastJob = j }).catch(() => {})
     void api?.runningJob().then((p) => { if (p && !progress) progress = p }).catch(() => {})
@@ -117,15 +121,23 @@
   })
   let codePlan = $state<CodePlan | null>(null)
   let codeText = $state('')
+  let teamBox = $state<number | null>(null) // a number input binds a number, or null when empty
+  let savedTeam = $state<number | null>(null)
   let linkReport = $state.raw<LinkReport | null>(null)
   let lastJob = $state.raw<LastJob | null>(null)
   const linkLabel = $derived(!codePlan ? 'Link code' : codePlan.logs === 0
     ? `Link code (${codePlan.unstamped ? 'no logs to link; read logs again first?' : 'no logs to link'})`
     : `Link code (at least ${codePlan.requests} requests)`)
-  async function saveSources() {
+  /** Saves the number and the sources together; with sources set, the app then links every log it can (the same pass as Link code). */
+  async function saveTeam() {
     const sources = codeText.split(/[\s,]+/).filter(Boolean)
-    const p = await work('Saving', () => api!.setCodeSources(sources))
-    if (p) { codePlan = p; codeText = p.sources.join(', ') }
+    const saved = await work('Saving', () => api!.setTeam(teamBox ?? null, sources))
+    if (saved) {
+      savedTeam = saved.team; teamBox = saved.team; codeText = saved.sources.join(', ')
+      setTeamNow(saved.team)
+      if (saved.linkNeeded) { const r = await work('Linking code', () => api!.linkCode()); if (r) linkReport = r }
+    }
+    codePlan = await api!.codePlan().catch(() => codePlan)
   }
   async function linkCode() {
     const r = await work('Linking code', () => api!.linkCode())
@@ -193,12 +205,10 @@
 
   function openInSession() {
     if (!api) return
-    // The Session view tells logs apart by name: two logs filed under the same name on different days get their sha-256 start added.
-    const count = new Map<string, number>()
-    for (const e of local) count.set(baseName(e.record.path), (count.get(baseName(e.record.path)) ?? 0) + 1)
-    const nameOf = (e: Entry) => (count.get(baseName(e.record.path)) === 1 ? baseName(e.record.path) : withShaSuffix(baseName(e.record.path), e.record.sha256))
-    const files = local.map((e) => new LibraryFile(nameOf(e), e.record.size, e.record.modifiedTime ?? e.record.recordedAt, e.record.path, api) as unknown as File)
-    onOpenSession(files)
+    onOpenSession(sessionNames(local).map((n) => asFile(n, api)))
+  }
+  function openMatch(e: Entry) {
+    if (api) onOpenMatch([asFile({ entry: e, name: baseName(e.record.path) }, api)])
   }
 
   const size = (n: number) => (n >= 2 ** 30 ? `${(n / 2 ** 30).toFixed(1)} GB` : `${(n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0)} MB`)
@@ -246,11 +256,14 @@
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 
-<details class="team">
-  <summary>Code: {codePlan?.sources.length ? codePlan.sources.join(', ') : 'no GitHub source yet'}</summary>
-  <p class="meta">Logs that name only their code (no robot profile) can be linked to the public GitHub repo that holds it. Give an organization or <code>owner/repo</code>, comma separated. Pressing <em>Link code</em> reads each repo's <code>Robot.java</code> and asks GitHub about build commits; nothing is sent but repo and commit names.</p>
-  <p class="row"><input bind:value={codeText} placeholder="organization or owner/repo" aria-label="GitHub sources for code" /><button class="primary" onclick={saveSources} disabled={driveBusy}>Save</button>
+<details class="team" open={savedTeam === null && !codePlan?.sources.length}>
+  <summary>Your team: {savedTeam === null ? 'no team number yet' : savedTeam}{codePlan?.sources.length ? ` · code from ${codePlan.sources.join(', ')}` : ' · no GitHub source yet'}</summary>
+  <p class="meta">With your team number set, the robot lists show your team's robots. Logs that name only their code (no robot profile) can be linked to the public GitHub repo that holds it: give an organization or <code>owner/repo</code>, comma separated. Saving, and <em>Link code</em>, read each repo's <code>Robot.java</code> and ask GitHub about build commits; nothing is sent but repo and commit names.</p>
+  <p class="row"><label>Team number <input type="number" min="1" max="99999" step="1" bind:value={teamBox} placeholder="e.g. 8033" aria-label="Team number" /></label>
+    <label>GitHub organization or repos <input bind:value={codeText} placeholder="organization or owner/repo" aria-label="GitHub sources for code" /></label>
+    <button class="primary" onclick={saveTeam} disabled={driveBusy}>Save</button>
     <button class="primary" onclick={linkCode} disabled={driveBusy || !codePlan?.sources.length || !codePlan.logs}>{linkLabel}</button></p>
+  {#if codePlan?.sources.length}<p class="meta">Logs whose code is in {codePlan.sources.length === 1 ? 'this repo' : 'these repos'} are linked when they are added (at most {ADD_LINK_REQUESTS} GitHub requests each time). Saving links the logs already here, which can take {codePlan.requests} or more requests.</p>{/if}
 </details>
 
 <details class="team" open={drive !== null && !drive.teamFolder}>
@@ -329,6 +342,8 @@
     <p class="meta">
       {size(report.bytesAdded)} copied in {(report.durationMs / 1000).toFixed(1)} s. The originals were not moved, renamed or deleted.
       {#if report.ignored}{report.ignored} other file{report.ignored === 1 ? '' : 's'} ignored.{/if}
+      {#if report.linked !== undefined}Linked {report.linked} new log{report.linked === 1 ? '' : 's'} to their code with {report.linkRequests} GitHub request{report.linkRequests === 1 ? '' : 's'}.{#if report.linkCapped} Stopped after {ADD_LINK_REQUESTS} GitHub requests; Link code finishes the rest.{/if}{#if report.linkRateLimitedUntil} GitHub's request limit was reached: stopped, and what was found is kept. Try again after {new Date(report.linkRateLimitedUntil).toLocaleTimeString()}.{/if}{/if}
+      {#if report.linkProblem}<span class="problem">Linking code did not finish: {report.linkProblem}</span>{/if}
     </p>
     <ul class="flags">
       <li><strong>{report.added.filter((a) => a.undated).length}</strong> undated <span class="meta">(no robot clock, no date in the name: filed under <code>logs/undated</code>)</span></li>
@@ -410,7 +425,7 @@
             ].filter(Boolean).join('. ')}
             <tr class:remote={!e.local}>
               <td class="time">{clock(e.record.playedAt)}</td>
-              <td class="name"><code title={e.record.path}>{baseName(e.record.path)}</code></td>
+              <td class="name">{#if e.local}<button class="link open" title={`Open ${e.record.path} in Match review`} onclick={() => openMatch(e)}><code>{baseName(e.record.path)}</code></button>{:else}<code title={e.record.path}>{baseName(e.record.path)}</code>{/if}</td>
               <td>{fmsPlace(e.record)?.name ?? ''} {matchText(e)}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
               <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}{#if code}<span class="meta">{' · '}<a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}</td>
@@ -481,6 +496,8 @@
   .time, .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .num { text-align: right; }
   .name { max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .open { padding: 0; color: var(--fg); text-decoration-color: var(--border); }
+  .open:hover { text-decoration-color: currentColor; }
   .driver { width: 7rem; }
   .fixed { color: var(--fg); font-size: 0.85rem; }
   .remote { color: var(--muted); }

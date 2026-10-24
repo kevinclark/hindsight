@@ -220,6 +220,11 @@ export interface RobotProfile<Signals = SignalSources, Battery = BatterySources>
    */
   keptAs?: string
   /**
+   * The FRC team number this robot belongs to. Only the robot lists use it (src/ui/robot-list.ts); no rule and no profile
+   * choice reads it. A profile kept before this field existed has none.
+   */
+  team?: number
+  /**
    * How a log says it came from this robot: the code's /RealMetadata/Codebase value (an AdvantageKit metadata entry
    * the robot code sets). Several profiles may share one codebase, each pinned to a different branch.
    */

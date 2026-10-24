@@ -21,6 +21,8 @@
   import { lowerLimitOff } from '../limits/limits-report.ts'
   import { downloadText } from './download.ts'
   import { changed } from './kept-profiles.svelte.ts'
+  import { teamNow } from './team-setting.svelte.ts'
+  import { builderStart } from './builder-start.ts'
 
   let logs = $state.raw<DraftLog[]>([])
   let snapshot = $state.raw<Snapshot | null>(null)
@@ -29,6 +31,10 @@
   let hintsFrom = $state('code folder')
   let askingGitHub = $state(false)
   let githubSpec = $state('')
+  /** The repo a library log was linked to (start()): used by "Use GitHub" when no built-in profile names the codebase. */
+  let linkedRepo = ''
+  /** The draft was opened by start(): its logs are linked to this team's sources, so the draft gets the team. */
+  let stampTeam = false
   let json = $state<ProfileJson | null>(null)
   let notUsed = $state<{ key: string; why: string }[]>([])
   let guessedSignals = $state<{ signal: string; key: string; alternatives: string[] }[]>([])
@@ -68,6 +74,7 @@
   /** A profile.json that leaves out the game or code fields still shows editable ones. `fromKept`: opened from the kept list. */
   function open(p: ProfileJson, fromKept = false) {
     keptAs = fromKept ? keptId(p) : null
+    linkedRepo = ''; stampTeam = false
     const copy = structuredClone($state.snapshot(p)) as ProfileJson
     copy.game ??= { name: '', autoSeconds: 15, teleopSeconds: 135 }
     copy.code ??= { repo: '', branch: '', sha: '' }
@@ -83,6 +90,7 @@
   function redraft() {
     if (logs.length === 0) return
     const d = draftProfile({ logs, snapshot: snapshot ?? undefined, hints: hints ?? undefined })
+    if (stampTeam && d.json.team === undefined && teamNow() !== null) d.json.team = teamNow()!
     // Another log was dropped: keep what the student already confirmed.
     if (json) { carryConfirmations($state.snapshot(json) as ProfileJson, d.json); if (snapshot) refreshLimits(d.json, snapshot) }
     json = d.json
@@ -94,9 +102,10 @@
     keptNote = ''
   }
 
-  async function load(list: FileList | File[] | null) {
+  async function load(list: FileList | File[] | null, fromLink = false) {
     const files = Array.from(list ?? [])
     if (files.length === 0) return
+    if (!fromLink) { linkedRepo = ''; stampTeam = false }
     busy = true
     await new Promise((r) => setTimeout(r, 30))
     const found: string[] = []
@@ -153,13 +162,24 @@
   }
 
   /**
+   * Starts a draft from library logs with "Use GitHub" open and filled in (`owner/repo@ref`, from a log's code link). The
+   * student presses Read: the GitHub requests stay theirs to start.
+   */
+  export async function start(files: File[], spec: string): Promise<void> {
+    const s = builderStart(spec)
+    logs = []; snapshot = null; hints = null; json = null
+    ;({ keptAs, openedProfile, keptNote, problems, draftNotes, notUsed, guessedSignals, seenLimits, hintsFrom, githubSpec, askingGitHub, linkedRepo, stampTeam } = s)
+    await load(files, true)
+  }
+
+  /**
    * Pre-fills "Use GitHub" with the profile's repo at the commit the log ran (else its branch). A draft from logs knows
    * the codebase and commit but not the repo: then the repo of a built-in profile for the same codebase.
    */
   function askGitHub() {
     const realRepo = (repo?: string) => !!repo && /^[\w.-]+\/[\w.-]+$/.test(repo)
     const sameCodebase = PROFILES.find((p) => p.codebase === json?.codebase && realRepo(p.code.repo))
-    const repo = realRepo(json?.code?.repo) ? json?.code?.repo : sameCodebase?.code.repo
+    const repo = realRepo(json?.code?.repo) ? json?.code?.repo : sameCodebase?.code.repo ?? (linkedRepo || undefined)
     const sha = /^[0-9a-f]{7,40}$/i.test(json?.code?.sha ?? '') ? json!.code!.sha.slice(0, 7) : ''
     if (repo) githubSpec = `${repo}@${sha || json?.code?.branch || sameCodebase?.code.branch || 'main'}`
     askingGitHub = !askingGitHub

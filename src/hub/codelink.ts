@@ -7,8 +7,9 @@
  *     repo), and one `GET /repos/{owner}/{repo}/commits/{sha}` per (candidate repo, build commit), read only for `.sha`;
  *   - raw.githubusercontent.com (not counted by GitHub): each repo's `src/main/java/frc/robot/Robot.java` at its default
  *     branch, searched for `recordMetadata("Codebase", "<text>")`. No other branch or tag is tried.
- * Stops at the first answer saying no requests remain; what was linked before is kept. No node: imports (the page uses
- * `describeCodeLink`).
+ * Stops at the first answer saying no requests remain; what was linked before is kept. `maxRequests` (the pass run when logs
+ * are added) stops it the same way after that many API requests, and says so as `capped`, which is not GitHub's limit.
+ * No node: imports (the page uses `describeCodeLink`).
  */
 import { isCodeLink, validSource, type CodeLink, type LogRecord } from './types.ts'
 
@@ -18,6 +19,9 @@ const API = 'https://api.github.com'
 const RAW = 'https://raw.githubusercontent.com'
 const ROBOT_JAVA = 'src/main/java/frc/robot/Robot.java'
 const CODEBASE = /recordMetadata\(\s*"Codebase"\s*,\s*"([^"]+)"/
+
+/** The most API requests linking the logs of one add makes: leaves 40 of the 60 an hour for the profile builder's "Use GitHub". */
+export const ADD_LINK_REQUESTS = 20
 
 export interface RepoInfo { full: string; defaultBranch: string; pushedAt: string }
 
@@ -41,6 +45,8 @@ export interface LinkResult {
   requests: { api: number; raw: number }
   /** Set when GitHub said no requests remain; ms since 1970 when they come back. */
   rateLimitedUntil: number | null
+  /** Set when `maxRequests` was reached and the rest was left for the Link code button; what was found is kept. */
+  capped: boolean
   /** Problems worth showing (a source that could not be listed). */
   problems: string[]
 }
@@ -50,13 +56,20 @@ class RateLimited extends Error {
   constructor(resetAt: number) { super('GitHub rate limit reached'); this.resetAt = resetAt }
 }
 
-export async function linkCode(sources: string[], records: LogRecord[], options: { get?: typeof fetch; now?: () => number; cancelled?: () => boolean; onProgress?: (done: number, total: number, current: string) => void } = {}): Promise<LinkResult> {
+/** Our own cap on API requests was reached (not GitHub's rate limit). */
+class Capped extends Error {
+  constructor() { super('stopped at the request cap') }
+}
+const stops = (e: unknown) => e instanceof RateLimited || e instanceof Capped
+
+export async function linkCode(sources: string[], records: LogRecord[], options: { get?: typeof fetch; now?: () => number; cancelled?: () => boolean; maxRequests?: number; onProgress?: (done: number, total: number, current: string) => void } = {}): Promise<LinkResult> {
   const get = options.get ?? fetch
   const now = options.now ?? Date.now
-  const result: LinkResult = { links: new Map(), unmatched: 0, repos: 0, requests: { api: 0, raw: 0 }, rateLimitedUntil: null, problems: [] }
+  const result: LinkResult = { links: new Map(), unmatched: 0, repos: 0, requests: { api: 0, raw: 0 }, rateLimitedUntil: null, capped: false, problems: [] }
   let remaining = Infinity
   const api = async (path: string): Promise<Response> => {
     if (remaining <= 0) throw new RateLimited(result.rateLimitedUntil ?? now())
+    if (result.requests.api >= (options.maxRequests ?? Infinity)) throw new Capped()
     result.requests.api++
     const res = await get(`${API}${path}`, { headers: { Accept: 'application/vnd.github+json' } })
     const left = res.headers.get('x-ratelimit-remaining')
@@ -76,7 +89,7 @@ export async function linkCode(sources: string[], records: LogRecord[], options:
     // 1. The repos, and the Codebase text each records.
     const repos: RepoInfo[] = []
     for (const source of sources) {
-      try { repos.push(...(await list(source, api))) } catch (e) { if (e instanceof RateLimited) throw e; result.problems.push(`${source}: ${e instanceof Error ? e.message : String(e)}`) }
+      try { repos.push(...(await list(source, api))) } catch (e) { if (stops(e)) throw e; result.problems.push(`${source}: ${e instanceof Error ? e.message : String(e)}`) }
     }
     result.repos = repos.length
     const wanted = new Set(todo.map((r) => r.robot!.name))
@@ -101,7 +114,7 @@ export async function linkCode(sources: string[], records: LogRecord[], options:
         held.set(key, full)
         return full
       } catch (e) {
-        if (e instanceof RateLimited) throw e
+        if (stops(e)) throw e
         result.problems.push(`${repo.full}: could not check commit ${sha} (${e instanceof Error ? e.message : String(e)}); treated as not there for now`)
         return null
       }
@@ -125,6 +138,7 @@ export async function linkCode(sources: string[], records: LogRecord[], options:
     }
   } catch (e) {
     if (e instanceof RateLimited) result.rateLimitedUntil = e.resetAt
+    else if (e instanceof Capped) result.capped = true
     else result.problems.push(e instanceof Error ? e.message : String(e)) // what was linked before is kept
   }
   return result

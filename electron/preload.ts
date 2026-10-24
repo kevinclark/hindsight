@@ -7,7 +7,7 @@ const call = (channel: string) => (...args: unknown[]) => ipcRenderer.invoke(`hu
 })
 
 const CHANNELS = [
-  'info', 'library', 'addFromFolder', 'cancel', 'runningJob', 'redescribe', 'lastJob', 'codePlan', 'setCodeSources', 'linkCode', 'setTag', 'readLog',
+  'info', 'library', 'addFromFolder', 'cancel', 'runningJob', 'redescribe', 'lastJob', 'codePlan', 'setCodeSources', 'team', 'setTeam', 'linkCode', 'setTag', 'readLog',
   'driveStatus', 'driveSignIn', 'driveSignOut', 'setGoogleClient', 'driveFolders', 'setTeamFolder', 'driveIngestPlan', 'addFromDrive',
   'syncPlan', 'sync', 'fetchLogs', 'addFromRobot', 'updateInfo',
 ] as const

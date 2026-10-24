@@ -57,7 +57,7 @@ panel. Neither is committed.
 - **The event table is a seed until it is generated.** `src/hub/events/*.json` holds only entries checked by hand
   (`"_source": "seed, not generated"`); a code not in it keeps the FMS text and a typed place. Generate a year with
   `TBA_READ_KEY=… node --experimental-strip-types scripts/build-event-table.ts <year>`.
-- **Link code** (Library view, "Code" section; settings keep `codeSources`: GitHub organizations as `name` or repos as
+- **Link code** (Library view, "Your team" box; settings keep `team` and `codeSources`: GitHub organizations as `name` or repos as
   `owner/name`, chosen on this computer, never in the repo). For logs whose robot only has a Codebase text, the button reads
   each repo's `src/main/java/frc/robot/Robot.java` at its default branch from raw.githubusercontent.com (not counted by
   GitHub) for `recordMetadata("Codebase", "…")`, and, for a log with a build commit, asks `GET /repos/{repo}/commits/{sha}`
@@ -74,6 +74,25 @@ panel. Neither is committed.
   without "template" or "training", then the latest push; the others are kept as `candidates`. The link is stored as a `meta`
   record (`code`: repo, `linkedBy` `sha` or `codebase`, full sha when by commit, `checkedAt`). No tag or branch other than
   the default is tried, so a Codebase line that moved off the default branch is not found.
+- **Your team** (top of the Library view). The team number (a whole number, 1 to 99999) and the GitHub sources are saved together
+  (`hub:setTeam`; both are checked first). With the number set, the Session view's and Match review's robot lists show that
+  team's built-in robots and the kept profiles that are its or have no team; other teams' robots are left out, except those
+  the session's own logs use. With no number (or the page opened from disk, which has no settings) every robot is listed,
+  grouped by team. Automatic robot choice is unchanged and still sees every profile. Saving runs the full
+  Link code pass once, uncapped, because saving is the user's own action, but only when the sources differ from those of the last pass that
+  finished (a new team number alone asks GitHub nothing; a pass that failed or hit the rate limit is tried again on the next save).
+- **Logs are linked when they are added.** After an add (folder, Drive or robot) that was not stopped, the logs it added that
+  name only their code and have no link yet are linked in the same job, with at most 20 GitHub API requests (one listing per
+  source plus one commit check per new build commit; the raw `Robot.java` reads are not counted). At the cap it stops, keeps
+  what it linked, and the add's report says "Stopped after 20 GitHub requests; Link code finishes the rest" (the cap is ours,
+  not GitHub's limit). Codebase-only links are not re-checked on add; the button does the full pass. Nothing is asked of
+  GitHub when no added log needs a link.
+- **Draft a profile from the linked code.** In the Session view, a session whose robot was chosen by signals or by the log's
+  code name, and whose logs carry a code link, shows "This robot's code is `repo` at `sha`" with *Draft a profile from it*.
+  It opens the Robot profile page with that log loaded and "Use GitHub" filled in (`repo@commit`, or the log's branch when
+  the commit is not on GitHub); the student presses Read, so the GitHub requests stay theirs. Nothing is used until the
+  profile is kept; then the session finds it by code name. The Library's robot facet comes from the built-in profiles only,
+  so it keeps showing the code name.
 - **Open in Session view** reads the filtered logs one at a time into the Session view.
 
 ## Sharing through the team's Drive

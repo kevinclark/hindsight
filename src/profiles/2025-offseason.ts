@@ -29,6 +29,7 @@ const swerveIds: Record<string, [number, number, number]> = {
 
 export const offseason2025: RobotProfile = {
   name: '2025 offseason robot',
+  team: 8033,
   codebase: '2025 Offseason',
   code: { repo: 'HighlanderRobotics/2025-Offseason-Robot', branch: 'event-mttd', sha: '493666f' },
 

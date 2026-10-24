@@ -14,8 +14,10 @@ import { checkForUpdate } from '../src/hub/update.ts'
 import { JobRunner, type Work } from '../src/hub/jobs.ts'
 import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
-import { estimateRequests, linkable, linkCode, validSource } from '../src/hub/codelink.ts'
-import type { CodePlan, DriveStatus, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
+import { estimateRequests, linkable, linkCode } from '../src/hub/codelink.ts'
+import { linkAdded } from '../src/hub/ingest-link.ts'
+import { checkTeamSetting, needsLinkPass, validTeam } from '../src/hub/team-setting.ts'
+import type { CodePlan, DriveStatus, TeamSettingSaved, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
 import { Describer } from './describer.ts'
 import { driveToken, googleClient, keeping, signIn, signOut, signedIn } from './google-auth.ts'
@@ -54,6 +56,11 @@ export function registerHub(window: () => BrowserWindow | null): void {
     return job(name, async (j, progress) => {
       const report = await ingest(lib, files, { describe: describer.describe, seen, cancelled: () => j.cancelled, onProgress: progress })
       await writeJson(seenPath, Object.fromEntries(seen))
+      // Logs just added that name only their code are linked to the saved GitHub sources, at most 20 API requests (a cancelled add links nothing).
+      const sources = (await loadSettings()).codeSources ?? []
+      if (sources.length > 0) {
+        try { Object.assign(report, await linkAdded(lib, report, sources, `${app.getVersion()}+linked`, { cancelled: () => j.cancelled, onProgress: progress })) } catch (e) { report.linkProblem = e instanceof Error ? e.message : String(e) }
+      }
       return report
     })
   }
@@ -100,14 +107,11 @@ export function registerHub(window: () => BrowserWindow | null): void {
   }
   ipcMain.handle('hub:codePlan', codePlan)
   ipcMain.handle('hub:setCodeSources', async (_e, sources: string[]): Promise<CodePlan> => {
-    const clean = [...new Set((Array.isArray(sources) ? sources : []).map((s) => String(s).trim()).filter(Boolean))]
-    const bad = clean.find((s) => !validSource(s))
-    if (bad) throw new Error(`"${bad}" is not a GitHub organization (name) or repository (owner/name).`)
-    await saveSettings({ codeSources: clean })
+    await saveSettings({ codeSources: checkTeamSetting(null, sources).sources })
     return codePlan()
   })
-  /** Find the repo each code-named log ran, from the listed GitHub sources; writes a `meta` record for each log linked. */
-  ipcMain.handle('hub:linkCode', async (): Promise<LinkReport> => {
+  /** The full pass: find the repo each code-named log ran, from the saved GitHub sources, uncapped; writes a `meta` record for each log linked. */
+  const linkPass = async (): Promise<LinkReport> => {
     const lib = await open()
     const sources = (await loadSettings()).codeSources ?? []
     if (sources.length === 0) throw new Error('Add a GitHub organization or repository first.')
@@ -115,8 +119,22 @@ export function registerHub(window: () => BrowserWindow | null): void {
       const found = await linkCode(sources, lib.catalog.all(), { cancelled: () => j.cancelled, onProgress: progress })
       // A log with no reading yet is stamped with this version but not this describer: it ranks as current, yet "Read logs again" still reads it.
       const { written, unchanged } = await applyLinks(lib, found.links, `${app.getVersion()}+linked`)
+      if (found.rateLimitedUntil === null && found.problems.length === 0) await saveSettings({ linkedSources: sources })
       return { linked: found.links.size, written, unchanged, unmatched: found.unmatched, repos: found.repos, requests: found.requests, rateLimitedUntil: found.rateLimitedUntil, problems: found.problems }
     })
+  }
+  ipcMain.handle('hub:linkCode', linkPass)
+
+  ipcMain.handle('hub:team', async (): Promise<TeamSettingSaved> => {
+    const s = await loadSettings()
+    return { team: validTeam(s.team) ? s.team : null, sources: s.codeSources ?? [] }
+  })
+  /** Save the team number and GitHub sources together (both checked first). `linkNeeded`: the sources differ from those of the last full pass that finished, so the page runs Link code (its own job). */
+  ipcMain.handle('hub:setTeam', async (_e, team: number | null, sources: string[]): Promise<TeamSettingSaved> => {
+    const checked = checkTeamSetting(team, sources)
+    const linked = (await loadSettings()).linkedSources ?? []
+    await saveSettings({ team: checked.team ?? undefined, codeSources: checked.sources })
+    return { ...checked, linkNeeded: needsLinkPass(linked, checked.sources) }
   })
 
   /** Read every robot log in this library again with the current describer; appends a `meta` record for each that reads differently. */

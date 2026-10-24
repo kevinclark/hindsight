@@ -12,8 +12,12 @@ export interface Settings {
   teamFolder?: { id: string; name: string }
   /** A Google Desktop OAuth client a team made for itself, used in place of the build's. */
   googleClient?: { id: string; secret: string }
+  /** The team's FRC number (1-99999): the robot lists show this team's robots (src/ui/robot-list.ts). */
+  team?: number
   /** GitHub orgs ("name") or repos ("owner/name") whose code logs are linked to (src/hub/codelink.ts). Chosen at run time, never in the repo. */
   codeSources?: string[]
+  /** The sources of the last full link pass that finished without a rate limit or problem: saving the same sources again links nothing. */
+  linkedSources?: string[]
   /** The last sync: when, and the paths the team store held (what "shared" means in the Library view). */
   lastSync?: { at: number; paths: string[] }
 }
