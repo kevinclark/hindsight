@@ -11,7 +11,8 @@
   import { ForesightLive, type LiveStatus } from '../foresight/live.ts'
   import { SETTLE_SECONDS } from '../foresight/engine.ts'
   import { FIELD_MESSAGE, isFieldLocked } from '../foresight/nt4-client.ts'
-  import { lastPassingSha, type HistoryEvent, type PitCheckEvent } from '../triage/history.ts'
+  import { lastPassingSha, triage, type HistoryEvent, type PitCheckEvent } from '../triage/history.ts'
+  import { howSure, trackRecord } from '../triage/track-record.ts'
   import { FORESIGHT_RULES } from '../rules/index.ts'
   import { profileId } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
@@ -47,6 +48,14 @@
     /** Writes board lines (App.svelte writeBoard): the queue checklist's ticks. Without it ticks stay on this page. */
     onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void
   } = $props()
+  // A code check's "not a real problem" line beside its fix: from the marks in the history (no open logs fire code checks).
+  // Null when the history holds no mark of that check, which the fix preview says as "no marks yet".
+  const marksNow = $derived(triage(history))
+  const anyMarks = $derived(history.some((e) => e.type === 'issue'))
+  const sureCode = (rule: string): string | null => {
+    const record = trackRecord(rule, marksNow, history, [])
+    return record.fired === 0 ? null : howSure(record, anyMarks)
+  }
   // The mode line (ADR 3): a pit check on an event day is a pit run; the laptop's day decides. With no logs of today loaded
   // (the desktop app at the pit, before the Session view has any), The Blue Alliance's schedule or a library log dated today can
   // say it is an event day too (src/session/today-event.ts). The single-file page has neither and keeps the old behaviour.
@@ -354,7 +363,7 @@
     </section>
   {/if}
 
-  <CodeCheck robotSha={checked?.match.build.sha || null} robotDirty={!!checked && isUncommitted(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
+  <CodeCheck sure={sureCode} robotSha={checked?.match.build.sha || null} robotDirty={!!checked && isUncommitted(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
 
   {#if status && status.state !== 'closed'}
     <details class="readings" open>
