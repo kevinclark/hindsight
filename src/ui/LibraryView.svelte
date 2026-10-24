@@ -19,10 +19,13 @@
   import { ADD_LINK_REQUESTS, describeCodeLink } from '../hub/codelink.ts'
   import { setTeamNow } from './team-setting.svelte.ts'
   import type { CodePlan, LastJob, LinkReport } from '../hub/bridge.ts'
-  import { asFile, sessionNames } from '../hub/session-files.ts'
+  import { asFile, codeSpec, sessionNames } from '../hub/session-files.ts'
+  import { robotsToProfile, type RobotToProfile } from '../hub/drafts.ts'
+  import { keptNow } from './kept-profiles.svelte.ts'
 
-  // `onOpenSession`: the filtered logs, in the Session view. `onOpenMatch`: one log, in Match review.
-  let { onOpenSession, onOpenMatch }: { onOpenSession: (files: File[]) => void; onOpenMatch: (files: File[]) => void } = $props()
+  // `onOpenSession`: the filtered logs, in the Session view. `onOpenMatch`: one log, in Match review. `onDraft`: one log in the
+  // profile builder, with "Use GitHub" filled in (`owner/repo@ref`).
+  let { onOpenSession, onOpenMatch, onDraft }: { onOpenSession: (files: File[]) => void; onOpenMatch: (files: File[]) => void; onDraft: (files: File[], spec: string) => void } = $props()
   const api = hub()
 
   let snapshot = $state.raw<LibrarySnapshot | null>(null)
@@ -168,6 +171,8 @@
   const all = $derived(snapshot?.entries ?? [])
   const stubs = $derived(all.filter((e) => e.record.stub))
   const base = $derived(showStubs ? all : all.filter((e) => !e.record.stub))
+  /** Robots only a Codebase text names and no profile kept in this browser covers: over every log, like the labels. */
+  const toProfile = $derived(robotsToProfile(all, new Set(keptNow().flatMap((p) => (p.codebase ? [p.codebase] : [])))))
   /** Decided over every log, so a filter or the stubs switch never renames a robot. */
   const labels = $derived(robotLabels(all))
   const filtered = $derived(filterEntries(base, selection, labels))
@@ -206,6 +211,9 @@
   function openInSession() {
     if (!api) return
     onOpenSession(sessionNames(local).map((n) => asFile(n, api)))
+  }
+  function draft(r: RobotToProfile) {
+    if (api && r.source.kind === 'draft') onDraft([asFile({ entry: r.source.entry, name: baseName(r.source.entry.record.path) }, api)], codeSpec({ code: r.source.code, build: r.source.entry.record.build }))
   }
   function openMatch(e: Entry) {
     if (api) onOpenMatch([asFile({ entry: e, name: baseName(e.record.path) }, api)])
@@ -370,6 +378,26 @@
   </section>
 {/if}
 
+{#if toProfile.length}
+  <section class="report" aria-label="Robots with no profile">
+    <h2>Robots with no profile</h2>
+    <p class="meta">The review reads a log's motors, currents and limits from its robot's profile. A draft from the robot's code at the commit a log ran marks where each value came from; nothing uses it until a student checks it and keeps it in the profile builder.</p>
+    <ul class="rows plain">
+      {#each toProfile as r (r.name)}
+        {@const code = r.source.kind === 'no code' ? null : describeCodeLink({ code: r.source.code, build: r.source.kind === 'draft' ? r.source.entry.record.build : null })}
+        <li data-robot={r.name}>
+          <strong>{r.name}</strong> · {r.logs} log{r.logs === 1 ? '' : 's'} ·
+          {#if code}code <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a>{/if}
+          {#if r.source.kind === 'draft'}
+            <button class="primary" onclick={() => draft(r)} title="Opens {baseName(r.source.entry.record.path)}, this robot's newest log linked to its code on this computer, in the profile builder with the code it ran ready to read from GitHub ({codeSpec({ code: r.source.code, build: r.source.entry.record.build })}). A session's offer may pick another commit: the one most of that session's logs ran.">Draft a profile from its code</button>
+          {:else if r.source.kind === 'not here'}<span class="meta">none of its logs linked to code is on this computer: download one to draft from</span>
+          {:else}<span class="meta">no code linked: set your GitHub organization under Your team</span>{/if}
+        </li>
+      {/each}
+    </ul>
+  </section>
+{/if}
+
 <datalist id="places">{#each counts.place as [value] (value)}{#if !all.some((e) => fmsPlace(e.record)?.name === value)}<option {value}></option>{/if}{/each}</datalist>
 <div class="layout">
   <aside aria-label="Filters">
@@ -475,6 +503,8 @@
   .report h2 { font-size: 1rem; margin: 0.2rem 0; }
   .flags { display: flex; gap: 1.5rem; list-style: none; padding: 0; margin: 0.25rem 0; }
   .rows { margin: 0.25rem 0 0.5rem; padding-left: 1.2rem; max-height: 14rem; overflow: auto; font-size: 0.85rem; }
+  .rows.plain { list-style: none; padding-left: 0; max-height: none; }
+  .plain li { min-height: 28px; }
   .layout { display: grid; grid-template-columns: 14rem 1fr; gap: 1.5rem; align-items: start; }
   @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
   aside { font-size: 0.85rem; }

@@ -73,9 +73,12 @@
   let profileBuilder = $state<{ start(files: File[], spec: string): Promise<void> }>()
   // From a session's "Draft a profile from it": the library's copy of that log, in the profile builder, with the linked code to read.
   async function draftFromCode(link: LibraryLink) {
-    const files = await libraryLogs(hub()!, [link.name])
+    await startDraft(await libraryLogs(hub()!, [link.name]), codeSpec(link))
+  }
+  // From the Library's "Robots with no profile", or a session's offer: the log in the profile builder, its code to read.
+  async function startDraft(files: File[], spec: string) {
     mode = 'profile'
-    await profileBuilder?.start(files, codeSpec(link))
+    await profileBuilder?.start(files, spec)
   }
   // From the Library: the filtered logs, in the Session view.
   async function openInSession(files: File[]) {
@@ -297,7 +300,7 @@
   <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
-{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} /></div>{/if}
+{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} /></div>{/if}
 <div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 {#if !current || dragging}

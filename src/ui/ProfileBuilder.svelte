@@ -35,6 +35,8 @@
   let linkedRepo = ''
   /** The draft was opened by start(): its logs are linked to this team's sources, so the draft gets the team. */
   let stampTeam = false
+  /** Bumped by start(): a load or code read still running from before (another robot's log, its Read) is dropped when it ends. */
+  let generation = 0
   let json = $state<ProfileJson | null>(null)
   let notUsed = $state<{ key: string; why: string }[]>([])
   let guessedSignals = $state<{ signal: string; key: string; alternatives: string[] }[]>([])
@@ -91,6 +93,8 @@
     if (logs.length === 0) return
     const d = draftProfile({ logs, snapshot: snapshot ?? undefined, hints: hints ?? undefined })
     if (stampTeam && d.json.team === undefined && teamNow() !== null) d.json.team = teamNow()!
+    // A draft from a log knows the codebase and commit, not the repo: a library log's code link does.
+    if (linkedRepo && d.json.code && !d.json.code.repo) d.json.code.repo = linkedRepo
     // Another log was dropped: keep what the student already confirmed.
     if (json) { carryConfirmations($state.snapshot(json) as ProfileJson, d.json); if (snapshot) refreshLimits(d.json, snapshot) }
     json = d.json
@@ -105,16 +109,21 @@
   async function load(list: FileList | File[] | null, fromLink = false) {
     const files = Array.from(list ?? [])
     if (files.length === 0) return
-    if (!fromLink) { linkedRepo = ''; stampTeam = false }
+    // Two drops add up (a second log joins the draft); a start() in between replaces both.
+    const mine = generation
     busy = true
     await new Promise((r) => setTimeout(r, 30))
+    if (mine !== generation) return
     const found: string[] = []
     let newLogs = false, newSnapshot = false
     let profile: ProfileJson | null = null
     for (const f of files) {
       try {
         const bytes = new Uint8Array(await f.arrayBuffer())
+        if (mine !== generation) return
         if (startsWithWpilog(bytes)) {
+          // A log the student dropped is not the library's linked one (a snapshot or profile.json leaves the link).
+          if (!fromLink) { linkedRepo = ''; stampTeam = false }
           const log: WpilogFile = openWpilog(bytes)
           logs = [...logs.filter((l) => l.fileName !== f.name), { log, fileName: f.name }]
           newLogs = true
@@ -145,17 +154,22 @@
   async function loadCode(list: FileList | null) {
     const files = Array.from(list ?? [])
     if (files.length === 0) return
+    const mine = generation
     busy = true
     const read: CodeFile[] = []
     for (const f of files) {
       const path = f.webkitRelativePath || f.name
       if (path.endsWith('.java')) read.push({ path, text: await f.text() })
     }
+    if (mine !== generation) return
     try {
       await loadJavaInPage()
-      useHints(codeHints(read, await codeHead(gitRepoOfFiles(files))), 'code folder')
+      const head = await codeHead(gitRepoOfFiles(files))
+      if (mine !== generation) return
+      useHints(codeHints(read, head), 'code folder')
       problems = []
     } catch (error) {
+      if (mine !== generation) return
       problems = [error instanceof Error ? error.message : String(error)]
     }
     busy = false
@@ -167,6 +181,9 @@
    */
   export async function start(files: File[], spec: string): Promise<void> {
     const s = builderStart(spec)
+    generation++
+    // A load or code read this start() replaces won't finish its own "Reading…".
+    busy = false
     logs = []; snapshot = null; hints = null; json = null
     ;({ keptAs, openedProfile, keptNote, problems, draftNotes, notUsed, guessedSignals, seenLimits, hintsFrom, githubSpec, askingGitHub, linkedRepo, stampTeam } = s)
     await load(files, true)
@@ -189,13 +206,19 @@
   async function loadGitHub(spec: string) {
     const parsed = parseGitHub(spec)
     if (!parsed?.ref) { problems = [`"${spec}" isn't a GitHub repo and branch: write it as owner/repo@branch.`]; return }
+    const mine = generation
     busy = true
     try {
       await loadJavaInPage()
-      useHints(await hintsAt(browserGitHub(parsed.repo), parsed.ref), `${parsed.repo} (GitHub)`)
+      const found = await hintsAt(browserGitHub(parsed.repo), parsed.ref)
+      if (mine !== generation) return
+      // The repo read names the draft's code from now on (it may not be the linked one).
+      if (linkedRepo) linkedRepo = parsed.repo
+      useHints(found, `${parsed.repo} (GitHub)`)
       askingGitHub = false
       problems = []
     } catch (error) {
+      if (mine !== generation) return
       problems = [error instanceof Error ? error.message : String(error)]
     }
     busy = false
