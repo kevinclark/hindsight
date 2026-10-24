@@ -19,6 +19,7 @@
   import LibraryView from './ui/LibraryView.svelte'
   import { hub } from './hub/bridge.ts'
   import { loadTeam, teamNow } from './ui/team-setting.svelte.ts'
+  import { loadTba } from './ui/tba-setting.svelte.ts'
   import { robotChoices } from './ui/robot-list.ts'
   import RobotOptions from './ui/RobotOptions.svelte'
   import { codeSpec, libraryLinks, libraryLogs, type LibraryLink } from './hub/session-files.ts'
@@ -67,6 +68,7 @@
   let update = $state<{ version: string; url: string } | null>(null)
   void hub()?.updateInfo().then((u) => { update = u })
   void loadTeam()
+  void loadTba()
   let sessionView = $state<{ addFiles(files: File[]): Promise<void> }>()
   // Session summaries restored without their file read the library's copy (desktop app only).
   const findInLibrary = hub() ? (names: string[]) => libraryLogs(hub()!, names) : undefined

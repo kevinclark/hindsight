@@ -88,14 +88,17 @@ export function robotLabels(entries: Entry[]): RobotLabels {
   return out
 }
 
+/** The event The Blue Alliance named for on-field logs whose FMS event name is blank, by sha-256 (src/tba/identify.ts): "Name 2099". */
+export type Places = ReadonlyMap<string, string>
+
 /** The value of each facet for one log. */
-export function facetValues(e: Entry, labels: RobotLabels): Record<FacetId, string> {
+export function facetValues(e: Entry, labels: RobotLabels, places?: Places): Record<FacetId, string> {
   const r = e.record
   return {
     schoolYear: r.playedAt === null ? UNKNOWN.schoolYear : schoolYear(r.playedAt),
     season: r.playedAt === null ? UNKNOWN.season : seasonOf(r.playedAt) === 'season' ? 'Season' : 'Off-season',
     // On the field the FMS names the event; anywhere else a person types where the practice was.
-    place: fmsPlace(r)?.name ?? e.tags.place ?? UNKNOWN.place,
+    place: fmsPlace(r)?.name ?? places?.get(r.sha256) ?? e.tags.place ?? UNKNOWN.place,
     matchType: r.matchType !== null ? MATCH_TYPES[r.matchType] ?? UNKNOWN.matchType : UNKNOWN.matchType,
     battery: e.tags.battery ?? r.batteryId ?? UNKNOWN.battery,
     robot: labels.get(r.sha256)?.label ?? UNKNOWN.robot,
@@ -106,9 +109,9 @@ export function facetValues(e: Entry, labels: RobotLabels): Record<FacetId, stri
 export type Selection = Partial<Record<FacetId, string[]>>
 
 /** Entries that match every facet that has picks, where any pick of a facet matches. */
-export function filterEntries(entries: Entry[], selection: Selection, labels: RobotLabels): Entry[] {
+export function filterEntries(entries: Entry[], selection: Selection, labels: RobotLabels, places?: Places): Entry[] {
   return entries.filter((e) => {
-    const values = facetValues(e, labels)
+    const values = facetValues(e, labels, places)
     return FACETS.every((f) => !selection[f]?.length || selection[f]!.includes(values[f]))
   })
 }
@@ -126,13 +129,13 @@ export function countLabel(selection: Selection, f: FacetId, value: string, n: n
  * Each facet's values with how many logs have them. A facet's counts ignore its own picks (so picking a second school year
  * shows what it would add) but respect every other facet's.
  */
-export function facetCounts(entries: Entry[], selection: Selection, labels: RobotLabels): Record<FacetId, [value: string, count: number][]> {
+export function facetCounts(entries: Entry[], selection: Selection, labels: RobotLabels, places?: Places): Record<FacetId, [value: string, count: number][]> {
   const out = {} as Record<FacetId, [string, number][]>
   for (const f of FACETS) {
     const others = { ...selection, [f]: undefined }
     const counts = new Map<string, number>()
-    for (const e of filterEntries(entries, others, labels)) {
-      const v = facetValues(e, labels)[f]
+    for (const e of filterEntries(entries, others, labels, places)) {
+      const v = facetValues(e, labels, places)[f]
       counts.set(v, (counts.get(v) ?? 0) + 1)
     }
     // Picked values stay listed even at zero, so they can be unpicked.

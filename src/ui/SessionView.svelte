@@ -32,6 +32,10 @@
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
   import { allMarked, crashedNote, gridCells, marksText, misfitNotes, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
+  import { hub } from '../hub/bridge.ts'
+  import { REFUSED_WORDS, blankEventClusters, clockOffsetText, identifyEvents, type ResolvedEvent } from '../tba/identify.ts'
+  import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
+  import TbaFields from './TbaFields.svelte'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
   // copies of logs by name, for summaries restored without their file. `linksFor` (desktop app): the library's code links for
@@ -111,7 +115,25 @@
   }
 
   const stored = $derived(profilesNow())
-  const sessions = $derived(groupSessions(summaries, overrides, renames))
+  // Which event The Blue Alliance says each blank-event on-field log belongs to (src/tba/identify.ts). Filled in after the
+  // logs are read, from the saved copy when offline; until then, and with no key or team, the grouping is the plain one.
+  let found = $state.raw<ReadonlyMap<string, ResolvedEvent>>(new Map())
+  let lookupProblem = $state('')
+  $effect(() => {
+    const logs = summaries, get = tbaGetter(), team = tbaTeam()
+    lookupProblem = ''
+    if (!get || team === null || blankEventClusters(logs).length === 0) { found = new Map(); return }
+    let stale = false
+    void identifyEvents(logs, team, get).then((r) => {
+      if (stale) return
+      found = r.byFile
+      const lost = r.clusters.filter((c) => c.why === 'unreachable').length
+      if (r.clusters.some((c) => c.why === 'refused')) lookupProblem = REFUSED_WORDS
+      else if (lost) lookupProblem = `The Blue Alliance could not be reached for ${lost} group${lost === 1 ? '' : 's'} of logs with no event name, and no saved copy covers them.`
+    })
+    return () => { stale = true }
+  })
+  const sessions = $derived(groupSessions(summaries, overrides, renames, found))
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
   // Until one is picked, show the event (the matches that count), else the first session.
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
@@ -147,6 +169,15 @@
     })
     return rows.sort((a, b) => b.fired - a.fired || a.worst - b.worst || a.row - b.row)
   })
+  // Pit runs: logs not on the field, on an event's days. Not matches: they have their own grid and are in no count above.
+  const pitRuns = $derived(session?.pitRuns ?? [])
+  const pitGrid = $derived.by(() => {
+    if (!session || pitRuns.length === 0) return []
+    const pit = { ...session, matches: pitRuns }
+    return ruleGrid(pit).map((r) => ({ ...r, gridCells: gridCells(pit, r.rule) })).filter((r) => r.fired > 0)
+      .sort((a, b) => b.fired - a.fired)
+  })
+  const pitTime = (m: MatchSummary) => (m.playedAt ? new Date(m.playedAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : m.fileName)
   // Signals that appeared, vanished or changed between matches (by build), and those missing from every match.
   const changes = $derived(session ? loggingChanges(session.matches) : [])
   const missingAll = $derived(session ? neverLogged(session.matches) : [])
@@ -178,7 +209,7 @@
   const offers = $derived(draftOffers(codeLinks))
 
   /** Every log file in a session, counting the pieces of a match recorded in several logs. */
-  const logsOf = (s: Session) => s.matches.flatMap((m) => m.pieces ?? [m.fileName])
+  const logsOf = (s: Session) => [...s.matches, ...(s.pitRuns ?? [])].flatMap((m) => m.pieces ?? [m.fileName])
   const staleShown = $derived(summaries.filter((m) => stale[m.fileName]).map((m) => stale[m.fileName]))
   const sessionIsStale = $derived(!!session && logsOf(session).some((n) => stale[n]))
   const staleText = $derived(staleNote(staleShown, hiddenOld.size))
@@ -491,10 +522,13 @@
 
 {#if staleText}<p class="note warn" data-stale-note>{staleText}</p>{/if}
 
+{#if !hub()}<TbaFields />{/if}
+{#if lookupProblem}<p class="note warn">{lookupProblem}</p>{/if}
+
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
-      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{s.matches.length} match{s.matches.length === 1 ? '' : 'es'}</small></button>
+      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{s.matches.length} match{s.matches.length === 1 ? '' : 'es'}{s.pitRuns?.length ? `, ${s.pitRuns.length} pit run${s.pitRuns.length === 1 ? '' : 's'}` : ''}</small></button>
     {/each}
   </nav>
 {/if}
@@ -508,6 +542,7 @@
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
   </section>
+  {#if session.event}<p class="note" data-event-note>The Blue Alliance says this was {session.event.name}{#if session.event.by === 'date'}{' '}<strong>(guess)</strong>{/if} ({session.event.key}), {session.event.start} to {session.event.end}: {session.event.matched} of the {session.event.of} qualification numbers in these logs are on the team's list there{session.event.by === 'date' ? ' (several events held as many; the robot clock chose, so this is a guess)' : ''}.{session.event.clockOffsetDays ? ` The robot clock is ${clockOffsetText(session.event.clockOffsetDays).replace('robot clock ', '')}.` : ''} {session.event.fromCache ? 'From a saved copy' : 'Fetched'} {new Date(session.event.fetchedAt).toLocaleString()}.</p>{/if}
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   {#if reread && reread.sessionId === session.id && !reread.dismissed}
     <section class="changed" data-reread-changes>
@@ -565,6 +600,28 @@
     </table>
   </div>
   <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
+
+  {#if pitRuns.length}
+    <h3>Pit runs on this event's days</h3>
+    <p class="hint" data-pit-runs>{pitRuns.length} log{pitRuns.length === 1 ? '' : 's'} not on the field, played on a day this event had matches (pit runs). They are not matches: the grid above, the match count and the confidence below leave them out. Rules that fired in at least one are shown here{pitGrid.length ? '' : '; none did'}.</p>
+    {#if pitGrid.length}
+      <div class="grid-wrap"><table class="grid" data-pit-grid>
+        <thead><tr><th>rule</th>{#each pitRuns as m (m.fileName)}<th class="match"><button class="link" title={`${label(m)} · ${m.fileName}`} aria-label={`Pit run ${pitTime(m)}`} onclick={() => open(m)}>{pitTime(m)}</button></th>{/each}<th>pit runs</th></tr></thead>
+        <tbody>
+          {#each pitGrid as r (r.rule)}
+            <tr>
+              <th scope="row"><code>{r.rule}</code></th>
+              {#each r.cells as c, i (i)}
+                {#if c === 'fired'}{@const cell = r.gridCells[i]}{@const sev = cell.severity ?? 'error'}<td class={`cell fired ${sev}`} title={`${SEV_WORD[sev]}: fired in the pit run`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}</span></td>
+                {:else}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/if}
+              {/each}
+              <td class="rate">fired in {r.fired} of {r.checkable}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table></div>
+    {/if}
+  {/if}
 
   <h3>Per match</h3>
   <Trends matches={session.matches} {typedBatteries} labels={session.matches.map(shortLabel)} onOpen={open} />
@@ -632,9 +689,9 @@
   <div class="grid-wrap"><table class="list">
     <thead><tr><th>match</th><th>played</th><th>battery</th><th>session</th></tr></thead>
     <tbody>
-      {#each session.matches as m (m.fileName)}
+      {#each [...session.matches.map((m) => [m, false] as const), ...pitRuns.map((m) => [m, true] as const)] as [m, pit] (m.fileName)}
         <tr>
-          <td>{label(m)}</td>
+          <td>{label(m)}{#if pit}{' '}<span class="pit">pit run</span>{/if}</td>
           <td>{m.playedAt ? new Date(m.playedAt).toLocaleString() : 'unknown'}{m.playedAtSource === 'file name' ? ' (from file name)' : ''}</td>
           <td>{#if m.batteryId}{m.batteryId} (logged){:else}<input size="6" placeholder="label" value={typedBatteries[m.fileName] ?? ''} onchange={(e) => setBattery(m.fileName, (e.currentTarget as HTMLInputElement).value)} />{/if}</td>
           <td>
@@ -664,6 +721,7 @@
   .sessions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
   .sessions button { min-height: 24px; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
   .sessions button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
+  .pit { font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
   .sessions small { color: var(--muted); }
   .button.prominent { border-color: var(--warning); color: var(--warning); font-weight: 600; }
   .changed h3 { margin-top: 1rem; }

@@ -28,3 +28,14 @@ export function sameSources(a: readonly string[], b: readonly string[]): boolean
 
 /** Saving needs the full link pass only when there are sources and they differ from those of the last pass that finished (`linked`): a new team number alone asks GitHub nothing, and a pass that failed is tried again. */
 export const needsLinkPass = (linked: readonly string[], after: readonly string[]): boolean => after.length > 0 && !sameSources(linked, after)
+
+/**
+ * A The Blue Alliance read key as typed: undefined (not given) leaves the saved key alone, null or an empty box clears it,
+ * anything else must be letters, digits, - or _ (TBA's are 64 characters). The message never repeats what was typed.
+ */
+export function checkTbaKey(key: unknown): string | null | undefined {
+  if (key === undefined) return undefined
+  if (key === null || (typeof key === 'string' && key.trim() === '')) return null
+  if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(key.trim())) throw new Error('That does not look like a The Blue Alliance read key: it is letters, numbers, - and _ only (account page, Read API Keys).')
+  return key.trim()
+}

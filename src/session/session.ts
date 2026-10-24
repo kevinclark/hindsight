@@ -3,9 +3,12 @@
  * finding across them.
  *
  * Grouping: matches on the field (FMS) with the same event name within 4 days are one event (when the Driver Station
- * logged no event name, on-field matches within 4 days of each other are one event); everything else is grouped by
- * the local date it was played (a practice day). One match recorded in several logs (the robot program restarted
- * during it) counts once. The student can move a log or rename a session.
+ * logged no event name, on-field matches within 4 days of each other are one event, named by The Blue Alliance when the
+ * caller found which one: src/tba/identify.ts). The mode is decided per local day (ADR 3): a day with any on-field log
+ * of an event is an event day, and a log that was not on the field that day (a tethered pit run between matches) joins
+ * the event as a pit run, kept in `pitRuns` and not counted as a match. Everything else is grouped by the local date it
+ * was played (a practice day). One match recorded in several logs (the robot program restarted during it) counts once.
+ * The student can move a log or rename a session.
  *
  * Confidence of a finding across a session, from k = matches where it fired and n = matches where it could be checked:
  *   consistent:      fired in most (more than half) and n ≥ 3
@@ -20,45 +23,73 @@ import { RULES } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import type { SummaryFinding } from './summary.ts'
 import { median } from '../match/series.ts'
+import { clockOffsetText, eventLabel, type ResolvedEvent } from '../tba/identify.ts'
+import { addEventDay, eventOfDay, type EventDayIndex } from '../tba/event-days.ts'
 
 export interface Session {
   id: string
   label: string
   kind: 'event' | 'practice' | 'undated'
   matches: MatchSummary[]
+  /** The event The Blue Alliance named for a session of on-field logs with no event name. */
+  event?: ResolvedEvent
+  /** Logs not on the field, played on a day this event had matches: pit runs. They are not matches, so no grid or confidence counts them. Only on event sessions. */
+  pitRuns?: MatchSummary[]
 }
 
 const DAY = 86400e3
+const NO_EVENTS: ReadonlyMap<string, ResolvedEvent> = new Map()
 
 /**
  * Group summaries into sessions. `overrides` maps a file name to the label of the session the student moved it to:
  * an existing session with that label if there is one, else a new one. `renames` maps a session id to a new label.
  */
-export function groupSessions(summaries: MatchSummary[], overrides: Record<string, string> = {}, renames: Record<string, string> = {}): Session[] {
+export function groupSessions(summaries: MatchSummary[], overrides: Record<string, string> = {}, renames: Record<string, string> = {}, events: ReadonlyMap<string, ResolvedEvent> = NO_EVENTS): Session[] {
   const sorted = joinSplitMatches([...summaries].sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity) || a.fileName.localeCompare(b.fileName)))
   const sessions: Session[] = []
   const byId = new Map<string, Session>()
-  const add = (id: string, label: string, kind: Session['kind'], m: MatchSummary) => {
+  /** Where each session began in `sorted`, so sessions keep the order of their first log. */
+  const first = new Map<Session, number>()
+  const add = (id: string, label: string, kind: Session['kind'], m: MatchSummary, at: number) => {
     let s = byId.get(id)
-    if (!s) { s = { id, label: renames[id] ?? label, kind, matches: [] }; byId.set(id, s); sessions.push(s) }
+    if (!s) { s = { id, label: renames[id] ?? label, kind, matches: [] }; byId.set(id, s); sessions.push(s); first.set(s, at) }
     s.matches.push(m)
+    return s
   }
-  // Automatic grouping first, for every log the student hasn't moved.
-  for (const m of sorted) {
-    if (overrides[m.fileName]) continue
-    if (m.playedAt === null) { add('undated', 'Logs with no date', 'undated', m); continue }
-    if (m.onField) {
-      // Same event name within 4 days of the event's last match: the same event. The id is the event name and its
-      // first day, so a rename survives adding more logs from that day.
-      const open = sessions.find((s) => s.kind === 'event' && s.id.startsWith(`event:${m.event}:`) && m.playedAt! - (s.matches.at(-1)!.playedAt ?? 0) < 4 * DAY)
-      if (open) { open.matches.push(m); continue }
+  const resolvedOf = (m: MatchSummary) => (m.event ? undefined : events.get(m.fileName) ?? m.pieces?.map((p) => events.get(p)).find(Boolean))
+  // The event a log belongs to: the FMS's name, else the one The Blue Alliance found. TBA keys carry the year; FMS names do not.
+  const eventOf = (m: MatchSummary) => { const r = resolvedOf(m); return r ? r.key.slice(4).toLowerCase() : m.event.toLowerCase() }
+  const days: EventDayIndex<Session> = new Map()
+  // Automatic grouping first, for every log the student hasn't moved. Logs that were not on the field wait for the event days.
+  const pending: [MatchSummary, number][] = []
+  sorted.forEach((m, i) => {
+    if (overrides[m.fileName]) return
+    if (m.playedAt === null) { add('undated', 'Logs with no date', 'undated', m, i); return }
+    if (!m.onField) { pending.push([m, i]); return }
+    // Same event within 4 days of the event's last match: the same event. The id is the event name and its first day,
+    // so a rename survives adding more logs from that day.
+    const name = eventOf(m)
+    let s = sessions.find((x) => x.kind === 'event' && eventOf(x.matches[0]) === name && m.playedAt! - (x.matches.at(-1)!.playedAt ?? 0) < 4 * DAY)
+    if (s) s.matches.push(m)
+    else {
       const day = dateText(m.playedAt)
-      add(`event:${m.event}:${day}`, m.event ? `Event ${m.event} (${day})` : `Event starting ${day} (no event name logged)`, 'event', m)
-      continue
+      const r = resolvedOf(m)
+      // The old blank-event session had the id event::<day>: a rename made then still applies.
+      const label = r ? `Event ${eventLabel(r.name, r.key)}${r.by === 'date' ? ' (guess)' : ''}${r.clockOffsetDays ? ` (${clockOffsetText(r.clockOffsetDays)})` : ''}`
+        : m.event ? `Event ${m.event} (${day})` : `Event starting ${day} (no event name logged)`
+      const id = `event:${r ? r.key.slice(4) : m.event}:${day}`
+      s = add(id, r ? renames[id] ?? renames[`event::${day}`] ?? label : label, 'event', m, i)
+      if (r) s.event = r
     }
-    const day = dateText(m.playedAt)
-    add(`practice:${day}`, `Practice ${day}`, 'practice', m)
+    addEventDay(days, s, m.playedAt, s.event?.timezone ?? null)
+  })
+  // The mode is decided per local day (ADR 3): a log not on the field, on a day an event had matches, is a pit run of that event.
+  for (const [m, i] of pending) {
+    const home = eventOfDay(days, m.playedAt!)
+    if (home) (home.pitRuns ??= []).push(m)
+    else { const day = dateText(m.playedAt!); add(`practice:${day}`, `Practice ${day}`, 'practice', m, i) }
   }
+  sessions.sort((a, b) => first.get(a)! - first.get(b)!)
   // Then the logs the student moved: into the session with that label if it exists, else a new one.
   for (const m of sorted) {
     const label = overrides[m.fileName]
@@ -67,7 +98,7 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
     if (target) {
       target.matches.push(m)
       target.matches.sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity))
-    } else add(`manual:${label}`, label, 'practice', m)
+    } else add(`manual:${label}`, label, 'practice', m, Infinity)
   }
   return sessions
 }
