@@ -28,7 +28,7 @@ export default rule({
   sources: [
     { ...MK_ES17_12, says: 'The ES17-12 is rated 18 Ah at the 20-hour rate but 6.3 Ah when drawn at 3C (54 A) down to 9.6 V: capacity shrinks as the draw grows.' },
     { ...CD_BATTERY_ACCEPTANCE, says: 'One poster\'s competition acceptance criteria for a battery: state of health above 80 %, CCA above 240, internal resistance under 12 mΩ.' },
-    { ...CD_BATTERY_CBA_LINE, says: 'AndyMark\'s analyzer test counts 12 Ah at a 10.5 V cutoff; a poster would not use a battery that tested under 14 to 15 Ah.' },
+    { ...CD_BATTERY_CBA_LINE, says: 'A quoted poster puts the AM battery-analyzer figure at 12 Ah with a 10.5 V cutoff; the poster thinks the pass line should be higher and would be concerned using a battery that tested under 15 Ah, 14 at the minimum.' },
   ],
   thresholds: [
     { name: 'below a healthy battery', value: '1.5 V', basis: 'judgment', how: 'Chosen. Not measured against the spread of healthy batteries: the healthy curve below is only two batteries.' },

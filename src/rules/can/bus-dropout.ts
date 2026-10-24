@@ -31,7 +31,7 @@ export default rule({
   incident: 'One 2025 match: the whole CANivore bus gone for 58 s',
   sources: [
     { ...CTRE_CAN_TROUBLESHOOTING, says: 'A CAN bus needs a 120 Ω terminator at each end (the PDP, CANivore and roboRIO have integrated termination); flicking the wiring reproduces intermittent faults.' },
-    { ...CD_CANIVORE_USB, says: 'When a CANivore drops off USB (STAT LED double-blinking red) its whole bus stays down until the roboRIO restarts.' },
+    { ...CD_CANIVORE_USB, says: 'One team\'s CANivore bus stayed down until a roboRIO restart after its STAT LED double-blinked red (they read it as a USB problem, not CAN).' },
   ],
   thresholds: [
     { name: 'drops that count as one event', value: 'starting within 1 s of each other', basis: 'judgment', how: 'Assumed.' },

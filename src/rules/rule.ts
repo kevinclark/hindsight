@@ -20,8 +20,8 @@
  *     ],
  *     nextStep: 'Put a battery reading 12.5 V or more at rest on the robot.',
  *     incident: 'A practice match that started at 12.44 V sagged deeper than the one before it',
- *     sources: [{ ...CD_BATTERY_REST_SWAP, says: 'A poster advises swapping a battery out when the Driver Station reads 11.5 to 11.9 V at rest.' }],
- *     thresholds: [{ name: 'rest voltage', value: '12.5 V', basis: 'judgment', how: "Hindsight's own line" }],
+ *     sources: [{ ...CD_BATTERY_REST_SWAP, says: "A poster advises swapping a battery out at 11.5 to 11.9 V at rest; this rule's 12.5 V line is stricter (a full charge)." }],
+ *     thresholds: [{ name: 'rest voltage', value: '12.5 V', basis: 'judgment', how: "Stricter than the post (a full charge): a 12.44 V start sagged deeper than a 12.65 V one" }],
  *     check(match) {
  *       if (match.autoStart === null) return           // never enabled: nothing to check
  *       const rest = match.signal('batteryVoltage').median(match.before(match.autoStart, 2))

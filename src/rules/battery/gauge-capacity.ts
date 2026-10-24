@@ -25,11 +25,11 @@ export default rule({
   incident: 'One 2026 match, battery collapse; gauge snapshots (hindsight-proposal.md §3, battery-sources.md)',
   sources: [
     { ...PWF_BATTERY_FUEL_GAUGE, says: 'The gauge starts from a new 18 Ah battery and slowly learns capacity each charge/discharge cycle (faster with a full charge and a discharge at 1.8 A or less); effective capacity is what a fully charged battery could deliver now.' },
-    { ...CD_BATTERY_CBA_LINE, says: 'AndyMark\'s analyzer test counts 12 Ah at a 10.5 V cutoff; a poster would not use a battery that tested under 14 to 15 Ah.' },
+    { ...CD_BATTERY_CBA_LINE, says: 'A quoted poster puts the AM battery-analyzer figure at 12 Ah with a 10.5 V cutoff; the poster thinks the pass line should be higher and would be concerned using a battery that tested under 15 Ah, 14 at the minimum.' },
     { ...GAME_MANUAL_2026, says: 'Rule R601: the robot battery is one sealed lead acid battery of 17 Ah to 18.2 Ah nominal capacity at the 20-hour rate.' },
   ],
   thresholds: [
-    { name: 'effective capacity', value: 'under 12 Ah', basis: 'judgment', how: 'The AndyMark analyzer "not for competition" line, an assumption until gauge readings are compared with analyzer tests.' },
+    { name: 'effective capacity', value: 'under 12 Ah', basis: 'judgment', how: 'The 12 Ah figure quoted in the post above, an assumption until gauge readings are compared with analyzer tests.' },
   ],
 
   check(match) {

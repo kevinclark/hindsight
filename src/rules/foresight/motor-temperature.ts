@@ -33,7 +33,7 @@ export default rule({
     { ...CTRE_TALONFX_API, says: 'Fault_DeviceTemp is "Device temperature exceeded limit"; the page gives no temperature in degrees.' },
   ],
   thresholds: [
-    { name: 'motor controller temperature', value: 'above 60 °C', basis: 'measured', how: '8033\'s three 2026 matches (19 motors each): 22 to 31 °C disabled before the match, a highest of 60 °C during a match, 26 to 54 °C from 10 s after it. Where the Talon FX itself cuts power is not measured.' },
+    { name: 'motor controller temperature', value: 'above 60 °C', basis: 'measured', how: 'the three 2026 offseason-event matches (19 motors each): 22 to 31 °C disabled before the match, a highest of 60 °C during a match, 26 to 54 °C from 10 s after it. Where the Talon FX itself cuts power is not measured.' },
   ],
   forEach: 'motor',
 

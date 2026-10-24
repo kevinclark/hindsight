@@ -31,7 +31,7 @@ export default rule({
   incident: 'Team pit checklist 2026 §10: "Log stick in", checked by hand',
   sources: [
     { ...ADVANTAGEKIT_INSTALL, says: 'By default WPILOGWriter writes to a USB stick on the roboRIO ("/U/logs"), and a FAT32 stick must be in one of its USB ports.' },
-    { ...CD_CANIVORE_USB, says: 'Teams found a logging USB drive on an extension cable to be a likely ESD source that dropped the CANivore; plugging it straight into the roboRIO fixed it.' },
+    { ...CD_CANIVORE_USB, says: 'One team believed a logging USB drive on an extension cable was the ESD source that dropped its CANivore, and plugging it straight into the roboRIO fixed it.' },
   ],
 
   check(match) {

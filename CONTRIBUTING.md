@@ -14,6 +14,7 @@ draws the plot, and lists the rule under "Not checked" when the log doesn't have
 
 ```ts
 import { rule, volts, round } from '../rule.ts'
+import { CD_BATTERY_REST_SWAP } from '../sources.ts'
 
 const LOWEST_REST_VOLTAGE = 12.5
 
@@ -29,6 +30,8 @@ export default rule({
   ],
   nextStep: 'Put a battery reading 12.5 V or more at rest on the robot.',
   incident: 'TEST Q1: 12.44 V before auto',
+  sources: [{ ...CD_BATTERY_REST_SWAP, says: "A poster advises swapping a battery out at 11.5 to 11.9 V at rest; this rule's 12.5 V line is stricter (a full charge)." }],
+  thresholds: [{ name: 'rest voltage', value: '12.5 V', basis: 'judgment', how: 'Stricter than the post (a full charge): a 12.44 V start sagged deeper than a 12.65 V one' }],
 
   check(match) {
     if (match.autoStart === null) return              // never enabled: nothing to check
@@ -49,13 +52,15 @@ export default rule({
 1. **Copy the template.** `cp src/rules/_template/new-rule.ts src/rules/<area>/<name>.ts`. Areas so far: `power`,
    `can`, `comms`, `auto`, `mech`, `collision`, `loop`, `vision`, `build`, `alerts`, `battery`.
 2. **Fill in the description first.** The comment at the top says what it checks (with the threshold) and why (the
-   match and what happened). The app shows four things under every finding, so write them for a student standing
+   match and what happened). The app shows these under every finding, so write them for a student standing
    in the pit:
    - `meaning`: what it probably means, in a sentence or two;
    - `causes`: what could cause it, most likely first, each with what to look for and **where** (a tab in this app,
      a log key in AdvantageScope, a part on the robot, a file in the robot code);
    - `nextStep`: the one thing to do next;
-   - `incident`: why the rule exists.
+   - `incident`: why the rule exists;
+   - `sources`: at least one page from `src/rules/sources.ts`, opened and read, with what it says;
+   - `thresholds`: each number, measured or judgment, and how.
 
    `who` is who acts: `software` (code, config), `pit` (mechanisms, wiring, batteries), `drive` (drive team, the DS
    laptop).

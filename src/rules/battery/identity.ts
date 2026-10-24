@@ -22,7 +22,7 @@ export default rule({
   nextStep: 'Plug in the battery\'s fuel gauge, or type its label in the battery-ID dashboard field after every swap.',
   incident: 'One 2026 match: the weak battery could not be identified after the match (hindsight-proposal.md §3); library: kevinclark/8033-battery-tracker',
   sources: [
-    { ...CD_BATTERY_TRACKING, says: 'Teams log which battery was in the robot with a QR code or an NFC/RFID tag on each battery, to collect usage data per battery.' },
+    { ...CD_BATTERY_TRACKING, says: 'A poster recalls a team\'s battery tracker with a QR code on each battery and quotes others proposing an NFC/RFID tag per battery to collect usage data.' },
     { ...PWF_BATTERY_FUEL_GAUGE, says: 'The fuel gauge has a user-definable battery name, shown on its Home page, to identify each battery.' },
   ],
 

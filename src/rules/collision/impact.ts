@@ -5,6 +5,7 @@
  * Why: hits against field metal come before controller drops in #in-hindsight (≥ 8 episodes), and the log A trench hit
  * would have shown here had the accelerometer been logged then (it was added after log A).
  * Threshold: assumed. Logs B and C peaked at 2.6 and 2.8 g with no known collision; backtest before trusting it.
+ * On a Pigeon 2 each axis reads at most 2 g, so this 3 g line cannot be reached; the rule is being redesigned.
  */
 import { rule, round, type Problem } from '../rule.ts'
 import { CD_MAIN_BREAKER_CAUSES, CTRE_PIGEON2_API, WPILIB_PREEMPTIVE } from '../sources.ts'

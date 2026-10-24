@@ -39,7 +39,7 @@ export default rule({
   incident: 'One 2026 match: flywheel follower 16 off CAN 7 times at 5.85–6.31 V (the match analysis); #in-hindsight: ≥ 11 CAN dropout episodes',
   sources: [
     { ...CTRE_CAN_TROUBLESHOOTING, says: 'Bad crimps and connection points are the most common cause of intermittent connection issues; tug-test each crimped wire and jostle the CAN wiring to reproduce the red LED blips.' },
-    { ...WPILIB_PREEMPTIVE, says: 'Tug the power and CAN connectors in the pit; none should pull out. It is better for the robot to fail in the pits than in a match.' },
+    { ...WPILIB_PREEMPTIVE, says: 'Tug-test the power connectors in the pit (none should pull out) and wiggle the battery connector; it is better for the robot to fail in the pits than in a match.' },
   ],
   thresholds: [
     { name: 'battery voltage that points at the power path', value: 'under 7 V', basis: 'judgment', how: 'Chosen, just above the 6.75 V roboRIO 2 default brownout level; the one case seen dropped at 5.85 to 6.31 V.' },

@@ -30,7 +30,7 @@ export default rule({
   nextStep: 'Plug the CANivore straight into the roboRIO, not through a hub, with the cable strain-relieved and away from motor wires.',
   incident: 'A public 2026 robot (two elimination matches): CANivore on a USB hub, 3 and 2 kernel "USB disconnect"s; fixed by moving it off the hub',
   sources: [
-    { ...CD_CANIVORE_USB, says: 'A CANivore STAT LED double-blinking red means a bad or missing USB connection, and the bus stays down until a roboRIO restart; teams traced it to ESD from a logging USB drive on an extension cable and to unshielded cables.' },
+    { ...CD_CANIVORE_USB, says: 'A CANivore STAT LED double-blinking red was read as a bad or missing USB connection, and the bus stayed down until a roboRIO restart; one team believed a logging USB drive on an extension cable was the ESD source, and others added shielded USB cables.' },
     { ...CD_USB_HUB_CPU, says: 'A team traced high roboRIO CPU use to a USB hub that rebooted repeatedly during matches, then moved both CANivores to the roboRIO CAN bus, which they said solved those issues.' },
     { ...CTRE_CANIVORE_API, says: 'Phoenix logs "CANbus Disconnected" when it detects that a CANivore USB device has been disconnected, which helps tell a bad USB connection from a bad CAN connection.' },
   ],

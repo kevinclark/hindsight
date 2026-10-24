@@ -25,10 +25,10 @@ export default rule({
   nextStep: 'Put a battery reading 12.5 V or more at rest on the robot. If a charged battery rests lower, load-test it.',
   incident: 'One 2026 match: 12.44 V before auto',
   sources: [
-    { ...CD_BATTERY_REST_SWAP, says: 'A poster advises not running batteries below 11.5 V resting and swapping a battery out when the Driver Station reads 11.5 to 11.9 V at rest.' },
+    { ...CD_BATTERY_REST_SWAP, says: 'A poster advises not running a battery below 11.5 V at rest and swapping it out when the Driver Station reads 11.5 to 11.9 V; Hindsight\'s 12.5 V line is stricter (a full charge) because one 2026 match that started at 12.44 V sagged deeper than one at 12.65 V.' },
   ],
   thresholds: [
-    { name: 'median voltage in the 2 s before auto', value: '12.5 V', basis: 'judgment', how: 'Hindsight\'s own line, not taken from a source (the post above puts the swap point lower). One 2026 match started at 12.44 V and sagged deeper than another at 12.65 V.' },
+    { name: 'median voltage in the 2 s before auto', value: '12.5 V', basis: 'judgment', how: 'Hindsight\'s own line, stricter than the post above (a full charge, not the swap point): one 2026 match that started at 12.44 V sagged deeper than another at 12.65 V.' },
   ],
 
   check(match) {

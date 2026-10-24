@@ -2,7 +2,7 @@
  * Was the robot e-stopped?
  *
  * Checks: the Driver Station's e-stop flag (/DriverStation/EmergencyStop) turning on. Each one is a finding: on the
- * field it ended the robot's match (error); off the field it cost a restart (warning).
+ * field it ended the robot's match (error); off the field it cost a roboRIO reboot (warning).
  * Why: One 2025 match was e-stopped 1.5 s before the end, and on one day three program runs in a row were e-stopped
  * 0.02 s after their first enable (the team's Slack PSA blamed the DS space bar). No rule read the flag.
  */
@@ -16,7 +16,7 @@ export default rule({
   title: 'Robot e-stopped',
   severity: 'error',
   who: ['drive'],
-  meaning: 'Someone e-stopped the robot. It stays disabled until the robot program restarts, so on the field it sat out the rest of the match.',
+  meaning: 'Someone e-stopped the robot. It stays disabled until the roboRIO is rebooted, so on the field it sat out the rest of the match.',
   causes: [
     { id: 'space-bar', cause: 'The space bar on the Driver Station laptop was pressed (it is the DS e-stop key), e.g. by a hand resting on the keyboard', look: 'who was at the DS laptop keyboard, and what they did; the DS log for this time shows the e-stop but not the key' },
     { id: 'on-purpose', cause: 'The drive team pressed the e-stop on purpose because the robot was unsafe or out of control', look: 'ask the drive team; the match video at this time' },

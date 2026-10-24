@@ -45,7 +45,7 @@ export default rule({
   incident: 'A public 2026 robot, Q108: intake leader motor off at 282.2 s (29.2 s), 320.7 s (20.5 s), then from 342.4 s to the end; the team found the intake connector pulled apart',
   sources: [
     { ...CTRE_CAN_TROUBLESHOOTING, says: 'Flick, shake or jostle the CAN wiring to reproduce intermittent drops; bad crimps and connection points are the most common cause.' },
-    { ...WPILIB_PREEMPTIVE, says: 'Tug-test the robot connectors in the pit, including the large Anderson battery connector and the power and CAN connections.' },
+    { ...WPILIB_PREEMPTIVE, says: 'Tug-test the power connectors in the pit (none should pull out) and wiggle the battery connector; it is better for the robot to fail in the pits than in a match.' },
   ],
   thresholds: [
     { name: 'flags falling together that count as one event', value: 'within 0.1 s of the first', basis: 'judgment', how: 'Chosen.' },
