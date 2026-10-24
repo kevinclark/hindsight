@@ -5,6 +5,8 @@
  *     inside Drive when they came from there, else uploaded,
  *  3. publishes this machine's records for them: the remote manifest is read first, must hold nothing this copy lacks,
  *     and a log's record is written only after its file is there, so a failed upload leaves no record.
+ * The triage history (`history/<machine id>.jsonl`) travels the same way, by the same rule, in step 1b: teammates' files
+ * down, this machine's up; a copy is replaced only by a longer one that starts with it, anything else is a problem.
  * Nothing is deleted or overwritten on either side.
  */
 import { ManifestConflict, readText, type FileInfo, type StorageAdapter } from './adapter.ts'
@@ -24,6 +26,9 @@ export interface SyncReport {
   published: number
   /** Files in the team's logs/ that no manifest mentions (a manifest write that failed, or files put there by hand). */
   unrecorded: string[]
+  /** History files brought down (teammates', or this machine's own when the team's copy was longer), with how many lines each added; and how many lines of this machine's file went up this sync (0 when nothing new or on a conflict). */
+  history: { name: string; lines: number }[]
+  historyPublished: number
   /** Anything that stopped part of the sync (a manifest that changed under us). */
   problems: string[]
   /** Paths in the team's logs/ after the sync: what "shared" means in the Library view. */
@@ -44,7 +49,7 @@ export interface SyncOptions {
 }
 
 export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, options: SyncOptions = {}): Promise<SyncReport> {
-  const report: SyncReport = { manifests: [], uploaded: [], failed: [], alreadyThere: 0, published: 0, unrecorded: [], problems: [], remotePaths: [] }
+  const report: SyncReport = { manifests: [], history: [], historyPublished: 0, uploaded: [], failed: [], alreadyThere: 0, published: 0, unrecorded: [], problems: [], remotePaths: [] }
   const own = lib.ownManifestPath
 
   // 1. Teammates' manifests down.
@@ -62,6 +67,9 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
     }
   }
   await lib.reload()
+
+  // 1b. The triage history, both ways. It does not depend on the logs, so a problem with a manifest never holds it back.
+  await syncHistory(lib, team, report)
 
   // 2. The remote manifest of this machine must hold nothing this copy lacks (another install with the same machine id).
   const remoteOwn = (await readText(team, own)) ?? ''
@@ -118,6 +126,42 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   report.remotePaths = [...remote.keys()]
   report.unrecorded = report.remotePaths.filter((p) => !known.has(p))
   return report
+}
+
+const linesOf = (text: string) => text.split('\n').filter((l) => l.trim() !== '').length
+
+/** Teammates' history files down and this machine's up, each only when the older copy is the start of the newer one. */
+async function syncHistory(lib: LocalLibrary, team: StorageAdapter, report: SyncReport): Promise<void> {
+  const own = lib.ownHistoryPath
+  for (const f of await team.list('history')) {
+    if (!f.path.endsWith('.jsonl') || f.path === own) continue
+    const text = (await readText(team, f.path)) ?? ''
+    const mine = (await readText(lib.store, f.path)) ?? ''
+    if (text === mine) continue
+    try {
+      await lib.store.appendManifest(f.path, text)
+      report.history.push({ name: f.path, lines: linesOf(text) - linesOf(mine) })
+    } catch (e) {
+      if (e instanceof ManifestConflict) report.problems.push(`${f.path} on the team store is shorter than, or differs from, the copy already here: kept the copy already here`)
+      else throw e
+    }
+  }
+  const local = (await readText(lib.store, own)) ?? ''
+  const remote = (await readText(team, own)) ?? ''
+  if (local === remote) return
+  if (remote.startsWith(local)) {
+    // The team has more of this computer's history (a reinstall, a lost library): bring it down; strictly additive.
+    await lib.store.appendManifest(own, remote)
+    report.history.push({ name: own, lines: linesOf(remote) - linesOf(local) })
+    return
+  }
+  try {
+    await team.appendManifest(own, local)
+    report.historyPublished = linesOf(local) - linesOf(remote)
+  } catch (e) {
+    if (!(e instanceof ManifestConflict)) throw e
+    report.problems.push(`The team's copy of this computer's history differs from this copy (another install with this id?): not uploaded, nothing overwritten`)
+  }
 }
 
 /**

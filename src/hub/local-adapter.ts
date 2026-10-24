@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs'
 import { appendFile, mkdir, open, readdir, rename, rm, stat as fsStat, readFile, utimes, writeFile } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isManifestPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
+import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isOwnAppendPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
 
 const CHUNK = 4 << 20
 /** Marks a file still being written; never listed, never read as a library file. */
@@ -85,13 +85,13 @@ export class LocalFolderAdapter implements StorageAdapter {
 
   /** Add lines to the end of a manifest this process alone writes (one install per machine): O(the new lines), not a rewrite of the whole file. */
   async appendOwn(path: string, lines: string): Promise<void> {
-    if (!isManifestPath(checkPath(path))) throw new Error(`${path} is not a manifest path`)
+    if (!isOwnAppendPath(checkPath(path))) throw new Error(`${path} is not a file this machine appends to`)
     await mkdir(dirname(this.at(path)), { recursive: true })
     await appendFile(this.at(path), lines)
   }
 
   async appendManifest(path: string, content: string): Promise<void> {
-    if (!isManifestPath(checkPath(path))) throw new Error(`${path} is not a manifest path`)
+    if (!isOwnAppendPath(checkPath(path))) throw new Error(`${path} is not a file this machine appends to`)
     const existing = await readFile(this.at(path), 'utf8').catch((e) => { if (e.code === 'ENOENT') return null; throw e })
     if (existing !== null && !extendsManifest(existing, content)) throw new ManifestConflict(path)
     await mkdir(dirname(this.at(path)), { recursive: true })

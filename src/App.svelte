@@ -29,7 +29,7 @@
   import { playedAt, reviewCard, reviewModel } from './report/review-model.ts'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
-  import { HISTORY_FILE_NAME, mergeHistory, parseHistory, serializeHistory, triage, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
+  import { HISTORY_FILE_NAME, mergeHistory, migrationLines, parseHistory, serializeHistory, triage, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
   import { howSure, matchRef, realHere, trackRecord, withMarks, wrongHere, type Fire } from './triage/track-record.ts'
   import type { Finding } from './rules/types.ts'
   import { PROFILES, profileId } from './profiles/index.ts'
@@ -123,8 +123,12 @@
 
   // Known issues: kept in this browser between visits, and saved to / loaded from hindsight-history.jsonl.
   const STORE = 'hindsight.history'
-  let history = $state<HistoryEvent[]>(readStoredHistory())
+  // In the desktop app the history is the library's: history/<machine id>.jsonl, merged with the teammates' files by sync.
+  // The browser store is then read only once, to move what it holds into the library.
+  const library = hub()
+  let history = $state<HistoryEvent[]>(library ? [] : readStoredHistory())
   let unsaved = $state(false)
+  let historyNote = $state('')
   const marks = $derived(triage(history))
   const issues = $derived(marks.issues)
 
@@ -164,7 +168,47 @@
   function readStoredHistory(): HistoryEvent[] {
     try { return parseHistory(localStorage.getItem(STORE) ?? '').events } catch { return [] }
   }
+  // Lines to the library's file go one after another, so two quick marks reach the file in the order they were made.
+  // Events whose append failed: shown anyway, and retried on the next open from the browser store.
+  let unwritten: HistoryEvent[] = []
+  let appending: Promise<unknown> = Promise.resolve()
+  function appendToLibrary(lines: string) {
+    appending = appending.then(() => library!.appendHistory(lines)).catch((e: Error) => {
+      // Keep the marks: the browser store holds them, and the next open moves them into the library (migrationLines).
+      unwritten = mergeHistory(unwritten, parseHistory(lines).events)
+      try { localStorage.setItem(STORE, `${localStorage.getItem(STORE) ?? ''}${lines}`) } catch { /* no browser store either */ }
+      historyNote = `The history could not be written to the library, so it is kept in this browser and retried on the next open: ${e.message}`
+    })
+  }
+  async function openLibraryHistory() {
+    if (!library) return
+    try {
+      const inLibrary = await library.history()
+      const stored = migrationLines(inLibrary, localStorage.getItem(STORE) ?? '')
+      if (stored) {
+        await library.appendHistory(stored.text)
+        historyNote = `Moved ${stored.count} line${stored.count === 1 ? '' : 's'} of known-issue history from this browser into the library.`
+      }
+      await refreshLibraryHistory()
+    } catch (e) { historyNote = `The history could not be read from the library: ${e instanceof Error ? e.message : String(e)}` }
+  }
+  appending = appending.then(openLibraryHistory)
+  // Sync (in the Library) may have brought teammates' lines down: read the library's history again when the view changes.
+  $effect(() => { void mode; if (library) appending = appending.then(refreshLibraryHistory) })
+  let generation = 0
+  async function refreshLibraryHistory() {
+    const was = generation
+    try { const read = parseHistory(await library!.history()).events; if (was === generation) history = mergeHistory(read, unwritten) } catch { /* the note from the last read stands */ }
+  }
   function keep(events: HistoryEvent[], changed: boolean) {
+    if (library) {
+      generation++
+      const had = new Set(history.map((e) => serializeHistory([e])))
+      const fresh = events.filter((e) => !had.has(serializeHistory([e])))
+      history = events
+      if (fresh.length) appendToLibrary(serializeHistory(fresh))
+      return
+    }
     history = events
     if (changed) unsaved = true
     try { localStorage.setItem(STORE, serializeHistory(events)) } catch { /* private window: the file is the only copy */ }
@@ -345,6 +389,7 @@
 
 {#each problems as p (p)}<p class="problem" role="alert">{p}</p>{/each}
 
+{#if historyNote}<p class="history screen-only" role="status">{historyNote}</p>{/if}
 {#if history.length}
   <p class="history">
     Known issues: {issues.size} tracked{#if marks.wrong.size}{' · '}{marks.wrong.size} marked not a real problem{/if}{#if marks.real.size}{' · '}{marks.real.size} marked a real problem{/if}{#if unsaved}{' · '}<strong>changes not saved to a file yet</strong>{/if}

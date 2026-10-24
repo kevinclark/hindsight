@@ -98,6 +98,10 @@ export interface HubApi {
   linkCode(): Promise<LinkReport>
   /** Read this library's robot logs again with the current describer; resolves with what changed. */
   redescribe(): Promise<RedescribeReport>
+  /** The team's triage history (every machine's `history/*.jsonl` folded), as the text of one hindsight-history.jsonl. */
+  history(): Promise<string>
+  /** Append lines to this machine's own history file; lines already in the library are skipped. Resolves with how many were written. */
+  appendHistory(text: string): Promise<number>
   setTag(target: TagTarget, field: TagField, value: string): Promise<void>
   /** The bytes of a log in the library (path as in the manifest). */
   readLog(path: string): Promise<Uint8Array>

@@ -249,3 +249,35 @@ export function boardState(events: HistoryEvent[]): Map<string, BoardState> {
   }
   return out
 }
+
+/**
+ * What a new board line carries: `seq` is 1 + this device's largest seq in the whole merged history (every machine's
+ * file, so a reinstall with the same id can't repeat one), and `when` is the later of now and the newest `when` already
+ * there, so a laptop whose clock runs behind still sorts its line after the lines it has seen.
+ */
+export function boardStamp(history: HistoryEvent[], device: string, now: Date = new Date()): { seq: number; when: string } {
+  let seq = 0
+  let when = now.toISOString()
+  for (const e of history) {
+    if (e.type === 'board' && e.by.device === device && e.seq > seq) seq = e.seq
+    if (e.when > when) when = e.when
+  }
+  return { seq: seq + 1, when }
+}
+
+/**
+ * The lines of a browser store's history the library's history lacks (compared by exact text), as one text to append,
+ * or null when it holds nothing new. Run on every open: once the lines are in the library, the next open finds none.
+ */
+export function migrationLines(library: string, stored: string): { text: string; count: number } | null {
+  // The library's text has been through parseHistory (which fills defaults, so key order can differ): compare in that form.
+  const norm = (line: string) => serializeHistory(parseHistory(line).events).trimEnd() || line
+  const have = new Set(library.split('\n').filter((l) => l.trim() !== '').map(norm))
+  const fresh: string[] = []
+  for (const line of stored.split('\n')) {
+    if (line.trim() === '' || have.has(norm(line))) continue
+    have.add(norm(line))
+    fresh.push(line)
+  }
+  return fresh.length ? { text: `${fresh.join('\n')}\n`, count: fresh.length } : null
+}
