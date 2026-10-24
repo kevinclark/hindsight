@@ -75,12 +75,22 @@ export function lastOnField(session: Pick<Session, 'matches'>): MatchSummary | u
 /**
  * Where the team stands. `schedule` is `parseSchedule`/`teamSchedule`'s list (null: none was read). The next match is the
  * first scheduled one after the latest on-field log: by qualification number when that log was a qualification, else by
- * time; a match The Blue Alliance already has an actual time for is not next.
+ * time; a match The Blue Alliance already has an actual time for is not next. `typedNext` is a qualification number typed in
+ * when there is no schedule (see below); with a schedule it is ignored.
  */
-export function timeline(session: Pick<Session, 'matches'>, schedule: readonly ScheduledMatch[] | null, shortOf: (m: MatchSummary) => string, now?: number): Timeline {
+export function timeline(session: Pick<Session, 'matches'>, schedule: readonly ScheduledMatch[] | null, shortOf: (m: MatchSummary) => string, now?: number, typedNext?: number | null): Timeline {
   const latest = lastOnField(session)
   const last = latest ? { label: shortOf(latest), qual: qualOf(latest.matchLabel), playedAt: latest.playedAt } : null
   if (!schedule || schedule.length === 0) {
+    // A match number a person typed is the next match and nothing more: it is NOT a one-match schedule. The event's last
+    // qualification, its gaps and its playoffs stay unknown (hasSchedule false), so "the end of the event" and "before
+    // playoffs" never name it and a match deferral is not over until that match's own log is in. At or below the latest
+    // qualification played it is stale and ignored (the next match is unknown again, and the field asks again).
+    const n = typedNext != null && Number.isInteger(typedNext) && typedNext > 0 && (last?.qual == null || typedNext > last.qual) ? typedNext : null
+    if (n !== null) {
+      const next: NextMatch = { label: `Q${n}`, level: 'qm', number: n, pos: n, startsAt: null, minutes: null, leftMinutes: null }
+      return { hasSchedule: false, last, next, nextPos: n - 0.5, named: [], all: [], lastQual: null, toEnd: null, hasPlayoffs: false, starts: new Map(), now: now ?? null }
+    }
     return { hasSchedule: false, last, next: null, nextPos: 0, named: [], all: [], lastQual: null, toEnd: null, hasPlayoffs: false, starts: new Map(), now: now ?? null }
   }
   let from = -1
