@@ -19,7 +19,7 @@ export interface ProfileChoice {
   /**
    * The profile doesn't fit this log (under 60 % of its signals): the rules about specific motors, devices, cameras
    * and mechanisms aren't run, and the match's auto and teleop lengths are its season's game (profiles/games.ts),
-   * measured from the log when it has no date.
+   * measured from the log when it has no date or predates the first game listed.
    */
   misfit?: boolean
 }
@@ -51,7 +51,7 @@ export function profileFit(log: WpilogFile, profile: RobotProfile): { present: n
   return { present: keys.filter((k) => hasEntry(log, k)).length, total: keys.length }
 }
 
-const MISFIT_TEXT = 'So the rules about specific motors, devices, cameras and mechanisms were not run, and the auto and teleop lengths are the season\'s game (measured from this log when it has no date).'
+const MISFIT_TEXT = 'So the rules about specific motors, devices, cameras and mechanisms were not run, and the auto and teleop lengths are the season\'s game (measured from this log when it has no date or predates 2023).'
 
 
 export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?: RobotProfile): { profile: RobotProfile; choice: ProfileChoice } {

@@ -226,8 +226,8 @@ const FIELD_AUTO_TO_TELEOP_SECONDS = 3
 const FIELD_AUTO_TO_TELEOP_MAX_SECONDS = 4.5
 
 /**
- * Auto and teleop lengths from the log itself, for a log no profile fits that has no date, rounded to whole seconds. On the field, an
- * auto period that ran until the pause before teleop is the auto length; a robot disabled earlier doesn't shorten it,
+ * Auto and teleop lengths from the log itself, for a log no profile fits that has no date (or predates the first game
+ * listed), rounded to whole seconds. On the field, an auto period that ran until the pause before teleop is the auto length; a robot disabled earlier doesn't shorten it,
  * so then auto is the time from auto start to teleop start less the 3 s pause. Off the field, the first auto period.
  * Teleop runs from the teleop enable to the end of the match.
  */

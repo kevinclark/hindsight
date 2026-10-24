@@ -30,11 +30,11 @@ const misfitMatch = (clockMs?: number) => {
 
 describe('a log no profile fits', () => {
   it('fits no profile (the premise)', () => {
-    expect(misfitMatch(Date.UTC(2025, 6, 6, 16)).choice.misfit).toBe(true)
+    expect(misfitMatch(Date.UTC(2025, 5, 1, 16)).choice.misfit).toBe(true)
   })
 
   it('plays its season\'s game: the later enable is inside the match, as with a profile that fits', () => {
-    const { match } = misfitMatch(Date.UTC(2025, 6, 6, 16))
+    const { match } = misfitMatch(Date.UTC(2025, 5, 1, 16))
     expect(match.profile.game).toEqual({ name: '2025 REEFSCAPE', autoSeconds: 15, teleopSeconds: 135 })
     expect([match.matchStart, match.teleopStart, match.matchEnd]).toEqual([10, 28, 80])
   })
@@ -49,7 +49,11 @@ describe('a log no profile fits', () => {
     expect(match.matchEnd).toBe(41)
   })
 
+  it('measures the lengths of a log dated before the first kickoff listed', () => {
+    expect(misfitMatch(Date.UTC(2023, 0, 3, 16)).match.profile.game.name).toBe('measured from this log')
+  })
+
   it('says the lengths are the season\'s game', () => {
-    expect(misfitMatch(Date.UTC(2025, 6, 6, 16)).choice.note).toMatch(/auto and teleop lengths are the season's game \(measured from this log when it has no date\)/)
+    expect(misfitMatch(Date.UTC(2025, 5, 1, 16)).choice.note).toMatch(/auto and teleop lengths are the season's game \(measured from this log when it has no date or predates 2023\)/)
   })
 })

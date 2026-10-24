@@ -538,7 +538,7 @@
   {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
   {#if crashedNote(session)}<p class="note warn">{crashedNote(session)}</p>{/if}
   {#if misfits.length}
-    <p class="note warn"><strong>{misfits.length} of {session.matches.length} matches don't fit their robot profile</strong>: as few as {Math.min(...misfits.map((m) => m.robot.present))} of its {misfits[0].robot.total} signals are in them. The rules about specific motors, devices, cameras and mechanisms were not run on them, and their auto and teleop lengths are the season's game (measured from a log only when it has no date). Add a profile for this robot, or choose one above.</p>
+    <p class="note warn"><strong>{misfits.length} of {session.matches.length} matches don't fit their robot profile</strong>: as few as {Math.min(...misfits.map((m) => m.robot.present))} of its {misfits[0].robot.total} signals are in them. The rules about specific motors, devices, cameras and mechanisms were not run on them, and their auto and teleop lengths are the season's game (measured from a log only when it has no date or predates 2023). Add a profile for this robot, or choose one above.</p>
   {/if}
   {#each session.matches.filter((m) => m.pieces) as m (m.fileName)}
     <p class="note warn">{m.matchLabel} is in {m.pieces!.length} logs ({m.pieces!.join(', ')}): the robot program restarted during the match. They count as one match here.</p>
