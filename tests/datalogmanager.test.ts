@@ -119,6 +119,34 @@ describe('match identity in a plain WPILib log', () => {
     const [cut] = analyze([{ name: 'cut.wpilog', bytes: writeWpilog(dlmMatch(23.5)) }], (() => undefined) as never)
     expect(cut.report.findings.some((f) => f.rule === 'auto/early-disable')).toBe(true)
   })
+  // One match split by a program restart in auto (one 2025 match): the robot was never disabled in auto in either log.
+  const restartLogs = {
+    /** Enabled in auto from 10 s; the program stops at 22 s, still enabled. */
+    endsInAuto: (): FixtureEntry[] => [
+      { name: 'DS:enabled', type: 'boolean', records: [[0, false], [10, true], [22, true]] },
+      { name: 'DS:autonomous', type: 'boolean', records: [[0, false], [9.5, true], [22, true]] },
+      { name: 'NT:/FMSInfo/FMSControlData', type: 'int64', ...NT, records: [[0, 0], [9.5, 0x32], [10, 0x33]] },
+      // No Alerts: their records at 60 s would stretch the log past the cut.
+      ...dlmMatch().slice(3).filter((e) => !e.name.includes('Alerts')),
+    ],
+    /** The program back: enabled in auto from its first record, straight into teleop at 3 s with no disable. */
+    startsInAuto: (): FixtureEntry[] => [
+      { name: 'DS:enabled', type: 'boolean', records: [[0, true], [120, false]] },
+      { name: 'DS:autonomous', type: 'boolean', records: [[0, true], [3, false]] },
+      { name: 'NT:/FMSInfo/FMSControlData', type: 'int64', ...NT, records: [[0, 0x33], [3, 0x31], [120, 0x30]] },
+      ...dlmMatch().slice(3).filter((e) => !e.name.includes('Alerts')),
+    ],
+  }
+  const earlyDisable = (entries: FixtureEntry[]) => {
+    const [a] = analyze([{ name: 'piece.wpilog', bytes: writeWpilog(entries) }], (() => undefined) as never)
+    return { findings: a.report.findings.filter((f) => f.rule === 'auto/early-disable'), notChecked: a.report.skipped.filter((x) => x.rule === 'auto/early-disable').map((x) => x.reason) }
+  }
+  it('a log that ends during auto, still enabled, is not an early disable: the rest of auto is not in it', () => {
+    expect(earlyDisable(restartLogs.endsInAuto())).toEqual({ findings: [], notChecked: ['partly checked; the log ends during auto: the rest of auto is not in it'] })
+  })
+  it('a log that starts mid-auto and runs straight into teleop is not checked: its auto start is not in it', () => {
+    expect(earlyDisable(restartLogs.startsInAuto())).toEqual({ findings: [], notChecked: ['the log starts mid-auto: the auto start is not in it'] })
+  })
   it('a log with neither AdvantageKit /DriverStation nor DS: entries has no match', () => {
     const [a] = analyze([{ name: 'empty.wpilog', bytes: writeWpilog([{ name: '/x', type: 'double', records: [[1, 1], [2, 2]] }]) }], offseason2026)
     expect(a.match.matchStart).toBeNull()
