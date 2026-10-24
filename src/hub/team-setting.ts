@@ -26,5 +26,5 @@ export function sameSources(a: readonly string[], b: readonly string[]): boolean
   return x.size === y.size && [...x].every((s) => y.has(s))
 }
 
-/** Saving runs the full link pass only when there are sources and they differ from those saved before: a new team number alone asks GitHub nothing. */
-export const needsLinkPass = (before: readonly string[], after: readonly string[]): boolean => after.length > 0 && !sameSources(before, after)
+/** Saving needs the full link pass only when there are sources and they differ from those of the last pass that finished (`linked`): a new team number alone asks GitHub nothing, and a pass that failed is tried again. */
+export const needsLinkPass = (linked: readonly string[], after: readonly string[]): boolean => after.length > 0 && !sameSources(linked, after)

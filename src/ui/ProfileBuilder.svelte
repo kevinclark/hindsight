@@ -22,6 +22,7 @@
   import { downloadText } from './download.ts'
   import { changed } from './kept-profiles.svelte.ts'
   import { teamNow } from './team-setting.svelte.ts'
+  import { builderStart } from './builder-start.ts'
 
   let logs = $state.raw<DraftLog[]>([])
   let snapshot = $state.raw<Snapshot | null>(null)
@@ -32,6 +33,8 @@
   let githubSpec = $state('')
   /** The repo a library log was linked to (start()): used by "Use GitHub" when no built-in profile names the codebase. */
   let linkedRepo = ''
+  /** The draft was opened by start(): its logs are linked to this team's sources, so the draft gets the team. */
+  let stampTeam = false
   let json = $state<ProfileJson | null>(null)
   let notUsed = $state<{ key: string; why: string }[]>([])
   let guessedSignals = $state<{ signal: string; key: string; alternatives: string[] }[]>([])
@@ -71,6 +74,7 @@
   /** A profile.json that leaves out the game or code fields still shows editable ones. `fromKept`: opened from the kept list. */
   function open(p: ProfileJson, fromKept = false) {
     keptAs = fromKept ? keptId(p) : null
+    linkedRepo = ''; stampTeam = false
     const copy = structuredClone($state.snapshot(p)) as ProfileJson
     copy.game ??= { name: '', autoSeconds: 15, teleopSeconds: 135 }
     copy.code ??= { repo: '', branch: '', sha: '' }
@@ -86,7 +90,7 @@
   function redraft() {
     if (logs.length === 0) return
     const d = draftProfile({ logs, snapshot: snapshot ?? undefined, hints: hints ?? undefined })
-    if (d.json.team === undefined && teamNow() !== null) d.json.team = teamNow()!
+    if (stampTeam && d.json.team === undefined && teamNow() !== null) d.json.team = teamNow()!
     // Another log was dropped: keep what the student already confirmed.
     if (json) { carryConfirmations($state.snapshot(json) as ProfileJson, d.json); if (snapshot) refreshLimits(d.json, snapshot) }
     json = d.json
@@ -98,9 +102,10 @@
     keptNote = ''
   }
 
-  async function load(list: FileList | File[] | null) {
+  async function load(list: FileList | File[] | null, fromLink = false) {
     const files = Array.from(list ?? [])
     if (files.length === 0) return
+    if (!fromLink) { linkedRepo = ''; stampTeam = false }
     busy = true
     await new Promise((r) => setTimeout(r, 30))
     const found: string[] = []
@@ -161,10 +166,10 @@
    * student presses Read: the GitHub requests stay theirs to start.
    */
   export async function start(files: File[], spec: string): Promise<void> {
-    linkedRepo = spec.split('@')[0]
-    githubSpec = spec
-    askingGitHub = true
-    await load(files)
+    const s = builderStart(spec)
+    logs = []; snapshot = null; hints = null; json = null
+    ;({ keptAs, openedProfile, keptNote, problems, draftNotes, notUsed, guessedSignals, seenLimits, hintsFrom, githubSpec, askingGitHub, linkedRepo, stampTeam } = s)
+    await load(files, true)
   }
 
   /**

@@ -135,7 +135,7 @@
     if (saved) {
       savedTeam = saved.team; teamBox = saved.team; codeText = saved.sources.join(', ')
       setTeamNow(saved.team)
-      if (saved.linkReport) linkReport = saved.linkReport
+      if (saved.linkNeeded) { const r = await work('Linking code', () => api!.linkCode()); if (r) linkReport = r }
     }
     codePlan = await api!.codePlan().catch(() => codePlan)
   }

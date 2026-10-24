@@ -167,8 +167,10 @@
   // Logs whose robot was only guessed (by signals, or by the code's name) and whose library record links them to a GitHub repo:
   // one offer per repo and commit, to draft a profile from that code.
   let codeLinks = $state.raw<LibraryLink[]>([])
+  // The effect depends on this string, so it runs again only when the set of guessed logs changes, not on every change to the session.
+  const guessedNames = $derived((session?.matches ?? []).filter((m) => m.robot.how === 'signals' || m.robot.how === 'codebase').flatMap((m) => m.pieces ?? [m.fileName]).sort().join('\n'))
   $effect(() => {
-    const names = (session?.matches ?? []).filter((m) => m.robot.how === 'signals' || m.robot.how === 'codebase').flatMap((m) => m.pieces ?? [m.fileName])
+    const names = guessedNames ? guessedNames.split('\n') : []
     if (!linksFor || names.length === 0) { codeLinks = []; return }
     let stale = false
     void linksFor(names).then((found) => { if (!stale) codeLinks = found }).catch(() => { if (!stale) codeLinks = [] })

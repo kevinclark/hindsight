@@ -40,6 +40,9 @@ describe('when saving runs the link pass', () => {
     expect(needsLinkPass([], ['example-org'])).toBe(true)
     expect(needsLinkPass(['example-org'], ['example-org', 'other-org'])).toBe(true)
   })
+  it('runs again when the last pass did not finish (its sources were never recorded)', () => {
+    expect(needsLinkPass([], ['example-org'])).toBe(true)
+  })
   it('does not run when only the team number changed, or when no source is left', () => {
     expect(needsLinkPass(['example-org'], ['example-org'])).toBe(false)
     expect(needsLinkPass(['a-org', 'b-org'], ['b-org', 'a-org'])).toBe(false)

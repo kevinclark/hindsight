@@ -16,7 +16,7 @@ import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
 import { estimateRequests, linkable, linkCode } from '../src/hub/codelink.ts'
 import { linkAdded } from '../src/hub/ingest-link.ts'
-import { checkTeamSetting, needsLinkPass } from '../src/hub/team-setting.ts'
+import { checkTeamSetting, needsLinkPass, validTeam } from '../src/hub/team-setting.ts'
 import type { CodePlan, DriveStatus, TeamSettingSaved, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
 import { Describer } from './describer.ts'
@@ -119,6 +119,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
       const found = await linkCode(sources, lib.catalog.all(), { cancelled: () => j.cancelled, onProgress: progress })
       // A log with no reading yet is stamped with this version but not this describer: it ranks as current, yet "Read logs again" still reads it.
       const { written, unchanged } = await applyLinks(lib, found.links, `${app.getVersion()}+linked`)
+      if (found.rateLimitedUntil === null && found.problems.length === 0) await saveSettings({ linkedSources: sources })
       return { linked: found.links.size, written, unchanged, unmatched: found.unmatched, repos: found.repos, requests: found.requests, rateLimitedUntil: found.rateLimitedUntil, problems: found.problems }
     })
   }
@@ -126,14 +127,14 @@ export function registerHub(window: () => BrowserWindow | null): void {
 
   ipcMain.handle('hub:team', async (): Promise<TeamSettingSaved> => {
     const s = await loadSettings()
-    return { team: s.team ?? null, sources: s.codeSources ?? [] }
+    return { team: validTeam(s.team) ? s.team : null, sources: s.codeSources ?? [] }
   })
-  /** Save the team number and GitHub sources together (both checked first). When the sources changed, the full link pass runs once: saving is the user's own action, like the button. */
+  /** Save the team number and GitHub sources together (both checked first). `linkNeeded`: the sources differ from those of the last full pass that finished, so the page runs Link code (its own job). */
   ipcMain.handle('hub:setTeam', async (_e, team: number | null, sources: string[]): Promise<TeamSettingSaved> => {
     const checked = checkTeamSetting(team, sources)
-    const before = (await loadSettings()).codeSources ?? []
+    const linked = (await loadSettings()).linkedSources ?? []
     await saveSettings({ team: checked.team ?? undefined, codeSources: checked.sources })
-    return { ...checked, ...(needsLinkPass(before, checked.sources) ? { linkReport: await linkPass() } : {}) }
+    return { ...checked, linkNeeded: needsLinkPass(linked, checked.sources) }
   })
 
   /** Read every robot log in this library again with the current describer; appends a `meta` record for each that reads differently. */
