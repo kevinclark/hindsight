@@ -134,7 +134,7 @@ for (const label of MARK_ON.split(',')) {
     if (!b) return 'missing'
     b.click(); return 'clicked'
   })()`))
-  await answerDialog(REASON)
+  if ((await answerDialog(REASON)) !== 'answered') throw new Error('the mark dialog did not open')
   await sleep(400)
 }
 result.review = {}

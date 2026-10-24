@@ -416,9 +416,9 @@
     writeStore('hindsight.sessionOverrides', overrides)
   }
   async function rename(s: Session) {
-    const name = await askText('Session name', s.label)
+    const name = (await askText('Session name', s.label))?.trim()
     if (!name) return
-    renameSession(s.id, name.trim())
+    renameSession(s.id, name)
   }
   function setBattery(fileName: string, id: string) {
     typedBatteries = { ...typedBatteries, [fileName]: id.trim() }
@@ -456,8 +456,8 @@
     api.sessionReport = () => (shown ? sessionModel(shown, issues, typedBatteries) : null)
   })
   async function newSessionFor(fileName: string) {
-    const label = await askText('Move this log to the session named:', '')
-    if (label) moveMatch(fileName, label.trim())
+    const label = (await askText('Move this log to the session named:', ''))?.trim()
+    if (label) moveMatch(fileName, label)
   }
 
   /** Matches played after an issue was marked fixed, where it fired again. */

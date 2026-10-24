@@ -111,7 +111,7 @@ result.clicked = await evalIn(`(() => {
   if (!b) return 'missing'
   b.click(); return 'clicked'
 })()`)
-if (result.clicked === 'clicked') await answerDialog(REASON)
+if (result.clicked === 'clicked' && (await answerDialog(REASON)) !== 'answered') throw new Error('the mark dialog did not open')
 if (result.clicked !== 'clicked') {
   const seen = (result.before as { rows: { severity: string }[] }).rows.map((r) => r.severity.split(' ')[0])
   await fail(`${RULE} has no red finding on ${MARK_ON} to mark (its rows there: ${seen.join(', ') || 'none'}). A wrong mark demotes only reds; pick a check that is red on that match.`)
@@ -165,7 +165,7 @@ result.clickedReal = await evalIn(`(() => {
   if (!b) return 'missing'
   b.click(); return 'clicked'
 })()`)
-if (result.clickedReal === 'clicked') await answerDialog('test note')
+if (result.clickedReal === 'clicked' && (await answerDialog('test note')) !== 'answered') throw new Error('the real-mark dialog did not open')
 if (result.clickedReal !== 'clicked') await fail(`${RULE} has no "Real problem" button on ${others[0]}: the check did not fire there`)
 await sleep(400)
 result.afterReal = { match: others[0], head: await head(), rows: await rows() }
