@@ -54,7 +54,7 @@
     <h5>A fix to read, not applied</h5>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex: a scrolling region must take focus to scroll by keyboard (WCAG 2.1.1) -->
     <pre class="diff" tabindex="0" aria-label="The patch">{#each lines as l, i (i)}<span class={l.kind}>{l.text}</span>{/each}</pre>
-    {#if sameLine}<p class="same" role="note">Another finding's fix changes this same line: apply one, then run the check again.</p>{/if}
+    {#if sameLine}<p class="same" role="note">Another finding's fix changes this line or one next to it: apply one, then run the check again.</p>{/if}
     <p><strong>What this does not fix:</strong></p>
     <ul>{#each notFixed as point (point)}<li>{point}</li>{/each}</ul>
     <p class="sure"><strong>How sure:</strong> {#if sure}{sure}.{:else}no marks on this check in reach here.{/if}</p>
@@ -65,7 +65,7 @@
     </p>
     <ol class="steps" aria-label="How to apply it">
       <li>Save .patch (into Downloads, unless you choose another folder: then use that path below).</li>
-      <li>In the robot folder: <code>git apply ~/Downloads/{fileName}</code> (Windows: <code>%USERPROFILE%\Downloads\{fileName}</code>).</li>
+      <li>In the robot folder: <code>git apply ~/Downloads/{fileName}</code> (Windows PowerShell: <code>git apply $env:USERPROFILE\Downloads\{fileName}</code>).</li>
       <li>Read <code>git diff</code>, then <code>git add</code> and <code>git commit</code> yourself.</li>
     </ol>
     <p class="muted">Hindsight changes nothing in your code.</p>

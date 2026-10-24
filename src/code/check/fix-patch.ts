@@ -120,7 +120,7 @@ export const patchFileName = (rule: string) => `fix-${rule.replace(/[^a-z0-9]+/g
 /** The patch's own text with its first lines read: which files it changes, for a one-line label. */
 export const filesOfPatch = (patch: string): string[] => [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((m) => m[1])
 
-/** The lines a patch removes or changes, as "path:line" in the old file: two fixes that share one can't both be applied. */
+/** The lines a patch removes or changes, as "path:line" in the old file (a removed line whose own text starts with `--` is skipped as a header: unreachable for indented code). */
 export function changedLines(patch: string): string[] {
   const out: string[] = []
   let file = ''
@@ -135,4 +135,23 @@ export function changedLines(patch: string): string[] {
     else if (text.startsWith(' ')) line++
   }
   return out
+}
+
+/** Each hunk's span of old-file lines, context included: `git apply` matches the whole span, so two patches whose spans meet can't both apply as they are. */
+export function hunkRanges(patch: string): { file: string; from: number; to: number }[] {
+  const out: { file: string; from: number; to: number }[] = []
+  let file = ''
+  for (const text of patch.split('\n')) {
+    const header = /^diff --git a\/(\S+) b\//.exec(text)
+    if (header) { file = header[1]; continue }
+    const hunk = /^@@ -(\d+)(?:,(\d+))? /.exec(text)
+    if (hunk && file) { const from = Number(hunk[1]); out.push({ file, from, to: from + Number(hunk[2] ?? 1) - 1 }) }
+  }
+  return out
+}
+
+/** Two fixes that can't both be applied one after the other: a hunk of one overlaps a hunk of the other in the same file. */
+export function fixesClash(a: string, b: string): boolean {
+  const rb = hunkRanges(b)
+  return hunkRanges(a).some((x) => rb.some((y) => x.file === y.file && x.from <= y.to && y.from <= x.to))
 }

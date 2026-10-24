@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { checkCode, CODE_RULES } from '../src/code/check/index.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import limitSwitchedOff from '../src/code/check/rules/limit-switched-off.ts'
-import { patchOf, patchFileName, changedLines } from '../src/code/check/fix-patch.ts'
+import { patchOf, patchFileName, changedLines, fixesClash } from '../src/code/check/fix-patch.ts'
 
 beforeAll(loadJavaFromDisk)
 
@@ -223,6 +223,35 @@ describe('fix pass', () => {
     expect(changedLines(found[0].fix!.patch)).toEqual(['Roller.java:7'])
     expect(changedLines(found[1].fix!.patch)).toEqual(['Roller.java:7'])
     expect(changedLines(find(drum)[0].fix!.patch)).toEqual(['src/main/java/Drum.java:7'])
+  })
+  it('fixes on neighbouring lines clash (git rejects the second through the shared context), far ones do not', () => {
+    const java = {
+      'Roller.java': `class Roller {
+  TalonFX m;
+  Roller(int id) {
+    m = new TalonFX(id);
+    var c = new TalonFXConfiguration();
+    c.CurrentLimits.SupplyCurrentLimit = 40;
+    c.CurrentLimits.SupplyCurrentLimitEnable = false;
+    c.CurrentLimits.StatorCurrentLimit = 80;
+    c.CurrentLimits.StatorCurrentLimitEnable = false;
+    m.getConfigurator().apply(c);
+  }
+}
+`,
+      'Robot.java': robot('new Roller(9);'),
+    }
+    const found = find(java)
+    expect(found).toHaveLength(2)
+    expect(changedLines(found[0].fix!.patch)).not.toEqual(changedLines(found[1].fix!.patch))
+    expect(fixesClash(found[0].fix!.patch, found[1].fix!.patch)).toBe(true)
+    inRepo({ 'Roller.java': java['Roller.java'] }, (dir) => {
+      gitApply(dir, found[0].fix!.patch)
+      expect(() => gitApply(dir, found[1].fix!.patch, '--check')).toThrow()
+    })
+    const text = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n') + '\n'
+    const at = (n: number) => ({ file: 'A.java', start: text.indexOf(`line ${n}\n`), end: text.indexOf(`line ${n}\n`) + `line ${n}`.length, replacement: 'X' })
+    expect(fixesClash(patchOf([at(5)], new Map([['A.java', text]])), patchOf([at(30)], new Map([['A.java', text]])))).toBe(false)
   })
 })
 
