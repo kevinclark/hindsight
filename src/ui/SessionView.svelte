@@ -608,7 +608,7 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
+  <p class="hint">Rules that fired in the most {practice ? 'logs' : 'matches'} come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that {practice ? 'log' : 'match'}; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a {practice ? 'log' : 'match'} to open it in Match review.</p>
 
   {#if pitRuns.length}
     <h3>Pit runs on this event's days</h3>
@@ -644,7 +644,7 @@
   <Trends matches={trendInfo!.logs} unit={trendInfo!.unit} {typedBatteries} labels={trendInfo!.logs.map(shortLabel)} onOpen={open} />
 
   <h3>Findings across the session</h3>
-  <p class="hint">Consistent: fired in most {practice ? 'logs' : 'matches'} where it could be checked (3 or more). Intermittent: in some, or in every one of only 2 checked (too few to call consistent). Once: one {practice ? 'log' : 'match'} only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
+  <p class="hint">Consistent: fired in most {practice ? 'logs' : 'matches'} where it could be checked (3 or more). Intermittent: in some, or in every one of only 2 checked (too few to call consistent). Once: one {practice ? 'log' : 'match'} only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across {practice ? 'logs' : 'matches'}).</p>
   <ul class="merged">
     {#each listed as f (f.key)}
       {@render row(f)}
