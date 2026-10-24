@@ -32,6 +32,10 @@
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
   import { allMarked, crashedNote, gridCells, marksText, misfitNotes, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
+  import { hub } from '../hub/bridge.ts'
+  import { blankEventClusters, clockOffsetText, identifyEvents, type ResolvedEvent } from '../tba/identify.ts'
+  import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
+  import TbaFields from './TbaFields.svelte'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
   // copies of logs by name, for summaries restored without their file. `linksFor` (desktop app): the library's code links for
@@ -111,7 +115,24 @@
   }
 
   const stored = $derived(profilesNow())
-  const sessions = $derived(groupSessions(summaries, overrides, renames))
+  // Which event The Blue Alliance says each blank-event on-field log belongs to (src/tba/identify.ts). Filled in after the
+  // logs are read, from the saved copy when offline; until then, and with no key or team, the grouping is the plain one.
+  let found = $state.raw<ReadonlyMap<string, ResolvedEvent>>(new Map())
+  let lookupProblem = $state('')
+  $effect(() => {
+    const logs = summaries, get = tbaGetter(), team = tbaTeam()
+    lookupProblem = ''
+    if (!get || team === null || blankEventClusters(logs).length === 0) { found = new Map(); return }
+    let stale = false
+    void identifyEvents(logs, team, get).then((r) => {
+      if (stale) return
+      found = r.byFile
+      const lost = r.clusters.filter((c) => c.why === 'unreachable').length
+      if (lost) lookupProblem = `The Blue Alliance could not be reached for ${lost} group${lost === 1 ? '' : 's'} of logs with no event name, and no saved copy covers them.`
+    })
+    return () => { stale = true }
+  })
+  const sessions = $derived(groupSessions(summaries, overrides, renames, found))
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
   // Until one is picked, show the event (the matches that count), else the first session.
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
@@ -491,6 +512,9 @@
 
 {#if staleText}<p class="note warn" data-stale-note>{staleText}</p>{/if}
 
+{#if !hub()}<TbaFields />{/if}
+{#if lookupProblem}<p class="note warn">{lookupProblem}</p>{/if}
+
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
@@ -508,6 +532,8 @@
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
   </section>
+  {#if session.event}<p class="note" data-event-note>The Blue Alliance says this was {session.event.name} ({session.event.key}), {session.event.start} to {session.event.end}: {session.event.matched} of the {session.event.of} qualification numbers in these logs are on the team's list there{session.event.by === 'date' ? ' (several events held as many; the date chose)' : ''}.{session.event.clockOffsetDays ? ` The robot clock is ${clockOffsetText(session.event.clockOffsetDays).replace('robot clock ', '')}.` : ''} {session.event.fromCache ? 'From a saved copy' : 'Fetched'} {new Date(session.event.fetchedAt).toLocaleString()}.</p>{/if}
+  {#if session.pitRuns?.length}<p class="note" data-pit-runs>{session.pitRuns.length} pit run{session.pitRuns.length === 1 ? '' : 's'} on this event's days, not counted as matches: {session.pitRuns.slice(0, 4).map((m) => m.fileName).join(', ')}{session.pitRuns.length > 4 ? '…' : ''}</p>{/if}
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   {#if reread && reread.sessionId === session.id && !reread.dismissed}
     <section class="changed" data-reread-changes>

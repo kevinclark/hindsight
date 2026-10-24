@@ -16,7 +16,9 @@ import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
 import { estimateRequests, linkable, linkCode } from '../src/hub/codelink.ts'
 import { linkAdded } from '../src/hub/ingest-link.ts'
-import { checkTeamSetting, needsLinkPass, validTeam } from '../src/hub/team-setting.ts'
+import { checkTbaKey, checkTeamSetting, needsLinkPass, validTeam } from '../src/hub/team-setting.ts'
+import { createTba, isTbaPath, type TbaGet } from '../src/tba/source.ts'
+import { fileTbaStore } from './tba-store.ts'
 import type { CodePlan, DriveStatus, TeamSettingSaved, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
 import { Describer } from './describer.ts'
@@ -127,14 +129,25 @@ export function registerHub(window: () => BrowserWindow | null): void {
 
   ipcMain.handle('hub:team', async (): Promise<TeamSettingSaved> => {
     const s = await loadSettings()
-    return { team: validTeam(s.team) ? s.team : null, sources: s.codeSources ?? [] }
+    return { team: validTeam(s.team) ? s.team : null, sources: s.codeSources ?? [], tbaKey: !!s.tbaKey }
   })
   /** Save the team number and GitHub sources together (both checked first). `linkNeeded`: the sources differ from those of the last full pass that finished, so the page runs Link code (its own job). */
-  ipcMain.handle('hub:setTeam', async (_e, team: number | null, sources: string[]): Promise<TeamSettingSaved> => {
+  ipcMain.handle('hub:setTeam', async (_e, team: number | null, sources: string[], tbaKey?: string | null): Promise<TeamSettingSaved> => {
     const checked = checkTeamSetting(team, sources)
-    const linked = (await loadSettings()).linkedSources ?? []
-    await saveSettings({ team: checked.team ?? undefined, codeSources: checked.sources })
-    return { ...checked, linkNeeded: needsLinkPass(linked, checked.sources) }
+    const key = checkTbaKey(tbaKey)
+    const before = await loadSettings()
+    const saved = await saveSettings({ team: checked.team ?? undefined, codeSources: checked.sources, ...(key === undefined ? {} : { tbaKey: key ?? undefined }) })
+    return { ...checked, tbaKey: !!saved.tbaKey, linkNeeded: needsLinkPass(before.linkedSources ?? [], checked.sources) }
+  })
+  /** The Blue Alliance, asked from here so the key never reaches the page. Only the three reads in src/tba/source.ts. */
+  const tbaStore = fileTbaStore()
+  let tba: { key: string; get: TbaGet } | null = null
+  ipcMain.handle('hub:tba', async (_e, path: string) => {
+    const { tbaKey } = await loadSettings()
+    if (!tbaKey) throw new Error('Add a The Blue Alliance read key under Your team first.')
+    if (!isTbaPath(path)) throw new Error('Hindsight does not ask The Blue Alliance for that.')
+    if (tba?.key !== tbaKey) tba = { key: tbaKey, get: createTba({ key: tbaKey, store: tbaStore }) }
+    return tba.get(path)
   })
 
   /** Read every robot log in this library again with the current describer; appends a `meta` record for each that reads differently. */

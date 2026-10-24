@@ -13,7 +13,9 @@
   import type { FetchReport, SyncReport } from '../hub/sync.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
-  import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Selection } from '../hub/facets.ts'
+  import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Places, type Selection } from '../hub/facets.ts'
+  import { eventLabel, identifyEvents } from '../tba/identify.ts'
+  import { setAppHasKey, tbaGetter, tbaHasKey, tbaMissing } from './tba-setting.svelte.ts'
   import { baseName, dayText } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
   import { ADD_LINK_REQUESTS, describeCodeLink } from '../hub/codelink.ts'
@@ -105,7 +107,7 @@
     void api?.updateInfo().then((u) => { update = u })
     // A job already running (the page was reloaded, or something else started it) gets the same bar.
     void api?.codePlan().then((p) => { codePlan = p; codeText = p.sources.join(', ') }).catch(() => {})
-    void api?.team().then((t) => { teamBox = t.team; savedTeam = t.team }).catch(() => {})
+    void api?.team().then((t) => { teamBox = t.team; savedTeam = t.team; setAppHasKey(!!t.tbaKey) }).catch(() => {})
     // How the job that finished last ended, for a page that reloaded and did not see it (kept for 30 minutes).
     void api?.lastJob().then((j) => { if (j && Date.now() - j.at < 30 * 60e3) lastJob = j }).catch(() => {})
     void api?.runningJob().then((p) => { if (p && !progress) progress = p }).catch(() => {})
@@ -126,6 +128,8 @@
   let codeText = $state('')
   let teamBox = $state<number | null>(null) // a number input binds a number, or null when empty
   let savedTeam = $state<number | null>(null)
+  let keyBox = $state('') // empty: leave the saved key as it is
+  let lookupNote = $state('')
   let linkReport = $state.raw<LinkReport | null>(null)
   let lastJob = $state.raw<LastJob | null>(null)
   const linkLabel = $derived(!codePlan ? 'Link code' : codePlan.logs === 0
@@ -134,13 +138,17 @@
   /** Saves the number and the sources together; with sources set, the app then links every log it can (the same pass as Link code). */
   async function saveTeam() {
     const sources = codeText.split(/[\s,]+/).filter(Boolean)
-    const saved = await work('Saving', () => api!.setTeam(teamBox ?? null, sources))
+    const saved = await work('Saving', () => api!.setTeam(teamBox ?? null, sources, keyBox.trim() || undefined))
     if (saved) {
-      savedTeam = saved.team; teamBox = saved.team; codeText = saved.sources.join(', ')
-      setTeamNow(saved.team)
+      savedTeam = saved.team; teamBox = saved.team; codeText = saved.sources.join(', '); keyBox = ''
+      setTeamNow(saved.team); setAppHasKey(!!saved.tbaKey)
       if (saved.linkNeeded) { const r = await work('Linking code', () => api!.linkCode()); if (r) linkReport = r }
     }
     codePlan = await api!.codePlan().catch(() => codePlan)
+  }
+  async function removeKey() {
+    const saved = await work('Saving', () => api!.setTeam(savedTeam, codePlan?.sources ?? [], null))
+    if (saved) setAppHasKey(!!saved.tbaKey)
   }
   async function linkCode() {
     const r = await work('Linking code', () => api!.linkCode())
@@ -175,8 +183,27 @@
   const toProfile = $derived(robotsToProfile(all, new Set(keptNow().flatMap((p) => (p.codebase ? [p.codebase] : [])))))
   /** Decided over every log, so a filter or the stubs switch never renames a robot. */
   const labels = $derived(robotLabels(all))
-  const filtered = $derived(filterEntries(base, selection, labels))
-  const counts = $derived(facetCounts(base, selection, labels))
+  /** Events The Blue Alliance names for on-field logs with no FMS event name (src/tba/identify.ts), by sha-256; empty with no key or team. */
+  let places = $state.raw<Places>(new Map())
+  $effect(() => {
+    const get = tbaGetter(), team = savedTeam
+    const logs = all.filter((e) => e.record.kind === 'wpilog' && !e.record.stub).map((e) => ({
+      fileName: e.record.sha256, playedAt: e.record.playedAt, onField: e.record.onField, event: e.record.event,
+      matchLabel: e.record.matchType === 2 && e.record.matchNumber ? `Qualification ${e.record.matchNumber}` : '',
+    }))
+    if (!get || team === null) { places = new Map(); lookupNote = tbaMissing() ?? ''; return }
+    let stale = false
+    void identifyEvents(logs, team, get).then((r) => {
+      if (stale) return
+      places = new Map([...r.byFile].map(([sha, ev]) => [sha, eventLabel(ev.name, ev.key)]))
+      const unnamed = r.clusters.filter((c) => !c.event)
+      const oldest = Math.min(Infinity, ...[...r.byFile.values()].map((v) => v.fromCache ? v.fetchedAt : Infinity))
+      lookupNote = `${r.byFile.size} log${r.byFile.size === 1 ? '' : 's'} named from The Blue Alliance${unnamed.length ? `; ${unnamed.length} group${unnamed.length === 1 ? '' : 's'} of logs with no event name matched no single event` : ''}${Number.isFinite(oldest) ? `; from a saved copy fetched ${new Date(oldest).toLocaleString()}` : ''}.`
+    }).catch(() => { if (!stale) lookupNote = 'The Blue Alliance could not be asked.' })
+    return () => { stale = true }
+  })
+  const filtered = $derived(filterEntries(base, selection, labels, places))
+  const counts = $derived(facetCounts(base, selection, labels, places))
   const bytes = $derived(filtered.reduce((n, e) => n + e.record.size, 0))
   const local = $derived(filtered.filter((e) => e.local))
   /** Logs the team has that this computer lacks: what a download would fetch. */
@@ -237,7 +264,7 @@
     // From every log of the day the stub setting shows, not only those the filters leave: a filter must not change what the day is.
     const field = rows.filter((e) => e.record.onField)
     if (field.length === 0) return { label: 'practice place', placeholder: 'where' }
-    const names = new Set(rows.map((e) => fmsPlace(e.record)).map((p) => (p?.resolved ? p.name : null)))
+    const names = new Set(rows.map((e) => { const p = fmsPlace(e.record); return p?.resolved ? p.name : places.get(e.record.sha256) ?? null }))
     if (field.length === rows.length && names.size === 1 && !names.has(null)) return { fixed: [...names][0]! }
     return { label: 'event', placeholder: 'name' }
   }
@@ -269,8 +296,11 @@
   <p class="meta">With your team number set, the robot lists show your team's robots. Logs that name only their code (no robot profile) can be linked to the public GitHub repo that holds it: give an organization or <code>owner/repo</code>, comma separated. Saving, and <em>Link code</em>, read each repo's <code>Robot.java</code> and ask GitHub about build commits; nothing is sent but repo and commit names.</p>
   <p class="row"><label>Team number <input type="number" min="1" max="99999" step="1" bind:value={teamBox} placeholder="e.g. 8033" aria-label="Team number" /></label>
     <label>GitHub organization or repos <input bind:value={codeText} placeholder="organization or owner/repo" aria-label="GitHub sources for code" /></label>
+    <label>The Blue Alliance read key <input type="password" bind:value={keyBox} autocomplete="off" placeholder={tbaHasKey() ? 'saved: type to replace' : 'paste the key'} aria-label="The Blue Alliance read key" /></label>
+    {#if tbaHasKey()}<button class="link" onclick={removeKey} disabled={driveBusy}>Remove key</button>{/if}
     <button class="primary" onclick={saveTeam} disabled={driveBusy}>Save</button>
     <button class="primary" onclick={linkCode} disabled={driveBusy || !codePlan?.sources.length || !codePlan.logs}>{linkLabel}</button></p>
+  <p class="meta">The read key (from your account page on The Blue Alliance, Read API Keys) names events whose logs don't, and fetches your schedule. It stays on this computer, in this app's settings.{lookupNote ? ` ${lookupNote}` : ''}</p>
   {#if codePlan?.sources.length}<p class="meta">Logs whose code is in {codePlan.sources.length === 1 ? 'this repo' : 'these repos'} are linked when they are added (at most {ADD_LINK_REQUESTS} GitHub requests each time). Saving links the logs already here, which can take {codePlan.requests} or more requests.</p>{/if}
 </details>
 
@@ -398,7 +428,7 @@
   </section>
 {/if}
 
-<datalist id="places">{#each counts.place as [value] (value)}{#if !all.some((e) => fmsPlace(e.record)?.name === value)}<option {value}></option>{/if}{/each}</datalist>
+<datalist id="places">{#each counts.place as [value] (value)}{#if !all.some((e) => (fmsPlace(e.record)?.name ?? places.get(e.record.sha256)) === value)}<option {value}></option>{/if}{/each}</datalist>
 <div class="layout">
   <aside aria-label="Filters">
     {#each FACETS as f (f)}
@@ -443,7 +473,7 @@
       <table>
         <tbody>
           {#each rows as e (e.record.sha256)}
-            {@const v = facetValues(e, labels)}
+            {@const v = facetValues(e, labels, places)}
             {@const code = describeCodeLink(e.record)}
             {@const profileMark = !e.tags.robot && robotIsGuess(e.record) ? (e.record.robot?.profileId === null ? 'code name' : 'guess') : null}
             <!-- One mark for both guesses (the profile by fit, the edition by roboRIO), so a row never reads "(guess)(guess)". -->
@@ -454,7 +484,7 @@
             <tr class:remote={!e.local}>
               <td class="time">{clock(e.record.playedAt)}</td>
               <td class="name">{#if e.local}<button class="link open" title={`Open ${e.record.path} in Match review`} onclick={() => openMatch(e)}><code>{baseName(e.record.path)}</code></button>{:else}<code title={e.record.path}>{baseName(e.record.path)}</code>{/if}</td>
-              <td>{fmsPlace(e.record)?.name ?? ''} {matchText(e)}</td>
+              <td>{fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''} {matchText(e)}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
               <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}{#if code}<span class="meta">{' · '}<a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}</td>
               <td><input class="driver" aria-label="Driver for this log" value={e.tags.driver ?? ''} placeholder="driver" onchange={(ev) => tag({ log: e.record.sha256 }, 'driver', typed(ev))} /></td>

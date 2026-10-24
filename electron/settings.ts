@@ -14,6 +14,8 @@ export interface Settings {
   googleClient?: { id: string; secret: string }
   /** The team's FRC number (1-99999): the robot lists show this team's robots (src/ui/robot-list.ts). */
   team?: number
+  /** This laptop's The Blue Alliance read key: names events whose logs don't, and fetches the schedule (src/tba/). Stays in this file; the page is only told whether one is set. */
+  tbaKey?: string
   /** GitHub orgs ("name") or repos ("owner/name") whose code logs are linked to (src/hub/codelink.ts). Chosen at run time, never in the repo. */
   codeSources?: string[]
   /** The sources of the last full link pass that finished without a rate limit or problem: saving the same sources again links nothing. */
