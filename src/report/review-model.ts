@@ -9,6 +9,7 @@ import { makerOf } from '../rules/index.ts'
 import type { Finding, Severity } from '../rules/types.ts'
 import type { IssueEvent } from '../triage/history.ts'
 import { VERSION } from '../version.ts'
+import { robotName } from '../profiles/choose.ts'
 import { SCHEMA, findingsFileName } from './findings-json.ts'
 import type { CardModel, Tone } from './card.ts'
 import { descendants, nest, partitionStanding, severityWords, withParents, type FindingNode } from './finding-tree.ts'
@@ -129,7 +130,7 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>,
     crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
     cameBack: new Set(active.filter((f) => status(f) === 'came back').map((f) => f.key)),
     header: {
-      robot: m.profile.name, event: m.event, matchLabel: m.matchLabel, date: matchDate(analysis), logFile: m.fileName,
+      robot: robotName(m.profile.name, m.profileChoice), event: m.event, matchLabel: m.matchLabel, date: matchDate(analysis), logFile: m.fileName,
       dsFiles: m.ds.map((d) => d.fileName), build: buildLine(m.build), version: VERSION,
     },
     bottomLine: '',
