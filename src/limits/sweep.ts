@@ -4,8 +4,8 @@
  *
  * A spin-up starts when the leader's speed leaves standstill (above 2 rot/s after at least 0.5 s below it) and
  * reaches its target: the logged setpoint if there is one, else the speed it settles at. "Time to setpoint" is the
- * time to get within 10 % of the target. (Holding speed, the CalGames flywheel ripples ±5 % around its setpoint, so
- * a tighter band measures the ripple, not the spin-up. With 10 %, Q13's spin-ups take ~0.7 s, as in the P0 analysis.)
+ * time to get within 10 % of the target. (Holding speed, the 2026 flywheel ripples ±5 % around its setpoint, so
+ * a tighter band measures the ripple, not the spin-up. With 10 %, log A's spin-ups take ~0.7 s.)
  */
 
 import { has, num, values, type Match } from '../match/match.ts'
@@ -127,17 +127,17 @@ export interface TookEffect {
   motors: { motor: string; verdict: TookVerdict; modeA: number | null; peakA: number; secondsOver: number }[]
 }
 
-/** Longer than this above 110 % of the limit is a limit that didn't take. A working CalGames limiter stayed above for
- * up to 0.21 s (Q13 front-left drive at 40 A: 0.208 s), so the cut sits at 0.3 s. */
+/** Longer than this above 110 % of the limit is a limit that didn't take. A working 2026 limiter stayed above for
+ * up to 0.21 s (log A front-left drive at 40 A: 0.208 s), so the cut sits at 0.3 s. */
 export const DID_NOT_TAKE_SECONDS = 0.3
 
 /**
  * Did the supply limit the student set take effect on every motor? Per motor, over the step's runs:
  *  - did not take: more than 0.3 s above 110 % of the limit in one run;
  *  - held at the limit: the most common 2 A bin of samples ≥ 30 A is within ±10 % of the limit (the brief's check;
- *    Q13 drive at 40 A: mode 38–40 A while p99 is 46–53 A, so peaks aren't judged);
+ *    log A drive at 40 A: mode 38–40 A while p99 is 46–53 A, so peaks aren't judged);
  *  - never had to hold: the current never went above 110 % of the limit at all;
- *  - cannot tell: it went over, but only briefly, and a working limiter overshoots that long too. On the CalGames
+ *  - cannot tell: it went over, but only briefly, and a working limiter overshoots that long too. On the 2026
  *    spin-ups this is what a 60 A or 50 A step looks like whether or not the limit was saved, so only the
  *    comparison with the no-limit step (lower peak, slower spin-up) can show it took.
  */

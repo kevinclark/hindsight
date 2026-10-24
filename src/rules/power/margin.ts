@@ -23,7 +23,7 @@ export default rule({
     { id: 'wiring', cause: 'High resistance in the battery leads, connectors or main breaker', look: 'Power tab: battery + wiring resistance (over 20 mΩ is high); tug-test the battery leads and main breaker lugs' },
   ],
   nextStep: 'Keep at least 1 V of margin: turn on supply limits on the big motor groups, use only batteries that pass a load test, and shed load in code when the voltage nears 7 V.',
-  incident: 'Two 2026 matches: minimum 6.28 V and 6.15 V against a 6.0 V setting (2026-10-17-calgames-q13-log-analysis.md §3)',
+  incident: 'Two 2026 matches: minimum 6.28 V and 6.15 V against a 6.0 V setting',
 
   check(match) {
     const battery = match.signal('batteryVoltage')

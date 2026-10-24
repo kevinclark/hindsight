@@ -1,7 +1,7 @@
 /**
  * Findings that stopped firing in a session's later matches.
  *
- * A student's "fixed" mark comes first: "Marked fixed after Q21 · quiet in 3 checked matches since". It counts the
+ * A student's "fixed" mark comes first: "Marked fixed after Q4 · quiet in 3 checked matches since". It counts the
  * matches played after the mark where the rule could look and this issue didn't fire. No statistics: the mark is a
  * known moment of change, made by the person who did the repair.
  *
@@ -152,8 +152,8 @@ export function chanceText(s: Pick<NotSeenSince, 'times' | 'outOf' | 'about'>): 
 }
 
 /**
- * The finding's line in the Session view, the report and the JSON: "Not seen since Q21 · 3 clean checked matches · a
- * run this clean happens 4 times in 7 with no fix", or "Marked fixed after Q21 · quiet in 3 checked matches since".
+ * The finding's line in the Session view, the report and the JSON: "Not seen since Q4 · 3 clean checked matches · a
+ * run this clean happens 4 times in 7 with no fix", or "Marked fixed after Q4 · quiet in 3 checked matches since".
  */
 export function stoppedText(session: Session, s: Stopped, f?: Pick<MergedFinding, 'matches'>): string {
   const code = s.codeChanged ? ` · code changed in between: ${s.codeChanged.from} → ${s.codeChanged.to}` : ''
@@ -169,15 +169,15 @@ export function stoppedText(session: Session, s: Stopped, f?: Pick<MergedFinding
   return `${since} · ${clean} · a run this clean happens ${chanceText(s)} with no fix${code}`
 }
 
-/** For the bottom line and the card: "not seen since Q21, 1 in 35", the chance with no-break spaces so it never wraps. */
+/** For the bottom line and the card: "not seen since Q4, 1 in 35", the chance with no-break spaces so it never wraps. */
 export function stoppedShort(session: Session, s: NotSeenSince): string {
   const chance = chanceText(s).replace(/ times? in /, ' in ').replace(/ /g, '\u00a0')
   return `not seen since ${matchName(session, s.last)}, ${chance}`
 }
 
 /**
- * For the phone card, only what is worth its room: "potentially fixed: not seen since Q21, 1 in 35" (errors too), or
- * "marked fixed after Q21, quiet in 3 since". A plain "not seen since" (weaker than 1 in 20) stays off. Empty otherwise.
+ * For the phone card, only what is worth its room: "potentially fixed: not seen since Q4, 1 in 35" (errors too), or
+ * "marked fixed after Q4, quiet in 3 since". A plain "not seen since" (weaker than 1 in 20) stays off. Empty otherwise.
  */
 export function stoppedCard(session: Session, s: Stopped | null): string {
   if (s?.kind === 'fixed mark') {

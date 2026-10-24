@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { currentStatus, lastPassingSha, matchKey, mergeHistory, parseHistory, serializeHistory, triage, type IssueEvent, type PitCheckEvent } from '../src/triage/history.ts'
 
-const known: IssueEvent = { type: 'issue', key: 'mech/follower-mismatch · Flywheel', status: 'known', note: 'belt slip on 17/18', when: '2026-10-17T21:30:00Z', match: 'Q21' }
+const known: IssueEvent = { type: 'issue', key: 'mech/follower-mismatch · Flywheel', status: 'known', note: 'test reason', when: '2026-10-17T21:30:00Z', match: 'Q4' }
 const fixed: IssueEvent = { ...known, status: 'fixed', note: 'new belt before elims', when: '2026-10-18T15:00:00Z' }
 
 describe('known-issue history file', () => {

@@ -8,7 +8,7 @@ import { competition2026 } from '../src/profiles/2026-competition.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
 import { writeWpilog, type Fixture, type FixtureEntry } from './helpers/fixture-format.ts'
 
-const q13 = JSON.parse(readFileSync('fixtures/q13-auto-and-comms.json', 'utf8')) as Fixture
+const autoAndComms = JSON.parse(readFileSync('fixtures/auto-and-comms.json', 'utf8')) as Fixture
 
 function report(entries: FixtureEntry[], profile: RobotProfile = offseason2026) {
   return analyzeFiles([{ name: 'TEST.wpilog', bytes: writeWpilog(entries) }], profile).analyses[0].report
@@ -47,9 +47,9 @@ describe('a log with no match on the field (never enabled)', () => {
 })
 
 describe('mechanisms that never did the thing the rule judges', () => {
-  const enabled = q13.entries.find((e) => e.name === '/DriverStation/Enabled')!.records.map(([t]) => t as number)
+  const enabled = autoAndComms.entries.find((e) => e.name === '/DriverStation/Enabled')!.records.map(([t]) => t as number)
   const [from, to] = [Math.min(...enabled), Math.max(...enabled) + 20]
-  const base = q13.entries.filter((e) => !['/Drum/Hood/PositionRotations', '/RealOutputs/Console'].includes(e.name))
+  const base = autoAndComms.entries.filter((e) => !['/Drum/Hood/PositionRotations', '/RealOutputs/Console'].includes(e.name))
 
   const hoodRun = (hood: FixtureEntry, consoleLines: [number, string][]) =>
     report([...base, hood, { name: '/RealOutputs/Console', type: 'string', records: consoleLines }])

@@ -6,23 +6,23 @@ import { analyzeFiles } from '../src/analyze.ts'
 import { writeDslog, writeWpilog, type Fixture, type FixtureEntry } from './helpers/fixture-format.ts'
 import { fired } from './helpers/load.ts'
 
-const q13 = JSON.parse(readFileSync('fixtures/q13-auto-and-comms.json', 'utf8')) as Fixture
+const autoAndComms = JSON.parse(readFileSync('fixtures/auto-and-comms.json', 'utf8')) as Fixture
 
 describe('Driver Station logs are matched to the match window, not the whole robot log', () => {
   it('ignores a DS log that only overlaps the minutes after roboRIO boot', () => {
-    // The real Q13 DS log starts 13.8 s into the robot log; one that ends 60 s in belongs to an earlier session.
-    const stale = { ...q13.dslog!, name: 'stale.dslog', count: 2300, noRobotFrom: 2300 }
-    const r = analyzeFiles([{ name: 'q13.wpilog', bytes: writeWpilog(q13.entries) }, { name: 'stale.dslog', bytes: writeDslog(stale) }], offseason2026)
+    // The real DS log starts 13.8 s into the robot log; one that ends 60 s in belongs to an earlier session.
+    const stale = { ...autoAndComms.dslog!, name: 'stale.dslog', count: 2300, noRobotFrom: 2300 }
+    const r = analyzeFiles([{ name: 'autoAndComms.wpilog', bytes: writeWpilog(autoAndComms.entries) }, { name: 'stale.dslog', bytes: writeDslog(stale) }], offseason2026)
     expect(r.analyses[0].match.ds).toHaveLength(0)
     expect(r.problems[0]).toMatch(/stale.dslog: doesn't overlap any loaded match/)
     expect(fired(r.analyses[0].report)).not.toContain('comms/ds-log-truncated')
   })
   it('keeps both DS logs when the DS app restarted, and flags the one that stopped mid-match', () => {
-    const first = q13.dslog!
+    const first = autoAndComms.dslog!
     const restartEpoch = first.startEpochSeconds + first.count * 0.02 + 4
     const second = { name: 'restart.dslog', startEpochSeconds: restartEpoch, count: 1500, robotFrom: 0, noRobotFrom: 1500 }
     const r = analyzeFiles([
-      { name: 'q13.wpilog', bytes: writeWpilog(q13.entries) },
+      { name: 'autoAndComms.wpilog', bytes: writeWpilog(autoAndComms.entries) },
       { name: 'restart.dslog', bytes: writeDslog(second) },
       { name: first.name, bytes: writeDslog(first) },
     ], offseason2026)
@@ -58,7 +58,7 @@ describe('the match window ignores enables before the match', () => {
 
 describe('rules that check several devices report what they could not check', () => {
   it('lists power/limit-not-applied as not checked when no motor current is logged', () => {
-    const r = analyzeFiles([{ name: 'q13.wpilog', bytes: writeWpilog(q13.entries) }], offseason2026).analyses[0].report
+    const r = analyzeFiles([{ name: 'autoAndComms.wpilog', bytes: writeWpilog(autoAndComms.entries) }], offseason2026).analyses[0].report
     for (const rule of ['power/limit-not-applied', 'can/device-dropout']) {
       const reason = r.skipped.find((s) => s.rule === rule)?.reason ?? ''
       expect(reason, rule).toMatch(/missing /)
@@ -67,7 +67,7 @@ describe('rules that check several devices report what they could not check', ()
   })
   it('says "partly checked" when only some keys are missing', () => {
     const r = analyzeFiles([{ name: 'p.wpilog', bytes: writeWpilog([
-      ...q13.entries,
+      ...autoAndComms.entries,
       { name: '/Drum/Hood/Connected', type: 'boolean', records: [[11.9, true]] },
     ]) }], offseason2026).analyses[0].report
     expect(r.skipped.find((s) => s.rule === 'can/device-dropout')?.reason).toMatch(/^partly checked; .*missing /)
@@ -75,7 +75,7 @@ describe('rules that check several devices report what they could not check', ()
 })
 
 describe('mech/zero-not-completed', () => {
-  const base = q13.entries.filter((e) => !['/Drum/Hood/PositionRotations', '/RealOutputs/Console'].includes(e.name))
+  const base = autoAndComms.entries.filter((e) => !['/Drum/Hood/PositionRotations', '/RealOutputs/Console'].includes(e.name))
   const run = (hood: [number, number][], consoleLines: [number, string][], profile = offseason2026) => analyzeFiles([{ name: 'z.wpilog', bytes: writeWpilog([
     ...base,
     { name: '/Drum/Hood/PositionRotations', type: 'double', records: hood.map(([t, deg]) => [t, deg / 360]) },
@@ -88,7 +88,7 @@ describe('mech/zero-not-completed', () => {
     const r = run([[260, 30], [270.3, 25], [270.6, 15], [270.9, 2], [271.2, 10], [272, 10]], [[271.1, 'Rezeroed hood']])
     expect(fired(r)).not.toContain('mech/zero-not-completed')
   })
-  it('fires when the hood rises before the zero completes (the zero then moves it 8°, as in Q13)', () => {
+  it('fires when the hood rises before the zero completes (the zero then moves it 8°, as in the real match)', () => {
     const r = run([[260, 2], [270.5, 2], [271, 9], [272, 9], [293.5, 9], [293.6, 1]], [[293.5, 'Rezeroed hood']])
     expect(fired(r)).toContain('mech/zero-not-completed')
   })

@@ -27,7 +27,7 @@ Branch `claude/session-stopped-016ad5`, PR #1, merged 2026-10-21 as 0b764c3.
 
 ## What was built
 
-- `src/session/stopped.ts`: a student's fixed mark leads ("Marked fixed after Q21 · quiet in 3 checked matches
+- `src/session/stopped.ts`: a student's fixed mark leads ("Marked fixed after Q4 · quiet in 3 checked matches
   since", counted per issue, only after the mark). With no mark, "Not seen since <match>" when the rule's grid row has
   2 or more checked matches after its last firing, all quiet, with the exact chance C(n, k) / C(N, k) of a run that
   clean with no fix (BigInt, compared as fractions). "Potentially fixed" at 0.05 or less; only then does a warning sort
@@ -51,7 +51,7 @@ Branch `claude/session-stopped-016ad5`, PR #1, merged 2026-10-21 as 0b764c3.
 
 ## Judgment calls (reviewed)
 
-1. "Not seen since" uses the rule's grid row; a row whose own issue last fired earlier says "(this one last in Q2)".
+1. "Not seen since" uses the rule's grid row; a row whose own issue last fired earlier says "(this one last in Q4)".
    Per issue key would add about 20 labels on one test event and multiply the false-label rate.
 2. The fixed-mark count is per issue key.
 3. A potentially fixed error keeps its place and its confidence clause; the label still shows.

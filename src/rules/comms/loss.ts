@@ -31,7 +31,7 @@ export default rule({
     { id: 'field', cause: 'A problem on the field side', look: 'ask the FTA for the field log for this match' },
   ],
   nextStep: 'Load this match\'s .dslog too (on the DS laptop in C:\\Users\\Public\\Documents\\FRC\\Log Files): it tells a DS laptop problem from a radio or wireless one.',
-  incident: 'One 2026 match: comms lost at 417.4 s (7.4 s dead) and 426.4 s (4.3 s) (2026-10-17-calgames-q13-log-analysis.md §2)',
+  incident: 'One 2026 match: comms lost at 417.4 s (7.4 s dead) and 426.4 s (4.3 s)',
 
   check(match) {
     if (match.wholeMatch.length === 0) return match.couldNotCheck('no match in this log')

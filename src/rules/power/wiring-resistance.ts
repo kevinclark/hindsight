@@ -3,7 +3,7 @@
  *
  * Checks: resistance measured from current steps (see resistanceFromSteps in src/power/battery-model.ts) against
  * 20 mΩ. A loose crimp or a tired battery adds resistance, and then every amp costs more voltage.
- * Why: CalGames 2026 measured 11.0–11.4 mΩ in all three matches; Chief Delphi puts a good battery under 20 mΩ.
+ * Why: the 2026 offseason event measured 11.0–11.4 mΩ in all three matches; Chief Delphi puts a good battery under 20 mΩ.
  * Not yet: "+5 mΩ against this robot's history" needs the history file (phase 2).
  */
 import { rule, round } from '../rule.ts'
@@ -23,7 +23,7 @@ export default rule({
     { id: 'thin-wire', cause: 'Wire that is too thin or too long between the battery and the main breaker', look: 'the battery leads and the main power path: gauge and length' },
   ],
   nextStep: 'Tug-test and re-crimp the battery leads and main breaker lugs; then load-test the battery. Good is under 20 mΩ.',
-  incident: 'Baseline: CalGames 2026 measured 11.0–11.4 mΩ (P0 analysis); threshold from Chief Delphi (hindsight-research/battery-sources.md)',
+  incident: 'Baseline: 2026 offseason event measured 11.0–11.4 mΩ; threshold from Chief Delphi',
 
   check(match) {
     const ohms = match.power().report.resistanceOhms

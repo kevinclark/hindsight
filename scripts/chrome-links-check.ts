@@ -6,7 +6,7 @@
  *   npm run build
  *   node --experimental-strip-types scripts/chrome-links-check.ts <out-dir> <log> [<log> ...] [-- <log> ...]
  *
- * Each group separated by "--" is loaded on a fresh page (e.g. the Q13 .wpilog with its .dslog, then P0). Prints, per
+ * Each group separated by "--" is loaded on a fresh page (e.g. log A's .wpilog with its .dslog, then log C). Prints, per
  * group, each headline on the Match tab with the findings nested under it, read back from the page.
  */
 import { spawn, execSync } from 'node:child_process'

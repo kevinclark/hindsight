@@ -16,25 +16,25 @@ const q7 = { id: q(7), event: 'TEST', played }
 const mark = (status: IssueEvent['status'], match: string, more: Partial<IssueEvent> = {}): IssueEvent => ({
   type: 'issue', key: RULE, status, note: status === 'wrong' ? 'test reason' : '', when: '2026-10-20T10:00:00Z', match, event: 'TEST', played: '2026-10-17T15:00:00Z', ...more,
 })
-const q2wrong = mark('wrong', q(2))
+const wrongMark = mark('wrong', q(3))
 const fire = (key: string, match: string, at: number | null = played) => ({ key, match, played: at })
 
 describe('track record', () => {
   it('counts real only where someone marked that match; other fires of a known issue are "known", not confirmed', () => {
-    const events = [mark('known', q(13)), q2wrong, mark('wrong', q(9), { key: `${RULE} · x` })]
-    const fires = [fire(RULE, q(13)), fire(RULE, q(13)), fire(RULE, q(37)), fire('other/rule', q(37))]
-    // Q13 marked known (real), Q37 fired on the known issue (known), Q2 and Q9 wrong.
+    const events = [mark('known', q(4)), wrongMark, mark('wrong', q(8), { key: `${RULE} · x` })]
+    const fires = [fire(RULE, q(4)), fire(RULE, q(4)), fire(RULE, q(6)), fire('other/rule', q(6))]
+    // Q4 marked known (real), Q6 fired on the known issue (known), Q3 and Q8 wrong.
     expect(trackRecord(RULE, triage(events), events, fires)).toEqual({ fired: 4, real: 1, known: 1, wrong: 2, untriaged: 0 })
     expect(trackRecord(RULE, triage(events), events, [fire(`${RULE} · y`, q(40))]).untriaged).toBe(1)
   })
   it('a fire after a fix is not counted as confirmed (it came back); one before the fix is a known issue', () => {
-    const fixed = [mark('fixed', q(13), { when: '2026-10-18T00:00:00Z' })]
+    const fixed = [mark('fixed', q(4), { when: '2026-10-18T00:00:00Z' })]
     const t = triage(fixed)
     expect(trackRecord(RULE, t, fixed, [fire(RULE, q(40), Date.parse('2026-10-19T00:00:00Z'))])).toEqual({ fired: 2, real: 1, known: 0, wrong: 0, untriaged: 1 })
     expect(trackRecord(RULE, t, fixed, [fire(RULE, q(5), Date.parse('2026-10-17T00:00:00Z'))]).known).toBe(1)
   })
   it('an undone wrong mark counts as not marked, never as real', () => {
-    const events = [q2wrong, mark('unmark', q(2), { when: '2026-10-21T00:00:00Z' })]
+    const events = [wrongMark, mark('unmark', q(3), { when: '2026-10-21T00:00:00Z' })]
     expect(trackRecord(RULE, triage(events), events, [])).toEqual({ fired: 1, real: 0, known: 0, wrong: 0, untriaged: 1 })
   })
   it('says nothing with no marks at all, and never calls a check confirmed when no mark says so', () => {
@@ -48,8 +48,8 @@ describe('track record', () => {
     expect(howSure(r({ fired: 5, real: 1, known: 3, untriaged: 1 }), true)).toBe('marked real on 1 of the 5 times it fired on our matches; a known issue on 3 more; 1 not marked yet')
   })
   it('names the match short, without the event; a log with no match label is named by its file', () => {
-    expect(shortMatch(q2wrong)).toBe('Q2')
-    expect(shortMatch({ ...q2wrong, event: undefined, match: 'akit_26-10-17_p0.wpilog' })).toBe('akit_26-10-17_p0.wpilog')
+    expect(shortMatch(wrongMark)).toBe('Q3')
+    expect(shortMatch({ ...wrongMark, event: undefined, match: 'akit_26-01-01_p4.wpilog' })).toBe('akit_26-01-01_p4.wpilog')
     expect(matchRef({ event: 'TEST', matchLabel: '', fileName: 'a.wpilog' }, null).id).toBe('a.wpilog')
     expect(matchRef({ event: 'TEST', matchLabel: 'Qualification 7', fileName: 'a.wpilog' }, null).id).toBe(q(7))
   })
@@ -57,48 +57,48 @@ describe('track record', () => {
 
 describe('real marks', () => {
   it('count as real on their match, without a known mark, and are not counted as known elsewhere', () => {
-    const events = [mark('real', q(13)), mark('real', q(9), { key: `${RULE} · x` })]
-    const fires = [fire(RULE, q(13)), fire(RULE, q(37))]
+    const events = [mark('real', q(4)), mark('real', q(8), { key: `${RULE} · x` })]
+    const fires = [fire(RULE, q(4)), fire(RULE, q(6))]
     expect(trackRecord(RULE, triage(events), events, fires)).toEqual({ fired: 3, real: 2, known: 0, wrong: 0, untriaged: 1 })
   })
   it('a real mark on this match keeps its red red, whatever was marked wrong elsewhere', () => {
-    expect(demotion(finding(RULE), q7, triage([q2wrong, mark('real', q(7))]))).toBeUndefined()
+    expect(demotion(finding(RULE), q7, triage([wrongMark, mark('real', q(7))]))).toBeUndefined()
     // A real mark on a third match doesn't overrule the wrong mark for this one.
-    expect(demotion(finding(RULE), q7, triage([q2wrong, mark('real', q(13))]))).toEqual(q2wrong)
+    expect(demotion(finding(RULE), q7, triage([wrongMark, mark('real', q(4))]))).toEqual(wrongMark)
   })
   it('an undone real mark counts as not marked', () => {
-    const events = [mark('real', q(13)), mark('unmark', q(13), { when: '2026-10-21T00:00:00Z' })]
+    const events = [mark('real', q(4)), mark('unmark', q(4), { when: '2026-10-21T00:00:00Z' })]
     expect(trackRecord(RULE, triage(events), events, [])).toEqual({ fired: 1, real: 0, known: 0, wrong: 0, untriaged: 1 })
   })
 })
 
 describe('a wrong mark demotes the check for its event', () => {
-  const t = triage([q2wrong])
+  const t = triage([wrongMark])
   it('turns the same check\'s red amber on another match of the same event', () => {
-    expect(demotion(finding(RULE), q7, t)).toEqual(q2wrong)
-    expect(demotion(finding(`${RULE} · intake`), q7, t)).toEqual(q2wrong)
+    expect(demotion(finding(RULE), q7, t)).toEqual(wrongMark)
+    expect(demotion(finding(`${RULE} · intake`), q7, t)).toEqual(wrongMark)
   })
   it('leaves alone: other checks, ambers, the marked match itself, other events, next year, undated logs', () => {
     expect(demotion(finding('comms/loss'), q7, t)).toBeUndefined()
     expect(demotion(finding(RULE, 'warning'), q7, t)).toBeUndefined()
-    expect(demotion(finding(RULE), { ...q7, id: q(2) }, t)).toBeUndefined()
+    expect(demotion(finding(RULE), { ...q7, id: q(3) }, t)).toBeUndefined()
     expect(demotion(finding(RULE), { ...q7, event: 'OTHER' }, t)).toBeUndefined()
     expect(demotion(finding(RULE), { ...q7, played: played + 365 * 86400e3 }, t)).toBeUndefined()
     expect(demotion(finding(RULE), { ...q7, played: null }, t)).toBeUndefined()
     expect(demotion(finding(RULE), { ...q7, event: '' }, t)).toBeUndefined()
   })
   it('stops once the mark is undone or the issue is marked known', () => {
-    expect(demotion(finding(RULE), q7, triage([q2wrong, mark('unmark', q(2), { when: '2026-10-21T00:00:00Z' })]))).toBeUndefined()
-    expect(demotion(finding(RULE), q7, triage([q2wrong, mark('known', q(13), { when: '2026-10-21T00:00:00Z' })]))).toBeUndefined()
+    expect(demotion(finding(RULE), q7, triage([wrongMark, mark('unmark', q(3), { when: '2026-10-21T00:00:00Z' })]))).toBeUndefined()
+    expect(demotion(finding(RULE), q7, triage([wrongMark, mark('known', q(4), { when: '2026-10-21T00:00:00Z' })]))).toBeUndefined()
   })
   it('still demotes a red that came back after a fix: the fix may be fine and the check wrong', () => {
     const fixedBefore = mark('fixed', q(1), { when: '2026-10-16T00:00:00Z' })
-    expect(demotion(finding(RULE), q7, triage([fixedBefore, q2wrong]))).toEqual(q2wrong)
+    expect(demotion(finding(RULE), q7, triage([fixedBefore, wrongMark]))).toEqual(wrongMark)
   })
 })
 
 describe('marks on a real match (TEST fixture)', () => {
-  const q13 = analyzeFixture('q13-auto-and-comms').analyses[0]
+  const q13 = analyzeFixture('auto-and-comms').analyses[0]
   const here = matchRef(q13.match, playedAt(q13))
   const red = q13.report.findings.find((f) => f.severity === 'error')!
   const other = (when: number | null) => ({ type: 'issue' as const, key: red.key, status: 'wrong' as const, note: 'test reason', when: '2026-10-20T00:00:00Z',
@@ -135,7 +135,7 @@ describe('marks on a real match (TEST fixture)', () => {
 })
 
 describe('a red parent whose members are all demoted is demoted with them', () => {
-  const q13 = analyzeFixture('q13-auto-and-comms').analyses[0]
+  const q13 = analyzeFixture('auto-and-comms').analyses[0]
   const here = matchRef(q13.match, playedAt(q13))
   const by = { rule: 'test/parent', about: null, time: 1, why: 'test' }
   const member = (key: string): Finding => ({ ...finding(key), explainedBy: by })

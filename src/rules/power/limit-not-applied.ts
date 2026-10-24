@@ -2,14 +2,14 @@
  * Is each motor's current staying under its configured limit?
  *
  * Checks: for each motor group with limits in the robot profile, supply and stator current above 120 % of the limit
- * for more than 0.2 s while enabled. (Shorter bursts are the limiter catching up: ≤ 0.21 s at CalGames.) Says when the
+ * for more than 0.2 s while enabled. (Shorter bursts are the limiter catching up: ≤ 0.21 s at the 2026 offseason event.) Says when the
  * limit is switched off in code: amber when the log ran the profile's commit, or another commit whose current-limit
  * lines a robot-code folder shows are the same (src/code/limit-lines.ts); red otherwise, as other code may differ. Only
  * the lines in the files `where` names are compared: a limit set through a name defined in another file isn't followed.
- * The share of enabled time over 110 % of the limit is evidence only: at CalGames it is made of
+ * The share of enabled time over 110 % of the limit is evidence only: at the 2026 offseason event it is made of
  * 154–233 bursts per motor per match with a median of 0.02 s (one 50 Hz sample) and a longest of 0.26 s, the limiter
  * catching up at each acceleration, so on its own it does not mean the limit is failing.
- * Why: CalGames 2026: the flywheel's 40 A supply limit is configured but switched off (DrumSubsystem.java:310), so
+ * Why: 2026 offseason event: the flywheel's 40 A supply limit is configured but switched off (DrumSubsystem.java:310), so
  * four motors pulled 78–94 A each during spin-up.
  */
 import { amps, beyond, isFalse, rule, round, totalSeconds, type Problem } from '../rule.ts'
@@ -29,7 +29,7 @@ export default rule({
     { id: 'wrong-value', cause: 'The limit is set too high for what the mechanism needs', look: 'the limit value in the code against the Limits tab: what current the mechanism actually needs' },
   ],
   nextStep: 'If the limit is switched off in code, switch it on and measure the mechanism before and after. If it is on, check the config reaches every motor.',
-  incident: 'CalGames 2026: flywheel 78–94 A vs a disabled 40 A supply limit (hindsight-research/design-detail.md §5a)',
+  incident: '2026 offseason event: flywheel 78–94 A vs a disabled 40 A supply limit',
   forEach: 'motorGroup',
 
   check(group, match) {

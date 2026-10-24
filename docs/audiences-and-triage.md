@@ -45,10 +45,10 @@ stores in `history.jsonl` and trends per robot, per mechanism, or per battery. �
 | Friction, rubbing, a bearing going | current at steady speed (kS/kV) vs physics and vs last week | ✓ supply/stator current + velocity | spindexer shaft rub |
 | Motor running hot | temperature rise per minute of use | ✓ `*/TempC` | steer motor at 90 °C in 45 s |
 | Connector working loose | CAN drops per device per match, rising | ✓ `*/Connected` | CAN dropouts (≥ 11) |
-| Battery wearing out | open-circuit voltage at 4 Ah, resistance, per battery ID | ✓ voltage/current; battery ID needs the tracker library | P0 |
+| Battery wearing out | open-circuit voltage at 4 Ah, resistance, per battery ID | ✓ voltage/current; battery ID needs the tracker library | a 2026 match |
 | Wiring degrading | battery + wiring resistance per match, rising | ✓ | crimps (brownout cases) |
 | Module wear (swerve) | each module's drive current at a given speed vs its siblings | ✓ | — (not yet seen) |
-| Hits adding up | count of > 3 g hits per match | ✓ since Q21 (accelerometer) | fasteners backing out (≥ 14) |
+| Hits adding up | count of > 3 g hits per match | ✓ since log B (accelerometer) | fasteners backing out (≥ 14) |
 
 The thresholds for these are unknown until the 808-log backtest runs; phase 2 shows the trend first and flags only
 what the backtest supports.
@@ -64,7 +64,7 @@ the same problem in five matches is one issue with five sightings, not five rows
 - **Not a real problem…** (2026-10-20) needs a reason ("deliberate A-stop"). Unlike known and fixed it is about one
   match only, and it files the finding with the known issues there. While it stands, the same check's reds on the
   other matches of that event (same event name, played within 4 days) show amber with "marked not a real problem in
-  Q13: <reason>"; nothing is hidden. *Undo* writes `unmark`, which undoes only that mark (a build from before this
+  Q4: <reason>"; nothing is hidden. *Undo* writes `unmark`, which undoes only that mark (a build from before this
   feature skips both lines; a `new` would have cleared the issue's known or fixed mark there). The Session view
   applies the same marks match by match (`sessionWithMarks`): a session row keeps every match it fired in, says where
   it was marked and why, and is as serious as its unmarked matches; a grid cell marked in its match is grey (same
@@ -75,7 +75,7 @@ the same problem in five matches is one issue with five sightings, not five rows
 - **Real problem…** (2026-10-20) says a finding was real on that match, with an optional note (what happened, a link
   to the report). It is about one match only and changes nothing else on the page: the finding stays in its list, red
   stays red, and a wrong mark elsewhere no longer demotes it. It says nothing about the event's other matches: a wrong
-  mark on Q2 still turns Q7's red amber, and How sure shows both marks. It is what *How sure* counts as confirmed. Known and
+  mark on Q1 still turns Q2's red amber, and How sure shows both marks. It is what *How sure* counts as confirmed. Known and
   fixed still count too, but a known mark files every later fire of the issue as known, which for a check with no
   subject (`comms/loss`, `power/brownout`) hides the next real red. *Undo* writes `unmark`; older builds skip both.
 - **How sure:** with any marks in the history, each finding says how its check has done on our matches, counted once
@@ -91,11 +91,11 @@ the same problem in five matches is one issue with five sightings, not five rows
   the file, and dropping it in with the logs loads it. findings.json carries each finding's status (`known`, `fixed`
   or `wrong`), and a demoted finding there is a warning with a `demoted` field naming the mark.
 
-Example, the CalGames flywheel belt (known slip, fixed before elims):
+Example, a flywheel follower problem marked known, then fixed (invented notes and times):
 
 ```
-{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"known","note":"belt slipping on the 17/18 shaft","when":"2026-10-17T21:40:00Z"}
-{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"fixed","note":"new belt before elims","when":"2026-10-18T15:00:00Z"}
+{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"known","note":"test reason","when":"2026-01-10T18:00:00Z"}
+{"type":"issue","key":"mech/follower-mismatch · Flywheel","status":"fixed","note":"test fix","when":"2026-01-11T15:00:00Z"}
 ```
 
 **Still to build (phase 2):** the pit board (open issues across every loaded match, grouped by mechanism — decision

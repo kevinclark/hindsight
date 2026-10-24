@@ -37,7 +37,7 @@ amber (not in proven.ts).
 
 ## Golden
 
-264 local logs (CalGames 2026, four hindsight-test folders, three loose CalGames logs). With each log's
+264 local logs (the team's 2026 event, four hindsight-test folders, three loose logs from it). With each log's
 can/device-rebooted skip entry and its meta/not-checked line and count stripped, before and after are identical on
 every log (0 residual differences); the skip was added on 264 of 264 logs, since none has the companion's keys.
 

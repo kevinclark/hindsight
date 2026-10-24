@@ -2,6 +2,7 @@
 // each state and each branch of the rule, then the real logs when they are on this Mac (never copied into the repo).
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { basename } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { coverage, coverageKeys, loggingChanges, neverLogged, worstAcross, type LoggedState } from '../src/coverage/coverage.ts'
@@ -13,7 +14,8 @@ import { FORESIGHT_RULES, RULES } from '../src/rules/index.ts'
 import { WANTED_CHECKS } from '../src/rules/wanted.ts'
 import type { MatchSummary } from '../src/session/summary.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
-import { CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
+import { LOGS, haveLogs, readInput } from './helpers/load.ts'
+import { TEAM } from './helpers/team-logs.ts'
 
 type Entries = FixtureEntry[]
 
@@ -182,14 +184,14 @@ describe('logging across a session', () => {
   const state = (key: string, s: LoggedState['state']): LoggedState => ({ what: key, key, state: s })
   const match = (label: string, sha: string, logging: LoggedState[]) => ({ matchLabel: label, fileName: label, build: { sha, branch: 'main', uncommitted: false }, logging }) as unknown as MatchSummary
   const ms = [
-    match('Q13', 'aaaaaaa', [state('/AX', 'not logged'), state('/Id', 'not logged')]),
-    match('Q21', 'bbbbbbb', [state('/AX', 'logged'), state('/Id', 'not logged')]),
-    match('P0', 'bbbbbbb', [state('/AX', 'logged'), state('/Id', 'not logged')]),
+    match('Q1', 'aaaaaaa', [state('/AX', 'not logged'), state('/Id', 'not logged')]),
+    match('Q2', 'bbbbbbb', [state('/AX', 'logged'), state('/Id', 'not logged')]),
+    match('Q3', 'bbbbbbb', [state('/AX', 'logged'), state('/Id', 'not logged')]),
   ]
   it('shows when a key appeared, by match and build', () => {
     const [c] = loggingChanges(ms)
     expect(c.key).toBe('/AX')
-    expect(c.runs.map((r) => [r.state, r.first.matchLabel, r.last.matchLabel, r.matches])).toEqual([['not logged', 'Q13', 'Q13', 1], ['logged', 'Q21', 'P0', 2]])
+    expect(c.runs.map((r) => [r.state, r.first.matchLabel, r.last.matchLabel, r.matches])).toEqual([['not logged', 'Q1', 'Q1', 1], ['logged', 'Q2', 'Q3', 2]])
   })
   it('lists keys missing from every match apart', () => {
     expect(neverLogged(ms).map((s) => s.key)).toEqual(['/Id'])
@@ -203,26 +205,26 @@ describe('logging across a session', () => {
 const LOCAL = [`${homedir()}/Downloads/hindsight-test`]
 const localLogs = LOCAL.filter(existsSync).flatMap((d) => readdirSync(d, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.wpilog')).map((f) => `${d}/${f}`))
 
-describe.skipIf(!haveCalGames)('CalGames logs', () => {
-  const analyses = haveCalGames ? analyzeFiles([CALGAMES.q13, CALGAMES.q21, CALGAMES.p0].map(readInput)).analyses : []
-  const byName = (s: string) => analyses.find((a) => a.match.fileName.includes(s))!
-  it('Q13 logs neither accel X nor Y; Q21 logs both (the proposal\'s laziness example)', () => {
-    const q13 = coverage(byName('q13').match, byName('q13').report)
-    expect(q13.lines.filter((l) => /^accel/.test(l.what)).map((l) => l.state)).toEqual(['not logged', 'not logged'])
-    const q21 = coverage(byName('q21').match, byName('q21').report)
-    expect(q21.lines.filter((l) => /^accel/.test(l.what)).map((l) => l.state)).toEqual(['logged', 'logged'])
+describe.skipIf(!haveLogs)('the team\'s 2026 logs A, B and C', () => {
+  const analyses = haveLogs ? analyzeFiles([LOGS.a, LOGS.b, LOGS.c].map(readInput)).analyses : []
+  const byPath = (p: string) => analyses.find((a) => a.match.fileName === basename(p))!
+  it('A logs neither accel X nor Y; B logs both (the proposal\'s laziness example)', () => {
+    const logA = coverage(byPath(LOGS.a).match, byPath(LOGS.a).report)
+    expect(logA.lines.filter((l) => /^accel/.test(l.what)).map((l) => l.state)).toEqual(['not logged', 'not logged'])
+    const logB = coverage(byPath(LOGS.b).match, byPath(LOGS.b).report)
+    expect(logB.lines.filter((l) => /^accel/.test(l.what)).map((l) => l.state)).toEqual(['logged', 'logged'])
   })
   it('none of the three fires auto/none-at-enable (the chooser was set 1.0–6.1 s after the field attached)', () => {
     expect(analyses.flatMap((a) => a.report.findings.filter((f) => f.rule === 'auto/none-at-enable'))).toEqual([])
   })
 })
 
-describe.skipIf(localLogs.length < 100)('backtest over every local log', () => {
-  it('auto/none-at-enable fires on MTTD 2025 practice 5 only', () => {
+describe.skipIf(localLogs.length < 100 || !TEAM.event2025Files?.noneAtEnable)('backtest over every local log', () => {
+  it('auto/none-at-enable fires on one 2025 practice match only', () => {
     const fired = localLogs.filter((p) => {
       const a = analyzeFiles([readInput(p)]).analyses[0]
       return a?.report.findings.some((f) => f.rule === 'auto/none-at-enable')
     })
-    expect(fired.map((p) => p.split('/').pop())).toEqual(['akit_25-11-07_19-38-15_p5.wpilog'])
+    expect(fired.map((p) => p.split('/').pop())).toEqual([TEAM.event2025Files?.noneAtEnable])
   }, 120_000)
 })

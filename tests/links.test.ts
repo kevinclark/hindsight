@@ -1,6 +1,6 @@
 // Links between findings (src/rules/links.ts) and how the lists nest them (src/report/finding-tree.ts). The chains
 // are shaped like the real ones (three 2026 matches and two 2025 ones), with their times and evidence; the real logs
-// themselves are checked in calgames-logs.test.ts and mttd-rules.test.ts when they are in ~/Downloads.
+// themselves are checked in team-logs.test.ts and event-2025-rules.test.ts when they are listed.
 import { describe, expect, it } from 'vitest'
 import { FORESIGHT_RULES, LINKS, PARENTS, RULES, ruleById, runRules } from '../src/rules/index.ts'
 import { consolidate } from '../src/rules/run.ts'
@@ -45,7 +45,7 @@ describe('links.ts', () => {
     for (const id of ids) visit(id, [])
   })
 
-  it('Q13: hood zero → tilt → early disable, and the comms loss → the DS log stopping', () => {
+  it('a 2026 match: hood zero → tilt → early disable, and the comms loss → the DS log stopping', () => {
     const zero = finding('mech/zero-not-completed', 270.945, { about: 'Hood', evidence: { 'zero completed (robot time, s)': 293.53 } })
     const tilt = finding('collision/tilt', 281.874, { about: 'Pitch', severity: 'error' })
     const disable = finding('auto/early-disable', 282.693, { likely: ['wedged'] })
@@ -57,7 +57,7 @@ describe('links.ts', () => {
     expect(nest(all, all).map((n) => n.finding)).toEqual([loss, zero])
   })
 
-  it('P0: collapse → brownout → follower dropout → its alert, and brownout → margin below zero', () => {
+  it('another 2026 match: collapse → brownout → follower dropout → its alert, and brownout → margin below zero', () => {
     const brownout = finding('power/brownout', 532.770, { likely: ['weak-battery'] })
     const collapse = finding('power/battery-collapse', 542.262, { severity: 'error', likely: ['weak-battery'] })
     const dropout = finding('can/device-dropout', 535.307, { about: 'Flywheel follower 16', likely: ['battery-sag', 'device-power'] })
@@ -71,7 +71,7 @@ describe('links.ts', () => {
     expect(headline.children[0].children.map((c) => c.finding)).toEqual([dropout, margin])
   })
 
-  it('Q61: the brownout ranked by the collapse nests; a brownout whose top cause is the load does not', () => {
+  it('a 2025 match: the brownout ranked by the collapse nests; a brownout whose top cause is the load does not', () => {
     const collapse = finding('power/battery-collapse', 705.729)
     const brownout = finding('power/brownout', 703.006, { likely: ['weak-battery'] })
     const load = finding('power/brownout', 703.006, { likely: ['load', 'weak-battery'] })
@@ -81,7 +81,7 @@ describe('links.ts', () => {
     expect(load.explainedBy).toBeUndefined()
   })
 
-  it('Q21: the camera dropout explains both of its alerts, but not the other camera\'s', () => {
+  it('a third 2026 match: the camera dropout explains both of its alerts, but not the other camera\'s', () => {
     const stale = finding('vision/stale', 394.717, { about: 'Back_Right', likely: ['connection', 'coprocessor'] })
     const red = alert('Back_Right Camera Disconnected!', 394.717)
     const amber = alert("PhotonCamera 'Back_Right' is disconnected.", 394.717, 'warning')
@@ -96,7 +96,7 @@ describe('links.ts', () => {
     expect(heads[2].children.map((c) => c.finding)).toEqual([amber])
   })
 
-  it('Q41: the bus drop explains the module and gyro alerts, not "Using Sync Odometry" or a camera alert at the same moment', () => {
+  it('another 2025 match: the bus drop explains the module and gyro alerts, not "Using Sync Odometry" or a camera alert at the same moment', () => {
     const bus = finding('can/bus-dropout', 745.063, { about: 'CANivore bus', likely: ['bus'], evidence: { [BUS_DEVICES]: 'Gyro (Pigeon), Front Left module, Front Right module, Back Left module, Back Right module' } })
     const module = alert('Missing Module Data', 744.218)
     const gyro = alert('Missing Gyro Data', 744.218, 'warning')
@@ -216,19 +216,19 @@ describe('nesting in the lists', () => {
 })
 
 describe('the pass runs for match analysis only', () => {
-  const [p0] = analyzeFixture('p0-brownout').analyses
+  const [brownout] = analyzeFixture('brownout').analyses
 
-  it('match analysis links the P0 cut; the card lists the headline once and counts every error', () => {
-    const linked = p0.report.findings.filter((f) => f.explainedBy).map((f) => `${f.rule} ← ${f.explainedBy!.rule}`)
+  it('match analysis links the brownout fixture; the card lists the headline once and counts every error', () => {
+    const linked = brownout.report.findings.filter((f) => f.explainedBy).map((f) => `${f.rule} ← ${f.explainedBy!.rule}`)
     expect(linked.length).toBeGreaterThan(0)
-    const model = reviewModel(p0, new Map())
+    const model = reviewModel(brownout, new Map())
     const card = reviewCard(model)
     expect(card.heading).toBe(`${model.errors.length} errors`)
     expect(card.items.length).toBe(model.headlines.filter((n) => n.finding.severity === 'error').length)
   })
 
   it('Foresight rules, and runRules without links, leave explainedBy off', () => {
-    for (const report of [runRules(p0.match, FORESIGHT_RULES), runRules(p0.match)]) {
+    for (const report of [runRules(brownout.match, FORESIGHT_RULES), runRules(brownout.match)]) {
       expect(report.findings.filter((f) => f.explainedBy)).toEqual([])
     }
   })

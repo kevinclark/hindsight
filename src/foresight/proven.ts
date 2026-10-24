@@ -27,13 +27,13 @@ export interface Proof {
   date: string
 }
 
-const OURS = 'CalGames 2026'
+const OURS = 'our 2026 offseason event'
 const RUN = '2026-10-19'
 
 export const PROVEN: Record<string, Proof> = {
-  // Fired once (Q21, 12.45 V before auto, a real low battery).
+  // Fired once (one 2026 match, 12.45 V before auto, a real low battery).
   'power/rest-voltage': { logs: 9, fires: 1, ourFires: 1, base: `${OURS} + 6 logs of 5 other teams, 2024–26`, date: RUN },
-  // Fired twice (P0 and one other team's 2026 public log), both really running uncommitted code; P0 is ours.
+  // Fired twice (one 2026 match of ours and one other team's 2026 public log), both really running uncommitted code; the 2026 one is ours.
   'build/dirty': { logs: 6, fires: 2, ourFires: 1, base: `${OURS} + 3 other teams' AdvantageKit logs`, date: RUN },
   // No false reds, but never fired on our logs, so amber until one does (then set ourFires from that run).
   'can/device-dropout': { logs: 3, fires: 0, ourFires: 0, base: OURS, date: RUN },

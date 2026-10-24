@@ -22,7 +22,7 @@ export default rule({
     { id: 'drain', cause: 'The robot sat powered on for a long time before the match', look: 'how long the robot was on in the queue (the log starts when the robot code starts)' },
   ],
   nextStep: 'Put a battery reading 12.5 V or more at rest on the robot. If a charged battery rests lower, load-test it.',
-  incident: 'One 2026 match: 12.44 V before auto (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 2)',
+  incident: 'One 2026 match: 12.44 V before auto',
 
   check(match) {
     // Before auto in a match log; in Foresight, now (the end of the disabled stretch).

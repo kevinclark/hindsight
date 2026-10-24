@@ -4,7 +4,7 @@
  * Rules never hard-code a log key. They ask this file, so a new robot or a renamed subsystem means editing
  * this file, not the rules. Copy it for next season's robot.
  *
- * Current limits are copied from the robot code on branch `event-mttd`, commit 493666f (2025-11-09), the last
+ * Current limits are copied from the robot code on the event branch `event-mttd`, commit 493666f (2025-11-09), the last
  * commit the robot ran at its Nov 8-9 2025 event. The branch was deleted afterwards; the commit is still in
  * main's history. A limit the code never sets is left out; Phoenix 6 v25 defaults then apply (70 A supply,
  * 120 A stator, both on; the supply cap drops to 40 A after 1.0 s at the limit).
@@ -212,8 +212,8 @@ export const offseason2025: RobotProfile = {
   // Pigeon and the swerve modules report their health: each module logs BaseStatusSignal.refreshAll over its drive
   // TalonFX, steer TalonFX and CANcoder signals as "Module<name>refresh status code" (ModuleIOReal.java:130).
   // Superstructure.java logs its state and the drivers' requests (@AutoLogOutput, 493666f:232-250; the Algae Intake
-  // Request is commented out there but logged by the Friday builds); the "Has Game Piece" flags and the intake
-  // CANranges are what a state can wait for. PRE_CLIMB holds 29-39 s by design (MTTD 2025).
+  // Request is commented out there but logged by the practice-day builds); the "Has Game Piece" flags and the intake
+  // CANranges are what a state can wait for. PRE_CLIMB holds 29-39 s by design (the 2025 offseason event).
   stateMachine: {
     name: 'Superstructure',
     state: '/RealOutputs/Superstructure/State',

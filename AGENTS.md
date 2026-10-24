@@ -43,6 +43,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   through `codeHints(repo @ commit)`. Diff that JSON, before and after, for each distinct commit the library and
   public logs ran (2026-10-23: 146 commits in 3 min, against ~50 min a side for builder-backtest over 857 logs).
   Then run builder-backtest only on the logs whose commit's hints changed, and read every changed hint.
+- A group's limits with no number and no on/off mean *not known* (5531e0e): the Limits tab, budget and wizard say so,
+  never Phoenix's defaults. Phoenix 6 (CurrentLimitsConfigs): SupplyCurrentLowerTime 0 turns the lower limit off, and both
+  Enable flags default to true, so a limit set without its Enable line runs.
 
 ## Plain-node scripts
 

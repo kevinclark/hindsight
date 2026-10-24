@@ -16,7 +16,7 @@
  *     uint16 bandwidth, ÷256 Mb/s
  *     4 bytes power-distribution header; byte 3 is its type, then that type's data:
  *            33 = REV PDH: 33 more bytes; 25 = CTRE PDP: 25 more bytes; anything else: none
- * Sources: the 2026-10-17 Q13 analysis ("How this was produced") and AdvantageScope's DSLogReader.ts (PD sizes).
+ * Sources: the 2026 log analysis and AdvantageScope's DSLogReader.ts (PD sizes).
  * The power-distribution currents are skipped, not decoded: the robot log has better current data.
  */
 

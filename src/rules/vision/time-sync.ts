@@ -3,7 +3,7 @@
  *
  * Checks: alerts saying a coprocessor isn't time-synced ("not connected to the TimeSyncServer") or that vision data
  * has a timestamp in the future, anywhere in the log.
- * Why: CalGames 2026: every boot reported "not connected to the TimeSyncServer", and "Vision Data Coming from The
+ * Why: 2026 offseason event: every boot reported "not connected to the TimeSyncServer", and "Vision Data Coming from The
  * Future" fired 1–3 times per match. Unsynced timestamps put vision poses at the wrong moment.
  */
 import { rule } from '../rule.ts'
@@ -29,7 +29,7 @@ export default rule({
     { id: 'boot-timing', cause: 'The coprocessor booted after the roboRIO, so the clocks had not synced yet', look: 'do the alerts only appear soon after boot and clear on their own? Alert times against the start of the log' },
   ],
   nextStep: 'Match PhotonVision versions between coprocessors and robot code, and confirm time sync connects after boot (PhotonVision dashboard).',
-  incident: 'CalGames 2026: TimeSyncServer warnings at every boot; "Vision Data Coming from The Future" 1–3× per match (Q13 analysis)',
+  incident: '2026 offseason event: TimeSyncServer warnings at every boot; "Vision Data Coming from The Future" 1–3× per match',
 
   check(match) {
     const syncAlerts = match.alerts().filter(isTimeSyncAlert)

@@ -1,5 +1,5 @@
 /**
- * Build a bench-test .wpilog for the limits wizard from real CalGames spin-ups (fixtures/q13-spinups.json):
+ * Build a bench-test .wpilog for the limits wizard from real spin-ups (fixtures/flywheel-spinups.json):
  * three runs, 10 s apart, as a student would record them with a supply limit set in Phoenix Tuner X.
  *
  * With a limit L, each motor's supply current is held at L (± 1.5 A of ripple, like a real limiter) and the run takes
@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { writeWpilog, type Fixture, type FixtureEntry } from './fixture-format.ts'
 
-const SPIN_UPS = [302.13, 351.22, 371.73] // starts in Q13 (s)
+const SPIN_UPS = [302.13, 351.22, 371.73] // starts in log A (s)
 const R_OHMS = 0.011
 const RIPPLE = [-1.5, -0.5, 0.5, 1.5]
 const BENCH_SETPOINT = 43
@@ -26,7 +26,7 @@ export interface BenchOptions {
 }
 
 export function benchLog(opts: BenchOptions): Uint8Array {
-  const fixture = JSON.parse(readFileSync('fixtures/q13-spinups.json', 'utf8')) as Fixture
+  const fixture = JSON.parse(readFileSync('fixtures/flywheel-spinups.json', 'utf8')) as Fixture
   const byName = new Map(fixture.entries.map((e) => [e.name, e]))
   const supplyKeys = fixture.entries.filter((e) => e.name.endsWith('SupplyCurrentAmps')).map((e) => e.name)
   const out = new Map<string, FixtureEntry>(fixture.entries.map((e) => [e.name, { name: e.name, type: e.type, records: [] }]))

@@ -11,8 +11,8 @@
  * history): a flag written false only in a method that runs later, a `config.withCurrentLimits(…)` statement that turns
  * it back on after the field write, and a shared constant configuration turned back on from another class. Each would
  * be reported as off.
- * Why: 2026-Offseason-Robot had the drum and slapdown supply limits at 40 A with their enable flags false at CalGames
- * 2026, where the flywheel motors drew 78-94 A each. Ten commits in 8033's repos switched such a limit back on
+ * Why: 2026-Offseason-Robot had the drum and slapdown supply limits at 40 A with their enable flags false at a 2026 offseason
+ * event, where the flywheel motors drew 78-94 A each. Ten commits in 8033's repos switched such a limit back on
  * (2026-Offseason-Robot c572443 "Re-enable current limits on all mechanisms").
  */
 import type { Node } from '../java.ts'
@@ -26,7 +26,7 @@ export default codeRule({
   title: 'A current limit set but switched off',
   meaning: 'The code gives the motor a current limit and then turns that limit off, so the limit you chose never applies. With the supply limit off, the motor can pull more from the battery than you meant, a common cause of a brownout. With the stator limit off, it can pull far more current when it stalls or starts, heating the motor and loading the mechanism harder than you meant; a supply limit still on caps what it takes from the battery.',
   nextStep: 'Turn the limit on (set its enable flag to true), or delete the value if the motor really should run with no limit.',
-  incident: '2026-Offseason-Robot at CalGames 2026: drum supply limits at 40 A switched off; the flywheel drew 78-94 A per motor',
+  incident: '2026-Offseason-Robot at a 2026 offseason event: drum supply limits at 40 A switched off; the flywheel drew 78-94 A per motor',
 
   check(project) {
     // Keyed by place in the code: the parser gives a new object for the same flag on each read.

@@ -1,6 +1,6 @@
 // Parents (src/rules/parents.ts): a finding that names a group, made by the reduce stage (consolidate in run.ts).
 // The CAN group is shaped like one 2026 match with no bus in the robot profile (25 devices, 614.037–614.284 s); the
-// real log is in calgames-logs.test.ts when it is in ~/Downloads.
+// real log is checked when it is listed in tests/helpers/team-logs.ts.
 import { describe, expect, it } from 'vitest'
 import { CONSOLIDATORS, LINKS, PARENTS, RULES, ruleById } from '../src/rules/index.ts'
 import { consolidate } from '../src/rules/run.ts'
@@ -21,8 +21,8 @@ function finding(rule: string, time: number | null, more: { about?: string; seve
   }
 }
 const dropout = (about: string, time: number, likely = ['shared-wiring']) => finding('can/device-dropout', time, { about, likely })
-/** Q2's shape: 11 devices at 614.037 s, 13 at 614.096 s, the roller follower at 614.284 s. */
-const q2 = () => [
+/** One 2026 match's shape: 11 devices at 614.037 s, 13 at 614.096 s, the roller follower at 614.284 s. */
+const dropouts = () => [
   ...Array.from({ length: 11 }, (_, i) => dropout(`Device ${i}`, 614.036903)),
   ...Array.from({ length: 13 }, (_, i) => dropout(`Device ${11 + i}`, 614.095688)),
   dropout('Intake roller follower', 614.284119),
@@ -44,8 +44,8 @@ describe('parents.ts', () => {
 })
 
 describe('CAN devices dropped together', () => {
-  it('Q2 with no bus mapped: 25 dropouts become one headline with the 25 under it', () => {
-    const all = q2()
+  it('25 dropouts with no bus mapped: 25 dropouts become one headline with the 25 under it', () => {
+    const all = dropouts()
     const parents = consolidate(all, CONSOLIDATORS)
     expect(parents).toHaveLength(1)
     const [group] = parents
@@ -89,7 +89,7 @@ describe('CAN devices dropped together', () => {
 describe('the reduce stage runs to a fixpoint', () => {
   // Not in links.ts (no real log has shown it yet): a brownout explaining a group shows why a second pass is needed.
   const brownoutExplainsGroup = link({ cause: 'power/brownout', explains: GROUP, when: () => true, why: 'test' })
-  const setup = () => [finding('power/brownout', 9.5), ...q2()]
+  const setup = () => [finding('power/brownout', 9.5), ...dropouts()]
 
   it('a link to a parent applies in the second pass, and running again changes nothing', () => {
     const all = setup()
@@ -110,7 +110,7 @@ describe('the reduce stage runs to a fixpoint', () => {
 
   it('a parent that throws is listed as crashed and changes nothing', () => {
     const broken = parent({ ...PARENTS[0], id: 'can/broken', name: () => { throw new Error('typo') } })
-    const all = q2()
+    const all = dropouts()
     const crashed: { rule: string; reason: string }[] = []
     expect(consolidate(all, { parents: [broken] }, crashed)).toEqual([])
     expect(crashed).toEqual([{ rule: 'parent can/broken', reason: 'Error: typo' }])
@@ -121,14 +121,14 @@ describe('the reduce stage runs to a fixpoint', () => {
 describe('parents in the lists', () => {
   it('a parent sits just before the first of its group in the list, and is left out when none of its group is listed', () => {
     const loss = finding('comms/loss', 500)
-    const all = [loss, ...q2()]
+    const all = [loss, ...dropouts()]
     const [group] = consolidate(all, CONSOLIDATORS)
     expect(withParents(all, [group]).slice(0, 3)).toEqual([loss, group, all[1]])
     expect(withParents([loss], [group])).toEqual([loss])
   })
 
   it('a group that fires in every match folds as standing, though its parent is never in the session history', () => {
-    const all = q2()
+    const all = dropouts()
     const [group] = consolidate(all, CONSOLIDATORS)
     const tree = nest(withParents(all, [group]), [...all, group])
     const standing = new Set(all.map((f) => f.key))
@@ -142,8 +142,8 @@ describe('alerts the robot code raised for a group', () => {
   const group = (devices: string, at = 614) => consolidate(devices.split(', ').map((d, i) => dropout(d, at + i * 0.01)), { parents: PARENTS })[0]
   const alert = (text: string, time = 614.5) => finding('alerts/passthrough', time, { about: text, severity: 'error' })
 
-  it('Q2 with no bus: module and gyro alerts nest under the group, in the pass after it is made', () => {
-    const all = q2().map((f, i) => ({ ...f, about: Q2_DEVICES[i] }))
+  it('the 25 dropouts with no bus: module and gyro alerts nest under the group, in the pass after it is made', () => {
+    const all = dropouts().map((f, i) => ({ ...f, about: DROPOUT_DEVICES[i] }))
     const alerts = [alert('Missing Module Data', 613.9), alert('Disconnected turn motor on Back Left module!'), alert('Missing Gyro Data')]
     const parents = consolidate([...all, ...alerts], CONSOLIDATORS)
     expect(parents[0].evidence[GROUP_DEVICES]).toContain('Back Left steer')
@@ -166,7 +166,7 @@ describe('alerts the robot code raised for a group', () => {
 })
 
 /** one 2026 match's 25 devices in the order they dropped. */
-const Q2_DEVICES = [
+const DROPOUT_DEVICES = [
   'Flywheel leader', 'Flywheel follower 16', 'Flywheel follower 17', 'Flywheel follower 18', 'Hood', 'Intake pivot',
   'Intake roller leader', 'Indexer', 'Kicker leader', 'Kicker follower', 'Intake CANcoder', 'Front Left drive',
   'Front Right drive', 'Back Left drive', 'Back Right drive', 'Front Left steer', 'Front Right steer', 'Back Left steer',

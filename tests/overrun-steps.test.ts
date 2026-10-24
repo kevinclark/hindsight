@@ -1,10 +1,10 @@
-// loop/overrun names the slow step from the robot console's Tracer lines. Synthetic logs, plus Q13 when it is on disk.
+// loop/overrun names the slow step from the robot console's Tracer lines. Synthetic logs, plus the team's log A when it is listed.
 import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { analyzeFiles } from '../src/analyze.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
-import { CALGAMES, readInput } from './helpers/load.ts'
+import { LOGS, readInput } from './helpers/load.ts'
 
 const STEP_LABEL = 'slow steps over 10 ms (console)'
 const ORIGINAL_NEXT_STEP = 'Use the Tracer/* entries to find the slow step in auto and move it off the main loop or cache it.'
@@ -37,7 +37,7 @@ function overrunFinding(extra: FixtureEntry[]) {
 const epoch = (name: string, seconds: string) => `\t${name}: ${seconds}s\n`
 
 describe('loop/overrun slow steps', () => {
-  // Real logs split a list of epochs between records at a line break (CalGames and one practice log: ~7,700 records,
+  // Real logs split a list of epochs between records at a line break (the team's 2026 logs and one practice log: ~7,700 records,
   // none cut mid-line).
   it('names the worst step, with epoch lines split across two records', () => {
     const finding = overrunFinding([consoleOf([
@@ -89,8 +89,8 @@ describe('loop/overrun slow steps', () => {
   })
 })
 
-describe('loop/overrun slow steps on the Q13 log', () => {
-  const path = CALGAMES.q13
+describe('loop/overrun slow steps on the team\'s log A', () => {
+  const path = LOGS.a
   it.skipIf(!existsSync(path))('names SwerveSubsystem.periodic()', () => {
     const report = analyzeFiles([readInput(path)], offseason2026).analyses[0].report
     const finding = report.findings.find((f) => f.rule === 'loop/overrun')

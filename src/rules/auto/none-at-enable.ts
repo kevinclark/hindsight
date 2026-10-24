@@ -28,7 +28,7 @@ export default rule({
     { id: 'on-purpose', cause: 'The team chose to run no auto (some practice matches)', look: 'ask the drive team' },
   ],
   nextStep: 'Pick the auto on the dashboard after the field connects, and have a second person read it back before every match.',
-  incident: 'The chooser starts at "None" on every boot; MTTD 2025 practice 5 ran its whole auto on "None" and the robot did not move',
+  incident: 'The chooser starts at "None" on every boot; a 2025 practice match ran its whole auto on "None" and the robot did not move',
 
   check(match) {
     const first = match.enabled[0]

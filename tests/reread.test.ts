@@ -94,7 +94,7 @@ describe('session-findings.json', () => {
 
 describe('the shape of a saved summary', () => {
   it('has the keys SUMMARY_SHAPE was set for', () => {
-    const [log] = loadFixture('q13-auto-and-comms').filter((f) => f.name.endsWith('.wpilog'))
+    const [log] = loadFixture('auto-and-comms').filter((f) => f.name.endsWith('.wpilog'))
     const summary = summarizeLog(log)!
     // What a summary of one log has. Keys present only sometimes (pieces) aren't on a single log and aren't pinned.
     const keys = Object.keys(summary).sort()

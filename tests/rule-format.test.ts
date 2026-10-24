@@ -80,12 +80,12 @@ describe('cause ids', () => {
     }
   })
   it('no rule names a cause it does not have (the runner reports that as a crash)', () => {
-    const logs = ['q13-auto-and-comms', 'q21-follower-mismatch', 'p0-brownout', 'q13-spinups', 'q13-drive-plateau']
+    const logs = ['auto-and-comms', 'follower-mismatch', 'brownout', 'flywheel-spinups', 'drive-plateau']
     for (const name of logs) for (const a of analyzeFixture(name).analyses) expect(a.report.crashed, name).toEqual([])
   })
   it('a typo in a likely id shows as a crashed rule', () => {
     const typo = { ...template, id: 'example/typo', check: () => ({ message: 'x', likely: ['no-such-cause'] }) }
-    const match = analyzeFixture('q13-auto-and-comms').analyses[0].match
+    const match = analyzeFixture('auto-and-comms').analyses[0].match
     expect(runRules(match, [typo]).crashed[0].reason).toMatch(/no-such-cause/)
   })
 })

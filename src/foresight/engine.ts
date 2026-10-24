@@ -88,7 +88,7 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   const snapshot = input.snapshot?.snapshot
   if (snapshotUsed && snapshot) joinWatched(report, snapshot, new MatchView(match).watchedDevices())
   // The backtest only proved checks on stretches before any enable. After a drive the battery is still recovering
-  // (CalGames: 11.7–12.1 V 10 s after the match, 12.3 V after 160 s), so rest voltage stays amber then.
+  // (2026 logs: 11.7–12.1 V 10 s after the match, 12.3 V after 160 s), so rest voltage stays amber then.
   const unproven: Record<string, string> = Object.fromEntries(SNAPSHOT_RULES.map((r) => [r, SNAPSHOT_PROOF]))
   if (lastEnable) unproven['power/rest-voltage'] = `amber: the robot was driven ${Math.round(now - lastEnable.end)} s ago and the battery is still recovering; proven only before any enable`
   // Context only, never in the verdict: whether Phoenix's hoot is recording (from the Hindsight companion).

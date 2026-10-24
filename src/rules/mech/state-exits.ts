@@ -3,10 +3,10 @@
  *
  * For each exit from the state while enabled, in this log and every other loaded log of the same robot, look at the
  * profile's sensors in the 0.3 s before the exit: which one flipped, and which way. A flip in the same loop as the
- * exit is left out, because a sensor can change as a result of leaving (MTTD 2025: "At Extension? → false" came with
+ * exit is left out, because a sensor can change as a result of leaving (2025 offseason event: "At Extension? → false" came with
  * 100 % of exits). The sensor and direction seen before the most exits is the trigger, named only with 5 exits or more
  * and 80 % of them. Its base rate (how much of the enabled time has such a flip in the 0.3 s before) says whether
- * the match is better than chance: arm has-piece → true came before 33 of 33 MTTD handoff exits, at a 1 % base rate.
+ * the match is better than chance: arm has-piece → true came before 33 of 33 handoff exits, at a 1 % base rate.
  */
 import { isTrue, plural } from '../rule.ts'
 import { inside, lengthOf, type MatchView } from '../view.ts'

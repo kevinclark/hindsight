@@ -27,7 +27,7 @@ export default rule({
     { id: 'device-fault', cause: 'One device faulting and taking the others with it', look: 'its status light during a dropout; the vendor tool (Phoenix Tuner, REV Hardware Client) for firmware and faults' },
   ],
   nextStep: 'Check the CANivore itself: its USB cable to the roboRIO (seated and strain-relieved), its power wiring and the CAN wiring at it. Have the code log its status every loop, so the next drop says why.',
-  incident: 'One 2025 match: the whole CANivore bus gone for 58 s (mttd-2025-context.md §1)',
+  incident: 'One 2025 match: the whole CANivore bus gone for 58 s',
   needsProfile: true,
 
   check(match) {
@@ -53,7 +53,7 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
   const first = timed[0].start
   const earlier = lowestEarlier(match, battery, first)
   const low = voltages.length > 0 && voltages.every((v) => v < LOW_VOLTS)
-  // A deeper but shorter sag earlier doesn't rule a sag out (Q41: cause unknown), but it does stop it being "likely".
+  // A deeper but shorter sag earlier doesn't rule a sag out (one 2025 match: cause unknown), but it does stop it being "likely".
   const sagExplains = low && !(earlier <= Math.min(...voltages))
   // How long the bus was gone: until the last member came back, per drop.
   const gone = drops.map((d, i) => lastBackAt(bus, d.start) - timed[i].start)
