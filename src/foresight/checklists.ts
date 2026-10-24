@@ -89,7 +89,7 @@ const SAME_EVENT_MS = 4 * 86400e3
  */
 export function isCarried(session: Session, todaySessionId: string, external: { key?: string; name: string } | null, now: number): boolean {
   if (session.id === todaySessionId) return false
-  if (external?.key && session.event?.key === external.key) return false
+  if (external?.key && session.event?.key) return session.event.key !== external.key // two named events: the keys decide, whatever the dates
   const norm = (x: string) => x.trim().toLowerCase()
   if (external && norm(sessionEventName(session)) === norm(external.name)) return false
   const last = Math.max(0, ...[...session.matches, ...(session.pitRuns ?? [])].map((m) => m.playedAt ?? 0))
@@ -199,7 +199,9 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     const notRan = verdict ? new Set([...verdict.notChecked, ...verdict.crashed].map((x) => x.rule)) : null
     const ran = { n: notRan ? mine_rules.filter((r) => !notRan.has(r)).length : 0, of: mine_rules.length }
     // A system whose checks all failed to run is never Go: a person checks it, and a fresh tick says they did.
-    const hand = !!verdict && !unjudged && ran.n === 0 && ran.of > 0
+    // A system with a step of the team's own (HAND_STEPS: the drivetrain, on blocks, every match) always needs the tick, however many
+    // of its checks ran; any other waits for one only when none ran. In queue mode the first pit-check record therefore waits for that tick.
+    const hand = !!verdict && !unjudged && ((ran.n === 0 && ran.of > 0) || system in HAND_STEPS)
     const ticked = input.ticks?.get(system)
     const handDone = hand && !!ticked && !ticked.old
     const step = hand ? HAND_STEPS[system] ?? null : null

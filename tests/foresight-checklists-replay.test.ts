@@ -13,11 +13,13 @@ import { RecordStore } from '../src/foresight/records.ts'
 import { evaluateForesight, SETTLE_SECONDS } from '../src/foresight/engine.ts'
 import { foresightKeysIn } from '../src/foresight/keys.ts'
 import { DATALOGMANAGER_SIGNALS } from '../src/profiles/datalogmanager.ts'
-import { boardFor, openDeferrals, queueChecklist } from '../src/foresight/checklists.ts'
+import { boardFor, openDeferrals, queueChecklist, tickAt } from '../src/foresight/checklists.ts'
 import { summarizeLog } from '../src/session/summary.ts'
 import type { Session } from '../src/session/session.ts'
 import type { BoardEvent } from '../src/triage/history.ts'
 
+// The drivetrain's on-blocks tick, fresh (Kevin, 2026-10-24: every match).
+const BLOCKS = new Map([['Drivetrain' as const, tickAt('pit', new Date().toISOString(), Date.now())]])
 const have = !!TEAM.logA && !!TEAM.logC && existsSync(TEAM.logA) && existsSync(TEAM.logC)
 
 /** The engine's check on the field-attached, disabled robot just before its first enable. */
@@ -60,7 +62,7 @@ describe.skipIf(!have)('the queue checklist on the team\'s logs', () => {
     ])
     const open = openDeferrals(boardFor(session, history, profile, new Date()), profile)
     expect(open).toHaveLength(2)
-    const q = queueChecklist({ verdict: result.verdict, why: '', profile, deferrals: open, deferralNote: null })
+    const q = queueChecklist({ verdict: result.verdict, why: '', profile, deferrals: open, deferralNote: null, ticks: BLOCKS })
     expect(q.word).toBe('GO WITH 2 DEFERRALS')
     expect(q.kind).toBe('GO WITH DEFERRALS')
     expect(q.rows.flatMap((r) => r.deferrals).map((d) => d.workaround).sort()).toEqual(['test workaround 1', 'test workaround 2'])
@@ -74,7 +76,7 @@ describe.skipIf(!have)('the queue checklist on the team\'s logs', () => {
     const reds = result.verdict.items.filter((i) => i.level === 'red')
     expect(reds.length).toBeGreaterThan(0)
     const deferrals = reds.map((i) => ({ key: i.finding.key, system: 'Code' as const, title: 'test issue', workaround: 'test workaround', until: 'the end of the event' }))
-    const q = queueChecklist({ verdict: result.verdict, why: '', profile, deferrals, deferralNote: null })
+    const q = queueChecklist({ verdict: result.verdict, why: '', profile, deferrals, deferralNote: null, ticks: BLOCKS })
     expect(q.rows.some((r) => r.word === 'No-go')).toBe(false)
     expect(q.word).toBe(`GO WITH ${deferrals.length} ${deferrals.length === 1 ? 'DEFERRAL' : 'DEFERRALS'}`)
   })

@@ -35,7 +35,9 @@ const RED_POWER = finding('power/rest-voltage', null)
 const RED_CAMERA = finding('vision/stale', 'Front camera')
 const RED_CODE = finding('build/dirty', null)
 const defer = (f: ReturnType<typeof finding>, system: OpenDeferral['system'], workaround = 'test workaround'): OpenDeferral => ({ key: f.key, system, title: `${system} · ${f.rule}`, workaround, until: 'the end of the event' })
-const checklist = (v: ReturnType<typeof verdict> | null, deferrals: OpenDeferral[] | null = [], note: string | null = null) => queueChecklist({ verdict: v, why: 'test not connected', profile, deferrals, deferralNote: note })
+// The drivetrain always needs its on-blocks tick (Kevin, 2026-10-24): these tests have it, the ones about it do not.
+const BLOCKS = new Map([['Drivetrain' as const, tickAt('pit', new Date().toISOString(), Date.now())]])
+const checklist = (v: ReturnType<typeof verdict> | null, deferrals: OpenDeferral[] | null = [], note: string | null = null) => queueChecklist({ verdict: v, why: 'test not connected', profile, deferrals, deferralNote: note, ticks: BLOCKS })
 const row = (c: ReturnType<typeof checklist>, system: string) => c.rows.find((r) => r.system === system)!
 
 describe('a finding goes to a system by the board\'s own grouping', () => {
@@ -382,6 +384,10 @@ describe('the fix pass, round 2', () => {
     expect(isCarried(scene, scene.id, null, week)).toBe(false)
     expect(isCarried(scene, 'practice:x', null, day1 + 86400e3)).toBe(false)
     expect(isCarried(scene, 'practice:x', null, week)).toBe(true)
+    // Two named events with different keys: carried inside the window too.
+    const named = { ...scene, event: { key: '2099test', name: 'Test Regional' } } as unknown as typeof scene
+    expect(isCarried(named, 'practice:x', { key: '2099other', name: 'Other Regional' }, day1 + 3.5 * 86400e3)).toBe(true)
+    expect(isCarried(named, 'practice:x', { key: '2099test', name: 'Test Regional' }, day1 + 3.5 * 86400e3)).toBe(false)
   })
 
   it('3: a tick dated after now reads clock ahead and is not fresh', () => {
@@ -439,10 +445,20 @@ describe('a system whose checks all failed to run is never Go (Kevin, 2026-10-24
     expect(row(p, 'Power').text).toMatch(/^Check by hand: /)
   })
 
+  it('the drivetrain needs its tick however many of its checks ran', () => {
+    const none = queueChecklist({ verdict: verdict([]), why: '', profile, deferrals: [], deferralNote: null })
+    expect(at(none)).toMatchObject({ word: 'Check by hand', ran: { n: 3, of: 3 } })
+    expect(none.word).toBe('NOT CHECKED')
+    const some = queueChecklist({ verdict: verdict([], skipAll.slice(0, 1)), why: '', profile, deferrals: [], deferralNote: null })
+    expect(at(some).word).toBe('Check by hand')
+    expect(queueChecklist({ verdict: verdict([]), why: '', profile, deferrals: [], deferralNote: null, ticks: BLOCKS }).word).toBe('GO')
+  })
+
   it('a No-go still beats it, and a system with some checks run is not by hand', () => {
     const c = queueChecklist({ verdict: verdict([RED_POWER], skipAll), why: '', profile, deferrals: [], deferralNote: null })
     expect(row(c, 'Power').word).toBe('No-go')
-    const some = queueChecklist({ verdict: verdict([], skipAll.slice(0, 2)), why: '', profile, deferrals: [], deferralNote: null })
-    expect(at(some).word).toBe('Go')
+    // Power with only some of its checks run is Go: only a system with none run, or the drivetrain, waits for a person.
+    const some = queueChecklist({ verdict: verdictFor(report([], [{ rule: 'power/rest-voltage', reason: 'missing a signal' }]), {}), why: '', profile, deferrals: [], deferralNote: null, ticks: BLOCKS })
+    expect(row(some, 'Power').word).toBe('Go')
   })
 })

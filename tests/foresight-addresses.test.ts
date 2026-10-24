@@ -10,10 +10,12 @@ describe('the robot addresses come from the team number', () => {
     expect(values(254)).toEqual(['172.22.11.2', '10.2.54.2', 'roborio-254-frc.local'])
     expect(values(8033)).toEqual(['172.22.11.2', '10.80.33.2', 'roborio-8033-frc.local'])
     expect(values(9999)[1]).toBe('10.99.99.2')
+    expect(values(12345)).toEqual(['172.22.11.2', '10.123.45.2', 'roborio-12345-frc.local'])
+    expect(values(25599)[1]).toBe('10.255.99.2')
     expect(values(1000)[1]).toBe('10.10.0.2')
   })
   it('no team, or one the rule cannot say: USB only, and a line says a team number adds the others', () => {
-    for (const t of [null, 0, 10000, 3.5]) {
+    for (const t of [null, 0, 25600, 3.5]) {
       const r = robotAddresses(t)
       expect(r.addresses.map((a) => a.value)).toEqual(['172.22.11.2'])
       expect(r.note).toMatch(/team number/)

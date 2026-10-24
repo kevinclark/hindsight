@@ -7,7 +7,7 @@
   Read-only (src/foresight/nt4-client.ts), and never on the field: it closes for good when the field attaches.
 -->
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { ForesightLive, type LiveStatus } from '../foresight/live.ts'
   import { SETTLE_SECONDS } from '../foresight/engine.ts'
   import { FIELD_MESSAGE, isFieldLocked } from '../foresight/nt4-client.ts'
@@ -57,11 +57,13 @@
   let tbaEvents = $state.raw<Parameters<typeof eventFromSchedule>[0]>([])
   let libraryLogs = $state.raw<Parameters<typeof eventFromLibrary>[0]>([])
   let libraryReadAt = 0
+  let reading = false
   async function readLibrary() {
     const app = hub()
     if (!app) return
     libraryReadAt = Date.now()
-    try { libraryLogs = (await app.library()).entries.map((e) => e.record) } catch { /* no library answer: the last one stands */ }
+    reading = true
+    try { libraryLogs = (await app.library()).entries.map((e) => e.record) } catch { /* no library answer: the last one stands */ } finally { reading = false }
   }
   $effect(() => {
     const app = hub()
@@ -76,7 +78,8 @@
     return () => { cancelled = true; stop() }
   })
   // On each status update, while no event day is known, read the library again at most every 10 s.
-  $effect(() => { void status; if (hub() && !eventFromLibrary(libraryLogs, clock) && Date.now() - libraryReadAt > 10_000) void readLibrary() })
+  // Only while connected, with no event day known from either signal, and with no read in flight; neither the clock nor the answer re-runs it.
+  $effect(() => { void status; if (hub() && connected && !reading && !untrack(() => external) && Date.now() - libraryReadAt > 10_000) void readLibrary() })
   const external = $derived<TodayEvent | null>(eventFromSchedule(tbaEvents, clock) ?? eventFromLibrary(libraryLogs, clock))
   const today = $derived(todayMode(sessions, clock, sessionNames(), external))
 
