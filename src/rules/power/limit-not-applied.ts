@@ -13,6 +13,7 @@
  * four motors pulled 78–94 A each during spin-up.
  */
 import { amps, beyond, isFalse, rule, round, totalSeconds, type Problem } from '../rule.ts'
+import { CTRE_CURRENT_LIMITS, CTRE_CURRENT_LIMITS_CONFIG } from '../sources.ts'
 import type { LimitLines } from '../../code/limit-lines.ts'
 import { lengthOf, MissingSignal, type GroupView, type MatchView, type MotorView, type Window } from '../view.ts'
 
@@ -30,6 +31,14 @@ export default rule({
   ],
   nextStep: 'If the limit is switched off in code, switch it on and measure the mechanism before and after. If it is on, check the config reaches every motor.',
   incident: '2026 offseason event: flywheel 78–94 A vs a disabled 40 A supply limit',
+  sources: [
+    { ...CTRE_CURRENT_LIMITS_CONFIG, says: 'SupplyCurrentLimit defaults to 70 A and StatorCurrentLimit to 120 A, and each takes effect only when its Enable flag is true.' },
+    { ...CTRE_CURRENT_LIMITS, says: 'Current limits must be enabled with their own enable config as well as set; the supply limit drops to the lower limit after being active for the lower time.' },
+  ],
+  thresholds: [
+    { name: 'current over the limit', value: 'above 120 % for more than 0.2 s', basis: 'measured', how: 'At the 2026 offseason event, bursts above the limit lasted 0.21 s or less: the limiter catching up.' },
+    { name: 'share of enabled time over 110 % (evidence only)', value: 'not a verdict', basis: 'measured', how: 'At the 2026 offseason event it was 154 to 233 bursts per motor per match, median 0.02 s (one 50 Hz sample), longest 0.26 s.' },
+  ],
   forEach: 'motorGroup',
 
   check(group, match) {

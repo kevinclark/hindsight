@@ -17,6 +17,7 @@
  */
 import { isUncommitted } from '../../match/git-dirty.ts'
 import { rule, round, secs } from '../rule.ts'
+import { GAME_MANUAL_2026 } from '../sources.ts'
 import type { MatchView, Signal, Window } from '../view.ts'
 
 const TILTED_DEGREES = 15 // the same line as collision/tilt
@@ -37,6 +38,14 @@ export default rule({
   ],
   nextStep: 'Ask the drive team why they disabled it, then check what happened in the seconds before: tilt, a mechanism out of position, a stuck path.',
   incident: 'One 2026 match: disabled at 282.7 s with 7.4 s of auto left after the hood hit the trench',
+  sources: [
+    { ...GAME_MANUAL_2026, says: 'Section 5.9.1: the A-Stop button disables a robot for the rest of auto, and the stack light blinks when a robot is disabled after an A-Stop press; the E-Stop is a separate button.' },
+  ],
+  thresholds: [
+    { name: 'disabled with auto time left', value: 'more than 1 s of auto left', basis: 'judgment', how: 'Chosen.' },
+    { name: 'tilt that points to a wedge', value: '15° in the 3 s before the disable', basis: 'judgment', how: 'The same line as collision/tilt.' },
+    { name: 'a run counts as the whole auto', value: 'within 1 s of the auto length', basis: 'judgment', how: 'Assumed.' },
+  ],
 
   check(match) {
     const autoStart = match.autoStart

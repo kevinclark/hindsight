@@ -8,6 +8,7 @@
  * refresh status went CanMessageStale and the Pigeon's flag false. Only the Pigeon was reported, as if alone.
  */
 import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
+import { CD_CANIVORE_USB, CTRE_CAN_TROUBLESHOOTING } from '../sources.ts'
 import type { Episode, MatchView, Signal } from '../view.ts'
 import { canBuses, dropAround, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, TOGETHER_SECONDS, watched, windowStart, type CanBus } from './bus.ts'
 
@@ -28,6 +29,14 @@ export default rule({
   ],
   nextStep: 'Check the CANivore itself: its USB cable to the roboRIO (seated and strain-relieved), its power wiring and the CAN wiring at it. Have the code log its status every loop, so the next drop says why.',
   incident: 'One 2025 match: the whole CANivore bus gone for 58 s',
+  sources: [
+    { ...CTRE_CAN_TROUBLESHOOTING, says: 'A CAN bus needs a 120 Ω terminator at each end (the PDP, CANivore and roboRIO have integrated termination); flicking the wiring reproduces intermittent faults.' },
+    { ...CD_CANIVORE_USB, says: 'One team\'s CANivore bus stayed down until a roboRIO restart after its STAT LED double-blinked red (they read it as a USB problem, not CAN).' },
+  ],
+  thresholds: [
+    { name: 'drops that count as one event', value: 'starting within 1 s of each other', basis: 'judgment', how: 'Assumed.' },
+    { name: 'devices needed to call it the bus', value: 'at least 3 reporting their health', basis: 'judgment', how: 'Assumed.' },
+  ],
   needsProfile: true,
 
   check(match) {

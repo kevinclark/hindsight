@@ -13,6 +13,7 @@
  * for a long time, or with supply limits off; a warm breaker, or loose lugs, trip it sooner.
  */
 import { rule, round, type PlotRequest } from '../rule.ts'
+import { BUSSMANN_SERIES_18X, CD_MAIN_BREAKER_CAUSES, CD_MAIN_BREAKER_TRIPS, CTRE_CURRENT_LIMITS, GAME_MANUAL_2026, REV_ATO_BREAKERS } from '../sources.ts'
 import { DT, type PowerGrid } from '../../power/battery-model.ts'
 import { inside, type MatchView } from '../view.ts'
 
@@ -34,6 +35,18 @@ export default rule({
   ],
   nextStep: 'Set a sustained supply limit on the drive and the biggest mechanisms (a lower limit after about 1 s), and make sure the sum of those sustained limits stays at or under about 120 A.',
   incident: 'Main-breaker trips while being pushed are a known FRC failure (Chief Delphi threads on main-breaker trips, 2024 and 2026).',
+  sources: [
+    { ...GAME_MANUAL_2026, says: 'Rule R609: the robot has a single main 120 A surface-mount circuit breaker (Cooper Bussmann CB185-120 or the listed equivalents); R612 allows only one 120 A breaker.' },
+    { ...BUSSMANN_SERIES_18X, says: 'The Series 18X data sheet describes a thermal-type breaker and gives a time versus percent-of-rated-current curve and a temperature derating curve.' },
+    { ...CTRE_CURRENT_LIMITS, says: 'FRC breakers mostly trip from heat and can carry well above their rating for a limited time; check the breaker data sheet for trip times.' },
+    { ...REV_ATO_BREAKERS, says: 'A breaker is designed to trip at a temperature after a set time, not at an exact current; its rating is the most it is guaranteed to carry without tripping (the page is about a 40 A ATO breaker).' },
+    { ...CD_MAIN_BREAKER_TRIPS, says: 'A poster reports more main-breaker trips in 2024 as teams moved to swerve without current limits; one team\'s PDH log showed about 120 A from the battery for most of a match until the breaker tripped.' },
+    { ...CD_MAIN_BREAKER_CAUSES, says: 'One team traced main-breaker trips to a damaged drive motor drawing excess current, a loose power wire, a breaker that popped on a tap, and battery leads shorting to the frame.' },
+  ],
+  thresholds: [
+    { name: 'trip band', value: '100 % to 130 % of 120 A at 25 °C', basis: 'judgment', how: 'Read by eye from the data sheet curve (±15 to 30 %), so the band is wide on purpose.' },
+    { name: 'heating time constant', value: '90 s', basis: 'measured', how: 'The lowest time constant under which three real matches that did not trip stay under the slow edge of the band (one reached 128 % at 90 s and 150 % at 30 s).' },
+  ],
 
   check(match) {
     if (match.wholeMatch.length === 0) return match.couldNotCheck('no match in this log')

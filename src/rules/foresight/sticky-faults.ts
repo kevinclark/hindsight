@@ -11,6 +11,7 @@
  * Amber only: no log of ours has this reading yet, so it has never fired for real (proven.ts).
  */
 import { rule } from '../rule.ts'
+import { CTRE_FAULTS } from '../sources.ts'
 import { hex32 } from '../../match/companion.ts'
 
 export default rule({
@@ -27,6 +28,9 @@ export default rule({
   ],
   nextStep: 'Open the device in Phoenix Tuner X to see which fault it is. Save the log (and a robot snapshot) before anyone presses Clear Faults.',
   incident: 'Hindsight companion library (2026-10-20): it logs each device\'s sticky faults; Clear Faults in Tuner X wipes them unread',
+  sources: [
+    { ...CTRE_FAULTS, says: 'Live faults report current conditions; sticky faults stay set until cleared with Tuner X Clear Faults or clearStickyFaults() in robot code.' },
+  ],
   forEach: 'watchedDevice',
 
   check(device, match) {

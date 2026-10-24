@@ -11,6 +11,7 @@
  */
 import type { Pose2d } from '../../readers/wpilog.ts'
 import { maxOf, pct, percentile, plural, rule, round } from '../rule.ts'
+import { PHOTON_MULTITAG, WPILIB_POSE_ESTIMATORS } from '../sources.ts'
 import type { MatchView } from '../view.ts'
 import { isTimeSyncAlert } from './time-sync.ts'
 
@@ -31,6 +32,16 @@ export default rule({
   ],
   nextStep: 'Reject vision poses more than ~0.5 m from odometry, or weight them by ambiguity and tag distance; check camera mounts and calibration.',
   incident: '2026 offseason event: 5–15 % of accepted vision poses over 0.5 m from odometry',
+  sources: [
+    { ...WPILIB_POSE_ESTIMATORS, says: 'Vision x and y standard deviations should scale with distance from the tag; a smaller standard deviation makes the estimator trust a measurement more.' },
+    { ...PHOTON_MULTITAG, says: 'MultiTag combines several visible tags into a better estimate and needs an accurate field layout; any difference from the real tags adds error to the pose.' },
+  ],
+  thresholds: [
+    { name: 'distance from odometry', value: 'over 0.5 m', basis: 'judgment', how: 'Assumed from three logs; every log so far fires it.' },
+    { name: 'share of accepted poses', value: 'more than 5 %', basis: 'judgment', how: 'Assumed from three logs.' },
+    { name: 'poses needed', value: 'at least 20', basis: 'judgment', how: 'Fewer can\'t give a rate worth acting on.' },
+    { name: 'odometry off the field', value: 'more than 1 m past the edge', basis: 'judgment', how: 'Assumed: half a robot plus drift.' },
+  ],
   forEach: 'camera',
 
   check(camera, match) {

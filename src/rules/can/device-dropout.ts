@@ -15,6 +15,7 @@
  * over the 1.5 s before. No log of ours has the companion's keys yet.
  */
 import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
+import { CTRE_CAN_TROUBLESHOOTING, WPILIB_PREEMPTIVE } from '../sources.ts'
 import type { DeviceView, Episode, MatchView, WatchedDeviceView } from '../view.ts'
 import { busOf, DROP_LOOK_BACK, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, watched, windowStart } from './bus.ts'
 import { DEVICE_LATE_SECONDS, DEVICE_READ_SECONDS } from '../../match/companion.ts'
@@ -36,6 +37,14 @@ export default rule({
   ],
   nextStep: 'Tug-test the CAN connectors on that device and the ones next to it, and check the CAN termination at the far end of the chain.',
   incident: 'One 2026 match: flywheel follower 16 off CAN 7 times at 5.85–6.31 V (the match analysis); #in-hindsight: ≥ 11 CAN dropout episodes',
+  sources: [
+    { ...CTRE_CAN_TROUBLESHOOTING, says: 'Bad crimps and connection points are the most common cause of intermittent connection issues; tug-test each crimped wire and jostle the CAN wiring to reproduce the red LED blips.' },
+    { ...WPILIB_PREEMPTIVE, says: 'Tug-test the power connectors in the pit (none should pull out) and wiggle the battery connector; it is better for the robot to fail in the pits than in a match.' },
+  ],
+  thresholds: [
+    { name: 'battery voltage that points at the power path', value: 'under 7 V', basis: 'judgment', how: 'Chosen, just above the 6.75 V roboRIO 2 default brownout level; the one case seen dropped at 5.85 to 6.31 V.' },
+    { name: 'voltage read before each drop', value: 'the lowest in the 0.5 s before', basis: 'judgment', how: 'A Connected flag goes false about this long after the device stops answering (Phoenix\'s isConnected).' },
+  ],
   forEach: 'device',
 
   check(device, match) {

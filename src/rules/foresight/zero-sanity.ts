@@ -10,6 +10,7 @@
  * puts the mechanism 100° off; the robot then drives it into a hard stop.
  */
 import { rule, round } from '../rule.ts'
+import { CTRE_CANCODER, CTRE_REMOTE_SENSORS } from '../sources.ts'
 import type { Problem } from '../rule.ts'
 
 const MAX_OFF_DEGREES = 2
@@ -31,6 +32,14 @@ export default rule({
   ],
   nextStep: 'Power-cycle the robot so the motor re-seeds from the encoder, and check again; if it is still off, check the encoder\'s magnet offset in Phoenix Tuner X.',
   incident: 'Foresight proposal §5 (zero sanity); the intake pivot is seeded from its CANcoder at start-up (SlapdownSubsystem.slapdownInit)',
+  sources: [
+    { ...CTRE_REMOTE_SENSORS, says: 'SyncCANcoder checks the motor rotor against the remote CANcoder and reports when they differ significantly.' },
+    { ...CTRE_CANCODER, says: 'The CANcoder\'s absolute-position zero offset is its Magnet Offset config, which Tuner X can write.' },
+  ],
+  thresholds: [
+    { name: 'motor vs absolute encoder', value: 'more than 2°', basis: 'judgment', how: 'Assumed. Measured at rest on the field: the 2026 intake pivot agreed within 0.24° (median 0.04 to 0.08°); while moving, up to 6.7°.' },
+    { name: 'position averaged over', value: 'the last 2 s', basis: 'judgment', how: 'Chosen.' },
+  ],
 
   check(match) {
     const stretch = match.pitStretch

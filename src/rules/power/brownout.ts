@@ -7,6 +7,7 @@
  * Why: One 2026 match browned out 53 times in the last 18 s; nine shots in a row failed.
  */
 import { plural, rule, round } from '../rule.ts'
+import { CTRE_CURRENT_LIMITS, WPILIB_BROWNOUTS } from '../sources.ts'
 import { MOTOR_CURRENT_LABEL, type PowerGrid } from '../../power/battery-model.ts'
 import { batteryHealth } from './battery-health.ts'
 
@@ -24,6 +25,10 @@ export default rule({
   ],
   nextStep: 'Find the loads on at each sag (Power tab), turn on current limits for the big ones, and load-test the battery used.',
   incident: 'One 2026 match: brownouts from 532.8 s, battery collapse after ~3.5 Ah',
+  sources: [
+    { ...WPILIB_BROWNOUTS, says: 'Below 6.3 V (6.75 V by default on a roboRIO 2) the roboRIO enters brownout protection: it disables its outputs and sends a disable to CAN motor controllers until the voltage is back above 7.5 V.' },
+    { ...CTRE_CURRENT_LIMITS, says: 'Stator limits are effective against brownouts and supply limits help prevent them; check the battery, leads and power wiring before tightening limits.' },
+  ],
 
   check(match) {
     const onsets = match.signal('brownedOut').turnsOn()

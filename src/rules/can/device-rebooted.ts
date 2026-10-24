@@ -12,6 +12,7 @@
  * keys yet: the rule has never fired on a real robot.
  */
 import { plural, round, rule, voltageList, type Problem } from '../rule.ts'
+import { CTRE_PARENT_DEVICE_API, CTRE_TALONFX_API } from '../sources.ts'
 import type { MatchView, WatchedDeviceView } from '../view.ts'
 import { DEVICE_LATE_SECONDS, DEVICE_READ_SECONDS } from '../../match/companion.ts'
 import { LOW_VOLTS, watched } from './bus.ts'
@@ -30,6 +31,14 @@ export default rule({
   ],
   nextStep: 'Wiggle-test the power connector and wire at that device, and check its breaker or PDH channel.',
   incident: 'Hindsight companion library (2026-10-20): it logs Phoenix\'s reboot flag; nothing logged it before',
+  sources: [
+    { ...CTRE_PARENT_DEVICE_API, says: 'HasResetOccurred returns true if the device has reset since the previous call; GetResetOccurredChecker returns a lambda that checks for resets.' },
+    { ...CTRE_TALONFX_API, says: 'The BootDuringEnable fault is "Device boot while detecting the enable signal", and it has a sticky version.' },
+  ],
+  thresholds: [
+    { name: 'battery voltage that points at the power path', value: 'under 7 V', basis: 'judgment', how: 'The same line as can/device-dropout.' },
+    { name: 'voltage read before each reboot', value: 'the lowest in the 1.5 s before', basis: 'judgment', how: 'The companion reads each device once a second, so the reboot happened up to 1.5 s before the count rose.' },
+  ],
   forEach: 'watchedDevice',
 
   check(device, match) {

@@ -16,6 +16,7 @@
  * refreshing, a device that stopped sending) leaves the robot acting on old values.
  */
 import { plural, rule, round } from '../rule.ts'
+import { CTRE_STATUS_SIGNALS } from '../sources.ts'
 import type { Problem } from '../rule.ts'
 import type { MatchView } from '../view.ts'
 
@@ -36,6 +37,13 @@ export default rule({
   ],
   nextStep: 'Open the device in Phoenix Tuner X and watch its readings; if they move there but not here, check the robot code refreshes that signal.',
   incident: 'The team\'s 2026 pit checklist: "All device values updating"',
+  sources: [
+    { ...CTRE_STATUS_SIGNALS, says: 'optimizeBusUtilization slows or disables every status signal the code did not set a frequency for (4 Hz by default, 0 Hz disables), so a signal can go still because the code turned it off.' },
+  ],
+  thresholds: [
+    { name: 'seconds unchanged', value: '5 s', basis: 'judgment', how: 'Assumed; any value from about 1 s up fits the measurement. On the 2026 logs the 16 signals used changed 41 to 49 times a second and never sat still longer than 0.16 s.' },
+    { name: 'which signals', value: 'ones that change at rest (a motor stator current, the gyro yaw rate)', basis: 'measured', how: 'Position and velocity cannot tell: still motors sat unchanged for the whole disabled stretch (228 to 345 s), so those are listed as not checked.' },
+  ],
 
   check(match) {
     const stretch = match.pitStretch

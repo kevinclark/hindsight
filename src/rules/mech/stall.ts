@@ -15,6 +15,7 @@
  * Why: 2026-02-21 practice: a screw jammed the turret, and no rule caught it.
  */
 import { above, beyond, nearZero, plural, round, rule, secs, totalSeconds } from '../rule.ts'
+import { CTRE_CURRENT_LIMITS, WCP_KRAKEN_PERFORMANCE } from '../sources.ts'
 import type { Episode, MatchView, MotorView } from '../view.ts'
 
 const STALL_AMPS = 30 // stator current; measured (the turret jam peaked at 45–53 A)
@@ -38,6 +39,16 @@ export default rule({
   ],
   nextStep: 'With the robot off, turn the mechanism by hand through its whole range and find what stops it.',
   incident: '2026-02-21 practice: a screw jammed the turret, stalled 13.4 s at 45 A (failure-detection-measurements §6)',
+  sources: [
+    { ...WCP_KRAKEN_PERFORMANCE, says: 'Kraken X60 stall: 7.09 Nm at 366 A with trapezoidal commutation, 9.37 Nm at 483 A with FOC.' },
+    { ...CTRE_CURRENT_LIMITS, says: 'Stator limits cap output torque, help prevent wheel slip and reduce motor heat.' },
+  ],
+  thresholds: [
+    { name: 'stator current', value: 'above 30 A', basis: 'measured', how: 'The turret jam peaked at 45 to 53 A (170 practice logs of 2026-02-19 to 22); for any other motor the line is assumed.' },
+    { name: 'speed', value: 'under 0.2 rot/s', basis: 'measured', how: 'From the same jam; assumed for any other motor.' },
+    { name: 'stall length', value: 'longer than 0.5 s', basis: 'measured', how: 'Jam stalls lasted 0.9 to 13.4 s; every other mid-travel turret stall lasted 0.18 s or less.' },
+    { name: 'distance from the setpoint for a jam', value: 'more than 10°', basis: 'judgment', how: 'Assumed.' },
+  ],
   forEach: 'motor',
 
   // Only motors the robot profile says never push a hard stop: any stall there is a jam.

@@ -9,6 +9,7 @@
  */
 import { isTimeSyncAlert } from '../vision/time-sync.ts'
 import { rule, round } from '../rule.ts'
+import { WPILIB_ALERTS } from '../sources.ts'
 
 export default rule({
   id: 'alerts/passthrough',
@@ -23,6 +24,9 @@ export default rule({
   ],
   nextStep: 'Search the robot code for the alert text to find what raises it, then check the part it names.',
   incident: 'One 2026 match: "Flywheel Follower Disconnected" ×7, unseen during the match (hindsight-research/design-detail.md §5a)',
+  sources: [
+    { ...WPILIB_ALERTS, says: 'Alerts have an error, warning or info priority and persist on dashboards; Driver Station console messages are easy to miss.' },
+  ],
   forEach: 'alert',
 
   check(alert, match) {

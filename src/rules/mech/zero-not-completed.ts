@@ -13,6 +13,7 @@
  * all auto, and the hood hit the trench in log A. Fixed in 8ba92cb (zero at boot); log C must stay quiet.
  */
 import { rule, round, secs } from '../rule.ts'
+import { CTRE_REMOTE_SENSORS, CTRE_TUNER_ELEVATOR } from '../sources.ts'
 import type { MatchView, MechanismView, Signal } from '../view.ts'
 
 export default rule({
@@ -28,6 +29,13 @@ export default rule({
   ],
   nextStep: 'Make the zero finish before any command can move the mechanism: zero at boot, or put the zero command ahead of the first auto command; set the zeroed flag when it completes.',
   incident: 'Two 2026 matches: hood zero cancelled 0.2 s into auto; fixed by 8ba92cb',
+  sources: [
+    { ...CTRE_TUNER_ELEVATOR, says: 'The elevator subsystem that Tuner X generates includes a current-based homing routine to zero the elevator.' },
+    { ...CTRE_REMOTE_SENSORS, says: 'SyncCANcoder syncs the motor rotor to a remote CANcoder and then uses the rotor for control; it reports when the two positions differ significantly.' },
+  ],
+  thresholds: [
+    { name: 'movement that counts as moving', value: 'the mechanism\'s moveDegrees, a few degrees', basis: 'judgment', how: 'Set per mechanism in the robot profile.' },
+  ],
   forEach: 'mechanism',
 
   check(mechanism, match) {

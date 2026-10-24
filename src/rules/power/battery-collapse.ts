@@ -9,6 +9,7 @@
  */
 import { ocvCurve } from '../../power/battery-model.ts'
 import { rule, round, volts } from '../rule.ts'
+import { CD_BATTERY_ACCEPTANCE, CD_BATTERY_CBA_LINE, MK_ES17_12 } from '../sources.ts'
 import { batteryHealth, LAST_REFERENCE_AH, MOST_BELOW_HEALTHY, restBeforeAuto } from './battery-health.ts'
 
 export default rule({
@@ -24,6 +25,15 @@ export default rule({
   ],
   nextStep: 'Take this battery out of competition use and capacity-test it (a battery analyzer: 10 A down to 11 V). Under 12 Ah twice means practice only.',
   incident: 'One 2026 match: estimated open-circuit voltage collapsed after ~3.5 Ah (hindsight-research/REVIEW.md items 1–3)',
+  sources: [
+    { ...MK_ES17_12, says: 'The ES17-12 is rated 18 Ah at the 20-hour rate but 6.3 Ah when drawn at 3C (54 A) down to 9.6 V: capacity shrinks as the draw grows.' },
+    { ...CD_BATTERY_ACCEPTANCE, says: 'One poster\'s competition acceptance criteria for a battery: state of health above 80 %, CCA above 240, internal resistance under 12 mΩ.' },
+    { ...CD_BATTERY_CBA_LINE, says: 'A quoted poster puts the AM battery-analyzer figure at 12 Ah with a 10.5 V cutoff; the poster thinks the pass line should be higher and would be concerned using a battery that tested under 15 Ah, 14 at the minimum.' },
+  ],
+  thresholds: [
+    { name: 'below a healthy battery', value: '1.5 V', basis: 'judgment', how: 'Chosen. Not measured against the spread of healthy batteries: the healthy curve below is only two batteries.' },
+    { name: 'healthy battery curve (open-circuit voltage by charge drawn)', value: '11.94 V at 0.25 Ah to 10.38 V at 6.25 Ah', basis: 'measured', how: 'The lower of the batteries of two 2026 matches that finished without a brownout, estimated as V + R·I in 0.5 Ah bins (R 11.3 and 11.4 mΩ).' },
+  ],
 
   check(match) {
     const power = match.power()

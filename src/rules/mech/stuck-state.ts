@@ -14,6 +14,7 @@
  * The exits are learned across every loaded log of this robot, whatever build each ran.
  */
 import { isTrue, rule, round, type Problem } from '../rule.ts'
+import { WPILIB_COMMAND_COMPOSITIONS } from '../sources.ts'
 import { inside, lengthOf, type MatchView, type Window } from '../view.ts'
 import { exitTrigger, stateStretches, type Trigger } from './state-exits.ts'
 
@@ -32,6 +33,14 @@ export default rule({
   ],
   nextStep: 'Check what the state waits for (the evidence) on the robot: the game piece path and that sensor. Then give the state a way out in code: a timeout or an operator cancel.',
   incident: 'Two 2025 practice matches: RIGHT_HANDOFF for 107 s and SCORE_L4_RIGHT for 135 s',
+  sources: [
+    { ...WPILIB_COMMAND_COMPOSITIONS, says: 'withTimeout() interrupts a command after a set time and until() ends it on a condition: two ways to give a state a way out.' },
+  ],
+  thresholds: [
+    { name: 'time in one state while enabled', value: '20 s', basis: 'judgment', how: 'Assumed. One match had a 9 s carry-over, which stays under it; the stuck stretches seen were 26 s to 135 s.' },
+    { name: 'exits needed before the rule names what a state waits for', value: '5 exits and 80 % of them', basis: 'judgment', how: 'A floor set by the maintainer; the 2025 offseason practice matches had 33 of 33 handoff exits preceded by the arm flag.' },
+    { name: 'window before an exit for the sensor flip', value: '0.3 s', basis: 'judgment', how: 'Chosen.' },
+  ],
   needsProfile: true,
 
   check(match) {
