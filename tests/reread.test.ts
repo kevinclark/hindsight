@@ -103,5 +103,5 @@ describe('the shape of a saved summary', () => {
 })
 const EXPECTED_KEYS = [
   'batteryId', 'build', 'clockNote', 'event', 'fileName', 'fileSize', 'logging', 'matchLabel', 'matchType', 'metrics', 'onField',
-  'playedAt', 'playedAtSource', 'problems', 'robot', 'rules', 'timing',
+  'playedAt', 'playedAtSource', 'problems', 'robot', 'rules', 'runs', 'timing',
 ]

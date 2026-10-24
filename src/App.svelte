@@ -39,6 +39,7 @@
   import { profilesNow } from './ui/kept-profiles.svelte.ts'
   import CodeFolderControl from './ui/CodeFolderControl.svelte'
   import ModeLine from './ui/ModeLine.svelte'
+  import { SHORT_RUN_SECONDS } from './match/match.ts'
   import { chooseMode, sessionNames } from './ui/session-names.svelte.ts'
   import { logModeLine, loneLogMode, modeOf } from './session/mode.ts'
   import { codeFolder } from './ui/code-folder.svelte.ts'
@@ -290,7 +291,13 @@
     },
   }
 
-  const fmtDuration = (a: Analysis) => (a.match.matchStart !== null && a.match.matchEnd !== null ? `${(a.match.matchEnd - a.match.matchStart).toFixed(0)} s match` : 'never enabled')
+  // Off the field there is no match: the log holds runs (ADR 8), each judged.
+  const fmtDuration = (a: Analysis) => {
+    if (a.match.matchStart === null || a.match.matchEnd === null) return 'never enabled'
+    if (a.match.fms) return `${(a.match.matchEnd - a.match.matchStart).toFixed(0)} s match`
+    const runs = a.match.runs
+    return `${runs.length} run${runs.length === 1 ? '' : 's'}, ${runs.reduce((n, r) => n + r.end - r.start, 0).toFixed(0)} s enabled`
+  }
 </script>
 
 <svelte:window ondragover={(e) => { e.preventDefault(); dragging = mode === 'review' }} ondragleave={(e) => { if (e.relatedTarget === null) dragging = false }} ondrop={onDrop} />
@@ -390,6 +397,7 @@
           </select></label>
         </p>
       </details>
+      {#if current.report.droppedInShortRuns}<p class="meta" data-short-runs>{current.report.droppedInShortRuns.length} performance finding{current.report.droppedInShortRuns.length === 1 ? ' was' : 's were'} not shown: {current.report.droppedInShortRuns.length === 1 ? 'it fell' : 'they fell'} in a run under {SHORT_RUN_SECONDS} s, too short to show a margin or a rate ({[...new Set(current.report.droppedInShortRuns)].join(', ')}). Faults are always shown.</p>{/if}
       {#if current.match.profileChoice.note}<p class="meta dirty">{current.match.profileChoice.note}</p>{/if}
     </div>
     {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}

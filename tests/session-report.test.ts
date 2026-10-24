@@ -25,7 +25,7 @@ const match = (n: number, fires: Fire[], over: Partial<MatchSummary> = {}): Matc
     const mine = fires.filter((f) => f.rule === r)
     return [r, { status: mine.length ? 'fired' : 'quiet', findings: mine.map((f) => finding(f.key, f.rule, f.severity ?? 'warning', f.title, f.value)) }]
   })),
-  metrics: { ...METRICS, minVolts: 7 + n }, timing: { parseMs: 1, rulesMs: 1 }, problems: [], robot: fit, ...over,
+  metrics: { ...METRICS, minVolts: 7 + n }, timing: { parseMs: 1, rulesMs: 1 }, problems: [], robot: fit, runs: { count: 1, seconds: [150], droppedShort: 0 }, ...over,
 } as unknown as MatchSummary)
 
 const FOLLOW: Fire = { key: 'mech/follower-mismatch · Flywheel', rule: 'mech/follower-mismatch', title: 'Flywheel follower 18 ran off its leader (teleop; robot time 417.4 s)', value: 70 }

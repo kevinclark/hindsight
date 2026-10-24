@@ -30,6 +30,7 @@ export default rule({
   id: 'mech/stall',
   title: 'Motor stalled',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit'],
   meaning: 'The motor pushed hard but did not turn. A stalled motor heats up fast and draws current the rest of the robot needs.',
   causes: [

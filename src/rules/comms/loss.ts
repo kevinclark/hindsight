@@ -23,6 +23,7 @@ export default rule({
   id: 'comms/loss',
   title: 'Communications lost mid-match',
   severity: 'error',
+  judges: 'fault',
   who: ['drive'],
   meaning: 'The robot stopped hearing the Driver Station, so it disabled itself until the link came back.',
   causes: [

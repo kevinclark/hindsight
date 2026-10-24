@@ -131,7 +131,9 @@ describe('trend labels', () => {
   it('keeps a labelled match\'s short label, labels an unnumbered log from its MatchType, and never from its file name', () => {
     expect(trendLabel(m(13, {}), 0)).toBe('Q13')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 1 }), 0)).toBe('Pr')
-    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, fileName: 'akit_q4.wpilog' }), 0)).toBe('On field')
+    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, onField: true, fileName: 'akit_q4.wpilog' }), 0)).toBe('On field')
+    // A practice log (off the field) with no match type is a numbered log, never "On field".
+    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, onField: false, fileName: 'akit_q4.wpilog' }), 2)).toBe('#3')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: null, fileName: 'akit_q4.wpilog' }), 2)).toBe('#3')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: undefined }), 0)).toBe('#1')
   })

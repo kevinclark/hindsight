@@ -27,6 +27,7 @@ export default rule({
   id: 'auto/early-disable',
   title: 'Disabled during auto',
   severity: 'error',
+  judges: 'fault',
   who: ['software', 'drive'],
   meaning: 'The robot was disabled partway through auto while the Driver Station was still connected, so a person or the field turned it off on purpose. It was not a comms loss.',
   causes: [

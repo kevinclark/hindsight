@@ -22,6 +22,7 @@ export default rule({
   id: 'vision/time-sync',
   title: 'Camera clocks not synced',
   severity: 'warning',
+  judges: 'performance',
   who: ['software'],
   meaning: 'A vision coprocessor\'s clock is not synced with the roboRIO\'s, so vision poses can be stamped at the wrong moment and pull the robot\'s position estimate off.',
   causes: [

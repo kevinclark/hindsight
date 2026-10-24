@@ -39,6 +39,7 @@
   import ModeLine from './ModeLine.svelte'
   import { chooseMode, renameSession, sessionNames } from './session-names.svelte.ts'
   import { modeLine, modeOf } from '../session/mode.ts'
+  import { leftOutLine, leftOutWhy, runsLine, runsSummary, runsText, trendSet } from '../session/runs.ts'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
   // copies of logs by name, for summaries restored without their file. `linksFor` (desktop app): the library's code links for
@@ -171,6 +172,10 @@
     })
     return rows.sort((a, b) => b.fired - a.fired || a.worst - b.worst || a.row - b.row)
   })
+  // Practice is judged by run (ADR 8): the runs in the session's logs, and the logs the Trends leave out (never enabled, or only runs under 10 s).
+  const practice = $derived(!!session && modeOf(session) === 'practice')
+  const trendInfo = $derived(session ? trendSet(session) : null)
+  const leftOutText = $derived(practice && session ? leftOutLine(runsSummary(session.matches)) : '')
   // Pit runs: logs not on the field, on an event's days. Not matches: they have their own grid and are in no count above.
   const pitRuns = $derived(session?.pitRuns ?? [])
   const pitGrid = $derived.by(() => {
@@ -544,6 +549,7 @@
     </span>
   </section>
   <ModeLine text={modeLine(session)} mode={modeOf(session)} byHand={!!session.modeByHand} onChange={(m) => chooseMode(session.id, m)} />
+  {#if practice}<p class="note" data-runs-summary>{runsLine(runsSummary(session.matches))} A practice day is judged by run, not by match: each log counts once in the grid and the trends, however many runs it holds.</p>{/if}
   {#if session.event}<p class="note" data-event-note>The Blue Alliance says this was {session.event.name}{#if session.event.by === 'date'}{' '}<strong>(guess)</strong>{/if} ({session.event.key}), {session.event.start} to {session.event.end}: {session.event.matched} of the {session.event.of} qualification numbers in these logs are on the team's list there{session.event.by === 'date' ? ' (several events held as many; the robot clock chose, so this is a guess)' : ''}.{session.event.clockOffsetDays ? ` The robot clock is ${clockOffsetText(session.event.clockOffsetDays).replace('robot clock ', '')}.` : ''} {session.event.fromCache ? 'From a saved copy' : 'Fetched'} {new Date(session.event.fetchedAt).toLocaleString()}.</p>{/if}
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   {#if reread && reread.sessionId === session.id && !reread.dismissed}
@@ -581,7 +587,7 @@
     <p class="note warn">{label(m)}: {m.clockNote}</p>
   {/each}
 
-  <h3>Rule × match</h3>
+  <h3>Rule × {practice ? 'log' : 'match'}</h3>
   <div class="grid-wrap">
     <table class="grid">
       <thead>
@@ -606,6 +612,7 @@
   {#if pitRuns.length}
     <h3>Pit runs on this event's days</h3>
     <p class="hint" data-pit-runs>{pitRuns.length} log{pitRuns.length === 1 ? '' : 's'} not on the field, played on a day this event had matches (pit runs). They are not matches: the grid above, the match count and the confidence below leave them out. Rules that fired in at least one are shown here{pitGrid.length ? '' : '; none did'}.</p>
+    <p class="hint" data-pit-runs-summary>{runsLine(runsSummary(pitRuns))}{#if leftOutLine(runsSummary(pitRuns))}{' '}{leftOutLine(runsSummary(pitRuns)).replace('left out of trends', 'not in any trend (pit runs never are)')}.{/if}</p>
     {#if pitGrid.length}
       <div class="grid-wrap"><table class="grid" data-pit-grid>
         <thead><tr><th>rule</th>{#each pitRuns as m (m.fileName)}<th class="match"><button class="link" title={`${label(m)} · ${m.fileName}`} aria-label={`Pit run ${pitTime(m)}`} onclick={() => open(m)}>{pitTime(m)}</button></th>{/each}<th>pit runs</th></tr></thead>
@@ -625,8 +632,15 @@
     {/if}
   {/if}
 
-  <h3>Per match</h3>
-  <Trends matches={session.matches} {typedBatteries} labels={session.matches.map(shortLabel)} onOpen={open} />
+  <h3>Per {trendInfo!.unit}</h3>
+  {#if leftOutText}
+    <details class="once-fold" data-left-out>
+      <summary>{leftOutText}</summary>
+      <p class="hint">A log that was never enabled, or whose runs are all under 10 s, shows no margin or rate, so it is listed (with its runs, below) but not drawn here.</p>
+      <ul class="changes">{#each trendInfo!.leftOut as x (x.log.fileName)}<li>{label(x.log)}: {x.why}{x.log.runs.count ? ` (${runsText(x.log)})` : ''}</li>{/each}</ul>
+    </details>
+  {/if}
+  <Trends matches={trendInfo!.logs} unit={trendInfo!.unit} {typedBatteries} labels={trendInfo!.logs.map(shortLabel)} onOpen={open} />
 
   <h3>Findings across the session</h3>
   <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some, or in every match of only 2 checked (too few to call consistent). Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
@@ -687,14 +701,15 @@
     {/if}
   {/if}
 
-  <h3>Matches in this session</h3>
+  <h3>{practice ? 'Logs' : 'Matches'} in this session</h3>
   <div class="grid-wrap"><table class="list">
-    <thead><tr><th>match</th><th>played</th><th>battery</th><th>session</th></tr></thead>
+    <thead><tr><th>{practice ? 'log' : 'match'}</th><th>played</th><th>runs</th><th>battery</th><th>session</th></tr></thead>
     <tbody>
       {#each [...session.matches.map((m) => [m, false] as const), ...pitRuns.map((m) => [m, true] as const)] as [m, pit] (m.fileName)}
         <tr>
           <td>{label(m)}{#if pit}{' '}<span class="pit">pit run</span>{/if}</td>
           <td>{m.playedAt ? new Date(m.playedAt).toLocaleString() : 'unknown'}{m.playedAtSource === 'file name' ? ' (from file name)' : ''}</td>
+          <td data-runs>{runsText(m)}{#if practice && leftOutWhy(m)}{' '}<span class="pit">not in trends</span>{/if}</td>
           <td>{#if m.batteryId}{m.batteryId} (logged){:else}<input size="6" placeholder="label" value={typedBatteries[m.fileName] ?? ''} onchange={(e) => setBattery(m.fileName, (e.currentTarget as HTMLInputElement).value)} />{/if}</td>
           <td>
             <select onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; if (v === '__new') newSessionFor(m.fileName); else moveMatch(m.fileName, v === '__auto' ? '' : v) }}>

@@ -12,6 +12,7 @@ export default rule({
   id: 'foresight/commit-matches',
   title: 'Code changed since the last passing pit check',
   severity: 'warning',
+  judges: 'performance',
   foresightOnly: true,
   who: ['software'],
   meaning: 'The robot is running different code from the last pit check that passed. That can be on purpose (a fix between matches), but it is the change nothing has checked yet.',

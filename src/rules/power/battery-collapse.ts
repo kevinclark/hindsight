@@ -16,6 +16,7 @@ export default rule({
   id: 'power/battery-collapse',
   title: 'Battery ran out of capacity',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit'],
   meaning: 'The battery\'s voltage fell much further than a healthy battery\'s does once part of its charge was used. It ran out of capacity before the match was over.',
   causes: [

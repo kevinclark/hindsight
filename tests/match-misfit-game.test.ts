@@ -7,8 +7,8 @@ import { openWpilog } from '../src/readers/wpilog.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 
 /**
- * A practice run: auto 10-25 s, a 13 s teleop (28-41 s), then enabled again 60-80 s. Measured, teleop is 13 s and the
- * re-enable falls outside the match; with the season's 135 s it is inside, as for a log whose profile fits.
+ * A practice log: auto 10-25 s, a 13 s teleop (28-41 s), then enabled again 60-80 s. Measured, teleop is 13 s; off the
+ * field the window is every run (ADR 8), so the later run is inside it either way (three runs: a gap of 3 s or more starts a new one).
  */
 function practice(clockMs?: number) {
   const entries: FixtureEntry[] = [
@@ -46,7 +46,9 @@ describe('a log no profile fits', () => {
   it('measures the lengths when the log has no date', () => {
     const { match } = misfitMatch()
     expect(match.profile.game).toEqual({ name: 'measured from this log', autoSeconds: 15, teleopSeconds: 13 })
-    expect(match.matchEnd).toBe(41)
+    expect(match.matchEnd).toBe(80)
+    // A gap of exactly 3 s (auto 25 to teleop 28) is not shorter than the join gap: three runs.
+    expect(match.runs).toEqual([{ start: 10, end: 25, auto: true }, { start: 28, end: 41, auto: false }, { start: 60, end: 80, auto: false }])
   })
 
   it('measures the lengths of a log dated before the first kickoff listed', () => {

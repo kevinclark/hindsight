@@ -20,6 +20,7 @@ export default rule({
   id: 'mech/zero-not-completed',
   title: 'Mechanism moved before its zero completed',
   severity: 'error',
+  judges: 'fault',
   who: ['software'],
   meaning: 'A mechanism moved before its zero (finding its hard stop) finished, so every angle it was sent to was measured from the wrong starting point. It went to the wrong place.',
   causes: [

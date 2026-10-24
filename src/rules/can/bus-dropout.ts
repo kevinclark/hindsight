@@ -19,6 +19,7 @@ export default rule({
   id: 'can/bus-dropout',
   title: 'Whole CAN bus dropped out',
   severity: 'error',
+  judges: 'fault',
   who: ['pit'],
   meaning: 'Every device on one CAN bus that reports its health stopped at the same moment, so the bus itself went down, not one device. Everything on that bus stopped working until it came back.',
   causes: [

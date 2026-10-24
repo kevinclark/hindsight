@@ -19,6 +19,7 @@ export default rule({
   id: 'can/usb-dropout',
   title: 'CANivore dropped off USB',
   severity: 'error',
+  judges: 'fault',
   who: ['pit'],
   meaning: 'The roboRIO lost the CANivore\'s USB connection, so every motor and sensor on that CAN bus stopped until it reconnected.',
   causes: [

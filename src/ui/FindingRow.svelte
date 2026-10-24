@@ -95,6 +95,7 @@
       {#if showNext && !open}<span class="next"><strong>Next step:</strong> {finding.nextStep}{#if who}{' · '}<strong>Who acts:</strong> {who}{/if}</span>{/if}
     </summary>
     <div class="body">
+      {#if finding.run && analysis.match.runs.length > 1}<p class="issue-note" data-run>Run {finding.run} of {analysis.match.runs.length}{finding.when ? `: ${finding.when}` : ''}</p>{/if}
       {#if wrongMark}
         <p class="issue-note"><strong>Not a real problem</strong> on this match, marked {date(wrongMark.when)}: {wrongMark.note}</p>
       {/if}

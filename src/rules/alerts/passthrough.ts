@@ -15,6 +15,7 @@ export default rule({
   id: 'alerts/passthrough',
   title: 'Robot code alerts',
   severity: 'info',
+  judges: 'fault',
   who: ['software'],
   meaning: 'The robot code raised an alert: a message its programmers chose to show on the dashboard. The type (error, warning, info) is how serious they thought it was.',
   causes: [

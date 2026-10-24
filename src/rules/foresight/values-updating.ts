@@ -27,6 +27,7 @@ export default rule({
   id: 'foresight/values-updating',
   title: 'Device readings stopped updating',
   severity: 'warning',
+  judges: 'fault',
   foresightOnly: true,
   who: ['software', 'pit'],
   meaning: 'A device says it is connected, but its readings have not changed at all for several seconds while the others keep changing. The robot code may be acting on old values from it.',

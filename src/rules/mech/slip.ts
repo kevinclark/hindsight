@@ -32,6 +32,7 @@ export default rule({
   id: 'mech/slip',
   title: 'Motor turned but the mechanism did not',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit'],
   needsProfile: true,
   meaning: 'The motor turned but its absolute encoder says the mechanism stayed where it was: the drive between them is slipping or disconnected, so the mechanism is not where the code thinks it is.',

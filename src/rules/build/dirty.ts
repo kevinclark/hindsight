@@ -12,6 +12,7 @@ export default rule({
   id: 'build/dirty',
   title: 'Uncommitted code on the robot',
   severity: 'warning',
+  judges: 'performance',
   who: ['software'],
   meaning: 'The code on the robot had changes that were never saved to git, so nobody can say exactly what was running.',
   causes: [

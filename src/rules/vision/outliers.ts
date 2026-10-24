@@ -22,6 +22,7 @@ export default rule({
   id: 'vision/outliers',
   title: 'Vision poses far from odometry',
   severity: 'warning',
+  judges: 'performance',
   who: ['software'],
   meaning: 'The camera\'s position estimates often disagreed with odometry by half a meter or more, and the robot accepted them. The robot\'s idea of where it is can jump.',
   causes: [

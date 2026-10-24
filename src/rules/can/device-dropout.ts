@@ -25,6 +25,7 @@ export default rule({
   id: 'can/device-dropout',
   title: 'Device dropped off CAN',
   severity: 'error',
+  judges: 'fault',
   who: ['pit'],
   meaning: 'A motor controller or sensor stopped answering on the CAN bus while the robot was enabled. If it is a motor, it stopped working until it came back.',
   causes: [

@@ -18,6 +18,7 @@ export default rule({
   id: 'foresight/motor-temperature',
   title: 'Motor hot before the match',
   severity: 'warning',
+  judges: 'performance',
   foresightOnly: true,
   who: ['pit'],
   meaning: 'A motor is already hotter than any of this robot\'s motors got by the end of a full match. It has less room before it overheats and loses power during the match.',

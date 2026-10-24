@@ -16,6 +16,7 @@ export default rule({
   id: 'foresight/gyro-still-drift',
   title: 'Gyro drift while still',
   severity: 'info',
+  judges: 'performance',
   foresightOnly: true,
   who: ['software', 'pit'],
   meaning: 'How much the robot\'s heading changed while it sat disabled. A gyro that drifts while still makes field-relative driving and auto paths slowly turn.',

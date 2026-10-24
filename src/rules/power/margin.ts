@@ -15,6 +15,7 @@ export default rule({
   id: 'power/margin',
   title: 'Voltage margin to brownout',
   severity: 'warning',
+  judges: 'performance',
   who: ['software', 'pit'],
   meaning: 'The battery voltage came close to the brownout level (or below it). A little more load or a slightly weaker battery would have turned the robot off.',
   causes: [

@@ -23,6 +23,7 @@ export default rule({
   id: 'power/pd-not-reporting',
   title: 'Power distribution board not reporting',
   severity: 'warning',
+  judges: 'fault',
   who: ['software', 'pit'],
   meaning: 'The robot code got no channel currents from the power distribution board, so nobody can see how hard each breaker is working, including the loads that aren\'t motor controllers. Hindsight adds up the motor controllers\' supply currents instead.',
   causes: [

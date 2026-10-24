@@ -54,7 +54,7 @@ function eventName(session: Session): string {
   const named = session.matches.find((m) => m.onField && m.event)?.event
   if (named) return named
   const day = firstDay(session.matches)
-  return day ? `event starting ${day}` : 'event'
+  return day ? `starting ${day}, no event name logged` : 'no event name logged'
 }
 
 /** The line, whole, for a session: "Event · Name · qualification (from the field data)", "Practice · 2025-07-12". */

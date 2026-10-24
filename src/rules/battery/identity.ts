@@ -12,6 +12,7 @@ export default rule({
   id: 'battery/identity',
   title: 'Battery not identified',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit'],
   meaning: 'Hindsight cannot tell which battery was in the robot, so a weak battery cannot be followed from match to match.',
   causes: [

@@ -24,6 +24,7 @@ export default rule({
   id: 'mech/stuck-state',
   title: 'State machine stuck in one state',
   severity: 'error',
+  judges: 'fault',
   who: ['software', 'pit', 'drive'],
   meaning: 'The robot stayed in one state while the drivers pressed buttons, so it ignored them. The state was waiting for something: the evidence says what, and whether it came.',
   causes: [

@@ -21,6 +21,7 @@ export default rule({
   id: 'can/device-rebooted',
   title: 'Device rebooted',
   severity: 'error',
+  judges: 'fault',
   who: ['pit'],
   meaning: 'A motor controller or sensor restarted while the robot was enabled. Until it was back it did nothing, and it may have come back without the position it had.',
   causes: [

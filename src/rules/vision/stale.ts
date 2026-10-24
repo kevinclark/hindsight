@@ -18,6 +18,7 @@ export default rule({
   id: 'vision/stale',
   title: 'Camera stale or dropped out',
   severity: 'warning',
+  judges: 'fault',
   who: ['software', 'pit'],
   meaning: 'A camera stopped giving fresh results for a good part of the match, or dropped out completely. While it does, the robot is flying on odometry alone.',
   causes: [

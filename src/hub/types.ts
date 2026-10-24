@@ -34,7 +34,7 @@ export const GITHUB_SOURCE = /^[\w.-]+(\/[\w.-]+)?$/
 export const validSource = (text: string): boolean => GITHUB_SOURCE.test(text) && !text.includes('..')
 
 /** The fields of a log record that a later reading (a `meta` record) may set. Nothing else in a meta is ever laid over a log. */
-export const DESCRIBABLE_KEYS = ['wall', 'matchWindow', 'event', 'matchType', 'matchNumber', 'onField', 'batteryId', 'roboRio', 'edition', 'robot', 'build', 'stub', 'hardwareId', 'code'] as const
+export const DESCRIBABLE_KEYS = ['wall', 'matchWindow', 'event', 'matchType', 'matchNumber', 'onField', 'batteryId', 'roboRio', 'edition', 'robot', 'build', 'stub', 'hardwareId', 'code', 'runs'] as const
 /** The fields that decide where a file lives (and so its identity in the library): set by the first reading, never by a later one. */
 export const FIXED_KEYS = ['kind', 'playedAt', 'dateSource'] as const
 export type DescribableKey = (typeof DESCRIBABLE_KEYS)[number]
@@ -51,6 +51,11 @@ export function isCodeLink(v: unknown): v is CodeLink {
     && finite(v.checkedAt)
 }
 
+/** How many runs a log holds and how long each lasted (ADR 8); an older reading has none. */
+export interface RunsReading { count: number; seconds: number[] }
+export const isRunsReading = (v: unknown): v is RunsReading =>
+  isObject(v) && Number.isInteger(v.count) && Array.isArray(v.seconds) && v.seconds.length === v.count && v.seconds.every(finite)
+
 const SHAPES: Record<DescribableKey, (v: unknown) => boolean> = {
   wall: span, matchWindow: span,
   event: (v) => typeof v === 'string',
@@ -60,6 +65,7 @@ const SHAPES: Record<DescribableKey, (v: unknown) => boolean> = {
   robot: orNull((v) => isObject(v) && typeof v.name === 'string' && (v.profileId === null || typeof v.profileId === 'string') && (v.how === undefined || typeof v.how === 'string') && (v.fit === undefined || v.fit === null || finite(v.fit))),
   build: orNull((v) => isObject(v) && typeof v.sha === 'string' && typeof v.branch === 'string'),
   code: (v) => isCodeLink(v),
+  runs: (v) => isRunsReading(v),
 }
 
 /**
@@ -108,6 +114,8 @@ export interface LogMeta {
   build: { sha: string; branch: string } | null
   /** Set by linking code, never by reading the log. */
   code?: CodeLink
+  /** Robot logs: the runs in the log, how many and each one's length in seconds (the FMS match is one run). Absent in readings made before runs. */
+  runs?: RunsReading
   /** Under 1 MB with no enabled time: a log the robot started and abandoned (akit_<hex>.wpilog on Drive today). */
   stub: boolean
   /** Hoot files: the part of the name before the timestamp ("rio", or a CANivore serial). */

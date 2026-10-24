@@ -23,6 +23,33 @@ import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } f
 import { playedAt } from './played-at.ts'
 import { gameFor } from '../profiles/games.ts'
 
+/**
+ * One run (ADR 8): a maximal stretch of enabled time whose disabled gaps are shorter than RUN_JOIN_SECONDS. `auto` is
+ * true when the run began in autonomous. On the field the FMS match is one run; off it, every run counts.
+ */
+export interface Run { start: number; end: number; auto: boolean }
+
+/**
+ * Enabled stretches closer than this are one run. Measured on 975 gaps between consecutive enabled stretches in 627
+ * off-field logs of one library: no clear valley (2 s: 1424 runs, 3 s: 1365, 4.5 s: 1325, 6 s: 1272), so the 3 s
+ * the plan started from stays. Gaps under 3 s are 97 of 975 (the quick disable and re-enable).
+ */
+export const RUN_JOIN_SECONDS = 3
+
+/** A run shorter than this is checked for faults only (ADR 8): about the shortest a margin or a rate can be read from. */
+export const SHORT_RUN_SECONDS = 10
+
+/** The runs among enabled stretches (sorted by start): a gap of RUN_JOIN_SECONDS or more starts a new one. */
+export function runsOf(enabled: Interval[], auto: Interval[], joinSeconds = RUN_JOIN_SECONDS): Run[] {
+  const runs: Run[] = []
+  for (const iv of enabled) {
+    const last = runs.at(-1)
+    if (last && iv.start - last.end < joinSeconds) last.end = Math.max(last.end, iv.end)
+    else runs.push({ start: iv.start, end: iv.end, auto: auto.some((a) => a.start === iv.start) })
+  }
+  return runs
+}
+
 export interface Match {
   fileName: string
   log: WpilogFile
@@ -41,11 +68,14 @@ export interface Match {
   /**
    * The match as the robot saw it: auto enable (the first one under FMS, if the field was attached), the first teleop
    * enable after it, and the end of the last enabled period that could still belong to the match. Enables earlier
-   * (queue, pit) or much later in the same log are outside this window.
+   * (queue, pit) or much later in the same log are outside this window. Off the field there is no match: the window is
+   * every run, first enable to the end of the last one (see `runs`).
    */
   matchStart: number | null
   teleopStart: number | null
   matchEnd: number | null
+  /** The runs in the log, in time order. On the field the FMS match is one of them (the one that counts as the match); off it every run is judged. */
+  runs: Run[]
   fms: boolean
   event: string
   matchLabel: string
@@ -125,7 +155,7 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
 
   const match: Match = {
     fileName, log, profile, sources: givenProfile, profileChoice, logStart, logEnd,
-    enabled: [], auto: [], teleop: [], matchStart: null, teleopStart: null, matchEnd: null,
+    enabled: [], auto: [], teleop: [], matchStart: null, teleopStart: null, matchEnd: null, runs: [],
     fms: false, event: '', matchLabel: '', build: { sha: '', branch: '', date: '', dirty: '' },
     epochOffset: null, ds: [], dsEvents: [], others: [], cache: new Map(),
   }
@@ -207,6 +237,17 @@ function readIdentity(match: Match): void {
  */
 function findMatchWindow(match: Match, fms: NumberSeries | null): void {
   const game = match.profile.game
+  match.runs = []
+  if (!match.fms) {
+    // Off the field there is no match to find: every run is judged, from the first enable to the end of the last.
+    const first = match.enabled[0]
+    if (!first) return
+    match.matchStart = first.start
+    match.teleopStart = match.teleop.find((iv) => iv.start >= first.start)?.start ?? null
+    match.matchEnd = match.enabled.at(-1)!.end
+    match.runs = runsOf(match.enabled, match.auto)
+    return
+  }
   const fieldAuto = fms ? match.auto.find((iv) => valueAt(fms, iv.start) > 0.5) : undefined
   const start = fieldAuto?.start ?? match.auto[0]?.start ?? match.enabled[0]?.start
   if (start === undefined) return
@@ -216,6 +257,11 @@ function findMatchWindow(match: Match, fms: NumberSeries | null): void {
   const latestStart = start + game.autoSeconds + game.teleopSeconds + 15
   const inMatch = match.enabled.filter((iv) => iv.start >= start && iv.start <= latestStart)
   match.matchEnd = inMatch.at(-1)?.end ?? null
+  // The FMS match is one run; enables outside it (queue, pit, practice after) are runs of their own.
+  const end = match.matchEnd ?? start
+  const outside = match.enabled.filter((iv) => iv.end <= start || iv.start > end)
+  const others = runsOf(outside, match.auto)
+  match.runs = [...others.filter((r) => r.end <= start), { start, end, auto: match.auto.some((a) => a.start === start) }, ...others.filter((r) => r.end > start)]
 }
 
 /**
@@ -325,9 +371,27 @@ export function matchTimeLeft(match: Match, t: number): { phase: 'auto' | 'teleo
   return { phase: 'disabled', secondsLeft: NaN }
 }
 
-/** Seconds into the match (from the start of auto) at robot time t, or null when the log has no match in it. */
+/**
+ * The run that holds time t, numbered from 1, and how many runs there are; off the field only. A time in a gap belongs to
+ * the run before it (`inside` is false then), a time before the first run to none.
+ */
+export function runAt(match: Match, t: number): { n: number; of: number; run: Run; inside: boolean } | null {
+  if (match.fms || !match.runs?.length) return null
+  let at = -1
+  match.runs.forEach((r, i) => { if (r.start <= t) at = i })
+  if (at < 0) return null
+  const run = match.runs[at]
+  return { n: at + 1, of: match.runs.length, run, inside: t <= run.end }
+}
+
+/**
+ * Seconds into the match (from the start of auto) at robot time t, or null when the log has no match in it. Off the field
+ * it is seconds into the run that holds t.
+ */
 export function matchSeconds(match: Match, t: number): number | null {
-  return match.matchStart === null ? null : t - match.matchStart
+  if (match.matchStart === null) return null
+  const run = runAt(match, t)
+  return t - (run ? run.run.start : match.matchStart)
 }
 
 /** 107 → "1:47". */
@@ -338,12 +402,21 @@ export function clock(seconds: number): string {
 
 /**
  * When something happened, match time first (what people think in), robot time in parentheses (what the log and
- * AdvantageScope show): "1:47 into the match (teleop; robot time 532.8 s)".
+ * AdvantageScope show): "1:47 into the match (teleop; robot time 532.8 s)". Off the field the time is in a run:
+ * "0:12 into run 3 of 7 (teleop; robot time 532.8 s)".
  */
 export function matchWhen(match: Match, t: number): string {
   const robot = `robot time ${t.toFixed(1)} s`
   const s = matchSeconds(match, t)
   if (s === null) return robot
+  // A log with a single run reads as before: the one run is the whole window.
+  if (!match.fms && match.runs?.length > 1) {
+    const r = runAt(match, t)
+    if (!r) return `before the first run (${robot})`
+    if (r.inside) return `${clock(s)} into run ${r.n} of ${r.of} (${phaseAt(match, t)}; ${robot})`
+    if (r.n === r.of) return `after the last run (${robot})`
+    return `between run ${r.n} and run ${r.n + 1} of ${r.of} (${robot})`
+  }
   if (s < 0) return `before the match (${robot})`
   if (match.matchEnd !== null && t > match.matchEnd + 0.5) return `after the match (${robot})`
   return `${clock(s)} into the match (${phaseAt(match, t)}; ${robot})`
@@ -355,7 +428,7 @@ export function matchWhen(match: Match, t: number): string {
  */
 export function matchWhenAt(match: Match, t: number): string {
   const when = matchWhen(match, t)
-  return when.startsWith('before the match') || when.startsWith('after the match') ? when : `at ${when}`
+  return /^(before|after|between) /.test(when) ? when : `at ${when}`
 }
 
 /** Phase name at time t, for evidence text. */

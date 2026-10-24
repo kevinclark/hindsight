@@ -18,6 +18,7 @@ export default rule({
   id: 'foresight/camera-sees-tag',
   title: 'Camera has not seen an AprilTag yet',
   severity: 'info',
+  judges: 'performance',
   foresightOnly: true,
   who: ['pit', 'software'],
   meaning: 'This camera has not reported an AprilTag since the check started. In the pit that is normal: hold a tag in front of it to prove it is on and detecting.',

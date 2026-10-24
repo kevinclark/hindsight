@@ -18,6 +18,7 @@ export default rule({
   id: 'foresight/sticky-faults',
   title: 'Sticky fault set',
   severity: 'warning',
+  judges: 'fault',
   foresightOnly: true,
   who: ['pit', 'software'],
   meaning: 'The device has recorded a fault since its faults were last cleared. It may be fine now, but something happened to it: a brownout, a reboot while enabled, a hardware or licence problem.',
