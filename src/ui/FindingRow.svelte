@@ -8,6 +8,7 @@
   import { makerOf } from '../rules/index.ts'
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import Plot from './Plot.svelte'
+  import { askText } from './ask-text.svelte.ts'
   import { plotModel } from './plot-data.ts'
   import FindingRow from './FindingRow.svelte'
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
@@ -62,14 +63,14 @@
   let open = $state(!nested && issue?.status === 'fixed' && !fixedLater && !wrong?.has(finding.key))
   const who = $derived(rule ? rule.who.map((a) => WHO[a]).join(', ') : '')
 
-  function mark(status: IssueStatus) {
+  async function mark(status: IssueStatus) {
     const ask = status === 'known' ? 'What do we know about it? (e.g. "belt slipping on 17/18, new belt before elims")'
       : status === 'fixed' ? 'What fixed it? (e.g. "replaced belt, retensioned")'
       : status === 'wrong' ? 'Why is this not a real problem on this match? (e.g. "deliberate A-stop", "zero kept through a restart")'
       : status === 'real' ? 'What happened? (optional, e.g. "lost auto" or a link to the report)' : ''
-    let note: string | null = status === 'new' || status === 'unmark' ? '' : window.prompt(ask, status === 'wrong' || status === 'real' ? '' : (issue?.note ?? ''))
+    let note: string | null = status === 'new' || status === 'unmark' ? '' : await askText(ask, status === 'wrong' || status === 'real' ? '' : (issue?.note ?? ''))
     // A wrong mark needs its reason: it turns this check's reds amber on the event's other matches.
-    while (status === 'wrong' && note !== null && !note.trim()) note = window.prompt(`A reason is needed. ${ask}`, '')
+    while (status === 'wrong' && note !== null && !note.trim()) note = await askText(`A reason is needed. ${ask}`, '')
     if (note === null) return // cancelled
     onMark(finding, status, note.trim())
   }

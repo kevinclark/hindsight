@@ -56,7 +56,7 @@ async function setFiles(selector: string, files: string[]) {
 }
 // Match review: waits until the match bar lists `matches` logs (a history file adds none).
 async function dropInReview(files: string[], matches: number) {
-  await setFiles('input[type=file][accept=".wpilog,.dslog,.jsonl"]', files)
+  await setFiles('input[type=file][accept=".wpilog,.dslog,.dsevents,.jsonl"]', files)
   for (let i = 0; i < 300; i++) { await sleep(200); if ((await evalIn(`document.querySelectorAll('nav.matches button').length`)) >= matches) break }
   await sleep(300)
 }
@@ -115,7 +115,13 @@ result.noHistory = await sessionState()
 await mode('Match review')
 await dropInReview(logs, MATCHES)
 result.matches = await labels()
-await evalIn(`window.prompt = () => ${JSON.stringify(REASON)}`)
+// The page has no window.prompt any more (Electron's throws): text is asked in an in-page <dialog> (src/ui/AskText.svelte).
+const answerDialog = (text: string) => evalIn(`(async () => {
+  for (let i = 0; i < 50 && !document.querySelector('dialog[open]'); i++) await new Promise((r) => setTimeout(r, 100))
+  const d = document.querySelector('dialog[open]'); if (!d) return 'no dialog'
+  const input = d.querySelector('input'); input.value = ${JSON.stringify(text)}; input.dispatchEvent(new Event('input', { bubbles: true }))
+  d.querySelector('form').requestSubmit(); return 'answered'
+})()`)
 result.clicked = []
 // After the first mark, the check's reds on the other matches are amber: click the check's open row, whatever colour.
 for (const label of MARK_ON.split(',')) {
@@ -128,6 +134,7 @@ for (const label of MARK_ON.split(',')) {
     if (!b) return 'missing'
     b.click(); return 'clicked'
   })()`))
+  if ((await answerDialog(REASON)) !== 'answered') throw new Error('the mark dialog did not open')
   await sleep(400)
 }
 result.review = {}
