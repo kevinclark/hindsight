@@ -54,7 +54,9 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
     // Devices only the Hindsight companion watches need no profile: can/device-dropout still checks those.
     const watchedOnly = rule.forEach === 'device' && view.watchedDevices().some((w) => !w.profileFlag)
     if (misfit && !watchedOnly && (rule.needsProfile ?? ROBOT_ITEMS.includes(rule.forEach ?? 'match'))) {
-      skipped.push({ rule: rule.id, reason: `the robot profile doesn't fit this log (${misfit.present} of ${misfit.total} of its signals are in it)` })
+      skipped.push({ rule: rule.id, reason: match.profileChoice.how === 'signals'
+        ? `no robot profile fits this log (the closest has ${misfit.present} of its ${misfit.total} signals in it)`
+        : `the robot profile doesn't fit this log (${misfit.present} of ${misfit.total} of its signals are in it)` })
       continue
     }
     try {

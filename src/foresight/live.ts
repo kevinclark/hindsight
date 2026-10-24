@@ -13,7 +13,7 @@
  */
 import { encodePayload } from '../readers/wpilog-writer.ts'
 import { PROFILES } from '../profiles/index.ts'
-import { chooseProfile } from '../profiles/choose.ts'
+import { chooseProfile, type ProfileChoice } from '../profiles/choose.ts'
 import { openWpilog } from '../readers/wpilog.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import type { Snapshot } from '../snapshot/snapshot.ts'
@@ -66,6 +66,8 @@ export class ForesightLive {
   private firstValueAt: number | null = null
   private metadataAt: number | null = null
   private profileChosen = false
+  /** How the profile was chosen: passed to every check, so a robot no profile fits is still said to be one. */
+  private profileChoice: ProfileChoice | undefined
   private lastValueWallMs: number | null = null
   private snapshot: Snapshot | null = null
   private codeSettings: CodeSettings | null = null
@@ -158,14 +160,15 @@ export class ForesightLive {
     this.profileChosen = true
     if (this.metaTimer) clearTimeout(this.metaTimer)
     const end = Number.isFinite(this.store.latest) ? this.store.latest : 0
-    const { profile } = chooseProfile(openWpilog(this.store.windowLog(-Infinity, end)), PROFILES)
+    const { profile, choice } = chooseProfile(openWpilog(this.store.windowLog(-Infinity, end)), PROFILES)
+    this.profileChoice = choice
     const keys = foresightKeys(profile).filter((k) => !this.status.subscribed.includes(k))
     this.client.subscribe(keys.map(topicFor), { all: true, periodic: PERIODIC })
     // The companion's keys name each watched device, so they are asked for by prefix (read-only, like every subscribe).
     this.client.subscribe(FORESIGHT_PREFIXES.map(topicFor), { all: true, periodic: PERIODIC, prefix: true })
     this.status.profile = profile
     this.status.subscribed = [...this.status.subscribed, ...keys]
-    this.connectedMessage = `Connected. Robot: ${profile.name} (${profile.code.branch}); reading ${this.status.subscribed.length} signals, and every Hindsight companion key (${FORESIGHT_PREFIXES.join(', ')}).`
+    this.connectedMessage = `Connected. Robot: ${profile.name}${profile.code.branch ? ` (${profile.code.branch})` : ''}; reading ${this.status.subscribed.length} signals, and every Hindsight companion key (${FORESIGHT_PREFIXES.join(', ')}).`
     this.status.message = this.connectedMessage
     this.emit()
   }
@@ -190,7 +193,7 @@ export class ForesightLive {
     this.store.prune()
     this.status.message = this.connectedMessage
     try {
-      this.status.result = evaluateForesight({ store: this.store, codeStart, now: this.store.latest, lastPassingSha: this.options.lastPassingSha, profile: this.status.profile ?? undefined, snapshot: { snapshot: this.snapshot, codeStartWallMs, codeStartFrom: this.status.codeStartFrom }, codeSettings: this.codeSettings ?? undefined })
+      this.status.result = evaluateForesight({ store: this.store, codeStart, now: this.store.latest, lastPassingSha: this.options.lastPassingSha, profile: this.status.profile ?? undefined, choice: this.profileChoice, snapshot: { snapshot: this.snapshot, codeStartWallMs, codeStartFrom: this.status.codeStartFrom }, codeSettings: this.codeSettings ?? undefined })
     } catch (error) {
       this.status.result = null // never leave an earlier verdict up
       this.status.message = `The check failed: ${error instanceof Error ? error.message : String(error)}`

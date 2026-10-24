@@ -1,19 +1,22 @@
 <!--
   "Choose code folder" or "Use GitHub": the robot code (a git clone, or a public GitHub repo), so a log that ran another
   commit than its robot profile's can be checked for the same current limits (power/limit-not-applied). Shared by Match
-  review and the Session view. `suggest` is the code the robot profile in view names, to pre-fill the GitHub repo.
+  review and the Session view. `suggest` is the code the robot profile in view names, to pre-fill the GitHub repo;
+  `linked` ("owner/repo@ref"), the code the library linked the logs in view to, wins over it. Only with neither in view
+  (`suggest` undefined: no log yet) is the first built-in profile's repo offered, never another robot's for a log in view.
 -->
 <script lang="ts">
   import { codeFolder } from './code-folder.svelte.ts'
   import { PROFILES } from '../profiles/index.ts'
   import type { RobotProfile } from '../profiles/types.ts'
 
-  let { suggest }: { suggest?: RobotProfile['code'] } = $props()
+  let { suggest, linked }: { suggest?: RobotProfile['code'] | null; linked?: string } = $props()
 
   const REAL_REPO = /^[\w.-]+\/[\w.-]+$/
-  /** The profile's repo and branch when it names a real repo; else the first built-in profile's. */
+  /** The linked code; else the profile's repo and branch when it names a real repo; else, with no log in view, the first built-in profile's. */
   const suggested = $derived.by(() => {
-    const code = [suggest, ...PROFILES.map((p) => p.code)].find((c) => c && REAL_REPO.test(c.repo))
+    if (linked) return linked
+    const code = [suggest, ...(suggest === undefined ? PROFILES.map((p) => p.code) : [])].find((c) => c && REAL_REPO.test(c.repo))
     return code ? `${code.repo}@${code.branch}` : ''
   })
   let asking = $state(false)
