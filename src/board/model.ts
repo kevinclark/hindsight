@@ -232,9 +232,9 @@ const finds = (m: MatchSummary, rule: string, key: string): SummaryFinding | und
 /** The moment a fix line counts from: the played time of the match it was made on, else when it was written (same clock as the logs). */
 const fixTime = (e: { played?: string; when: string }): number | null => ms(e.played) ?? ms(e.when)
 
-interface Scope { event: string; from: number | null; to: number | null }
+export interface Scope { event: string; from: number | null; to: number | null }
 /** The event a tick or a deferral must belong to (ADR 4: it is about this event's matches): the FMS event name, and the span of the session's matches. */
-function scopeOf(session: Session): Scope {
+export function scopeOf(session: Session): Scope {
   const t = session.matches.map((m) => m.playedAt).filter((x): x is number => x !== null)
   return { event: session.matches.find((m) => m.onField && m.event)?.event ?? '', from: t.length ? Math.min(...t) : null, to: t.length ? Math.max(...t) : null }
 }

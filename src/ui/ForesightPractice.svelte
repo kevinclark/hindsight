@@ -11,18 +11,17 @@
 </script>
 
 <section class="onchecks practice" aria-label="Practice-start checklist">
-  <h3>Practice-start checklist: read each line, do it, then it reads Done</h3>
+  <h3>Practice-start checklist: read each line, do it, then it reads Done <span class="muted">· {checklist.ready ? 'ready to drive' : `${checklist.actions.length} left`}</span></h3>
   <ul>
     {#each checklist.items as i, n (i.line.line)}
       {#if n === 0 || checklist.items[n - 1].group !== i.group}<li class="group" aria-hidden="true">{i.group}</li>{/if}
       <li class={`oc ${i.line.state.replace(' ', '-')}`}><span class="mark">{i.done ? '✓ ' : '○ '}{MARK[i.line.state]}</span><span class="line">{i.line.line}</span><span class="detail-text">{i.line.detail}</span></li>
     {/each}
   </ul>
-  <p class="end" class:ready={checklist.ready} role="status">{checklist.end}</p>
   <p class="small">The team's 2026 pit checklist, battery, CAN, cameras and zeros first. A line reads Done only from the check on screen now; "By eye" lines are for a person and are never counted.</p>
   {#if checklist.byEye.length}
     <details class="inert">
-      <summary>{checklist.byEye.length} lines for a person or context: never counted</summary>
+      <summary>{checklist.byEye.length} lines for a person, context, or what this robot's code can't report: never counted</summary>
       <ul>
         {#each checklist.byEye as l (l.line)}<li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.detail}</span></li>{/each}
       </ul>
@@ -44,8 +43,7 @@
   .oc.to-do .mark { color: var(--fg); }
   .oc .detail-text { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
   @media (max-width: 600px) { .oc { grid-template-columns: 8rem 1fr; } .oc .detail-text { grid-column: 2; } }
-  .end { margin: 0.6rem 0 0.2rem; font-size: 1.15rem; font-weight: 700; overflow-wrap: anywhere; }
-  .end.ready { color: var(--go, #188038); }
+  .muted { color: var(--muted); font-weight: 400; }
   .small { font-size: 0.8rem; color: var(--muted); }
   .inert { margin-top: 0.4rem; }
   .inert summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; padding: 0.25rem 0; min-height: 24px; box-sizing: border-box; }

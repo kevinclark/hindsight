@@ -18,7 +18,11 @@
   import { isUncommitted } from '../match/git-dirty.ts'
   import { downloadText } from './download.ts'
   import { ASSISTED_RULES, checklistLines, groupSteps, markOnchecks, wantedLines } from '../foresight/onchecks.ts'
-  import { boardFor, deferralSession, openDeferrals, practiceChecklist, queueChecklist, ticksFor, tickKey, type System, type Tick } from '../foresight/checklists.ts'
+  import { boardFor, deferralSession, openDeferrals, practiceChecklist, queueChecklist, sessionEventName, tickAt, ticksFor, tickKey, uncoveredItems, type System, type Tick } from '../foresight/checklists.ts'
+  import { hub } from '../hub/bridge.ts'
+  import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
+  import { teamEvents } from '../tba/api.ts'
+  import { eventFromLibrary, eventFromSchedule, type TodayEvent } from '../session/today-event.ts'
   import { atLatest, boardLines } from '../board/writes.ts'
   import { readRole, writeRole } from '../board/role.ts'
   import { verdictTone } from '../report/foresight-model.ts'
@@ -42,8 +46,24 @@
     /** Writes board lines (App.svelte writeBoard): the queue checklist's ticks. Without it ticks stay on this page. */
     onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void
   } = $props()
-  // The mode line (ADR 3): a pit check on an event day is a pit run; the laptop's day decides.
-  const today = $derived(todayMode(sessions, Date.now(), sessionNames()))
+  // The mode line (ADR 3): a pit check on an event day is a pit run; the laptop's day decides. With no logs of today loaded
+  // (the desktop app at the pit, before the Session view has any), The Blue Alliance's schedule or a library log dated today can
+  // say it is an event day too (src/session/today-event.ts). The single-file page has neither and keeps the old behaviour.
+  let external = $state.raw<TodayEvent | null>(null)
+  $effect(() => {
+    const app = hub()
+    if (!app) return
+    const get = tbaGetter(), team = tbaTeam()
+    let cancelled = false
+    void (async () => {
+      let found: TodayEvent | null = null
+      try { if (get && team !== null) found = eventFromSchedule((await teamEvents(get, team, new Date().getFullYear())).data, Date.now()) } catch { /* offline with no saved copy, or no key: the library is next */ }
+      if (!found) { try { found = eventFromLibrary((await app.library()).entries.map((e) => e.record), Date.now()) } catch { /* no library answer */ } }
+      if (!cancelled) external = found
+    })()
+    return () => { cancelled = true }
+  })
+  const today = $derived(todayMode(sessions, Date.now(), sessionNames(), external))
 
   const ADDRESSES = [
     { value: '172.22.11.2', label: 'USB tether' },
@@ -132,26 +152,29 @@
   // Open deferrals are the board's: today's event session when there is one, else the latest event session for this robot.
   const defSession = $derived(queueMode && robotId ? deferralSession(sessions, today.sessionId, robotId) : null)
   const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date()) : null)
-  const deferrals = $derived(board && profile ? openDeferrals(board, profile) : null)
+  // An earlier event's board (none of today's loaded): only what it deferred to the next event is still open, and its ticks are not today's.
+  const carried = $derived(!!defSession && defSession.id !== today.sessionId)
+  const deferrals = $derived(board && profile && defSession ? openDeferrals(board, profile, carried ? sessionEventName(defSession) : undefined) : null)
   const deferralNote = $derived(!queueMode ? null : !robotId ? 'The robot is not identified yet, so no deferrals are read.' : !defSession ? 'No event session for this robot is loaded in the Session view, so no deferrals are read.' : null)
   const queue = $derived(queueMode ? queueChecklist({ verdict: checked?.verdict ?? null, why, profile, deferrals, deferralNote }) : null)
-  const practice = $derived(practiceChecklist(markOnchecks(checked)))
+  const practice = $derived(practiceChecklist(markOnchecks(checked), uncoveredItems(checked?.verdict ?? null)))
   // The word in the big box (and on the printed report): the queue's, or the practice list's end, never a Go in practice.
-  const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.left.length} left`) : 'NOT CHECKED')
-  const shownWhy = $derived(queue ? queue.reason : checked ? (practice.ready ? 'every live check on the practice-start list is done' : practice.end.replace(/^\d+ left: /, '')) : why)
+  const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.actions.length} left`) : 'NOT CHECKED')
+  const shownWhy = $derived(queue ? queue.reason : checked ? (practice.ready ? 'every live check on the practice-start list is done' : practice.actions.join(', ')) : why)
   const shownTone = $derived(verdictTone(shownWord))
   // The role this laptop ticks under (the same setting as the board's), and ticks when no event is loaded to file them with.
   let role = $state<BoardRole | null>((() => { try { return readRole(localStorage) } catch { return null } })())
   function chooseRole(r: BoardRole | null) { role = r; if (r) { try { writeRole(localStorage, r) } catch { /* kept for this visit */ } } }
-  let localTicks = $state<Partial<Record<System, Tick>>>({})
+  let localTicks = $state<Partial<Record<System, { role: string; when: string }>>>({})
   const ticks = $derived.by((): Map<System, Tick> => {
     if (!queue || !robotId) return new Map()
-    if (defSession && board) return ticksFor(history, robotId, defSession, board.tickFor)
-    return new Map(Object.entries(localTicks) as [System, Tick][])
+    void status // the clock moves with each update: a tick goes old after TICK_MINUTES
+    if (defSession && board && !carried) return ticksFor(history, robotId, defSession, board.tickFor, Date.now())
+    return new Map(Object.entries(localTicks).map(([k, t]) => [k as System, tickAt(t!.role, t!.when, Date.now())] as const))
   })
   function tick(system: System, on: boolean) {
     if (!role) return
-    if (defSession && board && robotId && onBoard) {
+    if (defSession && board && robotId && onBoard && !carried) {
       const r = role, forMatch = board.tickFor, robot = robotId, at = atLatest(defSession)
       onBoard((device, h) => boardLines(h, { device, role: r }, new Date(), { key: tickKey(system), robot }, [{ op: on ? 'checked' : 'unchecked', value: forMatch }], at))
     } else localTicks = on ? { ...localTicks, [system]: { role, when: new Date().toISOString() } } : Object.fromEntries(Object.entries(localTicks).filter(([k]) => k !== system))
@@ -190,6 +213,9 @@
   const stepItems = $derived(checked ? groupSteps(checked.verdict.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule))) : [])
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
   const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
+  // Reds the board has deferred, by finding key (queue mode): worded as deferred wherever they are listed.
+  const deferredBy = $derived<Record<string, string>>(Object.fromEntries((queue?.deferrals ?? []).map((d) => [d.key, d.workaround || 'none written'])))
+  const deferredLine = (i: VerdictItem): string | null => (i.level === 'red' ? deferredBy[i.finding.key] ?? null : null)
   const unrun = $derived(checked ? didNotRun(checked.verdict.notChecked.length + checked.verdict.crashed.length, totalChecks) : null)
   const snapshotWhy = $derived(checked && !checked.snapshotUsed ? checked.report.skipped.find((s) => s.rule === SNAPSHOT_RULES[0])?.reason ?? null : null)
   let reportView = $state<{ save: () => Promise<string | null> }>()
@@ -198,12 +224,13 @@
 </script>
 
 {#snippet itemRow(item: VerdictItem, nested = false)}
-  <li class={`item ${item.level}`}>
+  <li class={`item ${deferredLine(item) !== null ? 'deferred' : item.level}`}>
     <button class="row" onclick={() => (open = { ...open, [item.finding.key]: !open[item.finding.key] })} aria-expanded={!!open[item.finding.key]}>
-      <span class="chip">{ASSISTED_RULES.has(item.finding.rule) && item.level === 'grey' ? 'Do' : LEVEL_WORD[item.level]}</span>
+      <span class="chip">{deferredLine(item) !== null ? 'Deferred' : ASSISTED_RULES.has(item.finding.rule) && item.level === 'grey' ? 'Do' : LEVEL_WORD[item.level]}</span>
       <span class="title">{item.finding.title}</span>
     </button>
     {#if nested}<p class="action">↳ {item.finding.explainedBy?.why}</p>
+    {:else if deferredLine(item) !== null}<p class="action"><strong>DEFERRED · workaround:</strong> {deferredLine(item)}</p>
     {:else if item.level !== 'grey' || ASSISTED_RULES.has(item.finding.rule)}<p class="action"><strong>Do:</strong> {item.action}</p>{/if}
     {#if !nested && item.finding.explainedBy}<p class="proof">explained by {item.finding.explainedBy.rule}: {item.finding.explainedBy.why}</p>{/if}
     <p class="proof">{item.finding.rule} · {item.proof}</p>
@@ -257,6 +284,10 @@
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
   </section>
 
+  {#if queue && status}
+    <ForesightQueue checklist={queue} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard && !carried)} onTick={tick} onRole={chooseRole} />
+  {/if}
+
   {#if checked}
     {#if decisive.length}
       <ol class="items" aria-label="Findings that decide GO or NO-GO">
@@ -288,9 +319,7 @@
   {/if}
 
   {#if status}
-    {#if queue}
-      <ForesightQueue checklist={queue} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard)} onTick={tick} onRole={chooseRole} />
-    {:else}
+    {#if !queue}
       <ForesightPractice checklist={practice} />
     {/if}
     <section class="onchecks" aria-label="Wanted checks">
@@ -330,7 +359,7 @@
   {/if}
 {/if}
 </div>
-<ForesightReport bind:this={reportView} {totalChecks} {status} {checked} verdict={shownWord} why={shownWhy} {onchecks} {battery} {controllers} />
+<ForesightReport bind:this={reportView} {totalChecks} {status} {checked} verdict={shownWord} why={shownWhy} deferred={deferredBy} {onchecks} {battery} {controllers} />
 
 <style>
   .connect + .connect { margin-top: 0.5rem; }
@@ -352,13 +381,13 @@
   .items { list-style: none; padding: 0; margin: 0; }
   .item { border-left: 4px solid var(--border); padding: 0.4rem 0.75rem; margin: 0 0 0.5rem; }
   .item.red { border-left-color: var(--error); }
-  .item.amber { border-left-color: var(--warning); }
+  .item.amber, .item.deferred { border-left-color: var(--warning); }
   .items.under { margin: 0.4rem 0 0; }
   .under .item { margin-bottom: 0; }
   .row { display: flex; gap: 0.6rem; align-items: baseline; width: 100%; text-align: left; border: none; background: none; color: var(--fg); font: inherit; cursor: pointer; padding: 0; }
   .chip { font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
   .red .chip { color: var(--error); }
-  .amber .chip { color: var(--warning); }
+  .amber .chip, .deferred .chip { color: var(--warning); }
   .grey .chip { color: var(--muted); }
   .title { font-weight: 600; font-size: 1.1rem; }
   .action, .proof { margin: 0.15rem 0 0; font-size: 0.9rem; }

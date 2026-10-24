@@ -15,7 +15,11 @@ import type { Verdict, VerdictItem } from './verdict.ts'
 import type { MarkedLine } from './onchecks.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { profileId } from '../profiles/index.ts'
-import { buildBoard, inScope, mechanismOf, robotOf, type Board, type BoardIssue } from '../board/model.ts'
+import { buildBoard, inScope, mechanismOf, robotOf, scopeOf, type Board, type BoardIssue } from '../board/model.ts'
+import { NEXT_EVENT } from '../board/points.ts'
+import { FORESIGHT_RULES, makerOf } from '../rules/index.ts'
+import { ONCHECKS } from './onchecks.ts'
+import { SNAPSHOT_RULES } from './snapshot-checks.ts'
 import { goWithWord, rowTitle } from '../board/words.ts'
 import { sessionWithMarks } from '../triage/track-record.ts'
 import { boardKey, boardState, triage, type HistoryEvent } from '../triage/history.ts'
@@ -68,7 +72,12 @@ export interface OpenDeferral {
   workaround: string
   /** "the end of the event", "Q41": the board's `deferral.point.until`. */
   until: string
+  /** Set when the board is an earlier event's: the event it was made at. Only a deferral to the next event carries over. */
+  carriedFrom?: string
 }
+
+/** The event a session is, in words: The Blue Alliance's name, the field's, else its label. */
+export const sessionEventName = (s: Pick<Session, 'event' | 'matches' | 'label'>): string => s.event?.name ?? s.matches.find((m) => m.onField && m.event)?.event ?? s.label
 
 /** The session whose board holds the deferrals: today's event session when there is one, else the latest event session for this robot. */
 export function deferralSession(sessions: readonly Session[], todaySessionId: string, robot: string): Session | null {
@@ -86,12 +95,16 @@ export function boardFor(session: Session, history: HistoryEvent[], profile: Rob
   return buildBoard({ session: sessionWithMarks(session, marks), history, marks, schedule: null, profiles: [profile], now })
 }
 
-/** Every open (not closed, not ended) deferral for the robot. */
-export function openDeferrals(board: Board, profile: RobotProfile): OpenDeferral[] {
+/**
+ * Every open (not closed, not ended) deferral for the robot. `carriedFrom`: the board is not today's event (an earlier
+ * one), so only a deferral to the next event is still open here, and it says where it came from; the earlier event's
+ * "until the end of the event" and match deferrals are over.
+ */
+export function openDeferrals(board: Board, profile: RobotProfile, carriedFrom?: string): OpenDeferral[] {
   const robot = profileId(profile)
   return board.issues
-    .filter((i): i is BoardIssue & { deferral: NonNullable<BoardIssue['deferral']> } => i.robot === robot && i.status === 'deferred' && !!i.deferral && !i.deferral.expired)
-    .map((i) => ({ key: i.key, system: systemOf(i.rule, i.about, profile), title: rowTitle(i), workaround: i.deferral.workaround, until: i.deferral.point.until }))
+    .filter((i): i is BoardIssue & { deferral: NonNullable<BoardIssue['deferral']> } => i.robot === robot && i.status === 'deferred' && !!i.deferral && !i.deferral.expired && (carriedFrom === undefined || i.deferral.point.pos === NEXT_EVENT))
+    .map((i) => ({ key: i.key, system: systemOf(i.rule, i.about, profile), title: rowTitle(i), workaround: i.deferral.workaround, until: i.deferral.point.until, ...(carriedFrom !== undefined ? { carriedFrom } : {}) }))
 }
 
 // ---- the queue checklist ----
@@ -107,6 +120,10 @@ export interface QueueRow {
   look: VerdictItem[]
   /** Open deferrals of this system, seen live or not. */
   deferrals: (OpenDeferral & { seenNow: boolean })[]
+  /** How many of this system's checks ran in this check, of those it has. */
+  ran: { n: number; of: number }
+  /** "tag not seen yet" on Vision until the camera step clears. */
+  note: string | null
   /** The row, in words: "Go", "Go with deferral: <issue> · workaround: <line>", "No-go: <title>". */
   text: string
 }
@@ -126,6 +143,9 @@ export interface QueueChecklist {
   /** Why no deferral was read, when none could be; null otherwise. */
   deferralNote: string | null
 }
+
+/** Every check Foresight runs, to count how many of a system's ran. */
+const ALL_RULES: string[] = [...FORESIGHT_RULES.map((r) => r.id), ...(SNAPSHOT_RULES as unknown as string[])]
 
 const WORD_RANK: Record<SystemWord, number> = { 'No-go': 0, 'Not checked': 1, 'Go with deferral': 2, Go: 3 }
 
@@ -152,14 +172,19 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     const text = word === 'No-go' ? `No-go: ${fix.map((i) => i.finding.title).join('; ')}`
       : word === 'Go with deferral' ? `Go with deferral: ${deferrals.map((d) => `${d.title} · workaround: ${d.workaround || 'none written'}`).join('; ')}`
       : word === 'Not checked' ? (verdict ? 'Not checked: a check for this system could not read its signals' : 'Not checked') : 'Go'
-    return { system, word, fix, look: mine.filter((i) => i.level === 'amber'), deferrals, text }
+    const mine_rules = ALL_RULES.filter((r) => systemOf(r, null, profile) === system)
+    const notRan = verdict ? new Set([...verdict.notChecked.filter((x) => !x.reason.startsWith('partly')), ...verdict.crashed].map((x) => x.rule)) : null
+    const ran = { n: notRan ? mine_rules.filter((r) => !notRan.has(r)).length : 0, of: mine_rules.length }
+    const tagStep = system === 'Vision' && !!verdict && verdict.items.some((i) => i.level === 'grey' && i.finding.rule === 'foresight/camera-sees-tag')
+    return { system, word, fix, look: mine.filter((i) => i.level === 'amber'), deferrals, ran, note: tagStep ? 'tag not seen yet' : null, text }
   }).sort((a, b) => WORD_RANK[a.word] - WORD_RANK[b.word] || SYSTEMS.indexOf(a.system) - SYSTEMS.indexOf(b.system))
   const nogo = rows.filter((r) => r.word === 'No-go')
   let word: string
   let kind: QueueKind
   let reason: string
   if (nogo.length) { kind = 'NO-GO'; word = 'NO-GO'; reason = `${nogo.length} ${nogo.length === 1 ? 'system' : 'systems'} to fix before the robot goes on the field: ${nogo.map((r) => r.system).join(', ')}` }
-  else if (!verdict || verdict.verdict === 'NOT CHECKED') { kind = 'NOT CHECKED'; word = 'NOT CHECKED'; reason = verdict ? verdict.reason : input.why }
+  // A system left unjudged keeps the word NOT CHECKED whatever the engine says, and a deferral never lifts it.
+  else if (!verdict || verdict.verdict === 'NOT CHECKED' || rows.some((r) => r.word === 'Not checked')) { kind = 'NOT CHECKED'; word = 'NOT CHECKED'; reason = !verdict ? input.why : verdict.verdict === 'NOT CHECKED' ? verdict.reason : `could not check ${rows.filter((r) => r.word === 'Not checked').map((r) => r.system).join(', ')}` }
   else if (open.length) { kind = 'GO WITH DEFERRALS'; word = goWithWord(open.length); reason = `${open.length === 1 ? 'one deferral is' : `${open.length} deferrals are`} open: the workaround ${open.length === 1 ? 'line is' : 'lines are'} below` }
   else { kind = 'GO'; word = 'GO'; reason = verdict.reason }
   return { word, kind, reason, rows, deferrals: open, deferralNote: input.deferralNote }
@@ -170,21 +195,26 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
 /** The history key a system's tick is filed under. Not an issue's key: the board never shows it. */
 export const tickKey = (system: System): string => `Foresight checklist · ${system}`
 
-export interface Tick { role: string; when: string }
+/** A tick is Done for this long, then it reads "(old)" and the system is unticked: a check made long ago says nothing about now. */
+export const TICK_MINUTES = 90
+
+export interface Tick { role: string; when: string; old: boolean }
+
+/** A tick as read at `now`. */
+export const tickAt = (role: string, when: string, now: number): Tick => ({ role, when, old: !(now - Date.parse(when) <= TICK_MINUTES * 60e3) })
 
 /**
  * The ticks on the system rows for `forMatch` ("after Q33", the board's label), as the board counts a tick: only this
- * event's (its name and span, or its played time). With no session there is no event to tie them to: none are read.
+ * event's (the board's own scope: its name and span, or its played time). With no session there is no event to tie them to: none are read.
  */
-export function ticksFor(history: HistoryEvent[], robot: string, session: Session | null, forMatch: string): Map<System, Tick> {
+export function ticksFor(history: HistoryEvent[], robot: string, session: Session | null, forMatch: string, now: number): Map<System, Tick> {
   const out = new Map<System, Tick>()
   if (!session) return out
-  const times = session.matches.map((m) => m.playedAt).filter((x): x is number => x !== null)
-  const scope = { event: session.matches.find((m) => m.onField && m.event)?.event ?? '', from: times.length ? Math.min(...times) : null, to: times.length ? Math.max(...times) : null }
+  const scope = scopeOf(session)
   const states = boardState(history)
   for (const system of SYSTEMS) {
     const c = (states.get(boardKey(tickKey(system), robot))?.checked ?? []).filter((x) => x.match === forMatch && inScope(x, scope)).at(-1)
-    if (c) out.set(system, { role: c.by.role, when: c.when })
+    if (c) out.set(system, tickAt(c.by.role, c.when, now))
   }
   return out
 }
@@ -206,23 +236,51 @@ export interface PracticeItem { group: string; line: MarkedLine; done: boolean }
 
 export interface PracticeChecklist {
   items: PracticeItem[]
-  /** Lines only a person can check, and context that is never a fault: shown folded, never counted. */
+  /** Lines only a person can check, context that is never a fault, and lines this robot's code can never report: shown folded, never counted. */
   byEye: MarkedLine[]
+  /** Lines not done. */
   left: PracticeItem[]
+  /** What is left as actions: the lines waiting on the robot snapshot are one ("drop the snapshot"). */
+  actions: string[]
   ready: boolean
-  /** "Ready to drive" or "3 left: Fresh battery installed, …". Never a Go. */
+  /** "Ready to drive" or "2 left: Fresh battery installed, drop the snapshot". Never a Go. */
   end: string
 }
 
-export function practiceChecklist(lines: MarkedLine[]): PracticeChecklist {
+const WAITING_ON_SNAPSHOT = /^no robot snapshot/
+/** A line that stays "not checked" because the robot's code never sends what it reads: only a person can do it. */
+const NEVER_REPORTED = /check by hand|watches no CTRE device|the robot (does not|doesn't) send/
+
+/** Failing (red or amber) items whose rule is on no line of the team's checklist: nothing in the list would show them. */
+export function uncoveredItems(verdict: Pick<Verdict, 'items'> | null): VerdictItem[] {
+  const covered = new Set(ONCHECKS.flatMap((l) => l.rules ?? []))
+  return (verdict?.items ?? []).filter((i) => i.level !== 'grey' && !covered.has(i.finding.rule))
+}
+
+/**
+ * `uncovered`: failing items that no checklist line covers (uncoveredItems): each is left, so "Ready to drive" never
+ * reads over a live red or amber.
+ */
+export function practiceChecklist(lines: MarkedLine[], uncovered: VerdictItem[] = []): PracticeChecklist {
   const live = lines.filter((l) => !l.byEye && !l.context)
-  const first = PRACTICE_FIRST.flatMap((g) => g.lines.map((name) => ({ group: g.group, line: live.find((l) => l.line === name) })).filter((x): x is { group: string; line: MarkedLine } => !!x.line))
+  const byHand = live.filter((l) => l.state === 'not checked' && NEVER_REPORTED.test(l.detail))
+  const counted = live.filter((l) => !byHand.includes(l))
+  const first = PRACTICE_FIRST.flatMap((g) => g.lines.map((name) => ({ group: g.group, line: counted.find((l) => l.line === name) })).filter((x): x is { group: string; line: MarkedLine } => !!x.line))
   const named = new Set(first.map((x) => x.line))
-  const rest = live.filter((l) => !named.has(l)).map((line) => ({ group: 'The rest', line }))
-  const items = [...first, ...rest].map((x): PracticeItem => ({ ...x, done: x.line.state === 'ok' }))
+  const rest = counted.filter((l) => !named.has(l)).map((line) => ({ group: 'The rest', line }))
+  const extra = uncovered.map((i) => ({
+    group: 'Not on the checklist',
+    line: { section: '', line: `${makerOf(i.finding.rule)?.title ?? i.finding.title} (no checklist line)`, state: i.level === 'red' ? 'red' : 'amber', detail: i.finding.title } as MarkedLine,
+  }))
+  const items = [...first, ...rest, ...extra].map((x): PracticeItem => ({ ...x, done: x.line.state === 'ok' }))
   const left = items.filter((i) => !i.done)
+  const actions: string[] = []
+  for (const i of left) {
+    const name = WAITING_ON_SNAPSHOT.test(i.line.detail) ? 'drop the snapshot' : i.line.line
+    if (!actions.includes(name)) actions.push(name)
+  }
   return {
-    items, left, ready: left.length === 0, byEye: lines.filter((l) => l.byEye || l.context),
-    end: left.length === 0 ? 'Ready to drive' : `${left.length} left: ${left.map((i) => i.line.line).join(', ')}`,
+    items, left, actions, ready: left.length === 0, byEye: [...lines.filter((l) => l.byEye || l.context), ...byHand],
+    end: left.length === 0 ? 'Ready to drive' : `${actions.length} left: ${actions.join(', ')}`,
   }
 }

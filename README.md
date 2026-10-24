@@ -305,7 +305,7 @@ commit, reseat a controller).
   it), `alerts/passthrough`, `foresight/camera-sees-tag` (a step: "hold an AprilTag up to Back_Left" until each camera has
   seen one; never moves the verdict), and `foresight/gyro-still-drift` as context. Not here: the auto choice and
   alliance (they reset on the field).
-- **Wanted checks** (`src/rules/wanted.ts`) fold away under the pit checklist as grey context: problems no check can
+- **Wanted checks** (`src/rules/wanted.ts`) fold away under the checklist as grey context: problems no check can
   see yet, never a finding and never in the verdict. One whose covering check could run drops off the list.
 - **Red is earned:** every check is amber until `scripts/foresight-backtest.ts` finds no false reds on field logs;
   the screen says how many logs each red was proven on (`src/foresight/proven.ts`, `docs/measurements.md`).

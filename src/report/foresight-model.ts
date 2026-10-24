@@ -23,6 +23,8 @@ export interface ForesightReportInput {
   controllers: string[]
   build: { sha: string; branch: string; dirty: string } | null
   notChecked: { rule: string; reason: string }[]
+  /** Reds the board has deferred, by finding key: the workaround line. They read DEFERRED, never "fix before the field". */
+  deferred?: Record<string, string>
 }
 
 /** A 40-hex git sha in a line of text shortened to the 7 characters the card and the printed report show. */
@@ -48,7 +50,9 @@ export function foresightBuild(i: ForesightReportInput): BuildLine | null {
 }
 
 export function foresightCard(i: ForesightReportInput): CardModel {
-  const reds = i.items.filter((x) => x.level === 'red')
+  const deferred = i.deferred ?? {}
+  const reds = i.items.filter((x) => x.level === 'red' && !(x.finding.key in deferred))
+  const defers = i.items.filter((x) => x.level === 'red' && x.finding.key in deferred)
   const ambers = i.items.filter((x) => x.level === 'amber')
   const build = foresightBuild(i)
   // A number the title already says is not said again under it; that includes a 40-hex sha the title shows as its
@@ -59,7 +63,7 @@ export function foresightCard(i: ForesightReportInput): CardModel {
     const said = n.inTitle || (/^[0-9a-f]{40}$/i.test(n.value) && title.includes(n.value.slice(0, 7)))
     return { word, tone, title, number: said ? '' : shortShas(n.text) }
   }
-  const items = [...reds.map((x) => item(x, 'FIX', 'error')), ...ambers.map((x) => item(x, 'LOOK AT', 'warning'))]
+  const items = [...reds.map((x) => item(x, 'FIX', 'error')), ...defers.map((x) => ({ ...item(x, 'DEFERRED', 'warning'), number: `workaround: ${deferred[x.finding.key] || 'none written'}` })), ...ambers.map((x) => item(x, 'LOOK AT', 'warning'))]
   return {
     context: 'Foresight pit check',
     heading: i.verdict,
