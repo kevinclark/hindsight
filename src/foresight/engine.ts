@@ -52,6 +52,8 @@ export type ForesightResult =
  * signals that Foresight subscribes to), not on every signal the profile names.
  */
 function fitOnSubscribed(log: WpilogFile, profile: RobotProfile, choice: ProfileChoice): ProfileChoice {
+  // No profile fits: the log's own signals stand in (profiles/choose.ts), and fitting those to the log says nothing.
+  if (choice.how === 'signals' && choice.misfit) return choice
   const wanted = new Set(foresightKeys(profile))
   const keys = profileKeys(profile).filter((k) => wanted.has(k))
   const fit = { present: keys.filter((k) => hasEntry(log, k)).length, total: keys.length }
