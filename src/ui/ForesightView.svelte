@@ -18,7 +18,8 @@
   import { isUncommitted } from '../match/git-dirty.ts'
   import { downloadText } from './download.ts'
   import { ASSISTED_RULES, checklistLines, groupSteps, markOnchecks, wantedLines } from '../foresight/onchecks.ts'
-  import { boardFor, deferralSession, openDeferrals, practiceChecklist, queueChecklist, sessionEventName, tickAt, ticksFor, tickKey, uncoveredItems, type System, type Tick } from '../foresight/checklists.ts'
+  import { boardFor, deferralSession, openDeferrals, isCarried, practiceChecklist, queueChecklist, sessionEventName, tickAt, ticksFor, tickKey, uncoveredItems, type System, type Tick } from '../foresight/checklists.ts'
+  import { robotAddresses, USB_ADDRESS } from '../foresight/addresses.ts'
   import { hub } from '../hub/bridge.ts'
   import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
   import { teamEvents } from '../tba/api.ts'
@@ -49,28 +50,40 @@
   // The mode line (ADR 3): a pit check on an event day is a pit run; the laptop's day decides. With no logs of today loaded
   // (the desktop app at the pit, before the Session view has any), The Blue Alliance's schedule or a library log dated today can
   // say it is an event day too (src/session/today-event.ts). The single-file page has neither and keeps the old behaviour.
-  let external = $state.raw<TodayEvent | null>(null)
+  // The schedule's events are read once (the answer for a day is worked out from them each time); the library is read again as
+  // the day goes on, so a log pulled in that day flips Practice to Event without a reload. A hand choice still wins (todayMode).
+  let clock = $state(Date.now())
+  $effect(() => { const t = setInterval(() => { clock = Date.now() }, 30_000); return () => clearInterval(t) })
+  let tbaEvents = $state.raw<Parameters<typeof eventFromSchedule>[0]>([])
+  let libraryLogs = $state.raw<Parameters<typeof eventFromLibrary>[0]>([])
+  let libraryReadAt = 0
+  async function readLibrary() {
+    const app = hub()
+    if (!app) return
+    libraryReadAt = Date.now()
+    try { libraryLogs = (await app.library()).entries.map((e) => e.record) } catch { /* no library answer: the last one stands */ }
+  }
   $effect(() => {
     const app = hub()
     if (!app) return
     const get = tbaGetter(), team = tbaTeam()
     let cancelled = false
     void (async () => {
-      let found: TodayEvent | null = null
-      try { if (get && team !== null) found = eventFromSchedule((await teamEvents(get, team, new Date().getFullYear())).data, Date.now()) } catch { /* offline with no saved copy, or no key: the library is next */ }
-      if (!found) { try { found = eventFromLibrary((await app.library()).entries.map((e) => e.record), Date.now()) } catch { /* no library answer */ } }
-      if (!cancelled) external = found
+      try { if (get && team !== null) { const events = (await teamEvents(get, team, new Date().getFullYear())).data; if (!cancelled) tbaEvents = events } } catch { /* offline with no saved copy, or no key: the library is next */ }
     })()
-    return () => { cancelled = true }
+    void readLibrary()
+    const stop = app.onProgress((p) => { if (p === null) void readLibrary() })
+    return () => { cancelled = true; stop() }
   })
-  const today = $derived(todayMode(sessions, Date.now(), sessionNames(), external))
+  // On each status update, while no event day is known, read the library again at most every 10 s.
+  $effect(() => { void status; if (hub() && !eventFromLibrary(libraryLogs, clock) && Date.now() - libraryReadAt > 10_000) void readLibrary() })
+  const external = $derived<TodayEvent | null>(eventFromSchedule(tbaEvents, clock) ?? eventFromLibrary(libraryLogs, clock))
+  const today = $derived(todayMode(sessions, clock, sessionNames(), external))
 
-  const ADDRESSES = [
-    { value: '172.22.11.2', label: 'USB tether' },
-    { value: '10.80.33.2', label: 'Ethernet tether' },
-    { value: 'roborio-8033-frc.local', label: 'by name' },
-  ]
-  let address = $state(ADDRESSES[0].value)
+  // The Ethernet and by-name addresses are built from the team number (src/foresight/addresses.ts); USB is the same for every team.
+  const offered = $derived(robotAddresses(tbaTeam()))
+  const ADDRESSES = $derived(offered.addresses)
+  let address = $state(USB_ADDRESS.value)
   let live: ForesightLive | null = null
   // What the Code panel read from the robot code, for the snapshot check (snapshot/code-settings).
   let codeSettings: CodeSettings | null = null
@@ -120,7 +133,7 @@
     if (recorded || s.result?.state !== 'checked') return
     let kept: PitCheckEvent['verdict']
     if (queueMode) {
-      const q = queueChecklist({ verdict: s.result.verdict, why: '', profile: s.result.match.profile, deferrals, deferralNote: null })
+      const q = queueChecklist({ verdict: s.result.verdict, why: '', profile: s.result.match.profile, deferrals, deferralNote: null, ticks })
       if (q.kind !== 'GO' && q.kind !== 'GO WITH DEFERRALS') return
       kept = q.kind
     } else if (s.result.verdict.verdict === 'GO') kept = 'GO'
@@ -153,25 +166,25 @@
   const defSession = $derived(queueMode && robotId ? deferralSession(sessions, today.sessionId, robotId) : null)
   const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date()) : null)
   // An earlier event's board (none of today's loaded): only what it deferred to the next event is still open, and its ticks are not today's.
-  const carried = $derived(!!defSession && defSession.id !== today.sessionId)
+  const carried = $derived(!!defSession && isCarried(defSession, today.sessionId, external, clock))
   const deferrals = $derived(board && profile && defSession ? openDeferrals(board, profile, carried ? sessionEventName(defSession) : undefined) : null)
   const deferralNote = $derived(!queueMode ? null : !robotId ? 'The robot is not identified yet, so no deferrals are read.' : !defSession ? 'No event session for this robot is loaded in the Session view, so no deferrals are read.' : null)
-  const queue = $derived(queueMode ? queueChecklist({ verdict: checked?.verdict ?? null, why, profile, deferrals, deferralNote }) : null)
-  const practice = $derived(practiceChecklist(markOnchecks(checked), uncoveredItems(checked?.verdict ?? null)))
-  // The word in the big box (and on the printed report): the queue's, or the practice list's end, never a Go in practice.
-  const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.actions.length} left`) : 'NOT CHECKED')
-  const shownWhy = $derived(queue ? queue.reason : checked ? (practice.ready ? 'every live check on the practice-start list is done' : practice.actions.join(', ')) : why)
-  const shownTone = $derived(verdictTone(shownWord))
   // The role this laptop ticks under (the same setting as the board's), and ticks when no event is loaded to file them with.
   let role = $state<BoardRole | null>((() => { try { return readRole(localStorage) } catch { return null } })())
   function chooseRole(r: BoardRole | null) { role = r; if (r) { try { writeRole(localStorage, r) } catch { /* kept for this visit */ } } }
   let localTicks = $state<Partial<Record<System, { role: string; when: string }>>>({})
   const ticks = $derived.by((): Map<System, Tick> => {
-    if (!queue || !robotId) return new Map()
-    void status // the clock moves with each update: a tick goes old after TICK_MINUTES
-    if (defSession && board && !carried) return ticksFor(history, robotId, defSession, board.tickFor, Date.now())
-    return new Map(Object.entries(localTicks).map(([k, t]) => [k as System, tickAt(t!.role, t!.when, Date.now())] as const))
+    if (!queueMode || !robotId) return new Map()
+    void clock // moves every 30 s: a tick goes old after TICK_MINUTES
+    if (defSession && board && !carried) return ticksFor(history, robotId, defSession, board.tickFor, clock)
+    return new Map(Object.entries(localTicks).map(([k, t]) => [k as System, tickAt(t!.role, t!.when, clock)] as const))
   })
+  const queue = $derived(queueMode ? queueChecklist({ verdict: checked?.verdict ?? null, why, profile, deferrals, deferralNote, ticks }) : null)
+  const practice = $derived(practiceChecklist(markOnchecks(checked), uncoveredItems(checked?.verdict ?? null)))
+  // The word in the big box (and on the printed report): the queue's, or the practice list's end, never a Go in practice.
+  const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.actions.length} left`) : 'NOT CHECKED')
+  const shownWhy = $derived(queue ? queue.reason : checked ? (practice.ready ? 'every live check on the practice-start list is done' : practice.actions.join(', ')) : why)
+  const shownTone = $derived(verdictTone(shownWord))
   function tick(system: System, on: boolean) {
     if (!role) return
     if (defSession && board && robotId && onBoard && !carried) {
@@ -208,9 +221,11 @@
   // Problems no check can see yet (rules/wanted.ts): grey context, never in the verdict.
   const wanted = $derived(wantedLines(checked))
   // Only red and amber items decide GO/NO-GO; grey ones (context, or a step for a person) sit in their own short list.
-  const decisive = $derived(checked ? checked.verdict.items.filter((i) => i.level !== 'grey') : [])
+  // One headline per event: a finding already on a No-go row of the queue (with its action and proof) is not listed again.
+  const decisive = $derived(checked ? checked.verdict.items.filter((i) => i.level !== 'grey' && !queue?.rows.some((r) => r.fix.includes(i))) : [])
   // Grey items that ask a person to do something (hold a tag up to a camera) are steps; the other greys are context.
-  const stepItems = $derived(checked ? groupSteps(checked.verdict.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule))) : [])
+  // In practice the camera step is on its checklist line ("Left: do", with the cameras named), so it is not listed again.
+  const stepItems = $derived(checked && queue ? groupSteps(checked.verdict.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule))) : [])
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
   const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
   // Reds the board has deferred, by finding key (queue mode): worded as deferred wherever they are listed.
@@ -262,6 +277,7 @@
   <section class="connect">
     <label>Robot <input list="foresight-addresses" bind:value={address} disabled={connected} size="24" /></label>
     <datalist id="foresight-addresses">{#each ADDRESSES as a (a.value)}<option value={a.value}>{a.label}</option>{/each}</datalist>
+    {#if offered.note}<span class="status">{offered.note}</span>{/if}
     {#if connected}<button class="button" onclick={disconnect}>Disconnect</button>{:else}<button class="button" onclick={connect}>Connect</button>{/if}
     <span class="status">{status?.message ?? 'Tethered in the pit or queue (USB or Ethernet), robot on, Driver Station connected. Never on the field.'}</span>
   </section>
@@ -283,6 +299,10 @@
     {#if result?.state === 'settling'}<p class="small">Nothing is judged until {SETTLE_SECONDS} s after the robot code starts: start-up camera and time-sync alerts clear in that time.</p>{/if}
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
   </section>
+
+  {#if !queue && status}
+    <ForesightPractice checklist={practice} />
+  {/if}
 
   {#if queue && status}
     <ForesightQueue checklist={queue} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard && !carried)} onTick={tick} onRole={chooseRole} />
@@ -319,9 +339,6 @@
   {/if}
 
   {#if status}
-    {#if !queue}
-      <ForesightPractice checklist={practice} />
-    {/if}
     <section class="onchecks" aria-label="Wanted checks">
       {#if wanted.length}
         <details class="inert">

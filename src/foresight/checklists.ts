@@ -79,6 +79,23 @@ export interface OpenDeferral {
 /** The event a session is, in words: The Blue Alliance's name, the field's, else its label. */
 export const sessionEventName = (s: Pick<Session, 'event' | 'matches' | 'label'>): string => s.event?.name ?? s.matches.find((m) => m.onField && m.event)?.event ?? s.label
 
+/** The repo's same-event window: logs of one event lie within this long of each other (src/session/session.ts groups by it). */
+const SAME_EVENT_MS = 4 * 86400e3
+
+/**
+ * Whether the deferral session is an earlier event than today's, so only what was deferred to the next event carries over.
+ * It is today's event when it is the session the mode line found, or The Blue Alliance's signal names its event (the same
+ * key, or the same name), or its last log is within the same-event window (day two of an event, with no log of today loaded).
+ */
+export function isCarried(session: Session, todaySessionId: string, external: { key?: string; name: string } | null, now: number): boolean {
+  if (session.id === todaySessionId) return false
+  if (external?.key && session.event?.key === external.key) return false
+  const norm = (x: string) => x.trim().toLowerCase()
+  if (external && norm(sessionEventName(session)) === norm(external.name)) return false
+  const last = Math.max(0, ...[...session.matches, ...(session.pitRuns ?? [])].map((m) => m.playedAt ?? 0))
+  return now - last > SAME_EVENT_MS
+}
+
 /** The session whose board holds the deferrals: today's event session when there is one, else the latest event session for this robot. */
 export function deferralSession(sessions: readonly Session[], todaySessionId: string, robot: string): Session | null {
   const today = sessions.find((s) => s.id === todaySessionId && s.kind === 'event')
@@ -109,7 +126,14 @@ export function openDeferrals(board: Board, profile: RobotProfile, carriedFrom?:
 
 // ---- the queue checklist ----
 
-export type SystemWord = 'Go' | 'Go with deferral' | 'No-go' | 'Not checked'
+export type SystemWord = 'Go' | 'Go with deferral' | 'No-go' | 'Not checked' | 'Check by hand'
+
+/**
+ * What a person does for a system when none of its checks ran (never Go, never silence). The team does this every match for
+ * the drivetrain (Kevin, 2026-10-24: robot on blocks, confirm the wheels spin as expected); the checklist has no other such
+ * step, so any other system just reads "Check by hand".
+ */
+export const HAND_STEPS: Partial<Record<System, string>> = { Drivetrain: 'On blocks: enable and confirm every wheel spins the way it should' }
 
 export interface QueueRow {
   system: System
@@ -124,6 +148,8 @@ export interface QueueRow {
   ran: { n: number; of: number }
   /** "tag not seen yet" on Vision until the camera step clears. */
   note: string | null
+  /** For a row that reads Check by hand: the step. */
+  step: string | null
   /** The row, in words: "Go", "Go with deferral: <issue> · workaround: <line>", "No-go: <title>". */
   text: string
 }
@@ -147,13 +173,13 @@ export interface QueueChecklist {
 /** Every check Foresight runs, to count how many of a system's ran. */
 const ALL_RULES: string[] = [...FORESIGHT_RULES.map((r) => r.id), ...(SNAPSHOT_RULES as unknown as string[])]
 
-const WORD_RANK: Record<SystemWord, number> = { 'No-go': 0, 'Not checked': 1, 'Go with deferral': 2, Go: 3 }
+const WORD_RANK: Record<SystemWord, number> = { 'No-go': 0, 'Not checked': 1, 'Check by hand': 1, 'Go with deferral': 2, Go: 3 }
 
 /**
  * `verdict`: the engine's, or null with no current check. `deferrals`: null when none could be read (no event session),
  * with `deferralNote` saying why. `profile`: the robot's, for the grouping.
  */
-export function queueChecklist(input: { verdict: Verdict | null; why: string; profile: RobotProfile | undefined; deferrals: OpenDeferral[] | null; deferralNote: string | null }): QueueChecklist {
+export function queueChecklist(input: { verdict: Verdict | null; why: string; profile: RobotProfile | undefined; deferrals: OpenDeferral[] | null; deferralNote: string | null; ticks?: ReadonlyMap<System, Tick> }): QueueChecklist {
   const { verdict, profile } = input
   const open = input.deferrals ?? []
   const items = (verdict?.items ?? []).filter((i) => i.level !== 'grey')
@@ -168,15 +194,22 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     const seen = new Set(reds.filter(deferred).map((i) => i.finding.key))
     const deferrals = open.filter((d) => d.system === system).map((d) => ({ ...d, seenNow: seen.has(d.key) }))
     const unjudged = !verdict || blind.some((s) => systemOf(s.rule, null, profile) === system)
-    const word: SystemWord = fix.length ? 'No-go' : unjudged ? 'Not checked' : deferrals.length ? 'Go with deferral' : 'Go'
+    const mine_rules = ALL_RULES.filter((r) => systemOf(r, null, profile) === system)
+    // One meaning of "ran", the box's own ("n of 26 checks not fully run"): a check that ran only in part did not.
+    const notRan = verdict ? new Set([...verdict.notChecked, ...verdict.crashed].map((x) => x.rule)) : null
+    const ran = { n: notRan ? mine_rules.filter((r) => !notRan.has(r)).length : 0, of: mine_rules.length }
+    // A system whose checks all failed to run is never Go: a person checks it, and a fresh tick says they did.
+    const hand = !!verdict && !unjudged && ran.n === 0 && ran.of > 0
+    const ticked = input.ticks?.get(system)
+    const handDone = hand && !!ticked && !ticked.old
+    const step = hand ? HAND_STEPS[system] ?? null : null
+    const word: SystemWord = fix.length ? 'No-go' : unjudged ? 'Not checked' : hand && !handDone ? 'Check by hand' : deferrals.length ? 'Go with deferral' : 'Go'
     const text = word === 'No-go' ? `No-go: ${fix.map((i) => i.finding.title).join('; ')}`
       : word === 'Go with deferral' ? `Go with deferral: ${deferrals.map((d) => `${d.title} · workaround: ${d.workaround || 'none written'}`).join('; ')}`
+      : word === 'Check by hand' ? `Check by hand: ${step ?? 'none of its checks ran; a person checks it'}`
       : word === 'Not checked' ? (verdict ? 'Not checked: a check for this system could not read its signals' : 'Not checked') : 'Go'
-    const mine_rules = ALL_RULES.filter((r) => systemOf(r, null, profile) === system)
-    const notRan = verdict ? new Set([...verdict.notChecked.filter((x) => !x.reason.startsWith('partly')), ...verdict.crashed].map((x) => x.rule)) : null
-    const ran = { n: notRan ? mine_rules.filter((r) => !notRan.has(r)).length : 0, of: mine_rules.length }
     const tagStep = system === 'Vision' && !!verdict && verdict.items.some((i) => i.level === 'grey' && i.finding.rule === 'foresight/camera-sees-tag')
-    return { system, word, fix, look: mine.filter((i) => i.level === 'amber'), deferrals, ran, note: tagStep ? 'tag not seen yet' : null, text }
+    return { system, word, fix, look: mine.filter((i) => i.level === 'amber'), deferrals, ran, note: tagStep ? 'tag not seen yet' : null, step, text }
   }).sort((a, b) => WORD_RANK[a.word] - WORD_RANK[b.word] || SYSTEMS.indexOf(a.system) - SYSTEMS.indexOf(b.system))
   const nogo = rows.filter((r) => r.word === 'No-go')
   let word: string
@@ -184,7 +217,10 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
   let reason: string
   if (nogo.length) { kind = 'NO-GO'; word = 'NO-GO'; reason = `${nogo.length} ${nogo.length === 1 ? 'system' : 'systems'} to fix before the robot goes on the field: ${nogo.map((r) => r.system).join(', ')}` }
   // A system left unjudged keeps the word NOT CHECKED whatever the engine says, and a deferral never lifts it.
-  else if (!verdict || verdict.verdict === 'NOT CHECKED' || rows.some((r) => r.word === 'Not checked')) { kind = 'NOT CHECKED'; word = 'NOT CHECKED'; reason = !verdict ? input.why : verdict.verdict === 'NOT CHECKED' ? verdict.reason : `could not check ${rows.filter((r) => r.word === 'Not checked').map((r) => r.system).join(', ')}` }
+  else if (!verdict || verdict.verdict === 'NOT CHECKED' || rows.some((r) => r.word === 'Not checked' || r.word === 'Check by hand')) { kind = 'NOT CHECKED'; word = 'NOT CHECKED'; reason = !verdict ? input.why : [
+      ...(verdict.verdict === 'NOT CHECKED' ? [verdict.reason] : rows.some((r) => r.word === 'Not checked') ? [`could not check ${rows.filter((r) => r.word === 'Not checked').map((r) => r.system).join(', ')}`] : []),
+      ...rows.filter((r) => r.word === 'Check by hand').map((r) => `${r.system}: check by hand`),
+    ].join('; ') }
   else if (open.length) { kind = 'GO WITH DEFERRALS'; word = goWithWord(open.length); reason = `${open.length === 1 ? 'one deferral is' : `${open.length} deferrals are`} open: the workaround ${open.length === 1 ? 'line is' : 'lines are'} below` }
   else { kind = 'GO'; word = 'GO'; reason = verdict.reason }
   return { word, kind, reason, rows, deferrals: open, deferralNote: input.deferralNote }
@@ -198,10 +234,13 @@ export const tickKey = (system: System): string => `Foresight checklist · ${sys
 /** A tick is Done for this long, then it reads "(old)" and the system is unticked: a check made long ago says nothing about now. */
 export const TICK_MINUTES = 90
 
-export interface Tick { role: string; when: string; old: boolean }
+export interface Tick { role: string; when: string; old: boolean; /** Dated after now: this laptop's clock is behind the one that wrote it, so it cannot be told fresh. */ ahead: boolean }
 
 /** A tick as read at `now`. */
-export const tickAt = (role: string, when: string, now: number): Tick => ({ role, when, old: !(now - Date.parse(when) <= TICK_MINUTES * 60e3) })
+export const tickAt = (role: string, when: string, now: number): Tick => {
+  const age = now - Date.parse(when)
+  return { role, when, ahead: age < 0, old: !(age >= 0 && age <= TICK_MINUTES * 60e3) }
+}
 
 /**
  * The ticks on the system rows for `forMatch` ("after Q33", the board's label), as the board counts a tick: only this

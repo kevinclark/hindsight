@@ -18,10 +18,10 @@
     onTick: (system: System, on: boolean) => void; onRole: (role: BoardRole | null) => void
   } = $props()
 
-  const MARK: Record<QueueRow['word'], string> = { 'No-go': '●', 'Not checked': '○', 'Go with deferral': '▲', Go: '✓' }
-  const CLASS: Record<QueueRow['word'], string> = { 'No-go': 'nogo', 'Not checked': 'unknown', 'Go with deferral': 'defer', Go: 'go' }
+  const MARK: Record<QueueRow['word'], string> = { 'No-go': '●', 'Not checked': '○', 'Check by hand': '☞', 'Go with deferral': '▲', Go: '✓' }
+  const CLASS: Record<QueueRow['word'], string> = { 'No-go': 'nogo', 'Not checked': 'unknown', 'Check by hand': 'unknown', 'Go with deferral': 'defer', Go: 'go' }
   /** Only a system that can be confirmed done takes a tick: a No-go or unjudged one is fixed or checked first. */
-  const canTick = (r: QueueRow) => !!role && (r.word === 'Go' || r.word === 'Go with deferral')
+  const canTick = (r: QueueRow) => !!role && (r.word === 'Go' || r.word === 'Go with deferral' || r.word === 'Check by hand')
   /** A tick counts only while it is fresh, and only on a row that can be confirmed. */
   const freshTick = (r: QueueRow): Tick | undefined => { const t = ticks.get(r.system); return t && !t.old && (r.word === 'Go' || r.word === 'Go with deferral') ? t : undefined }
   const oldTick = (r: QueueRow): Tick | undefined => { const t = ticks.get(r.system); return t?.old ? t : undefined }
@@ -45,15 +45,24 @@
         <div>
           <p class="head"><span class="num">{n + 1}.</span> <span class="mark" aria-hidden="true">{MARK[r.word]}</span> <span class="name">{r.system}</span> <span class="word">{r.word}</span> <span class="ran">{r.ran.n} of {r.ran.of} checks ran{r.note ? ` · ${r.note}` : ''}</span></p>
           {#if r.word === 'No-go'}
-            {#each r.fix as i (i.finding.key + i.finding.title)}<p class="line">{i.finding.title}<br /><b>Do:</b> {i.action}</p>{/each}
+            {#each r.fix as i (i.finding.key + i.finding.title)}
+              <p class="line">{i.finding.title}<br /><b>Do:</b> {i.action}</p>
+              <p class="line muted">{i.finding.rule} · {i.proof}</p>
+              <details class="why"><summary>Evidence</summary>
+                <p>{i.finding.meaning}</p>
+                <dl>{#each Object.entries(i.finding.evidence) as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}</dl>
+                <p>Could be: {i.finding.causes.map((c) => `${c.cause} (${c.look})`).join('; ')}</p>
+              </details>
+            {/each}
           {/if}
+          {#if r.word === 'Check by hand'}<p class="line"><b>{r.step ?? 'None of its checks ran: a person checks it.'}</b> Tick when done.</p>{/if}
           {#if r.word === 'Not checked'}<p class="line muted">{r.text.replace(/^Not checked:? ?/, '') || 'No current check.'}</p>{/if}
           {#each r.deferrals as d (d.key)}
             <p class="line">{d.title} · <b>workaround:</b> {d.workaround || 'none written'} <span class="muted">· until {d.until} · {d.seenNow ? 'seen now' : 'not seen now'}{d.carriedFrom ? ` · carried from ${d.carriedFrom}` : ''}</span></p>
           {/each}
           {#if r.look.length}<p class="line muted">{r.look.length} to look at: {r.look.map((i) => i.finding.title).join('; ')}</p>{/if}
           {#if tick}<p class="line"><b>Done, ticked by {tick.role} at {clockText(tick.when)}</b></p>{/if}
-          {#if old}<p class="line muted">ticked at {clockText(old.when)} (old)</p>{/if}
+          {#if old}<p class="line muted">ticked at {clockText(old.when)} ({old.ahead ? 'clock ahead' : 'old'})</p>{/if}
         </div>
       </li>
     {/each}
@@ -93,6 +102,11 @@
   .defer .word, .defer .mark { color: var(--warning); }
   .unknown .word, .unknown .mark { color: var(--focus); }
   .line { margin-top: 0.2rem; font-size: 0.9rem; overflow-wrap: anywhere; }
+  .why { font-size: 0.85rem; margin-top: 0.2rem; }
+  .why summary { color: var(--muted); cursor: pointer; min-height: 24px; box-sizing: border-box; }
+  .why dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.1rem 0.75rem; margin: 0.3rem 0; }
+  .why dt { color: var(--muted); }
+  .why dd { margin: 0; overflow-wrap: anywhere; }
   .defers { list-style: none; margin: 0; padding: 0; font-size: 0.9rem; }
   .defers li { padding: 0.3rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 </style>

@@ -12,6 +12,8 @@ export interface TodayEvent {
   /** The id a hand choice is kept under: the event's key for its dates, or the day for a library log. */
   id: string
   name: string
+  /** The Blue Alliance's event key, for the schedule signal. */
+  key?: string
   signal: 'tba' | 'library'
 }
 
@@ -25,7 +27,7 @@ export const SIGNAL_WORDS: Record<TodayEvent['signal'], string> = {
 export function eventFromSchedule(events: readonly Pick<TbaEventSimple, 'key' | 'name' | 'start_date' | 'end_date'>[], now: number): TodayEvent | null {
   const today = dateText(now)
   const e = events.find((x) => x.start_date <= today && today <= x.end_date)
-  return e ? { id: `event-days:${e.key}`, name: eventLabel(e.name, e.key), signal: 'tba' } : null
+  return e ? { id: `event-days:${e.key}`, name: eventLabel(e.name, e.key), key: e.key, signal: 'tba' } : null
 }
 
 /** An on-field log in the library dated today (by the laptop's day). */

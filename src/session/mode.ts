@@ -96,7 +96,7 @@ export function loneLogMode(m: { onField: boolean; event: string; matchLabel: st
  * session the Session view holds, else practice. With no session loaded it can only say practice. The choice is kept under
  * that session's id, or the id a practice session for today would have.
  */
-export function todayMode(sessions: readonly Session[], now: number, store: Readonly<Record<string, string>> = {}, external: { id: string; name: string; signal: 'tba' | 'library' } | null = null): { line: string; sessionId: string; mode: Mode; byHand: boolean } {
+export function todayMode(sessions: readonly Session[], now: number, store: Readonly<Record<string, string>> = {}, external: { id: string; name: string; key?: string; signal: 'tba' | 'library' } | null = null): { line: string; sessionId: string; mode: Mode; byHand: boolean } {
   const today = dateText(now)
   const event = sessions.find((s) => s.kind === 'event' && s.matches.some((m) => m.onField && m.playedAt !== null && dateText(m.playedAt) === today))
   // No logs of today's event are loaded: the desktop app can still know it is an event day (today-event.ts), and a hand

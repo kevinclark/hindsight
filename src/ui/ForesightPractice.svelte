@@ -7,15 +7,18 @@
   import type { PracticeChecklist } from '../foresight/checklists.ts'
 
   let { checklist }: { checklist: PracticeChecklist } = $props()
+  // The lines waiting on the robot snapshot say so once in full; the others only that they wait.
+  const WAITING = /^no robot snapshot/
+  const firstWaiting = $derived(checklist.items.findIndex((i) => WAITING.test(i.line.detail)))
   const MARK = { ok: 'Done', red: 'Left: fix', amber: 'Left: look', 'to do': 'Left: do', context: 'Context', 'not checked': 'Left: not checked', 'by eye': 'By eye' } as const
 </script>
 
 <section class="onchecks practice" aria-label="Practice-start checklist">
   <h3>Practice-start checklist: read each line, do it, then it reads Done <span class="muted">· {checklist.ready ? 'ready to drive' : `${checklist.actions.length} left`}</span></h3>
   <ul>
-    {#each checklist.items as i, n (i.line.line)}
+    {#each checklist.items as i, n (i.line.line + i.line.detail)}
       {#if n === 0 || checklist.items[n - 1].group !== i.group}<li class="group" aria-hidden="true">{i.group}</li>{/if}
-      <li class={`oc ${i.line.state.replace(' ', '-')}`}><span class="mark">{i.done ? '✓ ' : '○ '}{MARK[i.line.state]}</span><span class="line">{i.line.line}</span><span class="detail-text">{i.line.detail}</span></li>
+      <li class={`oc ${i.line.state.replace(' ', '-')}`}><span class="mark">{i.done ? '✓ ' : '○ '}{MARK[i.line.state]}</span><span class="line">{i.line.line}</span><span class="detail-text">{WAITING.test(i.line.detail) && n !== firstWaiting ? 'waiting on the snapshot' : i.line.detail}</span></li>
     {/each}
   </ul>
   <p class="small">The team's 2026 pit checklist, battery, CAN, cameras and zeros first. A line reads Done only from the check on screen now; "By eye" lines are for a person and are never counted.</p>
@@ -33,7 +36,7 @@
   .onchecks { margin-top: 1rem; }
   .onchecks h3 { font-size: 1rem; margin: 0 0 0.4rem; }
   .onchecks ul { list-style: none; margin: 0; padding: 0; }
-  .group { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 0.5rem 0 0.1rem; }
+  .group { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 0.5rem 0 0.1rem; }
   .oc { display: grid; grid-template-columns: 9.5rem minmax(10rem, 1fr) 2fr; gap: 0.15rem 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
   .oc .mark { font-weight: 700; font-size: 0.8rem; }
   .oc.ok .mark { color: var(--muted); font-weight: 400; }

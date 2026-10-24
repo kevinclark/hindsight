@@ -2,7 +2,7 @@
 // event TEST, "test workaround". The team-log replay at the end is skipped when ~/.hindsight/team-logs.json is absent.
 import { describe, expect, it } from 'vitest'
 import {
-  boardFor, deferralSession, openDeferrals, PRACTICE_FIRST, practiceChecklist, queueChecklist, SYSTEMS, systemOf, tickAt, tickKey, ticksFor, TICK_MINUTES, uncoveredItems, type OpenDeferral,
+  boardFor, deferralSession, isCarried, openDeferrals, sessionEventName, PRACTICE_FIRST, practiceChecklist, queueChecklist, SYSTEMS, systemOf, tickAt, tickKey, ticksFor, TICK_MINUTES, uncoveredItems, type OpenDeferral,
 } from '../src/foresight/checklists.ts'
 import { markOnchecks, ONCHECKS } from '../src/foresight/onchecks.ts'
 import { eventFromLibrary, eventFromSchedule } from '../src/session/today-event.ts'
@@ -348,5 +348,101 @@ describe('the fix pass', () => {
     const store = { [`mode:${tba.id}`]: 'practice' }
     expect(todayMode([], now, store, tba)).toMatchObject({ mode: 'practice', byHand: true })
     expect(todayMode([], now + 86400e3, store, tba).mode).toBe('practice')
+  })
+})
+
+describe('the fix pass, round 2', () => {
+  const D = 'power/rest-voltage'
+  const scene = session([2, 3].map((n) => match(n, { fires: [{ key: D }] })))
+  const day1 = scene.matches[0].playedAt!
+  const h = (kind: 'end-of-event' | 'next-event'): BoardEvent[] => [
+    { type: 'board', v: 1, key: D, robot: ROBOT, op: 'workaround', value: 'test workaround', event: 'TEST', by: { device: 'dev-a', role: 'pit' }, seq: 1, when: new Date(day1 + 3600e3).toISOString() },
+    { type: 'board', v: 1, key: D, robot: ROBOT, op: 'defer', value: kind, until: { kind }, event: 'TEST', by: { device: 'dev-a', role: 'pit' }, seq: 2, when: new Date(day1 + 3600e3).toISOString() },
+  ]
+  const events = [{ key: '2099test', name: 'Test Regional', start_date: '2099-03-04', end_date: '2099-03-06' }]
+
+  it('1: day two of an event, no log of today loaded: the end-of-event deferral is still shown and ticks are filed', () => {
+    const now = day1 + 86400e3
+    const tba = eventFromSchedule(events, now)!
+    const t = todayMode([scene], now, {}, tba)
+    const def = deferralSession([scene], t.sessionId, ROBOT)!
+    expect(def.id).not.toBe(t.sessionId)
+    // Within the repo's same-event window: today's event, not carried.
+    expect(isCarried(def, t.sessionId, tba, now)).toBe(false)
+    const board = boardFor(def, h('end-of-event'), profile, new Date(now))
+    expect(openDeferrals(board, profile, isCarried(def, t.sessionId, tba, now) ? sessionEventName(def) : undefined)).toHaveLength(1)
+  })
+
+  it('1: the same key or name makes it today\'s event at any age; an event more than 4 days old with neither is carried', () => {
+    const week = day1 + 7 * 86400e3
+    const sameKey = { ...scene, event: { key: '2099test', name: 'Test Regional' } } as unknown as typeof scene
+    expect(isCarried(sameKey, 'practice:x', { key: '2099test', name: 'Other' }, week)).toBe(false)
+    expect(isCarried(scene, 'practice:x', { name: 'test' }, week)).toBe(false) // the field's own event name, TEST
+    expect(isCarried(scene, 'practice:x', { key: '2099late', name: 'Late Event' }, week)).toBe(true)
+    expect(isCarried(scene, scene.id, null, week)).toBe(false)
+    expect(isCarried(scene, 'practice:x', null, day1 + 86400e3)).toBe(false)
+    expect(isCarried(scene, 'practice:x', null, week)).toBe(true)
+  })
+
+  it('3: a tick dated after now reads clock ahead and is not fresh', () => {
+    const t = tickAt('pit', '2099-03-05T22:00:00Z', Date.parse('2099-03-05T21:00:00Z'))
+    expect(t).toMatchObject({ ahead: true, old: true })
+    expect(tickAt('pit', '2099-03-05T21:00:00Z', Date.parse('2099-03-05T21:10:00Z'))).toMatchObject({ ahead: false, old: false })
+  })
+
+  it('6: one meaning of ran: a check that ran in part did not, and the rows add up to the box\'s count', () => {
+    const states = [
+      verdict([]),
+      verdict([], [{ rule: 'vision/time-sync', reason: 'partly checked; one camera missing' }]),
+      verdict([RED_POWER], [{ rule: 'snapshot/devices', reason: 'no robot snapshot' }, { rule: 'foresight/controllers', reason: 'missing a signal' }, { rule: 'vision/stale', reason: 'partly checked' }]),
+    ]
+    for (const v of states) {
+      const c = checklist(v)
+      const notRun = c.rows.reduce((n, r) => n + (r.ran.of - r.ran.n), 0)
+      expect(notRun).toBe(v.notChecked.length + v.crashed.length)
+      expect(c.rows.reduce((n, r) => n + r.ran.of, 0)).toBe(26)
+    }
+    expect(row(checklist(states[1]), 'Vision').ran.n).toBe(row(checklist(states[1]), 'Vision').ran.of - 1)
+  })
+})
+
+describe('a system whose checks all failed to run is never Go (Kevin, 2026-10-24)', () => {
+  // The drivetrain's three checks (gyro drift, CANcoder offsets, swerve ratio) all skipped: 0 of 3 ran.
+  const skipAll = ['foresight/gyro-still-drift', 'snapshot/cancoder-offsets', 'snapshot/swerve-ratio'].map((rule) => ({ rule, reason: 'no robot snapshot' }))
+  const v = () => verdict([], skipAll)
+  const withTick = (when: string, now = Date.parse('2099-03-05T21:00:00Z')) => new Map([['Drivetrain' as const, tickAt('pit', when, now)]])
+  const at = (c: ReturnType<typeof checklist>) => row(c, 'Drivetrain')
+
+  it('0 of 3 with no tick: Check by hand with its step, and the word is NOT CHECKED naming the row', () => {
+    const c = queueChecklist({ verdict: v(), why: '', profile, deferrals: [], deferralNote: null })
+    expect(at(c)).toMatchObject({ word: 'Check by hand', ran: { n: 0, of: 3 }, step: 'On blocks: enable and confirm every wheel spins the way it should' })
+    expect(at(c).text).toBe('Check by hand: On blocks: enable and confirm every wheel spins the way it should')
+    expect([c.word, c.reason]).toEqual(['NOT CHECKED', 'Drivetrain: check by hand'])
+  })
+
+  it('a fresh tick turns the row Go and the word GO; an old tick, or one from a clock ahead, does not', () => {
+    const fresh = queueChecklist({ verdict: v(), why: '', profile, deferrals: [], deferralNote: null, ticks: withTick('2099-03-05T20:30:00Z') })
+    expect([at(fresh).word, fresh.word]).toEqual(['Go', 'GO'])
+    for (const when of ['2099-03-05T18:00:00Z', '2099-03-05T22:00:00Z']) {
+      const c = queueChecklist({ verdict: v(), why: '', profile, deferrals: [], deferralNote: null, ticks: withTick(when) })
+      expect([at(c).word, c.word]).toEqual(['Check by hand', 'NOT CHECKED'])
+    }
+  })
+
+  it('a deferral does not lift it; another system reads only "Check by hand" with no step of the team\'s', () => {
+    const c = queueChecklist({ verdict: v(), why: '', profile, deferrals: [defer(RED_POWER, 'Power')], deferralNote: null })
+    expect(c.word).toBe('NOT CHECKED')
+    // Nothing proven here, so nothing is blind: only the person can say Power is fine.
+    const power = verdictFor(report([], ['power/rest-voltage', 'battery/identity', 'battery/gauge-capacity'].map((rule) => ({ rule, reason: 'missing a signal' }))), {})
+    const p = queueChecklist({ verdict: power, why: '', profile, deferrals: [], deferralNote: null })
+    expect(row(p, 'Power')).toMatchObject({ word: 'Check by hand', step: null })
+    expect(row(p, 'Power').text).toMatch(/^Check by hand: /)
+  })
+
+  it('a No-go still beats it, and a system with some checks run is not by hand', () => {
+    const c = queueChecklist({ verdict: verdict([RED_POWER], skipAll), why: '', profile, deferrals: [], deferralNote: null })
+    expect(row(c, 'Power').word).toBe('No-go')
+    const some = queueChecklist({ verdict: verdict([], skipAll.slice(0, 2)), why: '', profile, deferrals: [], deferralNote: null })
+    expect(at(some).word).toBe('Go')
   })
 })
