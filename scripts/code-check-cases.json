@@ -304,6 +304,106 @@
     56
    ],
    "expect": "fires"
+  },
+  {
+   "repo": "2025-Offseason-Robot",
+   "commit": "8b02c20",
+   "rule": "code/limit-switched-off",
+   "file": "ElevatorIOReal.java",
+   "lines": [
+    63
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "c572443",
+   "rule": "code/limit-switched-off",
+   "file": "DrumSubsystem.java",
+   "lines": [
+    265
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "commit": "1efe84f",
+   "rule": "code/limit-switched-off",
+   "file": "DrumSubsystem.java",
+   "lines": [
+    233
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Crescendo",
+   "commit": "eb8431c",
+   "rule": "code/limit-switched-off",
+   "file": "ModuleIOReal.java",
+   "lines": [
+    90
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "ecd9143",
+   "rule": "code/limit-switched-off",
+   "file": "SpindexerSubsystem.java",
+   "lines": [
+    154
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "0092093",
+   "rule": "code/limit-switched-off",
+   "file": "SpindexerSubsystem.java",
+   "lines": [
+    143
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "a3075d6",
+   "rule": "code/limit-switched-off",
+   "file": "SlapdownSubsystem.java",
+   "lines": [
+    259
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Rebuilt",
+   "commit": "2dcf200",
+   "rule": "code/limit-switched-off",
+   "file": "SlapdownSubsystem.java",
+   "lines": [
+    263
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Reefscape",
+   "commit": "1c14742",
+   "rule": "code/limit-switched-off",
+   "file": "Robot.java",
+   "lines": [
+    305
+   ],
+   "expect": "fires"
+  },
+  {
+   "repo": "Reefscape",
+   "commit": "fe000f2",
+   "rule": "code/limit-switched-off",
+   "file": "ElevatorIOReal.java",
+   "lines": [
+    78
+   ],
+   "expect": "fires"
   }
  ],
  "live": [
@@ -847,6 +947,54 @@
    "rule": "code/unused-config",
    "verdict": "real",
    "why": "real: the CANdleConfiguration (StripType GRB) is never applied; no visible effect while it only sets the strip type"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "DrumSubsystem.java",
+   "line": 310,
+   "rule": "code/limit-switched-off",
+   "verdict": "real",
+   "why": "real: flywheel supply limit 40 A switched off (stator 75 A on); measured 78-94 A per motor at CalGames 2026"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "DrumSubsystem.java",
+   "line": 337,
+   "rule": "code/limit-switched-off",
+   "verdict": "real",
+   "why": "real: supply limit 40 A switched off (stator 30 A on)"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "SlapdownSubsystem.java",
+   "line": 270,
+   "rule": "code/limit-switched-off",
+   "verdict": "real",
+   "why": "real: supply limit 40 A switched off (stator 50 A on)"
+  },
+  {
+   "repo": "2026-Offseason-Robot",
+   "file": "SlapdownSubsystem.java",
+   "line": 297,
+   "rule": "code/limit-switched-off",
+   "verdict": "real",
+   "why": "real: supply limit 40 A switched off (stator 20 A on)"
+  },
+  {
+   "repo": "Rebuilt",
+   "file": "TurretSubsystem.java",
+   "line": 515,
+   "rule": "code/limit-switched-off",
+   "verdict": "real",
+   "why": "real: flywheel stator limit 120 A switched off; the line carries \"TODO add current limits back!!!\""
+  },
+  {
+   "repo": "Reefscape",
+   "file": "ElevatorIOReal.java",
+   "line": 77,
+   "rule": "code/limit-switched-off",
+   "verdict": "real",
+   "why": "real: elevator stator limit 80 A switched off (supply 60 A on)"
   }
  ],
  "hints": {
