@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { gameFor } from '../src/profiles/games.ts'
 import { seasonOf } from '../src/hub/season.ts'
-import { draftProfile } from '../src/builder/draft.ts'
+import { carryConfirmations, draftProfile } from '../src/builder/draft.ts'
 import { openWpilog } from '../src/readers/wpilog.ts'
 import { robotLog } from './helpers/hub-logs.ts'
 
@@ -55,6 +55,21 @@ describe('the draft\'s game', () => {
     const d = draft(undefined)
     expect(d.json.game?.name).toBe('measured from practice.wpilog')
     expect(d.notes.join(' ')).toMatch(/no date.*measured from this log/i)
+  })
+
+  it('says a log dated before the first kickoff listed is older than the table, not that its year is missing', () => {
+    expect(draft(Date.UTC(2023, 0, 3, 20)).notes.join(' ')).toMatch(/before 2023's kickoff, the first game listed.*measured from this log/)
+  })
+
+  it('replaces a measured game with the season\'s when a dated log is dropped next', () => {
+    const undated = draft(undefined).json
+    const dated = draft(Date.UTC(2026, 1, 20, 20)).json
+    carryConfirmations(undated, dated)
+    expect(dated.game).toEqual({ name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 140 })
+    // A season game the student kept stays.
+    const again = draft(Date.UTC(2026, 1, 21, 20)).json
+    carryConfirmations({ ...dated, game: { name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 150 } }, again)
+    expect(again.game?.teleopSeconds).toBe(150)
   })
 
   it('notes a year whose kickoff isn\'t listed yet', () => {

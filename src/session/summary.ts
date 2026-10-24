@@ -104,7 +104,6 @@ export interface MatchMetrics {
   visionOutlierPct: number | null
 }
 
-
 /** Analyse one log and keep only the summary. `profile`: the robot the student chose for it, if any. */
 export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?: RobotProfile[]): MatchSummary | null {
   // As the student's choice (checked for fit), not as a pinned profile.

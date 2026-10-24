@@ -16,7 +16,7 @@ import { limitsKnown } from '../limits/limits-report.ts'
 import type { CurrentLimits } from '../profiles/types.ts'
 import { firstText } from '../profiles/formats.ts'
 import { applyCode } from './code-draft.ts'
-import { gameFor } from '../profiles/games.ts'
+import { GAMES, gameFor } from '../profiles/games.ts'
 import { playedAt } from '../match/played-at.ts'
 
 /** What the builder couldn't settle from the files, for the confirm step. */
@@ -225,7 +225,8 @@ export function carryConfirmations(from: ProfileJson, to: ProfileJson): void {
     if (o.sameLoopSuggested) g.sameLoopSuggested = true; else delete g.sameLoopSuggested
   }
   to.name = from.name
-  if (from.game) to.game = from.game
+  // A game measured from one log isn't a confirmation: a dated log's season game replaces it.
+  if (from.game && !from.game.name.startsWith('measured from')) to.game = from.game
 }
 
 /**
@@ -239,7 +240,8 @@ function seasonGame(log: WpilogFile, fileName: string, sig: ReturnType<typeof si
   const when = playedAt(match).playedAt
   const found = when === null ? null : gameFor(when)
   if (!found) {
-    const why = when === null ? 'This log has no date (the robot clock was not set and the file name has none)' : `No FRC game is listed for ${new Date(when).getFullYear()}`
+    const first = GAMES[0]
+    const why = when === null ? 'This log has no date (the robot clock was not set and the file name has none)' : `This log is from before ${first.year}'s kickoff, the first game listed`
     return { game: { ...match.profile.game, name: `measured from ${fileName}` }, note: `${why}, so auto and teleop were measured from this log: check them against the game.` }
   }
   const { game, assumed } = found
