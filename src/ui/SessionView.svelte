@@ -156,6 +156,8 @@
   let boardTab = $state<'board' | 'findings'>('board')
   const eventMode = $derived(!!session && modeOf(session) === 'event' && !!onBoard)
   const showBoard = $derived(eventMode && boardTab === 'board')
+  // The board leads the first screen: with it showing, the chooser, saved-copies line, event names and session buttons fold to one line that opens them.
+  let chromeOpen = $state(false)
   let printQueue = $state<{ sheet: QueueSheet; title: string } | null>(null)
   // The team's schedule at this event, for the next match, the gaps and the deferral points (ADR 6). Read again only when the
   // session's on-field matches, event or Blue Alliance settings change, not on every summary that lands.
@@ -166,7 +168,7 @@
     if (!scheduleSig) { schedule = null; scheduleNote = null; return }
     const s = untrack(() => session)!
     const [get, team] = [tbaGetter(), tbaTeam()]
-    if (!get || team === null) { schedule = null; scheduleNote = tbaMissing(); return }
+    if (!get || team === null) { schedule = null; scheduleNote = null; return }
     let stale = false
     void (async () => {
       try {
@@ -356,6 +358,7 @@
   }
   /** A load is running: New session and Read again wait for it. */
   const loading = $derived(!!progress && progress.done < progress.total)
+  const folded = $derived(showBoard && !chromeOpen && !loading)
 
   /** Start over: clear the summaries on the page and saved in this browser. What the student wrote down stays. */
   async function newSession() {
@@ -542,6 +545,10 @@
 {/snippet}
 
 <div class:screen-only={!!session} data-session-view>
+{#if folded && session}
+  <p class="oneline" data-folded>{summaries.length} of {summaries.length} logs · event {session.label.replace(/^Event\s+/, '')} · <button class="link" onclick={() => (chromeOpen = true)}>Change logs…</button></p>
+{:else}
+{#if showBoard && chromeOpen}<p class="oneline"><button class="link" onclick={() => (chromeOpen = false)}>Fold the log chooser away</button></p>{/if}
 <p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
 
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
@@ -571,7 +578,8 @@
 {#if !hub()}<TbaFields />{/if}
 {#if lookupProblem}<p class="note warn">{lookupProblem}</p>{/if}
 
-{#if sessions.length}
+{/if}
+{#if sessions.length && !folded}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
       <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{modeOf(s) === 'practice' ? `${s.matches.length} log${s.matches.length === 1 ? '' : 's'}` : `${s.matches.length} match${s.matches.length === 1 ? '' : 'es'}`}{s.pitRuns?.length ? `, ${s.pitRuns.length} pit run${s.pitRuns.length === 1 ? '' : 's'}` : ''}</small></button>
@@ -580,14 +588,14 @@
 {/if}
 
 {#if session}
-  <section class="head">
+  {#if !folded}<section class="head">
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
     <span class="actions">
       <button class="button" disabled={loading} class:prominent={sessionIsStale} onclick={() => readAgain(session)} title={`Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, ${findLogs ? 'it reads the library\'s copies' : 'it asks for the folder'}.`}>Read again</button>
       <button class="button" onclick={download}>Download for Claude</button>
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
-  </section>
+  </section>{/if}
   <ModeLine text={modeLine(session)} mode={modeOf(session)} byHand={!!session.modeByHand} onChange={(m) => chooseMode(session.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />
   {#if eventMode}
     <div class="tabs" role="tablist" aria-label="Event view">
@@ -787,6 +795,7 @@
   .problem { color: var(--error); font-size: 0.85rem; }
   .sessions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
   .sessions button { min-height: 24px; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
+  .oneline { margin: 0.2rem 0; font-size: 0.85rem; color: var(--muted); }
   .tabs { display: flex; gap: 0.25rem; margin: 0.6rem 0 0.2rem; border-bottom: 1px solid var(--border); }
   .tabs button { min-height: 28px; padding: 0.45rem 1rem; border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .tabs button.active { color: var(--fg); border-bottom-color: var(--focus); font-weight: 600; }

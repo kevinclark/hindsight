@@ -43,7 +43,10 @@
   let openKey = $state<string | null>(null)
   let group = $state<'urgency' | 'mechanism'>('urgency')
 
-  const board = $derived(buildBoard({ session, history, marks, schedule, profiles }))
+  // The clock the time left counts from; it moves on every half minute so "≈ 61 min left" stays true while the page is open.
+  let now = $state(new Date())
+  $effect(() => { const t = setInterval(() => (now = new Date()), 30_000); return () => clearInterval(t) })
+  const board = $derived(buildBoard({ session, history, marks, schedule, profiles, now }))
   const rates = $derived(ruleRates(session, marks, history))
   const issue = $derived(openKey ? board.issues.find((i) => i.key === openKey) : undefined)
   const sheet = $derived(queueSheet(board))
@@ -89,19 +92,19 @@
       {#if !role}<option value="" disabled>choose…</option>{/if}
       {#each ROLES as r (r)}<option value={r}>{r}</option>{/each}
     </select></label>
-    {#if !role}<span class="note">Choose your role to make changes. It is kept on this laptop; changes are recorded under the role, never a name.</span>{/if}
+    {#if !role}<span class="note">Choose it to make changes (kept on this laptop, never a name).</span>{/if}
   </p>
 
   {#if view === 'board'}
     <p class="gate" data-gate><b>{board.strip.gate}</b> {unit(board.strip.gate, 'red', 'reds')} due before {next}</p>
     <p class="sub strip" data-strip>
-      {#if board.strip.minutes !== null}<span>≈ {durText(board.strip.minutes)} (est.)</span>{/if}
+      {#if board.strip.minutesWord}<span>{board.strip.minutesWord}</span>{/if}
       <span><b>{board.strip.deferralsDue}</b> {unit(board.strip.deferralsDue, 'deferral', 'deferrals')} due</span>
       <span><b>{board.strip.noOwner}</b> with no owner</span>
-      <span><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all (cap {RED_CAP})</span>
+      <span><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all{board.strip.deferredReds ? ` (${board.strip.deferredReds} deferred)` : ''}</span>
       {#if board.strip.nextGap}<span>Next gap: <strong>{board.strip.nextGap}</strong></span>{/if}
     </p>
-    {#if board.noSchedule}<p class="note">{board.noSchedule}{#if scheduleNote}{' '}{scheduleNote}{/if}</p>{:else if scheduleNote}<p class="note">{scheduleNote}</p>{/if}
+    {#if board.noSchedule}<p class="note wide">{board.noSchedule}{#if scheduleNote}{' '}{scheduleNote}{/if}</p>{/if}
     <div class="toolbar">
       <button type="button" class="primary" onclick={() => (view = 'queue')}>Queue sheet (print)</button>
       <button type="button" onclick={() => (view = 'handoff')}>Handoff{board.handoff ? '' : ' (not read yet)'}</button>
@@ -131,7 +134,7 @@
     {/if}
     {#if board.below.length}
       <details class="below">
-        <summary>{board.below.length} more below the line ({belowParts}) · show</summary>
+        <summary>{board.below.length} more below the line (cap of {RED_CAP} reds: {belowParts}) · show</summary>
         <ul class="rows">{#each board.below as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} />{/each}</ul>
       </details>
     {/if}
@@ -149,6 +152,7 @@
     </div>
     <button type="button" disabled={!role || !board.tl.last || pitText.trim() === pitNow} onclick={() => note('pit-change', pitText.trim())}>Save the pit line{role ? ` as ${role}` : ''}</button>
 
+    {#if scheduleNote && !board.noSchedule}<p class="note">{scheduleNote}</p>{/if}
     <BoardRates {rates} />
   {:else if view === 'issue' && issue}
     <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} onBack={back} onChange={(c) => change(issue, c)} />
@@ -157,7 +161,7 @@
   {:else if view === 'missed'}
     <BoardMissed {board} {role} onBack={back} onFile={(t) => note('missed', t)} />
   {:else if view === 'queue'}
-    <BoardQueue {sheet} {role} onBack={back} onTick={(i) => change(i, [{ op: 'checked', value: sheet.forMatch }])} />
+    <BoardQueue {sheet} {role} onBack={back} onTick={(i, on) => change(i, [{ op: on ? 'checked' : 'unchecked', value: sheet.forMatch }])} />
   {:else}
     <p>No such issue. <button type="button" class="link" onclick={back}>Back to the board</button></p>
   {/if}
@@ -168,11 +172,12 @@
   .board :global(.muted) { color: var(--muted); }
   .board :global(.small) { font-size: 0.85rem; }
   .board :global(.hint) { color: var(--muted); font-size: 0.85rem; }
-  .board :global(.note) { color: var(--muted); font-size: 0.85rem; max-width: 80ch; }
+  .board :global(.note) { color: var(--muted); font-size: 0.85rem; max-width: 80ch; margin: 0.2rem 0; }
+  .board :global(.note.wide) { max-width: none; }
   .board :global(.problem) { color: var(--error); }
-  .whoami { margin: 0.25rem 0; font-size: 0.85rem; color: var(--muted); }
-  .gate { font-size: 1.6rem; margin: 0.4rem 0 0.1rem; line-height: 1.2; }
-  .gate b { font-size: 2.2rem; font-variant-numeric: tabular-nums; }
+  .whoami { margin: 0.2rem 0; font-size: 0.85rem; color: var(--muted); }
+  .gate { font-size: 1.6rem; margin: 0.2rem 0 0; line-height: 1.15; }
+  .gate b { font-size: 2rem; font-variant-numeric: tabular-nums; }
   .strip { display: flex; flex-wrap: wrap; gap: 0.2rem 1.2rem; margin: 0.1rem 0 0.5rem; }
   .board :global(.sub) { color: var(--muted); margin: 0.1rem 0; }
   .board :global(.sub strong) { color: var(--fg); }

@@ -222,7 +222,10 @@
   // The issue board's changes: board lines and event notes, stamped with this device's id (the hub's machine id, else a random one kept on this page).
   async function writeBoard(build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) {
     let device: string
-    try { device = library ? (await library.info()).machineId : deviceId(localStorage) } catch { device = deviceId({ getItem: () => null, setItem: () => { throw new Error('none') } }) }
+    try { device = library ? (await library.info()).machineId : deviceId(localStorage) } catch {
+      // The hub did not answer (or this is the page): this page's own id, and if storage is blocked, one for this visit.
+      try { device = deviceId(localStorage) } catch { device = deviceId({ getItem: () => null, setItem: () => { throw new Error('none') } }) }
+    }
     keep([...history, ...build(device, history)], true)
   }
   function saveHistory() {
@@ -357,7 +360,7 @@
 <div class="top" class:compact={mode === 'review' && !!current}>
 <header class:screen-only={reportable}>
   <h1>Hindsight</h1>
-  {#if !(mode === 'review' && current)}<p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>{/if}
+  {#if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>{/if}
 </header>
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}

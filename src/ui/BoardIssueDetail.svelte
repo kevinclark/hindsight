@@ -8,6 +8,8 @@
   import { makerOf } from '../rules/index.ts'
   import type { Board, BoardIssue, Priority, RuleRate } from '../board/model.ts'
   import { PRIORITY_ICON, PRIORITY_WORDS, STATUS_WORDS } from '../board/model.ts'
+  // The board's own words for a log's severity (an error is a Red, a warning an Amber), so the detail does not say "error" where the board says "Red".
+  const SEVERITY_WORD = { error: 'Red', warning: 'Amber', info: 'Info' } as const
   import { OWNER_ROLES } from '../board/role.ts'
   import { suggestions } from '../board/points.ts'
   import { changedLine, clockText, dueLine, ownerText, priorityIcon, priorityWord, rowTitle, statusLine, tags } from '../board/words.ts'
@@ -126,7 +128,7 @@
       <table>
         <thead><tr><th scope="col">Where</th><th scope="col">Severity</th><th scope="col">What Hindsight said</th></tr></thead>
         <tbody>
-          {#each issue.sightings as s, n (n)}<tr><td><b>{s.label}</b>{s.logs > 1 ? ` (${s.logs} logs)` : ''}{s.at ? ` · ${new Date(s.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</td><td>{s.severity}</td><td>{s.title}</td></tr>{/each}
+          {#each issue.sightings as s, n (n)}<tr><td><b>{s.label}</b>{s.logs > 1 ? ` (${s.logs} logs)` : ''}{s.at ? ` · ${new Date(s.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</td><td>{SEVERITY_WORD[s.severity]}</td><td>{s.title}</td></tr>{/each}
         </tbody>
       </table>
       {#if issue.sightings.some((s) => s.kind === 'pit')}<p class="hint">A pit run is a sighting, not a match: it is not counted in the match totals.</p>{/if}
@@ -147,7 +149,8 @@
       </fieldset>
       <div class="field"><label for="board-status">Status</label>
         <select id="board-status" bind:value={status} disabled={issue.status === 'deferred'}>
-          {#each ['open', 'fixing', 'check'] as v (v)}<option value={v}>{STATUS_WORDS[v as 'open']}</option>{/each}
+          {#if issue.status === 'deferred'}<option value={status}>Deferred (workaround until {issue.deferral?.point.until})</option>{/if}
+          {#each ['open', 'fixing', 'check'] as v (v)}{#if issue.status !== 'deferred'}<option value={v}>{STATUS_WORDS[v as 'open']}</option>{/if}{/each}
         </select>
         <span class="hint">{issue.status === 'deferred' ? 'Deferred: clear the deferral to change the status.' : 'Closed happens by itself: after a clean match that follows the fix.'}</span></div>
       <div class="field"><label for="board-owner">Owner</label>

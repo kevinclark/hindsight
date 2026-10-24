@@ -158,3 +158,15 @@ describe('a deferral ends', () => {
     expect(issue(buildBoard(input(session([quiet(2), quiet(3), fired(4), fired(5), fired(6)]), gapQ5, null))).deferral?.expired).toBe(true)
   })
 })
+
+describe('wording the screens rely on', () => {
+  it('with no schedule the sheet is for "the next match", never "after Q5"; with one it is for the match', () => {
+    expect(queueSheet(buildBoard(input(live, [], null)))).toMatchObject({ forLabel: 'the next match', forMatch: 'after Q5' })
+    expect(queueSheet(buildBoard(input(live)))).toMatchObject({ forLabel: 'Q6', forMatch: 'Q6' })
+  })
+  it('a deferred red still counts among the reds, and the strip says how many are deferred', () => {
+    const lines = [bl('workaround', 'test workaround', iso(1)), bl('defer', 'end-of-event', iso(1), { until: { kind: 'end-of-event' } })]
+    expect(buildBoard(input(live, lines)).strip).toMatchObject({ reds: 1, deferredReds: 1, gate: 0 })
+    expect(buildBoard(input(live)).strip).toMatchObject({ reds: 1, deferredReds: 0, gate: 1 })
+  })
+})

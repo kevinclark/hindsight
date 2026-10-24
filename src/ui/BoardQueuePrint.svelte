@@ -15,19 +15,19 @@
 
 <article class="print-only queue-sheet" aria-hidden="true">
   <section class="half">
-    <p class="who">For the drive team · {title} · before {sheet.forMatch}</p>
+    <p class="who">For the drive team · {title} · before {sheet.forLabel}</p>
     <p class="verdict" class:hold={!sheet.verdict.cleared}>{sheet.verdict.text}</p>
-    <p class="counts">{sheet.gate} red{sheet.gate === 1 ? '' : 's'} due before {sheet.forMatch} · {sheet.deferrals} deferral{sheet.deferrals === 1 ? '' : 's'} · {sheet.redsOpen} red{sheet.redsOpen === 1 ? '' : 's'} open. A go still has work open.</p>
+    <p class="counts">{sheet.gate} red{sheet.gate === 1 ? '' : 's'} due before {sheet.forLabel} · {sheet.deferrals} deferral{sheet.deferrals === 1 ? '' : 's'} · {sheet.redsOpen} red{sheet.redsOpen === 1 ? '' : 's'} open. A go still has work open.</p>
     {#if defs.length}
       <ol>{#each defs as l (l.issue.key)}<li><b>{rowTitle(l.issue)}</b><br />Workaround: {l.issue.deferral?.workaround}<br /><span class="small">Until {l.issue.deferral?.point.until}</span></li>{/each}</ol>
     {:else}<p>No workarounds in force.</p>{/if}
   </section>
   <p class="cut">✂ - - - - - - - - - - - - - - - - - cut here - - - - - - - - - - - - - - - - -</p>
   <section class="half">
-    <p class="who">For the pit · before {sheet.forMatch}</p>
+    <p class="who">For the pit · before {sheet.forLabel}</p>
     {#if gate.length}
       <ol>{#each gate as l (l.issue.key)}
-        <li><span class="box" aria-hidden="true">☐</span> <b>{rowTitle(l.issue)}</b> <span class="small">(red, due before {sheet.forMatch})</span><br />{l.issue.nextStep}<br />
+        <li><span class="box" aria-hidden="true">{l.checked ? '☑' : '☐'}</span> <b>{rowTitle(l.issue)}</b> <span class="small">(red, due before {sheet.forLabel})</span><br />{l.issue.nextStep}<br />
           <span class="small">{l.checked ? `Checked by ${l.checked.role} at ${clockText(l.checked.when)}` : 'Checked by ________ (role) at ________ (time)'}</span></li>
       {/each}</ol>
     {:else}<p>No reds to confirm.</p>{/if}

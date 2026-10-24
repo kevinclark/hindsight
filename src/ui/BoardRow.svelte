@@ -8,7 +8,7 @@
 
 <li>
   <button type="button" class="row" class:grey={issue.grey} data-issue={issue.key} onclick={() => onOpen(issue.key)}>
-    <span class={`sev ${issue.grey ? 'grey' : issue.priority}`}><span aria-hidden="true">{priorityIcon(issue)}</span>{' '}{priorityWord(issue)}{#if issue.grey}<span class="small muted">{issue.unchanged} matches unchanged</span>{/if}</span>
+    <span class={`sev ${issue.grey || issue.status === 'deferred' ? 'grey' : issue.priority}`}><span aria-hidden="true">{priorityIcon(issue)}</span>{' '}{priorityWord(issue)}{#if issue.grey}<span class="small muted">{issue.unchanged} matches unchanged</span>{:else if issue.status === 'deferred'}<span class="small muted">deferred</span>{/if}</span>
     <span class="main">
       <span class="title">{rowTitle(issue)}</span>{#each tags(issue) as t (t)}<span class="tag">{t}</span>{/each}
       {#if issue.nextStep}<span class="verb">{issue.nextStep}</span>{/if}
