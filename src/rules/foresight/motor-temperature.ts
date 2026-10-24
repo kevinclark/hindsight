@@ -3,7 +3,7 @@
  *
  * Checks (Foresight, the live pit check, only): each motor controller's temperature (a Talon FX's DeviceTemp, its
  * own reading, not the winding's) at the latest moment of the disabled stretch. Fires above 60 °C.
- * Measured on the CalGames 2026 logs (Q13, Q21, P0; 19 motors each): 22–31 °C while disabled before the match, a
+ * Measured on the 2026 logs (three matches; 19 motors each): 22–31 °C while disabled before the match, a
  * highest of 60 °C during a match (a swerve drive motor, Q21), and 26–54 °C from 10 s after it to the end of the log. So 60 °C is
  * hotter than any of the robot's motors ended a full match: one that starts there has less margin than the hottest
  * one had at the final buzzer. The line is measured from 8033's own logs; where the Talon FX itself starts cutting

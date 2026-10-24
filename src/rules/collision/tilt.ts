@@ -4,7 +4,7 @@
  * Checks: gyro pitch or roll beyond ±15° for longer than 0.3 s while enabled. Red in auto, amber in teleop.
  * Bump crossings tilt past 15° too, but for 0.2 s or less (every CalGames log has several). The margin is thin:
  * 0.3 s is 1.5× the longest bump and 2.7× under the one wedge we have (0.82 s). Backtest before changing it.
- * Why: CalGames 2026 Q13: the hood hit the trench bar in auto, pitch −24° for 0.8 s, and the robot was disabled.
+ * Why: One 2026 match: the hood hit the trench bar in auto, pitch −24° for 0.8 s, and the robot was disabled.
  * Not yet: field bump and trench zones (the game pack, phase 2).
  */
 import { beyond, rule, round, secs, type Problem } from '../rule.ts'
@@ -22,7 +22,7 @@ export default rule({
     { id: 'gyro', cause: 'The gyro is mounted tilted or reads wrong', look: 'the pitch and roll plot at rest before the match: should be near 0°' },
   ],
   nextStep: 'Watch the match video at this time. If it was a field element, check what was raised and add a guard in code near that element.',
-  incident: 'CalGames 2026 Q13: −24° pitch for 0.8 s at the trench in auto (2026-10-17-calgames-q13-log-analysis.md §1)',
+  incident: 'One 2026 match: −24° pitch for 0.8 s at the trench in auto (2026-10-17-calgames-q13-log-analysis.md §1)',
 
   check(match) {
     const pitch = match.signal('gyroPitch').inDegrees('Pitch')

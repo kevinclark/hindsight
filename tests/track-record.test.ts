@@ -97,7 +97,7 @@ describe('a wrong mark demotes the check for its event', () => {
   })
 })
 
-describe('marks on a real match (CalGames Q13 fixture)', () => {
+describe('marks on a real match (TEST fixture)', () => {
   const q13 = analyzeFixture('q13-auto-and-comms').analyses[0]
   const here = matchRef(q13.match, playedAt(q13))
   const red = q13.report.findings.find((f) => f.severity === 'error')!

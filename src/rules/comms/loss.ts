@@ -5,7 +5,7 @@
  * outputs stayed off after each.
  * Severity: error. A blip (outputs back on in under 0.5 s) is only info, or a warning from 3 blips; any longer loss,
  * or one whose length is unknown, stays an error.
- * Why: CalGames 2026 Q13 lost comms twice in the last 16 s (7.4 s and 4.3 s dead); the DS log stopped mid-match.
+ * Why: One 2026 match lost comms twice in the last 16 s (7.4 s and 4.3 s dead); the DS log stopped mid-match.
  *
  * Which cause it points to, from this log: the radio rebooted if the roboRIO lost the radio too, or the outputs
  * stayed off for 15 s or more (a radio boots in 20–40 s); a DS log that stops during the loss points to the DS laptop;
@@ -31,7 +31,7 @@ export default rule({
     { id: 'field', cause: 'A problem on the field side', look: 'ask the FTA for the field log for this match' },
   ],
   nextStep: 'Load this match\'s .dslog too (on the DS laptop in C:\\Users\\Public\\Documents\\FRC\\Log Files): it tells a DS laptop problem from a radio or wireless one.',
-  incident: 'CalGames 2026 Q13: comms lost at 417.4 s (7.4 s dead) and 426.4 s (4.3 s) (2026-10-17-calgames-q13-log-analysis.md §2)',
+  incident: 'One 2026 match: comms lost at 417.4 s (7.4 s dead) and 426.4 s (4.3 s) (2026-10-17-calgames-q13-log-analysis.md §2)',
 
   check(match) {
     if (match.wholeMatch.length === 0) return match.couldNotCheck('no match in this log')

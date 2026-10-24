@@ -5,7 +5,7 @@
  * while disabled since start-up settled), and the lowest battery voltage in
  * the 0.5 s before. A drop at low voltage points at the power path (the device browned out); a drop at normal
  * voltage points at CAN wiring or a connector.
- * Why: CalGames 2026 P0: flywheel follower 16 alone dropped off CAN 7 times, each at 5.85–6.31 V.
+ * Why: One 2026 match: flywheel follower 16 alone dropped off CAN 7 times, each at 5.85–6.31 V.
  *
  * Drops that took the whole bus down at once are left to can/bus-dropout.
  *
@@ -35,7 +35,7 @@ export default rule({
     { id: 'device-fault', cause: 'The device itself (old firmware, damage)', look: 'its status light during a dropout; the vendor tool (Phoenix Tuner, REV Hardware Client) for firmware and faults' },
   ],
   nextStep: 'Tug-test the CAN connectors on that device and the ones next to it, and check the CAN termination at the far end of the chain.',
-  incident: 'CalGames 2026 P0: flywheel follower 16 off CAN 7 times at 5.85–6.31 V (P0 analysis); #in-hindsight: ≥ 11 CAN dropout episodes',
+  incident: 'One 2026 match: flywheel follower 16 off CAN 7 times at 5.85–6.31 V (the match analysis); #in-hindsight: ≥ 11 CAN dropout episodes',
   forEach: 'device',
 
   check(device, match) {

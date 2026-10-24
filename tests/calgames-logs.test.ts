@@ -7,7 +7,7 @@ import { listedAbove, reviewCard, reviewModel } from '../src/report/review-model
 import { powerReport } from '../src/power/power-report.ts'
 import { CALGAMES, fired, haveCalGames, readInput } from './helpers/load.ts'
 
-if (!haveCalGames) console.warn('SKIPPED calgames-logs.test.ts: put the three CalGames .wpilog files and the Q13 .dslog in ~/Downloads to run it')
+if (!haveCalGames) console.warn('SKIPPED calgames-logs.test.ts: put the three CalGames .wpilog files and the matching .dslog in ~/Downloads to run it')
 
 describe.skipIf(!haveCalGames)('CalGames 2026 logs', () => {
   const { analyses, problems } = haveCalGames

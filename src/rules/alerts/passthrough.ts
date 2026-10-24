@@ -5,7 +5,7 @@
  * warning → amber, info → grey), counted inside the match only; before or after the match it is grey. In Foresight
  * (the live pit check) "the match" is the disabled stretch since start-up settled.
  * Camera time-sync alerts are left to vision/time-sync.
- * Why: CalGames 2026 P0 raised "Flywheel Follower Disconnected" 7 times and nobody saw it until the log review.
+ * Why: one 2026 match raised "Flywheel Follower Disconnected" 7 times and nobody saw it until the log review.
  */
 import { isTimeSyncAlert } from '../vision/time-sync.ts'
 import { rule, round } from '../rule.ts'
@@ -22,7 +22,7 @@ export default rule({
     { id: 'bad-check', cause: 'The check in the code is too touchy or wrong (it fires when nothing is broken)', look: 'the code file that creates the alert: what makes it turn on, and for how long' },
   ],
   nextStep: 'Search the robot code for the alert text to find what raises it, then check the part it names.',
-  incident: 'CalGames 2026 P0: "Flywheel Follower Disconnected" ×7, unseen during the match (hindsight-research/design-detail.md §5a)',
+  incident: 'One 2026 match: "Flywheel Follower Disconnected" ×7, unseen during the match (hindsight-research/design-detail.md §5a)',
   forEach: 'alert',
 
   check(alert, match) {

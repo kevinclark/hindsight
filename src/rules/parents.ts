@@ -16,7 +16,7 @@ import type { Finding } from './types.ts'
 export const GROUP_DEVICES = 'devices'
 
 export const PARENTS: Parent[] = [
-  // CalGames 2026 Q2 with no CAN bus in the robot profile: 25 devices dropped off CAN between 614.04 and 614.28 s,
+  // One 2026 match with no CAN bus in the robot profile: 25 devices dropped off CAN between 614.04 and 614.28 s,
   // one event (the bus), listed as 25 separate errors. Other teams' logs and new robots have no bus mapped.
   parent({
     id: 'can/devices-dropped-together',
@@ -56,7 +56,7 @@ export const PARENTS: Parent[] = [
     }),
     nextStep: 'Look at what these devices share: the CANivore and its USB cable, a CAN splice, a power channel. '
       + 'If they are all on one bus, add it to the robot profile (canBuses), so Hindsight can say when the whole bus drops.',
-    incident: 'CalGames 2026 Q2: 25 devices off CAN within 0.25 s, listed as 25 separate errors when the robot profile mapped no bus',
+    incident: 'One 2026 match: 25 devices off CAN within 0.25 s, listed as 25 separate errors when the robot profile mapped no bus',
   }),
 ]
 

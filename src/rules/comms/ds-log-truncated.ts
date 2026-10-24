@@ -3,7 +3,7 @@
  *
  * Checks: each .dslog loaded for this match, against the end of the match. A .dslog ends when the DS application
  * closes, so one that stops mid-match means the DS app crashed or was closed.
- * Why: CalGames 2026 Q13: the DS log ended at 420.5 s, 3 s into the first comms loss; the match ran to 433 s.
+ * Why: One 2026 match: the DS log ended at 420.5 s, 3 s into the first comms loss; the match ran to 433 s.
  */
 import { rule, round, secs } from '../rule.ts'
 
@@ -19,7 +19,7 @@ export default rule({
     { id: 'overload', cause: 'Something else on the laptop starved the DS (dashboards, updates, browsers)', look: 'Task Manager during a practice match; the DS log\'s CPU column before it stopped' },
   ],
   nextStep: 'Plug the DS laptop in, set the High performance power plan, close everything but the DS and dashboard, and check Event Viewer for a Driver Station crash.',
-  incident: 'CalGames 2026 Q13: DS log ends at 420.5 s; match ran to 433.1 s (2026-10-17-calgames-q13-log-analysis.md §2)',
+  incident: 'One 2026 match: DS log ends at 420.5 s; match ran to 433.1 s (2026-10-17-calgames-q13-log-analysis.md §2)',
 
   check(match) {
     if (match.dsLogs.length === 0) return match.couldNotCheck('no .dslog loaded for this match (drop the .dslog together with the .wpilog)')

@@ -5,7 +5,7 @@
  * changes every few loops even at rest: a motor's stator current, the gyro's yaw rate), over the last 5 s of the
  * disabled stretch. Fires for a connected device whose signal did not change at all while at least one other did, and
  * once for the robot when none changed (its other signals still arriving, or the page would say "no data").
- * Measured on the CalGames 2026 logs (Q13, Q21, P0), robot disabled before and after the match: those 16 signals
+ * Measured on the 2026 logs (three matches), robot disabled before and after the match: those 16 signals
  * changed 41–49 times a second and never sat still longer than 0.16 s, so 5 s still is 30 times the longest seen.
  * Position and velocity can't tell: some still motors' (the swerve drives, flywheels, indexer) sat unchanged for the
  * whole disabled stretch before the match (228–345 s), and the swerve turn positions sat still from 2 s up to

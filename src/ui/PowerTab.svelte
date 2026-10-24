@@ -41,7 +41,7 @@
     from: 0, to: Math.max(p.ocv[p.ocv.length - 1].ah, FLEET_REFERENCE[FLEET_REFERENCE.length - 1].ah) + 0.25, unit: 'V',
     series: [
       { label: 'This battery (V + R·I)', t: p.ocv.map((x) => x.ah - 0.125), v: p.ocv.map((x) => x.volts) },
-      { label: 'Healthy reference (CalGames Q13/Q21)', t: FLEET_REFERENCE.map((x) => x.ah - 0.25), v: FLEET_REFERENCE.map((x) => x.volts) },
+      { label: 'Healthy reference (two 2026 matches)', t: FLEET_REFERENCE.map((x) => x.ah - 0.25), v: FLEET_REFERENCE.map((x) => x.volts) },
     ],
   } : null)
   const f2 = (x: number | null | undefined) => (x === null || x === undefined || !Number.isFinite(x) ? '—' : x.toFixed(2))

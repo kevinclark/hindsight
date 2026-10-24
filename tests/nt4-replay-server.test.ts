@@ -265,7 +265,7 @@ describe('NT4 replay server', () => {
 
 const CALGAMES = `${homedir()}/Downloads/akit_26-10-17_21-24-40_cacg_q21.wpilog`
 
-describe('NT4 replay server on the CalGames Q21 log', () => {
+describe('NT4 replay server on a real 2026 match log', () => {
   if (!existsSync(CALGAMES)) {
     it.skip(`needs ${CALGAMES}, which is not on this machine`, () => undefined)
     return

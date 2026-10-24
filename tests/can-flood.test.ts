@@ -1,4 +1,4 @@
-// A whole-robot CAN flood (CalGames 2026 Q2: 25 devices dropped within 0.3 s): the 2026 profile's bus members, the
+// A whole-robot CAN flood (one 2026 match: 25 devices dropped within 0.3 s): the 2026 profile's bus members, the
 // bus-wide and partial drops, and the alert words that tie
 // "turn motor" and "encoder" alerts to the bus. Built on small synthetic logs; the real Q2 log is in
 // calgames-logs.test.ts when it is in ~/Downloads.

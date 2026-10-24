@@ -21,7 +21,7 @@ export interface SlowStep {
 }
 
 // A line that ends "<Name>(): <seconds>s". The epoch can follow a "Warning at ...: " prefix and a tab on the same
-// line, and a command's name can have spaces in it ("Teleop drive.execute()" in CalGames Q13).
+// line, and a command's name can have spaces in it ("Teleop drive.execute()" in a 2026 match).
 const EPOCH_LINE = /([^\t]+?\(\)): (\d+(?:\.\d+)?)s\s*$/
 
 /** The steps over SLOW_STEP_MS in the console lines inside the window, slowest first (none without a console). */

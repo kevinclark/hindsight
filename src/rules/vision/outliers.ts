@@ -7,7 +7,7 @@
  * Threshold: assumed from three logs; every log so far fires it.
  *
  * When odometry was off the field for most of the far poses, the finding says so: those distances measure odometry
- * (a pose never seeded), not the camera. MTTD 2025 Q66: odometry started at (-4.7, -3.9) m, and 82-87 % "outliers".
+ * (a pose never seeded), not the camera. One 2025 match: odometry started at (-4.7, -3.9) m, and 82-87 % "outliers".
  */
 import type { Pose2d } from '../../readers/wpilog.ts'
 import { maxOf, pct, percentile, plural, rule, round } from '../rule.ts'

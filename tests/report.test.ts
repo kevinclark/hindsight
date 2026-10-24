@@ -213,7 +213,7 @@ describe('wording', () => {
       expect(text, r.id).not.toMatch(/\.md|hindsight-research|8033\/robot/)
       expect(text.length, r.id).toBeGreaterThan(10)
     }
-    expect(stripRepoPaths('CalGames Q13: hood moved (2026-10-17-calgames-q13-log-analysis.md §1) before its zero')).toBe('CalGames Q13: hood moved before its zero')
+    expect(stripRepoPaths('TEST Q13: hood moved (2026-10-17-calgames-q13-log-analysis.md §1) before its zero')).toBe('TEST Q13: hood moved before its zero')
     expect(stripRepoPaths('Seen at MTTD 2025 (mttd-2025-context.md §1).')).toBe('Seen at MTTD 2025.')
   })
   it('shortens a card title without losing what happened', () => {

@@ -3,7 +3,7 @@
  *
  * Checks: the median battery voltage over the 2 s before auto, against 12.5 V. In Foresight (the live pit check,
  * robot not enabled yet) the last 2 s of the disabled stretch instead.
- * Why: CalGames 2026 Q21 started at 12.44 V and sagged deeper than Q13 (12.65 V) on the same robot.
+ * Why: One 2026 match started at 12.44 V and sagged deeper than another (12.65 V) on the same robot.
  */
 import { rule, volts, round } from '../rule.ts'
 
@@ -22,7 +22,7 @@ export default rule({
     { id: 'drain', cause: 'The robot sat powered on for a long time before the match', look: 'how long the robot was on in the queue (the log starts when the robot code starts)' },
   ],
   nextStep: 'Put a battery reading 12.5 V or more at rest on the robot. If a charged battery rests lower, load-test it.',
-  incident: 'CalGames 2026 Q21: 12.44 V before auto (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 2)',
+  incident: 'One 2026 match: 12.44 V before auto (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 2)',
 
   check(match) {
     // Before auto in a match log; in Foresight, now (the end of the disabled stretch).

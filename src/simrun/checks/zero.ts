@@ -4,10 +4,10 @@
  *
  * The zeroes and their done messages come from the team's scenario file and the Hindsight robot profile. Commands
  * have no names a tool can rely on, so the zero's command is found from the runs themselves: the command that
- * finishes soonest after the done message prints (CalGames Q13's hood zero is a SequentialCommandGroup needing
+ * finishes soonest after the done message prints (a 2026 match's hood zero is a SequentialCommandGroup needing
  * DrumSubsystem, which finishes a loop or two after "Rezeroed hood"), preferring one that needs a subsystem.
  *
- * Why: CalGames 2026 Q13. The auto's first state change took the drum 0.12 s after enable and cancelled the hood's
+ * Why: One 2026 match. The auto's first state change took the drum 0.12 s after enable and cancelled the hood's
  * zero, so the hood ran unzeroed all of auto. The sim shows the same thing on a laptop (2026-10-21).
  */
 

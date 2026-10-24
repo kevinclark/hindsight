@@ -95,7 +95,7 @@ Measured along the way (CalGames, disabled on the field after the 30 s settle):
   stayed above 0.25° for ~100 s). No line is set.
 - Intake pivot against its CANcoder (× 1.7778): within 0.24° at rest (median 0.04–0.08°), up to 6.7° while moving.
 
-Measured for the three new checks (2026-10-19, CalGames Q13, Q21, P0; "before" = code start + 30 s to the first
+Measured for the three new checks (2026-10-19, three 2026 matches; "before" = code start + 30 s to the first
 enable, "after" = 10 s after the last disable to the end of the log):
 
 - **Motor temperatures** (19 Talon FX, `DeviceTemp`, the controller's own reading): 22–31 °C before, 60 °C the

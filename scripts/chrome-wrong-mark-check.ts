@@ -9,8 +9,8 @@
  *   node --experimental-strip-types scripts/chrome-wrong-mark-check.ts <out-dir> <rule> <match to mark, e.g. "Qualification 13"> <log> <log> [<log> ...]
  *
  * The rule must be red on the match to mark and fire on at least one other: a wrong mark demotes only reds
- * (track-record.ts demotion), so a warning rule such as power/margin has nothing to show. On the CalGames Q13, Q21
- * and Q42 logs, power/limit-not-applied does. A run that can't go on stops with exit code 1 and says why.
+ * (track-record.ts demotion), so a warning rule such as power/margin has nothing to show. On the three 2026 logs used
+ * here, power/limit-not-applied does. A run that can't go on stops with exit code 1 and says why.
  *
  * Writes check.json, the history file it made, and screenshots to <out-dir>. The reason it types is a made-up test
  * string; nothing here is a real label.

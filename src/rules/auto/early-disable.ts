@@ -3,10 +3,10 @@
  *
  * Checks: on the field (FMS attached), an auto period that ends more than 1 s early while the DS is still attached.
  * That is a deliberate disable (an A-stop or the drive team), not a comms loss.
- * Why: CalGames 2026 Q13: the robot wedged under the trench and was disabled with 7.4 s of auto left.
+ * Why: One 2026 match: the robot wedged under the trench and was disabled with 7.4 s of auto left.
  *
  * Evidence: which auto was chosen, and its earlier runs in this log and in the other logs loaded with it: how many,
- * how many on this build, and how the last one ended. MTTD 2025 Q28's "Left stack auto" was disabled after 1.0 s; it
+ * how many on this build, and how the last one ended. One 2025 match's "Left stack auto" was disabled after 1.0 s; it
  * had run once before, in Friday practice p8, on a different build with uncommitted changes.
  * "Not run before on this build" is marked likely only when an earlier run on another build was actually seen in the
  * loaded logs (a judgment: a new build is a suspect, not a proof). Two builds of one commit with different
@@ -33,7 +33,7 @@ export default rule({
     { id: 'new-auto', cause: 'The auto had not run before on this build: new or changed code ran in a match for the first time', look: 'the evidence below (earlier runs of this auto and their builds); git log between those builds and this one' },
   ],
   nextStep: 'Ask the drive team why they disabled it, then check what happened in the seconds before: tilt, a mechanism out of position, a stuck path.',
-  incident: 'CalGames 2026 Q13: disabled at 282.7 s with 7.4 s of auto left after the hood hit the trench (2026-10-17-calgames-q13-log-analysis.md §1)',
+  incident: 'One 2026 match: disabled at 282.7 s with 7.4 s of auto left after the hood hit the trench (2026-10-17-calgames-q13-log-analysis.md §1)',
 
   check(match) {
     const autoStart = match.autoStart
