@@ -209,7 +209,7 @@ describe('fix pass 2: model', () => {
   it('each issue says in how many matches it was seen, of those where the rule could be checked', () => {
     const s = session([quiet(2), fired(3), fired(4), fired(5)])
     s.matches[0].rules[RULE] = { status: 'not checked', findings: [], reason: 'test reason' }
-    expect(issue(buildBoard(input(s))).seenIn).toEqual({ n: 3, of: 3 })
-    expect(issue(buildBoard(input(live))).seenIn).toEqual({ n: 2, of: 4 })
+    expect(issue(buildBoard(input(s))).seenIn).toEqual({ n: 3, of: 3, pit: 0 })
+    expect(issue(buildBoard(input(live))).seenIn).toEqual({ n: 2, of: 4, pit: 0 })
   })
 })

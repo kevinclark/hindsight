@@ -98,7 +98,7 @@
   </p>
 
   {#if view === 'board'}
-    <p class="gate" data-gate><b>{board.strip.gate}</b> {unit(board.strip.gate, 'red', 'reds')} due before {next}</p>
+    <p class="gate" data-gate><b>{board.strip.gate}</b> {unit(board.strip.gate, 'red', 'reds')} {board.strip.over ? 'open · the event is over' : `due before ${next}`}</p>
     <p class="sub strip" data-strip>
       {#if board.strip.minutesWord}<span>{board.strip.minutesWord}</span>{/if}
       <span><b>{board.strip.deferralsDue}</b> {unit(board.strip.deferralsDue, 'deferral', 'deferrals')} due</span>
