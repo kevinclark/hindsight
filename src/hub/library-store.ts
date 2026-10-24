@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto'
 import { Catalog } from './catalog.ts'
 import { LocalFolderAdapter } from './local-adapter.ts'
 import { readText } from './adapter.ts'
+import { mergeHistory, parseHistory, serializeHistory, type HistoryEvent } from '../triage/history.ts'
 import { serializeRecord, type ManifestRecord } from './types.ts'
 
 export class LocalLibrary {
@@ -52,6 +53,42 @@ export class LocalLibrary {
     await this.store.appendOwn(this.ownManifestPath, lines)
     this.own += lines
     for (const r of records) this.catalog.add(r)
+  }
+
+  get ownHistoryPath(): string { return `history/${this.machine}.jsonl` }
+
+  /** The text of every machine's triage history file (this machine's first), read from disk each time. */
+  private async historyTexts(): Promise<string[]> {
+    const texts: string[] = []
+    for (const f of await this.store.list('history')) if (f.path.endsWith('.jsonl') && f.path !== this.ownHistoryPath) texts.push((await readText(this.store, f.path)) ?? '')
+    return [(await readText(this.store, this.ownHistoryPath)) ?? '', ...texts]
+  }
+
+  /** The team's triage history as one file's text: every machine's file folded in (by when, device, seq); lines this build can't type are kept as they came. */
+  async historyText(): Promise<string> {
+    let events: HistoryEvent[] = []
+    for (const t of await this.historyTexts()) events = mergeHistory(events, parseHistory(t).events)
+    return serializeHistory(events)
+  }
+
+  /**
+   * Add lines (a text of JSON lines) to this machine's history file, durably. A line already in any machine's file
+   * (exact text) is not added again. Returns how many lines were written.
+   */
+  async appendHistory(text: string): Promise<number> {
+    const texts = await this.historyTexts()
+    const have = new Set(texts.flatMap((t) => t.split('\n')).filter((l) => l.trim() !== ''))
+    const fresh: string[] = []
+    for (const line of text.split('\n')) {
+      if (line.trim() === '' || have.has(line)) continue
+      have.add(line)
+      fresh.push(line)
+    }
+    if (fresh.length === 0) return 0
+    // A crash can leave the last line without its newline: start a fresh line rather than join the next one to it.
+    const own = texts[0]
+    await this.store.appendOwn(this.ownHistoryPath, (own !== '' && !own.endsWith('\n') ? '\n' : '') + fresh.join('\n') + '\n')
+    return fresh.length
   }
 
   /** This machine's own records, as lines (what sync publishes). */

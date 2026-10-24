@@ -105,6 +105,13 @@ panel. Neither is committed.
 - **Sync** (one named plan, then a click): downloads teammates' manifests, uploads this computer's logs the team folder
   lacks (a log that came from Drive is copied *inside* Drive), then publishes this computer's records. A log's record is
   written only after its file is there, so a failed upload leaves no record. Nothing is deleted or overwritten.
+- **The triage history** (known issues, and the issue board's lines) is `history/<machine id>.jsonl`, appended only by that
+  computer, beside the manifests. The board is the fold of every file (`hub:history`; order by when, device, seq; lines
+  this build can't read are kept as they came). Sync brings teammates' files down and puts this computer's up by the
+  manifests' rule: a copy is replaced only by a longer one that starts with it, anything else is a problem and nothing is
+  overwritten. In the app, marking an issue appends there, not to the browser store; the first open moves what the
+  browser store holds that the library lacks, once, and says so in one line. "Save hindsight-history.jsonl" stays as an
+  export. The page opened from disk keeps the browser store and the file.
 - Each computer appends only to its own `manifests/<machine id>.jsonl`, so Drive never makes a conflict copy. The library
   is the union of every manifest. The team folder is chosen in the app and remembered on that computer: it is not in this
   repository.

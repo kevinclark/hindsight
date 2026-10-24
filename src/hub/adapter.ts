@@ -4,7 +4,7 @@
  * the ingest or the library.
  *
  * The interface has no delete and no overwrite: nothing built on it can remove a log. Paths are relative to the
- * library root, with "/" between parts: `logs/<school year>/<date>/<name>` and `manifests/<machine id>.jsonl`.
+ * library root, with "/" between parts: `logs/<school year>/<date>/<name>` `manifests/<machine id>.jsonl` and `history/<machine id>.jsonl`.
  */
 
 export interface FileInfo {
@@ -77,8 +77,9 @@ export function checkPath(path: string): string {
   return path
 }
 
+/** A file one machine alone appends to: its manifest, or its triage history (`history/<machine id>.jsonl`). */
 export function isManifestPath(path: string): boolean {
-  return /^manifests\/[A-Za-z0-9_-]+\.jsonl$/.test(path)
+  return /^(manifests|history)\/[A-Za-z0-9_-]+\.jsonl$/.test(path)
 }
 
 /** Read a whole (small) file as text, in chunks. */

@@ -163,6 +163,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
     await lib.append({ type: 'tag', target, field, value: String(value).trim(), recordedAt: Date.now(), machine: lib.machine })
   })
 
+  ipcMain.handle('hub:history', async (): Promise<string> => (await open()).historyText())
+  ipcMain.handle('hub:appendHistory', async (_e, text: string): Promise<number> => (await open()).appendHistory(String(text)))
   ipcMain.handle('hub:readLog', async (_e, path: string) => {
     const lib = await open()
     if (!checkPath(path).startsWith('logs/')) throw new Error('not a log path')
