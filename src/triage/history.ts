@@ -44,7 +44,8 @@ export interface IssueEvent {
  */
 export interface PitCheckEvent {
   type: 'pit-check'
-  verdict: 'GO' | 'NO-GO' | 'NOT CHECKED'
+  /** 'GO WITH DEFERRALS': a queue check that was a go with deferrals open (never plain GO, ADR 9). An old build keeps the line as an OpaqueEvent and writes it back as it came. */
+  verdict: 'GO' | 'GO WITH DEFERRALS' | 'NO-GO' | 'NOT CHECKED'
   /** The robot's GitSHA and whether it had uncommitted changes. */
   sha: string
   dirty: boolean
@@ -178,7 +179,7 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
       const isObject = typeof e === 'object' && e !== null && !Array.isArray(e)
       if (isObject && e.type === 'issue' && typeof e.key === 'string' && ['known', 'fixed', 'new'].includes(e.status)) events.push({ note: '', when: '', ...e })
       else if (isObject && e.type === 'issue' && typeof e.key === 'string' && ['wrong', 'real', 'unmark'].includes(e.status) && typeof e.match === 'string' && e.match) events.push({ note: '', when: '', ...e })
-      else if (isObject && e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
+      else if (isObject && e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'GO WITH DEFERRALS', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
       else if (isObject && e.type === 'board' && validBoard(e)) events.push(e)
       else if (isObject && e.type === 'event-note' && validEventNote(e)) events.push(e)
       else if (isObject) events.push({ type: 'opaque', raw: line, when: typeof e.when === 'string' ? e.when : '' })
@@ -240,9 +241,9 @@ export function triage(events: HistoryEvent[]): Triage {
   return { issues, wrong, real }
 }
 
-/** The code of the latest pit check that came out GO (null if none is on record). */
+/** The code of the latest pit check that came out GO or GO WITH DEFERRALS (null if none is on record). */
 export function lastPassingSha(events: HistoryEvent[]): string | null {
-  const go = events.filter((e): e is PitCheckEvent => e.type === 'pit-check' && e.verdict === 'GO' && e.sha !== '')
+  const go = events.filter((e): e is PitCheckEvent => e.type === 'pit-check' && (e.verdict === 'GO' || e.verdict === 'GO WITH DEFERRALS') && e.sha !== '')
   return go.sort(compareEvents).at(-1)?.sha ?? null
 }
 

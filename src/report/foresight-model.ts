@@ -7,7 +7,8 @@ import type { MarkedLine } from '../foresight/onchecks.ts'
 import { VERSION } from '../version.ts'
 
 export interface ForesightReportInput {
-  verdict: 'GO' | 'NO-GO' | 'NOT CHECKED'
+  /** The word the screen shows: GO, NO-GO, NOT CHECKED, GO WITH n DEFERRALS (queue), or a practice list's end ("Ready to drive", "3 left"). */
+  verdict: string
   why: string
   /** The connection as the screen says it ("connected", "closed", ...) and its message. */
   state: string
@@ -22,6 +23,8 @@ export interface ForesightReportInput {
   controllers: string[]
   build: { sha: string; branch: string; dirty: string } | null
   notChecked: { rule: string; reason: string }[]
+  /** Reds the board has deferred, by finding key: the workaround line. They read DEFERRED, never "fix before the field". */
+  deferred?: Record<string, string>
 }
 
 /** A 40-hex git sha in a line of text shortened to the 7 characters the card and the printed report show. */
@@ -34,14 +37,22 @@ const p2 = (n: number) => String(n).padStart(2, '0')
 export const stamp = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`
 export const fileStamp = (d: Date) => stamp(d).replace(/[ :]/g, '-')
 
-export const VERDICT_TONE: Record<ForesightReportInput['verdict'], Tone> = { GO: 'ok', 'NO-GO': 'error', 'NOT CHECKED': 'muted' }
+/** Never green for a go that still has work open (WCAG 1.4.1: the word says it, the tone only helps). */
+export function verdictTone(verdict: string): Tone {
+  if (verdict === 'GO' || verdict === 'Ready to drive') return 'ok'
+  if (verdict.startsWith('NO-GO')) return 'error'
+  if (verdict.startsWith('GO WITH') || /^\d+ left/.test(verdict)) return 'warning'
+  return 'muted'
+}
 
 export function foresightBuild(i: ForesightReportInput): BuildLine | null {
   return i.build ? buildLine(i.build) : null
 }
 
 export function foresightCard(i: ForesightReportInput): CardModel {
-  const reds = i.items.filter((x) => x.level === 'red')
+  const deferred = i.deferred ?? {}
+  const reds = i.items.filter((x) => x.level === 'red' && !(x.finding.key in deferred))
+  const defers = i.items.filter((x) => x.level === 'red' && x.finding.key in deferred)
   const ambers = i.items.filter((x) => x.level === 'amber')
   const build = foresightBuild(i)
   // A number the title already says is not said again under it; that includes a 40-hex sha the title shows as its
@@ -52,14 +63,14 @@ export function foresightCard(i: ForesightReportInput): CardModel {
     const said = n.inTitle || (/^[0-9a-f]{40}$/i.test(n.value) && title.includes(n.value.slice(0, 7)))
     return { word, tone, title, number: said ? '' : shortShas(n.text) }
   }
-  const items = [...reds.map((x) => item(x, 'FIX', 'error')), ...ambers.map((x) => item(x, 'LOOK AT', 'warning'))]
+  const items = [...reds.map((x) => item(x, 'FIX', 'error')), ...defers.map((x) => ({ ...item(x, 'DEFERRED', 'warning'), number: `workaround: ${deferred[x.finding.key] || 'none written'}` })), ...ambers.map((x) => item(x, 'LOOK AT', 'warning'))]
   return {
     context: 'Foresight pit check',
     heading: i.verdict,
-    headingTone: VERDICT_TONE[i.verdict],
+    headingTone: verdictTone(i.verdict),
     subheading: i.why + (ambers.length ? ` · ${ambers.length} to look at` : ''),
     items,
-    emptyText: i.verdict === 'GO' ? 'Nothing to fix.' : i.verdict === 'NOT CHECKED' ? 'Not judged: this is not a GO.' : '',
+    emptyText: i.verdict === 'GO' || i.verdict === 'Ready to drive' ? 'Nothing to fix.' : i.verdict === 'NOT CHECKED' ? 'Not judged: this is not a GO.' : '',
     footer: [`read ${stamp(i.readAt)}${i.robot ? ` · ${i.robot}` : ''}`, build ? build.text : `connection: ${i.state}`, `Hindsight ${VERSION}`],
     // The fact is said by the headline item and the footer; the box says it only when the first item (always drawn)
     // does not, since items after it can be cut to fit the card.

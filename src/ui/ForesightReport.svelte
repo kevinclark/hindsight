@@ -11,20 +11,23 @@
   import { profileId } from '../profiles/index.ts'
   import { buildCard, type Card } from '../report/card.ts'
   import { saveForSlack } from '../report/card-png.ts'
-  import { fileStamp, foresightBuild, foresightCard, didNotRun, shortShas, stamp, type ForesightReportInput } from '../report/foresight-model.ts'
+  import { fileStamp, foresightBuild, foresightCard, didNotRun, shortShas, stamp, verdictTone, type ForesightReportInput } from '../report/foresight-model.ts'
   import { keyNumber } from '../report/review-model.ts'
   import { allItems, type VerdictItem } from '../foresight/verdict.ts'
   import { VERSION } from '../version.ts'
 
-  let { status, checked, verdict, why, onchecks, battery, controllers, totalChecks }: {
+  let { status, checked, verdict, why, onchecks, battery, controllers, totalChecks, deferred = {} }: {
     status: LiveStatus | null
     checked: Extract<ForesightResult, { state: 'checked' }> | null
-    verdict: 'GO' | 'NO-GO' | 'NOT CHECKED'
+    /** The word the screen shows: GO, NO-GO, NOT CHECKED, GO WITH n DEFERRALS, or a practice list's end ("Ready to drive", "3 left"). */
+    verdict: string
     why: string
     onchecks: ChecklistLine[]
     battery: number | null
     controllers: string[]
     totalChecks: number
+    /** Reds the board has deferred, by finding key: the workaround line. */
+    deferred?: Record<string, string>
   } = $props()
 
   // The screen updates about once a second; the time of the latest update is the time the readings were taken.
@@ -34,12 +37,13 @@
   const input = $derived<ForesightReportInput>({
     verdict, why, state: status?.state ?? 'not connected', message: status?.message ?? 'not connected', url: status?.url ?? null, readAt,
     robot: status?.profile ? profileId(status.profile) : null, items: checked?.verdict.items ?? [], onchecks, battery, controllers,
-    build: checked?.match.build ?? null, notChecked: [...(checked?.verdict.notChecked ?? []), ...(checked?.verdict.crashed ?? [])],
+    deferred, build: checked?.match.build ?? null, notChecked: [...(checked?.verdict.notChecked ?? []), ...(checked?.verdict.crashed ?? [])],
   })
   const unrun = $derived(didNotRun(input.notChecked.length, totalChecks))
   const card = $derived<Card>(buildCard(foresightCard(input)))
   const build = $derived(foresightBuild(input))
-  const reds = $derived(input.items.filter((i) => i.level === 'red'))
+  const reds = $derived(input.items.filter((i) => i.level === 'red' && !(i.finding.key in deferred)))
+  const defers = $derived(input.items.filter((i) => i.level === 'red' && i.finding.key in deferred))
   const ambers = $derived(input.items.filter((i) => i.level === 'amber'))
   // Grey items that ask a person to do something (hold a tag up to a camera) are steps, not context.
   const steps = $derived(groupSteps(input.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule))))
@@ -69,7 +73,7 @@
     <h1>Foresight pit check</h1>
   </header>
 
-  <section class={`verdict v-${verdict.replace(' ', '-').toLowerCase()}`}>
+  <section class={`verdict t-${verdictTone(verdict)}`}>
     <p class="big">{verdict}</p>
     <p class="why">{why}</p>
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
@@ -83,6 +87,10 @@
   {#if reds.length}
     <h2>Fix before the field ({reds.length})</h2>
     <ul class="items">{#each reds as i (i.finding.key)}<li class="red"><p class="title"><span class="sev red">Fix</span> {i.finding.title}</p><p class="do"><strong>Do:</strong> {i.action}</p><p class="small">{i.finding.rule} · {keyNumber(i.finding).label}: {shortShas(keyNumber(i.finding).value)}</p>{@render under(i)}</li>{/each}</ul>
+  {/if}
+  {#if defers.length}
+    <h2>Deferred ({defers.length})</h2>
+    <ul class="items">{#each defers as i (i.finding.key)}<li class="amber"><p class="title"><span class="sev amber">Deferred</span> {i.finding.title}</p><p class="do"><strong>DEFERRED · workaround:</strong> {deferred[i.finding.key] || 'none written'}</p><p class="small">{i.finding.rule}</p>{@render under(i)}</li>{/each}</ul>
   {/if}
   {#if ambers.length}
     <h2>Look at ({ambers.length})</h2>
@@ -124,9 +132,10 @@
   .big { font-size: 48pt; font-weight: 800; line-height: 1.05; margin: 0; letter-spacing: 0.02em; }
   .why { font-size: 12pt; margin: 0.2rem 0 0; }
   .unrun { font-size: 10.5pt; margin: 0.1rem 0 0; color: var(--muted); }
-  .v-go { border-color: var(--go); color: var(--go); }
-  .v-no-go { border-color: var(--error); color: var(--error); }
-  .v-not-checked { color: var(--muted); }
+  .t-ok { border-color: var(--go); color: var(--go); }
+  .t-error { border-color: var(--error); color: var(--error); }
+  .t-warning { border-color: var(--warning); color: var(--warning); }
+  .t-muted { color: var(--muted); }
   .build.dirty { color: var(--warning); font-weight: 600; }
   .items { list-style: none; margin: 0; padding: 0; }
   .items li { padding: 0.2rem 0 0.2rem 0.5rem; border-left: 4px solid var(--border); margin-bottom: 0.2rem; break-inside: avoid; }

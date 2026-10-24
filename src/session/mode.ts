@@ -9,6 +9,7 @@
 import type { MatchSummary } from './summary.ts'
 import { eventLabel } from '../tba/identify.ts'
 import { dateText } from './day.ts'
+import { SIGNAL_WORDS } from './today-event.ts'
 import type { Session } from './session.ts'
 
 export type Mode = 'event' | 'practice'
@@ -95,15 +96,18 @@ export function loneLogMode(m: { onField: boolean; event: string; matchLabel: st
  * session the Session view holds, else practice. With no session loaded it can only say practice. The choice is kept under
  * that session's id, or the id a practice session for today would have.
  */
-export function todayMode(sessions: readonly Session[], now: number, store: Readonly<Record<string, string>> = {}): { line: string; sessionId: string; mode: Mode; byHand: boolean } {
+export function todayMode(sessions: readonly Session[], now: number, store: Readonly<Record<string, string>> = {}, external: { id: string; name: string; key?: string; signal: 'tba' | 'library' } | null = null): { line: string; sessionId: string; mode: Mode; byHand: boolean } {
   const today = dateText(now)
   const event = sessions.find((s) => s.kind === 'event' && s.matches.some((m) => m.onField && m.playedAt !== null && dateText(m.playedAt) === today))
-  const sessionId = event ? event.id : `practice:${today}`
+  // No logs of today's event are loaded: the desktop app can still know it is an event day (today-event.ts), and a hand
+  // choice is then kept under the event's id so it stays for the event's dates.
+  const outside = event ? null : external
+  const sessionId = event ? event.id : outside ? outside.id : `practice:${today}`
   const choice = modeChoice(store, sessionId)
-  const mode = choice ?? (event ? 'event' : 'practice')
+  const mode = choice ?? (event || outside ? 'event' : 'practice')
   const how = choice ? ' (set by hand)' : ''
   const line = mode === 'event'
-    ? (event && !choice ? 'Event · pit run on an event day' : `Event · ${event ? eventName(event) : 'today'}${how}`)
+    ? (event && !choice ? 'Event · pit run on an event day' : outside ? `Event · ${outside.name} (${choice ? 'set by hand' : SIGNAL_WORDS[outside.signal]})` : `Event · ${event ? eventName(event) : 'today'}${how}`)
     : `Practice · ${today}${how}`
   return { line, sessionId, mode, byHand: choice !== null }
 }
