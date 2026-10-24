@@ -375,7 +375,7 @@
 <div hidden={mode !== 'snapshot'} class:screen-only={reportable}><SnapshotView /></div>
 <div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder bind:this={profileBuilder} /></div>
 <div hidden={mode !== 'foresight'}>
-  <ForesightView {history} {sessions} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
+  <ForesightView {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
 {#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} /></div>{/if}

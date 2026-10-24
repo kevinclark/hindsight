@@ -5,6 +5,7 @@
 import { makerOf } from '../rules/index.ts'
 import type { Board, BoardIssue } from './model.ts'
 import { isChecked, isGate } from './model.ts'
+import { queueVerdictText } from './words.ts'
 
 /** A sheet holds at most this many lines (a tired reader at the field): over it says "n more on the board". */
 export const SHEET_LINES = 7
@@ -34,8 +35,6 @@ export interface QueueSheet {
   tickNote: string | null
 }
 
-const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
-
 /**
  * The gate is the reds due before the next match, each either checked (its role and time recorded) or deferred. The
  * verdict is NOT CLEARED until every gate red is checked or deferred; then it is GO WITH its deferrals and open reds, which
@@ -54,9 +53,7 @@ export function queueSheet(board: Board): QueueSheet {
     }),
     ...deferrals.map((issue): QueueLine => ({ kind: 'deferral', issue, checked: null })),
   ]
-  const text = toConfirm
-    ? `NOT CLEARED: ${toConfirm} ${plural(toConfirm, 'RED', 'REDS')} TO CONFIRM`
-    : `GO WITH ${deferrals.length} ${plural(deferrals.length, 'DEFERRAL', 'DEFERRALS')} · ${redsOpen} ${plural(redsOpen, 'RED', 'REDS')} OPEN`
+  const text = queueVerdictText(toConfirm, deferrals.length, redsOpen)
   return {
     forMatch: tickFor, forLabel: board.tickLabel, verdict: { cleared: toConfirm === 0, text }, toConfirm, deferrals: deferrals.length, redsOpen, gate: gate.length,
     lines: all.slice(0, SHEET_LINES), more: Math.max(0, all.length - SHEET_LINES),

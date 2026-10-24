@@ -32,3 +32,19 @@ export function tags(i: BoardIssue): string[] {
 }
 
 export const clockText = (iso: string): string => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
+
+/** "1 RED", "2 REDS": the verdict words' counts. */
+export const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many)
+
+/**
+ * The words for a go that still has work open, in one place so the queue sheet and Foresight never word it differently:
+ * "GO WITH 2 DEFERRALS". Never green and never plain GO (WCAG 1.4.1: the word carries the count, not the colour).
+ */
+export const goWithWord = (deferrals: number): string => `GO WITH ${deferrals} ${plural(deferrals, 'DEFERRAL', 'DEFERRALS')}`
+
+/** The queue sheet's verdict: NOT CLEARED: n RED(S) TO CONFIRM, or the go-with word and the reds still open. */
+export function queueVerdictText(toConfirm: number, deferrals: number, redsOpen: number): string {
+  return toConfirm
+    ? `NOT CLEARED: ${toConfirm} ${plural(toConfirm, 'RED', 'REDS')} TO CONFIRM`
+    : `${goWithWord(deferrals)} · ${redsOpen} ${plural(redsOpen, 'RED', 'REDS')} OPEN`
+}

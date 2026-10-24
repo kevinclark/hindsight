@@ -11,7 +11,7 @@
   import { profileId } from '../profiles/index.ts'
   import { buildCard, type Card } from '../report/card.ts'
   import { saveForSlack } from '../report/card-png.ts'
-  import { fileStamp, foresightBuild, foresightCard, didNotRun, shortShas, stamp, type ForesightReportInput } from '../report/foresight-model.ts'
+  import { fileStamp, foresightBuild, foresightCard, didNotRun, shortShas, stamp, verdictTone, type ForesightReportInput } from '../report/foresight-model.ts'
   import { keyNumber } from '../report/review-model.ts'
   import { allItems, type VerdictItem } from '../foresight/verdict.ts'
   import { VERSION } from '../version.ts'
@@ -19,7 +19,8 @@
   let { status, checked, verdict, why, onchecks, battery, controllers, totalChecks }: {
     status: LiveStatus | null
     checked: Extract<ForesightResult, { state: 'checked' }> | null
-    verdict: 'GO' | 'NO-GO' | 'NOT CHECKED'
+    /** The word the screen shows: GO, NO-GO, NOT CHECKED, GO WITH n DEFERRALS, or a practice list's end ("Ready to drive", "3 left"). */
+    verdict: string
     why: string
     onchecks: ChecklistLine[]
     battery: number | null
@@ -69,7 +70,7 @@
     <h1>Foresight pit check</h1>
   </header>
 
-  <section class={`verdict v-${verdict.replace(' ', '-').toLowerCase()}`}>
+  <section class={`verdict t-${verdictTone(verdict)}`}>
     <p class="big">{verdict}</p>
     <p class="why">{why}</p>
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
@@ -124,9 +125,10 @@
   .big { font-size: 48pt; font-weight: 800; line-height: 1.05; margin: 0; letter-spacing: 0.02em; }
   .why { font-size: 12pt; margin: 0.2rem 0 0; }
   .unrun { font-size: 10.5pt; margin: 0.1rem 0 0; color: var(--muted); }
-  .v-go { border-color: var(--go); color: var(--go); }
-  .v-no-go { border-color: var(--error); color: var(--error); }
-  .v-not-checked { color: var(--muted); }
+  .t-ok { border-color: var(--go); color: var(--go); }
+  .t-error { border-color: var(--error); color: var(--error); }
+  .t-warning { border-color: var(--warning); color: var(--warning); }
+  .t-muted { color: var(--muted); }
   .build.dirty { color: var(--warning); font-weight: 600; }
   .items { list-style: none; margin: 0; padding: 0; }
   .items li { padding: 0.2rem 0 0.2rem 0.5rem; border-left: 4px solid var(--border); margin-bottom: 0.2rem; break-inside: avoid; }

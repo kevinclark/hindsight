@@ -1,7 +1,9 @@
 <!--
   Foresight: the pre-match go/no-go, live from the robot over a tether in the pit or the queue (the team's onchecks).
-  One verdict (GO, NO-GO, NOT CHECKED), then the findings worst first, each with the one thing to do before the robot
-  goes on the field. Big enough to read at arm's length in a noisy queue.
+  One engine, two checklists chosen by the mode line (ADR 9). In the queue (event mode) a do-confirm list of systems, each
+  Go, Go with deferral or No-go, under one word (NO-GO, NOT CHECKED, GO WITH n DEFERRALS, GO); at the start of practice a
+  read-do list ending "Ready to drive" or "n left", with no Go verdict. Then the findings worst first, each with the one
+  thing to do before the robot goes on the field. Big enough to read at arm's length in a noisy queue.
   Read-only (src/foresight/nt4-client.ts), and never on the field: it closes for good when the field attaches.
 -->
 <script lang="ts">
@@ -15,20 +17,31 @@
   import { num, values } from '../match/match.ts'
   import { isUncommitted } from '../match/git-dirty.ts'
   import { downloadText } from './download.ts'
-  import { ASSISTED_RULES, checklistLines, groupSteps, wantedLines, type ChecklistLine } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, checklistLines, groupSteps, markOnchecks, wantedLines } from '../foresight/onchecks.ts'
+  import { boardFor, deferralSession, openDeferrals, practiceChecklist, queueChecklist, ticksFor, tickKey, type System, type Tick } from '../foresight/checklists.ts'
+  import { atLatest, boardLines } from '../board/writes.ts'
+  import { readRole, writeRole } from '../board/role.ts'
+  import { verdictTone } from '../report/foresight-model.ts'
   import { SNAPSHOT_RULES, type CodeSettings } from '../foresight/snapshot-checks.ts'
   import type { FolderCheck } from '../code/check/index.ts'
   import { parseSnapshot, type Snapshot } from '../snapshot/snapshot.ts'
   import type { VerdictItem } from '../foresight/verdict.ts'
   import { didNotRun } from '../report/foresight-model.ts'
   import ForesightReport from './ForesightReport.svelte'
+  import ForesightQueue from './ForesightQueue.svelte'
+  import ForesightPractice from './ForesightPractice.svelte'
   import CodeCheck from './CodeCheck.svelte'
   import ModeLine from './ModeLine.svelte'
   import { chooseMode, sessionNames } from './session-names.svelte.ts'
   import { todayMode } from '../session/mode.ts'
   import type { Session } from '../session/session.ts'
+  import type { BoardRole } from '../triage/history.ts'
 
-  let { history, onPitCheck, sessions = [] }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void; sessions?: Session[] } = $props()
+  let { history, onPitCheck, sessions = [], onBoard }: {
+    history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void; sessions?: Session[]
+    /** Writes board lines (App.svelte writeBoard): the queue checklist's ticks. Without it ticks stay on this page. */
+    onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void
+  } = $props()
   // The mode line (ADR 3): a pit check on an event day is a pit run; the laptop's day decides.
   const today = $derived(todayMode(sessions, Date.now(), sessionNames()))
 
@@ -81,12 +94,20 @@
   }
   onDestroy(() => live?.disconnect())
 
-  // The first GO of a connection is kept in the history file (for foresight/commit-matches next time).
+  // The first GO (in the queue: GO or GO WITH DEFERRALS) of a connection is kept in the history file (for foresight/commit-matches next time).
+  // Practice has no Go verdict; it keeps the engine's GO as before, so the next check still compares the code with the last good one.
   function record(s: LiveStatus) {
-    if (recorded || s.result?.state !== 'checked' || s.result.verdict.verdict !== 'GO') return
+    if (recorded || s.result?.state !== 'checked') return
+    let kept: PitCheckEvent['verdict']
+    if (queueMode) {
+      const q = queueChecklist({ verdict: s.result.verdict, why: '', profile: s.result.match.profile, deferrals, deferralNote: null })
+      if (q.kind !== 'GO' && q.kind !== 'GO WITH DEFERRALS') return
+      kept = q.kind
+    } else if (s.result.verdict.verdict === 'GO') kept = 'GO'
+    else return
     recorded = true
     const m = s.result.match
-    onPitCheck({ type: 'pit-check', verdict: 'GO', sha: m.build.sha, dirty: isUncommitted(m.build.dirty), robot: profileId(m.profile), when: new Date().toISOString() })
+    onPitCheck({ type: 'pit-check', verdict: kept, sha: m.build.sha, dirty: isUncommitted(m.build.dirty), robot: profileId(m.profile), when: new Date().toISOString() })
   }
 
   const result = $derived(status?.result ?? null)
@@ -104,6 +125,37 @@
       : status?.state === 'connected' ? 'reading the robot…'
       : 'not connected',
   )
+  // The checklist the mode line chooses (ADR 3, 9): event mode is the queue's, practice the start-up one.
+  const queueMode = $derived(today.mode === 'event')
+  const profile = $derived(checked?.match.profile ?? status?.profile ?? undefined)
+  const robotId = $derived(profile ? profileId(profile) : null)
+  // Open deferrals are the board's: today's event session when there is one, else the latest event session for this robot.
+  const defSession = $derived(queueMode && robotId ? deferralSession(sessions, today.sessionId, robotId) : null)
+  const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date()) : null)
+  const deferrals = $derived(board && profile ? openDeferrals(board, profile) : null)
+  const deferralNote = $derived(!queueMode ? null : !robotId ? 'The robot is not identified yet, so no deferrals are read.' : !defSession ? 'No event session for this robot is loaded in the Session view, so no deferrals are read.' : null)
+  const queue = $derived(queueMode ? queueChecklist({ verdict: checked?.verdict ?? null, why, profile, deferrals, deferralNote }) : null)
+  const practice = $derived(practiceChecklist(markOnchecks(checked)))
+  // The word in the big box (and on the printed report): the queue's, or the practice list's end, never a Go in practice.
+  const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.left.length} left`) : 'NOT CHECKED')
+  const shownWhy = $derived(queue ? queue.reason : checked ? (practice.ready ? 'every live check on the practice-start list is done' : practice.end.replace(/^\d+ left: /, '')) : why)
+  const shownTone = $derived(verdictTone(shownWord))
+  // The role this laptop ticks under (the same setting as the board's), and ticks when no event is loaded to file them with.
+  let role = $state<BoardRole | null>((() => { try { return readRole(localStorage) } catch { return null } })())
+  function chooseRole(r: BoardRole | null) { role = r; if (r) { try { writeRole(localStorage, r) } catch { /* kept for this visit */ } } }
+  let localTicks = $state<Partial<Record<System, Tick>>>({})
+  const ticks = $derived.by((): Map<System, Tick> => {
+    if (!queue || !robotId) return new Map()
+    if (defSession && board) return ticksFor(history, robotId, defSession, board.tickFor)
+    return new Map(Object.entries(localTicks) as [System, Tick][])
+  })
+  function tick(system: System, on: boolean) {
+    if (!role) return
+    if (defSession && board && robotId && onBoard) {
+      const r = role, forMatch = board.tickFor, robot = robotId, at = atLatest(defSession)
+      onBoard((device, h) => boardLines(h, { device, role: r }, new Date(), { key: tickKey(system), robot }, [{ op: on ? 'checked' : 'unchecked', value: forMatch }], at))
+    } else localTicks = on ? { ...localTicks, [system]: { role, when: new Date().toISOString() } } : Object.fromEntries(Object.entries(localTicks).filter(([k]) => k !== system))
+  }
   const fmt = (t: number | null) => (t === null ? '—' : `${t.toFixed(1)} s`)
   // A few live values to compare with the Driver Station's own display.
   const lastNumber = (key: string) => { const s = checked ? num(checked.match, key) : null; return s && s.v.length ? s.v[s.v.length - 1] : null }
@@ -122,6 +174,7 @@
       valuesReceived: status.valuesReceived, robotTime: status.robotTime, codeStart: status.codeStart, codeStartFrom: status.codeStartFrom,
       robot: status.profile ? profileId(status.profile) : null, neverSent, battery, controllers,
       snapshot: snapshot && { file: snapshot.fileName, takenAt: snapshot.takenAt, devices: snapshot.devices.length, stopped: snapshot.stopped, responseShapes: snapshot.responseShapes, used: checked?.snapshotUsed ?? null },
+      checklist: queue ? { kind: 'queue', word: queue.word, systems: queue.rows.map((r) => [r.system, r.word]), openDeferrals: queue.deferrals.length } : { kind: 'practice', end: practice.end },
       verdict: checked ? { verdict: checked.verdict.verdict, reason: checked.verdict.reason, items: checked.verdict.items.map(readingItem), notChecked: checked.verdict.notChecked, crashed: checked.verdict.crashed, build: checked.match.build } : result,
     }
     downloadText(`foresight-readings-${report.when.slice(0, 19).replace(/[:T]/g, '-')}.json`, JSON.stringify(report, null, 1))
@@ -138,20 +191,11 @@
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
   const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
   const unrun = $derived(checked ? didNotRun(checked.verdict.notChecked.length + checked.verdict.crashed.length, totalChecks) : null)
-  // The checklist keeps the team's order.
-  // Lines the tool can never judge (a person's) and context that is never a fault (the gyro) fold away; the rest are live.
-  const liveLines = $derived(onchecks.filter((l) => !l.folded))
-  const inertLines = $derived(onchecks.filter((l) => l.folded))
   const snapshotWhy = $derived(checked && !checked.snapshotUsed ? checked.report.skipped.find((s) => s.rule === SNAPSHOT_RULES[0])?.reason ?? null : null)
   let reportView = $state<{ save: () => Promise<string | null> }>()
   let saveProblem = $state<string | null>(null)
-  const MARK = { ok: 'OK', red: 'Fix', amber: 'Look', 'to do': 'Do', context: 'Context', 'not checked': '– Not checked', 'by eye': 'By eye' } as const
   const LEVEL_WORD = { red: 'Fix before the field', amber: 'Look at', grey: 'Context' } as const
 </script>
-
-{#snippet checkLine(l: ChecklistLine)}
-  <li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.detail}</span></li>
-{/snippet}
 
 {#snippet itemRow(item: VerdictItem, nested = false)}
   <li class={`item ${item.level}`}>
@@ -205,9 +249,9 @@
     </span>
   </section>
 
-  <section class={`verdict v-${verdict.replace(' ', '-').toLowerCase()}`} aria-live="polite">
-    <p class="big">{verdict}</p>
-    <p>{why}</p>
+  <section class={`verdict t-${shownTone}`} aria-live="polite">
+    <p class="big">{shownWord}</p>
+    <p>{shownWhy}</p>
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
     {#if result?.state === 'settling'}<p class="small">Nothing is judged until {SETTLE_SECONDS} s after the robot code starts: start-up camera and time-sync alerts clear in that time.</p>{/if}
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
@@ -244,18 +288,12 @@
   {/if}
 
   {#if status}
-    <section class="onchecks" aria-label="The team's pit checklist">
-      <h3>Pit checklist: battery, controllers, software</h3>
-      <ul>
-        {#each liveLines as l (l.line)}{@render checkLine(l)}{/each}
-      </ul>
-      <details class="inert">
-        <summary>{inertLines.length} lines for a person or context</summary>
-        <ul>
-          {#each inertLines as l (l.line)}{@render checkLine(l)}{/each}
-        </ul>
-      </details>
-      <p class="small">In the team's 2026 checklist order. A line is marked only from the check on screen now; "By eye" lines are for a person and never count toward GO. A merged line shows the worst of its checked parts, says how many were checked, and names each part that is not OK; it reads "Not checked" only when no part was.</p>
+    {#if queue}
+      <ForesightQueue checklist={queue} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard)} onTick={tick} onRole={chooseRole} />
+    {:else}
+      <ForesightPractice checklist={practice} />
+    {/if}
+    <section class="onchecks" aria-label="Wanted checks">
       {#if wanted.length}
         <details class="inert">
           <summary>{wanted.length} wanted checks: problems no check can see yet (context, never changes the verdict)</summary>
@@ -292,7 +330,7 @@
   {/if}
 {/if}
 </div>
-<ForesightReport bind:this={reportView} {totalChecks} {status} {checked} {verdict} {why} {onchecks} {battery} {controllers} />
+<ForesightReport bind:this={reportView} {totalChecks} {status} {checked} verdict={shownWord} why={shownWhy} {onchecks} {battery} {controllers} />
 
 <style>
   .connect + .connect { margin-top: 0.5rem; }
@@ -306,9 +344,11 @@
   .small { font-size: 0.8rem; color: var(--muted); }
   .verdict .unrun { font-size: 1rem; color: var(--muted); }
   details > summary { min-height: 24px; box-sizing: border-box; }
-  .v-go { border-color: var(--go, #188038); color: var(--go, #188038); }
-  .v-no-go { border-color: var(--error); color: var(--error); }
-  .v-not-checked { color: var(--muted); }
+  /* The word carries the meaning; the colour only helps (WCAG 1.4.1). A go with deferrals is amber, never green. */
+  .t-ok { border-color: var(--go, #188038); color: var(--go, #188038); }
+  .t-error { border-color: var(--error); color: var(--error); }
+  .t-warning { border-color: var(--warning); color: var(--warning); }
+  .t-muted { color: var(--muted); }
   .items { list-style: none; padding: 0; margin: 0; }
   .item { border-left: 4px solid var(--border); padding: 0.4rem 0.75rem; margin: 0 0 0.5rem; }
   .item.red { border-left-color: var(--error); }
@@ -329,7 +369,6 @@
   dd { margin: 0; overflow-wrap: anywhere; }
   .notchecked, .readings { margin-top: 1rem; font-size: 0.85rem; }
   .onchecks { margin-top: 1rem; }
-  .onchecks h3 { font-size: 1rem; margin: 0 0 0.4rem; }
   .onchecks ul { list-style: none; margin: 0; padding: 0; }
   .oc { display: grid; grid-template-columns: 6.5rem minmax(10rem, 1fr) 2fr; gap: 0.15rem 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
   .oc .mark { font-weight: 700; font-size: 0.8rem; }
