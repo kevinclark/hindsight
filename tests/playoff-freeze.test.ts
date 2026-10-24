@@ -6,12 +6,16 @@ import { codeChangeFlag, cutOffState, cutOffText, fixFolded, FREEZE_BANNER, isPl
 import { suggestions, timeline } from '../src/board/points.ts'
 import { noteLine } from '../src/board/writes.ts'
 import { queueChecklist } from '../src/foresight/checklists.ts'
+import { verdictFor } from '../src/foresight/verdict.ts'
+import { sessionSchedule } from '../src/tba/session-schedule.ts'
+import { createTba, memoryStore } from '../src/tba/source.ts'
 import { changedFiles } from '../src/code/git.ts'
 import type { CodeSource } from '../src/code/source.ts'
 import type { MatchSummary } from '../src/session/summary.ts'
 import { eventNotes, parseHistory, serializeHistory, type BoardEvent, type EventNote, type HistoryEvent } from '../src/triage/history.ts'
 import { shortMatchLabel } from '../src/ui/match-label.ts'
 import { BASE, ROBOT, SCHEDULE, input, match, profile, session } from './helpers/board-scene.ts'
+import type { Report } from '../src/rules/index.ts'
 
 const KEY = 'power/brownout · test'
 const RULE = 'power/brownout'
@@ -185,17 +189,16 @@ describe('deferral suggestions after the cut-off', () => {
     const was = suggestions(tl)
     expect(suggestions(tl, { passed: false, red: false })).toEqual(was)
     expect(suggestions(tl, { passed: false, red: true })).toEqual(was)
-    expect(suggestions(tl, { passed: true, red: true })).toEqual(was)
     expect(was.find((s) => s.suggested)!.id).toBe('gap-7')
     expect(was.every((s) => s.reason === undefined)).toBe(true)
   })
-  it('after it, for anything that is not red, the end of the event leads and is the pick; nothing is left out', () => {
+  it('after it, for anything that is not red, the end of the event leads and is the pick; only "before playoffs" is gone', () => {
     const was = suggestions(tl)
     const now = suggestions(tl, { passed: true, red: false })
     expect(now[0]).toMatchObject({ id: 'end', suggested: true, reason: 'after the cut-off' })
     expect(now.filter((s) => s.suggested)).toHaveLength(1)
-    expect(ids(now).slice(1)).toEqual(ids(was).filter((i) => i !== 'end'))
-    expect([...ids(now)].sort()).toEqual([...ids(was)].sort())
+    expect(ids(now).slice(1)).toEqual(ids(was).filter((i) => i !== 'end' && i !== 'playoffs'))
+    expect([...ids(now)].sort()).toEqual(ids(was).filter((i) => i !== 'playoffs').sort())
     expect(now.find((s) => s.id === 'end')!.until).toEqual({ kind: 'end-of-event' })
   })
   it('the board offers them by the issue\'s priority', () => {
@@ -260,5 +263,101 @@ describe('"still holds?" on each open deferral', () => {
   })
   it('an issue with no live deferral has no tick to read', () => {
     expect(at([bl('checked', HOLDS, iso(910))], 915).holds).toBeNull()
+  })
+})
+
+describe('no deferral point already in the past (UX)', () => {
+  const ids = (xs: { id: string }[]) => xs.map((x) => x.id)
+  it('once the cut-off has passed, "Before playoffs" is not offered, red or not, with or without a schedule', () => {
+    for (const schedule of [SCHEDULE, null]) {
+      const tl = timeline(session([match(5)]), schedule, label)
+      expect(ids(suggestions(tl))).toContain('playoffs')
+      for (const red of [true, false]) expect(ids(suggestions(tl, { passed: true, red }))).not.toContain('playoffs')
+      expect(ids(suggestions(tl, { passed: false, red: true }))).toContain('playoffs')
+    }
+  })
+  it('a red keeps its pick (the next named gap, else the next match) among the rest', () => {
+    const tl = timeline(session([match(5)]), SCHEDULE, label)
+    const red = suggestions(tl, { passed: true, red: true })
+    expect(red.filter((s) => s.suggested).map((s) => s.id)).toEqual(['gap-7'])
+    expect(red[0].reason).toBeUndefined()
+    const none = suggestions(timeline(session([match(5)]), null, label), { passed: true, red: true })
+    expect(none.find((s) => s.suggested)!.id).toBe('next')
+  })
+})
+
+describe('the strip counts deferrals to re-confirm', () => {
+  const matches = [fired(40), fired(41)]
+  const dfr = [bl('workaround', 'test workaround', iso(900)), bl('defer', 'end-of-event', iso(900), { until: { kind: 'end-of-event' } })]
+  const strip = (h: HistoryEvent[], min: number) => buildBoard({ ...input(session(matches), h), now: new Date(BASE + min * 60e3) }).strip.reconfirm
+  it('is 0 before the cut-off, 1 for an open deferral with no tick, 0 with a fresh tick, 1 again when it is old', () => {
+    expect(buildBoard({ ...input(session([fired(5)]), dfr.map((l) => ({ ...l }))), now: new Date(BASE + 905 * 60e3) }).strip.reconfirm).toBe(0)
+    expect(strip(dfr, 905)).toBe(1)
+    const ticked = [...dfr, bl('checked', HOLDS, iso(910))]
+    expect(strip(ticked, 915)).toBe(0)
+    expect(strip(ticked, 910 + 91)).toBe(1)
+  })
+})
+
+describe('the schedule read both views share', () => {
+  const qm = (...numbers: number[]) => numbers.map((n) => ({ key: `2099x_qm${n}`, comp_level: 'qm', set_number: 1, match_number: n, time: 1_000_000 + n * 600 }))
+  const EVENTS = [{ key: '2099test', name: 'Test Regional', start_date: '2099-03-05', end_date: '2099-03-07' }]
+  const fakeFetch = (down = false): typeof fetch => (async (url: string) => {
+    if (down) throw new TypeError('network down')
+    const path = url.replace('https://www.thebluealliance.com/api/v3', '')
+    const body = (b: unknown) => ({ ok: true, status: 200, json: async () => b }) as Response
+    let m
+    if ((m = /^\/team\/frc9999\/events\/(\d{4})\/simple$/.exec(path))) return body(m[1] === '2099' ? EVENTS : [])
+    if (/^\/event\/\w+$/.test(path)) return body({ ...EVENTS[0], timezone: 'America/Los_Angeles' })
+    if (/^\/team\/frc9999\/event\/\w+\/matches\/simple$/.test(path)) return body(qm(2, 3, 4, 5, 6))
+    return { ok: false, status: 404, json: async () => null } as Response
+  }) as unknown as typeof fetch
+  const get = (down = false) => createTba({ key: 'k'.repeat(64), store: memoryStore(), fetch: fakeFetch(down), now: () => 7 })
+  it('returns the team\'s schedule and a line saying where it came from', async () => {
+    const got = await sessionSchedule(session([match(2), match(3), match(4)]), 9999, get())
+    expect(got.schedule?.map((m) => m.number)).toEqual([2, 3, 4, 5, 6])
+    expect(got.note).toMatch(/^Schedule for 2099test( from a saved copy)? as of /)
+  })
+  it('says why there is none: numbers no event holds, or offline with no saved copy; it never throws', async () => {
+    const a = await sessionSchedule(session([match(20), match(21)]), 9999, get())
+    expect(a.schedule).toBeNull()
+    expect(a.note).toMatch(/^No schedule: .*no event on the team's list/)
+    const b = await sessionSchedule(session([match(2), match(3)]), 9999, get(true))
+    expect(b.schedule).toBeNull()
+    expect(b.note).toMatch(/^No schedule: /)
+  })
+  it('with the schedule, the cut-off default passes on the last scheduled qualification and the board reads match numbers', async () => {
+    const got = await sessionSchedule(session([match(5), match(6)]), 9999, get())
+    const b = buildBoard(input(session([match(5), match(6)]), [], got.schedule))
+    expect(b.cutOff.passed).toBe(true)
+    expect(buildBoard(input(session([match(5), match(6)]), [], null)).cutOff.passed).toBe(false)
+  })
+})
+
+describe('one headline per event: the flag does not repeat what the Code row says', () => {
+  const PROVEN = { 'build/dirty': { logs: 9, fires: 1, ourFires: 1, base: 'test', date: '2099-03-05' } }
+  const dirty = { rule: 'build/dirty', severity: 'error', title: 'test finding build/dirty', time: null, matchTime: null, when: null, about: null, key: 'build/dirty', evidence: {}, meaning: '', causes: [], nextStep: 'test step' }
+  const withDirty = verdictFor({ findings: [dirty], skipped: [], crashed: [] } as unknown as Report, PROVEN as never)
+  const clean = verdictFor({ findings: [], skipped: [], crashed: [] } as unknown as Report, PROVEN as never)
+  const base = { why: 'test', profile, deferrals: [], deferralNote: null }
+  const last = { label: 'Q41', build: { sha: 'aaaaaaa', uncommitted: false } }
+  const flag = (live: { sha: string; dirty: boolean }) => codeChangeFlag({ passed: true }, live, last)
+  const run = (v: typeof withDirty, f: ReturnType<typeof flag>) => queueChecklist({ ...base, verdict: v, freeze: { banner: FREEZE_BANNER, change: f } }).freeze!.change
+  it('a changed commit that is also dirty loses its "uncommitted" clause when the Code row has it, keeps it otherwise', () => {
+    const f = flag({ sha: 'bbbbbbb', dirty: true })
+    expect(f!.text).toContain('uncommitted changes')
+    expect(run(withDirty, f)!.text).toBe('Code changed since Q41: the robot runs bbbbbbb, Q41 ran aaaaaaa.')
+    expect(run(clean, f)!.text).toContain('uncommitted changes')
+  })
+  it('uncommitted changes only on the robot: the flag is dropped when the Code row says it, kept otherwise', () => {
+    const f = flag({ sha: 'aaaaaaa', dirty: true })
+    expect(run(withDirty, f)).toBeNull()
+    expect(run(clean, f)).toEqual(f)
+  })
+  it('both dirty (cannot compare) and a plain change are kept', () => {
+    const both = codeChangeFlag({ passed: true }, { sha: 'aaaaaaa', dirty: true }, { label: 'Q41', build: { sha: 'aaaaaaa', uncommitted: true } })
+    expect(run(withDirty, both)).toEqual(both)
+    const moved = flag({ sha: 'bbbbbbb', dirty: false })
+    expect(run(withDirty, moved)).toEqual(moved)
   })
 })

@@ -284,11 +284,18 @@ export function suggestions(tl: Timeline, freeze?: { passed: boolean; red: boole
   })
   out.push({ id: 'event', label: 'Next event', estimate: 'weeks', until: { kind: 'next-event' }, point: nextEvent(), suggested: false })
   // After the playoff cut-off (ADR 7, Kevin 2026-10-24): fixes are for reds only, so anything that is not red leads with "the end of the event". The rest keep their order; nothing is left out.
-  if (freeze?.passed && !freeze.red) {
-    const end = out.find((s) => s.id === 'end')!
-    end.suggested = true
-    end.reason = 'after the cut-off'
-    return [end, ...out.filter((s) => s !== end)]
+  // Once it has passed, "Before playoffs" is behind us whatever the issue (with or without a schedule): it is not offered.
+  if (freeze?.passed) {
+    const ahead = out.filter((s) => s.id !== 'playoffs')
+    if (!freeze.red) {
+      const end = ahead.find((s) => s.id === 'end')!
+      end.suggested = true
+      end.reason = 'after the cut-off'
+      return [end, ...ahead.filter((s) => s !== end)]
+    }
+    const redPick = ahead.find((s) => s.id.startsWith('gap-')) ?? ahead[0]
+    redPick.suggested = true
+    return ahead
   }
   const pick = out.find((s) => s.id.startsWith('gap-')) ?? out[0]
   pick.suggested = true

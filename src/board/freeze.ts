@@ -14,6 +14,9 @@ import type { MatchSummary } from '../session/summary.ts'
 import { qualFromStored, type Timeline } from './points.ts'
 
 export const FREEZE_BANNER = 'Playoffs: analysis first. Code changed since the last match is flagged.'
+/** The board's wording says where the flag shows. */
+export const BOARD_BANNER = "Playoffs: analysis first. Code changed since the last match is flagged on Foresight's queue checklist."
+
 
 export type CutOffSetting = { kind: 'alliance-selection' } | { kind: 'off' } | { kind: 'after'; match: string; qual: number }
 
@@ -44,7 +47,10 @@ export interface CutOff {
 
 type PlayoffLike = Pick<MatchSummary, 'onField' | 'matchType' | 'matchLabel'>
 
-/** An on-field log of the playoffs (elimination): its MatchType (3), else its match label. */
+/**
+ * An on-field log of the playoffs (elimination): its MatchType (3), else its match label. Both rest on `/DriverStation/MatchType`,
+ * which reads practice for about the first second of a log (8033's logs, CLAUDE.md), so a log that ends that early is not counted.
+ */
 export const isPlayoffLog = (m: PlayoffLike): boolean =>
   m.onField && (m.matchType === 3 || /^(elimination|playoff|quarterfinal|semifinal|final)/i.test(m.matchLabel.trim()))
 
@@ -72,6 +78,10 @@ export interface CodeChangeFlag {
   /** Amber for every kind but `same`. Never a block, and it never moves the checklist's word. */
   amber: boolean
   text: string
+  /** `text` without its mention of uncommitted changes, for when the Code row already says it (one headline per event). */
+  plain?: string
+  /** The robot has uncommitted changes and the last match did not: all the flag adds over the Code row's own line. */
+  robotOnly?: true
   /** The commits, to read the files between them: the last match's and the robot's. Only on `changed`. */
   from?: string
   to?: string
@@ -90,10 +100,11 @@ export function codeChangeFlag(cutOff: Pick<CutOff, 'passed'>, live: LiveBuild |
   if (!last.build?.sha) return unknown(`Cannot tell whether the code changed: the log of ${last.label} does not say which code it ran.`)
   if (!live?.sha) return unknown(`Cannot tell whether the code changed since ${last.label}: the robot has not reported its commit yet.`)
   if (!sameSha(live.sha, last.build.sha)) {
-    return { kind: 'changed', amber: true, from: last.build.sha, to: live.sha, text: `Code changed since ${last.label}: the robot runs ${short(live.sha)}, ${last.label} ran ${short(last.build.sha)}${live.dirty ? ', and the robot has uncommitted changes' : ''}.` }
+    const base = `Code changed since ${last.label}: the robot runs ${short(live.sha)}, ${last.label} ran ${short(last.build.sha)}`
+    return { kind: 'changed', amber: true, from: last.build.sha, to: live.sha, text: `${base}${live.dirty ? ', and the robot has uncommitted changes' : ''}.`, plain: `${base}.` }
   }
   if (live.dirty && last.build.uncommitted) return { kind: 'uncommitted', amber: true, text: `Same commit as ${last.label} (${short(live.sha)}), but both ran with uncommitted changes: cannot tell whether they are the same changes.` }
-  if (live.dirty) return { kind: 'uncommitted', amber: true, text: `Same commit as ${last.label} (${short(live.sha)}), but the robot has uncommitted changes that ${last.label} did not.` }
+  if (live.dirty) return { kind: 'uncommitted', amber: true, robotOnly: true, text: `Same commit as ${last.label} (${short(live.sha)}), but the robot has uncommitted changes that ${last.label} did not.` }
   if (last.build.uncommitted) return { kind: 'uncommitted', amber: true, text: `Same commit as ${last.label} (${short(live.sha)}), but ${last.label} ran with uncommitted changes that the robot does not have.` }
   return { kind: 'same', amber: false, text: `No code change since ${last.label}: the same commit, ${short(live.sha)}, no uncommitted changes.` }
 }

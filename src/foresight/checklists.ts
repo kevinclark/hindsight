@@ -25,6 +25,7 @@ import { goWithWord, rowTitle } from '../board/words.ts'
 import { sessionWithMarks } from '../triage/track-record.ts'
 import { boardKey, boardState, triage, type HistoryEvent } from '../triage/history.ts'
 import type { Session } from '../session/session.ts'
+import type { ScheduledMatch } from '../tba/schedule.ts'
 
 // ---- systems ----
 
@@ -110,10 +111,10 @@ export function deferralSession(sessions: readonly Session[], todaySessionId: st
     .sort((a, b) => last(b) - last(a))[0] ?? null
 }
 
-/** The board for a session, as the Session view builds it (marks applied). Foresight has no Blue Alliance schedule: the board is read without one. */
-export function boardFor(session: Session, history: HistoryEvent[], profile: RobotProfile, now: Date): Board {
+/** The board for a session, as the Session view builds it (marks applied). `schedule` is the team's Blue Alliance schedule when it was read (src/tba/session-schedule.ts); null reads due points by name only, and the cut-off default passes only on a playoff log. */
+export function boardFor(session: Session, history: HistoryEvent[], profile: RobotProfile, now: Date, schedule: readonly ScheduledMatch[] | null = null): Board {
   const marks = triage(history)
-  return buildBoard({ session: sessionWithMarks(session, marks), history, marks, schedule: null, profiles: [profile], now })
+  return buildBoard({ session: sessionWithMarks(session, marks), history, marks, schedule, profiles: [profile], now })
 }
 
 /**
@@ -231,7 +232,14 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     ].join('; ') }
   else if (open.length) { kind = 'GO WITH DEFERRALS'; word = goWithWord(open.length); reason = `${open.length === 1 ? 'one deferral is' : `${open.length} deferrals are`} open: the workaround ${open.length === 1 ? 'line is' : 'lines are'} below` }
   else { kind = 'GO'; word = 'GO'; reason = verdict.reason }
-  return { word, kind, reason, rows, deferrals: open, deferralNote: input.deferralNote, freeze: input.freeze ?? null }
+  // One headline per event: when the Code row already says the robot ran uncommitted changes (build/dirty), the flag does not say it again.
+  let freeze = input.freeze ?? null
+  const dirtySaid = rows.some((r) => [...r.fix, ...r.look].some((i) => i.finding.rule === 'build/dirty'))
+  if (freeze?.change && dirtySaid) {
+    const c = freeze.change
+    freeze = { ...freeze, change: c.robotOnly ? null : c.kind === 'changed' && c.plain ? { ...c, text: c.plain } : c }
+  }
+  return { word, kind, reason, rows, deferrals: open, deferralNote: input.deferralNote, freeze }
 }
 
 // ---- ticks (do-confirm) ----

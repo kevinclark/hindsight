@@ -22,7 +22,9 @@
   import { boardFor, deferralSession, openDeferrals, isCarried, practiceChecklist, queueChecklist, sessionEventName, tickAt, ticksFor, tickKey, uncoveredItems, type System, type Tick } from '../foresight/checklists.ts'
   import { robotAddresses, USB_ADDRESS } from '../foresight/addresses.ts'
   import { hub } from '../hub/bridge.ts'
-  import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
+  import { tbaGetter, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
+  import { sessionSchedule } from '../tba/session-schedule.ts'
+  import type { ScheduledMatch } from '../tba/schedule.ts'
   import { teamEvents } from '../tba/api.ts'
   import { eventFromLibrary, eventFromSchedule, type TodayEvent } from '../session/today-event.ts'
   import { atLatest, boardLines } from '../board/writes.ts'
@@ -180,9 +182,22 @@
   const robotId = $derived(profile ? profileId(profile) : null)
   // Open deferrals are the board's: today's event session when there is one, else the latest event session for this robot.
   const defSession = $derived(queueMode && robotId ? deferralSession(sessions, today.sessionId, robotId) : null)
-  const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date()) : null)
   // An earlier event's board (none of today's loaded): only what it deferred to the next event is still open, and its ticks are not today's.
   const carried = $derived(!!defSession && isCarried(defSession, today.sessionId, external, clock))
+  // The team's schedule for the deferral session (the Session view's own read, src/tba/session-schedule.ts), so due points and the cut-off default
+  // place the same here. An earlier event's carried board never reads one; no key, no team, offline with no saved copy or an error: none (by name only).
+  let fsSchedule = $state.raw<ScheduledMatch[] | null>(null)
+  const scheduleSig = $derived(defSession && !carried ? `${defSession.id}|${defSession.event?.key ?? ''}|${defSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}` : '')
+  $effect(() => {
+    if (!scheduleSig) { fsSchedule = null; return }
+    const s = untrack(() => defSession)!
+    const [get, team] = [tbaGetter(), tbaTeam()]
+    if (!get || team === null) { fsSchedule = null; return }
+    let stale = false
+    void sessionSchedule(s, team, get).then((got) => { if (!stale) fsSchedule = got.schedule })
+    return () => { stale = true }
+  })
+  const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date(), carried ? null : fsSchedule) : null)
   const deferrals = $derived(board && profile && defSession ? openDeferrals(board, profile, carried ? sessionEventName(defSession) : undefined) : null)
   const deferralNote = $derived(!queueMode ? null : !robotId ? 'The robot is not identified yet, so no deferrals are read.' : !defSession ? 'No event session for this robot is loaded in the Session view, so no deferrals are read.' : null)
   // The role this laptop ticks under (the same setting as the board's), and ticks when no event is loaded to file them with.
@@ -206,13 +221,16 @@
   // The files between the two commits, when the code folder (or GitHub) can read both. Read-only; a failure just leaves the list out.
   let changedList = $state<{ files: string[] } | { problem: string } | null>(null)
   let changedRun = 0
+  // Keyed on the two commits, not on the flag object (a new object on every recompute, so on every clock tick): one read per change.
+  const changeKey = $derived(codeChange?.kind === 'changed' && codeChange.from && codeChange.to ? `${codeChange.from}..${codeChange.to}` : null)
   $effect(() => {
-    const c = codeChange
+    const key = changeKey
     const code = codeFolder.current
     void codeFolder.version
     const run = ++changedRun
-    if (!c || c.kind !== 'changed' || !c.from || !c.to || !code) { changedList = null; return }
-    changedFiles(code.repo, c.from, c.to).then(
+    if (!key || !code) { changedList = null; return }
+    const [from, to] = key.split('..')
+    changedFiles(code.repo, from, to).then(
       (files) => { if (run === changedRun) changedList = { files } },
       (error) => { if (run === changedRun) changedList = { problem: error instanceof Error ? error.message : String(error) } },
     )

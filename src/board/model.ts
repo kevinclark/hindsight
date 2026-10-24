@@ -126,6 +126,8 @@ export interface Strip {
   over: boolean
   /** The next named gap after the next match, in words, or null. */
   nextGap: string | null
+  /** After the playoff cut-off: open deferrals with no fresh "still holds" tick (0 before it). */
+  reconfirm: number
 }
 
 export interface Board {
@@ -441,16 +443,17 @@ export function buildBoard(input: BoardInput): Board {
     ;(cut ? below : visible).push(i)
   }
 
+  const cutOff = cutOffState(readCutOff(all.cutOff?.text), tl, session.matches)
   const gate = rows.filter((i) => isGate(i, tl))
   const nextGap = tl.named[0] ? `${gapText(tl.named[0])}${tl.named[0].minutes !== null ? ` (≈ ${durText(tl.named[0].minutes)}, est.)` : ''}` : null
   const strip: Strip = {
     gate: gate.length, nextLabel: tl.next?.label ?? null, minutes: tl.next?.minutes ?? null,
     minutesWord: tl.next?.leftMinutes != null ? `≈ ${durText(tl.next.leftMinutes)} left (est.)` : tl.next?.minutes != null && tl.last ? `≈ ${durText(tl.next.minutes)} after ${tl.last.label} (est.)` : null,
     deferralsDue: rows.filter((i) => i.cls === 'due').length, noOwner: rows.filter((i) => !i.grey && !i.awaitingClean && !i.owner).length,
+    reconfirm: cutOff.passed ? rows.filter((i) => i.status === 'deferred' && i.deferral && !i.deferral.expired && !(i.holds && !i.holds.old)).length : 0,
     reds: rows.filter(isRed).length, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, awaitingReds: rows.filter((i) => isRed(i) && i.awaitingClean).length, nextGap, over: eventOver(tl),
   }
   const tickFor = tl.next?.label ?? `after ${tl.last?.label ?? 'now'}`
-  const cutOff = cutOffState(readCutOff(all.cutOff?.text), tl, session.matches)
   const read = notes.handoffReads.at(-1)
   return {
     tl, issues, rows, visible, below, closed: issues.filter((i) => !i.open), strip,

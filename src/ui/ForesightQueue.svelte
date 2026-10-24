@@ -31,16 +31,17 @@
 
 <section class="queue" aria-label="Queue checklist">
   <h3>Queue checklist <span class="muted">· {checklist.rows.length} systems, most critical first</span></h3>
+  {#if checklist.freeze}<p class="small freeze" data-freeze>{checklist.freeze.banner}</p>{/if}
   <p class="small">Do each item, then tick it for {forLabel}. A No-go is fixed or deferred on the board first. {filed ? 'Ticks are filed with the event.' : 'Ticks stay on this page.'}
     <label>You are on: <select aria-label="Your role" value={role ?? ''} onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; onRole(ROLES.includes(v as BoardRole) ? (v as BoardRole) : null) }}>
       {#if !role}<option value="" disabled>choose…</option>{/if}
       {#each ROLES as r (r)}<option value={r}>{r}</option>{/each}
     </select></label>{#if !role}{' '}Choose it to tick.{/if}</p>
   {#if checklist.freeze}
-    <p class="freeze" role="status" data-freeze><b>{checklist.freeze.banner}</b></p>
     {#if checklist.freeze.change}
       {@const c = checklist.freeze.change}
-      <p class={c.amber ? 'change amber' : 'change'} data-code-change><span aria-hidden="true">{c.amber ? '▲' : '✓'}</span>{' '}<b>{c.amber ? 'Flag: ' : ''}{c.text}</b></p>
+      {#if c.amber}<p class="change amber" data-code-change><b>Flag:</b>{' '}{c.text}{#if c.kind === 'changed' && !changed}{' '}<span class="muted">Choose the robot-code folder below to see which files changed.</span>{/if}</p>
+      {:else}<p class="change same" data-code-change><span aria-hidden="true">✓</span>{' '}{c.text}</p>{/if}
       {#if c.kind === 'changed' && changed}
         {#if 'files' in changed}
           <details class="changed-files"><summary>{changed.files.length} {changed.files.length === 1 ? 'file' : 'files'} changed between them</summary>
@@ -48,7 +49,7 @@
             {#if changed.files.length > 40}<p class="small">and {changed.files.length - 40} more.</p>{/if}
           </details>
         {:else}<p class="small">The files changed could not be read: {changed.problem}</p>{/if}
-      {:else if c.kind === 'changed'}<p class="small">Choose the robot-code folder below to see which files changed.</p>{/if}
+      {/if}
     {/if}
   {/if}
   <ol class="systems">
@@ -100,7 +101,8 @@
   .muted { color: var(--muted); font-weight: 400; }
   .small { font-size: 0.8rem; color: var(--muted); margin: 0.2rem 0; }
   .small select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; min-height: 24px; box-sizing: border-box; }
-  .freeze { margin: 0.3rem 0; padding: 0.3rem 0.6rem; border-left: 4px solid var(--warning); }
+  .freeze { margin: 0; }
+  .change.same { color: var(--muted); font-weight: 400; }
   .change { margin: 0.3rem 0; padding: 0.3rem 0.6rem; }
   .change.amber { border-left: 4px solid var(--warning); }
   .changed-files { font-size: 0.85rem; margin: 0 0 0.4rem 0.6rem; }
