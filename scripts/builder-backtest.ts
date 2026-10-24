@@ -14,6 +14,8 @@ import { backtestLog } from '../src/builder/backtest.ts'
 import { codeHints } from '../src/builder/code-hints.ts'
 import { allMotors, draftProfile } from '../src/builder/draft.ts'
 import { chooseProfile } from '../src/profiles/choose.ts'
+import { buildMatch } from '../src/match/match.ts'
+import { playedAt } from '../src/match/played-at.ts'
 import { firstText } from '../src/profiles/formats.ts'
 import { GitRepo } from '../src/code/git.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
@@ -33,6 +35,10 @@ for (const path of args) {
   const log = openWpilog(new Uint8Array(readFileSync(path)))
   const r = backtestLog(log, PROFILES)
   console.log(`\n${path.split('/').pop()}  (hand profile: ${r.hand ?? 'none fits'})`)
+  const game = draftProfile({ logs: [{ log, fileName: path.split('/').pop()! }] }).json.game
+  const hand = chooseProfile(log, PROFILES)
+  const dated = playedAt(buildMatch(path.split('/').pop()!, log, hand.profile, hand.choice)).playedAtSource
+  console.log(`  game: ${game?.name} ${game?.autoSeconds}/${game?.teleopSeconds} (${dated})${hand.choice.misfit ? '' : ` · hand ${hand.profile.game.name} ${hand.profile.game.autoSeconds}/${hand.profile.game.teleopSeconds}`}`)
   console.log(`  motors: found ${r.found}${r.hand ? ` of ${r.handMotors}` : ''}, missed ${r.missed.length}, false positive ${r.falsePositives.length}${r.hand ? '' : ' (no hand profile: every motor counts here)'}`)
   for (const m of r.missed) console.log(`    missed ${m}`)
   for (const m of r.falsePositives) console.log(`    ${r.hand ? 'false positive' : 'found'} ${m}`)

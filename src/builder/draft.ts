@@ -16,6 +16,8 @@ import { limitsKnown } from '../limits/limits-report.ts'
 import type { CurrentLimits } from '../profiles/types.ts'
 import { firstText } from '../profiles/formats.ts'
 import { applyCode } from './code-draft.ts'
+import { GAMES, gameFor } from '../profiles/games.ts'
+import { playedAt } from '../match/played-at.ts'
 
 /** What the builder couldn't settle from the files, for the confirm step. */
 export interface Draft {
@@ -160,12 +162,13 @@ export function draftProfile(input: { logs: DraftLog[]; snapshot?: Snapshot; hin
     }),
   }))
 
+  const game = seasonGame(log, fileName, sig)
   const json: ProfileJson = {
     schema: PROFILE_SCHEMA,
     name: sig.codebase || fileName.replace(/\.wpilog$/i, ''),
     codebase: sig.codebase,
     code: sig.code,
-    game: measuredGame(log, fileName, sig),
+    game: game.game,
     signals: sig.signals,
     battery: sig.battery,
     otherDevices: sig.otherDevices,
@@ -183,7 +186,7 @@ export function draftProfile(input: { logs: DraftLog[]; snapshot?: Snapshot; hin
   const leftOut = others.length ? [`${others.length} log${others.length === 1 ? ' is' : 's are'} from another robot (${[...new Set(others.map((l) => codebaseOf(l.log) || 'no code name'))].join(', ')}) and ${others.length === 1 ? 'was' : 'were'} left out: ${others.map((l) => l.fileName).join(', ')}.`] : []
   const absolute = [...new Set(found.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.current]).filter((k): k is string => !!k && ABSOLUTE.test(k)))]
   const absNote = absolute.length ? [`${absolute.length} current key${absolute.length === 1 ? ' is' : 's are'} logged as the absolute value (${absolute[0].replace(/^.*\//, '')}${absolute.length > 1 ? ', …' : ''}): regenerative current then counts as draw.`] : []
-  const notes = [...leftOut, ...fromCode, ...absNote]
+  const notes = [...leftOut, ...(game.note ? [game.note] : []), ...fromCode, ...absNote]
   return { json, notUsed: found.notUsed, limits: found.limits, guessed, notes, warnings: [...notes, ...draftWarnings(json.motorGroups)] }
 }
 
@@ -222,14 +225,30 @@ export function carryConfirmations(from: ProfileJson, to: ProfileJson): void {
     if (o.sameLoopSuggested) g.sameLoopSuggested = true; else delete g.sameLoopSuggested
   }
   to.name = from.name
-  if (from.game) to.game = from.game
+  // A game measured from one log isn't a confirmation: a dated log's season game replaces it.
+  if (from.game && !from.game.name.startsWith('measured from')) to.game = from.game
 }
 
-/** Auto and teleop lengths measured from this log, the way a log no profile fits is read (match/match.ts). */
-function measuredGame(log: WpilogFile, fileName: string, sig: ReturnType<typeof signalsFromLog>): ProfileJson['game'] {
+/**
+ * The game the log was played under (profiles/games.ts), by the log's date. A log with no date gets auto and teleop
+ * measured from it, the way a log no profile fits is read (match/match.ts), and a note: one practice run or a match cut
+ * short gives lengths that aren't the game's.
+ */
+function seasonGame(log: WpilogFile, fileName: string, sig: ReturnType<typeof signalsFromLog>): { game: ProfileJson['game']; note?: string } {
   const probe = toProfile({ name: 'probe', motorGroups: [], signals: sig.signals })
   const match = buildMatch(fileName, log, probe, { how: 'given', note: null, fit: null, misfit: true })
-  return { ...match.profile.game, name: `measured from ${fileName}` }
+  const when = playedAt(match).playedAt
+  const found = when === null ? null : gameFor(when)
+  if (!found) {
+    const first = GAMES[0]
+    const why = when === null ? 'This log has no date (the robot clock was not set and the file name has none)' : `This log is from before ${first.year}'s kickoff, the first game listed`
+    return { game: { ...match.profile.game, name: `measured from ${fileName}` }, note: `${why}, so auto and teleop were measured from this log: check them against the game.` }
+  }
+  const { game, assumed } = found
+  return {
+    game: { name: game.name, autoSeconds: game.autoSeconds, teleopSeconds: game.teleopSeconds },
+    ...(assumed ? { note: `No kickoff listed for ${new Date(when!).getFullYear()}: assumed still ${game.name} (${game.autoSeconds} s auto, ${game.teleopSeconds} s teleop). Add the new game to src/profiles/games.ts.` } : {}),
+  }
 }
 
 /** Every motor with its group, in order. */

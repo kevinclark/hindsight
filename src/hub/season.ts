@@ -8,12 +8,16 @@
  * publishes it.
  */
 
+import { GAMES } from '../profiles/games.ts'
+
 interface Window { kickoff: [month: number, day: number]; championshipEnd: [month: number, day: number]; checked: boolean }
 
+/** Kickoffs come from the game table (src/profiles/games.ts), so there is one list of them. */
+const kickoff = (year: number) => GAMES.find((g) => g.year === year)!.kickoff
 const WINDOWS: Record<number, Window> = {
-  2024: { kickoff: [1, 6], championshipEnd: [4, 20], checked: false },
-  2025: { kickoff: [1, 4], championshipEnd: [4, 19], checked: false },
-  2026: { kickoff: [1, 10], championshipEnd: [5, 2], checked: true },
+  2024: { kickoff: kickoff(2024), championshipEnd: [4, 20], checked: false },
+  2025: { kickoff: kickoff(2025), championshipEnd: [4, 19], checked: false },
+  2026: { kickoff: kickoff(2026), championshipEnd: [5, 2], checked: true },
 }
 const DEFAULT_WINDOW: Window = { kickoff: [1, 1], championshipEnd: [5, 7], checked: false }
 
