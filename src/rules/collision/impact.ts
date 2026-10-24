@@ -2,9 +2,9 @@
  * Did the robot take a hard hit?
  *
  * Checks: sideways acceleration from the gyro's accelerometer, √(ax² + ay²), above 3 g during the match.
- * Why: hits against field metal come before controller drops in #in-hindsight (≥ 8 episodes), and the Q13 trench hit
- * would have shown here had the accelerometer been logged then (it was added after Q13).
- * Threshold: assumed. Q21 and P0 peaked at 2.6 and 2.8 g with no known collision; backtest before trusting it.
+ * Why: hits against field metal come before controller drops in #in-hindsight (≥ 8 episodes), and the log A trench hit
+ * would have shown here had the accelerometer been logged then (it was added after log A).
+ * Threshold: assumed. Logs B and C peaked at 2.6 and 2.8 g with no known collision; backtest before trusting it.
  */
 import { rule, round, type Problem } from '../rule.ts'
 import type { MatchView } from '../view.ts'

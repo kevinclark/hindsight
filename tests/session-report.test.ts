@@ -10,7 +10,7 @@ import { sessionWithMarks } from '../src/triage/track-record.ts'
 import { joinPieces, summarizeMatch } from '../src/session/summary.ts'
 import { buildSessionJson } from '../src/session/export.ts'
 import { PAGE1_ROWS, crashedNote } from '../src/report/session-model.ts'
-import { analyzeFixture, CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
+import { analyzeFixture, LOGS, haveLogs, readInput } from './helpers/load.ts'
 
 const METRICS = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSecondsOff: 2.0, brownoutVolts: 6, loopOverrunPct: 5, visionOutlierPct: null }
 const fit = { profileId: 'p @ main', name: 'Test robot', code: { repo: 'r', branch: 'main', sha: 'abc1234def' }, how: 'signals', note: null, present: 40, total: 40 }
@@ -19,7 +19,7 @@ const finding = (key: string, rule: string, severity: string, title: string, val
 })
 type Fire = { key: string; rule: string; severity?: string; title: string; value?: number }
 const match = (n: number, fires: Fire[], over: Partial<MatchSummary> = {}): MatchSummary => ({
-  fileName: `q${n}.wpilog`, fileSize: 1, playedAt: Date.UTC(2026, 9, 17, 20 + n), playedAtSource: 'robot clock', clockNote: null, event: 'cacg',
+  fileName: `q${n}.wpilog`, fileSize: 1, playedAt: Date.UTC(2026, 9, 17, 20 + n), playedAtSource: 'robot clock', clockNote: null, event: 'TEST',
   matchLabel: `Qualification ${n}`, onField: true, batteryId: null, build: { sha: 'abc1234', branch: 'main', uncommitted: false },
   rules: Object.fromEntries(['mech/follower-mismatch', 'power/brownout', 'loop/overrun'].map((r) => {
     const mine = fires.filter((f) => f.rule === r)
@@ -76,7 +76,7 @@ describe('session report model', () => {
     expect(g.rows.some((r) => r.rate === 'not checked')).toBe(true)
   })
   it('names the file the same way the Download button does, made safe', () => {
-    expect(m.jsonFile).toBe('event-cacg-2026-10-17.session-findings.json')
+    expect(m.jsonFile).toBe('event-test-2026-10-17.session-findings.json')
     expect(sessionBase('Event ../x/ (2026)!')).toBe('event-x-2026')
     expect(sessionBase('???')).toBe('session')
   })
@@ -127,7 +127,7 @@ describe('session phone card', () => {
     const c = sessionCard(m)
     expect(c.heading).toBe('3 matches')
     expect(c.subheading).toBe('1 consistent · 1 once')
-    expect(c.context).toContain('Event cacg')
+    expect(c.context).toContain('Event TEST')
   })
   it('items are the report\'s merged findings in the same order, as "SEVERITY · CONFIDENCE" with "N of M"', () => {
     const c = sessionCard(m)
@@ -167,7 +167,7 @@ describe('review fixes', () => {
     expect(html.match(/Qualification 1/g)!.length).toBeGreaterThan(2)
   })
   it('summarizing a match: a rule that crashed is "not checked" with the reason, never quiet', () => {
-    const a = analyzeFixture('p0-brownout').analyses[0]
+    const a = analyzeFixture('brownout').analyses[0]
     const report = { ...a.report, findings: a.report.findings.filter((f) => f.rule !== 'loop/overrun'), skipped: a.report.skipped.filter((x) => x.rule !== 'loop/overrun'), crashed: [{ rule: 'loop/overrun', reason: 'Error: boom' }] }
     const r = summarizeMatch(a.match, report, 1).rules['loop/overrun']
     expect(r).toMatchObject({ status: 'not checked', reason: 'crashed: Error: boom' })
@@ -227,8 +227,8 @@ describe('review fixes', () => {
   })
 })
 
-describe.skipIf(!haveCalGames)('the three CalGames logs as a session report', () => {
-  const session = haveCalGames ? groupSessions([CALGAMES.q13, CALGAMES.q21, CALGAMES.p0].map((p) => summarizeLog(readInput(p))!))[0] : undefined
+describe.skipIf(!haveLogs)('the team\'s logs A, B and C as a session report', () => {
+  const session = haveLogs ? groupSessions([LOGS.a, LOGS.b, LOGS.c].map((p) => summarizeLog(readInput(p))!))[0] : undefined
   it('follower mismatch is "Consistent" 3 of 3 and brownout "Once" 1 of 3, on the report and the card, from one model', () => {
     const m = sessionModel(session!)
     expect(m.findings.find((f) => f.rule === 'mech/follower-mismatch')).toMatchObject({ confidenceWord: 'Consistent', ratio: '3 of 3' })

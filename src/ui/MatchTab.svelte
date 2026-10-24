@@ -61,7 +61,7 @@
   const activeTree = $derived(partition.listed)
   const standingTree = $derived(partition.folded)
   // New errors first, then the fold, then new warnings and info, so the fold's summary (which names a standing error)
-  // sits near the top: after the info rows it was off-screen at 1366×768 in 8 of 8 session-opened CalGames matches.
+  // sits near the top: after the info rows it was off-screen at 1366×768 in 8 of 8 session-opened 2026 matches.
   const mainTree = $derived(activeTree.filter((n) => n.finding.severity === 'error'))
   const infoTree = $derived(activeTree.filter((n) => n.finding.severity !== 'error'))
   const standingErrors = $derived(standingTree.filter((n) => n.finding.severity === 'error').map((n) => n.finding))

@@ -28,7 +28,7 @@ export default rule({
     { id: 'cut-short', cause: 'Only the log file was cut short (copied while the robot was still writing it)', look: 'the robot\'s log folder: is there a later log from this match?' },
   ],
   nextStep: 'Read the Driver Station log\'s messages for this match (a stack trace means the code crashed), and load the match\'s other robot logs to see how long the robot had no program.',
-  incident: 'One 2025 match: two restarts in teleop, three logs, no program for ~63 s of the last ~84 s (mttd-2025-context.md §1)',
+  incident: 'One 2025 match: two restarts in teleop, three logs, no program for ~63 s of the last ~84 s',
 
   check(match) {
     if (!match.onField) return match.couldNotCheck('not a match on the field')
@@ -105,7 +105,7 @@ function gapsBetween(pieces: Piece[]): number[] {
 
 /** The match clock's second record, if it came within 5 s of the log's start (NaN if not). */
 function clockJustAfterStart(match: MatchView, clock: Signal): number {
-  // The first DS record after a restart can be stale (Q28: 80 then 68 two seconds later; 16 then 0): use the next.
+  // The first DS record after a restart can be stale (one match: 80 then 68 two seconds later; 16 then 0): use the next.
   const { t, v } = clock.series
   return t.length > 1 && t[1] - match.logStart < 5 ? v[1] : NaN
 }

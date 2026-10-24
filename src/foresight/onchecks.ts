@@ -51,7 +51,7 @@ export const ONCHECKS: OncheckLine[] = [
   { section: 'Software', line: 'Log stick in', rules: ['foresight/log-usb-stick'], note: 'the robot\'s own reading, once a second since its code started (Hindsight companion library): OK only if the stick has been in the whole time. Pulled it, even if it\'s back? Restart the robot code: the log doesn\'t carry on when a stick goes back in' },
   { section: 'Software', line: 'Gyro seems normal', rules: ['foresight/gyro-still-drift'], context: true, note: 'heading drift while still, as context: no line yet' },
   { section: 'Software', line: 'No undeployed changes', rules: ['build/dirty', 'foresight/commit-matches'] },
-  { section: 'Software', line: 'No motors overheating', rules: ['foresight/motor-temperature'], group: 'devices', note: 'every motor at or under 60 °C (hotter than any ended a CalGames match)' },
+  { section: 'Software', line: 'No motors overheating', rules: ['foresight/motor-temperature'], group: 'devices', note: 'every motor at or under 60 °C (hotter than any ended a 2026 match)' },
 ]
 
 /** Every check that asks a person to do something (its grey findings are a step, not context). */

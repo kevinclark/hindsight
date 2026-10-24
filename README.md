@@ -58,7 +58,7 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
 - **From the command line**, for Claude or a script: `node --experimental-strip-types scripts/report.ts <out-dir> <log>
   [<dslog>] [-- <log> …]` builds first (`--no-build` skips), drives headless Chrome on `hindsight.html` and writes
   `<log>.report.pdf`, `<log>.card.png` and `<log>.findings.json`. `scripts/chrome-foresight-report-check.ts <out-dir>`
-  replays P0 and Q13 as the robot's NT4 stream and writes the Foresight PDFs and cards.
+  replays log C and log A as the robot's NT4 stream and writes the Foresight PDFs and cards.
   `scripts/report.ts --session <out-dir> <log|folder> …` loads them into the Session view and writes, per session,
   `<label>.session-report.pdf`, `<label>.session-card.png` and `<label>.session-findings.json`.
 - **Ctrl+P** in Match review (any tab) also prints the report, not the app. What the report and card carry out of the
@@ -106,7 +106,7 @@ commit and each log's own commit; the branch only says where Robot profile start
 in and no token is sent, so a private repo answers "no public repo" and the folder is the way. GitHub allows **60
 lookups an hour per network** without signing in, and a venue's Wi-Fi may share them: each commit costs about one (its
 file list, kept in this browser by commit, so a second visit costs none), a branch name one more; file text comes from
-`raw.githubusercontent.com` and doesn't count. The 8 CalGames logs took 9 lookups the first time, 0 after. When the
+`raw.githubusercontent.com` and doesn't count. The 8 logs of one 2026 event took 9 lookups the first time, 0 after. When the
 hour's lookups are used up, or the laptop is offline, the finding says so (with the time it resets) and stays red: choose
 the folder. If the hourly limit ever runs out in real use, the planned fix is to read each commit's file list from
 jsDelivr (`data.jsdelivr.com/v1/packages/gh/owner/repo@<full sha>?structure=flat`, which allows `file://` pages and
@@ -202,29 +202,29 @@ settings**: it tells students what to set and which line to change, and they do 
   voltage falls.
   The drive wheel-slip test is shown but locked until Kevin agrees the procedure.
 - `scripts/limits-reference.ts` recomputes the Part A numbers a second way: the method of
-  `8033/robot/hindsight-research/whatif/current_limit_check.py` (5 ms hold-last grid, more than 5 A over the limit),
+  the earlier Python limit check (5 ms hold-last grid, more than 5 A over the limit),
   applied to supply current. It shares the app's .wpilog reader, so it checks the interval maths, not the decoding;
   the comparison with the brief's Python-derived numbers covers decoding. Flywheel leader over 45 A: app 6.09 / 6.83 /
-  6.75 s, reference 6.11 / 6.85 / 6.76 s, brief 6.06 / 6.80 / 6.72 s (Q13 / Q21 / P0); the 0.03–0.05 s differences are
+  6.75 s, reference 6.11 / 6.85 / 6.76 s, brief 6.06 / 6.80 / 6.72 s (log A / log B / log C); the 0.03–0.05 s differences are
   the grid and the enabled-time window.
 
 ### Where this differs from the brief (and why)
 
 - **"Did the limit take?"** (redesign accepted 2026-10-19) The brief judges the most common 2 A bin of samples ≥ 30 A against ±10 % of the limit. On
-  real CalGames spin-ups that check fails both ways: at 60 A the mode is 33–39 A (the motor rarely needs 60 A), and
+  real 2026 spin-ups that check fails both ways: at 60 A the mode is 33–39 A (the motor rarely needs 60 A), and
   a follower whose 40 A limit wasn't saved has a mode of 35 A while peaking at 73 A. Per motor the wizard says:
-  **didn't take** (more than 0.3 s above 110 % of the limit; a working CalGames limiter stayed above for up to 0.21 s),
+  **didn't take** (more than 0.3 s above 110 % of the limit; a working 2026 limiter stayed above for up to 0.21 s),
   **held at the limit** (mode within ±10 %, the brief's check; the drive's real 40 A plateau, mode 38–40 A, passes),
   **never had to hold** (never above 110 %), or **can't tell** (above it only briefly, which a working limiter also
-  does). On the CalGames spin-ups, 60 A and 50 A steps are "can't tell" whether or not the limit was saved, so those
+  does). On those 2026 spin-ups, 60 A and 50 A steps are "can't tell" whether or not the limit was saved, so those
   steps are plotted but left out of the recommendation until a run confirms them; the comparison with the no-limit
   step (lower peak, smaller dip) is what shows them working.
 - **The recommendation** walks down from the highest limit and stops at the first one that is too slow, so a noisy
   low step can't win.
-- **Runs 5 s apart** won't start from a standstill: the CalGames flywheel took more than 5 s to coast down (45 → 7 rot/s
+- **Runs 5 s apart** won't start from a standstill: the 2026 flywheel took more than 5 s to coast down (45 → 7 rot/s
   in 5 s). The run card says to wait until the wheel stops (about 10 s).
 - **Spin-up time** is to within 10 % of the target speed: holding speed, the flywheel ripples ±5 % around its setpoint.
-  With that, Q13/Q21/P0 spin-ups from standstill take 0.74 / 0.74 / 0.65 s (median), matching the P0 analysis's
+  With that, log A/B/C spin-ups from standstill take 0.74 / 0.74 / 0.65 s (median), matching the earlier analysis's
   0.5–0.8 s. Only 7–13 spin-ups per match start from standstill (the analysis counted 15–27 of all kinds).
 - **Shot recovery** (the match version of spin-up time) counts dips below 85 % of the target lasting ≥ 0.1 s: only
   0–3 per match, so treat it as a rough number until checked against video.
@@ -232,7 +232,7 @@ settings**: it tells students what to set and which line to change, and they do 
 ### To verify on the robot (unverified until a run confirms each)
 
 - The took-effect check is only decisive where the no-limit run goes over 110 % of the limit for more than 0.3 s
-  (on the CalGames spin-ups: 40 A and below). The first real sweep must confirm it at 60 and 50 A.
+  (on the 2026 spin-ups: 40 A and below). The first real sweep must confirm it at 60 and 50 A.
 - A limit set in Phoenix Tuner X holds while the robot code runs, until the next boot.
 - It applies the same way to the followers (CAN IDs 16–18) as to the leader (15).
 - `SupplyCurrentLowerTime = 0` disables the step-down to the lower limit during the sweep.
@@ -296,7 +296,7 @@ commit, reseat a controller).
   field is attached it disconnects, shows "On the field: close Foresight.", and won't connect again until the page is
   reloaded. If the robot publishes neither, it disconnects: it can't tell where it is.
 - **Settle:** nothing is judged until 30 s after the robot code started (start-up camera and time-sync alerts clear in
-  12.5–18.9 s in the CalGames logs). A robot already on for 30 s gets a verdict at once.
+  12.5–18.9 s in the 2026 logs). A robot already on for 30 s gets a verdict at once.
 - **Checks:** `power/rest-voltage`, `can/device-dropout`, `foresight/values-updating` (a connected device's readings
   frozen 5 s while others change), `foresight/controllers`, `foresight/zero-sanity`, `foresight/motor-temperature`
   (above 60 °C), `build/dirty`, `vision/stale` (drop-outs only, while disabled), `vision/time-sync`, the battery
@@ -312,7 +312,7 @@ commit, reseat a controller).
 - **Download for Claude** (under Readings) saves the counts, clock, verdict and which signals never came.
 
 First time on a robot: [docs/foresight-first-robot.md](docs/foresight-first-robot.md). Not yet run on a roboRIO; tested
-against the CalGames logs replayed as NT4 and against desktop ntcore (pyntcore 2025.3.2) in Chrome from `file://`.
+against the team's 2026 logs replayed as NT4 and against desktop ntcore (pyntcore 2025.3.2) in Chrome from `file://`.
 
 ## Build checks in your robot's build (Gradle plugin)
 
@@ -405,7 +405,7 @@ built in the job: 13 findings, 12 new, 1 fixed, that `fail-on: new` fails, and (
 
 ```
 npm install
-npm test          # unit + fixture tests; also the real CalGames logs if they are in ~/Downloads
+npm test          # unit + fixture tests; also the team's real logs if they are listed in ~/.hindsight/team-logs.json
 npm run build     # writes hindsight.html (one self-contained file) and dist/index.html
 npm run check     # type-check
 python3 -m unittest discover -s tests -p 'test_*.py'   # robot-snapshot collector (stub server, no robot)
@@ -419,8 +419,8 @@ node --experimental-strip-types scripts/chrome-foresight-check.ts <out-dir>     
 tree-sitter-java-orchard's, would compile a native binding the code check never loads (it uses the package's
 `.wasm`). `npm run …` and `npm test` still run their own script.
 
-The CalGames logs are never committed. `tests/calgames-logs.test.ts` reads them read-only from `~/Downloads` and
-skips with a message when they aren't there; `fixtures/*.json` are small cuts that keep the core rules tested anyway.
+The team's real logs are never committed. They are listed in the untracked local file `~/.hindsight/team-logs.json`;
+the tests and scripts read them read-only and skip with a message when they aren't there; `fixtures/*.json` are small cuts that keep the core rules tested anyway.
 
 ## How it is put together
 
@@ -449,9 +449,9 @@ Chrome 155, headless, page opened from `file://`, logs loaded through the page's
 
 | Log | Size | Index + match model | All rules | Drop to rendered | Renderer memory added at peak |
 |---|---|---|---|---|---|
-| Q13 + its .dslog | 52.6 MB | 55–56 ms | 59–62 ms | ~200 ms | +145 MB |
-| Q21 | 54.1 MB | 56–57 ms | 58–59 ms | ~200 ms | +182 MB |
-| P0 | 56.5 MB | 62–63 ms | 68 ms | ~200 ms | +188 MB |
+| Log A + its .dslog | 52.6 MB | 55–56 ms | 59–62 ms | ~200 ms | +145 MB |
+| Log B | 54.1 MB | 56–57 ms | 58–59 ms | ~200 ms | +182 MB |
+| Log C | 56.5 MB | 62–63 ms | 68 ms | ~200 ms | +188 MB |
 | all three + .dslog | 163 MB | | | ~400 ms | +320 MB |
 
 Details and how they were taken: [docs/measurements.md](docs/measurements.md).
@@ -477,7 +477,7 @@ from the page and drop it in with the logs next time. Design and what's next (th
   permission after a reload need a person to click; only the folder input path was driven (headless Chrome from
   `file://`, through `scripts/report.ts --code`).
 - **GitHub from `file://` was driven headless; the pane drove it from localhost.** `scripts/report.ts --github` (headless
-  Chrome, `file://`) and the browser pane (localhost: the pane can't open `file://`) both read Q21's limit lines from
+  Chrome, `file://`) and the browser pane (localhost: the pane can't open `file://`) both read log B's limit lines from
   GitHub and matched the folder. A real 403 for a used-up hour was never fetched (it would spend the hour): its message
   is tested on a scripted answer, and that GitHub sends CORS headers on it is assumed. raw.githubusercontent.com's own
   limits are undocumented and not measured.
@@ -488,12 +488,12 @@ from the page and drop it in with the logs next time. Design and what's next (th
   A Blob worker (design-detail §7) is the fix if that shows up.
 - Student laptops are slower than an M5 Max; the timings above are an upper bound on speed, not a promise.
 - Every threshold is an assumption until it is backtested over the 808-log archive (phase 2), apart from the
-  CalGames fixtures each rule must fire on.
-- The "healthy battery" reference curve is two batteries from one weekend (Q13, Q21), so only P0 tests the 1.5 V
+  2026 fixtures each rule must fire on.
+- The "healthy battery" reference curve is two batteries from one weekend (log A, log B), so only log C tests the 1.5 V
   line. Charge past 6.25 Ah has no reference and is listed as "partly checked".
 - Power numbers don't fully reconcile with the earlier analysis docs. Charge drawn reads 5.79 / 6.52 / 6.38 Ah
-  (Q13 / Q21 / P0) against 5.47 / 6.18 / 6.01 Ah there; the motors alone are 5.65 / 6.39 / 6.25 Ah, so 0.18–0.24 Ah is
-  unexplained (the script behind the docs' figure isn't in the repo). The open-circuit estimate for Q21 at 5.75 Ah is
+  (log A / log B / log C) against 5.47 / 6.18 / 6.01 Ah there; the motors alone are 5.65 / 6.39 / 6.25 Ah, so 0.18–0.24 Ah is
+  unexplained (the script behind the docs' figure isn't in the repo). The open-circuit estimate for log B at 5.75 Ah is
   10.50 V here against 9.80 V at 5.6 Ah in REVIEW.md (a point estimate under load; this is a 0.5 Ah median). The
   last bin of a curve reads high when it includes post-match rest.
 - DS logs with power-distribution data (REV PDH or CTRE PDP on CAN) are read by skipping that data, using

@@ -4,7 +4,7 @@ import { confidence, dateText, groupSessions, mergeFindings, ruleGrid, standingK
 import { dateFromFileName, summarizeLog, type MatchSummary } from '../src/session/summary.ts'
 import { buildSessionJson } from '../src/session/export.ts'
 import { writeWpilog } from './helpers/fixture-format.ts'
-import { CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
+import { LOGS, haveLogs, readInput } from './helpers/load.ts'
 
 describe('confidence in words', () => {
   it.each([
@@ -77,10 +77,10 @@ describe('dates and grouping', () => {
   })
 })
 
-if (!haveCalGames) console.warn('SKIPPED session checks on the CalGames logs (not in ~/Downloads)')
+if (!haveLogs) console.warn('SKIPPED session checks on the team\'s logs A, B and C (not listed in tests/helpers/team-logs.ts)')
 
-describe.skipIf(!haveCalGames)('the three CalGames logs as one session', () => {
-  const summaries = haveCalGames ? [CALGAMES.q13, CALGAMES.q21, CALGAMES.p0].map((p) => summarizeLog(readInput(p))!) : []
+describe.skipIf(!haveLogs)('the team\'s logs A, B and C as one session', () => {
+  const summaries = haveLogs ? [LOGS.a, LOGS.b, LOGS.c].map((p) => summarizeLog(readInput(p))!) : []
   const sessions = groupSessions(summaries)
   it('group into one event session', () => {
     expect(sessions).toHaveLength(1)
@@ -100,7 +100,7 @@ describe.skipIf(!haveCalGames)('the three CalGames logs as one session', () => {
   })
   it('a pre-match alert is context, not a finding that fired in the match', () => {
     const f = mergeFindings(sessions[0]).find((x) => x.key === 'alerts/passthrough · Back_Right Camera Disconnected!')
-    expect(f?.matches).toHaveLength(1) // only Q21 lost the camera during the match
+    expect(f?.matches).toHaveLength(1) // only B lost the camera during the match
   })
   it('session-findings.json is small and carries no raw series or radio status', () => {
     const text = JSON.stringify(buildSessionJson(sessions[0]))

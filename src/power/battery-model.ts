@@ -8,7 +8,7 @@
  * The battery model is the "no-RC" fit from hindsight-research/whatif/battery_model_replay.py:
  *     V = V0 − k·Q − R0·I
  * V bus voltage, Q charge drawn so far (Ah), I total current (A). The RC term in the reference script is left out
- * on purpose: it made P0's slope look 2.7× worse than it was (hindsight-research/REVIEW.md, item 1).
+ * on purpose: it made log C's slope look 2.7× worse than it was.
  */
 
 import { has, num, type Match } from '../match/match.ts'
@@ -134,7 +134,7 @@ const SHIFT_MUST_GAIN = 0.05
  * up to 0.3 s) where it follows the voltage most closely while enabled; the step also takes up the hold between the
  * total's samples. It stays where it was unless that step beats no step by SHIFT_MUST_GAIN, and when the best step is
  * the last one searched (a periodic load can put a second minimum there). Returns the step in seconds.
- * The motor currents never take this path: 8033's CalGames logs line up best at 0.
+ * The motor currents never take this path: the 2026 logs line up best at 0.
  */
 function measuredTotal(
   match: Match, t: Float64Array, volts: Float64Array, enabled: Uint8Array, amps: Float64Array,
@@ -288,8 +288,8 @@ export interface ResistanceEstimate {
  *
  * Why a window and not two neighbouring samples: voltage and motor currents are logged by different devices at
  * slightly different moments, so a sample-to-sample step reads ≈ 0 mΩ. Over a second the lag washes out.
- * Measured on the CalGames logs: 11.3 / 11.4 / 11.1 mΩ (Q13 / Q21 / P0), matching the 11.4 / 11.3 / 11.0 mΩ in
- * the P0 analysis.
+ * Measured on the 2026 logs: 11.3 / 11.4 / 11.1 mΩ (log A / log B / log C), matching the 11.4 / 11.3 / 11.0 mΩ from
+ * an independent analysis.
  */
 export function resistanceFromSteps(g: PowerGrid, minSwingAmps = 100): ResistanceEstimate | null {
   const window = Math.round(1 / DT)

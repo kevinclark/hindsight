@@ -3,7 +3,7 @@
  *
  * Checks: the Driver Station's e-stop flag (/DriverStation/EmergencyStop) turning on. Each one is a finding: on the
  * field it ended the robot's match (error); off the field it cost a restart (warning).
- * Why: One 2025 match was e-stopped 1.5 s before the end, and on Friday three program runs in a row were e-stopped
+ * Why: One 2025 match was e-stopped 1.5 s before the end, and on one day three program runs in a row were e-stopped
  * 0.02 s after their first enable (the team's Slack PSA blamed the DS space bar). No rule read the flag.
  */
 import { rule, round, secs, type Problem } from '../rule.ts'
@@ -22,7 +22,7 @@ export default rule({
     { id: 'field', cause: 'The field staff (FTA or head referee) e-stopped the robot', look: 'ask the FTA why; the field log for this match' },
   ],
   nextStep: 'Ask the drive team who pressed the e-stop (the button or the DS space bar) and why. Keep hands off the DS keyboard once the robot is enabled.',
-  incident: 'One 2025 match: e-stopped 1.5 s before the end; Friday 11-07: three runs e-stopped 0.02 s after enable (mttd-2025-context.md §1, §1b)',
+  incident: 'One 2025 match: e-stopped 1.5 s before the end; on one day, three runs e-stopped 0.02 s after enable',
 
   check(match) {
     const estop = match.signal('emergencyStop')

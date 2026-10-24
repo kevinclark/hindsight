@@ -1,14 +1,14 @@
-// The rules added after MTTD 2025 (8033 repo, robot/hindsight-research/mttd-2025-context.md §2): a made-up log that
+// The rules added after the 2025 robot's offseason event: a made-up log that
 // must fire each one and one that must stay quiet, then the real logs (skipped when they aren't on this Mac; they are
 // never copied into the repo).
 import { existsSync, readdirSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { offseason2025 } from '../src/profiles/2025-offseason.ts'
 import type { Finding } from '../src/rules/types.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 import { fired, readInput } from './helpers/load.ts'
+import { TEAM, TEAM_LOGS_FILE, teamPath } from './helpers/team-logs.ts'
 
 type Entries = FixtureEntry[]
 const WALL = 1762637000 // 2025-11-08, epoch seconds
@@ -23,7 +23,7 @@ function robotLog(o: { base: number; until: number; enabled: [number, boolean][]
     { name: '/DriverStation/DSAttached', type: 'boolean', records: [[start, true]] },
     { name: '/DriverStation/EventName', type: 'string', records: [[start, 'TEST']] },
     { name: '/DriverStation/MatchType', type: 'int64', records: [[start, 2]] },
-    { name: '/DriverStation/MatchNumber', type: 'int64', records: [[start, 28]] },
+    { name: '/DriverStation/MatchNumber', type: 'int64', records: [[start, 4]] },
     { name: '/SystemStats/SystemTimeValid', type: 'boolean', records: [[start, true]] },
     { name: '/SystemStats/EpochTimeMicros', type: 'int64', records: [[start, (o.base + start) * 1e6], [o.until, (o.base + o.until) * 1e6]] },
     { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[start, 12.5], [o.until, 12.4]] },
@@ -134,25 +134,25 @@ describe('auto/early-disable: the auto\'s earlier runs', () => {
       { name: '/RealMetadata/GitDirty', type: 'string', records: [[10, dirty]] },
     ],
   })
-  const practice = autoLog(WALL - 3600, '1fcbd9faaaa', 'Uncommitted changes', 35)
+  const practice = autoLog(WALL - 3600, 'b0a7123aaaa', 'Uncommitted changes', 35)
   const match = autoLog(WALL, '0a5a119bbbb', 'All changes committed', 21)
 
   it('names the auto and its last run on another build, and marks "not run before on this build" likely', () => {
-    const [f] = findingsOf({ 'p8.wpilog': practice, 'q28.wpilog': match }, 'q28.wpilog', 'auto/early-disable')
+    const [f] = findingsOf({ 'practice.wpilog': practice, 'match.wpilog': match }, 'match.wpilog', 'auto/early-disable')
     expect(f.evidence.auto).toBe('Left stack auto')
     expect(f.evidence['runs of it in the other logs loaded, earlier']).toBe(1)
     expect(f.evidence['runs of it on this build (0a5a119), in the logs loaded']).toBe(0)
-    expect(f.evidence['its last earlier run']).toBe('p8.wpilog, on the field, build 1fcbd9f with uncommitted changes: ran the whole auto')
+    expect(f.evidence['its last earlier run']).toBe('practice.wpilog, on the field, build b0a7123 with uncommitted changes: ran the whole auto')
     expect(f.causes[0]).toMatchObject({ id: 'new-auto', likely: true })
   })
   it('loaded logs that are all later prove nothing about a first run', () => {
-    const later = autoLog(WALL + 3600, '1fcbd9faaaa', 'All changes committed', 35)
-    const [f] = findingsOf({ 'later.wpilog': later, 'q28.wpilog': match }, 'q28.wpilog', 'auto/early-disable')
+    const later = autoLog(WALL + 3600, 'b0a7123aaaa', 'All changes committed', 35)
+    const [f] = findingsOf({ 'later.wpilog': later, 'match.wpilog': match }, 'match.wpilog', 'auto/early-disable')
     expect(f.evidence['runs of it in the other logs loaded, earlier']).toBe(0)
     expect(f.causes.find((c) => c.id === 'new-auto')?.likely).toBeUndefined()
   })
   it('alone, it says what it cannot know instead of claiming a first run', () => {
-    const [f] = findingsOf({ 'q28.wpilog': match }, 'q28.wpilog', 'auto/early-disable')
+    const [f] = findingsOf({ 'match.wpilog': match }, 'match.wpilog', 'auto/early-disable')
     expect(f.evidence['runs of it in the other logs loaded, earlier']).toBe('not known (only this log is loaded)')
     expect(f.causes.find((c) => c.id === 'new-auto')?.likely).toBeUndefined()
   })
@@ -226,62 +226,66 @@ describe('mech/stuck-state', () => {
   })
 })
 
-// The real MTTD 2025 logs: 64 Saturday/Sunday + 14 Friday, read-only from ~/Downloads.
-const MTTD = `${homedir()}/Downloads/hindsight-test/2025-11-event`
-const mttdLogs = existsSync(MTTD) ? readdirSync(MTTD).filter((f) => f.endsWith('.wpilog')).sort() : []
-const haveMttd = mttdLogs.length >= 78
-if (!haveMttd) console.warn(`SKIPPED part of mttd-rules.test.ts: put the 78 MTTD 2025 .wpilog files in ${MTTD} to run it`)
+// The team's real logs from the 2025 robot's event: 64 from the match days + 14 from the practice day, read-only from the folder listed in
+// tests/helpers/team-logs.ts, which also names the logs these tests pick out (F below).
+const EVENT = teamPath(TEAM.event2025)
+const F = (TEAM.event2025Files ?? {}) as Record<string, string> & { restartPieces: string[]; estopAtEnable: string[] }
+const eventLogs = existsSync(EVENT) ? readdirSync(EVENT).filter((f) => f.endsWith('.wpilog')).sort() : []
+const ROLES = ['restartPieces', 'estopAtEnable', 'estopLate', 'earlierRun', 'earlierRunBuild', 'handoffWait', 'heldFromAuto', 'carryOver', 'busDrop', 'odometryOutliers', 'collapse']
+const haveEvent = eventLogs.length >= 78 && ROLES.every((r) => r in F)
+if (!haveEvent) console.warn(`SKIPPED part of event-2025-rules.test.ts: list the 78 .wpilog files' folder (event2025) and event2025Files (${ROLES.join(', ')}) in ${TEAM_LOGS_FILE} to run it`)
 
-describe.skipIf(!haveMttd)('MTTD 2025 logs', () => {
-  const read = (names: string[]) => analyzeFiles(names.map((n) => readInput(`${MTTD}/${n}`))).analyses
-  const byName = (list: ReturnType<typeof read>, part: string) => list.find((a) => a.match.fileName.includes(part))!
+describe.skipIf(!haveEvent)('the 2025 robot\'s event logs', () => {
+  const read = (names: string[]) => analyzeFiles(names.map((n) => readInput(`${EVENT}/${n}`))).analyses
+  const pick = (...names: string[]) => eventLogs.filter((n) => names.includes(n))
+  const byName = (list: ReturnType<typeof read>, name: string) => list.find((a) => a.match.fileName === name)!
 
-  it('each log alone: restart-mid-match fires only on Q28\'s three pieces, emergency-stop only on Q24 and Friday\'s three', () => {
+  it('each log alone: restart-mid-match fires only on one match\'s three pieces, emergency-stop only on one match and three practice-day runs', () => {
     const restart: string[] = [], estop: string[] = []
-    for (const name of mttdLogs) {
+    for (const name of eventLogs) {
       const got = fired(read([name])[0].report)
       if (got.has('loop/restart-mid-match')) restart.push(name)
       if (got.has('comms/emergency-stop')) estop.push(name)
     }
-    expect(restart).toEqual(['akit_25-11-08_13-33-37_q28.wpilog', 'akit_25-11-08_13-35-46_q28.wpilog', 'akit_25-11-08_13-36-55_q28.wpilog'])
-    expect(estop).toEqual(['akit_25-11-07_19-59-03.wpilog', 'akit_25-11-07_20-01-12.wpilog', 'akit_25-11-07_20-02-38.wpilog', 'akit_25-11-08_12-24-52_q24.wpilog'])
+    expect(restart).toEqual(F.restartPieces)
+    expect(estop).toEqual([...F.estopAtEnable, F.estopLate].sort())
   }, 120_000)
 
-  it('Q28 with its pieces and Friday p8: the gaps, the lost controller, and the auto\'s earlier run', () => {
-    const list = read(mttdLogs.filter((n) => /_q28|_p8/.test(n)))
-    const third = byName(list, '13-36-55').report.findings.find((f) => f.rule === 'loop/restart-mid-match')!
+  it('a match restarted in pieces, with the practice run before it: the gaps, the lost controller, and the auto\'s earlier run', () => {
+    const list = read(pick(...F.restartPieces, F.earlierRun))
+    const third = byName(list, F.restartPieces[2]).report.findings.find((f) => f.rule === 'loop/restart-mid-match')!
     expect(third.title).toMatch(/no controller on port 0 after the restart/)
     expect(third.evidence['between logs, program down or starting up (s, ±2)']).toBe('14.7, 48.7')
-    const early = byName(list, '13-33-37').report.findings.find((f) => f.rule === 'auto/early-disable')!
-    expect(early.evidence['its last earlier run']).toMatch(/_p8\.wpilog, on the field, build 1fcbd9f with uncommitted changes/)
+    const early = byName(list, F.restartPieces[0]).report.findings.find((f) => f.rule === 'auto/early-disable')!
+    expect(early.evidence['its last earlier run']).toContain(`${F.earlierRun}, on the field, build ${F.earlierRunBuild} with uncommitted changes`)
   })
 
-  it('stuck-state: p5 waits for the arm\'s has-piece flag that never came; p8 and Q24 fire; Q33 and Q51 stay quiet', () => {
-    const list = read(mttdLogs.filter((n) => /_[qp]\d+\.wpilog$/.test(n)))
-    const stuck = (part: string) => byName(list, part).report.findings.filter((f) => f.rule === 'mech/stuck-state')
-    expect(stuck('_p5').map((f) => f.about)).toEqual(['RIGHT_HANDOFF'])
-    expect(stuck('_p5')[0].title).toMatch(/for 107 s .* it usually leaves when Arm has game piece turns true, which never happened/)
-    expect(stuck('_p8').map((f) => [f.about, f.evidence['seconds in it while enabled']])).toEqual([['SCORE_L4_RIGHT', 135]])
-    expect(stuck('_q24').map((f) => f.about)).toEqual(['SCORE_L4_LEFT'])
-    // Q33 held a score request set in auto but pressed nothing in its 23.4 s; Q51's carry-over was 9 s.
-    expect(stuck('_q33')).toEqual([])
-    expect(stuck('_q51')).toEqual([])
+  it('stuck-state: a practice run waits for the arm\'s has-piece flag that never came; two more runs fire; two stay quiet', () => {
+    const list = read(eventLogs.filter((n) => /_[qp]\d+\.wpilog$/.test(n)))
+    const stuck = (name: string) => byName(list, name).report.findings.filter((f) => f.rule === 'mech/stuck-state')
+    expect(stuck(F.handoffWait).map((f) => f.about)).toEqual(['RIGHT_HANDOFF'])
+    expect(stuck(F.handoffWait)[0].title).toMatch(/for 107 s .* it usually leaves when Arm has game piece turns true, which never happened/)
+    expect(stuck(F.earlierRun).map((f) => [f.about, f.evidence['seconds in it while enabled']])).toEqual([['SCORE_L4_RIGHT', 135]])
+    expect(stuck(F.estopLate).map((f) => f.about)).toEqual(['SCORE_L4_LEFT'])
+    // One held a score request set in auto but pressed nothing in its 23.4 s; the other's carry-over was 9 s.
+    expect(stuck(F.heldFromAuto)).toEqual([])
+    expect(stuck(F.carryOver)).toEqual([])
   })
 
-  it('Q24 is e-stopped 1.5 s before the end; Q41 loses the whole CANivore bus; Q66\'s outliers are odometry', () => {
-    const list = read(mttdLogs.filter((n) => /_q24|_q41|_q66/.test(n)))
-    expect(byName(list, '_q24').report.findings.find((f) => f.rule === 'comms/emergency-stop')!.title).toMatch(/with 1\.5 s of teleop left/)
-    const can = byName(list, '_q41').report.findings.filter((f) => f.rule.startsWith('can/'))
+  it('an e-stop 1.5 s before the end; a whole CANivore bus lost; vision outliers that are odometry', () => {
+    const list = read(pick(F.estopLate, F.busDrop, F.odometryOutliers))
+    expect(byName(list, F.estopLate).report.findings.find((f) => f.rule === 'comms/emergency-stop')!.title).toMatch(/with 1\.5 s of teleop left/)
+    const can = byName(list, F.busDrop).report.findings.filter((f) => f.rule.startsWith('can/'))
     expect(can.map((f) => `${f.rule} ${f.about}`)).toEqual(['can/bus-dropout CANivore bus'])
     expect(can[0].evidence['seconds until every device was back']).toBe('58.7')
-    const outliers = byName(list, '_q66').report.findings.filter((f) => f.rule === 'vision/outliers')
+    const outliers = byName(list, F.odometryOutliers).report.findings.filter((f) => f.rule === 'vision/outliers')
     expect(outliers.map((f) => f.causes[0].id)).toEqual(['odometry', 'odometry'])
   })
 
-  it('links: Q41\'s module and gyro alerts sit under the bus drop ("Using Sync Odometry" does not); Q61\'s brownout under the collapse', () => {
-    const list = read(mttdLogs.filter((n) => /_q41|_q61/.test(n)))
-    const links = (part: string) => byName(list, part).report.findings.filter((f) => f.explainedBy).map((f) => `${f.rule}${f.about ? ` ${f.about}` : ''} ← ${f.explainedBy!.rule}`)
-    expect(links('_q41')).toEqual(['alerts/passthrough Missing Module Data ← can/bus-dropout', 'alerts/passthrough Missing Gyro Data ← can/bus-dropout'])
-    expect(links('_q61')).toEqual(['power/brownout ← power/battery-collapse', 'power/margin ← power/brownout'])
+  it('links: the bus drop\'s module and gyro alerts sit under it ("Using Sync Odometry" does not); a brownout under the collapse', () => {
+    const list = read(pick(F.busDrop, F.collapse))
+    const links = (name: string) => byName(list, name).report.findings.filter((f) => f.explainedBy).map((f) => `${f.rule}${f.about ? ` ${f.about}` : ''} ← ${f.explainedBy!.rule}`)
+    expect(links(F.busDrop)).toEqual(['alerts/passthrough Missing Module Data ← can/bus-dropout', 'alerts/passthrough Missing Gyro Data ← can/bus-dropout'])
+    expect(links(F.collapse)).toEqual(['power/brownout ← power/battery-collapse', 'power/margin ← power/brownout'])
   })
 })

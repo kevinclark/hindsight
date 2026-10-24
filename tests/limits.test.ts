@@ -1,5 +1,6 @@
 // Phase 2: the Limits tab (Part A) against the reference script, and the limits wizard (Part B) on bench logs built
-// from real CalGames spin-ups: the student path, "the setting didn't take", and "runs not comparable".
+// from real spin-ups in one of the team's 2026 matches: the student path, "the setting didn't take", and "runs not comparable".
+import { basename } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { checkPair } from '../src/limits/pair.ts'
 import { readFileSync } from 'node:fs'
@@ -10,15 +11,15 @@ import { checkStep, comparability, newSession, parseSession, serializeSession, s
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import type { Fixture } from './helpers/fixture-format.ts'
 import { benchLog, type BenchOptions } from './helpers/bench-log.ts'
-import { CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
+import { LOGS, haveLogs, readInput } from './helpers/load.ts'
 import { openWpilog } from '../src/readers/wpilog.ts'
 import { overThreshold, REFERENCE_KEYS } from '../scripts/limits-reference.ts'
 
 const bench = (opts: BenchOptions) => analyzeFiles([{ name: `bench-${opts.limitA ?? 'none'}.wpilog`, bytes: benchLog(opts) }], offseason2026).analyses[0].match
 
 describe('"setting took" check', () => {
-  it('passes the Q13 front-left drive at its real 40 A supply limit (mode 38–40 A)', () => {
-    const f = JSON.parse(readFileSync('fixtures/q13-drive-plateau.json', 'utf8')) as Fixture
+  it('passes log A\'s front-left drive at its real 40 A supply limit (mode 38–40 A)', () => {
+    const f = JSON.parse(readFileSync('fixtures/drive-plateau.json', 'utf8')) as Fixture
     const amps = (f.entries[0].records as [number, number][]).map(([, a]) => Math.abs(a)).filter((a) => a >= 30)
     const mode = modalBin(amps, 2)!
     expect(mode).toBeGreaterThanOrEqual(38)
@@ -97,16 +98,16 @@ describe('limits wizard on bench logs built from real spin-ups', () => {
   })
 })
 
-if (!haveCalGames) console.warn('SKIPPED limits Part A checks: CalGames logs not in ~/Downloads')
+if (!haveLogs) console.warn('SKIPPED limits Part A checks: the team\'s logs A, B and C are not listed (tests/helpers/team-logs.ts)')
 
-describe.skipIf(!haveCalGames)('Limits tab on the CalGames logs (Part A)', () => {
-  const { analyses } = haveCalGames ? analyzeFiles([CALGAMES.q13, CALGAMES.q21, CALGAMES.p0].map(readInput)) : { analyses: [] }
-  const brief = { q13: 6.06, q21: 6.8, p0: 6.72 } // flywheel leader supply > 45 A, from the phase 2 brief
-  it.each(Object.entries(brief))('%s: flywheel leader over 45 A matches the brief and the reference script', (name, seconds) => {
-    const a = analyses.find((x) => x.match.fileName.includes(name))!
+describe.skipIf(!haveLogs)('Limits tab on the team\'s 2026 logs (Part A)', () => {
+  const { analyses } = haveLogs ? analyzeFiles([LOGS.a, LOGS.b, LOGS.c].map(readInput)) : { analyses: [] }
+  const brief = { a: 6.06, b: 6.8, c: 6.72 } // flywheel leader supply > 45 A, from the phase 2 brief
+  it.each(Object.entries(brief))('log %s: flywheel leader over 45 A matches the brief and the reference script', (name, seconds) => {
+    const a = analyses.find((x) => x.match.fileName === basename(LOGS[name as 'a']))!
     const fly = limitsReport(a.match).find((g) => g.group === 'Flywheel')!
     const leader = fly.supply.motors.find((m) => m.motor === 'Flywheel leader')!
-    const ref = overThreshold(openWpilog(readInput(CALGAMES[name as 'q13']).bytes), REFERENCE_KEYS.flywheel[0], 45, REFERENCE_KEYS.flywheel[0].replace('Supply', 'Stator'))!
+    const ref = overThreshold(openWpilog(readInput(LOGS[name as 'a']).bytes), REFERENCE_KEYS.flywheel[0], 45, REFERENCE_KEYS.flywheel[0].replace('Supply', 'Stator'))!
     expect(Math.abs(leader.secondsOver - seconds)).toBeLessThan(0.07)
     expect(Math.abs(ref.seconds - seconds)).toBeLessThan(0.07)
     expect(fly.supply.on).toBe(false)

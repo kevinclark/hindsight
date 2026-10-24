@@ -58,11 +58,11 @@ export interface ReportFinding {
   measured: string
   /** Matches played after a fix was recorded, where it fired again. */
   cameBack: string[]
-  /** "Not seen since Q21 · 3 clean checked matches · …" or "Marked fixed after Q21 · …" (session/stopped.ts); empty when neither. */
+  /** "Not seen since Q4 · 3 clean checked matches · …" or "Marked fixed after Q4 · …" (session/stopped.ts); empty when neither. */
   stopped: string
   /** Potentially fixed, and not an error: it sorts below the live findings, in the bottom line's "Stopped" group. */
   sinks: boolean
-  /** "not seen since Q21, 1 in 35", for the bottom line; empty unless it sinks. */
+  /** "not seen since Q4, 1 in 35", for the bottom line; empty unless it sinks. */
   stoppedShort: string
   /** The card's stopped line (session/stopped.ts stoppedCard): potentially fixed, errors too, or a fixed mark; else empty. */
   cardStopped: string
@@ -74,7 +74,7 @@ export interface ReportFinding {
   cardMeasured: string
   /** What the team's marks say about it (marksText); empty with none. */
   marks: string
-  /** The matches where it was marked not a real problem ("Q24"), for the card. */
+  /** The matches where it was marked not a real problem ("Q4"), for the card. */
   wrongIn: string[]
 }
 
@@ -162,7 +162,7 @@ export function cameBack(session: Session, issues: Map<string, IssueEvent>, key:
   return matchIdx.map((i) => session.matches[i]).filter((m) => m.playedAt !== null && m.playedAt > fixedAt).map(matchLabel)
 }
 
-/** The matches where a finding was marked not a real problem, short ("Q24"). */
+/** The matches where a finding was marked not a real problem, short ("Q4"). */
 export function wrongIn(session: Session, f: Pick<MergedFinding, 'wrong'>): string[] {
   // A log with no match label by its file, as the mark itself names it (track-record.ts matchRef, shortMatch).
   return (f.wrong ?? []).map((w) => { const m = session.matches[w.match]; return m.matchLabel ? shortMatchLabel(m.matchLabel, w.match) : m.fileName })
@@ -189,8 +189,8 @@ export function gridCells(session: Session, rule: string): GridCell[] {
 }
 
 /**
- * The team's marks on a merged finding, in Match review's words: "marked not a real problem in Q24: <reason>", and
- * "amber, not red: marked not a real problem in Q24: <reason>" for reds a mark on another match demoted (said once
+ * The team's marks on a merged finding, in Match review's words: "marked not a real problem in Q4: <reason>", and
+ * "amber, not red: marked not a real problem in Q4: <reason>" for reds a mark on another match demoted (said once
  * when it is the same mark). Empty when nothing is marked.
  */
 export function marksText(session: Session, f: Pick<MergedFinding, 'wrong' | 'demoted'>): string {
@@ -274,7 +274,7 @@ export function gridModel(session: Session): GridModel {
 
 /**
  * Page 1 holds this many finding rows with the trends below them (22 rows fit with room to spare on the 3-match
- * CalGames session). Past it, the once-only findings fold into one line.
+ * long session). Past it, the once-only findings fold into one line.
  */
 export const PAGE1_ROWS = 24
 
@@ -309,7 +309,7 @@ const ORDER: Confidence[] = ['consistent', 'intermittent', 'once', 'not enough d
 
 /**
  * "3 matches. Consistent: flywheel followers slow, 3 of 3. Once: brownout, 1 of 3. Stopped: hood zeroed late, not seen
- * since Q21, 1 in 35." One clause per confidence, worst first, then the potentially fixed warnings.
+ * since Q4, 1 in 35." One clause per confidence, worst first, then the potentially fixed warnings.
  */
 export function bottomLine(matchCount: number, findings: ReportFinding[], filed = 0): string {
   const head = `${plural(matchCount, 'match')}.`

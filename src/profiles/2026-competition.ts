@@ -5,7 +5,7 @@
  * Copied from the robot code on branch `comp-bring-up`, commit 2cd2843 (2026-02-21 13:41 PST). The practice logs of
  * 2026-02-20/21 ran 13 commits of that branch (7525889 to b675b5d, and two of them from `comp-bring-up-2-21`); none of
  * them changes a current limit, CAN ID, logged key, magnet offset or gear ratio, so this one profile fits them all.
- * 2cd2843 ran 12 of those logs, as many as 7525889 (11 Friday evening, one Saturday morning), and still has the
+ * 2cd2843 ran 12 of those logs, as many as 7525889 (11 on one evening, one the next morning), and still has the
  * intake's current zero (b675b5d stubs the intake out).
  *
  * A limit the code never sets is left out and Phoenix 6's default applies; a supply limit set without its enable flag

@@ -1,7 +1,7 @@
 /**
  * PhotonVision's pipeline result (proto:photonvision.proto.ProtobufPhotonPipelineResult), read only as far as
  * "how many targets": field 2 is the repeated `targets`, field 3 the optional multi-tag result (photon.proto).
- * Checked on the CalGames 2026 logs: 134,401 results from two cameras all parsed, and the multi-tag field was set
+ * Checked on the 2026 offseason logs: 134,401 results from two cameras all parsed, and the multi-tag field was set
  * exactly when two or more targets were.
  */
 

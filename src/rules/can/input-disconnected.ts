@@ -8,7 +8,7 @@
  * Why: A public 2026 robot, Q108: the intake's leader motor went off 3 times, 29.2 s, 20.5 s, then for the rest
  * of the match; the team found the Anderson connector pulled apart.
  *
- * Checked on: those logs only, 26 (public ones and 8033's CalGames logs). It fired on 4 and one is a confirmed case (that
+ * Checked on: those logs only, 26 (public ones and 8033's 2026 logs). It fired on 4 and one is a confirmed case (that
  * intake); a camera flag that dropped on 2 others is unconfirmed. Nothing says yet how often a flag drops without a
  * device fault.
  */

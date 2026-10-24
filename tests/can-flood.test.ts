@@ -1,7 +1,7 @@
 // A whole-robot CAN flood (one 2026 match: 25 devices dropped within 0.3 s): the 2026 profile's bus members, the
 // bus-wide and partial drops, and the alert words that tie
-// "turn motor" and "encoder" alerts to the bus. Built on small synthetic logs; the real Q2 log is in
-// calgames-logs.test.ts when it is in ~/Downloads.
+// "turn motor" and "encoder" alerts to the bus. Built on small synthetic logs shaped like one
+// of the team's real 2026 matches.
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'

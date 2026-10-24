@@ -1,11 +1,13 @@
-// The Trends table's model (src/session/trends.ts): verdicts, worst match, order, what to do. The CalGames part runs
-// only where the 8 logs are in ~/Downloads/Calgames 2026 (they are never copied into the repo).
+// The Trends table's model (src/session/trends.ts): verdicts, worst match, order, what to do. The part on the team's
+// 2026 event runs only where its 8 logs are listed (tests/helpers/team-logs.ts; they are never copied into the repo).
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { basename } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { joinSplitMatches } from '../src/session/session.ts'
 import { summarizeLog, type MatchMetrics, type MatchSummary } from '../src/session/summary.ts'
 import { firstSentence, trendLabel, trendRows, type TrendRow } from '../src/session/trends.ts'
+import { haveLogs, LOGS } from './helpers/load.ts'
+import { TEAM, teamPath } from './helpers/team-logs.ts'
 
 const BLANK: MatchMetrics = { minVolts: null, secondsUnder7: null, chargeAh: null, resistanceMilliohms: null, followerSecondsOff: null, brownoutVolts: 6, loopOverrunPct: null, visionOutlierPct: null }
 const m = (n: number, metrics: Partial<MatchMetrics>, over: Partial<MatchSummary> = {}): MatchSummary => ({
@@ -129,32 +131,34 @@ describe('trend labels', () => {
   it('keeps a labelled match\'s short label, labels an unnumbered log from its MatchType, and never from its file name', () => {
     expect(trendLabel(m(13, {}), 0)).toBe('Q13')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 1 }), 0)).toBe('Pr')
-    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, fileName: 'akit_q13.wpilog' }), 0)).toBe('On field')
-    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: null, fileName: 'akit_q13.wpilog' }), 2)).toBe('#3')
+    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: 0, fileName: 'akit_q4.wpilog' }), 0)).toBe('On field')
+    expect(trendLabel(m(1, {}, { matchLabel: '', matchType: null, fileName: 'akit_q4.wpilog' }), 2)).toBe('#3')
     expect(trendLabel(m(1, {}, { matchLabel: '', matchType: undefined }), 0)).toBe('#1')
   })
 })
 
-const DIR = `${homedir()}/Downloads/Calgames 2026`
-const have = existsSync(DIR)
-if (!have) console.warn('SKIPPED the CalGames part of trends.test.ts: put the 8 CalGames .wpilog files in ~/Downloads/Calgames 2026')
-describe.skipIf(!have)('trendRows on the 8 CalGames logs', () => {
+const DIR = teamPath(TEAM.event2026)
+const have = existsSync(DIR) && haveLogs
+if (!have) console.warn('SKIPPED the 2026 event part of trends.test.ts: list its folder (event2026) and logs A, B, C in tests/helpers/team-logs.ts')
+describe.skipIf(!have)('trendRows on the 8 logs of the team\'s 2026 event', () => {
   const sums = have
     ? readdirSync(DIR).sort().filter((f) => f.endsWith('.wpilog')).map((f) => summarizeLog({ name: f, bytes: new Uint8Array(readFileSync(`${DIR}/${f}`)) })!)
     : []
   sums.sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity))
   const matches = joinSplitMatches(sums)
   const rows = trendRows(matches)
+  const label = (path: string) => rows[0].labels[matches.findIndex((m) => m.fileName === basename(path))]
   const worst = (k: string) => { const r = row(rows, k); return `${r.labels[r.worstIndex!]} ${r.values[r.worstIndex!]!.toFixed(r.metric.digits)}` }
 
   it('has 8 matches and the numbers the proposal measured', () => {
     expect(matches).toHaveLength(8)
     expect(row(rows, 'minVolts')).toMatchObject({ pastCount: 8, n: 8, latestIsWorst: true, verdict: 'Under 7 V in 8 of 8 matches' })
-    expect(worst('minVolts')).toBe('Q42 5.69')
+    expect(label(LOGS.c)).toMatch(/^Q\d+$/)
+    expect(worst('minVolts')).toBe(`${label(LOGS.c)} 5.69`)
     expect(row(rows, 'loopOverrunPct').pastCount).toBe(8)
-    expect(worst('loopOverrunPct')).toBe('Q13 26.7')
+    expect(worst('loopOverrunPct')).toBe(`${label(LOGS.a)} 26.7`)
     expect(row(rows, 'visionOutlierPct').pastCount).toBe(8)
-    expect(worst('visionOutlierPct')).toBe('Q2 43.5')
+    expect(worst('visionOutlierPct')).toBe(`${label(teamPath(TEAM.event2026Files?.visionWorst))} 43.5`)
     expect(row(rows, 'resistanceMilliohms').pastCount).toBe(0)
     expect(row(rows, 'followerSecondsOff')).toMatchObject({ pastCount: 7, n: 8 })
   })

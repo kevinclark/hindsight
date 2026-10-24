@@ -53,7 +53,7 @@ describe('ingesting a folder of unorganized logs', () => {
     source = join(work, 'laptop')
     libRoot = join(work, 'library')
     const match = robotLog({ clockMs: CLOCK, enabled: ENABLED, event: 'TEST', fms: true, matchType: 2, matchNumber: 7, battery: 'B01' })
-    await put('day one/akit_26-10-17_19-00-00_test_q7.wpilog', match)
+    await put('day one/akit_26-10-17_19-00-00_test_q4.wpilog', match)
     await put('zcopies/my copy of the match.wpilog', match) // the same bytes under another name
     // A renamed log whose robot clock was never set (the roboRIO image date): only the name has the date, read as UTC in 2026.
     await put('misc/renamed.wpilog', robotLog({ clockMs: Date.UTC(2024, 11, 18), enabled: ENABLED, seed: 'unset clock' }))
@@ -75,14 +75,14 @@ describe('ingesting a folder of unorganized logs', () => {
 
   it('files each log by what it says: school year, local date, original name', async () => {
     const paths = first.added.map((a) => a.path).sort()
-    expect(paths).toContain('logs/2026-2027/2026-10-17/akit_26-10-17_19-00-00_test_q7.wpilog')
+    expect(paths).toContain('logs/2026-2027/2026-10-17/akit_26-10-17_19-00-00_test_q4.wpilog')
     expect(paths).toContain('logs/2026-2027/2026-10-17/akit_26-10-18_01-30-00_practice.wpilog')
     expect(paths).toContain('logs/2026-2027/2026-10-17/rio_2026-10-17_19-00-05.hoot')
-    expect(await stat(join(libRoot, 'logs/2026-2027/2026-10-17/akit_26-10-17_19-00-00_test_q7.wpilog'))).toBeTruthy()
+    expect(await stat(join(libRoot, 'logs/2026-2027/2026-10-17/akit_26-10-17_19-00-00_test_q4.wpilog'))).toBeTruthy()
   })
 
   it('reads the match from the log, not the name', () => {
-    const r = lib.catalog.all().find((x) => x.names.includes('akit_26-10-17_19-00-00_test_q7.wpilog'))!
+    const r = lib.catalog.all().find((x) => x.names.includes('akit_26-10-17_19-00-00_test_q4.wpilog'))!
     expect(r).toMatchObject({ event: 'TEST', matchType: 2, matchNumber: 7, onField: true, batteryId: 'B01', dateSource: 'robot clock', stub: false })
     expect(r.playedAt).toBe(CLOCK + 20_000)
   })
@@ -98,8 +98,8 @@ describe('ingesting a folder of unorganized logs', () => {
 
   it('reports the same bytes under two names as one log, with both names', () => {
     const dup = first.already.find((a) => a.name === 'my copy of the match.wpilog')!
-    expect(dup).toMatchObject({ path: 'logs/2026-2027/2026-10-17/akit_26-10-17_19-00-00_test_q7.wpilog', newName: true })
-    expect(dup.names.sort()).toEqual(['akit_26-10-17_19-00-00_test_q7.wpilog', 'my copy of the match.wpilog'])
+    expect(dup).toMatchObject({ path: 'logs/2026-2027/2026-10-17/akit_26-10-17_19-00-00_test_q4.wpilog', newName: true })
+    expect(dup.names.sort()).toEqual(['akit_26-10-17_19-00-00_test_q4.wpilog', 'my copy of the match.wpilog'])
     expect(lib.catalog.size).toBe(first.added.length)
   })
 
@@ -112,7 +112,7 @@ describe('ingesting a folder of unorganized logs', () => {
   })
 
   it('attaches the DS log and events that overlap the match, not the one an hour later; the hoot file by its name', () => {
-    const match = lib.catalog.entries().find((e) => e.names.includes('akit_26-10-17_19-00-00_test_q7.wpilog'))!
+    const match = lib.catalog.entries().find((e) => e.names.includes('akit_26-10-17_19-00-00_test_q4.wpilog'))!
     expect(match.attached.dslog.map((r) => r.names[0])).toEqual(['overlaps.dslog'])
     expect(match.attached.dsevents.map((r) => r.names[0])).toEqual(['overlaps.dsevents'])
     expect(match.attached.hoot.map((r) => r.names[0])).toEqual(['rio_2026-10-17_19-00-05.hoot'])
@@ -125,7 +125,7 @@ describe('ingesting a folder of unorganized logs', () => {
     const files = await localFolderFiles(source)
     expect(files.length).toBe(12)
     expect((await readFile(join(source, 'misc/notes.txt'), 'utf8'))).toBe('ignore me')
-    expect((await stat(join(source, 'day one/akit_26-10-17_19-00-00_test_q7.wpilog'))).mtimeMs).toBe(CLOCK)
+    expect((await stat(join(source, 'day one/akit_26-10-17_19-00-00_test_q4.wpilog'))).mtimeMs).toBe(CLOCK)
   })
 
   it('a second run reports everything as already there and writes nothing', async () => {
@@ -145,10 +145,10 @@ describe('ingesting a folder of unorganized logs', () => {
 
   it('files a different log with a name already taken under the name plus its sha-256 start', async () => {
     const clash = robotLog({ clockMs: CLOCK, enabled: ENABLED, seed: 'different bytes' })
-    await put('later/akit_26-10-17_19-00-00_test_q7.wpilog', clash)
+    await put('later/akit_26-10-17_19-00-00_test_q4.wpilog', clash)
     const report = await run(lib)
-    const added = report.added.find((a) => a.name === 'akit_26-10-17_19-00-00_test_q7.wpilog')!
-    expect(added.path).toMatch(/^logs\/2026-2027\/2026-10-17\/akit_26-10-17_19-00-00_test_q7-[0-9a-f]{8}\.wpilog$/)
+    const added = report.added.find((a) => a.name === 'akit_26-10-17_19-00-00_test_q4.wpilog')!
+    expect(added.path).toMatch(/^logs\/2026-2027\/2026-10-17\/akit_26-10-17_19-00-00_test_q4-[0-9a-f]{8}\.wpilog$/)
   })
 
   it("does not file a log at a path another machine's log holds, though that file is not on this disk", async () => {
