@@ -186,7 +186,7 @@ describe('fix pass 2: model', () => {
     const b = buildBoard(input(grey, lines))
     expect(issue(b).awaitingClean).toBe(true)
     expect(b.strip).toMatchObject({ gate: 0, noOwner: 0, reds: 1, awaitingReds: 1 })
-    expect(dueLine(issue(b))).toBe('Check next match · closes after a clean match where the rule can be checked')
+    expect(dueLine(issue(b))).toBe('Closes after a clean match where the rule can be checked')
     const seenAgain = buildBoard(input(live, [bl('status', 'check', after(5), ref(5))]))
     expect(issue(seenAgain).awaitingClean).toBe(false)
     expect(dueLine(issue(seenAgain))).toBe('Due before Q6')

@@ -27,7 +27,7 @@
     <p class="who">For the pit · before {sheet.forLabel}</p>
     {#if gate.length}
       <ol>{#each gate as l (l.issue.key)}
-        <li><span class="box" aria-hidden="true">{l.checked ? '☑' : '☐'}</span> <b>{rowTitle(l.issue)}</b> <span class="small">(red, due before {sheet.forLabel})</span><br />{l.issue.nextStep}<br />
+        <li><span class="box" aria-hidden="true">{l.checked ? '☑' : '☐'}</span> <b>{rowTitle(l.issue)}</b> <span class="small">(Red, due before {sheet.forLabel})</span><br />{l.issue.nextStep}<br />
           <span class="small">{l.checked ? `Checked by ${l.checked.role} at ${clockText(l.checked.when)}` : 'Checked by ________ (role) at ________ (time)'}</span></li>
       {/each}</ol>
     {:else}<p>No reds to confirm.</p>{/if}

@@ -87,6 +87,7 @@
   <span class="muted small">{dueLine(issue)}{dueLine(issue) ? ' · ' : ''}{changedLine(issue)}</span>
   <span class="small hdr-rate">Not a real problem, for this rule: {rate?.text ?? 'no marks yet'}</span>
 </div>
+{#if issue.deferral?.expired}<p class="note"><b>Deferral ended.</b> The workaround while it held: {issue.deferral.workaround || '(none written)'}</p>{/if}
 <h3 class="screen">{rowTitle(issue)}</h3>
 <p class="muted small"><code>{issue.rule}</code> · seen in {issue.firedIn.length} match{issue.firedIn.length === 1 ? '' : 'es'}{issue.sightings.some((s) => s.kind === 'pit') ? ` and ${issue.sightings.filter((s) => s.kind === 'pit').length} pit run${issue.sightings.filter((s) => s.kind === 'pit').length === 1 ? '' : 's'}` : ''} · on {issue.robot || 'an unknown robot'}</p>
 

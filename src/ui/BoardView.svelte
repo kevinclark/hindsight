@@ -73,6 +73,7 @@
   let pitSeen = $state<string | null>(null)
   $effect(() => { if (pitSeen !== pitNow) { pitSeen = pitNow; pitText = pitNow } })
 
+  const redsNote = $derived.by(() => { const p = [board.strip.deferredReds ? `${board.strip.deferredReds} deferred` : '', board.strip.awaitingReds ? `${board.strip.awaitingReds} closed, awaiting a clean match` : ''].filter(Boolean); return p.length ? ` (${p.join(', ')})` : '' })
   const unit = (n: number, one: string, many: string) => (n === 1 ? one : many)
   const mechs = $derived([...new Set([...board.rows.map((i) => i.mechanism)])].sort((a, b) => (FAMILIES.includes(a) ? 1 : 0) - (FAMILIES.includes(b) ? 1 : 0) || a.localeCompare(b)))
   const pinned = $derived(board.visible.filter((i) => i.cls === 'due' || (i.due.pos <= board.tl.nextPos && i.status !== 'deferred' && !i.grey)))
@@ -88,11 +89,12 @@
 
 <div class="board" data-board>
   <p class="whoami">
-    <label>You are on: <select aria-label="Your role" value={role ?? ''} onchange={(e) => chooseRole((e.currentTarget as HTMLSelectElement).value)}>
+    <label>You are on: <select aria-label="Your role" title="Your role: kept on this laptop; changes are recorded under it, never a name" value={role ?? ''} onchange={(e) => chooseRole((e.currentTarget as HTMLSelectElement).value)}>
       {#if !role}<option value="" disabled>choose…</option>{/if}
       {#each ROLES as r (r)}<option value={r}>{r}</option>{/each}
     </select></label>
-    {#if !role}<span class="note">Choose it to make changes (kept on this laptop, never a name).</span>{/if}
+    {#if !role}<span class="note">Choose it to make changes.</span>{/if}
+    <button type="button" class="help" aria-label="Your role is kept on this laptop. Changes are recorded under the role, never a name." title="Your role is kept on this laptop. Changes are recorded under the role, never a name.">?</button>
   </p>
 
   {#if view === 'board'}
@@ -101,10 +103,9 @@
       {#if board.strip.minutesWord}<span>{board.strip.minutesWord}</span>{/if}
       <span><b>{board.strip.deferralsDue}</b> {unit(board.strip.deferralsDue, 'deferral', 'deferrals')} due</span>
       <span><b>{board.strip.noOwner}</b> with no owner</span>
-      <span><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all{board.strip.deferredReds ? ` (${board.strip.deferredReds} deferred)` : ''}</span>
+      <span><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all{redsNote}</span>
       {#if board.strip.nextGap}<span>Next gap: <strong>{board.strip.nextGap}</strong></span>{/if}
     </p>
-    {#if board.noSchedule}<p class="note wide">{board.noSchedule}{#if scheduleNote}{' '}{scheduleNote}{/if}</p>{/if}
     <div class="toolbar">
       <button type="button" class="primary" onclick={() => (view = 'queue')}>Queue sheet (print)</button>
       <button type="button" onclick={() => (view = 'handoff')}>Handoff{board.handoff ? '' : ' (not read yet)'}</button>
@@ -145,6 +146,7 @@
       </details>
     {/if}
 
+    {#if board.noSchedule}<p class="note wide">{board.noSchedule}{#if scheduleNote}{' '}{scheduleNote}{/if}</p>{/if}
     <h4>What we changed in the pit since the last match{board.tl.last ? ` (after ${board.tl.last.label})` : ''}</h4>
     <div class="field">
       <label for="board-pit">One line, shown on the handoff</label>
@@ -176,6 +178,8 @@
   .board :global(.note.wide) { max-width: none; }
   .board :global(.problem) { color: var(--error); }
   .whoami { margin: 0.2rem 0; font-size: 0.85rem; color: var(--muted); }
+  .help { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; box-sizing: border-box; border: 1px solid var(--muted); border-radius: 50%; font-size: 0.8rem; font-weight: 700; cursor: help; color: var(--fg); }
+  .help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .gate { font-size: 1.6rem; margin: 0.2rem 0 0; line-height: 1.15; }
   .gate b { font-size: 2rem; font-variant-numeric: tabular-nums; }
   .strip { display: flex; flex-wrap: wrap; gap: 0.2rem 1.2rem; margin: 0.1rem 0 0.5rem; }

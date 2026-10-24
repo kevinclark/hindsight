@@ -12,9 +12,9 @@
     <span class="main">
       <span class="title">{rowTitle(issue)}</span>{#each tags(issue) as t (t)}<span class="tag">{t}</span>{/each}
       {#if issue.nextStep}<span class="verb">{issue.nextStep}</span>{/if}
-      <span class="changed">{changedLine(issue)}</span>
+      <span class="changed">Seen in {issue.seenIn.n} of {issue.seenIn.of} match{issue.seenIn.of === 1 ? '' : 'es'} · {changedLine(issue)}</span>
     </span>
-    <span class="status">{statusLine(issue)}{#if dueLine(issue)}<span class="due">{dueLine(issue)}</span>{/if}</span>
+    <span class="status">{#if issue.status === 'deferred' && issue.deferral}Workaround until {issue.deferral.point.until}<span class="due">re-decide {issue.deferral.point.redecide}</span>{:else}{statusLine(issue)}{#if dueLine(issue)}<span class="due">{dueLine(issue)}</span>{/if}{/if}</span>
     <span class="owner"><span class="chip" class:none={!issue.owner}>{ownerText(issue)}</span></span>
   </button>
   {#if issue.greyAsk}

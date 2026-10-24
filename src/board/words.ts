@@ -9,7 +9,7 @@ export function statusLine(i: BoardIssue): string {
 }
 
 /** "Due before Q41" for an issue that is not deferred; empty for a deferred one (its status line already says when). */
-export const dueLine = (i: BoardIssue): string => (i.status === 'deferred' || i.grey ? '' : i.awaitingClean ? 'Check next match · closes after a clean match where the rule can be checked' : `Due ${i.due.text}`)
+export const dueLine = (i: BoardIssue): string => (i.status === 'deferred' || i.grey ? '' : i.awaitingClean ? 'Closes after a clean match where the rule can be checked' : `Due ${i.due.text}`)
 
 export const changedLine = (i: BoardIssue): string => (i.lastChange ? `Last changed${i.lastChange.match ? ` ${i.lastChange.match}` : ''} by ${i.lastChange.role}` : 'Not changed yet')
 

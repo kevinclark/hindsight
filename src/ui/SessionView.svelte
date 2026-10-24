@@ -358,7 +358,7 @@
   }
   /** A load is running: New session and Read again wait for it. */
   const loading = $derived(!!progress && progress.done < progress.total)
-  const folded = $derived(showBoard && !chromeOpen && !loading)
+  const folded = $derived(eventMode && !chromeOpen && !loading)
 
   /** Start over: clear the summaries on the page and saved in this browser. What the student wrote down stays. */
   async function newSession() {
@@ -546,9 +546,9 @@
 
 <div class:screen-only={!!session} data-session-view>
 {#if folded && session}
-  <p class="oneline" data-folded>{summaries.length} of {summaries.length} logs · event {session.label.replace(/^Event\s+/, '')} · <button class="link" onclick={() => (chromeOpen = true)}>Change logs…</button></p>
+  <p class="oneline" data-folded>{session.matches.length + (session.pitRuns?.length ?? 0)} logs · event {session.label.replace(/^Event\s+/, '')} · <button class="link" onclick={() => (chromeOpen = true)}>Change logs…</button></p>
 {:else}
-{#if showBoard && chromeOpen}<p class="oneline"><button class="link" onclick={() => (chromeOpen = false)}>Fold the log chooser away</button></p>{/if}
+{#if eventMode && chromeOpen}<p class="oneline"><button class="link" onclick={() => (chromeOpen = false)}>Fold the log chooser away</button></p>{/if}
 <p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
 
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>

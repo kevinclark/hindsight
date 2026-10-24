@@ -413,7 +413,7 @@ export function buildBoard(input: BoardInput): Board {
   const read = notes.handoffReads.at(-1)
   return {
     tl, issues, rows, visible, below, closed: issues.filter((i) => !i.open), strip,
-    noSchedule: tl.hasSchedule ? null : 'No schedule: due points say "the next match" and "the end of the event". A team number and a Blue Alliance read key add match numbers, gaps (lunch, overnight, before playoffs) and times.',
+    noSchedule: tl.hasSchedule ? null : 'No schedule: due points say "the next match" and "the end of the event". A team number and a Blue Alliance read key add match numbers and gaps.',
     labels,
     pitLines: notes.pitChange.map((n) => ({ match: n.match, text: n.text, role: n.by.role, at: indexOfMatch(session, labels, n.match, n.when) })).sort((a, b) => a.at - b.at).map(({ match, text, role }) => ({ match, text, role })),
     handoff: read ? { role: read.by.role, match: read.match, when: read.when } : null,

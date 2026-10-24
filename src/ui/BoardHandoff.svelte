@@ -13,10 +13,10 @@
 
 <p class="crumbs"><button type="button" class="link" onclick={onBack}>← Board</button></p>
 <h3 class="screen">Handoff after {board.tl.last?.label ?? 'the last match'}</h3>
-<p class="sub">Next match {next}{board.strip.minutes !== null ? `, ≈ ${board.strip.minutes} min away (est.)` : ''}. Read this whole screen, then say you have.</p>
+<p class="sub">Next match {next}{board.strip.minutesWord ? `, ${board.strip.minutesWord}` : ''}. Read this whole screen, then say you have.</p>
 {#if h.firstRead}<p class="note">No handoff has been read at this event yet, so nothing on the board is marked new. Reading this one starts the count.</p>{/if}
 
-<h4>Reds due before the next match ({h.redsDue.length})</h4>
+<h4>Reds due before {next} ({h.redsDue.length})</h4>
 {#if h.redsDue.length}<ul class="rows">{#each h.redsDue as i (i.key)}<BoardRow issue={i} {onOpen} />{/each}</ul>{:else}<p class="muted">None.</p>{/if}
 
 <h4>Deferrals due before {next} ({h.deferralsDue.length})</h4>
