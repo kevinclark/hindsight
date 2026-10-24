@@ -4,7 +4,8 @@
  * Checks: on the field (FMS attached), an auto period that ends more than 1 s early with the robot disabled and the DS
  * still attached. That is a deliberate disable (an A-stop or the drive team), not a comms loss. A period the log's end
  * cuts off (the program stopped: loop/restart-mid-match) or that runs straight into teleop is not a disable; a log that
- * starts mid-auto doesn't hold the auto's start, so its time left can't be known.
+ * starts mid-auto doesn't hold the auto's start, so its time left can't be known: a real disable after such a restart is
+ * not reported either.
  * Why: One 2026 match: the robot wedged under the trench and was disabled with 7.4 s of auto left.
  *
  * Evidence: which auto was chosen, and its earlier runs in this log and in the other logs loaded with it: how many,
@@ -45,14 +46,17 @@ export default rule({
     const autoEnd = autoStart + match.profile.game.autoSeconds
     const autoPeriods = match.auto.filter((a) => a.start >= autoStart && a.start < autoEnd)
     const enabled = match.signal('enabled')
-    // The program came back mid-match: the log starts enabled, in auto.
-    if (enabled.series.v[0] > 0.5 && autoPeriods[0] && autoPeriods[0].start - enabled.series.t[0] < 0.5) {
+    // The program came back mid-match: the log starts enabled, already in auto, so the auto's start isn't in it.
+    const startsEnabled = enabled.first() > 0.5
+    const firstAuto = autoPeriods[0]
+    if (startsEnabled && firstAuto && firstAuto.start - match.logStart < 0.5) {
       return match.couldNotCheck('the log starts mid-auto: the auto start is not in it')
     }
-    // A disable is the robot reading disabled where the period ends. The log's end closes a period too, with the robot
-    // still enabled: the program stopped there, and what came after isn't in this log.
+    // A disable is the robot reading disabled where the period ends. The log's end closes a period too, with the
+    // robot still enabled: the program stopped there, and what came after isn't in this log.
     const disabled = autoPeriods.filter((a) => enabled.at(a.end) < 0.5)
-    if (autoPeriods.some((a) => enabled.at(a.end) > 0.5 && a.end >= match.logEnd)) match.checkedOnlyPart('the log ends during auto: the rest of auto is not in it')
+    const cutOffEnabled = autoPeriods.some((a) => enabled.at(a.end) > 0.5 && a.end >= match.logEnd)
+    if (cutOffEnabled) match.checkedOnlyPart('the log ends during auto: the rest of auto is not in it')
     const early = disabled.filter((a) => match.timeLeft(a.end) > 1 && attached.at(a.end + 0.05) > 0.5)
     // The plot is a bonus: draw the gyro if the log has it, but don't let a missing gyro stop the rule.
     const pitch = match.signalIfLogged('gyroPitch')

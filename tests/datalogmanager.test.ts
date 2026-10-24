@@ -126,6 +126,7 @@ describe('match identity in a plain WPILib log', () => {
       { name: 'DS:enabled', type: 'boolean', records: [[0, false], [10, true], [22, true]] },
       { name: 'DS:autonomous', type: 'boolean', records: [[0, false], [9.5, true], [22, true]] },
       { name: 'NT:/FMSInfo/FMSControlData', type: 'int64', ...NT, records: [[0, 0], [9.5, 0x32], [10, 0x33]] },
+      // No Alerts: their records at 60 s would stretch the log past the cut.
       ...dlmMatch().slice(3).filter((e) => !e.name.includes('Alerts')),
     ],
     /** The program back: enabled in auto from its first record, straight into teleop at 3 s with no disable. */
