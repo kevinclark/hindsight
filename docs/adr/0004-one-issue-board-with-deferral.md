@@ -23,7 +23,8 @@ fix everything at once.
 
   A deferral carries a workaround line for the drive team. When Hindsight has the event schedule, it suggests the
   point.
-- A must-fix class can never be deferred. The pre-match check reads all open deferrals together.
+- Every issue can be deferred (amended 2026-10-24: no must-fix class for now; one may be added once real events show
+  which problems a team must never carry). The pre-match check reads all open deferrals together.
 - The owner is a role (software, pit, drive). The board records who changed what.
 
 ## Why
