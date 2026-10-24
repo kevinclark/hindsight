@@ -35,6 +35,8 @@
   let linkedRepo = ''
   /** The draft was opened by start(): its logs are linked to this team's sources, so the draft gets the team. */
   let stampTeam = false
+  /** Bumped by start(): a load or code read still running from before (another robot's log, its Read) is dropped when it ends. */
+  let generation = 0
   let json = $state<ProfileJson | null>(null)
   let notUsed = $state<{ key: string; why: string }[]>([])
   let guessedSignals = $state<{ signal: string; key: string; alternatives: string[] }[]>([])
@@ -106,14 +108,18 @@
     const files = Array.from(list ?? [])
     if (files.length === 0) return
     if (!fromLink) { linkedRepo = ''; stampTeam = false }
+    // Two drops add up (a second log joins the draft); a start() in between replaces both.
+    const mine = generation
     busy = true
     await new Promise((r) => setTimeout(r, 30))
+    if (mine !== generation) return
     const found: string[] = []
     let newLogs = false, newSnapshot = false
     let profile: ProfileJson | null = null
     for (const f of files) {
       try {
         const bytes = new Uint8Array(await f.arrayBuffer())
+        if (mine !== generation) return
         if (startsWithWpilog(bytes)) {
           const log: WpilogFile = openWpilog(bytes)
           logs = [...logs.filter((l) => l.fileName !== f.name), { log, fileName: f.name }]
@@ -145,6 +151,7 @@
   async function loadCode(list: FileList | null) {
     const files = Array.from(list ?? [])
     if (files.length === 0) return
+    const mine = generation
     busy = true
     const read: CodeFile[] = []
     for (const f of files) {
@@ -153,9 +160,12 @@
     }
     try {
       await loadJavaInPage()
-      useHints(codeHints(read, await codeHead(gitRepoOfFiles(files))), 'code folder')
+      const head = await codeHead(gitRepoOfFiles(files))
+      if (mine !== generation) return
+      useHints(codeHints(read, head), 'code folder')
       problems = []
     } catch (error) {
+      if (mine !== generation) return
       problems = [error instanceof Error ? error.message : String(error)]
     }
     busy = false
@@ -167,6 +177,7 @@
    */
   export async function start(files: File[], spec: string): Promise<void> {
     const s = builderStart(spec)
+    generation++
     logs = []; snapshot = null; hints = null; json = null
     ;({ keptAs, openedProfile, keptNote, problems, draftNotes, notUsed, guessedSignals, seenLimits, hintsFrom, githubSpec, askingGitHub, linkedRepo, stampTeam } = s)
     await load(files, true)
@@ -189,13 +200,17 @@
   async function loadGitHub(spec: string) {
     const parsed = parseGitHub(spec)
     if (!parsed?.ref) { problems = [`"${spec}" isn't a GitHub repo and branch: write it as owner/repo@branch.`]; return }
+    const mine = generation
     busy = true
     try {
       await loadJavaInPage()
-      useHints(await hintsAt(browserGitHub(parsed.repo), parsed.ref), `${parsed.repo} (GitHub)`)
+      const found = await hintsAt(browserGitHub(parsed.repo), parsed.ref)
+      if (mine !== generation) return
+      useHints(found, `${parsed.repo} (GitHub)`)
       askingGitHub = false
       problems = []
     } catch (error) {
+      if (mine !== generation) return
       problems = [error instanceof Error ? error.message : String(error)]
     }
     busy = false
