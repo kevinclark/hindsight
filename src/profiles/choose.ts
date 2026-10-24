@@ -21,6 +21,8 @@ export interface ProfileChoice {
    * and mechanisms aren't run, and the match's auto and teleop lengths are measured from the log.
    */
   misfit?: boolean
+  /** The code name the log gives itself (its Codebase, or ProjectName), when the choice was by signals. */
+  codebase?: string
 }
 
 /** Below this share of the profile's signals, the log is probably from another robot or another year's code. */
@@ -48,6 +50,15 @@ export function profileKeys(profile: RobotProfile): string[] {
 export function profileFit(log: WpilogFile, profile: RobotProfile): { present: number; total: number } {
   const keys = profileKeys(profile)
   return { present: keys.filter((k) => hasEntry(log, k)).length, total: keys.length }
+}
+
+/**
+ * The robot to name for a log. A best guess by signals that doesn't fit is not the robot (the library says the same,
+ * src/hub/describe.ts robotIdentity): the log's own code name stands in, marked as one.
+ */
+export function robotName(profileName: string, choice: { how: ProfileChoice['how']; misfit?: boolean }, codebase: string | undefined): string {
+  if (choice.how !== 'signals' || !choice.misfit) return profileName
+  return codebase ? `${codebase} (code name)` : 'a robot no profile fits'
 }
 
 const MISFIT_TEXT = 'So the rules about specific motors, devices, cameras and mechanisms were not run, and the auto and teleop lengths were measured from this log.'
@@ -84,7 +95,7 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
   return {
     profile: best.p,
     choice: {
-      how: 'signals', fit: best.fit, misfit: low(best.fit),
+      how: 'signals', fit: best.fit, misfit: low(best.fit), codebase,
       note: `${named}; using "${best.p.name}", which fits best: ${fitText(best.fit)}.${low(best.fit) ? ` ${MISFIT_TEXT} Add a profile for this robot, or choose one.` : ''}`,
     },
   }

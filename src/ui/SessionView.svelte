@@ -7,7 +7,7 @@
   import { summarizeLogWithCode, type MatchSummary } from '../session/summary.ts'
   import CodeFolderControl from './CodeFolderControl.svelte'
   import { codeFolder } from './code-folder.svelte.ts'
-  import { PROFILE_FIT_MIN } from '../profiles/choose.ts'
+  import { PROFILE_FIT_MIN, robotName } from '../profiles/choose.ts'
   import { PROFILES, profileId } from '../profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
   import { profilesNow } from './kept-profiles.svelte.ts'
@@ -152,11 +152,16 @@
   const changes = $derived(session ? loggingChanges(session.matches) : [])
   const missingAll = $derived(session ? neverLogged(session.matches) : [])
   const withLogging = $derived(session ? session.matches.filter((m) => m.logging).length : 0)
-  // The robots (profiles) this session's logs were read with, and how many matches each.
+  // A best guess by signals that doesn't fit names no robot: such logs are grouped and named by their own code name.
+  const guessed = (r: MatchSummary['robot']) => r.how === 'signals' && r.present < PROFILE_FIT_MIN * r.total
+  // The robots this session's logs are from, and how many matches each.
   const robots = $derived.by(() => {
     const by = new Map<string, MatchSummary[]>()
-    for (const m of session?.matches ?? []) by.set(m.robot.profileId, [...(by.get(m.robot.profileId) ?? []), m])
-    return [...by.values()].map((ms) => ({ robot: ms[0].robot, matches: ms }))
+    for (const m of session?.matches ?? []) {
+      const key = guessed(m.robot) ? `code name ${m.robot.codebase ?? ''}` : m.robot.profileId
+      by.set(key, [...(by.get(key) ?? []), m])
+    }
+    return [...by].map(([key, ms]) => ({ key, robot: ms[0].robot, matches: ms }))
   })
   // Logs the robot profile doesn't fit (another robot, or another year's code): their mechanism and timing findings are suspect.
   const misfits = $derived(session ? session.matches.filter((m) => m.robot.present < PROFILE_FIT_MIN * m.robot.total) : [])
@@ -525,8 +530,8 @@
       {/if}
     </section>
   {/if}
-  {#each robots as r (r.robot.profileId)}
-    <p class="note">Robot: <strong>{r.robot.name}</strong>, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
+  {#each robots as r (r.key)}
+    <p class="note">Robot: <strong>{robotName(r.robot.name, { how: r.robot.how, misfit: guessed(r.robot) }, r.robot.codebase)}</strong>{#if guessed(r.robot)}, no profile is for this robot{:else}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
   {/each}
   {#if onDraft}{#each offers as { link: l, logs, total, refs } (l.code.repo)}
     <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}{refs > 1 ? ` (${logs} of these ${total} logs ran it; ${refs} commits in all)` : ''}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>

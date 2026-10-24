@@ -82,7 +82,7 @@ export interface MatchSummary {
   /** The code build the log says it ran (/RealMetadata): sha, branch and whether it had uncommitted changes. Absent in summaries made before this was kept. */
   build?: { sha: string; branch: string; uncommitted: boolean }
   /** The robot profile used for this log, how it was picked, and how many of its signals are in the log. */
-  robot: { profileId: string; name: string; code: CodePin; how: ProfileChoice['how']; note: string | null; present: number; total: number }
+  robot: { profileId: string; name: string; code: CodePin; how: ProfileChoice['how']; note: string | null; present: number; total: number; codebase?: string }
   /** When one match was recorded in several logs (the robot program restarted mid-match): every log's file name. */
   pieces?: string[]
   /** Each signal the robot profile expects and its state in this log (the Logging tab). Absent in older summaries. */
@@ -168,6 +168,7 @@ function robotOf(match: Match): MatchSummary['robot'] {
   return {
     profileId: profileId(match.profile), name: match.profile.name, code: match.profile.code,
     how: match.profileChoice.how, note: match.profileChoice.note, ...fit,
+    ...(match.profileChoice.codebase ? { codebase: match.profileChoice.codebase } : {}),
   }
 }
 
