@@ -53,11 +53,22 @@ export interface PitCheckEvent {
   when: string
 }
 
-export type HistoryEvent = IssueEvent | PitCheckEvent
+/**
+ * A well-formed JSON line this build cannot type (a newer build's line, such as the issue board's). It is never folded;
+ * it is kept so that saving the file writes the line back exactly as it came.
+ */
+export interface OpaqueEvent {
+  type: 'opaque'
+  raw: string
+  when: string
+}
+
+export type HistoryEvent = IssueEvent | PitCheckEvent | OpaqueEvent
 
 export const HISTORY_FILE_NAME = 'hindsight-history.jsonl'
 
-/** Read a history file. Lines that aren't issue or pit-check events are skipped and counted, never fatal. */
+/** Read a history file. A JSON object line this build can't type is kept as an OpaqueEvent; `skipped` counts only
+ * lines that aren't JSON objects. Never fatal. */
 export function parseHistory(text: string): { events: HistoryEvent[]; skipped: number } {
   const events: HistoryEvent[] = []
   let skipped = 0
@@ -65,10 +76,12 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
     if (!line.trim()) continue
     try {
       const e = JSON.parse(line)
-      if (e.type === 'issue' && typeof e.key === 'string' && ['known', 'fixed', 'new'].includes(e.status)) events.push({ note: '', when: '', ...e })
+      const isObject = typeof e === 'object' && e !== null && !Array.isArray(e)
+      if (!isObject) skipped++
+      else if (e.type === 'issue' && typeof e.key === 'string' && ['known', 'fixed', 'new'].includes(e.status)) events.push({ note: '', when: '', ...e })
       else if (e.type === 'issue' && typeof e.key === 'string' && ['wrong', 'real', 'unmark'].includes(e.status) && typeof e.match === 'string' && e.match) events.push({ note: '', when: '', ...e })
       else if (e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
-      else skipped++
+      else events.push({ type: 'opaque', raw: line, when: typeof e.when === 'string' ? e.when : '' })
     } catch {
       skipped++
     }
@@ -77,7 +90,7 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
 }
 
 export function serializeHistory(events: HistoryEvent[]): string {
-  return events.map((e) => JSON.stringify(e)).join('\n') + (events.length ? '\n' : '')
+  return events.map((e) => (e.type === 'opaque' ? e.raw : JSON.stringify(e))).join('\n') + (events.length ? '\n' : '')
 }
 
 /** Combine two lists of events, dropping exact duplicates (the same file loaded twice). */
