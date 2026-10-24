@@ -83,11 +83,16 @@ describe('an ended next-event deferral is shown only when recent and datable', (
 
 describe('the gate line once the event is over', () => {
   const s = session([quiet(2), quiet(3), fired(4), fired(5)])
-  const done = parseSchedule(RAW.slice(0, 4) as never)
-  it('with a schedule and no match left, strip.over is set and the gate still counts the open reds', () => {
+  // Every match on the schedule played, a playoff match among them: the team is done.
+  const done = parseSchedule(RAW.map((m) => ({ ...m, actual_time: m.time ?? BASE / 1000 })) as never)
+  it('with playoffs on the schedule and no match left, strip.over is set and the gate still counts the open reds', () => {
     const b = buildBoard(input(s, [], done))
     expect(b.strip.over).toBe(true)
     expect(b.strip.gate).toBe(1)
+  })
+  it('after the last qualification, before The Blue Alliance lists any playoff match, it is not over (the team may be picked)', () => {
+    const qualsDone = parseSchedule(RAW.slice(0, 4) as never)
+    expect(buildBoard(input(s, [], qualsDone)).strip.over).toBe(false)
   })
   it('with a next match it is not over; with no schedule it is not over either', () => {
     expect(buildBoard(input(s)).strip.over).toBe(false)
