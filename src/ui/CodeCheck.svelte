@@ -5,13 +5,19 @@
 -->
 <script lang="ts">
   import CodeFolderControl from './CodeFolderControl.svelte'
+  import FixPreview from './FixPreview.svelte'
   import type { RobotProfile } from '../profiles/types.ts'
   import { codeFolder } from './code-folder.svelte.ts'
   import { CODE_RULES, checkFolder, type FolderCheck } from '../code/check/index.ts'
   import { loadJavaInPage } from '../code/check/browser-java.ts'
   import { fileName } from '../code/check/java.ts'
+  import { clashing } from '../code/check/fix-patch.ts'
 
-  let { robotSha, robotDirty, suggest, onchecked }: { robotSha: string | null; robotDirty: boolean; suggest?: RobotProfile['code']; onchecked?: (check: FolderCheck | null) => void } = $props()
+  let { robotSha, robotDirty, suggest, onchecked, sure }: {
+    robotSha: string | null; robotDirty: boolean; suggest?: RobotProfile['code']; onchecked?: (check: FolderCheck | null) => void
+    /** A check's "How sure" line from the team's marks (null when it has none), shown beside its fix. Left out where no history is in reach. */
+    sure?: (rule: string) => string | null
+  } = $props()
 
   let result = $state.raw<FolderCheck | null>(null)
   let problem = $state<string | null>(null)
@@ -41,6 +47,13 @@
 
   /** Findings grouped by check, in CODE_RULES order (the ones that cost a match most directly first). */
   const groups = $derived(CODE_RULES.map((rule) => (result?.report.findings ?? []).filter((f) => f.rule === rule.id)).filter((g) => g.length > 0))
+  /** Fixes by the old-file lines they change: a finding whose fix shares one with another finding's says so. */
+  const sharedLine = $derived.by(() => {
+    // A fix whose hunks (context included) meet another finding's: git applies one, then rejects the other. By finding, not by text.
+    const findings = result?.report.findings ?? []
+    const clash = clashing(findings.map((f) => f.fix?.patch ?? ''))
+    return (f: { fix?: { patch: string } }) => clash[findings.indexOf(f as (typeof findings)[number])] ?? false
+  })
   const short = (sha: string) => sha.slice(0, 7)
 </script>
 
@@ -72,6 +85,7 @@
               <p>{f.meaning}</p>
               <dl>{#each Object.entries(f.evidence) as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}<dt>file</dt><dd><code>{f.file}</code></dd></dl>
               <p><strong>Next:</strong> {f.nextStep} <span class="muted">({f.rule})</span></p>
+              <FixPreview finding={f} sure={sure?.(f.rule) ?? null} sameLine={sharedLine(f)} />
             </details>
           </li>
         {/each}

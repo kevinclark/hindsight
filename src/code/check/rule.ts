@@ -26,6 +26,7 @@
  * Code findings are context for the software lead. They never count toward Foresight's GO.
  */
 import { definedOnly } from '../../rules/run.ts'
+import { patchOf, type Fix } from './fix-patch.ts'
 import { lineOf, type Node } from './java.ts'
 import type { Project } from './project.ts'
 
@@ -37,6 +38,11 @@ export interface CodeProblem {
   at?: Node
   /** The facts behind it, labelled in plain English. A value left undefined is left out. */
   evidence?: Record<string, number | string | undefined>
+  /**
+   * The edit that fixes it, only where the edit is mechanical and certain, and what it does not fix. Hindsight shows it
+   * as a diff the student applies (ADR 2); it never changes a file itself.
+   */
+  fix?: Fix
 }
 
 interface Description {
@@ -68,6 +74,8 @@ export interface CodeFinding {
   evidence: Record<string, number | string>
   meaning: string
   nextStep: string
+  /** The fix as a patch to read, copy or save (fix-patch.ts), with what it does not fix. Not in the command line's or the Action's output. */
+  fix?: { patch: string; doesNotFix: string }
 }
 
 export interface CodeReport {
@@ -84,7 +92,7 @@ export function runCodeRules(rules: CodeRule[], project: Project): CodeReport {
   for (const rule of rules) {
     try {
       for (const { piece, problems, unjudged } of lookAt(rule, project)) {
-        for (const problem of problems) report.findings.push({ ...describe(rule), ...where(rule, problem.at ?? piece, project), ...said(problem) })
+        for (const problem of problems) report.findings.push({ ...describe(rule), ...where(rule, problem.at ?? piece, project), ...said(problem, project) })
         for (const note of unjudged) report.notJudged.push({ rule: rule.id, ...where(rule, note.at ?? piece, project), why: note.why })
       }
     } catch (error) {
@@ -113,7 +121,10 @@ function where(rule: CodeRule, at: Node | undefined, project: Project): { file: 
 }
 
 /** The problem's own words, with evidence left undefined dropped. */
-const said = (problem: CodeProblem) => ({ message: problem.message, evidence: definedOnly(problem.evidence) })
+function said(problem: CodeProblem, project: Project) {
+  return { message: problem.message, evidence: definedOnly(problem.evidence), ...(problem.fix ? { fix: { patch: patchOf(problem.fix.edits, new Map(project.files.map((f) => [f.path, f.text]))), doesNotFix: problem.fix.doesNotFix } } : {}) }
+}
 
 // Numbers are said the same way as in the match rules.
+export type { Fix, FixEdit } from './fix-patch.ts'
 export { pct, plural, round } from '../../rules/rule.ts'
