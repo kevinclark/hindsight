@@ -5,9 +5,9 @@
  * the field (it came back mid-match). A normal field log starts before the match and runs past it. With the match's
  * other logs loaded too, it says how long there was no program (the robot's wall clock), and which controllers
  * came back.
- * Why: MTTD 2025 Q28: the program restarted twice in teleop, so the match is three logs ("the logs seem corrupted")
+ * Why: One 2025 match: the program restarted twice in teleop, so the match is three logs ("the logs seem corrupted")
  * and there was no log (program down or starting up) for 13 s and 50 s of the last ~84 s. After the second restart the driver's
- * controller (port 0) was missing. In 81 logs (MTTD 2025 and CalGames 2026) only Q28's start or end enabled on the field.
+ * controller (port 0) was missing. In 81 logs (2025 and 2026) only one match's start or end enabled on the field.
  */
 import { rule, round } from '../rule.ts'
 import type { MatchView, Signal } from '../view.ts'
@@ -28,7 +28,7 @@ export default rule({
     { id: 'cut-short', cause: 'Only the log file was cut short (copied while the robot was still writing it)', look: 'the robot\'s log folder: is there a later log from this match?' },
   ],
   nextStep: 'Read the Driver Station log\'s messages for this match (a stack trace means the code crashed), and load the match\'s other robot logs to see how long the robot had no program.',
-  incident: 'MTTD 2025 Q28: two restarts in teleop, three logs, no program for ~63 s of the last ~84 s (mttd-2025-context.md §1)',
+  incident: 'One 2025 match: two restarts in teleop, three logs, no program for ~63 s of the last ~84 s (mttd-2025-context.md §1)',
 
   check(match) {
     if (!match.onField) return match.couldNotCheck('not a match on the field')
@@ -50,7 +50,7 @@ export default rule({
     const clockAfterStart = clock ? clockJustAfterStart(match, clock) : NaN
     const lowestVolts = endsMid ? lowestInLastTwoSeconds(match) : NaN
 
-    // Wall-clock gaps are good to ~2 s: the robot clock offset scatters by that much between logs (MTTD Q28).
+    // Wall-clock gaps are good to ~2 s: the robot clock offset scatters by that much between logs (one 2025 match).
     const downBefore = before && me ? `, ${(me.start - before.end).toFixed(0)} s after the previous log stopped` : ''
     const downAfter = after && me ? `; the next log starts ${(after.start - me.end).toFixed(0)} s later` : ''
     const noController = lostPorts.length ? `; no controller on ${ports(lostPorts)} after the restart` : ''

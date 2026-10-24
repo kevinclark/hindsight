@@ -4,7 +4,7 @@
  * Checks: the log's first enable is autonomous with the field (FMS) attached, and the auto chooser reads "None" at
  * that moment.
  * Why: the chooser starts at "None" every time the robot code starts, and the drive team picks the auto by hand after
- * the field connects (CalGames 2026 Q13, Q21 and P0: 1.0–6.1 s after the FMS attached). Forget it, and the robot sits
+ * the field connects (three 2026 matches: 1.0–6.1 s after the FMS attached). Forget it, and the robot sits
  * still for the whole auto.
  *
  * Only the first enable, and only on the field (measured on 141 local logs, 2026-10-19): off the field, 74 of the 83

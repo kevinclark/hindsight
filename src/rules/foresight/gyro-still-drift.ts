@@ -24,7 +24,7 @@ export default rule({
     { id: 'gyro', cause: 'A loose or faulty gyro (Pigeon), or one mounted where it vibrates', look: 'the Pigeon\'s mounting and CAN connector; Phoenix Tuner X faults' },
   ],
   nextStep: 'Leave the robot untouched for 20 s and watch the number; if it stays high long after power-on, check the gyro\'s mounting and connector.',
-  incident: 'CalGames 2026 Q21: 0.49° per 20 s early in the disabled stretch (foresight-proposal.md)',
+  incident: 'One 2026 match: 0.49° per 20 s early in the disabled stretch (foresight-proposal.md)',
 
   check(match) {
     const stretch = match.pitStretch

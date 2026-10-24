@@ -2,7 +2,7 @@
  * Does the fuel gauge say this battery has lost capacity?
  *
  * Checks: BatteryGauge/EffectiveCapacityAh, only while BatteryGauge/Valid is true, against 12 Ah.
- * Why: CalGames 2026 P0's battery collapsed after ~3.5 Ah. The gauges learn each battery's capacity. 12 Ah is the
+ * Why: One 2026 match's battery collapsed after ~3.5 Ah. The gauges learn each battery's capacity. 12 Ah is the
  * AndyMark CBA "not for competition" line, an assumption until gauge readings are compared with CBA tests.
  */
 import { rule, round } from '../rule.ts'
@@ -21,7 +21,7 @@ export default rule({
     { id: 'gauge-off', cause: 'The gauge\'s learned number is wrong (it has not seen a full cycle yet)', look: 'compare with a capacity test; check whether the reading moves after a full charge and discharge' },
   ],
   nextStep: 'Capacity-test this battery (a battery analyzer: 10 A down to 11 V). Under 12 Ah twice means practice only.',
-  incident: 'CalGames 2026 P0 battery collapse; gauge snapshots (hindsight-proposal.md §3, battery-sources.md)',
+  incident: 'One 2026 match, battery collapse; gauge snapshots (hindsight-proposal.md §3, battery-sources.md)',
 
   check(match) {
     const valid = match.signal(match.batteryKey('gaugeValid'))

@@ -2,7 +2,7 @@
  * The "fleet curve": what a healthy battery's estimated open-circuit voltage looks like as charge is drawn.
  *
  * Phase 1 has no battery history yet, so the curve is built into the app: for each 0.5 Ah bin, the LOWER of the
- * CalGames 2026 Q13 and Q21 batteries (both finished their matches without browning out). Measured with
+ * batteries of two 2026 matches (both finished their matches without browning out). Measured with
  * ocvCurve() at 0.5 Ah bins, R from current steps (11.3 and 11.4 mΩ).
  *
  * Caveat: two batteries from one weekend. Phase 2 replaces this with the team's own history.jsonl.

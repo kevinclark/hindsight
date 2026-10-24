@@ -999,7 +999,7 @@ describe('backtest against the hand profiles (real logs)', () => {
   })
   // No hand profile for these robots: the motor counts come from their code (Charged-Up and Crescendo, counted by hand
   // on 2026-10-22). 2024 logs its elevator's two motors as one value and its climber not at all, so 16 of 18.
-  it.skipIf(!existsSync(OLDER.charged))('8033 2023 CalGames Q13: all 15 motors in the code, swerve and the elevator grouped', () => {
+  it.skipIf(!existsSync(OLDER.charged))('8033 2023 TEST Q1: all 15 motors in the code, swerve and the elevator grouped', () => {
     const r = bt(OLDER.charged)
     expect(r.falsePositives).toHaveLength(15)
     expect(r.builtGroups.filter((g) => g.evidence !== 'one motor')).toEqual([
@@ -1007,7 +1007,7 @@ describe('backtest against the hand profiles (real logs)', () => {
     ])
     expect(r.warnings).toEqual([])
   })
-  it.skipIf(!existsSync(OLDER.crescendo))('8033 2024 Chezy Q9: 16 of the code\'s 18 motors, every one the log has', () => {
+  it.skipIf(!existsSync(OLDER.crescendo))('8033 2024 TEST Q2: 16 of the code\'s 18 motors, every one the log has', () => {
     const r = bt(OLDER.crescendo)
     expect(r.falsePositives).toHaveLength(16)
     expect(r.builtGroups.filter((g) => g.evidence !== 'one motor')).toEqual([{ name: 'Drive', size: 4, evidence: 'swerve' }, { name: 'Turn', size: 4, evidence: 'swerve' }])

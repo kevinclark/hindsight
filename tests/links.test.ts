@@ -1,5 +1,5 @@
 // Links between findings (src/rules/links.ts) and how the lists nest them (src/report/finding-tree.ts). The chains
-// are shaped like the real ones (CalGames Q13, P0, Q21; MTTD Q41, Q61), with their times and evidence; the real logs
+// are shaped like the real ones (three 2026 matches and two 2025 ones), with their times and evidence; the real logs
 // themselves are checked in calgames-logs.test.ts and mttd-rules.test.ts when they are in ~/Downloads.
 import { describe, expect, it } from 'vitest'
 import { FORESIGHT_RULES, LINKS, PARENTS, RULES, ruleById, runRules } from '../src/rules/index.ts'

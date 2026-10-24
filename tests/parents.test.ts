@@ -1,5 +1,5 @@
 // Parents (src/rules/parents.ts): a finding that names a group, made by the reduce stage (consolidate in run.ts).
-// The CAN group is shaped like CalGames 2026 Q2 with no bus in the robot profile (25 devices, 614.037–614.284 s); the
+// The CAN group is shaped like one 2026 match with no bus in the robot profile (25 devices, 614.037–614.284 s); the
 // real log is in calgames-logs.test.ts when it is in ~/Downloads.
 import { describe, expect, it } from 'vitest'
 import { CONSOLIDATORS, LINKS, PARENTS, RULES, ruleById } from '../src/rules/index.ts'
@@ -165,7 +165,7 @@ describe('alerts the robot code raised for a group', () => {
   })
 })
 
-/** CalGames 2026 Q2's 25 devices in the order they dropped. */
+/** one 2026 match's 25 devices in the order they dropped. */
 const Q2_DEVICES = [
   'Flywheel leader', 'Flywheel follower 16', 'Flywheel follower 17', 'Flywheel follower 18', 'Hood', 'Intake pivot',
   'Intake roller leader', 'Indexer', 'Kicker leader', 'Kicker follower', 'Intake CANcoder', 'Front Left drive',

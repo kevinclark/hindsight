@@ -3,7 +3,7 @@
  *
  * Checks: the lowest battery voltage while enabled, against the brownout setting + 1.0 V, and the seconds spent
  * under 7 V in auto and in teleop.
- * Why: CalGames 2026 Q13 (6.28 V) and Q21 (6.15 V) came within 0.3 V of the 6.0 V setting a day before P0 browned out.
+ * Why: Two 2026 matches (6.28 V and 6.15 V) came within 0.3 V of the 6.0 V setting a day before a third browned out.
  */
 import { below, rule, round, totalSeconds, volts } from '../rule.ts'
 import { batteryHealth, restBeforeAuto } from './battery-health.ts'
@@ -23,7 +23,7 @@ export default rule({
     { id: 'wiring', cause: 'High resistance in the battery leads, connectors or main breaker', look: 'Power tab: battery + wiring resistance (over 20 mΩ is high); tug-test the battery leads and main breaker lugs' },
   ],
   nextStep: 'Keep at least 1 V of margin: turn on supply limits on the big motor groups, use only batteries that pass a load test, and shed load in code when the voltage nears 7 V.',
-  incident: 'CalGames 2026 Q13/Q21: minimum 6.28 V and 6.15 V against a 6.0 V setting (2026-10-17-calgames-q13-log-analysis.md §3)',
+  incident: 'Two 2026 matches: minimum 6.28 V and 6.15 V against a 6.0 V setting (2026-10-17-calgames-q13-log-analysis.md §3)',
 
   check(match) {
     const battery = match.signal('batteryVoltage')

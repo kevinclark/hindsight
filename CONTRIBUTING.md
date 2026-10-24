@@ -28,7 +28,7 @@ export default rule({
     { id: 'worn', cause: 'A worn battery that no longer holds a charge', look: 'Power tab: battery + wiring resistance' },
   ],
   nextStep: 'Put a battery reading 12.5 V or more at rest on the robot.',
-  incident: 'CalGames 2026 Q21: 12.44 V before auto',
+  incident: 'TEST Q1: 12.44 V before auto',
 
   check(match) {
     if (match.autoStart === null) return              // never enabled: nothing to check

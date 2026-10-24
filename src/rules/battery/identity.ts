@@ -3,7 +3,7 @@
  *
  * Checks: the FRC8033BatteryTracker keys (Battery/Id, Battery/IdSource) at the start of the match. Fires when the ID
  * is unknown, or came from the dashboard because the fuel gauge wasn't reporting.
- * Why: CalGames 2026 P0 browned out on a weak battery and nobody could say which one.
+ * Why: One 2026 match browned out on a weak battery and nobody could say which one.
  */
 import { rule } from '../rule.ts'
 
@@ -19,7 +19,7 @@ export default rule({
     { id: 'code', cause: 'The robot code is not logging the battery ID at all', look: 'the robot code: is the battery tracker created in robotInit, and does it log Battery/Id?' },
   ],
   nextStep: 'Plug in the battery\'s fuel gauge, or type its label in the battery-ID dashboard field after every swap.',
-  incident: 'CalGames 2026 P0: the weak battery could not be identified after the match (hindsight-proposal.md §3); library: kevinclark/8033-battery-tracker',
+  incident: 'One 2026 match: the weak battery could not be identified after the match (hindsight-proposal.md §3); library: kevinclark/8033-battery-tracker',
 
   check(match) {
     const at = match.autoStart ?? Infinity

@@ -3,7 +3,7 @@
  * calls it at points along a match log's disabled stretch. Both go through here, so they cannot drift apart.
  *
  *   1. Nothing is judged until SETTLE_SECONDS after robot code start: camera and PhotonVision alerts clear 12.5–18.9 s
- *      after the first record in the CalGames logs (Q13, Q21, P0), so 30 s leaves a margin.
+ *      after the first record in three 2026 logs, so 30 s leaves a margin.
  *   2. The stretch checked runs from then (or AFTER_DISABLE_SECONDS after the robot was last disabled) to now.
  *   3. That stretch is written as a small .wpilog (records.ts) and read by the ordinary match model and rules.
  */

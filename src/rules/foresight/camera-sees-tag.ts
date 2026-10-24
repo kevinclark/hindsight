@@ -8,7 +8,7 @@
  * never moves the verdict. The pass lasts as long as the stretch: after the robot is driven, or after 15 min, the
  * oldest records are gone and the step comes back (a camera knocked during a drive should be shown a tag again).
  * Why the raw result and not the accepted pose: on this robot the pose is logged only from two or more tags (multi-
- * tag), so a single hand-held tag never makes one. CalGames 2026 logs (Q13, Q21, P0; both cameras): 0 of 19,095
+ * tag), so a single hand-held tag never makes one. 2026 logs (three matches; both cameras): 0 of 19,095
  * one-tag results logged a pose; all 20,873 results with two or more did; no pose without a tag.
  */
 import { rule } from '../rule.ts'

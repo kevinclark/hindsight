@@ -36,7 +36,7 @@ export const WANTED_CHECKS: WantedCheck[] = [
   {
     id: 'wanted/hood-zeroed-since-boot',
     question: 'Was the hood zeroed since the robot code started?',
-    incident: 'CalGames 2026 Q13 and Q21: the zero was cancelled at the start of auto, and the hood has no absolute encoder to fall back on',
+    incident: 'Two 2026 matches: the zero was cancelled at the start of auto, and the hood has no absolute encoder to fall back on',
     needs: 'a true/false "zeroed since boot" flag for the hood',
   },
   {

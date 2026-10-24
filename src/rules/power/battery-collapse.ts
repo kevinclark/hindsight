@@ -4,7 +4,7 @@
  * Checks: the battery's estimated open-circuit voltage (V + R·I) at each 0.5 Ah of charge drawn, against a healthy
  * battery (src/power/fleet-reference.ts). Fires when any point is more than 1.5 V below. Red when the match also
  * browned out, amber otherwise.
- * Why: CalGames 2026 P0's battery matched Q13/Q21 for the first ~3.5 Ah, then collapsed: ~8 V at 6.25 Ah where a
+ * Why: One 2026 match's battery matched two healthy ones for the first ~3.5 Ah, then collapsed: ~8 V at 6.25 Ah where a
  * healthy battery reads ~10.4 V. It was fully charged (12.66 V) and the wiring was fine (11 mΩ). It was weak.
  */
 import { ocvCurve } from '../../power/battery-model.ts'
@@ -23,7 +23,7 @@ export default rule({
     { id: 'wiring', cause: 'High resistance in the battery leads or connections hiding as a weak battery', look: 'Power tab: battery + wiring resistance; tug-test and re-crimp the leads and main breaker lugs' },
   ],
   nextStep: 'Take this battery out of competition use and capacity-test it (a battery analyzer: 10 A down to 11 V). Under 12 Ah twice means practice only.',
-  incident: 'CalGames 2026 P0: estimated open-circuit voltage collapsed after ~3.5 Ah (hindsight-research/REVIEW.md items 1–3)',
+  incident: 'One 2026 match: estimated open-circuit voltage collapsed after ~3.5 Ah (hindsight-research/REVIEW.md items 1–3)',
 
   check(match) {
     const power = match.power()

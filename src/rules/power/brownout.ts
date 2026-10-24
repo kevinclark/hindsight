@@ -4,7 +4,7 @@
  * Checks: every time the brownout flag turns on (the robot log's, or the Driver Station log's when the robot log has
  * none). Below the brownout setting the roboRIO switches every motor off until the voltage recovers: the robot goes
  * limp.
- * Why: CalGames 2026 P0 browned out 53 times in the last 18 s; nine shots in a row failed.
+ * Why: One 2026 match browned out 53 times in the last 18 s; nine shots in a row failed.
  */
 import { plural, rule, round } from '../rule.ts'
 import { MOTOR_CURRENT_LABEL, type PowerGrid } from '../../power/battery-model.ts'
@@ -23,7 +23,7 @@ export default rule({
     { id: 'loose-connection', cause: 'A connection that opens and closes (battery connector, main breaker, roboRIO power) when the robot is bumped', look: 'did the brownouts follow a bump or hit (collision/impact)? Wiggle-test the battery connector and the roboRIO power plug' },
   ],
   nextStep: 'Find the loads on at each sag (Power tab), turn on current limits for the big ones, and load-test the battery used.',
-  incident: 'CalGames 2026 P0: brownouts from 532.8 s, battery collapse after ~3.5 Ah (8033/robot/2026-10-17-calgames-q13-log-analysis.md, P0 section)',
+  incident: 'One 2026 match: brownouts from 532.8 s, battery collapse after ~3.5 Ah (8033/robot/2026-10-17-calgames-q13-log-analysis.md, P0 section)',
 
   check(match) {
     const onsets = match.signal('brownedOut').turnsOn()

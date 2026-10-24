@@ -2,7 +2,7 @@
  * Did the robot run code that isn't committed?
  *
  * Checks: /RealMetadata/GitDirty says "Uncommitted changes" (older AdvantageKit spells it "Uncomitted changes").
- * Why: CalGames 2026 P0 ran uncommitted code, so nobody can say exactly what was on the robot.
+ * Why: One 2026 match ran uncommitted code, so nobody can say exactly what was on the robot.
  */
 import { isUncommitted } from '../../match/git-dirty.ts'
 import { rule } from '../rule.ts'
@@ -18,7 +18,7 @@ export default rule({
     { id: 'stray-files', cause: 'Files that should be ignored (build output, local settings) are showing up as changes', look: 'git status: which files are listed? Add generated ones to .gitignore' },
   ],
   nextStep: 'Commit and push what was deployed, then redeploy from the commit. At events, deploy only from a clean tree.',
-  incident: 'CalGames 2026 P0: GitDirty = "Uncommitted changes" (hindsight-proposal.md, conclusion 4)',
+  incident: 'One 2026 match: GitDirty = "Uncommitted changes" (hindsight-proposal.md, conclusion 4)',
 
   check(match) {
     const dirty = match.text('gitDirty').last()

@@ -32,7 +32,7 @@ const healthy = harness([
   [10, 'step', '8.000 mode disabled'], [10.2, 'end'],
 ])
 
-/** CalGames Q13: 0.12 s into auto the intake group takes the drum and the zero never prints. */
+/** TEST Q13: 0.12 s into auto the intake group takes the drum and the zero never prints. */
 const q13 = harness([
   [2, 'started'], [2, 'step', '0.000 mode disabled'], [5, 'step', '3.000 mode auto'],
   [5.01, 'init', cmd('z1', 'SequentialCommandGroup', 'DrumSubsystem')],

@@ -4,7 +4,7 @@
  * Checks: for each CAN bus the robot profile maps (canBuses), whether every device on it that reports its health (at
  * least 3) dropped within 1 s of each other, while enabled (in Foresight: while disabled since start-up settled).
  * That is one finding about the bus; can/device-dropout leaves those drops out of its per-device findings.
- * Why: MTTD 2025 Q41: at 745 s every CAN device stopped reporting for 58 s while the loop ran on; the swerve modules'
+ * Why: One 2025 match: at 745 s every CAN device stopped reporting for 58 s while the loop ran on; the swerve modules'
  * refresh status went CanMessageStale and the Pigeon's flag false. Only the Pigeon was reported, as if alone.
  */
 import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
@@ -27,7 +27,7 @@ export default rule({
     { id: 'device-fault', cause: 'One device faulting and taking the others with it', look: 'its status light during a dropout; the vendor tool (Phoenix Tuner, REV Hardware Client) for firmware and faults' },
   ],
   nextStep: 'Check the CANivore itself: its USB cable to the roboRIO (seated and strain-relieved), its power wiring and the CAN wiring at it. Have the code log its status every loop, so the next drop says why.',
-  incident: 'MTTD 2025 Q41: the whole CANivore bus gone for 58 s (mttd-2025-context.md §1)',
+  incident: 'One 2025 match: the whole CANivore bus gone for 58 s (mttd-2025-context.md §1)',
   needsProfile: true,
 
   check(match) {
