@@ -13,7 +13,7 @@ import { PAGE1_ROWS, crashedNote } from '../src/report/session-model.ts'
 import { analyzeFixture, CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
 
 const METRICS = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSecondsOff: 2.0, brownoutVolts: 6, loopOverrunPct: 5, visionOutlierPct: null }
-const fit = { profileId: 'p @ main', name: 'Test robot', code: { repo: 'r', branch: 'main', sha: 'abc1234def' }, how: 'signals', note: null, present: 40, total: 40 }
+const fit: MatchSummary['robot'] = { profileId: 'p @ main', name: 'Test robot', code: { repo: 'r', branch: 'main', sha: 'abc1234def' }, how: 'signals', note: null, present: 40, total: 40 }
 const finding = (key: string, rule: string, severity: string, title: string, value?: number) => ({
   key, rule, severity, title, when: null, evidence: {}, measured: value === undefined ? undefined : [{ label: 'slowest follower', value, unit: '%', threshold: 85 }],
 })
@@ -211,6 +211,23 @@ describe('review fixes', () => {
     expect(few.rows.length).toBe(PAGE1_ROWS)
     // The card still lists every finding, not the fold.
     expect(sessionCard(m).items.length).toBe(61)
+  })
+  it('logs no profile fits go by their own code name, one robot per code name, with no profile code', () => {
+    const guess = (codebase?: string) => ({ ...fit, present: 5, total: 40, misfit: true, ...(codebase ? { codebase } : {}) })
+    const s = groupSessions([match(1, [], { robot: guess('TestBot') }), match(2, [], { robot: guess('TestBot') }), match(3, [], { robot: guess('OtherBot') })])[0]
+    const m = sessionModel(s)
+    expect(m.robots).toEqual([{ name: 'TestBot (code name)', code: '', matches: 2 }, { name: 'OtherBot (code name)', code: '', matches: 1 }])
+    expect(buildText(m)).not.toMatch(/Test robot|profile from code/)
+    expect(sessionCard(m).footer[0]).toBe('TestBot (code name); OtherBot (code name)')
+    // A summary saved before the misfit flag was kept: the fit decides.
+    expect(sessionModel(groupSessions([match(1, [], { robot: { ...fit, present: 5, total: 40, codebase: 'TestBot' } })])[0]).robots[0].name).toBe('TestBot (code name)')
+    // A good fit by signals still names the profile.
+    expect(sessionModel(groupSessions([match(1, [])])[0]).robots[0].name).toBe('Test robot')
+  })
+  it('joining the pieces of a split match keeps a code name any piece logged', () => {
+    const cut = { ...fit, present: 2, total: 40, misfit: true }
+    const j = joinPieces([match(1, [], { robot: { ...fit, present: 5, total: 40, misfit: true, codebase: 'TestBot' } }), match(1, [], { fileName: 'q1b.wpilog', robot: cut })])
+    expect(j.robot).toMatchObject({ present: 2, codebase: 'TestBot' })
   })
   it('joining the pieces of a split match: uncommitted if any piece ran uncommitted code', () => {
     const j = joinPieces([match(1, []), match(1, [], { fileName: 'q1b.wpilog', build: { sha: 'abc1234', branch: 'main', uncommitted: true } })])

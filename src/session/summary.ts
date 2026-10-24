@@ -15,7 +15,7 @@ import { RULES, type Report } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
 import type { CodePin, RobotProfile } from '../profiles/types.ts'
-import { profileFit, type ProfileChoice } from '../profiles/choose.ts'
+import { namesRobot, PROFILE_FIT_MIN, profileFit, robotName, type ProfileChoice } from '../profiles/choose.ts'
 import { profileId } from '../profiles/index.ts'
 import { coverage, worstAcross, type LoggedState } from '../coverage/coverage.ts'
 import { playedAt } from '../match/played-at.ts'
@@ -82,7 +82,7 @@ export interface MatchSummary {
   /** The code build the log says it ran (/RealMetadata): sha, branch and whether it had uncommitted changes. Absent in summaries made before this was kept. */
   build?: { sha: string; branch: string; uncommitted: boolean }
   /** The robot profile used for this log, how it was picked, and how many of its signals are in the log. */
-  robot: { profileId: string; name: string; code: CodePin; how: ProfileChoice['how']; note: string | null; present: number; total: number; codebase?: string }
+  robot: { profileId: string; name: string; code: CodePin; how: ProfileChoice['how']; note: string | null; present: number; total: number; misfit?: boolean; codebase?: string }
   /** When one match was recorded in several logs (the robot program restarted mid-match): every log's file name. */
   pieces?: string[]
   /** Each signal the robot profile expects and its state in this log (the Logging tab). Absent in older summaries. */
@@ -168,8 +168,19 @@ function robotOf(match: Match): MatchSummary['robot'] {
   return {
     profileId: profileId(match.profile), name: match.profile.name, code: match.profile.code,
     how: match.profileChoice.how, note: match.profileChoice.note, ...fit,
+    ...(match.profileChoice.misfit ? { misfit: true } : {}),
     ...(match.profileChoice.codebase ? { codebase: match.profileChoice.codebase } : {}),
   }
+}
+
+/**
+ * The robot a summary is from, as the Session view and its report name and group it (profiles/choose.ts robotName): a
+ * guess that doesn't fit goes by the log's code name. Older summaries have no misfit flag, so it is worked out from the fit.
+ */
+export function summaryRobot(r: MatchSummary['robot']): { key: string; name: string; named: boolean } {
+  const pick = { how: r.how, misfit: r.misfit ?? r.present < PROFILE_FIT_MIN * r.total, codebase: r.codebase }
+  const named = namesRobot(pick)
+  return { key: named ? r.profileId : `code name ${r.codebase ?? ''}`, name: robotName(r.name, pick), named }
 }
 
 /**
@@ -217,7 +228,8 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
     },
     timing: { parseMs: sum(pieces.map((p) => p.timing.parseMs)), rulesMs: sum(pieces.map((p) => p.timing.rulesMs)) },
     problems: pieces.flatMap((p) => p.problems),
-    robot: pieces.reduce((a, b) => (b.robot.present / b.robot.total < a.robot.present / a.robot.total ? b : a)).robot,
+    // The worst-fitting piece's robot, with a code name from any piece (a piece cut short may not have logged it).
+    robot: { codebase: pieces.find((p) => p.robot.codebase)?.robot.codebase, ...pieces.reduce((a, b) => (b.robot.present / b.robot.total < a.robot.present / a.robot.total ? b : a)).robot },
     pieces: pieces.map((p) => p.fileName),
     logging: worstAcross(pieces.map((p) => p.logging)),
   }

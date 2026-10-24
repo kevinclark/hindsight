@@ -4,10 +4,10 @@
   summary of each is kept, so a whole event's folder fits in memory.
 -->
 <script lang="ts">
-  import { summarizeLogWithCode, type MatchSummary } from '../session/summary.ts'
+  import { summarizeLogWithCode, summaryRobot, type MatchSummary } from '../session/summary.ts'
   import CodeFolderControl from './CodeFolderControl.svelte'
   import { codeFolder } from './code-folder.svelte.ts'
-  import { PROFILE_FIT_MIN, robotName } from '../profiles/choose.ts'
+  import { PROFILE_FIT_MIN } from '../profiles/choose.ts'
   import { PROFILES, profileId } from '../profiles/index.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './robot-choice.ts'
   import { profilesNow } from './kept-profiles.svelte.ts'
@@ -152,17 +152,14 @@
   const changes = $derived(session ? loggingChanges(session.matches) : [])
   const missingAll = $derived(session ? neverLogged(session.matches) : [])
   const withLogging = $derived(session ? session.matches.filter((m) => m.logging).length : 0)
-  // A best guess by signals that doesn't fit names no robot: such logs are grouped and named by their own code name.
-  const guessed = (r: MatchSummary['robot']) => r.how === 'signals' && r.present < PROFILE_FIT_MIN * r.total
-  // The robots this session's logs are from, and how many matches each.
+  // The robots this session's logs are from, and how many matches each: a guess that doesn't fit goes by the log's code name.
   const robots = $derived.by(() => {
     const by = new Map<string, MatchSummary[]>()
-    for (const m of session?.matches ?? []) {
-      const key = guessed(m.robot) ? `code name ${m.robot.codebase ?? ''}` : m.robot.profileId
-      by.set(key, [...(by.get(key) ?? []), m])
-    }
-    return [...by].map(([key, ms]) => ({ key, robot: ms[0].robot, matches: ms }))
+    for (const m of session?.matches ?? []) { const { key } = summaryRobot(m.robot); by.set(key, [...(by.get(key) ?? []), m]) }
+    return [...by.values()].map((ms) => ({ robot: ms[0].robot, ...summaryRobot(ms[0].robot), matches: ms }))
   })
+  // The profiles this session's logs name (not a guess that doesn't fit): the code folder's suggestion and the robot list's own robots.
+  const namedRobots = $derived(robots.filter((r) => r.named).map((r) => r.robot.profileId))
   // Logs the robot profile doesn't fit (another robot, or another year's code): their mechanism and timing findings are suspect.
   const misfits = $derived(session ? session.matches.filter((m) => m.robot.present < PROFILE_FIT_MIN * m.robot.total) : [])
   // The robot the student chose for this whole session, if every match has the same choice.
@@ -476,7 +473,7 @@
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
   <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
-  <CodeFolderControl suggest={[...PROFILES, ...stored].find((p) => profileId(p) === robots[0]?.robot.profileId)?.code} />
+  <CodeFolderControl suggest={[...PROFILES, ...stored].find((p) => profileId(p) === namedRobots[0])?.code} />
   {#if summaries.length}<button class="button" disabled={loading} onclick={newSession} title="Clears the log summaries on this page and saved in this browser. Moved logs, session names, battery ids and known-issue marks are kept.">New session</button>{/if}
   <input type="file" webkitdirectory multiple hidden data-reread-input bind:this={rereadInput} onchange={(e) => rereadChosen((e.currentTarget as HTMLInputElement).files)} />
   {#if progress}
@@ -531,14 +528,14 @@
     </section>
   {/if}
   {#each robots as r (r.key)}
-    <p class="note">Robot: <strong>{robotName(r.robot.name, { how: r.robot.how, misfit: guessed(r.robot) }, r.robot.codebase)}</strong>{#if guessed(r.robot)}, no profile is for this robot{:else}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
+    <p class="note">Robot: <strong>{r.name}</strong>{#if !r.named}, no profile is for this robot{:else}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
   {/each}
   {#if onDraft}{#each offers as { link: l, logs, total, refs } (l.code.repo)}
     <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}{refs > 1 ? ` (${logs} of these ${total} logs ran it; ${refs} commits in all)` : ''}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>
   {/each}{/if}
   <p class="note"><label>Robot for this session: <select onchange={(e) => setRobot(session, (e.currentTarget as HTMLSelectElement).value)}>
     <option value="auto" selected={!chosenId}>automatic (from each log)</option>
-    <RobotOptions groups={robotChoices(PROFILES, stored, teamNow(), robots.map((r) => r.robot.profileId))} selectedId={chosenId} />
+    <RobotOptions groups={robotChoices(PROFILES, stored, teamNow(), namedRobots)} selectedId={chosenId} />
   </select></label></p>
   {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
   {#if crashedNote(session)}<p class="note warn">{crashedNote(session)}</p>{/if}

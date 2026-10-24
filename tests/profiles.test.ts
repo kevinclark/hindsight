@@ -40,10 +40,10 @@ describe('choosing a robot profile', () => {
   })
   it('a best guess that fits badly is named by the log\'s own code name, not the profile (as in the library)', () => {
     const { profile, choice } = chooseProfile(log('2019 Robot', 'main'), profiles)
-    expect(robotName(profile.name, choice, choice.codebase)).toBe('2019 Robot (code name)')
-    expect(robotName(profile.name, { how: 'signals', misfit: true }, undefined)).toBe('a robot no profile fits')
+    expect(robotName(profile.name, choice)).toBe('2019 Robot (code name)')
+    expect(robotName(profile.name, { how: 'signals', misfit: true })).toBe('unnamed robot')
     const named = chooseProfile(log('2026 Offseason', 'event-x'), profiles)
-    expect(robotName(named.profile.name, named.choice, named.choice.codebase)).toBe(named.profile.name)
+    expect(robotName(named.profile.name, named.choice)).toBe(named.profile.name)
   })
   it('the student\'s choice wins', () => {
     const { profile, choice } = chooseProfile(log('2026 Offseason', 'event-x'), profiles, other)

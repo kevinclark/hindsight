@@ -130,7 +130,7 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>,
     crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
     cameBack: new Set(active.filter((f) => status(f) === 'came back').map((f) => f.key)),
     header: {
-      robot: robotName(m.profile.name, m.profileChoice, m.profileChoice.codebase), event: m.event, matchLabel: m.matchLabel, date: matchDate(analysis), logFile: m.fileName,
+      robot: robotName(m.profile.name, m.profileChoice), event: m.event, matchLabel: m.matchLabel, date: matchDate(analysis), logFile: m.fileName,
       dsFiles: m.ds.map((d) => d.fileName), build: buildLine(m.build), version: VERSION,
     },
     bottomLine: '',

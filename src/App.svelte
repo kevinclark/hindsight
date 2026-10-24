@@ -32,7 +32,7 @@
   import { howSure, matchRef, realHere, trackRecord, withMarks, wrongHere, type Fire } from './triage/track-record.ts'
   import type { Finding } from './rules/types.ts'
   import { PROFILES, profileId } from './profiles/index.ts'
-  import { robotName } from './profiles/choose.ts'
+  import { namesRobot, robotName } from './profiles/choose.ts'
   import { chooseRobot, chosenRobot, HOW_WORDS } from './ui/robot-choice.ts'
   import ProfileBuilder from './ui/ProfileBuilder.svelte'
   import { profilesNow } from './ui/kept-profiles.svelte.ts'
@@ -364,13 +364,13 @@
         {#if isUncommitted(current.match.build.dirty)}<strong class="dirty">(uncommitted changes)</strong>{/if}
       </p>
       <details class="more">
-        <summary>Robot: <strong>{robotName(current.match.profile.name, current.match.profileChoice, current.match.profileChoice.codebase)}</strong></summary>
+        <summary>Robot: <strong>{robotName(current.match.profile.name, current.match.profileChoice)}</strong></summary>
         <p class="meta">
-          {#if current.match.profileChoice.how === 'signals' && current.match.profileChoice.misfit}No profile is for this robot ·{:else}Code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>
+          {#if !namesRobot(current.match.profileChoice)}No profile is for this robot ·{:else}Code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>
           ({HOW_WORDS[current.match.profileChoice.how]}) ·{/if}
           <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
             <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>
-            <RobotOptions groups={robotChoices(PROFILES, stored, teamNow(), [profileId(current.match.profile)])} selectedId={current.match.profileChoice.how === 'chosen by you' ? profileId(current.match.profile) : null} />
+            <RobotOptions groups={robotChoices(PROFILES, stored, teamNow(), namesRobot(current.match.profileChoice) ? [profileId(current.match.profile)] : [])} selectedId={current.match.profileChoice.how === 'chosen by you' ? profileId(current.match.profile) : null} />
           </select></label>
         </p>
       </details>

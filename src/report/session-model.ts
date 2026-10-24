@@ -15,7 +15,7 @@ import {
 } from '../session/session.ts'
 import { SESSION_FINDINGS_SCHEMA } from '../session/export.ts'
 import { sinks, stoppedCard, stoppedFiring, stoppedShort, stoppedText } from '../session/stopped.ts'
-import type { MatchSummary, RuleStatus } from '../session/summary.ts'
+import { summaryRobot, type MatchSummary, type RuleStatus } from '../session/summary.ts'
 import type { Severity } from '../rules/types.ts'
 import { trendRows } from '../session/trends.ts'
 import { titleHasValue } from './review-model.ts'
@@ -360,10 +360,10 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
   const findings = all.filter((f) => !isFiled.has(f.key))
   const filed = all.filter((f) => isFiled.has(f.key))
   const byRobot = new Map<string, { m: MatchSummary; n: number }>()
-  for (const m of session.matches) byRobot.set(m.robot.profileId, { m, n: (byRobot.get(m.robot.profileId)?.n ?? 0) + 1 })
+  for (const m of session.matches) { const { key } = summaryRobot(m.robot); byRobot.set(key, { m, n: (byRobot.get(key)?.n ?? 0) + 1 }) }
   const model: SessionModel = {
     label: session.label, kind: KIND_WORDS[session.kind], dates: dateRange(session), matchCount: session.matches.length,
-    robots: [...byRobot.values()].map(({ m, n }) => ({ name: m.robot.name, code: pinText(m.robot.code), matches: n })),
+    robots: [...byRobot.values()].map(({ m, n }) => { const r = summaryRobot(m.robot); return { name: r.name, code: r.named ? pinText(m.robot.code) : '', matches: n } }),
     builds: buildsOf(session.matches),
     uncommitted: session.matches.filter((m) => m.build?.uncommitted).length,
     buildUnknown: session.matches.filter((m) => !m.build || (!m.build.sha && !m.build.branch)).length,

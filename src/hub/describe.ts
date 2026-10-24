@@ -9,7 +9,7 @@ import { readDslog, dslogEndEpoch } from '../readers/dslog.ts'
 import { readDsevents, dseventsEndEpoch } from '../readers/dsevents.ts'
 import { buildMatch, has, num, values, type Match } from '../match/match.ts'
 import { heldAt } from '../match/series.ts'
-import { chooseProfile, type ProfileChoice } from '../profiles/choose.ts'
+import { chooseProfile, namesRobot, type ProfileChoice } from '../profiles/choose.ts'
 import { codeIdentity } from '../profiles/formats.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { PROFILES, profileId } from '../profiles/index.ts'
@@ -82,7 +82,7 @@ function describeWpilog(name: string, bytes: Uint8Array): LogMeta {
  */
 export function robotIdentity(profile: RobotProfile, choice: ProfileChoice, codebase: string): LogRobot | null {
   const fit = choice.fit && choice.fit.total > 0 ? choice.fit.present / choice.fit.total : null
-  const named = choice.how === 'codebase and branch' || choice.how === 'codebase' || (choice.how === 'signals' && !choice.misfit)
+  const named = choice.how !== 'chosen by you' && choice.how !== 'given' && namesRobot(choice)
   if (named) return { profileId: profileId(profile), name: profile.name, how: choice.how, fit }
   return codebase ? { profileId: null, name: codebase, how: choice.how, fit } : null
 }

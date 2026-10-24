@@ -52,13 +52,18 @@ export function profileFit(log: WpilogFile, profile: RobotProfile): { present: n
   return { present: keys.filter((k) => hasEntry(log, k)).length, total: keys.length }
 }
 
+type RobotPick = { how: ProfileChoice['how']; misfit?: boolean; codebase?: string }
+
+/** Whether the profile picked for a log names its robot: not when it is only a best guess by signals that doesn't fit. */
+export const namesRobot = (choice: RobotPick): boolean => choice.how !== 'signals' || !choice.misfit
+
 /**
  * The robot to name for a log. A best guess by signals that doesn't fit is not the robot (the library says the same,
  * src/hub/describe.ts robotIdentity): the log's own code name stands in, marked as one.
  */
-export function robotName(profileName: string, choice: { how: ProfileChoice['how']; misfit?: boolean }, codebase: string | undefined): string {
-  if (choice.how !== 'signals' || !choice.misfit) return profileName
-  return codebase ? `${codebase} (code name)` : 'a robot no profile fits'
+export function robotName(profileName: string, choice: RobotPick): string {
+  if (namesRobot(choice)) return profileName
+  return choice.codebase ? `${choice.codebase} (code name)` : 'unnamed robot'
 }
 
 const MISFIT_TEXT = 'So the rules about specific motors, devices, cameras and mechanisms were not run, and the auto and teleop lengths were measured from this log.'
