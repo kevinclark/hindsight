@@ -11,7 +11,7 @@
   import { CODE_RULES, checkFolder, type FolderCheck } from '../code/check/index.ts'
   import { loadJavaInPage } from '../code/check/browser-java.ts'
   import { fileName } from '../code/check/java.ts'
-  import { fixesClash } from '../code/check/fix-patch.ts'
+  import { clashing } from '../code/check/fix-patch.ts'
 
   let { robotSha, robotDirty, suggest, onchecked, sure }: {
     robotSha: string | null; robotDirty: boolean; suggest?: RobotProfile['code']; onchecked?: (check: FolderCheck | null) => void
@@ -49,9 +49,10 @@
   const groups = $derived(CODE_RULES.map((rule) => (result?.report.findings ?? []).filter((f) => f.rule === rule.id)).filter((g) => g.length > 0))
   /** Fixes by the old-file lines they change: a finding whose fix shares one with another finding's says so. */
   const sharedLine = $derived.by(() => {
-    // A fix whose hunks (context included) meet another finding's: git applies one, then rejects the other.
-    const patches = (result?.report.findings ?? []).flatMap((f) => (f.fix ? [f.fix.patch] : []))
-    return (f: { fix?: { patch: string } }) => !!f.fix && patches.some((p) => p !== f.fix!.patch && fixesClash(f.fix!.patch, p))
+    // A fix whose hunks (context included) meet another finding's: git applies one, then rejects the other. By finding, not by text.
+    const findings = result?.report.findings ?? []
+    const clash = clashing(findings.map((f) => f.fix?.patch ?? ''))
+    return (f: { fix?: { patch: string } }) => clash[findings.indexOf(f as (typeof findings)[number])] ?? false
   })
   const short = (sha: string) => sha.slice(0, 7)
 </script>

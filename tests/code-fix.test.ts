@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { checkCode, CODE_RULES } from '../src/code/check/index.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import limitSwitchedOff from '../src/code/check/rules/limit-switched-off.ts'
-import { patchOf, patchFileName, changedLines, fixesClash } from '../src/code/check/fix-patch.ts'
+import { patchOf, patchFileName, changedLines, clashing, fixesClash } from '../src/code/check/fix-patch.ts'
 
 beforeAll(loadJavaFromDisk)
 
@@ -222,6 +222,9 @@ describe('fix pass', () => {
     expect(found).toHaveLength(2)
     expect(changedLines(found[0].fix!.patch)).toEqual(['Roller.java:7'])
     expect(changedLines(found[1].fix!.patch)).toEqual(['Roller.java:7'])
+    // Two instances of one helper give byte-identical patches: they still clash, compared by position, not by text.
+    expect(found[0].fix!.patch).toBe(found[1].fix!.patch)
+    expect(clashing([found[0].fix!.patch, found[1].fix!.patch, ''])).toEqual([true, true, false])
     expect(changedLines(find(drum)[0].fix!.patch)).toEqual(['src/main/java/Drum.java:7'])
   })
   it('fixes on neighbouring lines clash (git rejects the second through the shared context), far ones do not', () => {

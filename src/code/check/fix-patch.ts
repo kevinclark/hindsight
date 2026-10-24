@@ -155,3 +155,8 @@ export function fixesClash(a: string, b: string): boolean {
   const rb = hunkRanges(b)
   return hunkRanges(a).some((x) => rb.some((y) => x.file === y.file && x.from <= y.to && y.from <= x.to))
 }
+
+/** For each patch (by index; '' = no fix), whether it clashes with any other one: two findings can carry byte-identical patches (one helper, two instances), so compare by position, never by text. */
+export function clashing(patches: readonly string[]): boolean[] {
+  return patches.map((p, i) => p !== '' && patches.some((q, j) => j !== i && q !== '' && fixesClash(p, q)))
+}
