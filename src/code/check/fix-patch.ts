@@ -119,3 +119,20 @@ export const patchFileName = (rule: string) => `fix-${rule.replace(/[^a-z0-9]+/g
 
 /** The patch's own text with its first lines read: which files it changes, for a one-line label. */
 export const filesOfPatch = (patch: string): string[] => [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((m) => m[1])
+
+/** The lines a patch removes or changes, as "path:line" in the old file: two fixes that share one can't both be applied. */
+export function changedLines(patch: string): string[] {
+  const out: string[] = []
+  let file = ''
+  let line = 0
+  for (const text of patch.split('\n')) {
+    const header = /^diff --git a\/(\S+) b\//.exec(text)
+    if (header) { file = header[1]; continue }
+    const hunk = /^@@ -(\d+)/.exec(text)
+    if (hunk) { line = Number(hunk[1]); continue }
+    if (!file || !line || text.startsWith('---') || text.startsWith('+++') || text.startsWith('\\')) continue
+    if (text.startsWith('-')) out.push(`${file}:${line++}`)
+    else if (text.startsWith(' ')) line++
+  }
+  return out
+}

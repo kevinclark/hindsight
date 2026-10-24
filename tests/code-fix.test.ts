@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { checkCode, CODE_RULES } from '../src/code/check/index.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import limitSwitchedOff from '../src/code/check/rules/limit-switched-off.ts'
-import { patchOf, patchFileName } from '../src/code/check/fix-patch.ts'
+import { patchOf, patchFileName, changedLines } from '../src/code/check/fix-patch.ts'
 
 beforeAll(loadJavaFromDisk)
 
@@ -193,6 +193,36 @@ describe('code/limit-switched-off fix', () => {
   it('only limit-switched-off offers a fix so far', () => {
     const report = checkCode(Object.entries(drum).map(([path, text]) => ({ path, text })), CODE_RULES)
     expect(report.findings.filter((f) => f.fix).map((f) => f.rule)).toEqual(['code/limit-switched-off'])
+  })
+})
+
+describe('fix pass', () => {
+  it('doesNotFix is one point to a line', () => {
+    const [finding] = find(drum)
+    expect(finding.fix!.doesNotFix.split('\n')).toHaveLength(3)
+  })
+  it('changedLines names the old-file lines a patch removes, so two fixes on one line are seen', () => {
+    const java = {
+      'Roller.java': `class Roller {
+  TalonFX m;
+  Roller(int id, double amps, double stator) {
+    m = new TalonFX(id);
+    var c = new TalonFXConfiguration();
+    c.CurrentLimits.SupplyCurrentLimit = amps;
+    c.CurrentLimits.SupplyCurrentLimitEnable = false;
+    c.CurrentLimits.StatorCurrentLimit = stator;
+    c.CurrentLimits.StatorCurrentLimitEnable = true;
+    m.getConfigurator().apply(c);
+  }
+}
+`,
+      'Robot.java': robot('new Roller(9, 30.0, 80.0); new Roller(10, 60.0, 20.0);'),
+    }
+    const found = find(java)
+    expect(found).toHaveLength(2)
+    expect(changedLines(found[0].fix!.patch)).toEqual(['Roller.java:7'])
+    expect(changedLines(found[1].fix!.patch)).toEqual(['Roller.java:7'])
+    expect(changedLines(find(drum)[0].fix!.patch)).toEqual(['src/main/java/Drum.java:7'])
   })
 })
 

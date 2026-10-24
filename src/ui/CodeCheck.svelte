@@ -11,6 +11,7 @@
   import { CODE_RULES, checkFolder, type FolderCheck } from '../code/check/index.ts'
   import { loadJavaInPage } from '../code/check/browser-java.ts'
   import { fileName } from '../code/check/java.ts'
+  import { changedLines } from '../code/check/fix-patch.ts'
 
   let { robotSha, robotDirty, suggest, onchecked, sure }: {
     robotSha: string | null; robotDirty: boolean; suggest?: RobotProfile['code']; onchecked?: (check: FolderCheck | null) => void
@@ -46,6 +47,12 @@
 
   /** Findings grouped by check, in CODE_RULES order (the ones that cost a match most directly first). */
   const groups = $derived(CODE_RULES.map((rule) => (result?.report.findings ?? []).filter((f) => f.rule === rule.id)).filter((g) => g.length > 0))
+  /** Fixes by the old-file lines they change: a finding whose fix shares one with another finding's says so. */
+  const sharedLine = $derived.by(() => {
+    const seen = new Map<string, number>()
+    for (const f of result?.report.findings ?? []) for (const l of new Set(f.fix ? changedLines(f.fix.patch) : [])) seen.set(l, (seen.get(l) ?? 0) + 1)
+    return (f: { fix?: { patch: string } }) => !!f.fix && changedLines(f.fix.patch).some((l) => (seen.get(l) ?? 0) > 1)
+  })
   const short = (sha: string) => sha.slice(0, 7)
 </script>
 
@@ -77,7 +84,7 @@
               <p>{f.meaning}</p>
               <dl>{#each Object.entries(f.evidence) as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}<dt>file</dt><dd><code>{f.file}</code></dd></dl>
               <p><strong>Next:</strong> {f.nextStep} <span class="muted">({f.rule})</span></p>
-              <FixPreview finding={f} sure={sure?.(f.rule) ?? null} />
+              <FixPreview finding={f} sure={sure?.(f.rule) ?? null} sameLine={sharedLine(f)} />
             </details>
           </li>
         {/each}

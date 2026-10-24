@@ -82,7 +82,7 @@ function motors(devices: string[]): string {
 }
 
 /**
- * Turning the flag on, where every write of it is a plain `false` to change: `flag = false;`, `.withXEnable(false)`, or a
+ * Turning the flag on (`doesNotFix` is one point to a line), where every write of it is a plain `false` to change: `flag = false;`, `.withXEnable(false)`, or a
  * `false` given in a call's arguments. A flag given as a constant or any other expression is left to the student: the
  * constant may be shared, and the edit would not be certain. Then no fix is offered at all.
  */
@@ -103,7 +103,7 @@ function fixFor(kind: (typeof KINDS)[number], writes: Node[], project: Project):
       `A flag turned off again later, in another method or from a shared constant: it changes only the ${edits.length === 1 ? 'line' : 'lines'} shown, so look for other writes of ${kind}CurrentLimitEnable.`,
       `The ${limit} limit, which it does not touch.`,
       ...(passedIn ? ['A false passed in to a method: the same argument may also mean something else in that method.'] : []),
-    ].join(' '),
+    ].join('\n'),
   }
 }
 

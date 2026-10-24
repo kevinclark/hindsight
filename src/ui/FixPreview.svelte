@@ -9,14 +9,17 @@
   import { patchFileName } from '../code/check/fix-patch.ts'
   import { downloadText } from './download.ts'
 
-  let { finding, sure = null }: {
+  let { finding, sure = null, sameLine = false }: {
     finding: Pick<CodeFinding, 'rule'> & { fix?: { patch: string; doesNotFix: string } }
     /** The check's "How sure" line from the team's marks (triage/track-record.ts howSure); null or left out when no marks are in reach. */
     sure?: string | null
+    /** Another finding's fix changes a line this one changes: only one of the two can be applied as it is. */
+    sameLine?: boolean
   } = $props()
 
   const patch = $derived(finding.fix?.patch ?? '')
   const fileName = $derived(patchFileName(finding.rule))
+  const notFixed = $derived((finding.fix?.doesNotFix ?? '').split('\n').filter(Boolean))
   /** Each line with what it is, so the colours are never the only cue (the +/- stays in the text). */
   const lines = $derived(patch.split('\n').filter((l, i, all) => i < all.length - 1 || l !== '').map((text) => ({
     text,
@@ -51,14 +54,21 @@
     <h5>A fix to read, not applied</h5>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex: a scrolling region must take focus to scroll by keyboard (WCAG 2.1.1) -->
     <pre class="diff" tabindex="0" aria-label="The patch">{#each lines as l, i (i)}<span class={l.kind}>{l.text}</span>{/each}</pre>
-    <p><strong>What this does not fix:</strong> {finding.fix.doesNotFix}</p>
-    <p class="sure"><strong>Not a real problem:</strong> {#if sure}{sure}.{:else}no marks yet.{/if}</p>
+    {#if sameLine}<p class="same" role="note">Another finding's fix changes this same line: apply one, then run the check again.</p>{/if}
+    <p><strong>What this does not fix:</strong></p>
+    <ul>{#each notFixed as point (point)}<li>{point}</li>{/each}</ul>
+    <p class="sure"><strong>How sure:</strong> {#if sure}{sure}.{:else}no marks on this check in reach here.{/if}</p>
     <p class="actions">
       <button onclick={copy}>Copy</button>
       <button onclick={save}>Save .patch</button>
-      <span class="muted" role="status">{#if copied === 'yes'}Copied.{:else if copied === 'no'}The browser would not copy: select the diff above, or Save .patch.{/if}</span>
+      <span class="muted" role="status">{#if copied === 'yes'}Copied: paste it into a file in the robot folder and <code>git apply</code> it.{:else if copied === 'no'}The browser would not copy: select the diff above, or Save .patch.{/if}</span>
     </p>
-    <p class="muted">Apply it with <code>git apply {fileName}</code>{' '}from the robot folder (give the path where you saved it), read <code>git diff</code>, then commit it yourself. Hindsight changes nothing in your code.</p>
+    <ol class="steps" aria-label="How to apply it">
+      <li>Save .patch (it goes to Downloads).</li>
+      <li>In the robot folder: <code>git apply ~/Downloads/{fileName}</code> (Windows: <code>%USERPROFILE%\Downloads\{fileName}</code>).</li>
+      <li>Read <code>git diff</code>, then <code>git add</code> and <code>git commit</code> yourself.</li>
+    </ol>
+    <p class="muted">Hindsight changes nothing in your code.</p>
   </div>
 {/if}
 
@@ -67,10 +77,18 @@
   h5 { font-size: 0.85rem; margin: 0 0 0.35rem; }
   .diff { margin: 0 0 0.4rem; padding: 0.4rem 0; overflow-x: auto; background: var(--hover); border-radius: 4px; font: 0.8rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .diff span { display: block; padding: 0 0.6rem; white-space: pre; }
+  /* Light: dark enough on their own tints for 4.5:1 (add 5.3, del 5.6, hunk 5.9 on the diff's grey). */
+  .diff { --add: #0d652d; --del: #a50e0e; --hunk: #0b57d0; }
   .diff .head { color: var(--muted); }
-  .diff .hunk { color: var(--focus); }
-  .diff .add { color: var(--series-3); background: color-mix(in srgb, var(--series-3) 14%, transparent); }
-  .diff .del { color: var(--error); background: color-mix(in srgb, var(--error) 14%, transparent); }
+  .diff .hunk { color: var(--hunk); }
+  .diff .add { color: var(--add); background: color-mix(in srgb, var(--add) 14%, transparent); }
+  .diff .del { color: var(--del); background: color-mix(in srgb, var(--del) 14%, transparent); }
+  @media screen and (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .diff { --add: var(--series-3); --del: var(--error); --hunk: var(--focus); }
+  }
+  ul, ol { margin: 0.2rem 0; padding-left: 1.3rem; font-size: 0.85rem; }
+  li { margin: 0.15rem 0; }
+  .same { padding: 0.25rem 0.5rem; border-left: 4px solid var(--warning); }
   p { font-size: 0.85rem; margin: 0.3rem 0; }
   .muted { color: var(--muted); }
   .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
