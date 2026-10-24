@@ -40,8 +40,8 @@
   import { tbaGetter, tbaHasKey, tbaMissing, tbaTeam } from './tba-setting.svelte.ts'
   import BoardView from './BoardView.svelte'
   import BoardQueuePrint from './BoardQueuePrint.svelte'
-  import { sessionEvent } from '../board/event.ts'
-  import { teamSchedule, type ScheduledMatch } from '../tba/schedule.ts'
+  import { sessionSchedule } from '../tba/session-schedule.ts'
+  import type { ScheduledMatch } from '../tba/schedule.ts'
   import type { QueueSheet } from '../board/sheets.ts'
   import TbaFields from './TbaFields.svelte'
   import ModeLine from './ModeLine.svelte'
@@ -173,13 +173,10 @@
     let stale = false
     void (async () => {
       try {
-        const found = await sessionEvent(s, team, get)
+        const got = await sessionSchedule(s, team, get)
         if (stale) return
-        if (!found.event) { schedule = null; scheduleNote = `No schedule: ${found.why}.`; return }
-        const got = await teamSchedule(get, team, found.event.key, found.event.end)
-        if (stale) return
-        schedule = got.data
-        scheduleNote = `Schedule for ${found.event.key}${got.fromCache ? ' from a saved copy' : ''} as of ${new Date(got.fetchedAt).toLocaleTimeString()}; times are estimates.`
+        schedule = got.schedule
+        scheduleNote = got.note
       } catch (e) {
         if (!stale) { schedule = null; scheduleNote = `No schedule: ${e instanceof Error ? e.message : String(e)}` }
       }

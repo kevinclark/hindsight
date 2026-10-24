@@ -9,7 +9,8 @@
   import type { RobotProfile } from '../profiles/types.ts'
   import type { ScheduledMatch } from '../tba/schedule.ts'
   import type { BoardRole, HistoryEvent, Triage } from '../triage/history.ts'
-  import { buildBoard, eventIdOf, ruleRates, PRIORITY_WORDS, RED_CAP, type BoardIssue } from '../board/model.ts'
+  import { buildBoard, eventIdOf, ruleRates, HOLDS, PRIORITY_WORDS, RED_CAP, type BoardIssue } from '../board/model.ts'
+  import { BOARD_BANNER, cutOffText, readCutOff } from '../board/freeze.ts'
   import { queueSheet, type QueueSheet } from '../board/sheets.ts'
   import { FAMILIES } from '../board/model.ts'
   import { readRole, ROLES, writeRole } from '../board/role.ts'
@@ -67,7 +68,7 @@
     onWrite((device, h) => make({ device, role: r }, h))
   }
   const change = (i: BoardIssue, changes: Change[]) => write((who, h) => boardLines(h, who, new Date(), i, changes, atLatest(session)))
-  const note = (kind: 'pit-change' | 'missed' | 'handoff-read', text: string) => write((who, h) => [noteLine(h, who, new Date(), kind, eventIdOf(session), board.tl.last?.label ?? '', text)])
+  const note = (kind: 'pit-change' | 'missed' | 'handoff-read' | 'cut-off', text: string) => write((who, h) => [noteLine(h, who, new Date(), kind, eventIdOf(session), board.tl.last?.label ?? '', text)])
   const grey = (i: BoardIssue, what: 'close' | 'take') => change(i, what === 'close' ? greyClose() : greyTake(role!))
 
   // The pit line for the latest match, editable.
@@ -76,6 +77,15 @@
   let pitSeen = $state<string | null>(null)
   $effect(() => { if (pitSeen !== pitNow) { pitSeen = pitNow; pitText = pitNow } })
 
+  // The playoff cut-off (ADR 7): its setting, the matches "after Qn" can name, and (once passed) the open deferrals that are asked "still holds?".
+  const cutOffChoices = $derived.by(() => {
+    const quals = new Set<number>([...board.tl.starts.keys(), ...board.labels.map((l) => /^Q(\d+)$/.exec(l)?.[1]).filter((n): n is string => !!n).map(Number)])
+    const cur = board.cutOff.setting
+    if (cur.kind === 'after') quals.add(cur.qual)
+    return [...quals].sort((a, b) => a - b).map((n) => `Q${n}`)
+  })
+  const cutOffValue = $derived(cutOffText(board.cutOff.setting))
+  const holds = (i: BoardIssue, on: boolean) => change(i, [{ op: on ? 'checked' : 'unchecked', value: HOLDS }])
   const redsNote = $derived.by(() => { const p = [board.strip.deferredReds ? `${board.strip.deferredReds} deferred` : '', board.strip.awaitingReds ? `${board.strip.awaitingReds} closed, awaiting a clean match` : ''].filter(Boolean); return p.length ? ` (${p.join(', ')})` : '' })
   const unit = (n: number, one: string, many: string) => (n === 1 ? one : many)
   const mechs = $derived([...new Set([...board.rows.map((i) => i.mechanism)])].sort((a, b) => (FAMILIES.includes(a) ? 1 : 0) - (FAMILIES.includes(b) ? 1 : 0) || a.localeCompare(b)))
@@ -102,13 +112,25 @@
 
   {#if view === 'board'}
     <p class="gate" data-gate><b>{board.strip.gate}</b> {unit(board.strip.gate, 'red', 'reds')} {board.strip.over ? 'open · the event is over' : `due before ${next}`}</p>
-    <p class="sub strip" data-strip>
+    <div class="sub strip" data-strip>
       {#if board.strip.minutesWord}<span>{board.strip.minutesWord}</span>{/if}
       <span><b>{board.strip.deferralsDue}</b> {unit(board.strip.deferralsDue, 'deferral', 'deferrals')} due</span>
+      {#if board.cutOff.passed}<span><b>{board.strip.reconfirm}</b> {unit(board.strip.reconfirm, 'deferral', 'deferrals')} to re-confirm <button type="button" class="help" aria-label="After the cut-off, check that each open deferral's workaround still holds before the next match. Tick it on its row: the tick says who and when, and counts for 90 minutes." title="After the cut-off, check that each open deferral's workaround still holds before the next match. Tick it on its row: the tick says who and when, and counts for 90 minutes.">?</button></span>{/if}
       <span><b>{board.strip.noOwner}</b> with no owner</span>
       <span><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all{redsNote}</span>
       {#if board.strip.nextGap}<span>Next gap: <strong>{board.strip.nextGap}</strong></span>{/if}
-    </p>
+      <details class="cutoff" data-cutoff>
+      <summary>{#if board.cutOff.passed}<span class="freeze" data-freeze>{BOARD_BANNER}</span>{' '}<span class="muted">· cut-off {board.cutOff.words}, passed · change</span>{:else}Playoff cut-off: {board.cutOff.words} <span class="muted">· change</span>{/if}</summary>
+      <p class="small muted">From the cut-off, Hindsight analyses and flags code changes; fixes are offered for reds only. Nothing is blocked. {board.cutOff.passed ? 'Passed' : 'Not passed'}: {board.cutOff.why}.</p>
+      <label>Set it to
+        <select aria-label="Playoff cut-off" disabled={!role} value={cutOffValue} onchange={(e) => note('cut-off', cutOffText(readCutOff((e.currentTarget as HTMLSelectElement).value)))}>
+          <option value="alliance-selection">Alliance selection (default)</option>
+          {#each cutOffChoices as q (q)}<option value={q}>After {q}</option>{/each}
+          <option value="off">Off</option>
+        </select></label>
+      {#if !role}<span class="small muted">Choose your role to change it.</span>{/if}
+    </details>
+    </div>
     <div class="toolbar">
       <button type="button" class="primary" onclick={() => (view = 'queue')}>Queue sheet (print)</button>
       <button type="button" onclick={() => (view = 'handoff')}>Handoff{board.handoff ? '' : ' (not read yet)'}</button>
@@ -127,19 +149,19 @@
     {#if group === 'urgency'}
       {#each SECT as [k, label] (k)}
         {@const rs = board.visible.filter((i) => classOf(i) === k)}
-        {#if rs.length}<div class="section-head">{label} <span class="count">({rs.length})</span></div><ul class="rows">{#each rs as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} />{/each}</ul>{/if}
+        {#if rs.length}<div class="section-head">{label} <span class="count">({rs.length})</span></div><ul class="rows">{#each rs as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} onHolds={board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
       {/each}
     {:else}
-      {#if pinned.length}<div class="section-head">Due before {next} <span class="count">({pinned.length})</span></div><ul class="rows">{#each pinned as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} />{/each}</ul>{/if}
+      {#if pinned.length}<div class="section-head">Due before {next} <span class="count">({pinned.length})</span></div><ul class="rows">{#each pinned as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} onHolds={board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
       {#each mechs as g (g)}
         {@const rs = board.visible.filter((i) => i.mechanism === g && !pinned.includes(i))}
-        {#if rs.length}<div class="section-head">{g} <span class="count">({rs.length})</span></div><ul class="rows">{#each rs as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} />{/each}</ul>{/if}
+        {#if rs.length}<div class="section-head">{g} <span class="count">({rs.length})</span></div><ul class="rows">{#each rs as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} onHolds={board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
       {/each}
     {/if}
     {#if board.below.length}
       <details class="below">
         <summary>{board.below.length} more below the line (cap of {RED_CAP} reds: {belowParts}) · show</summary>
-        <ul class="rows">{#each board.below as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} />{/each}</ul>
+        <ul class="rows">{#each board.below as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} onHolds={board.cutOff.passed ? holds : undefined} />{/each}</ul>
       </details>
     {/if}
     {#if board.closed.length}
@@ -188,6 +210,10 @@
   .help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .gate { font-size: 1.6rem; margin: 0.2rem 0 0; line-height: 1.15; }
   .gate b { font-size: 2rem; font-variant-numeric: tabular-nums; }
+  .freeze { font-weight: 400; }
+  .cutoff { font-size: 0.9rem; margin: -3px 0; }
+  .strip :global(.help) { margin: -4px 0; }
+  .cutoff summary { cursor: pointer; min-height: 24px; box-sizing: border-box; }
   .strip { display: flex; flex-wrap: wrap; gap: 0.2rem 1.2rem; margin: 0.1rem 0 0.5rem; }
   .board :global(.sub) { color: var(--muted); margin: 0.1rem 0; }
   .board :global(.sub strong) { color: var(--fg); }

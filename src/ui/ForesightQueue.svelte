@@ -11,8 +11,8 @@
   import { clockText } from '../board/words.ts'
   import type { BoardRole } from '../triage/history.ts'
 
-  let { checklist, role, ticks, forLabel, filed, onTick, onRole }: {
-    checklist: QueueChecklist; role: BoardRole | null; ticks: ReadonlyMap<System, Tick>; forLabel: string
+  let { checklist, changed = null, role, ticks, forLabel, filed, onTick, onRole }: {
+    checklist: QueueChecklist; /** The files between the last match's commit and the robot's, when the code folder could read both (or why not). */ changed?: { files: string[] } | { problem: string } | null; role: BoardRole | null; ticks: ReadonlyMap<System, Tick>; forLabel: string
     /** True when ticks are filed in the history (today's event session is loaded); false: kept on this page only. */
     filed: boolean
     onTick: (system: System, on: boolean) => void; onRole: (role: BoardRole | null) => void
@@ -31,11 +31,27 @@
 
 <section class="queue" aria-label="Queue checklist">
   <h3>Queue checklist <span class="muted">· {checklist.rows.length} systems, most critical first</span></h3>
+  {#if checklist.freeze}<p class="small freeze" data-freeze>{checklist.freeze.banner}</p>{/if}
   <p class="small">Do each item, then tick it for {forLabel}. A No-go is fixed or deferred on the board first. {filed ? 'Ticks are filed with the event.' : 'Ticks stay on this page.'}
     <label>You are on: <select aria-label="Your role" value={role ?? ''} onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; onRole(ROLES.includes(v as BoardRole) ? (v as BoardRole) : null) }}>
       {#if !role}<option value="" disabled>choose…</option>{/if}
       {#each ROLES as r (r)}<option value={r}>{r}</option>{/each}
     </select></label>{#if !role}{' '}Choose it to tick.{/if}</p>
+  {#if checklist.freeze}
+    {#if checklist.freeze.change}
+      {@const c = checklist.freeze.change}
+      {#if c.amber}<p class="change amber" role="status" data-code-change><b>Flag:</b>{' '}{c.text}{#if c.kind === 'changed' && !changed}{' '}<span class="muted">Choose the robot-code folder below to see which files changed.</span>{/if}</p>
+      {:else}<p class="change same" data-code-change><span aria-hidden="true">✓</span>{' '}{c.text}</p>{/if}
+      {#if c.kind === 'changed' && changed}
+        {#if 'files' in changed}
+          <details class="changed-files"><summary>{changed.files.length} {changed.files.length === 1 ? 'file' : 'files'} changed between them</summary>
+            <ul>{#each changed.files.slice(0, 40) as f (f)}<li><code>{f}</code></li>{/each}</ul>
+            {#if changed.files.length > 40}<p class="small">and {changed.files.length - 40} more.</p>{/if}
+          </details>
+        {:else}<p class="small">The files changed could not be read: {changed.problem}</p>{/if}
+      {/if}
+    {/if}
+  {/if}
   <ol class="systems">
     {#each checklist.rows as r, n (r.system)}
       {@const tick = freshTick(r)}
@@ -85,6 +101,13 @@
   .muted { color: var(--muted); font-weight: 400; }
   .small { font-size: 0.8rem; color: var(--muted); margin: 0.2rem 0; }
   .small select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; min-height: 24px; box-sizing: border-box; }
+  .freeze { margin: 0; }
+  .change.same { color: var(--muted); font-weight: 400; }
+  .change { margin: 0.3rem 0; padding: 0.3rem 0.6rem; }
+  .change.amber { border-left: 4px solid var(--warning); }
+  .changed-files { font-size: 0.85rem; margin: 0 0 0.4rem 0.6rem; }
+  .changed-files summary { cursor: pointer; min-height: 24px; box-sizing: border-box; color: var(--muted); }
+  .changed-files ul { margin: 0.2rem 0; padding-left: 1.2rem; }
   .systems { list-style: none; margin: 0; padding: 0; }
   .sys { display: grid; grid-template-columns: 1.6rem 1fr; gap: 0.5rem; padding: 0.35rem 0.6rem; border-left: 4px solid var(--border); border-bottom: 1px solid var(--border); align-items: start; }
   .sys input { width: 1.5rem; height: 1.5rem; margin: 0; }

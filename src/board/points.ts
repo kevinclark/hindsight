@@ -237,6 +237,8 @@ export interface Suggestion {
   point: DuePoint
   /** Hindsight's pick for a red. */
   suggested: boolean
+  /** Set when the pick is the end of the event because the playoff cut-off has passed and the issue is not red (ADR 7); otherwise the pick is a red's next named gap and this is left out. */
+  reason?: 'after the cut-off'
 }
 
 /**
@@ -252,7 +254,7 @@ function gapEstimate(tl: Timeline, g: Pick<Gap, 'after' | 'minutes'>): string {
   return startsIn !== null ? `starts in ≈ ${durText(startsIn)}, lasts ≈ ${durText(g.minutes)}, est.` : `lasts ≈ ${durText(g.minutes)}, est.`
 }
 
-export function suggestions(tl: Timeline): Suggestion[] {
+export function suggestions(tl: Timeline, freeze?: { passed: boolean; red: boolean }): Suggestion[] {
   const out: Suggestion[] = []
   const nextLabel = tl.next?.label
   out.push({
@@ -281,6 +283,20 @@ export function suggestions(tl: Timeline): Suggestion[] {
     until: { kind: 'end-of-event' }, point: endOfEvent(tl), suggested: false,
   })
   out.push({ id: 'event', label: 'Next event', estimate: 'weeks', until: { kind: 'next-event' }, point: nextEvent(), suggested: false })
+  // After the cut-off (ADR 7, Kevin 2026-10-24): fixes are for reds only, so anything not red leads with the end of the event; the rest keep their order. "Before playoffs" is offered only while that gap is still ahead.
+  if (freeze?.passed) {
+    const bpPast = !tl.hasSchedule || beforePlayoffs(tl).pos < tl.nextPos
+    const ahead = bpPast ? out.filter((s) => s.id !== 'playoffs') : out
+    if (!freeze.red) {
+      const end = ahead.find((s) => s.id === 'end')!
+      end.suggested = true
+      end.reason = 'after the cut-off'
+      return [end, ...ahead.filter((s) => s !== end)]
+    }
+    const redPick = ahead.find((s) => s.id.startsWith('gap-')) ?? ahead[0]
+    redPick.suggested = true
+    return ahead
+  }
   const pick = out.find((s) => s.id.startsWith('gap-')) ?? out[0]
   pick.suggested = true
   return out

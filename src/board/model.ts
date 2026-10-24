@@ -14,7 +14,8 @@ import { mergeFindings, type MergedFinding, type Session } from '../session/sess
 import { robotIdOf, summaryRobot, type MatchSummary, type SummaryFinding } from '../session/summary.ts'
 import { profileId } from '../profiles/index.ts'
 import type { RobotProfile } from '../profiles/types.ts'
-import { tickAt } from './ticks.ts'
+import { tickAt, type Tick } from './ticks.ts'
+import { cutOffState, readCutOff, type CutOff } from './freeze.ts'
 import { shortMatchLabel } from '../ui/match-label.ts'
 import type { ScheduledMatch } from '../tba/schedule.ts'
 import { boardKey, boardState, compareEvents, eventNotes, type BoardEvent, type BoardRole, type BoardState, type CauseState, type HistoryEvent, type Triage } from '../triage/history.ts'
@@ -100,6 +101,8 @@ export interface BoardIssue {
   causeMarks: Record<string, { state: CauseState; test: string; text: string; role: BoardRole; when: string; match: string | null }>
   /** Ticks for the queue sheet. */
   checked: { match: string; role: BoardRole; when: string }[]
+  /** After the playoff cut-off (ADR 7): the latest "still holds?" tick for this issue's live deferral, made after the deferral and in this event; `old` past the 90 minutes every tick has. Null: none. */
+  holds: Tick | null
   merged: MergedFinding
 }
 
@@ -123,6 +126,8 @@ export interface Strip {
   over: boolean
   /** The next named gap after the next match, in words, or null. */
   nextGap: string | null
+  /** After the playoff cut-off: open deferrals with no fresh "still holds" tick (0 before it). */
+  reconfirm: number
 }
 
 export interface Board {
@@ -148,6 +153,8 @@ export interface Board {
   tickLabel: string
   /** The latest match has no time and no event name: a tick written now can't be tied to this event. */
   untied: boolean
+  /** The playoff cut-off (ADR 7): the event's setting and whether it has passed. */
+  cutOff: CutOff
   missed: { text: string; role: BoardRole; match: string; when: string }[]
 }
 
@@ -275,6 +282,20 @@ function lastStatusLines(history: HistoryEvent[]): Map<string, { value: string; 
   return out
 }
 
+/**
+ * The "still holds?" tick of a live deferral: the latest `checked` line whose value is `holds`, in this event's scope and not
+ * older than the deferral itself (a deferral made again is asked again). It ages like every tick (`tickAt`); with no clock it is not aged.
+ */
+function holdsTick(checked: BoardState['checked'], deferredAt: string | null, scope: Scope, now: number | null): Tick | null {
+  if (deferredAt === null) return null
+  const since = ms(deferredAt)
+  const c = (checked ?? []).filter((x) => x.match === HOLDS && inScope(x, scope) && (since === null || (ms(x.when) ?? 0) >= since)).at(-1)
+  return c ? (now === null ? { role: c.by.role, when: c.when, old: false, ahead: false } : tickAt(c.by.role, c.when, now)) : null
+}
+
+/** The value of a "still holds?" tick (board op `checked`): no match label can be it. */
+export const HOLDS = 'holds'
+
 export function buildBoard(input: BoardInput): Board {
   const { session, history, marks, schedule, profiles } = input
   const labels = session.matches.map((m, i) => shortMatchLabel(m.matchLabel, i))
@@ -401,6 +422,7 @@ export function buildBoard(input: BoardInput): Board {
       lastChange: state?.changed ? { role: state.by.role, match: shortStored(state.match), when: state.when } : null,
       causeMarks: Object.fromEntries(Object.entries(state?.causes ?? {}).map(([id, c]) => [id, { state: c.state, test: c.test, text: c.text, role: c.by.role, when: c.when, match: shortStored(c.match) }])),
       checked: (state?.checked ?? []).filter((c) => inScope(c, scope)).map((c) => ({ match: c.match, role: c.by.role, when: c.when })),
+      holds: holdsTick(state?.checked, live ? deferral!.when : null, scope, input.now?.getTime() ?? null),
       merged,
     }
     issues.push(issue)
@@ -421,12 +443,14 @@ export function buildBoard(input: BoardInput): Board {
     ;(cut ? below : visible).push(i)
   }
 
+  const cutOff = cutOffState(readCutOff(all.cutOff?.text), tl, session.matches)
   const gate = rows.filter((i) => isGate(i, tl))
   const nextGap = tl.named[0] ? `${gapText(tl.named[0])}${tl.named[0].minutes !== null ? ` (≈ ${durText(tl.named[0].minutes)}, est.)` : ''}` : null
   const strip: Strip = {
     gate: gate.length, nextLabel: tl.next?.label ?? null, minutes: tl.next?.minutes ?? null,
     minutesWord: tl.next?.leftMinutes != null ? `≈ ${durText(tl.next.leftMinutes)} left (est.)` : tl.next?.minutes != null && tl.last ? `≈ ${durText(tl.next.minutes)} after ${tl.last.label} (est.)` : null,
     deferralsDue: rows.filter((i) => i.cls === 'due').length, noOwner: rows.filter((i) => !i.grey && !i.awaitingClean && !i.owner).length,
+    reconfirm: cutOff.passed ? rows.filter((i) => i.status === 'deferred' && i.deferral && !i.deferral.expired && !(i.holds && !i.holds.old)).length : 0,
     reds: rows.filter(isRed).length, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, awaitingReds: rows.filter((i) => isRed(i) && i.awaitingClean).length, nextGap, over: eventOver(tl),
   }
   const tickFor = tl.next?.label ?? `after ${tl.last?.label ?? 'now'}`
@@ -438,6 +462,7 @@ export function buildBoard(input: BoardInput): Board {
     pitLines: notes.pitChange.map((n) => ({ match: n.match, text: n.text, role: n.by.role, at: indexOfMatch(session, labels, n.match, n.when) })).sort((a, b) => a.at - b.at).map(({ match, text, role }) => ({ match, text, role })),
     handoff: read ? { role: read.by.role, match: read.match, when: read.when } : null,
     tickFor, tickLabel: tl.next?.label ?? 'the next match',
+    cutOff,
     untied: (() => { const m = session.matches.filter((x) => x.onField).at(-1); return !!m && m.playedAt === null && !m.event })(),
     missed: notes.missed.map((n) => ({ text: n.text, role: n.by.role, match: n.match, when: n.when })),
   }
@@ -457,8 +482,8 @@ export function isChecked(i: BoardIssue, tickFor: string, now: number | null = n
 }
 
 /** The deferral points to offer for an issue (ADR 6), with Hindsight's pick marked. */
-export function deferralOptions(board: Pick<Board, 'tl'>): Suggestion[] {
-  return suggestions(board.tl)
+export function deferralOptions(board: Pick<Board, 'tl' | 'cutOff'>, issue: Pick<BoardIssue, 'priority'>): Suggestion[] {
+  return suggestions(board.tl, { passed: board.cutOff.passed, red: issue.priority === 'red' })
 }
 
 // ---- the "not a real problem" rates, one row per rule that fired at the event ----

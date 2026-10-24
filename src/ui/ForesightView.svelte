@@ -22,7 +22,9 @@
   import { boardFor, deferralSession, openDeferrals, isCarried, practiceChecklist, queueChecklist, sessionEventName, tickAt, ticksFor, tickKey, uncoveredItems, type System, type Tick } from '../foresight/checklists.ts'
   import { robotAddresses, USB_ADDRESS } from '../foresight/addresses.ts'
   import { hub } from '../hub/bridge.ts'
-  import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
+  import { tbaGetter, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
+  import { sessionSchedule } from '../tba/session-schedule.ts'
+  import type { ScheduledMatch } from '../tba/schedule.ts'
   import { teamEvents } from '../tba/api.ts'
   import { eventFromLibrary, eventFromSchedule, type TodayEvent } from '../session/today-event.ts'
   import { atLatest, boardLines } from '../board/writes.ts'
@@ -37,6 +39,10 @@
   import ForesightQueue from './ForesightQueue.svelte'
   import ForesightPractice from './ForesightPractice.svelte'
   import CodeCheck from './CodeCheck.svelte'
+  import { codeFolder } from './code-folder.svelte.ts'
+  import { changedFiles } from '../code/git.ts'
+  import { codeChangeFlag } from '../board/freeze.ts'
+  import { lastOnField } from '../board/points.ts'
   import ModeLine from './ModeLine.svelte'
   import { chooseMode, sessionNames } from './session-names.svelte.ts'
   import { todayMode } from '../session/mode.ts'
@@ -176,9 +182,22 @@
   const robotId = $derived(profile ? profileId(profile) : null)
   // Open deferrals are the board's: today's event session when there is one, else the latest event session for this robot.
   const defSession = $derived(queueMode && robotId ? deferralSession(sessions, today.sessionId, robotId) : null)
-  const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date()) : null)
   // An earlier event's board (none of today's loaded): only what it deferred to the next event is still open, and its ticks are not today's.
   const carried = $derived(!!defSession && isCarried(defSession, today.sessionId, external, clock))
+  // The team's schedule for the deferral session (the Session view's own read, src/tba/session-schedule.ts), so due points and the cut-off default
+  // place the same here. An earlier event's carried board never reads one; no key, no team, offline with no saved copy or an error: none (by name only).
+  let fsSchedule = $state.raw<ScheduledMatch[] | null>(null)
+  const scheduleSig = $derived(defSession && !carried ? `${defSession.id}|${defSession.event?.key ?? ''}|${defSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}` : '')
+  $effect(() => {
+    if (!scheduleSig) { fsSchedule = null; return }
+    const s = untrack(() => defSession)!
+    const [get, team] = [tbaGetter(), tbaTeam()]
+    if (!get || team === null) { fsSchedule = null; return }
+    let stale = false
+    void sessionSchedule(s, team, get).then((got) => { if (!stale) fsSchedule = got.schedule })
+    return () => { stale = true }
+  })
+  const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date(), carried ? null : fsSchedule) : null)
   const deferrals = $derived(board && profile && defSession ? openDeferrals(board, profile, carried ? sessionEventName(defSession) : undefined) : null)
   const deferralNote = $derived(!queueMode ? null : !robotId ? 'The robot is not identified yet, so no deferrals are read.' : !defSession ? 'No event session for this robot is loaded in the Session view, so no deferrals are read.' : null)
   // The role this laptop ticks under (the same setting as the board's), and ticks when no event is loaded to file them with.
@@ -191,7 +210,32 @@
     if (defSession && board && !carried) return ticksFor(history, robotId, defSession, board.tickFor, clock)
     return new Map(Object.entries(localTicks).map(([k, t]) => [k as System, tickAt(t!.role, t!.when, clock)] as const))
   })
-  const queue = $derived(queueMode ? queueChecklist({ verdict: checked?.verdict ?? null, why, profile, deferrals, deferralNote, ticks }) : null)
+  // After the playoff cut-off (ADR 7; today's event only, never an earlier event's carried board): the banner, and an amber flag when the
+  // robot's code (commit, uncommitted flag) differs from the team's last on-field match's. It never moves the word.
+  const playoffs = $derived(!!board && !carried && board.cutOff.passed)
+  const codeChange = $derived.by(() => {
+    if (!board || !defSession || !playoffs) return null
+    const last = lastOnField(defSession)
+    return codeChangeFlag(board.cutOff, checked ? { sha: checked.match.build.sha, dirty: isUncommitted(checked.match.build.dirty) } : null, last && board.tl.last ? { label: board.tl.last.label, build: last.build } : undefined)
+  })
+  // The files between the two commits, when the code folder (or GitHub) can read both. Read-only; a failure just leaves the list out.
+  let changedList = $state<{ files: string[] } | { problem: string } | null>(null)
+  let changedRun = 0
+  // Keyed on the two commits, not on the flag object (a new object on every recompute, so on every clock tick): one read per change.
+  const changeKey = $derived(codeChange?.kind === 'changed' && codeChange.from && codeChange.to ? `${codeChange.from}..${codeChange.to}` : null)
+  $effect(() => {
+    const key = changeKey
+    const code = codeFolder.current
+    void codeFolder.version
+    const run = ++changedRun
+    if (!key || !code) { changedList = null; return }
+    const [from, to] = key.split('..')
+    changedFiles(code.repo, from, to).then(
+      (files) => { if (run === changedRun) changedList = { files } },
+      (error) => { if (run === changedRun) changedList = { problem: error instanceof Error ? error.message : String(error) } },
+    )
+  })
+  const queue = $derived(queueMode ? queueChecklist({ verdict: checked?.verdict ?? null, why, profile, deferrals, deferralNote, ticks, freeze: board && playoffs && board.cutOff.banner ? { banner: board.cutOff.banner, change: codeChange } : null }) : null)
   const practice = $derived(practiceChecklist(markOnchecks(checked), uncoveredItems(checked?.verdict ?? null)))
   // The word in the big box (and on the printed report): the queue's, or the practice list's end, never a Go in practice.
   const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.actions.length} left`) : 'NOT CHECKED')
@@ -317,7 +361,7 @@
   {/if}
 
   {#if queue && status}
-    <ForesightQueue checklist={queue} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard && !carried)} onTick={tick} onRole={chooseRole} />
+    <ForesightQueue checklist={queue} changed={changedList} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard && !carried)} onTick={tick} onRole={chooseRole} />
   {/if}
 
   {#if checked}
@@ -363,7 +407,7 @@
     </section>
   {/if}
 
-  <CodeCheck sure={sureCode} robotSha={checked?.match.build.sha || null} robotDirty={!!checked && isUncommitted(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
+  <CodeCheck playoffs={playoffs} sure={sureCode} robotSha={checked?.match.build.sha || null} robotDirty={!!checked && isUncommitted(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
 
   {#if status && status.state !== 'closed'}
     <details class="readings" open>

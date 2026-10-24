@@ -7,11 +7,10 @@
 <script lang="ts">
   import { makerOf } from '../rules/index.ts'
   import type { Board, BoardIssue, Priority, RuleRate } from '../board/model.ts'
-  import { PRIORITY_ICON, PRIORITY_WORDS, STATUS_WORDS } from '../board/model.ts'
+  import { PRIORITY_ICON, PRIORITY_WORDS, STATUS_WORDS, deferralOptions } from '../board/model.ts'
   // The board's own words for a log's severity (an error is a Red, a warning an Amber), so the detail does not say "error" where the board says "Red".
   const SEVERITY_WORD = { error: 'Red', warning: 'Amber', info: 'Info' } as const
   import { OWNER_ROLES } from '../board/role.ts'
-  import { suggestions } from '../board/points.ts'
   import { changedLine, clockText, dueLine, ownerText, priorityIcon, priorityWord, rowTitle, statusLine, tags } from '../board/words.ts'
   import type { Change } from '../board/writes.ts'
   import type { BoardRole } from '../triage/history.ts'
@@ -20,7 +19,9 @@
   let { issue, board, rate, role, onBack, onChange, onDebug }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange: (changes: Change[], note?: string) => void; onDebug: () => void } = $props()
 
   const maker = $derived(makerOf(issue.rule))
-  const options = $derived(suggestions(board.tl))
+  const options = $derived(deferralOptions(board, issue))
+  // After the playoff cut-off (ADR 7) a fix is for reds only: anything else leads with "the end of the event".
+  const freezeNote = $derived(board.cutOff.passed && issue.priority !== 'red')
   const evidence = $derived(Object.entries(issue.latest?.evidence ?? {}))
   // The test switch (debug workspace): causes in reverse order, named on screen while on.
   const reverse = (() => { try { return readReverse(localStorage) } catch { return false } })()
@@ -164,8 +165,9 @@
         <select id="board-defer" bind:value={deferTo}>
           <option value="">{issue.status === 'deferred' ? 'Keep the deferral' : 'Not deferred'}</option>
           {#if issue.status === 'deferred'}<option value="__clear">Clear the deferral</option>{/if}
-          {#each options as o (o.id)}<option value={o.id}>{o.label} · {o.estimate}{o.suggested && issue.priority === 'red' ? ' · suggested for a red' : ''}</option>{/each}
+          {#each options as o (o.id)}<option value={o.id}>{o.label} · {o.estimate}{o.reason === 'after the cut-off' ? ' · suggested in the playoffs' : o.suggested && issue.priority === 'red' ? ' · suggested for a red' : ''}</option>{/each}
         </select>
+        {#if freezeNote}<span class="hint" data-freeze-note><b>Playoffs: analysis first.</b> This is not a red, so defer it to the end of the event first. Every other point is still in the list.</span>{/if}
         <span class="hint">Each point shows its estimated time from now (after {board.tl.last?.label ?? 'the last match'}).{board.noSchedule ? ' No schedule: points are by name only.' : ''}</span></div>
       <div class="field"><label for="board-workaround">Workaround line for the drive team</label>
         <textarea id="board-workaround" rows="3" bind:value={workaround} placeholder="Written for the pit crew to pass on: what the drivers do or avoid until this is fixed."></textarea></div>
