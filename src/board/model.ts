@@ -18,7 +18,7 @@ import { shortMatchLabel } from '../ui/match-label.ts'
 import type { ScheduledMatch } from '../tba/schedule.ts'
 import { boardKey, boardState, compareEvents, eventNotes, type BoardEvent, type BoardRole, type BoardState, type HistoryEvent, type Triage } from '../triage/history.ts'
 import { matchRef, ruleOf, trackRecord, type Fire } from '../triage/track-record.ts'
-import { beforeNext, dueByPriority, durText, gapText, qualFromStored, resolveUntil, suggestions, timeline, type DuePoint, type Suggestion, type Timeline } from './points.ts'
+import { beforeNext, dueByPriority, nextEvent, durText, gapText, qualFromStored, resolveUntil, suggestions, timeline, type DuePoint, type Suggestion, type Timeline } from './points.ts'
 
 export type Priority = 'red' | 'amber' | 'low'
 export type Status = 'open' | 'fixing' | 'check' | 'deferred' | 'closed'
@@ -78,6 +78,10 @@ export interface BoardIssue {
   unchanged: number
   /** Matches since it last fired (a sighting only: a board change does not reset it). */
   sinceSeen: number
+  /** Status check and not seen for GREY_AFTER matches: closed by hand and waiting for a clean match where the rule can be checked. Not in the gate, not in "no owner"; still an open red. */
+  awaitingClean: boolean
+  /** Seen in n matches of the m where the rule could be checked. */
+  seenIn: { n: number; of: number }
   /** A grey issue shows no due point; in its place the row asks this (owner ruling 2026-10-24), with two actions (writes.ts greyClose, greyTake). */
   greyAsk: string | null
   isNew: boolean
@@ -110,6 +114,8 @@ export interface Strip {
   reds: number
   /** Of those, deferred (they still count: a deferral does not make a red go away). */
   deferredReds: number
+  /** Reds closed by hand and waiting for a clean match (awaitingClean). */
+  awaitingReds: number
   /** The next named gap after the next match, in words, or null. */
   nextGap: string | null
 }
@@ -135,6 +141,8 @@ export interface Board {
   tickFor: string
   /** The same, for people: "Q41", or "the next match" with no schedule. */
   tickLabel: string
+  /** The latest match has no time and no event name: a tick written now can't be tied to this event. */
+  untied: boolean
   missed: { text: string; role: BoardRole; match: string; when: string }[]
 }
 
@@ -228,9 +236,16 @@ function scopeOf(session: Session): Scope {
   const t = session.matches.map((m) => m.playedAt).filter((x): x is number => x !== null)
   return { event: session.matches.find((m) => m.onField && m.event)?.event ?? '', from: t.length ? Math.min(...t) : null, to: t.length ? Math.max(...t) : null }
 }
-/** A line counts here when its event equals the session's FMS event name (both named), else when its played time falls inside the session's span. A line that says neither does not count. */
+/** FMS event names repeat every year, so a name match with a played time must also fall within this long of the session's span. */
+const SAME_NAME_WITHIN = 30 * 86400e3
+
+/** A line counts here when its event equals the session's FMS event name (both named; if it has a played time, that must be within 30 days of the session's span), else when its played time falls inside the session's span. A line that says neither does not count. */
 export function inScope(line: { event?: string; played?: string }, sc: Scope): boolean {
-  if (line.event && sc.event) return line.event === sc.event
+  if (line.event && sc.event) {
+    if (line.event !== sc.event) return false
+    const t = ms(line.played)
+    return t === null || sc.from === null || sc.to === null || (t >= sc.from - SAME_NAME_WITHIN && t <= sc.to + SAME_NAME_WITHIN)
+  }
   const t = ms(line.played)
   return t !== null && sc.from !== null && sc.to !== null && t >= sc.from && t <= sc.to
 }
@@ -318,7 +333,10 @@ export function buildBoard(input: BoardInput): Board {
 
     // The deferral: live while its point is not behind the next match.
     let deferral: BoardIssue['deferral'] = null
-    if (state?.deferred && inScope(state.deferred, scope)) {
+    if (state?.deferred && !inScope(state.deferred, scope) && state.deferred.until?.kind === 'next-event') {
+      // "Until the next event", read at an event after the one it was made at: over. Shown as ended, with its workaround, not dropped.
+      deferral = { point: nextEvent(), workaround: state.workaround ?? '', role: state.deferred.by.role, match: shortStored(state.deferred.match), when: state.deferred.when, expired: true }
+    } else if (state?.deferred && inScope(state.deferred, scope)) {
       const point = state.deferred.until ? resolveUntil(state.deferred.until, tl) : beforeNext(tl)
       const madeAt = indexOfMatch(session, labels, state.deferred.match, state.deferred.when)
       // A next-match deferral that names no match is "the next one when it was made": once a match is played after it, it is over,
@@ -333,6 +351,7 @@ export function buildBoard(input: BoardInput): Board {
     const live = !!deferral && !deferral.expired
     const status: Status = closed ? 'closed' : live ? 'deferred' : asked
     const due = live ? deferral!.point : dueByPriority(priority, tl)
+    const checkable = session.matches.filter((m) => (m.rules[rule]?.status ?? 'not checked') !== 'not checked').length
 
     // Activity, for "grey": the last sighting or board change, counted in the team's matches.
     const changeIdx = state?.changed ? indexOfMatch(session, labels, state.match, state.when) : -1
@@ -342,6 +361,7 @@ export function buildBoard(input: BoardInput): Board {
     const firstSeen = seen.length ? Math.min(...seen) : -1
     const unchanged = lastIdx - Math.max(lastSeen, changeIdx)
     const sinceSeen = lastIdx - lastSeen
+    const awaitingClean = status === 'check' && sinceSeen >= GREY_AFTER
     const grey = unchanged >= GREY_AFTER && !live && !closed
 
     // "New": first seen after the last handoff was read (none read: nothing is new to compare with).
@@ -356,7 +376,7 @@ export function buildBoard(input: BoardInput): Board {
     const issue: BoardIssue = {
       key, rule, about, robot, ruleTitle: maker?.title ?? rule, title: latest?.title ?? merged.title, mechanism: mech.name, byProfile: mech.byProfile,
       severity: merged.severity, priority, prioritySet, status, asked, owner: state?.owner ?? null, cameBack, closedAt, deferral, due,
-      open: !closed, cls, grey, unchanged, sinceSeen, greyAsk: grey ? `Not seen for ${unchanged} matches: close it, or give it an owner?` : null, isNew, firedIn, firstSeen, lastSeen, sightings,
+      open: !closed, cls, grey, unchanged, sinceSeen, awaitingClean, seenIn: { n: firedIn.length, of: Math.max(checkable, firedIn.length) }, greyAsk: grey ? `Not seen for ${unchanged} matches: close it, or give it an owner?` : null, isNew, firedIn, firstSeen, lastSeen, sightings,
       nextStep: rule === ESTOP_RULE ? ESTOP_STEP : latest?.nextStep ?? maker?.nextStep ?? '', latest,
       notes: (state?.notes ?? []).map((n) => ({ text: n.text, role: n.by.role, match: shortStored(n.match), when: n.when })),
       lastChange: state?.changed ? { role: state.by.role, match: shortStored(state.match), when: state.when } : null,
@@ -386,8 +406,8 @@ export function buildBoard(input: BoardInput): Board {
   const strip: Strip = {
     gate: gate.length, nextLabel: tl.next?.label ?? null, minutes: tl.next?.minutes ?? null,
     minutesWord: tl.next?.leftMinutes != null ? `≈ ${durText(tl.next.leftMinutes)} left (est.)` : tl.next?.minutes != null && tl.last ? `≈ ${durText(tl.next.minutes)} after ${tl.last.label} (est.)` : null,
-    deferralsDue: rows.filter((i) => i.cls === 'due').length, noOwner: rows.filter((i) => !i.grey && !i.owner).length,
-    reds: rows.filter(isRed).length, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, nextGap,
+    deferralsDue: rows.filter((i) => i.cls === 'due').length, noOwner: rows.filter((i) => !i.grey && !i.awaitingClean && !i.owner).length,
+    reds: rows.filter(isRed).length, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, awaitingReds: rows.filter((i) => isRed(i) && i.awaitingClean).length, nextGap,
   }
   const tickFor = tl.next?.label ?? `after ${tl.last?.label ?? 'now'}`
   const read = notes.handoffReads.at(-1)
@@ -398,6 +418,7 @@ export function buildBoard(input: BoardInput): Board {
     pitLines: notes.pitChange.map((n) => ({ match: n.match, text: n.text, role: n.by.role, at: indexOfMatch(session, labels, n.match, n.when) })).sort((a, b) => a.at - b.at).map(({ match, text, role }) => ({ match, text, role })),
     handoff: read ? { role: read.by.role, match: read.match, when: read.when } : null,
     tickFor, tickLabel: tl.next?.label ?? 'the next match',
+    untied: (() => { const m = session.matches.filter((x) => x.onField).at(-1); return !!m && m.playedAt === null && !m.event })(),
     missed: notes.missed.map((n) => ({ text: n.text, role: n.by.role, match: n.match, when: n.when })),
   }
 }
@@ -405,7 +426,7 @@ export function buildBoard(input: BoardInput): Board {
 /** A red due before the next match that is neither deferred, closed nor grey: what the queue sheet gates on. */
 export function isGate(i: BoardIssue, tl: Timeline): boolean {
   // A grey red that was closed (status check) and has still not been seen for 3 matches is waiting for its clean match, not due: Close must not put it back in the gate.
-  if (i.status === 'check' && i.sinceSeen >= GREY_AFTER) return false
+  if (i.awaitingClean) return false
   return i.open && i.priority === 'red' && !i.grey && i.status !== 'deferred' && i.due.pos <= tl.nextPos
 }
 

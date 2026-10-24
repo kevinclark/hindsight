@@ -30,6 +30,8 @@ export interface QueueSheet {
   lines: QueueLine[]
   /** Items past the line cap. */
   more: number
+  /** One line when the latest match has no time and no event name: ticks written now can't be tied to this event, so they never count. Null otherwise. */
+  tickNote: string | null
 }
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
@@ -58,6 +60,7 @@ export function queueSheet(board: Board): QueueSheet {
   return {
     forMatch: tickFor, forLabel: board.tickLabel, verdict: { cleared: toConfirm === 0, text }, toConfirm, deferrals: deferrals.length, redsOpen, gate: gate.length,
     lines: all.slice(0, SHEET_LINES), more: Math.max(0, all.length - SHEET_LINES),
+    tickNote: board.untied ? "Ticks here can't be tied to this event: the log has no clock and no event name." : null,
   }
 }
 

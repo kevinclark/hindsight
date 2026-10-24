@@ -7,6 +7,7 @@ import { queueSheet } from '../src/board/sheets.ts'
 import { atLatest, boardLines, greyClose } from '../src/board/writes.ts'
 import type { BoardEvent, HistoryEvent, IssueEvent } from '../src/triage/history.ts'
 import { boardState, boardKey, parseHistory, serializeHistory } from '../src/triage/history.ts'
+import { dueLine, tags } from '../src/board/words.ts'
 import { shortMatchLabel } from '../src/ui/match-label.ts'
 import { BASE, ROBOT, SCHEDULE, input, match, session } from './helpers/board-scene.ts'
 
@@ -168,5 +169,47 @@ describe('wording the screens rely on', () => {
     const lines = [bl('workaround', 'test workaround', iso(1)), bl('defer', 'end-of-event', iso(1), { until: { kind: 'end-of-event' } })]
     expect(buildBoard(input(live, lines)).strip).toMatchObject({ reds: 1, deferredReds: 1, gate: 0 })
     expect(buildBoard(input(live)).strip).toMatchObject({ reds: 1, deferredReds: 0, gate: 1 })
+  })
+})
+
+describe('fix pass 2: model', () => {
+  it('a name match with a played time must also be within 30 days of the session (event codes repeat every year); no played time keeps the name match', () => {
+    const tick = (o: Partial<BoardEvent>) => bl('checked', 'Q6', after(5), { ...ref(5), ...o })
+    const n = (lines: HistoryEvent[]) => issue(buildBoard(input(live, lines))).checked.length
+    expect(n([tick({ played: iso(5 * 20 + 29 * 1440) })])).toBe(1)
+    expect(n([tick({ played: iso(5 * 20 + 31 * 1440) })])).toBe(0)
+    expect(n([tick({ played: iso(5 * 20 - 40 * 1440) })])).toBe(0)
+    expect(n([tick({ played: undefined })])).toBe(1)
+  })
+  it('awaitingClean: closed by hand and not seen for 3 matches; out of the gate and "no owner", still an open red, worded on the row', () => {
+    const lines = boardLines([], { device: 'dev-x', role: 'software' }, new Date(iso(300)), { key: A, robot: ROBOT }, greyClose(), atLatest(grey))
+    const b = buildBoard(input(grey, lines))
+    expect(issue(b).awaitingClean).toBe(true)
+    expect(b.strip).toMatchObject({ gate: 0, noOwner: 0, reds: 1, awaitingReds: 1 })
+    expect(dueLine(issue(b))).toBe('Check next match · closes after a clean match where the rule can be checked')
+    const seenAgain = buildBoard(input(live, [bl('status', 'check', after(5), ref(5))]))
+    expect(issue(seenAgain).awaitingClean).toBe(false)
+    expect(dueLine(issue(seenAgain))).toBe('Due before Q6')
+  })
+  it('a deferral to the next event, read at a later event, has ended: shown with its workaround, not dropped', () => {
+    const lines = [bl('workaround', 'test workaround', iso(1), { event: 'OTHER' }), bl('defer', 'next-event', iso(1), { event: 'OTHER', until: { kind: 'next-event' } })]
+    const i = issue(buildBoard(input(live, lines)))
+    expect(i.deferral).toMatchObject({ expired: true, workaround: 'test workaround' })
+    expect(i.status).toBe('open')
+    expect(tags(i)).toContain('Deferral ended')
+    // Any other deferral from another event is still dropped.
+    const gap = [bl('defer', 'end-of-event', iso(1), { event: 'OTHER', until: { kind: 'end-of-event' } })]
+    expect(issue(buildBoard(input(live, gap))).deferral).toBeNull()
+  })
+  it('the queue says so when ticks cannot be tied to the event: the latest match has no time and no event name', () => {
+    const blank = { ...fired(5), playedAt: null, event: '' } as ReturnType<typeof fired>
+    expect(queueSheet(buildBoard(input(session([fired(4), blank])))).tickNote).toMatch(/can't be tied to this event: the log has no clock and no event name/)
+    expect(queueSheet(buildBoard(input(live))).tickNote).toBeNull()
+  })
+  it('each issue says in how many matches it was seen, of those where the rule could be checked', () => {
+    const s = session([quiet(2), fired(3), fired(4), fired(5)])
+    s.matches[0].rules[RULE] = { status: 'not checked', findings: [], reason: 'test reason' }
+    expect(issue(buildBoard(input(s))).seenIn).toEqual({ n: 3, of: 3 })
+    expect(issue(buildBoard(input(live))).seenIn).toEqual({ n: 2, of: 4 })
   })
 })
