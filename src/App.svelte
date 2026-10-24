@@ -8,6 +8,7 @@
   import { buildFindingsJson, findingsFileName } from './report/findings-json.ts'
   import MatchTab from './ui/MatchTab.svelte'
   import Menu from './ui/Menu.svelte'
+  import AskText from './ui/AskText.svelte'
   import PowerTab from './ui/PowerTab.svelte'
   import LimitsTab from './ui/LimitsTab.svelte'
   import LoggingTab from './ui/LoggingTab.svelte'
@@ -434,6 +435,7 @@
 {/if}
 </div>
 
+<AskText />
 {#if mode === 'review' && current}<ReviewReport analysis={shownCurrent ?? current} {issues} {standing} wrong={wrongNow} />{/if}
 
 <style>

@@ -4,6 +4,7 @@
   summary of each is kept, so a whole event's folder fits in memory.
 -->
 <script lang="ts">
+  import { askText } from './ask-text.svelte.ts'
   import { summarizeLogWithCode, summaryRobot, type MatchSummary } from '../session/summary.ts'
   import CodeFolderControl from './CodeFolderControl.svelte'
   import { codeFolder } from './code-folder.svelte.ts'
@@ -414,8 +415,8 @@
     if (!label) { const { [fileName]: _, ...rest } = overrides; overrides = rest } else overrides = { ...overrides, [fileName]: label }
     writeStore('hindsight.sessionOverrides', overrides)
   }
-  function rename(s: Session) {
-    const name = window.prompt('Session name', s.label)
+  async function rename(s: Session) {
+    const name = await askText('Session name', s.label)
     if (!name) return
     renameSession(s.id, name.trim())
   }
@@ -454,8 +455,8 @@
     api.sessionCardPng = async () => (shown ? await cardToPngDataUrl(cardOf(shown)) : null)
     api.sessionReport = () => (shown ? sessionModel(shown, issues, typedBatteries) : null)
   })
-  function newSessionFor(fileName: string) {
-    const label = window.prompt('Move this log to the session named:', '')
+  async function newSessionFor(fileName: string) {
+    const label = await askText('Move this log to the session named:', '')
     if (label) moveMatch(fileName, label.trim())
   }
 

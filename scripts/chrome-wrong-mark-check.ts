@@ -62,7 +62,7 @@ async function shot(name: string) {
 // Waits until the match bar lists `matches` logs (a .dslog or history file adds none).
 async function drop(files: string[], matches: number) {
   const { result: { root } } = await send('DOM.getDocument', {}, sid)
-  const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog,.dslog,.jsonl"]' }, sid)
+  const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog,.dslog,.dsevents,.jsonl"]' }, sid)
   await send('DOM.setFileInputFiles', { nodeId, files }, sid)
   for (let i = 0; i < 300; i++) { await sleep(200); if ((await evalIn(`document.querySelectorAll('nav.matches button').length`)) >= matches) break }
   await sleep(300)
@@ -98,13 +98,20 @@ if (!(result.matches as string[]).some((l) => l.includes(MARK_ON))) await fail(`
 await pick(MARK_ON)
 await sleep(300)
 result.before = { head: await head(), rows: await rows() }
-await evalIn(`window.prompt = () => ${JSON.stringify(REASON)}`)
+// The page has no window.prompt any more (Electron's throws): text is asked in an in-page <dialog> (src/ui/AskText.svelte).
+const answerDialog = (text: string) => evalIn(`(async () => {
+  for (let i = 0; i < 50 && !document.querySelector('dialog[open]'); i++) await new Promise((r) => setTimeout(r, 100))
+  const d = document.querySelector('dialog[open]'); if (!d) return 'no dialog'
+  const input = d.querySelector('input'); input.value = ${JSON.stringify(text)}; input.dispatchEvent(new Event('input', { bubbles: true }))
+  d.querySelector('form').requestSubmit(); return 'answered'
+})()`)
 result.clicked = await evalIn(`(() => {
   const li = [...document.querySelectorAll('li.finding')].find(li => li.querySelector(':scope > details > summary .rule')?.innerText === ${JSON.stringify(RULE)} && li.classList.contains('error'))
   const b = li && [...li.querySelectorAll(':scope > details > .body .actions button')].find(b => b.innerText.startsWith('Not a real problem'))
   if (!b) return 'missing'
   b.click(); return 'clicked'
 })()`)
+if (result.clicked === 'clicked') await answerDialog(REASON)
 if (result.clicked !== 'clicked') {
   const seen = (result.before as { rows: { severity: string }[] }).rows.map((r) => r.severity.split(' ')[0])
   await fail(`${RULE} has no red finding on ${MARK_ON} to mark (its rows there: ${seen.join(', ') || 'none'}). A wrong mark demotes only reds; pick a check that is red on that match.`)
@@ -151,7 +158,6 @@ await shot('3-marked-match-after-reload.png')
 // stays in the list, and How sure counts it.
 await pick(others[0])
 await sleep(300)
-await evalIn(`window.prompt = () => 'test note'`)
 result.clickedReal = await evalIn(`(() => {
   const li = [...document.querySelectorAll('li.finding')].find(li => li.querySelector(':scope > details > summary .rule')?.innerText === ${JSON.stringify(RULE)})
   if (li) li.querySelector(':scope > details').open = true // a closed row's buttons have no innerText
@@ -159,6 +165,7 @@ result.clickedReal = await evalIn(`(() => {
   if (!b) return 'missing'
   b.click(); return 'clicked'
 })()`)
+if (result.clickedReal === 'clicked') await answerDialog('test note')
 if (result.clickedReal !== 'clicked') await fail(`${RULE} has no "Real problem" button on ${others[0]}: the check did not fire there`)
 await sleep(400)
 result.afterReal = { match: others[0], head: await head(), rows: await rows() }
