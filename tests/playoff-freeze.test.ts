@@ -192,13 +192,13 @@ describe('deferral suggestions after the cut-off', () => {
     expect(was.find((s) => s.suggested)!.id).toBe('gap-7')
     expect(was.every((s) => s.reason === undefined)).toBe(true)
   })
-  it('after it, for anything that is not red, the end of the event leads and is the pick; only "before playoffs" is gone', () => {
+  it('after it, for anything that is not red, the end of the event leads and is the pick; nothing is left out while it is mid-qualifications', () => {
     const was = suggestions(tl)
     const now = suggestions(tl, { passed: true, red: false })
     expect(now[0]).toMatchObject({ id: 'end', suggested: true, reason: 'after the cut-off' })
     expect(now.filter((s) => s.suggested)).toHaveLength(1)
-    expect(ids(now).slice(1)).toEqual(ids(was).filter((i) => i !== 'end' && i !== 'playoffs'))
-    expect([...ids(now)].sort()).toEqual(ids(was).filter((i) => i !== 'playoffs').sort())
+    expect(ids(now).slice(1)).toEqual(ids(was).filter((i) => i !== 'end'))
+    expect([...ids(now)].sort()).toEqual([...ids(was)].sort())
     expect(now.find((s) => s.id === 'end')!.until).toEqual({ kind: 'end-of-event' })
   })
   it('the board offers them by the issue\'s priority', () => {
@@ -268,13 +268,19 @@ describe('"still holds?" on each open deferral', () => {
 
 describe('no deferral point already in the past (UX)', () => {
   const ids = (xs: { id: string }[]) => xs.map((x) => x.id)
-  it('once the cut-off has passed, "Before playoffs" is not offered, red or not, with or without a schedule', () => {
-    for (const schedule of [SCHEDULE, null]) {
-      const tl = timeline(session([match(5)]), schedule, label)
-      expect(ids(suggestions(tl))).toContain('playoffs')
-      for (const red of [true, false]) expect(ids(suggestions(tl, { passed: true, red }))).not.toContain('playoffs')
-      expect(ids(suggestions(tl, { passed: false, red: true }))).toContain('playoffs')
-    }
+  it('kept while that gap is still ahead: cut-off after Q5, a schedule, mid-qualifications', () => {
+    const tl = timeline(session([match(5)]), SCHEDULE, label)
+    for (const red of [true, false]) expect(ids(suggestions(tl, { passed: true, red }))).toContain('playoffs')
+  })
+  it('dropped once it is behind: after the team\'s last qualification', () => {
+    const tl = timeline(session([match(40), match(41)]), SCHEDULE, label)
+    expect(ids(suggestions(tl))).toContain('playoffs')
+    for (const red of [true, false]) expect(ids(suggestions(tl, { passed: true, red }))).not.toContain('playoffs')
+    expect(ids(suggestions(tl, { passed: false, red: true }))).toContain('playoffs')
+  })
+  it('dropped with no schedule', () => {
+    const tl = timeline(session([match(5)]), null, label)
+    for (const red of [true, false]) expect(ids(suggestions(tl, { passed: true, red }))).not.toContain('playoffs')
   })
   it('a red keeps its pick (the next named gap, else the next match) among the rest', () => {
     const tl = timeline(session([match(5)]), SCHEDULE, label)

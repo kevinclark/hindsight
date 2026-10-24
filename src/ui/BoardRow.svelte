@@ -25,7 +25,7 @@
   </button>
   {#if askHolds}
     <p class="holds" data-holds>
-      <label><input type="checkbox" checked={!!fresh} disabled={!role && !fresh} aria-label={`Still holds: ${rowTitle(issue)}`} onchange={(e) => onHolds?.(issue, (e.currentTarget as HTMLInputElement).checked)} />{' '}Still holds?</label>{' '}
+      <label><input type="checkbox" checked={!!fresh} disabled={!role} aria-label={`Still holds: ${rowTitle(issue)}`} onchange={(e) => onHolds?.(issue, (e.currentTarget as HTMLInputElement).checked)} />{' '}Still holds?</label>{' '}
       {#if fresh}<b>Still holds, ticked by {fresh.role} at {clockText(fresh.when)}</b>{:else if issue.holds?.old}<span class="muted">ticked by {issue.holds.role} at {clockText(issue.holds.when)} ({issue.holds.ahead ? 'clock ahead' : 'old'}): tick again</span>{:else}<span class="muted">not asked yet</span>{/if}
     </p>
   {/if}

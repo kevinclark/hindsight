@@ -49,7 +49,7 @@ type PlayoffLike = Pick<MatchSummary, 'onField' | 'matchType' | 'matchLabel'>
 
 /**
  * An on-field log of the playoffs (elimination): its MatchType (3), else its match label. Both rest on `/DriverStation/MatchType`,
- * which reads practice for about the first second of a log (8033's logs, CLAUDE.md), so a log that ends that early is not counted.
+ * which reads practice for about the first second of a log (in the team's 2026 logs), so a log that ends that early is not counted.
  */
 export const isPlayoffLog = (m: PlayoffLike): boolean =>
   m.onField && (m.matchType === 3 || /^(elimination|playoff|quarterfinal|semifinal|final)/i.test(m.matchLabel.trim()))

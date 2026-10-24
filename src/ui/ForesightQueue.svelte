@@ -40,7 +40,7 @@
   {#if checklist.freeze}
     {#if checklist.freeze.change}
       {@const c = checklist.freeze.change}
-      {#if c.amber}<p class="change amber" data-code-change><b>Flag:</b>{' '}{c.text}{#if c.kind === 'changed' && !changed}{' '}<span class="muted">Choose the robot-code folder below to see which files changed.</span>{/if}</p>
+      {#if c.amber}<p class="change amber" role="status" data-code-change><b>Flag:</b>{' '}{c.text}{#if c.kind === 'changed' && !changed}{' '}<span class="muted">Choose the robot-code folder below to see which files changed.</span>{/if}</p>
       {:else}<p class="change same" data-code-change><span aria-hidden="true">✓</span>{' '}{c.text}</p>{/if}
       {#if c.kind === 'changed' && changed}
         {#if 'files' in changed}
