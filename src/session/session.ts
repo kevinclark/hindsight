@@ -25,6 +25,7 @@ import type { SummaryFinding } from './summary.ts'
 import { median } from '../match/series.ts'
 import { clockOffsetText, eventLabel, type ResolvedEvent } from '../tba/identify.ts'
 import { addEventDay, eventOfDay, type EventDayIndex } from '../tba/event-days.ts'
+import { dateText } from './day.ts'
 import { applyMode, inferredMode, modeChoice, type Mode } from './mode.ts'
 
 export interface Session {
@@ -126,11 +127,7 @@ export function joinSplitMatches(summaries: MatchSummary[]): MatchSummary[] {
   return out.map(joinPieces)
 }
 
-/** Local calendar date, YYYY-MM-DD. */
-export function dateText(ms: number): string {
-  const d = new Date(ms)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+export { dateText }
 
 export type Confidence = 'consistent' | 'intermittent' | 'once' | 'not enough data' | 'quiet'
 
@@ -263,6 +260,6 @@ export function standingKeys(session: Session): Set<string> {
 }
 
 /** "fired in 5 of 7 matches where it could be checked" */
-export function rateText(fired: number, checkable: number): string {
-  return `fired in ${fired} of ${checkable} match${checkable === 1 ? '' : 'es'} where it could be checked`
+export function rateText(fired: number, checkable: number, unit: 'match' | 'log' = 'match'): string {
+  return `fired in ${fired} of ${checkable} ${unit === 'log' ? 'log' : 'match'}${checkable === 1 ? '' : unit === 'log' ? 's' : 'es'} where it could be checked`
 }

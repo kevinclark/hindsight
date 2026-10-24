@@ -14,7 +14,7 @@ export default rule({
   id: 'collision/tilt',
   title: 'Robot tilted or wedged',
   severity: 'warning',
-  judges: 'performance',
+  judges: 'fault',
   who: ['software', 'pit', 'drive'],
   meaning: 'The robot tipped or tilted past 15° for a while. Usually it drove onto or into something and got wedged; in auto that can cost the match.',
   causes: [

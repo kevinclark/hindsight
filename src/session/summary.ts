@@ -25,9 +25,10 @@ export { dateFromFileName, playedAt } from '../match/played-at.ts'
 /**
  * The shape of a saved MatchSummary. Summaries saved in the browser by an older Hindsight are still shown while their
  * shape is the same as this one's. Bump it whenever MatchSummary changes in a way old code can't be drawn from
- * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it.
+ * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it (`runs` is one: a summary without it
+ * shows as before, with the "Read again to update" cue).
  */
-export const SUMMARY_SHAPE = 4
+export const SUMMARY_SHAPE = 3
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
@@ -91,7 +92,7 @@ export interface MatchSummary {
    * The runs in the log (ADR 8): how many, how long each lasted (seconds, in time order), and how many performance findings
    * were dropped because they fell in a run under 10 s. On the field the FMS match is one run. A log never enabled has none.
    */
-  runs: { count: number; seconds: number[]; droppedShort: number }
+  runs?: { count: number; seconds: number[]; droppedShort: number }
 }
 
 export interface MatchMetrics {
@@ -239,7 +240,8 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
     pieces: pieces.map((p) => p.fileName),
     logging: worstAcross(pieces.map((p) => p.logging)),
     // The pieces of one match: their runs side by side (each piece started its own run).
-    runs: { count: sum(pieces.map((p) => p.runs.count)), seconds: pieces.flatMap((p) => p.runs.seconds), droppedShort: sum(pieces.map((p) => p.runs.droppedShort)) },
+    // A piece saved before runs existed has none: the joined match has them only when every piece does.
+    runs: pieces.every((p) => p.runs) ? { count: sum(pieces.map((p) => p.runs!.count)), seconds: pieces.flatMap((p) => p.runs!.seconds), droppedShort: sum(pieces.map((p) => p.runs!.droppedShort)) } : undefined,
   }
 }
 

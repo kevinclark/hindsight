@@ -380,7 +380,7 @@
       ]} />
     </span>
     <div class="rest">
-      {#if modeNow}<ModeLine text={modeNow.text} mode={modeNow.mode} byHand={modeNow.byHand} onChange={(m) => chooseMode(modeNow.id, m)} />{/if}
+      {#if modeNow}<ModeLine text={modeNow.text} mode={modeNow.mode} byHand={modeNow.byHand} onChange={(m) => chooseMode(modeNow.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />{/if}
       <p class="meta">
         <code>{current.match.fileName}</code>{#each current.match.ds as d (d.fileName)}{' + '}<code>{d.fileName}</code>{/each} ·
         {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}

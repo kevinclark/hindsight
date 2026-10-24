@@ -35,7 +35,7 @@ export interface Finding {
   title: string
   /** The moment it happened, in robot (log) seconds (null for whole-match findings). */
   time: number | null
-  /** The same moment in seconds into the match (from the start of auto), or null. */
+  /** The same moment in seconds into the match (from the start of auto), or null. Off the field: seconds into the run that holds `time`. */
   matchTime: number | null
   /** The same moment in words, match time first: "1:47 into the match (teleop; robot time 532.8 s)". */
   when: string | null

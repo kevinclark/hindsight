@@ -113,10 +113,9 @@ interface About {
   title: string
   severity: Severity
   /**
-   * What the rule judges, chosen for every rule: 'fault' when something broke, disconnected, restarted or was disabled
-   * (a device dropped off CAN, comms were lost), 'performance' when it measures a margin, rate, magnitude or readiness
-   * (battery voltage margin, loop overruns, a hard hit). A performance finding whose time falls in a run shorter than
-   * 10 s is dropped, because a short run proves no margin or rate; a fault is kept however short the run (ADR 8).
+   * What the rule judges, chosen for every rule: 'performance' when a short run would invalidate the evidence (a margin,
+   * rate or share of time); 'fault' when the finding is an event with its own duration, or a disconnect or break. A
+   * performance finding whose time falls in a run shorter than 10 s is dropped; a fault is kept however short the run (ADR 8).
    */
   judges: 'fault' | 'performance'
   who: Audience[]

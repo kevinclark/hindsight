@@ -8,6 +8,7 @@
  */
 import type { MatchSummary } from './summary.ts'
 import { eventLabel } from '../tba/identify.ts'
+import { dateText } from './day.ts'
 import type { Session } from './session.ts'
 
 export type Mode = 'event' | 'practice'
@@ -27,12 +28,6 @@ export function withModeChoice(store: Record<string, string>, sessionId: string,
   return mode === null ? rest : { ...rest, [MODE_PREFIX + sessionId]: mode }
 }
 
-/** Local calendar date, YYYY-MM-DD (the same as session.ts dateText; kept here so this file needs no value import from it). */
-function dayText(ms: number): string {
-  const d = new Date(ms)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 const STAGES: [number, string][] = [[1, 'practice'], [2, 'qualification'], [3, 'elimination']]
 
 /** "qualification", "qualification and elimination": the match types the field data of these logs carry. */
@@ -45,7 +40,7 @@ export function stageWords(logs: MatchSummary[]): string {
 /** The first dated log's day, "2025-07-12", or null. */
 function firstDay(logs: MatchSummary[]): string | null {
   const at = logs.find((m) => m.playedAt !== null)?.playedAt
-  return at === undefined || at === null ? null : dayText(at)
+  return at === undefined || at === null ? null : dateText(at)
 }
 
 /** The event's name as the field data or The Blue Alliance gives it. */
@@ -84,7 +79,7 @@ export function logModeLine(session: Session, fileName: string): string {
  * day's other logs to know it belongs to an event). `choice` is what the store holds under that id.
  */
 export function loneLogMode(m: { onField: boolean; event: string; matchLabel: string; playedAt: number | null }, store: Readonly<Record<string, string>> = {}): { line: string; sessionId: string; mode: Mode; byHand: boolean } {
-  const day = m.playedAt === null ? null : dayText(m.playedAt)
+  const day = m.playedAt === null ? null : dateText(m.playedAt)
   const sessionId = m.onField ? `event:${m.event}:${day ?? ''}` : day ? `practice:${day}` : 'undated'
   const choice = modeChoice(store, sessionId)
   const mode = choice ?? (m.onField ? 'event' : 'practice')
@@ -101,8 +96,8 @@ export function loneLogMode(m: { onField: boolean; event: string; matchLabel: st
  * that session's id, or the id a practice session for today would have.
  */
 export function todayMode(sessions: readonly Session[], now: number, store: Readonly<Record<string, string>> = {}): { line: string; sessionId: string; mode: Mode; byHand: boolean } {
-  const today = dayText(now)
-  const event = sessions.find((s) => s.kind === 'event' && s.matches.some((m) => m.onField && m.playedAt !== null && dayText(m.playedAt) === today))
+  const today = dateText(now)
+  const event = sessions.find((s) => s.kind === 'event' && s.matches.some((m) => m.onField && m.playedAt !== null && dateText(m.playedAt) === today))
   const sessionId = event ? event.id : `practice:${today}`
   const choice = modeChoice(store, sessionId)
   const mode = choice ?? (event ? 'event' : 'practice')

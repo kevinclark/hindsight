@@ -4,6 +4,7 @@
  */
 import { withModeChoice, type Mode } from '../session/mode.ts'
 
+// Mode choices share this store under MODE_PREFIX (src/session/mode.ts): filter them in any future clear or export.
 const KEY = 'hindsight.sessionRenames'
 
 function read(): Record<string, string> {

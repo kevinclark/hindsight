@@ -399,7 +399,8 @@ export class MatchView {
       : raw.matchStart !== null && raw.matchEnd !== null ? [{ start: raw.matchStart, end: raw.matchEnd }] : []
     this.onField = raw.fms
     this.beforeEnable = raw.foresight ? [{ start: raw.foresight.start, end: raw.foresight.end }] : []
-    this.windowWords = this.wholeMatch.length || !raw.foresight ? 'during the match' : raw.foresight.words ?? 'since start-up settled'
+    const runs = !raw.fms && raw.runs?.length > 1 ? raw.runs.length : 0
+    this.windowWords = runs ? `across the ${runs} runs` : this.wholeMatch.length || !raw.foresight ? 'during the match' : raw.foresight.words ?? 'since start-up settled'
   }
 
   /**

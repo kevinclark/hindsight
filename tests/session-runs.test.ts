@@ -64,3 +64,25 @@ describe('trends by unit', () => {
     expect(trendSet(asPractice).logs.map((m) => m.fileName)).toEqual(['q1'])
   })
 })
+
+describe('summaries saved before runs existed', () => {
+  const old = (m: MatchSummary) => { const { runs: _r, ...rest } = m as MatchSummary & { runs?: unknown }; return rest as unknown as MatchSummary }
+  it('group exactly as before, with new ones mixed in, and the event day is not split', () => {
+    const q = (n: number, at: number, over: Partial<MatchSummary> = {}) => log(`q${n}`, at, [150], { onField: true, event: 'TEST', matchLabel: `Qualification ${n}`, matchType: 2, ...over })
+    const set = [q(1, day), log('pit', day + 1800e3, [20]), q(2, day + 3600e3), log('p1', day + 7 * 86400e3, [30])]
+    const mixed = [old(set[0]), set[1], old(set[2]), old(set[3])]
+    const shape = (l: MatchSummary[]) => groupSessions(l).map((s) => [s.kind, s.matches.map((m) => m.fileName), s.pitRuns?.map((m) => m.fileName)])
+    expect(shape(mixed)).toEqual(shape(set))
+    expect(shape(mixed)[0]).toEqual(['event', ['q1', 'q2'], ['pit']])
+    expect(trendSet(groupSessions(mixed)[1]).logs.map((m) => m.fileName)).toEqual(['p1'])
+  })
+  it('joining the pieces of a match with an old piece keeps working', () => {
+    const full = { onField: true, event: 'TEST', matchLabel: 'Qualification 1', timing: { parseMs: 1, rulesMs: 1 }, problems: [], clockNote: null, batteryId: null, fileSize: 1,
+      robot: { profileId: 'p', name: 'p', code: { repo: 'r', branch: 'main', sha: 'abc1234' }, how: 'signals', note: null, present: 40, total: 90 } } as unknown as Partial<MatchSummary>
+    const a = log('a', day, [100], full)
+    const b = old(log('b', day + 60e3, [50], full))
+    const [s] = groupSessions([a, b])
+    expect(s.matches.length).toBe(1)
+    expect(s.matches[0].runs).toBeUndefined()
+  })
+})

@@ -174,6 +174,7 @@
   })
   // Practice is judged by run (ADR 8): the runs in the session's logs, and the logs the Trends leave out (never enabled, or only runs under 10 s).
   const practice = $derived(!!session && modeOf(session) === 'practice')
+  const unitWord = (isPractice: boolean, many: boolean) => (isPractice ? (many ? 'logs' : 'log') : many ? 'matches' : 'match')
   const trendInfo = $derived(session ? trendSet(session) : null)
   const leftOutText = $derived(practice && session ? leftOutLine(runsSummary(session.matches)) : '')
   // Pit runs: logs not on the field, on an event's days. Not matches: they have their own grid and are in no count above.
@@ -480,7 +481,7 @@
     const [a, b] = [r.first.build?.sha || '?', r.last.build?.sha || '?']
     return a === b ? `build ${a}` : `builds ${a}–${b}`
   }
-  const span = (r: StateRun) => (r.matches === 1 ? label(r.first) : `${label(r.first)} to ${label(r.last)}, ${r.matches} matches`)
+  const span = (r: StateRun) => (r.matches === 1 ? label(r.first) : `${label(r.first)} to ${label(r.last)}, ${r.matches} ${unitWord(practice, true)}`)
   // At most 2 decimals, without trailing zeros: 7.4, 1.2–2.1, 53.
   const fmt = (x: number) => String(+x.toFixed(Math.abs(x) >= 100 ? 0 : 2))
 </script>
@@ -491,7 +492,7 @@
   {@const stop = stopped.get(f.key)}
   <li class={f.severity} class:filed={allMarked(f)}>
     <span class="lead"><span class="sev"><span aria-hidden="true">{SEV_ICON[f.severity]}</span> {SEV_WORD[f.severity]}</span><span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span></span>
-    <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
+    <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable, practice ? 'log' : 'match')} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
     {#if f.measured.length}
       <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
     {/if}
@@ -534,7 +535,7 @@
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
-      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{s.matches.length} match{s.matches.length === 1 ? '' : 'es'}{s.pitRuns?.length ? `, ${s.pitRuns.length} pit run${s.pitRuns.length === 1 ? '' : 's'}` : ''}</small></button>
+      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{modeOf(s) === 'practice' ? `${s.matches.length} log${s.matches.length === 1 ? '' : 's'}` : `${s.matches.length} match${s.matches.length === 1 ? '' : 'es'}`}{s.pitRuns?.length ? `, ${s.pitRuns.length} pit run${s.pitRuns.length === 1 ? '' : 's'}` : ''}</small></button>
     {/each}
   </nav>
 {/if}
@@ -548,7 +549,7 @@
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
   </section>
-  <ModeLine text={modeLine(session)} mode={modeOf(session)} byHand={!!session.modeByHand} onChange={(m) => chooseMode(session.id, m)} />
+  <ModeLine text={modeLine(session)} mode={modeOf(session)} byHand={!!session.modeByHand} onChange={(m) => chooseMode(session.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />
   {#if practice}<p class="note" data-runs-summary>{runsLine(runsSummary(session.matches))} A practice day is judged by run, not by match: each log counts once in the grid and the trends, however many runs it holds.</p>{/if}
   {#if session.event}<p class="note" data-event-note>The Blue Alliance says this was {session.event.name}{#if session.event.by === 'date'}{' '}<strong>(guess)</strong>{/if} ({session.event.key}), {session.event.start} to {session.event.end}: {session.event.matched} of the {session.event.of} qualification numbers in these logs are on the team's list there{session.event.by === 'date' ? ' (several events held as many; the robot clock chose, so this is a guess)' : ''}.{session.event.clockOffsetDays ? ` The robot clock is ${clockOffsetText(session.event.clockOffsetDays).replace('robot clock ', '')}.` : ''} {session.event.fromCache ? 'From a saved copy' : 'Fetched'} {new Date(session.event.fetchedAt).toLocaleString()}.</p>{/if}
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
@@ -568,7 +569,7 @@
     </section>
   {/if}
   {#each robots as r (r.key)}
-    <p class="note">Robot: <strong>{r.name}</strong>{#if !r.named}, no profile is for this robot{:else}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
+    <p class="note">Robot: <strong>{r.name}</strong>{#if !r.named}, no profile is for this robot{:else}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} ${unitWord(practice, r.matches.length !== 1)}` : ''}</p>
   {/each}
   {#if onDraft}{#each offers as { link: l, logs, total, refs } (l.code.repo)}
     <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}{refs > 1 ? ` (${logs} of these ${total} logs ran it; ${refs} commits in all)` : ''}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>
@@ -637,13 +638,13 @@
     <details class="once-fold" data-left-out>
       <summary>{leftOutText}</summary>
       <p class="hint">A log that was never enabled, or whose runs are all under 10 s, shows no margin or rate, so it is listed (with its runs, below) but not drawn here.</p>
-      <ul class="changes">{#each trendInfo!.leftOut as x (x.log.fileName)}<li>{label(x.log)}: {x.why}{x.log.runs.count ? ` (${runsText(x.log)})` : ''}</li>{/each}</ul>
+      <ul class="changes">{#each trendInfo!.leftOut as x (x.log.fileName)}<li>{label(x.log)}: {x.why}{x.log.runs?.count ? ` (${runsText(x.log)})` : ''}</li>{/each}</ul>
     </details>
   {/if}
   <Trends matches={trendInfo!.logs} unit={trendInfo!.unit} {typedBatteries} labels={trendInfo!.logs.map(shortLabel)} onOpen={open} />
 
   <h3>Findings across the session</h3>
-  <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some, or in every match of only 2 checked (too few to call consistent). Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
+  <p class="hint">Consistent: fired in most {practice ? 'logs' : 'matches'} where it could be checked (3 or more). Intermittent: in some, or in every one of only 2 checked (too few to call consistent). Once: one {practice ? 'log' : 'match'} only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
   <ul class="merged">
     {#each listed as f (f.key)}
       {@render row(f)}
@@ -670,7 +671,7 @@
   {/if}
   {#if filedRows.length}
     <details class="once-fold filed-fold">
-      <summary>{filedRows.length} marked not a real problem in every match {filedRows.length === 1 ? 'it' : 'they'} fired in</summary>
+      <summary>{filedRows.length} marked not a real problem in every {practice ? 'log' : 'match'} {filedRows.length === 1 ? 'it' : 'they'} fired in</summary>
       <ul class="merged">
         {#each filedRows as f (f.key)}
           {@render row(f)}
@@ -683,7 +684,7 @@
   {#if withLogging === 0}
     <p class="hint">Read these logs again (choose the folder) to see which signals each match logged.</p>
   {:else}
-    <p class="hint">Signals the checks need whose state changed from one match to the next, in the order the matches were played, with the code build each ran. Open a match's Logging tab for what each one guards.{withLogging < session.matches.length ? ` ${session.matches.length - withLogging} matches were read before Hindsight kept this and are left out.` : ''}</p>
+    <p class="hint">Signals the checks need whose state changed from one {practice ? 'log' : 'match'} to the next, in the order the {practice ? 'logs' : 'matches'} were played, with the code build each ran. Open a {practice ? 'log' : 'match'}'s Logging tab for what each one guards.{withLogging < session.matches.length ? ` ${session.matches.length - withLogging} {practice ? 'logs' : 'matches'} were read before Hindsight kept this and are left out.` : ''}</p>
     {#if changes.length === 0}
       <p>No signal appeared or vanished between matches.</p>
     {:else}

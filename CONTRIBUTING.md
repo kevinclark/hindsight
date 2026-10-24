@@ -55,8 +55,8 @@ export default rule({
 2. **Fill in the description first.** The comment at the top says what it checks (with the threshold) and why (the
    match and what happened). The app shows these under every finding, so write them for a student standing
    in the pit:
-   - `judges`: `'fault'` when something broke, disconnected, restarted or was disabled, `'performance'` when it measures
-     a margin, rate, magnitude or readiness. Off the field the robot is enabled in runs of any length: a performance
+   - `judges`: `'performance'` when a short run would invalidate the evidence (a margin, rate or share of time), `'fault'`
+     when the finding is an event with its own duration, or a disconnect or break. Off the field the robot is enabled in runs of any length: a performance
      finding in a run under 10 s is dropped (a short run proves no margin), a fault is kept;
    - `meaning`: what it probably means, in a sentence or two;
    - `causes`: what could cause it, most likely first, each with what to look for and **where** (a tab in this app,

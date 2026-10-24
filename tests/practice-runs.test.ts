@@ -113,17 +113,17 @@ describe('a run under 10 s is checked for faults only', () => {
 
 describe('every rule says what it judges', () => {
   const all = [...new Map([...RULES, ...FORESIGHT_RULES].map((r) => [r.id, r])).values()]
-  it('all 44 rules choose, 20 faults and 24 performance', () => {
+  it('all 44 rules choose, 24 faults and 20 performance', () => {
     expect(all.length).toBe(44)
     expect(all.every((r) => r.judges === 'fault' || r.judges === 'performance')).toBe(true)
-    expect(all.filter((r) => r.judges === 'fault').length).toBe(20)
+    expect(all.filter((r) => r.judges === 'fault').length).toBe(24)
   })
   it('the faults are the ones where something broke, disconnected, restarted or was disabled', () => {
     expect(all.filter((r) => r.judges === 'fault').map((r) => r.id).sort()).toEqual([
       'alerts/passthrough', 'auto/early-disable', 'can/bus-dropout', 'can/device-dropout', 'can/device-rebooted', 'can/input-disconnected',
-      'can/usb-dropout', 'comms/ds-log-truncated', 'comms/emergency-stop', 'comms/loss', 'foresight/controllers', 'foresight/log-usb-stick',
-      'foresight/sticky-faults', 'foresight/values-updating', 'loop/restart-mid-match', 'mech/stuck-state', 'mech/zero-not-completed',
-      'power/brownout', 'power/pd-not-reporting', 'vision/stale',
+      'can/usb-dropout', 'collision/tilt', 'comms/ds-log-truncated', 'comms/emergency-stop', 'comms/loss', 'foresight/controllers', 'foresight/log-usb-stick',
+      'foresight/sticky-faults', 'foresight/values-updating', 'loop/restart-mid-match', 'mech/slip', 'mech/stall', 'mech/stuck-state', 'mech/zero-not-completed',
+      'power/brownout', 'power/limit-not-applied', 'power/pd-not-reporting', 'vision/stale',
     ])
   })
 })
@@ -135,5 +135,22 @@ describe('the describer keeps the runs', () => {
     expect(usableReading({ runs: { count: 2, seconds: [30, 4] } })).toEqual({ runs: { count: 2, seconds: [30, 4] } })
     expect(usableReading({ runs: { count: 3, seconds: [30, 4] } })).toEqual({})
     expect(usableReading({ runs: { count: 1, seconds: ['x'] } })).toEqual({})
+  })
+})
+
+describe('words for the window, and the exemption', () => {
+  const alert = (at: number): FixtureEntry => ({ name: '/RealOutputs/Alerts/warnings', type: 'string[]', records: [[0, []], [at, ['Intake jammed']], [at + 2, []]] })
+  it('an alert raised in a run says "across the N runs" with more than one run, and "during the match" with one', () => {
+    const many = analyse([...enabledAt([[10, 40], [100, 160]]), alert(120)]).report.findings.find((f) => f.rule === 'alerts/passthrough')
+    expect(many?.title).toBe('Alert "Intake jammed" 1× across the 2 runs')
+    const one = analyse([...enabledAt([[10, 60]]), alert(30)]).report.findings.find((f) => f.rule === 'alerts/passthrough')
+    expect(one?.title).toBe('Alert "Intake jammed" 1× during the match')
+  })
+  it('a rest-voltage finding in a 5 s first run is kept: it is about the moment before the run', () => {
+    const entries = enabledAt([[10, 15], [100, 160]]).filter((e) => e.name !== '/SystemStats/BatteryVoltage')
+    const a = analyse([...entries, { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 11.8], [200, 12.4]] }])
+    const f = a.report.findings.find((x) => x.rule === 'power/rest-voltage')
+    expect(f?.run).toBe(1)
+    expect(a.report.droppedInShortRuns).toBeUndefined()
   })
 })
