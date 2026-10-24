@@ -109,7 +109,6 @@
   async function load(list: FileList | File[] | null, fromLink = false) {
     const files = Array.from(list ?? [])
     if (files.length === 0) return
-    if (!fromLink) { linkedRepo = ''; stampTeam = false }
     // Two drops add up (a second log joins the draft); a start() in between replaces both.
     const mine = generation
     busy = true
@@ -123,6 +122,8 @@
         const bytes = new Uint8Array(await f.arrayBuffer())
         if (mine !== generation) return
         if (startsWithWpilog(bytes)) {
+          // A log the student dropped is not the library's linked one (a snapshot or profile.json leaves the link).
+          if (!fromLink) { linkedRepo = ''; stampTeam = false }
           const log: WpilogFile = openWpilog(bytes)
           logs = [...logs.filter((l) => l.fileName !== f.name), { log, fileName: f.name }]
           newLogs = true
@@ -160,6 +161,7 @@
       const path = f.webkitRelativePath || f.name
       if (path.endsWith('.java')) read.push({ path, text: await f.text() })
     }
+    if (mine !== generation) return
     try {
       await loadJavaInPage()
       const head = await codeHead(gitRepoOfFiles(files))
@@ -180,6 +182,8 @@
   export async function start(files: File[], spec: string): Promise<void> {
     const s = builderStart(spec)
     generation++
+    // A load or code read this start() replaces won't finish its own "Reading…".
+    busy = false
     logs = []; snapshot = null; hints = null; json = null
     ;({ keptAs, openedProfile, keptNote, problems, draftNotes, notUsed, guessedSignals, seenLimits, hintsFrom, githubSpec, askingGitHub, linkedRepo, stampTeam } = s)
     await load(files, true)
@@ -208,6 +212,8 @@
       await loadJavaInPage()
       const found = await hintsAt(browserGitHub(parsed.repo), parsed.ref)
       if (mine !== generation) return
+      // The repo read names the draft's code from now on (it may not be the linked one).
+      if (linkedRepo) linkedRepo = parsed.repo
       useHints(found, `${parsed.repo} (GitHub)`)
       askingGitHub = false
       problems = []

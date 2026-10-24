@@ -389,7 +389,7 @@
           <strong>{r.name}</strong> · {r.logs} log{r.logs === 1 ? '' : 's'} ·
           {#if code}code <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a>{/if}
           {#if r.source.kind === 'draft'}
-            <button class="primary" onclick={() => draft(r)} title="Opens {baseName(r.source.entry.record.path)}, this robot's newest log linked to its code on this computer, in the profile builder with its code ready to read from GitHub.">Draft a profile from its code</button>
+            <button class="primary" onclick={() => draft(r)} title="Opens {baseName(r.source.entry.record.path)}, this robot's newest log linked to its code on this computer, in the profile builder with the code it ran ready to read from GitHub ({codeSpec({ code: r.source.code, build: r.source.entry.record.build })}). A session's offer may pick another commit: the one most of that session's logs ran.">Draft a profile from its code</button>
           {:else if r.source.kind === 'not here'}<span class="meta">none of its logs linked to code is on this computer: download one to draft from</span>
           {:else}<span class="meta">no code linked: set your GitHub organization under Your team</span>{/if}
         </li>
@@ -502,9 +502,9 @@
   .report { border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem; margin-bottom: 1rem; }
   .report h2 { font-size: 1rem; margin: 0.2rem 0; }
   .flags { display: flex; gap: 1.5rem; list-style: none; padding: 0; margin: 0.25rem 0; }
-  .plain { list-style: none; padding-left: 0; max-height: none; }
-  .plain li { min-height: 28px; }
   .rows { margin: 0.25rem 0 0.5rem; padding-left: 1.2rem; max-height: 14rem; overflow: auto; font-size: 0.85rem; }
+  .rows.plain { list-style: none; padding-left: 0; max-height: none; }
+  .plain li { min-height: 28px; }
   .layout { display: grid; grid-template-columns: 14rem 1fr; gap: 1.5rem; align-items: start; }
   @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
   aside { font-size: 0.85rem; }
