@@ -9,7 +9,9 @@
   import type { RobotProfile } from '../profiles/types.ts'
   import type { ScheduledMatch } from '../tba/schedule.ts'
   import type { BoardRole, HistoryEvent, Triage } from '../triage/history.ts'
-  import { buildBoard, eventIdOf, ruleRates, PRIORITY_WORDS, RED_CAP, type BoardIssue } from '../board/model.ts'
+  import { buildBoard, eventIdOf, ruleRates, HOLDS, PRIORITY_WORDS, RED_CAP, type BoardIssue } from '../board/model.ts'
+  import { cutOffText, readCutOff } from '../board/freeze.ts'
+  import { clockText } from '../board/words.ts'
   import { queueSheet, type QueueSheet } from '../board/sheets.ts'
   import { FAMILIES } from '../board/model.ts'
   import { readRole, ROLES, writeRole } from '../board/role.ts'
@@ -67,7 +69,7 @@
     onWrite((device, h) => make({ device, role: r }, h))
   }
   const change = (i: BoardIssue, changes: Change[]) => write((who, h) => boardLines(h, who, new Date(), i, changes, atLatest(session)))
-  const note = (kind: 'pit-change' | 'missed' | 'handoff-read', text: string) => write((who, h) => [noteLine(h, who, new Date(), kind, eventIdOf(session), board.tl.last?.label ?? '', text)])
+  const note = (kind: 'pit-change' | 'missed' | 'handoff-read' | 'cut-off', text: string) => write((who, h) => [noteLine(h, who, new Date(), kind, eventIdOf(session), board.tl.last?.label ?? '', text)])
   const grey = (i: BoardIssue, what: 'close' | 'take') => change(i, what === 'close' ? greyClose() : greyTake(role!))
 
   // The pit line for the latest match, editable.
@@ -76,6 +78,15 @@
   let pitSeen = $state<string | null>(null)
   $effect(() => { if (pitSeen !== pitNow) { pitSeen = pitNow; pitText = pitNow } })
 
+  // The playoff cut-off (ADR 7): its setting, the matches "after Qn" can name, and (once passed) the open deferrals that are asked "still holds?".
+  const cutOffChoices = $derived.by(() => {
+    const quals = new Set<number>([...board.tl.starts.keys(), ...board.labels.map((l) => /^Q(\d+)$/.exec(l)?.[1]).filter((n): n is string => !!n).map(Number)])
+    const cur = board.cutOff.setting
+    if (cur.kind === 'after') quals.add(cur.qual)
+    return [...quals].sort((a, b) => a - b).map((n) => `Q${n}`)
+  })
+  const cutOffValue = $derived(cutOffText(board.cutOff.setting))
+  const holdsRows = $derived(board.cutOff.passed ? board.rows.filter((i) => i.status === 'deferred' && i.deferral && !i.deferral.expired) : [])
   const redsNote = $derived.by(() => { const p = [board.strip.deferredReds ? `${board.strip.deferredReds} deferred` : '', board.strip.awaitingReds ? `${board.strip.awaitingReds} closed, awaiting a clean match` : ''].filter(Boolean); return p.length ? ` (${p.join(', ')})` : '' })
   const unit = (n: number, one: string, many: string) => (n === 1 ? one : many)
   const mechs = $derived([...new Set([...board.rows.map((i) => i.mechanism)])].sort((a, b) => (FAMILIES.includes(a) ? 1 : 0) - (FAMILIES.includes(b) ? 1 : 0) || a.localeCompare(b)))
@@ -109,6 +120,7 @@
       <span><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all{redsNote}</span>
       {#if board.strip.nextGap}<span>Next gap: <strong>{board.strip.nextGap}</strong></span>{/if}
     </p>
+    {#if board.cutOff.banner}<p class="freeze" role="status" data-freeze><b>{board.cutOff.banner}</b></p>{/if}
     <div class="toolbar">
       <button type="button" class="primary" onclick={() => (view = 'queue')}>Queue sheet (print)</button>
       <button type="button" onclick={() => (view = 'handoff')}>Handoff{board.handoff ? '' : ' (not read yet)'}</button>
@@ -120,6 +132,33 @@
         <button type="button" aria-pressed={group === 'mechanism'} onclick={() => (group = 'mechanism')}>By mechanism</button>
       </span>
     </div>
+
+    <details class="cutoff" data-cutoff>
+      <summary>Playoff cut-off: {board.cutOff.words}{board.cutOff.passed ? ' · passed' : ''}</summary>
+      <p class="small muted">From the cut-off, Hindsight analyses and flags code changes; fixes are offered for reds only. Nothing is blocked. {board.cutOff.passed ? 'Passed' : 'Not passed'}: {board.cutOff.why}.</p>
+      <label>Set it to
+        <select aria-label="Playoff cut-off" disabled={!role} value={cutOffValue} onchange={(e) => note('cut-off', cutOffText(readCutOff((e.currentTarget as HTMLSelectElement).value)))}>
+          <option value="alliance-selection">Alliance selection (default)</option>
+          {#each cutOffChoices as q (q)}<option value={q}>After {q}</option>{/each}
+          <option value="off">Off</option>
+        </select></label>
+      {#if !role}<span class="small muted">Choose your role to change it.</span>{/if}
+    </details>
+    {#if holdsRows.length}
+      <h4 data-holds>Still holds? <span class="count">({holdsRows.length} open {unit(holdsRows.length, 'deferral', 'deferrals')})</span></h4>
+      <p class="small muted">After the cut-off, check each workaround still holds before the next match. A tick says who and when, and counts for 90 minutes.</p>
+      <ul class="holds">
+        {#each holdsRows as i (i.key)}
+          {@const t = i.holds && !i.holds.old ? i.holds : null}
+          <li>
+            <label><input type="checkbox" checked={!!t} disabled={!role && !t} aria-label={`Still holds: ${rowTitle(i)}`} onchange={(e) => change(i, [{ op: (e.currentTarget as HTMLInputElement).checked ? 'checked' : 'unchecked', value: HOLDS }])} />
+              <b>{rowTitle(i)}</b></label>
+            <span class="small">Workaround until {i.deferral!.point.until}: {i.deferral!.workaround || 'none written'}</span>
+            {#if t}<span class="small"><b>Still holds, ticked by {t.role} at {clockText(t.when)}</b></span>{:else if i.holds?.old}<span class="small muted">Ticked by {i.holds.role} at {clockText(i.holds.when)} ({i.holds.ahead ? 'clock ahead' : 'old'}): tick again</span>{:else}<span class="small muted">Not asked yet</span>{/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
 
     {#if board.rows.length === 0}
       <p class="muted">Nothing on the board: no rule fired in this event's matches or pit runs{board.closed.length ? ', and every issue seen has closed' : ''}.</p>
@@ -188,6 +227,12 @@
   .help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .gate { font-size: 1.6rem; margin: 0.2rem 0 0; line-height: 1.15; }
   .gate b { font-size: 2rem; font-variant-numeric: tabular-nums; }
+  .freeze { margin: 0.3rem 0; padding: 0.3rem 0.6rem; border-left: 4px solid var(--warning); }
+  .cutoff { margin: 0.4rem 0; font-size: 0.9rem; }
+  .cutoff summary { cursor: pointer; min-height: 24px; box-sizing: border-box; }
+  .holds { list-style: none; margin: 0; padding: 0; }
+  .holds li { display: grid; gap: 0.1rem; padding: 0.35rem 0.6rem; border-left: 4px solid var(--warning); border-bottom: 1px solid var(--border); }
+  .holds input { width: 1.2rem; height: 1.2rem; margin: 0 0.4rem 0 0; vertical-align: middle; }
   .strip { display: flex; flex-wrap: wrap; gap: 0.2rem 1.2rem; margin: 0.1rem 0 0.5rem; }
   .board :global(.sub) { color: var(--muted); margin: 0.1rem 0; }
   .board :global(.sub strong) { color: var(--fg); }

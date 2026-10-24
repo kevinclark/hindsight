@@ -36,6 +36,20 @@ const REF_DELTA = 7
 /** Objects kept in memory once inflated (trees and delta bases are read again and again). */
 const KEEP_OBJECTS = 256
 
+/**
+ * The files that differ between two commits (added, removed or changed), by path, sorted: the trees compared by blob hash.
+ * Works on any CodeSource (a folder's .git or GitHub). Throws GitUnreadable when a commit cannot be read.
+ */
+export async function changedFiles(source: CodeSource, from: string, to: string): Promise<string[]> {
+  const [a, b] = await Promise.all([source.resolve(from), source.resolve(to)])
+  if (a === b) return []
+  const [before, after] = await Promise.all([source.files(a), source.files(b)])
+  const was = new Map(before.map((f) => [f.path, f.sha]))
+  const now = new Map(after.map((f) => [f.path, f.sha]))
+  const paths = new Set([...was.keys(), ...now.keys()])
+  return [...paths].filter((p) => was.get(p) !== now.get(p)).sort()
+}
+
 export class GitRepo implements CodeSource {
   readonly where = 'this code folder'
   private packs: Promise<Pack[]> | null = null

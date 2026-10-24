@@ -106,11 +106,12 @@ export interface BoardEvent {
   when: string
 }
 
-export type EventNoteKind = 'pit-change' | 'missed' | 'handoff-read'
+export type EventNoteKind = 'pit-change' | 'missed' | 'handoff-read' | 'cut-off'
 
 /**
  * A note about the event rather than one issue: what the team changed in the pit (the latest per match wins), something
- * Hindsight missed, or a handoff read. A new line type: old builds keep it as an OpaqueEvent and write it back unchanged.
+ * Hindsight missed, a handoff read, or the playoff cut-off (ADR 7; `text` is `alliance-selection`, a match label such as
+ * `Q40`, or `off`; the latest line for the event wins). A new line type: old builds keep it as an OpaqueEvent and write it back unchanged.
  * No names go in a line; `by` is a device and a role.
  */
 export interface EventNote {
@@ -142,7 +143,7 @@ export interface OpaqueEvent {
 export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent | EventNote | OpaqueEvent
 
 const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note', 'checked', 'unchecked', 'owner', 'cause']
-const NOTE_KINDS: readonly string[] = ['pit-change', 'missed', 'handoff-read']
+const NOTE_KINDS: readonly string[] = ['pit-change', 'missed', 'handoff-read', 'cut-off']
 const BOARD_ROLES: readonly string[] = ['software', 'pit', 'drive', 'mentor']
 const BOARD_VALUES: Partial<Record<BoardOp, readonly string[]>> = { priority: ['high', 'medium', 'low'], status: ['open', 'fixing', 'check'], owner: ['software', 'pit', 'drive', ''], cause: CAUSE_STATES }
 const UNTIL_KINDS: readonly string[] = ['next-match', 'gap', 'before-elims', 'end-of-event', 'next-event']
@@ -336,19 +337,22 @@ export interface EventNotes {
   missed: EventNote[]
   /** Every handoff read, oldest first. */
   handoffReads: EventNote[]
+  /** The latest cut-off line (ADR 7), or null: the default, alliance selection. */
+  cutOff: EventNote | null
 }
 
 export const eventNoteKey = (event: string, match: string) => `${event}\u0000${match}`
 
 /** Replay the event-note lines oldest first (the same order as boardState). */
 export function eventNotes(events: HistoryEvent[]): EventNotes {
-  const out: EventNotes = { pitChange: new Map(), missed: [], handoffReads: [] }
+  const out: EventNotes = { pitChange: new Map(), missed: [], handoffReads: [], cutOff: null }
   for (const e of [...events].sort(compareEvents)) {
     if (e.type !== 'event-note') continue
     if (e.kind === 'pit-change') {
       if (e.text === '') out.pitChange.delete(eventNoteKey(e.event, e.match))
       else out.pitChange.set(eventNoteKey(e.event, e.match), e)
     } else if (e.kind === 'missed') out.missed.push(e)
+    else if (e.kind === 'cut-off') out.cutOff = e
     else out.handoffReads.push(e)
   }
   return out

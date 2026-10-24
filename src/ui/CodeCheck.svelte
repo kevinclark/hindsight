@@ -12,8 +12,11 @@
   import { loadJavaInPage } from '../code/check/browser-java.ts'
   import { fileName } from '../code/check/java.ts'
   import { clashing } from '../code/check/fix-patch.ts'
+  import { FIX_FOLDED_SUMMARY, fixFolded } from '../board/freeze.ts'
 
-  let { robotSha, robotDirty, suggest, onchecked, sure }: {
+  let { robotSha, robotDirty, suggest, onchecked, sure, playoffs = false }: {
+    /** The playoff cut-off has passed (ADR 7): a fix for a finding that is not red is folded behind one click. */
+    playoffs?: boolean
     robotSha: string | null; robotDirty: boolean; suggest?: RobotProfile['code']; onchecked?: (check: FolderCheck | null) => void
     /** A check's "How sure" line from the team's marks (null when it has none), shown beside its fix. Left out where no history is in reach. */
     sure?: (rule: string) => string | null
@@ -54,6 +57,9 @@
     const clash = clashing(findings.map((f) => f.fix?.patch ?? ''))
     return (f: { fix?: { patch: string } }) => clash[findings.indexOf(f as (typeof findings)[number])] ?? false
   })
+  // CodeCheck shows every code finding as an amber one (code findings never count toward GO and carry no level of their own), so after the
+  // cut-off none is red and every fix is folded. One place to change if a code finding ever gets a red level.
+  const levelOf = (_f: unknown): 'red' | 'amber' => 'amber'
   const short = (sha: string) => sha.slice(0, 7)
 </script>
 
@@ -85,7 +91,13 @@
               <p>{f.meaning}</p>
               <dl>{#each Object.entries(f.evidence) as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}<dt>file</dt><dd><code>{f.file}</code></dd></dl>
               <p><strong>Next:</strong> {f.nextStep} <span class="muted">({f.rule})</span></p>
-              <FixPreview finding={f} sure={sure?.(f.rule) ?? null} sameLine={sharedLine(f)} />
+              {#if fixFolded(playoffs, levelOf(f)) && f.fix}
+                <details class="folded-fix" data-folded-fix><summary>{FIX_FOLDED_SUMMARY}</summary>
+                  <FixPreview finding={f} sure={sure?.(f.rule) ?? null} sameLine={sharedLine(f)} />
+                </details>
+              {:else}
+                <FixPreview finding={f} sure={sure?.(f.rule) ?? null} sameLine={sharedLine(f)} />
+              {/if}
             </details>
           </li>
         {/each}
@@ -114,6 +126,8 @@
   .code-finding dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; }
   .code-finding dt { color: var(--muted); }
   .code-finding dd { margin: 0; overflow-wrap: anywhere; }
+  .folded-fix { margin-top: 0.4rem; }
+  .folded-fix summary { cursor: pointer; min-height: 24px; box-sizing: border-box; color: var(--muted); }
   .code-unjudged { margin-top: 0.5rem; font-size: 0.85rem; }
   .code-unjudged summary { cursor: pointer; min-height: 24px; }
   .code-problem { color: var(--error); }

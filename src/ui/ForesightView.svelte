@@ -37,6 +37,10 @@
   import ForesightQueue from './ForesightQueue.svelte'
   import ForesightPractice from './ForesightPractice.svelte'
   import CodeCheck from './CodeCheck.svelte'
+  import { codeFolder } from './code-folder.svelte.ts'
+  import { changedFiles } from '../code/git.ts'
+  import { codeChangeFlag } from '../board/freeze.ts'
+  import { lastOnField } from '../board/points.ts'
   import ModeLine from './ModeLine.svelte'
   import { chooseMode, sessionNames } from './session-names.svelte.ts'
   import { todayMode } from '../session/mode.ts'
@@ -191,7 +195,29 @@
     if (defSession && board && !carried) return ticksFor(history, robotId, defSession, board.tickFor, clock)
     return new Map(Object.entries(localTicks).map(([k, t]) => [k as System, tickAt(t!.role, t!.when, clock)] as const))
   })
-  const queue = $derived(queueMode ? queueChecklist({ verdict: checked?.verdict ?? null, why, profile, deferrals, deferralNote, ticks }) : null)
+  // After the playoff cut-off (ADR 7; today's event only, never an earlier event's carried board): the banner, and an amber flag when the
+  // robot's code (commit, uncommitted flag) differs from the team's last on-field match's. It never moves the word.
+  const playoffs = $derived(!!board && !carried && board.cutOff.passed)
+  const codeChange = $derived.by(() => {
+    if (!board || !defSession || !playoffs) return null
+    const last = lastOnField(defSession)
+    return codeChangeFlag(board.cutOff, checked ? { sha: checked.match.build.sha, dirty: isUncommitted(checked.match.build.dirty) } : null, last && board.tl.last ? { label: board.tl.last.label, build: last.build } : undefined)
+  })
+  // The files between the two commits, when the code folder (or GitHub) can read both. Read-only; a failure just leaves the list out.
+  let changedList = $state<{ files: string[] } | { problem: string } | null>(null)
+  let changedRun = 0
+  $effect(() => {
+    const c = codeChange
+    const code = codeFolder.current
+    void codeFolder.version
+    const run = ++changedRun
+    if (!c || c.kind !== 'changed' || !c.from || !c.to || !code) { changedList = null; return }
+    changedFiles(code.repo, c.from, c.to).then(
+      (files) => { if (run === changedRun) changedList = { files } },
+      (error) => { if (run === changedRun) changedList = { problem: error instanceof Error ? error.message : String(error) } },
+    )
+  })
+  const queue = $derived(queueMode ? queueChecklist({ verdict: checked?.verdict ?? null, why, profile, deferrals, deferralNote, ticks, freeze: board && playoffs && board.cutOff.banner ? { banner: board.cutOff.banner, change: codeChange } : null }) : null)
   const practice = $derived(practiceChecklist(markOnchecks(checked), uncoveredItems(checked?.verdict ?? null)))
   // The word in the big box (and on the printed report): the queue's, or the practice list's end, never a Go in practice.
   const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.actions.length} left`) : 'NOT CHECKED')
@@ -317,7 +343,7 @@
   {/if}
 
   {#if queue && status}
-    <ForesightQueue checklist={queue} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard && !carried)} onTick={tick} onRole={chooseRole} />
+    <ForesightQueue checklist={queue} changed={changedList} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard && !carried)} onTick={tick} onRole={chooseRole} />
   {/if}
 
   {#if checked}
@@ -363,7 +389,7 @@
     </section>
   {/if}
 
-  <CodeCheck sure={sureCode} robotSha={checked?.match.build.sha || null} robotDirty={!!checked && isUncommitted(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
+  <CodeCheck playoffs={playoffs} sure={sureCode} robotSha={checked?.match.build.sha || null} robotDirty={!!checked && isUncommitted(checked.match.build.dirty)} suggest={status?.profile?.code} onchecked={useCode} />
 
   {#if status && status.state !== 'closed'}
     <details class="readings" open>
