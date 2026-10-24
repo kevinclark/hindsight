@@ -16,9 +16,9 @@ import { profileId } from '../profiles/index.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { shortMatchLabel } from '../ui/match-label.ts'
 import type { ScheduledMatch } from '../tba/schedule.ts'
-import { boardKey, boardState, eventNotes, type BoardEvent, type BoardRole, type BoardState, type HistoryEvent, type Triage } from '../triage/history.ts'
+import { boardKey, boardState, compareEvents, eventNotes, type BoardEvent, type BoardRole, type BoardState, type HistoryEvent, type Triage } from '../triage/history.ts'
 import { matchRef, ruleOf, trackRecord, type Fire } from '../triage/track-record.ts'
-import { beforeNext, dueByPriority, durText, gapText, resolveUntil, suggestions, timeline, type DuePoint, type Suggestion, type Timeline } from './points.ts'
+import { beforeNext, dueByPriority, durText, gapText, qualFromStored, resolveUntil, suggestions, timeline, type DuePoint, type Suggestion, type Timeline } from './points.ts'
 
 export type Priority = 'red' | 'amber' | 'low'
 export type Status = 'open' | 'fixing' | 'check' | 'deferred' | 'closed'
@@ -76,6 +76,8 @@ export interface BoardIssue {
   cls: RowClass
   grey: boolean
   unchanged: number
+  /** Matches since it last fired (a sighting only: a board change does not reset it). */
+  sinceSeen: number
   /** A grey issue shows no due point; in its place the row asks this (owner ruling 2026-10-24), with two actions (writes.ts greyClose, greyTake). */
   greyAsk: string | null
   isNew: boolean
@@ -99,10 +101,15 @@ export interface Strip {
   gate: number
   /** Where "next" points: the match label, or null with no schedule. */
   nextLabel: string | null
+  /** Match to match spacing in minutes (the gap includes the match itself), or null. */
   minutes: number | null
+  /** "≈ 61 min left (est.)" when the start is near enough to count from now, else "≈ 83 min after Q33 (est.)", else null. */
+  minutesWord: string | null
   deferralsDue: number
   noOwner: number
   reds: number
+  /** Of those, deferred (they still count: a deferral does not make a red go away). */
+  deferredReds: number
   /** The next named gap after the next match, in words, or null. */
   nextGap: string | null
 }
@@ -126,6 +133,8 @@ export interface Board {
   handoff: { role: BoardRole; match: string; when: string } | null
   /** Where the next match is, by the label ticks are filed under ("Q41", or "after Q33" with no schedule). */
   tickFor: string
+  /** The same, for people: "Q41", or "the next match" with no schedule. */
+  tickLabel: string
   missed: { text: string; role: BoardRole; match: string; when: string }[]
 }
 
@@ -138,6 +147,8 @@ export interface BoardInput {
   /** The team's schedule at the event; null when none was read. */
   schedule: readonly ScheduledMatch[] | null
   profiles: readonly RobotProfile[]
+  /** The moment the board is read: the time left to the next match counts from it. */
+  now?: Date
 }
 
 const ms = (iso: string | undefined): number | null => { const t = iso ? Date.parse(iso) : NaN; return Number.isNaN(t) ? null : t }
@@ -190,10 +201,13 @@ export function eventIdsOf(session: Pick<Session, 'event' | 'matches' | 'label'>
 /** The one a new note is filed under: the TBA key when there is one, else the event name, else the label. */
 export const eventIdOf = (session: Pick<Session, 'event' | 'matches' | 'label'>): string => eventIdsOf(session)[0]
 
+/** A short label as the board writes one ("Q41"). A longer reference carries its event ("<event> Qualification 41") and must match that event's own match, never another event's. */
+const SHORT = /^[A-Za-z]{1,6}\d+$/
+
 /** The index of the session match a stored reference names (a match id, a short label), else the one a time falls after (-1: before them all). */
 function indexOfMatch(session: Session, labels: string[], ref: string | undefined | null, when?: string): number {
   if (ref) {
-    const i = session.matches.findIndex((m, j) => matchRef(m, m.playedAt).id === ref || labels[j] === ref || (shortStored(ref) !== null && labels[j] === shortStored(ref)))
+    const i = session.matches.findIndex((m, j) => matchRef(m, m.playedAt).id === ref || (SHORT.test(ref) && labels[j] === ref))
     if (i >= 0) return i
   }
   const t = ms(when)
@@ -208,10 +222,23 @@ const finds = (m: MatchSummary, rule: string, key: string): SummaryFinding | und
 /** The moment a fix line counts from: the played time of the match it was made on, else when it was written (same clock as the logs). */
 const fixTime = (e: { played?: string; when: string }): number | null => ms(e.played) ?? ms(e.when)
 
+interface Scope { event: string; from: number | null; to: number | null }
+/** The event a tick or a deferral must belong to (ADR 4: it is about this event's matches): the FMS event name, and the span of the session's matches. */
+function scopeOf(session: Session): Scope {
+  const t = session.matches.map((m) => m.playedAt).filter((x): x is number => x !== null)
+  return { event: session.matches.find((m) => m.onField && m.event)?.event ?? '', from: t.length ? Math.min(...t) : null, to: t.length ? Math.max(...t) : null }
+}
+/** A line counts here when its event equals the session's FMS event name (both named), else when its played time falls inside the session's span. A line that says neither does not count. */
+export function inScope(line: { event?: string; played?: string }, sc: Scope): boolean {
+  if (line.event && sc.event) return line.event === sc.event
+  const t = ms(line.played)
+  return t !== null && sc.from !== null && sc.to !== null && t >= sc.from && t <= sc.to
+}
+
 function lastStatusLines(history: HistoryEvent[]): Map<string, { value: string; t: number | null; when: string }> {
   const out = new Map<string, { value: string; t: number | null; when: string }>()
   const lines = history.filter((e): e is BoardEvent => e.type === 'board' && e.op === 'status')
-  lines.sort((a, b) => a.when.localeCompare(b.when) || a.by.device.localeCompare(b.by.device) || a.seq - b.seq)
+  lines.sort(compareEvents)
   for (const e of lines) out.set(boardKey(e.key, e.robot), { value: e.value, t: fixTime(e), when: e.when })
   return out
 }
@@ -219,7 +246,8 @@ function lastStatusLines(history: HistoryEvent[]): Map<string, { value: string; 
 export function buildBoard(input: BoardInput): Board {
   const { session, history, marks, schedule, profiles } = input
   const labels = session.matches.map((m, i) => shortMatchLabel(m.matchLabel, i))
-  const tl = timeline(session, schedule, (m) => labels[session.matches.indexOf(m)] ?? shortMatchLabel(m.matchLabel, 0))
+  const tl = timeline(session, schedule, (m) => labels[session.matches.indexOf(m)] ?? shortMatchLabel(m.matchLabel, 0), input.now?.getTime())
+  const scope = scopeOf(session)
   const states = boardState(history)
   const statusLines = lastStatusLines(history)
   // Only this event's notes (under any of its names, read as one): the latest pit-change per match, and a handoff read counts for its own event.
@@ -266,7 +294,7 @@ export function buildBoard(input: BoardInput): Board {
     const mark = marks.issues.get(key)
     const markT = mark?.status === 'fixed' ? fixTime(mark) : null
     const checkT = st?.value === 'check' ? st.t : null
-    const reopened = st && st.value !== 'check' && markT !== null && (st.t ?? 0) >= markT
+    const reopened = !!st && st.value !== 'check' && markT !== null && ((st.t ?? 0) > markT || ((st.t ?? 0) === markT && st.when > mark!.when))
     const fixT = reopened ? checkT : [checkT, markT].filter((t): t is number => t !== null).reduce<number | null>((a, t) => (a === null || t > a ? t : a), null)
     let cameBack = false
     let closedAt: string | null = null
@@ -283,15 +311,23 @@ export function buildBoard(input: BoardInput): Board {
       }
     }
     const closed = closedAt !== null && !cameBack
-    const lineStatus = state?.status === 'fixing' || state?.status === 'check' || state?.status === 'open' ? state.status : undefined
+    // A status line older than the fixed mark that closed over it no longer says anything.
+    const markWins = !!st && st.value !== 'check' && markT !== null && !reopened
+    const lineStatus = !markWins && (state?.status === 'fixing' || state?.status === 'check' || state?.status === 'open') ? state.status : undefined
     const asked: BoardIssue['asked'] = cameBack ? (lineStatus === 'fixing' ? 'fixing' : 'open') : fixT !== null ? (lineStatus === 'fixing' ? 'fixing' : 'check') : (lineStatus ?? 'open')
 
     // The deferral: live while its point is not behind the next match.
     let deferral: BoardIssue['deferral'] = null
-    if (state?.deferred) {
+    if (state?.deferred && inScope(state.deferred, scope)) {
       const point = state.deferred.until ? resolveUntil(state.deferred.until, tl) : beforeNext(tl)
       const madeAt = indexOfMatch(session, labels, state.deferred.match, state.deferred.when)
-      const expired = tl.hasSchedule ? point.pos < tl.nextPos : point.pos <= tl.nextPos && madeAt < lastIdx
+      // A next-match deferral that names no match is "the next one when it was made": once a match is played after it, it is over,
+      // schedule or not. With a schedule a point is over when it is behind the next match; with none, when the latest qualification has reached the match it names.
+      const u = state.deferred.until
+      const unnamed = !u || (u.kind === 'next-match' && qualFromStored(u.match) === null)
+      const named = qualFromStored(point.match ?? undefined)
+      const lastQual = tl.last?.qual ?? null
+      const expired = (unnamed && madeAt < lastIdx) || (tl.hasSchedule ? point.pos < tl.nextPos : named !== null && lastQual !== null && (u?.kind === 'gap' ? lastQual > named : lastQual >= named))
       deferral = { point, workaround: state.workaround ?? '', role: state.deferred.by.role, match: shortStored(state.deferred.match), when: state.deferred.when, expired }
     }
     const live = !!deferral && !deferral.expired
@@ -305,6 +341,7 @@ export function buildBoard(input: BoardInput): Board {
     const lastSeen = seen.length ? Math.max(...seen) : -1
     const firstSeen = seen.length ? Math.min(...seen) : -1
     const unchanged = lastIdx - Math.max(lastSeen, changeIdx)
+    const sinceSeen = lastIdx - lastSeen
     const grey = unchanged >= GREY_AFTER && !live && !closed
 
     // "New": first seen after the last handoff was read (none read: nothing is new to compare with).
@@ -319,11 +356,11 @@ export function buildBoard(input: BoardInput): Board {
     const issue: BoardIssue = {
       key, rule, about, robot, ruleTitle: maker?.title ?? rule, title: latest?.title ?? merged.title, mechanism: mech.name, byProfile: mech.byProfile,
       severity: merged.severity, priority, prioritySet, status, asked, owner: state?.owner ?? null, cameBack, closedAt, deferral, due,
-      open: !closed, cls, grey, unchanged, greyAsk: grey ? `Not seen for ${unchanged} matches: close it, or give it an owner?` : null, isNew, firedIn, firstSeen, lastSeen, sightings,
+      open: !closed, cls, grey, unchanged, sinceSeen, greyAsk: grey ? `Not seen for ${unchanged} matches: close it, or give it an owner?` : null, isNew, firedIn, firstSeen, lastSeen, sightings,
       nextStep: rule === ESTOP_RULE ? ESTOP_STEP : latest?.nextStep ?? maker?.nextStep ?? '', latest,
       notes: (state?.notes ?? []).map((n) => ({ text: n.text, role: n.by.role, match: shortStored(n.match), when: n.when })),
       lastChange: state?.changed ? { role: state.by.role, match: shortStored(state.match), when: state.when } : null,
-      checked: (state?.checked ?? []).map((c) => ({ match: c.match, role: c.by.role, when: c.when })),
+      checked: (state?.checked ?? []).filter((c) => inScope(c, scope)).map((c) => ({ match: c.match, role: c.by.role, when: c.when })),
       merged,
     }
     issues.push(issue)
@@ -348,8 +385,9 @@ export function buildBoard(input: BoardInput): Board {
   const nextGap = tl.named[0] ? `${gapText(tl.named[0])}${tl.named[0].minutes !== null ? ` (≈ ${durText(tl.named[0].minutes)}, est.)` : ''}` : null
   const strip: Strip = {
     gate: gate.length, nextLabel: tl.next?.label ?? null, minutes: tl.next?.minutes ?? null,
+    minutesWord: tl.next?.leftMinutes != null ? `≈ ${durText(tl.next.leftMinutes)} left (est.)` : tl.next?.minutes != null && tl.last ? `≈ ${durText(tl.next.minutes)} after ${tl.last.label} (est.)` : null,
     deferralsDue: rows.filter((i) => i.cls === 'due').length, noOwner: rows.filter((i) => !i.grey && !i.owner).length,
-    reds: rows.filter(isRed).length, nextGap,
+    reds: rows.filter(isRed).length, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, nextGap,
   }
   const tickFor = tl.next?.label ?? `after ${tl.last?.label ?? 'now'}`
   const read = notes.handoffReads.at(-1)
@@ -359,13 +397,15 @@ export function buildBoard(input: BoardInput): Board {
     labels,
     pitLines: notes.pitChange.map((n) => ({ match: n.match, text: n.text, role: n.by.role, at: indexOfMatch(session, labels, n.match, n.when) })).sort((a, b) => a.at - b.at).map(({ match, text, role }) => ({ match, text, role })),
     handoff: read ? { role: read.by.role, match: read.match, when: read.when } : null,
-    tickFor,
+    tickFor, tickLabel: tl.next?.label ?? 'the next match',
     missed: notes.missed.map((n) => ({ text: n.text, role: n.by.role, match: n.match, when: n.when })),
   }
 }
 
 /** A red due before the next match that is neither deferred, closed nor grey: what the queue sheet gates on. */
 export function isGate(i: BoardIssue, tl: Timeline): boolean {
+  // A grey red that was closed (status check) and has still not been seen for 3 matches is waiting for its clean match, not due: Close must not put it back in the gate.
+  if (i.status === 'check' && i.sinceSeen >= GREY_AFTER) return false
   return i.open && i.priority === 'red' && !i.grey && i.status !== 'deferred' && i.due.pos <= tl.nextPos
 }
 

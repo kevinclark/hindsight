@@ -5,7 +5,7 @@ import type { BoardEvent } from '../src/triage/history.ts'
 import { ROBOT, input, match, session } from './helpers/board-scene.ts'
 
 const D = 'power/brownout'
-const line = (op: BoardEvent['op'], value: string, o: Partial<BoardEvent> = {}): BoardEvent => ({ type: 'board', v: 1, key: D, robot: ROBOT, op, value, by: { device: 'd', role: 'software' }, seq: 1, when: '2099-03-05T17:00:00Z', ...o })
+const line = (op: BoardEvent['op'], value: string, o: Partial<BoardEvent> = {}): BoardEvent => ({ type: 'board', v: 1, key: D, robot: ROBOT, op, value, event: 'TEST', by: { device: 'd', role: 'software' }, seq: 1, when: '2099-03-05T17:00:00Z', ...o })
 const s = session([2, 3, 4, 5].map((n) => match(n, { fires: n >= 4 ? [{ key: D }] : [], quiet: n >= 4 ? [] : [D] })))
 
 describe('board wording', () => {

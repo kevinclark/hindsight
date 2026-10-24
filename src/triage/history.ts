@@ -53,7 +53,7 @@ export interface PitCheckEvent {
   when: string
 }
 
-export type BoardOp = 'priority' | 'status' | 'defer' | 'workaround' | 'note' | 'checked' | 'owner'
+export type BoardOp = 'priority' | 'status' | 'defer' | 'workaround' | 'note' | 'checked' | 'unchecked' | 'owner'
 export type BoardRole = 'software' | 'pit' | 'drive' | 'mentor'
 
 export interface BoardUntil {
@@ -80,7 +80,7 @@ export interface BoardEvent {
   op: BoardOp
   /** priority: high|medium|low; status: open|fixing|check; defer: any non-empty value sets a deferral (its text is not kept; the target is `until`); '' with no until clears;
    * workaround and note: free text; checked: the match it was checked for ("Q41"), a tick on the queue sheet (new op: an old build keeps
-   * the line unread and writes it back as it came); owner: software|pit|drive, '' clears (the role that owns the issue; also a new op). */
+   * the line unread and writes it back as it came); unchecked: the same shape, takes a tick back (a tick counts only if no later unchecked names its match); owner: software|pit|drive, '' clears (the role that owns the issue; also a new op). */
   value: string
   /** Only on op 'defer'. */
   until?: BoardUntil
@@ -130,7 +130,7 @@ export interface OpaqueEvent {
 
 export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent | EventNote | OpaqueEvent
 
-const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note', 'checked', 'owner']
+const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note', 'checked', 'unchecked', 'owner']
 const NOTE_KINDS: readonly string[] = ['pit-change', 'missed', 'handoff-read']
 const BOARD_ROLES: readonly string[] = ['software', 'pit', 'drive', 'mentor']
 const BOARD_VALUES: Partial<Record<BoardOp, readonly string[]>> = { priority: ['high', 'medium', 'low'], status: ['open', 'fixing', 'check'], owner: ['software', 'pit', 'drive', ''] }
@@ -141,7 +141,7 @@ function validBoard(e: any): boolean {
   if (!BOARD_OPS.includes(e.op)) return false
   const allowed = BOARD_VALUES[e.op as BoardOp]
   if (allowed && !allowed.includes(e.value)) return false
-  if (e.op === 'checked' && e.value === '') return false
+  if ((e.op === 'checked' || e.op === 'unchecked') && e.value === '') return false
   if (e.op === 'defer' && e.value === '' && e.until !== undefined) return false
   if (e.op === 'defer' && e.until !== undefined && !(e.until && UNTIL_KINDS.includes(e.until.kind))) return false
   if (!e.by || typeof e.by.device !== 'string' || !BOARD_ROLES.includes(e.by.role)) return false
@@ -252,14 +252,14 @@ export interface BoardState {
   priority?: string
   status?: string
   /** The latest deferral; absent when none was set or the last defer line cleared it. */
-  deferred?: { until?: BoardUntil; by: BoardEvent['by']; when: string; match?: string }
+  deferred?: { until?: BoardUntil; by: BoardEvent['by']; when: string; match?: string; event?: string; played?: string }
   workaround?: string
   /** The owning role (software, pit or drive); absent when none was set or the last owner line cleared it. */
   owner?: string
   /** Every note, oldest first. */
   notes: { text: string; by: BoardEvent['by']; when: string; match?: string }[]
   /** Queue-sheet ticks (op 'checked'), oldest first: the match each was checked for. A tick is not a change to the issue (`by`, `when` and `match` below ignore it). */
-  checked?: { match: string; by: BoardEvent['by']; when: string }[]
+  checked?: { match: string; by: BoardEvent['by']; when: string; event?: string; played?: string }[]
   /** Who made the latest change, and when, and on which match (absent when the line named none). */
   by: BoardEvent['by']
   when: string
@@ -278,7 +278,14 @@ export function boardState(events: HistoryEvent[]): Map<string, BoardState> {
     const k = boardKey(e.key, e.robot)
     const s = out.get(k) ?? { key: e.key, robot: e.robot, notes: [], by: e.by, when: e.when }
     if (e.op === 'checked') {
-      ;(s.checked ??= []).push({ match: e.value, by: e.by, when: e.when })
+      ;(s.checked ??= []).push({ match: e.value, by: e.by, when: e.when, ...(e.event ? { event: e.event } : {}), ...(e.played ? { played: e.played } : {}) })
+      out.set(k, s)
+      continue
+    }
+    if (e.op === 'unchecked') {
+      // Takes back the ticks for that match made in the same event (or with no event named).
+      if (s.checked) s.checked = s.checked.filter((c) => !(c.match === e.value && (c.event ?? '') === (e.event ?? '')))
+      if (s.checked?.length === 0) delete s.checked
       out.set(k, s)
       continue
     }
@@ -286,7 +293,7 @@ export function boardState(events: HistoryEvent[]): Map<string, BoardState> {
     else if (e.op === 'status') s.status = e.value
     else if (e.op === 'defer') {
       if (e.value === '') delete s.deferred
-      else s.deferred = { ...(e.until ? { until: e.until } : {}), by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}) }
+      else s.deferred = { ...(e.until ? { until: e.until } : {}), by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}), ...(e.event ? { event: e.event } : {}), ...(e.played ? { played: e.played } : {}) }
     } else if (e.op === 'workaround') s.workaround = e.value
     else if (e.op === 'owner') { if (e.value === '') delete s.owner; else s.owner = e.value }
     else s.notes.push({ text: e.value, by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}) })

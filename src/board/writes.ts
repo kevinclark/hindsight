@@ -7,6 +7,7 @@ import type { Session } from '../session/session.ts'
 import { boardStamp, type BoardEvent, type BoardOp, type BoardRole, type BoardUntil, type EventNote, type EventNoteKind, type HistoryEvent } from '../triage/history.ts'
 import { matchRef } from '../triage/track-record.ts'
 import { lastOnField } from './points.ts'
+import { OWNER_ROLES } from './role.ts'
 import type { BoardIssue } from './model.ts'
 
 export interface Who { device: string; role: BoardRole }
@@ -45,5 +46,9 @@ export function deferChanges(workaround: string, until: BoardUntil): Change[] {
 /** The grey row's "Close": status `check`, so it closes (derived) after the next clean match. */
 export const greyClose = (): Change[] => [{ op: 'status', value: 'check' }]
 
-/** The grey row's "Give it an owner": status `open` plus a note recording the role who took it, so the row has a board change and leaves grey. */
-export const greyTake = (role: BoardRole): Change[] => [{ op: 'status', value: 'open' }, { op: 'note', value: `Taken by ${role}` }]
+/** The grey row's "Give it an owner": back to Open with a role on it. Status `open`, the owner when the role can own (a mentor coaches: the note only), then a note recording who took it. Any of them is a board change, so the row leaves grey. */
+export const greyTake = (role: BoardRole): Change[] => [
+  { op: 'status', value: 'open' },
+  ...((OWNER_ROLES as readonly string[]).includes(role) ? [{ op: 'owner' as const, value: role }] : []),
+  { op: 'note', value: `Taken by ${role}` },
+]

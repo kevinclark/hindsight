@@ -17,8 +17,10 @@ export interface QueueLine {
 }
 
 export interface QueueSheet {
-  /** The match this sheet is for ("Q41", or "after Q33" with no schedule). */
+  /** The match this sheet is for ("Q41", or "after Q33" with no schedule): the key a tick is filed under. */
   forMatch: string
+  /** The same, for people: "Q41", or "the next match" with no schedule. */
+  forLabel: string
   /** NOT CLEARED: n RED(S) TO CONFIRM, or GO WITH n DEFERRAL(S) · m RED(S) OPEN. Never green, never plain GO. */
   verdict: { cleared: boolean; text: string }
   toConfirm: number
@@ -54,7 +56,7 @@ export function queueSheet(board: Board): QueueSheet {
     ? `NOT CLEARED: ${toConfirm} ${plural(toConfirm, 'RED', 'REDS')} TO CONFIRM`
     : `GO WITH ${deferrals.length} ${plural(deferrals.length, 'DEFERRAL', 'DEFERRALS')} · ${redsOpen} ${plural(redsOpen, 'RED', 'REDS')} OPEN`
   return {
-    forMatch: tickFor, verdict: { cleared: toConfirm === 0, text }, toConfirm, deferrals: deferrals.length, redsOpen, gate: gate.length,
+    forMatch: tickFor, forLabel: board.tickLabel, verdict: { cleared: toConfirm === 0, text }, toConfirm, deferrals: deferrals.length, redsOpen, gate: gate.length,
     lines: all.slice(0, SHEET_LINES), more: Math.max(0, all.length - SHEET_LINES),
   }
 }
@@ -69,7 +71,7 @@ export interface Handoff {
   tried: { issue: BoardIssue; text: string; role: string; match: string | null; when: string }[]
   /** Causes the logs ruled out for those issues (the latest finding's own, from Hindsight's evidence). */
   ruledOut: RuledOut[]
-  /** First seen after the last handoff was read. With no handoff on record, every open issue (nothing to compare with). */
+  /** First seen after the last handoff was read, the board's own definition. With no handoff on record nothing is new (there is nothing to compare with), here and on the board. */
   newSince: BoardIssue[]
   /** True when no handoff has been read yet at this event. */
   firstRead: boolean
@@ -87,5 +89,5 @@ export function handoff(board: Board): Handoff {
     return Object.entries(issue.latest?.ruledOut ?? {}).map(([id, why]) => ({ issue, cause: causes.find((c) => c.id === id)?.cause ?? id, why }))
   })
   const firstRead = board.handoff === null
-  return { redsDue, deferralsDue, tried, ruledOut, newSince: firstRead ? board.rows : board.rows.filter((i) => i.isNew), firstRead, pitLines: board.pitLines }
+  return { redsDue, deferralsDue, tried, ruledOut, newSince: board.rows.filter((i) => i.isNew), firstRead, pitLines: board.pitLines }
 }

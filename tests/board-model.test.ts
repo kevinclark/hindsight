@@ -34,7 +34,7 @@ function scene(spec: Record<number, (string | Fire)[]>, opts: { pit?: Record<str
 
 let seq = 0
 const bl = (key: string, op: BoardEvent['op'], value: string, when: string, o: Partial<BoardEvent> = {}): BoardEvent => ({
-  type: 'board', v: 1, key, robot: ROBOT, op, value, by: { device: 'dev-a', role: 'pit' }, seq: ++seq, when, ...o,
+  type: 'board', v: 1, key, robot: ROBOT, op, value, event: 'TEST', by: { device: 'dev-a', role: 'pit' }, seq: ++seq, when, ...o,
 })
 const note = (kind: EventNote['kind'], text: string, match: string, when: string, o: Partial<EventNote> = {}): EventNote => ({
   type: 'event-note', v: 1, kind, event: 'TEST', match, text, by: { device: 'dev-a', role: 'pit' }, seq: ++seq, when, ...o,
@@ -110,7 +110,7 @@ describe('deferral suggestions (ADR 6)', () => {
     const tl = timeline(scene({ 5: [D] }), SCHEDULE, (m) => shortMatchLabel(m.matchLabel, 0))
     const s = suggestions(tl)
     expect(s.map((x) => x.label)).toEqual(['Next match (Q6)', 'The gap after Q7 (overnight)', 'Before playoffs (after Q41)', 'End of the event (after Q41)', 'Next event'])
-    expect(s.map((x) => x.estimate)).toEqual(['≈ 55 min, est.', `≈ ${durText(24 * 60 - 60 + 600 - 350)}, est.`, '≈ 3 h 20 min, est.', expect.stringMatching(/^≈ .* to the last scheduled match, est\.$/), 'weeks'])
+    expect(s.map((x) => x.estimate)).toEqual(['≈ 55 min after Q5, est.', `lasts ≈ ${durText(24 * 60 - 60 + 600 - 350)}, est.`, 'lasts ≈ 3 h 20 min, est.', expect.stringMatching(/^≈ .* to the last scheduled match, est\.$/), 'weeks'])
     expect(s.find((x) => x.suggested)!.id).toBe('gap-7')
     expect(s[1].until).toEqual({ kind: 'gap', match: 'Q7', minutes: 24 * 60 - 60 + 600 - 350 })
     expect(s[0].until).toEqual({ kind: 'next-match', match: 'Q6' })
@@ -301,9 +301,10 @@ describe('classes and order', () => {
     const q6 = session([...base.matches, match(6, { quiet: [rule(A)] })])
     expect(byKey(buildBoard(input(q6, [...hist, ...closeLines])), A)).toMatchObject({ status: 'closed', closedAt: 'Q6' })
     const takeLines = boardLines(hist, who, new Date(iso(300)), { key: A, robot: ROBOT }, greyTake('software'), atLatest(base))
-    expect(takeLines.map((l) => [l.op, l.value])).toEqual([['status', 'open'], ['note', 'Taken by software']])
+    expect(takeLines.map((l) => [l.op, l.value])).toEqual([['status', 'open'], ['owner', 'software'], ['note', 'Taken by software']])
     const taken = byKey(buildBoard(input(base, [...hist, ...takeLines])), A)
-    expect(taken).toMatchObject({ grey: false, status: 'open', greyAsk: null })
+    expect(taken).toMatchObject({ grey: false, status: 'open', greyAsk: null, owner: 'software' })
+    expect(greyTake('mentor').map((l) => l.op)).toEqual(['status', 'note'])
     expect(taken.notes.map((n) => [n.role, n.text])).toEqual([['software', 'Taken by software']])
   })
   it('a grey red leaves the red count', () => {
@@ -405,11 +406,11 @@ describe('the handoff', () => {
     expect(h.newSince.map((i) => i.key).sort()).toEqual([C, D].sort())
     expect(h.pitLines).toEqual([{ match: 'Q5', text: 'test pit line', role: 'pit' }])
   })
-  it('with no handoff read yet, everything is new to the reader, and the board marks nothing new', () => {
+  it('with no handoff read yet, nothing is new, on the board and in the handoff alike (the model decides)', () => {
     const b = buildBoard(input(s))
     const h = handoff(b)
     expect(h.firstRead).toBe(true)
-    expect(h.newSince).toHaveLength(b.rows.length)
+    expect(h.newSince).toEqual([])
     expect(b.rows.some((i) => i.isNew)).toBe(false)
   })
   it('what the logs ruled out is listed with the cause in words', () => {

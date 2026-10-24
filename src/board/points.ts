@@ -24,7 +24,10 @@ export interface NextMatch {
   number: number
   pos: number
   startsAt: number | null
+  /** Minutes from the previous scheduled match's start to this one's (the gap, which includes the match itself). */
   minutes: number | null
+  /** Minutes left from `now` to its start, when `now` was given and the start is near enough to mean it (within two days). */
+  leftMinutes: number | null
 }
 
 export interface Timeline {
@@ -45,6 +48,9 @@ export interface Timeline {
   toEnd: number | null
   /** The team's playoff matches are on the schedule (so "before playoffs" has a gap to estimate). */
   hasPlayoffs: boolean
+  /** When each of the team's qualifications starts (ms), by number; and the moment the board was read (ms), or null. */
+  starts: Map<number, number | null>
+  now: number | null
 }
 
 /** A short name for a scheduled match. */
@@ -71,11 +77,11 @@ export function lastOnField(session: Pick<Session, 'matches'>): MatchSummary | u
  * first scheduled one after the latest on-field log: by qualification number when that log was a qualification, else by
  * time; a match The Blue Alliance already has an actual time for is not next.
  */
-export function timeline(session: Pick<Session, 'matches'>, schedule: readonly ScheduledMatch[] | null, shortOf: (m: MatchSummary) => string): Timeline {
+export function timeline(session: Pick<Session, 'matches'>, schedule: readonly ScheduledMatch[] | null, shortOf: (m: MatchSummary) => string, now?: number): Timeline {
   const latest = lastOnField(session)
   const last = latest ? { label: shortOf(latest), qual: qualOf(latest.matchLabel), playedAt: latest.playedAt } : null
   if (!schedule || schedule.length === 0) {
-    return { hasSchedule: false, last, next: null, nextPos: 0, named: [], all: [], lastQual: null, toEnd: null, hasPlayoffs: false }
+    return { hasSchedule: false, last, next: null, nextPos: 0, named: [], all: [], lastQual: null, toEnd: null, hasPlayoffs: false, starts: new Map(), now: now ?? null }
   }
   let from = -1
   if (last?.qual != null) {
@@ -99,8 +105,17 @@ export function timeline(session: Pick<Session, 'matches'>, schedule: readonly S
   const end = schedule.at(-1)
   const [t0, t1] = [prev ? startOf(prev) : null, end ? startOf(end) : null]
   const toEnd = t0 !== null && t1 !== null && t1 > t0 ? Math.round((t1 - t0) / 60e3) : null
-  const next = nextM ? { label: scheduleLabel(nextM), level: nextM.level, number: nextM.number, pos: posOf(nextM, schedule), startsAt: startOf(nextM), minutes } : null
-  return { hasSchedule: true, last, next, nextPos: next ? next.pos - 0.5 : END_OF_EVENT - 1, named, all, lastQual, toEnd, hasPlayoffs: schedule.some((m) => m.level !== 'qm') }
+  const startsAt = nextM ? startOf(nextM) : null
+  const next = nextM ? { label: scheduleLabel(nextM), level: nextM.level, number: nextM.number, pos: posOf(nextM, schedule), startsAt, minutes, leftMinutes: minutesFromNow(startsAt, now, 2 * 1440) } : null
+  const starts = new Map(quals.map((m) => [m.number, startOf(m)] as const))
+  return { hasSchedule: true, last, next, nextPos: next ? next.pos - 0.5 : END_OF_EVENT - 1, named, all, lastQual, toEnd, hasPlayoffs: schedule.some((m) => m.level !== 'qm'), starts, now: now ?? null }
+}
+
+/** Minutes from `now` to a start (both ms), or null when either is unknown or the start is not within `within` minutes ahead (a stale clock or a copy of another day). */
+export function minutesFromNow(startsAt: number | null | undefined, now: number | undefined | null, within: number): number | null {
+  if (startsAt == null || now == null) return null
+  const m = Math.round((startsAt - now) / 60e3)
+  return m > 0 && m <= within ? m : null
 }
 
 /** A place in the event: where it falls, and how a row words it. */
@@ -225,19 +240,26 @@ export interface Suggestion {
  * schedule. A red's suggestion is the next named gap, else the next match. Without a schedule: the next match, before
  * playoffs, the end of the event and the next event, with no estimate.
  */
+/** One wording for a gap: when it starts, counted from now, and how long it lasts ("starts in ≈ 3 h 20 min, lasts ≈ 27 h 30 min, est."). The start is left out when there is no clock to count from. */
+function gapEstimate(tl: Timeline, g: Pick<Gap, 'after' | 'minutes'>): string {
+  const startsIn = minutesFromNow(tl.starts.get(g.after), tl.now, 7 * 1440)
+  if (g.minutes === null) return startsIn !== null ? `starts in ≈ ${durText(startsIn)}, length unknown, est.` : 'no estimate'
+  return startsIn !== null ? `starts in ≈ ${durText(startsIn)}, lasts ≈ ${durText(g.minutes)}, est.` : `lasts ≈ ${durText(g.minutes)}, est.`
+}
+
 export function suggestions(tl: Timeline): Suggestion[] {
   const out: Suggestion[] = []
   const nextLabel = tl.next?.label
   out.push({
     id: 'next', label: nextLabel ? `Next match (${nextLabel})` : 'Next match',
-    estimate: tl.next?.minutes != null ? `≈ ${durText(tl.next.minutes)}, est.` : 'no estimate',
+    estimate: tl.next?.leftMinutes != null ? `≈ ${durText(tl.next.leftMinutes)} from now, est.` : tl.next?.minutes != null && tl.last ? `≈ ${durText(tl.next.minutes)} after ${tl.last.label}, est.` : 'no estimate',
     until: { kind: 'next-match', ...(nextLabel && tl.next?.level === 'qm' ? { match: nextLabel } : {}) }, point: beforeNext(tl), suggested: false,
   })
   const gapsOffered = tl.named.filter((g) => g.name !== 'before playoffs').slice(0, 3)
   for (const g of gapsOffered) {
     out.push({
       id: `gap-${g.after}`, label: `The gap ${gapText(g)}`,
-      estimate: g.minutes !== null ? `≈ ${durText(g.minutes)}, est.` : 'no estimate',
+      estimate: gapEstimate(tl, g),
       until: { kind: 'gap', match: `Q${g.after}`, ...(g.minutes !== null ? { minutes: g.minutes } : {}) }, point: atGap(g), suggested: false,
     })
   }
@@ -245,7 +267,7 @@ export function suggestions(tl: Timeline): Suggestion[] {
   const bpGap = tl.named.find((g) => g.name === 'before playoffs')
   out.push({
     id: 'playoffs', label: tl.lastQual !== null ? `Before playoffs (after Q${tl.lastQual})` : 'Before playoffs',
-    estimate: bpGap?.minutes != null ? `≈ ${durText(bpGap.minutes)}, est.` : tl.hasSchedule ? 'no estimate: no playoff match for the team on the schedule' : 'no estimate',
+    estimate: bpGap ? gapEstimate(tl, bpGap) : tl.hasSchedule ? 'no estimate: no playoff match for the team on the schedule' : 'no estimate',
     until: { kind: 'before-elims' }, point: bp, suggested: false,
   })
   out.push({
