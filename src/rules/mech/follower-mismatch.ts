@@ -26,7 +26,7 @@ export default rule({
     { id: 'motor-fault', cause: 'That motor or its controller cutting out (current limit, brownout, CAN dropout)', look: 'the can/device-dropout and power/limit-not-applied findings for that motor; the Limits tab' },
   ],
   nextStep: 'Check belt tension, pulleys and set screws on the slow motor. If the motors drive separate shafts, consider closing the loop on each shaft.',
-  incident: 'One 2026 match: flywheel followers 17/18 ran 25 % slow while shooting, a slipping belt (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 1)',
+  incident: 'One 2026 match: flywheel followers 17/18 ran 25 % slow while shooting, a slipping belt',
   forEach: 'motorGroup',
 
   // Only a group whose followers copy the leader's output should spin at the leader's speed.

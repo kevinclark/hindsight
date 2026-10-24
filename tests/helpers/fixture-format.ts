@@ -31,7 +31,6 @@ export interface FixtureDslog {
 }
 
 export interface Fixture {
-  source: string
   note: string
   entries: FixtureEntry[]
   dslog?: FixtureDslog

@@ -28,12 +28,12 @@ writes to it: Foresight only subscribes.
 2. **Connect.** Robot: `172.22.11.2` for USB, `10.80.33.2` for Ethernet. Click **Connect**. Within about 5 s the line
    next to the button should say `Connected. Robot: 2026 offseason robot (<branch>); reading 109 signals.`
    If it says it cannot tell the robot is in the pit, or the connection closes: go to step 11 and note the message.
-3. **Check the counts** under **Readings**: *Topics announced / signals asked for*. Replaying the CalGames logs gives
+3. **Check the counts** under **Readings**: *Topics announced / signals asked for*. Replaying the team's 2026 logs gives
    94 / 109: 93 of the 109 signals are in those logs (the 16 missing are the battery tracker's 12 and the companion
    library's 4 log-drive keys, which the robot code doesn't log yet), plus WPILib's `/FMSInfo/FMSControlData` for the field guard. Note both numbers. *Values received* should climb every second.
 4. **Check the clock.** *Robot time* should read `… s · code started at … s (from the metadata)`. Note whether it says
    *from the metadata* or *from the first value*, and whether the code-start time looks right (just after a reboot
-   the CalGames logs started at 11.8–12.2 s). From the metadata, a robot already on for 30 s skips the countdown.
+   the 2026 logs started at 11.8–12.2 s). From the metadata, a robot already on for 30 s skips the countdown.
 5. **Compare three live values with the Driver Station:**
    - *Battery now* against the DS battery voltage (within 0.05 V);
    - *Controllers*: ports 0 and 1 both name a controller (unplug one: within a couple of seconds a "Controller
@@ -78,11 +78,11 @@ writes to it: Foresight only subscribes.
   check stays amber until a log of ours shows it fire for real.
 
 - **The field guard** needs the field: the Driver Station's practice mode does not set FMS attached. It is tested
-  against replayed CalGames logs (it closes at the attach, 27.3–28.5 s robot time) and against ntcore, but not
+  against replayed 2026 logs (it closes at the attach, 27.3–28.5 s robot time) and against ntcore, but not
   against a real field.
 - Whether **AdvantageKit's values carry the robot's own timestamps** on the roboRIO (so robot time matches the log)
   is assumed from AdvantageKit's source; step 4 shows it.
 - **The camera step** is tested only against replayed logs, where no tag was ever in view before a match (0 of 62,681
-  results on the three CalGames field stretches). Two things are assumed until step 7 shows them: that AdvantageKit
+  results on the three 2026 field stretches). Two things are assumed until step 7 shows them: that AdvantageKit
   publishes the camera's raw PhotonVision result over NetworkTables (it logs it), and that PhotonVision reports a
   hand-held tag. The robot's accepted pose would not do: it is logged only from two or more tags at once.

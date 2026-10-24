@@ -1,23 +1,24 @@
 /**
  * Foresight end to end in a real browser: the built hindsight.html opened from file:// in headless Google Chrome,
- * connected to a CalGames log replayed as the robot's NT4 stream (tests/helpers/nt4-replay-server.ts), or to any
+ * connected to one of the team's logs A, B, C (tests/helpers/team-logs.ts) replayed as the robot's NT4 stream (tests/helpers/nt4-replay-server.ts), or to any
  * NT4 server given with --address (e.g. a pyntcore server, to cross-check against the real ntcore).
  *
  *   npm run build
- *   node --experimental-strip-types scripts/chrome-foresight-check.ts <out-dir>                 # the CalGames scenarios
+ *   node --experimental-strip-types scripts/chrome-foresight-check.ts <out-dir>                 # the scenarios on logs A, B, C
  *   node --experimental-strip-types scripts/chrome-foresight-check.ts <out-dir> --address 127.0.0.1:5810 --seconds 40
  *
  * Every request the page makes is recorded: it must be the page itself (file://) or the NT4 socket, nothing else.
  * The pit cases also drop a synthetic robot snapshot on the page once it has a verdict (healthy, one CANcoder offset
  * off, or one taken an hour before the robot code started) and record the checklist's snapshot lines, the "Log stick
- * in" line (the CalGames logs have no companion keys, so "not checked") and the wanted checks (grey: their mark's
+ * in" line (logs A, B and C have no companion keys, so "not checked") and the wanted checks (grey: their mark's
  * colour is the "By eye" lines').
  */
 import { spawn, execSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { startReplayServer } from '../tests/helpers/nt4-replay-server.ts'
+import { LOGS } from '../tests/helpers/load.ts'
 import { makeDevicesSnapshotJson, profileSnapshot } from '../tests/helpers/make-snapshot.ts'
 import { offseason2026Event } from '../src/profiles/2026-offseason.ts'
 
@@ -40,7 +41,7 @@ const profile = mkdtempSync(`${tmpdir()}/foresight-chrome-`)
 const port = 9300 + Math.floor(Math.random() * 500)
 const chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--headless=new', '--no-first-run', '--window-size=1000,1400', 'about:blank'], { stdio: 'ignore' })
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const log = (p: string) => `${homedir()}/Downloads/${p}`
+const log = (k: 'a' | 'b' | 'c') => LOGS[k]
 
 async function cdp() {
   for (let i = 0; i < 50; i++) {
@@ -103,10 +104,10 @@ if (address) {
   results.push(await scenario('ntcore', address, Number(flag('--seconds') ?? 40), () => false))
 } else {
   const cases = [
-    { name: 'p0-pit', file: 'akit_26-10-18_16-31-52_cacg_p0.wpilog', pit: true, speed: 10, seconds: 20, snapshot: 'healthy' as const },
-    { name: 'q21-pit', file: 'akit_26-10-17_21-24-40_cacg_q21.wpilog', pit: true, speed: 10, seconds: 20, snapshot: 'offset-off' as const },
-    { name: 'q13-pit', file: 'akit_26-10-17_20-07-34_cacg_q13.wpilog', pit: true, speed: 30, seconds: 25, snapshot: 'stale' as const },
-    { name: 'q21-field', file: 'akit_26-10-17_21-24-40_cacg_q21.wpilog', pit: false, speed: 5, seconds: 15 },
+    { name: 'c-pit', file: 'c' as const, pit: true, speed: 10, seconds: 20, snapshot: 'healthy' as const },
+    { name: 'b-pit', file: 'b' as const, pit: true, speed: 10, seconds: 20, snapshot: 'offset-off' as const },
+    { name: 'a-pit', file: 'a' as const, pit: true, speed: 30, seconds: 25, snapshot: 'stale' as const },
+    { name: 'b-field', file: 'b' as const, pit: false, speed: 5, seconds: 15 },
   ]
   for (const c of cases) {
     const server = await startReplayServer({ bytes: new Uint8Array(readFileSync(log(c.file))), pit: c.pit, speed: c.speed })

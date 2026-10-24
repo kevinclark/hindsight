@@ -31,7 +31,8 @@ import { Project } from '../src/code/check/project.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
 import type { Finding } from '../src/rules/types.ts'
 import { packDoubles, writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
-import { loadFixture, CALGAMES, haveCalGames, readInput } from './helpers/load.ts'
+import { loadFixture, LOGS, haveLogs, readInput } from './helpers/load.ts'
+import { TEAM, teamPath } from './helpers/team-logs.ts'
 import { makeSnapshot } from './helpers/make-snapshot.ts'
 
 /** RegExps compared by source and flags. */
@@ -67,7 +68,7 @@ describe('profile.json', () => {
     expect(() => parseProfileJson('{"name":"a","motorGroups":[{"name":"g","motors":[{"name":"m","canId":"15"}]}]}')).toThrow(/canId must be a whole number/)
   })
 
-  it.each(['q13-spinups', 'q21-follower-mismatch', 'p0-brownout'])('the round-tripped 2026 profile gives the same analysis on %s', (name) => {
+  it.each(['flywheel-spinups', 'follower-mismatch', 'brownout'])('the round-tripped 2026 profile gives the same analysis on %s', (name) => {
     const files = loadFixture(name)
     const a = analyzeFiles(files, offseason2026).analyses.map((x) => x.report)
     const b = analyzeFiles(files, roundTrip(offseason2026)).analyses.map((x) => x.report)
@@ -970,23 +971,22 @@ describe('deferred review fixes', () => {
 // Real logs, when this computer has them (never copied into the repo)
 
 const PUBLIC = `${homedir()}/code/makers/8033/robot/public-logs`
-const MTTD = `${homedir()}/Downloads/hindsight-test/2025-11-event`
-const LIBRARY = `${homedir()}/.hindsight/app-data-a/library/logs`
-const OLDER = { charged: `${LIBRARY}/2023-2024/2023-10-07/Log_23-10-07_10-06-26_q13.wpilog`, crescendo: `${LIBRARY}/2024-2025/2024-09-28/Log_24-09-28_10-57-20_q9.wpilog` }
+const EVENT_2025 = teamPath(TEAM.event2025)
+const OLDER = { charged: teamPath(TEAM.robot2023), crescendo: teamPath(TEAM.robot2024) }
 const publicLog = (dir: string) => { const p = `${PUBLIC}/${dir}`; return existsSync(p) ? readdirSync(p).filter((f) => f.endsWith('.wpilog')).map((f) => `${p}/${f}`)[0] : undefined }
 const bt = (path: string) => backtestLog(openWpilog(new Uint8Array(readFileSync(path))), PROFILES)
 
 describe('backtest against the hand profiles (real logs)', () => {
-  it.skipIf(!haveCalGames).each(['q13', 'q21', 'p0'] as const)('8033 2026 %s: 19 of 19, every hand group', (k) => {
-    const r = bt(CALGAMES[k])
+  it.skipIf(!haveLogs).each(['a', 'b', 'c'] as const)('8033 2026 log %s: 19 of 19, every hand group', (k) => {
+    const r = bt(LOGS[k])
     expect([r.found, r.handMotors, r.missed.length, r.falsePositives.length]).toEqual([19, 19, 0, 0])
     expect(r.handGroups.filter((g) => g.exact).length).toBe(r.handGroups.length)
   })
-  it.skipIf(!existsSync(MTTD))('8033 2025 November event: 16 of 16 on every log', () => {
-    const logs = readdirSync(MTTD).filter((f) => f.endsWith('.wpilog'))
+  it.skipIf(!existsSync(EVENT_2025))('8033 2025 November event: 16 of 16 on every log', () => {
+    const logs = readdirSync(EVENT_2025).filter((f) => f.endsWith('.wpilog'))
     expect(logs.length).toBeGreaterThan(10)
     for (const f of logs) {
-      const r = bt(`${MTTD}/${f}`)
+      const r = bt(`${EVENT_2025}/${f}`)
       expect([f, r.found, r.handMotors, r.missed.length, r.falsePositives.length]).toEqual([f, 16, 16, 0, 0])
     }
   })
@@ -1029,7 +1029,7 @@ describe('backtest against the hand profiles (real logs)', () => {
   })
 })
 
-// A team with no profile: the 2026 CalGames logs with the built-in profiles hidden. The draft comes from the log; the
+// A team with no profile: the team's 2026 logs A, B and C with the built-in profiles hidden. The draft comes from the log; the
 // CAN IDs from a synthetic snapshot whose applied limits are the hand profile's (so limits match by construction, and
 // are not what is compared) and from dropdowns set as a student would, to the hand profile's IDs.
 
@@ -1039,8 +1039,8 @@ describe('backtest against the hand profiles (real logs)', () => {
  */
 const NOT_COMPARED = ['power/limit-not-applied', 'mech/zero-not-completed', 'vision/outliers', 'vision/stale', 'can/device-dropout', 'can/input-disconnected', 'mech/stuck-state', 'power/pd-not-reporting', 'meta/not-checked']
 
-describe.skipIf(!haveCalGames)('a team with no profile (8033 2026 CalGames logs, built-in profiles hidden)', () => {
-  const inputs: InputFile[] = [CALGAMES.q13, CALGAMES.q21, CALGAMES.p0].map(readInput)
+describe.skipIf(!haveLogs)('a team with no profile (8033 2026 logs A, B and C, built-in profiles hidden)', () => {
+  const inputs: InputFile[] = [LOGS.a, LOGS.b, LOGS.c].map(readInput)
   const logs = inputs.map((f) => openWpilog(f.bytes))
   const hand = chooseProfile(logs[0], PROFILES).profile
   const handMotors = hand.motorGroups.flatMap((g) => g.motors.map((m) => ({ g, m })))
@@ -1083,7 +1083,7 @@ describe.skipIf(!haveCalGames)('a team with no profile (8033 2026 CalGames logs,
     expect(fromBuilt[i].match.profileChoice.misfit).toBe(false)
     const a = compared(builtIn[i].report.findings, false), b = compared(fromBuilt[i].report.findings, true)
     expect(b).toEqual(a)
-    if (builtIn[i].match.fileName.includes('q21')) {
+    if (i === 1) { // log B
       expect(a.length).toBeGreaterThanOrEqual(2)
       expect(a.map((f) => f.rule)).toContain('mech/follower-mismatch')
     }

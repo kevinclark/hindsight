@@ -32,8 +32,8 @@ const healthy = harness([
   [10, 'step', '8.000 mode disabled'], [10.2, 'end'],
 ])
 
-/** TEST Q13: 0.12 s into auto the intake group takes the drum and the zero never prints. */
-const q13 = harness([
+/** TEST Q4: 0.12 s into auto the intake group takes the drum and the zero never prints. */
+const noZero = harness([
   [2, 'started'], [2, 'step', '0.000 mode disabled'], [5, 'step', '3.000 mode auto'],
   [5.01, 'init', cmd('z1', 'SequentialCommandGroup', 'DrumSubsystem')],
   [5.13, 'interrupt', cmd('z1', 'SequentialCommandGroup', 'DrumSubsystem'), cmd('p1', 'ParallelCommandGroup', 'IndexerSubsystem,DrumSubsystem')],
@@ -43,7 +43,7 @@ const q13 = harness([
 
 describe('reading a run', () => {
   it('reads modes, command lives and printed lines at robot time', () => {
-    const record = readRun(q13)
+    const record = readRun(noZero)
     expect(record.periods.map((p) => p.mode)).toEqual(['disabled', 'auto', 'disabled'])
     const [zero, intake] = record.lives
     expect(zero).toMatchObject({ how: 'interrupted', start: 5.01, end: 5.13 })
@@ -60,7 +60,7 @@ describe('reading a run', () => {
 
 describe('zero checks', () => {
   it('names the command that cut off the zero, using the run where it finished to know which command it is', () => {
-    const findings = zeroes(context([result(healthy, run('startup')), result(q13, run('auto'))]))
+    const findings = zeroes(context([result(healthy, run('startup')), result(noZero, run('auto'))]))
     expect(findings).toHaveLength(1)
     expect(findings[0]).toMatchObject({ check: 'zero/cut-off', run: 'auto' })
     expect(findings[0].message).toContain('cut off 0.12 s after it started')
@@ -69,7 +69,7 @@ describe('zero checks', () => {
 
   it('knows the zero when its requirements print in another order, or it finishes 38 ms after its message', () => {
     const otherOrder = healthy.replace(/DrumSubsystem/g, 'IntakeSubsystem,DrumSubsystem').replace('5.4505\tfinish', '5.4880\tfinish')
-    const cut = q13.replace(/SequentialCommandGroup\|DrumSubsystem/g, 'SequentialCommandGroup|DrumSubsystem,IntakeSubsystem')
+    const cut = noZero.replace(/SequentialCommandGroup\|DrumSubsystem/g, 'SequentialCommandGroup|DrumSubsystem,IntakeSubsystem')
     expect(zeroes(context([result(otherOrder, run('startup')), result(cut, run('auto'))])).map((f) => f.check)).toEqual(['zero/cut-off'])
   })
 
@@ -78,7 +78,7 @@ describe('zero checks', () => {
   })
 
   it('says when a zero the team named never printed', () => {
-    const findings = zeroes(context([result(q13)]))
+    const findings = zeroes(context([result(noZero)]))
     expect(findings.map((f) => f.check)).toEqual(['zero/never-done'])
   })
 

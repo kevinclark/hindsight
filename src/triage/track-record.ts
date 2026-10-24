@@ -41,7 +41,7 @@ export function matchRef(m: { event: string; matchLabel: string; fileName: strin
 
 export const ruleOf = (key: string) => key.split(' · ')[0]
 
-/** "Q24" from a mark's "<event> Qualification 24" (the event name dropped), for short notes. */
+/** "Q4" from a mark's "<event> Qualification 4" (the event name dropped), for short notes. */
 export function shortMatch(mark: IssueEvent): string {
   const id = mark.match ?? ''
   const label = mark.event && id.startsWith(`${mark.event} `) ? id.slice(mark.event.length + 1) : id

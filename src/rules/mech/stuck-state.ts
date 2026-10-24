@@ -6,11 +6,11 @@
  * learned from its normal exits in every loaded log: the profile sensor that flipped at least one loop before the
  * exit, in the 0.3 s before it. It is named only above a floor (5 exits or more, 80 % of them), with how often that
  * flip happens anyway (its base rate). A flip in the same loop as the exit doesn't count: it is a result of leaving.
- * Why: MTTD 2025 Friday p5: RIGHT_HANDOFF for the last 107 s of teleop, waiting for the arm's has-piece flag (it
- * came before 33 of 33 handoff exits); p8: SCORE_L4_RIGHT for the whole teleop. Q24 (26 s in the auto's score state,
- * 3 presses) fires; Q33 (23 s) stays quiet: its score request was held from auto, never pressed during the state.
- * Only presses count: a request held from before the state isn't a reaction to it (counting holds would add Q51's
- * 24.5 s READY_CORAL_INTAKE and two pit holds for one Q33). 20 s is assumed: Q51's 9 s carry-over stays under it.
+ * Why: 2025 offseason event, practice match 1: RIGHT_HANDOFF for the last 107 s of teleop, waiting for the arm's has-piece flag (it
+ * came before 33 of 33 handoff exits); practice match 2: SCORE_L4_RIGHT for the whole teleop. One match (26 s in the auto's score state,
+ * 3 presses) fires; another (23 s) stays quiet: its score request was held from auto, never pressed during the state.
+ * Only presses count: a request held from before the state isn't a reaction to it (counting holds would add a third's
+ * 24.5 s READY_CORAL_INTAKE and two pit holds for the second). 20 s is assumed: the third's 9 s carry-over stays under it.
  * The exits are learned across every loaded log of this robot, whatever build each ran.
  */
 import { isTrue, rule, round, type Problem } from '../rule.ts'
@@ -31,7 +31,7 @@ export default rule({
     { id: 'no-exit', cause: 'The code has no way out of this state for this situation (no timeout, no operator cancel)', look: 'the state machine code for this state: its exit conditions, and whether the operator can cancel it' },
   ],
   nextStep: 'Check what the state waits for (the evidence) on the robot: the game piece path and that sensor. Then give the state a way out in code: a timeout or an operator cancel.',
-  incident: 'MTTD 2025 Friday p5 (RIGHT_HANDOFF, 107 s) and p8 (SCORE_L4_RIGHT, 135 s) (mttd-2025-context.md §1b, §2.9)',
+  incident: 'Two 2025 practice matches: RIGHT_HANDOFF for 107 s and SCORE_L4_RIGHT for 135 s',
   needsProfile: true,
 
   check(match) {

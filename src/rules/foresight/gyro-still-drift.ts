@@ -3,8 +3,8 @@
  *
  * Checks (Foresight, the live pit check, only): the change in gyro yaw over the last 20 s of the disabled stretch.
  * It is context, not a verdict: there is no line yet.
- * Measured on the CalGames field logs, disabled: 0.005–0.044° per 20 s just before enable, but 0.3–4.4° per 20 s in
- * the first one to two minutes after boot (Q21 stayed above 0.25° for about 100 s). A gyro that is still settling,
+ * Measured on the 2026 field logs, disabled: 0.005–0.044° per 20 s just before enable, but 0.3–4.4° per 20 s in
+ * the first one to two minutes after boot (log B stayed above 0.25° for about 100 s). A gyro that is still settling,
  * or a robot being handled, both show up here; nothing tells them apart yet.
  */
 import { rule, round } from '../rule.ts'
@@ -44,7 +44,7 @@ export default rule({
       measured: [{ label: `yaw change in ${STILL_SECONDS} s`, value: round(degreesMoved, 3), unit: '°' }],
       evidence: {
         [`yaw change in the last ${STILL_SECONDS} s (°)`]: round(moved, 3),
-        'CalGames, disabled on the field (°)': '0.005–0.044 before enable; 0.3–4.4 in the first 1–2 min after boot',
+        '2026 offseason event, disabled on the field (°)': '0.005–0.044 before enable; 0.3–4.4 in the first 1–2 min after boot',
       },
       plot: { signals: [yaw], unit: '°', from: stretch.end - STILL_SECONDS, to: stretch.end },
     }

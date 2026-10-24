@@ -10,7 +10,7 @@
  * through a code restart. A code restart after an unzeroed run left it at that angle would start there too; the log
  * can't tell the two apart.
  * Why: Two 2026 matches: the hood's zero was cancelled 0.2 s into auto, so "10°" was 8° above the hard stop
- * all auto, and the hood hit the trench in Q13. Fixed in 8ba92cb (zero at boot); P0 must stay quiet.
+ * all auto, and the hood hit the trench in log A. Fixed in 8ba92cb (zero at boot); log C must stay quiet.
  */
 import { rule, round, secs } from '../rule.ts'
 import type { MatchView, MechanismView, Signal } from '../view.ts'
@@ -27,7 +27,7 @@ export default rule({
     { id: 'zero-never-ran', cause: 'The zero was never started, or its \'done\' message is never printed', look: 'the code: is the zero command scheduled at all? The console log for the zero-complete message' },
   ],
   nextStep: 'Make the zero finish before any command can move the mechanism: zero at boot, or put the zero command ahead of the first auto command; set the zeroed flag when it completes.',
-  incident: 'Two 2026 matches: hood zero cancelled 0.2 s into auto; fixed by 8ba92cb (2026-10-17-calgames-q13-log-analysis.md §1)',
+  incident: 'Two 2026 matches: hood zero cancelled 0.2 s into auto; fixed by 8ba92cb',
   forEach: 'mechanism',
 
   check(mechanism, match) {

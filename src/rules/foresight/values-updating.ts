@@ -58,7 +58,7 @@ export default rule({
         about: 'all devices',
         message: `No device reading changed in the last ${STILL_SECONDS} s (${still.length} watched): the robot may have stopped reading its devices`,
         at: stretch.end,
-        evidence: { 'readings watched': still.map((d) => d.name).join(', '), 'CalGames 2026, at rest': AT_REST_NOTE },
+        evidence: { 'readings watched': still.map((d) => d.name).join(', '), '2026 offseason event, at rest': AT_REST_NOTE },
       }
     }
     return still.map((d): Problem => ({
@@ -69,7 +69,7 @@ export default rule({
       evidence: {
         signal: d.key,
         'value, unchanged': Number.isFinite(d.value) ? round(d.value, 3) : 'no value yet',
-        'CalGames 2026, at rest': AT_REST_NOTE,
+        '2026 offseason event, at rest': AT_REST_NOTE,
       },
       plot: { signals: [d.key], from: stretch.end - 2 * STILL_SECONDS, to: stretch.end },
     }))

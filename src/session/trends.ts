@@ -65,7 +65,7 @@ export interface TrendRow {
   latestIsWorst: boolean
   /** The verdict sentence. */
   verdict: string
-  /** The second verdict line: "Latest is the worst (Q42)" or ''. */
+  /** The second verdict line: "Latest is the worst (Q4)" or ''. */
   verdict2: string
   /** What to do: the text (without quotes), where it came from, and the rule's id to show beside it. */
   next: { text: string; source: NextStepSource; ruleId: string | null }

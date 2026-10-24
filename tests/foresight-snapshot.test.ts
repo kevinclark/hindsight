@@ -158,7 +158,7 @@ describe('Foresight over a robot snapshot', () => {
     expect(report.findings.map((f) => f.title)).toEqual(['Talon FX 1 reads CANcoder 3, not Front Left CANcoder (0)'])
   })
 
-  it('the CalGames profile points at the intake CANcoder\'s lines in its own code (d339f29)', () => {
+  it('the event profile points at the intake CANcoder\'s lines in its own code (d339f29)', () => {
     expect(offseason2026Event.foresight!.snapshot!.devices.find((d) => d.name === 'Intake CANcoder')!.where).toMatch(/SlapdownSubsystem.java:329/)
     expect(offseason2026Event.foresight!.snapshot!.devices.filter((d) => d.name !== 'Intake CANcoder')).toEqual(expected.devices.filter((d) => d.name !== 'Intake CANcoder'))
   })

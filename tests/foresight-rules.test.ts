@@ -1,5 +1,5 @@
 // Foresight's checks on made-up robots (a "badness" log each), run through the real engine, plus the proof that
-// the keys Foresight subscribes to are enough: on the CalGames logs, the subscribed keys give the same findings as
+// the keys Foresight subscribes to are enough: on the team's logs A, B and C, the subscribed keys give the same findings as
 // the whole log.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
@@ -16,7 +16,7 @@ import { markOnchecks } from '../src/foresight/onchecks.ts'
 import { KEEP_SECONDS } from '../src/foresight/records.ts'
 import { photonTargetCount } from '../src/readers/photon.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
-import { CALGAMES, haveCalGames } from './helpers/load.ts'
+import { LOGS, haveLogs } from './helpers/load.ts'
 import { makeDevicesSnapshot, profileSnapshot } from './helpers/make-snapshot.ts'
 import { sameModel, snapshotBusFor, snapshotDeviceFor, type SnapshotInput } from '../src/foresight/snapshot-checks.ts'
 
@@ -458,8 +458,8 @@ describe('Foresight record store: fast readings kept only for their last 30 s', 
 describe('Foresight verdict', () => {
   const finding = (rule: string, severity: 'error' | 'warning' | 'info') => ({ rule, severity, title: rule, time: null, matchTime: null, when: null, about: null, key: rule, evidence: {}, meaning: '', causes: [], nextStep: `do ${rule}` })
   const proven = {
-    'power/rest-voltage': { logs: 3, fires: 1, ourFires: 1, base: 'CalGames 2026', date: '2026-10-19' },
-    'vision/time-sync': { logs: 8, fires: 0, ourFires: 0, base: 'CalGames 2026 + others', date: '2026-10-19' },
+    'power/rest-voltage': { logs: 3, fires: 1, ourFires: 1, base: '2026 offseason event', date: '2026-10-19' },
+    'vision/time-sync': { logs: 8, fires: 0, ourFires: 0, base: '2026 offseason event + others', date: '2026-10-19' },
     'build/dirty': { logs: 6, fires: 1, ourFires: 0, base: 'another team', date: '2026-10-19' },
   }
   it('amber unless proven; red only for proven checks; NO-GO on any red', () => {
@@ -485,8 +485,8 @@ describe('Foresight verdict', () => {
   })
 })
 
-describe.skipIf(!haveCalGames)('the keys Foresight subscribes to are enough', () => {
-  for (const path of [CALGAMES.q13, CALGAMES.q21, CALGAMES.p0]) {
+describe.skipIf(!haveLogs)('the keys Foresight subscribes to are enough', () => {
+  for (const path of [LOGS.a, LOGS.b, LOGS.c]) {
     it(path.split('/').pop()!, () => {
       const log = openWpilog(new Uint8Array(readFileSync(path)))
       const en = readNumbers(log, '/DriverStation/Enabled')!
@@ -505,10 +505,10 @@ describe.skipIf(!haveCalGames)('the keys Foresight subscribes to are enough', ()
   }
 })
 
-// Why foresight/camera-sees-tag reads the camera's raw result, not the accepted pose: on the CalGames logs the robot
+// Why foresight/camera-sees-tag reads the camera's raw result, not the accepted pose: on the team's 2026 logs the robot
 // code logged a pose only from two or more tags, so one hand-held tag never makes one.
-describe.skipIf(!haveCalGames)('CalGames logs: what a camera result and an accepted pose mean', () => {
-  for (const path of [CALGAMES.q13, CALGAMES.q21, CALGAMES.p0]) {
+describe.skipIf(!haveLogs)('logs A, B and C: what a camera result and an accepted pose mean', () => {
+  for (const path of [LOGS.a, LOGS.b, LOGS.c]) {
     it(path.split('/').pop()!, () => {
       const log = openWpilog(new Uint8Array(readFileSync(path)))
       for (const camera of offseason2026.cameras) {

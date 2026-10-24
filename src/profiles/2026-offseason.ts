@@ -188,7 +188,7 @@ const robot: RobotProfile = {
 
   // Other devices whose */Connected flag matters (encoders, gyro). Motors' flags come from motorGroups.
   // `updating` (foresight/values-updating): the gyro's yaw rate changes every loop at rest; the CANcoders have nothing
-  // that does (a still CANcoder's position sat unchanged for up to 110 s in the CalGames logs).
+  // that does (a still CANcoder's position sat unchanged for up to 110 s in the 2026 logs).
   otherDevices: [
     ...swerveModules.map((m) => ({ name: `${m} CANcoder`, connected: `/Swerve/${m} Module/CancoderConnected` })),
     { name: 'Intake CANcoder', connected: '/Intake/CANcoder/Connected' },
@@ -206,7 +206,7 @@ const robot: RobotProfile = {
       mechanism: 'Hood',
       position: '/Drum/Hood/PositionRotations',
       positionToDegrees: 360,
-      // "Rezeroed hood" is the on-enable current zero (Q13/Q21 code); "Hood zeroed!" is the zero at boot (8ba92cb).
+      // "Rezeroed hood" is the on-enable current zero (logs A and B code); "Hood zeroed!" is the zero at boot (8ba92cb).
       doneMessage: /Rezeroed hood|Hood zeroed/,
       moveDegrees: 3,
       zeroDirection: 'down', // the current zero drives the hood into its bottom hard stop
@@ -220,7 +220,7 @@ const robot: RobotProfile = {
   ],
 
   // `acceptedPose` is logged only when the code made a pose from the coprocessor's multi-tag result
-  // (Camera.updateCamera, estimateCoprocMultiTagPose), i.e. two or more tags in view: in the CalGames logs 0 of 19,095
+  // (Camera.updateCamera, estimateCoprocMultiTagPose), i.e. two or more tags in view: in the 2026 logs 0 of 19,095
   // one-tag results logged a pose, and all 20,873 with two or more did. `result` says what the camera saw.
   cameras: [
     {
@@ -240,7 +240,7 @@ const robot: RobotProfile = {
   ],
 
   foresight: {
-    // Two Xbox controllers, on ports 0 and 1, in all three CalGames match logs.
+    // Two Xbox controllers, on ports 0 and 1, in all three 2026 match logs.
     controllerNames: [0, 1].map((port) => `/DriverStation/Joystick${port}/Name`),
     gyroYaw: '/Swerve/Gyro/Yaw',
     zeroChecks: [
@@ -249,7 +249,7 @@ const robot: RobotProfile = {
         absolute: '/Intake/CANcoder/CancoderPositionRotations', // a Rotation2d, so radians despite the name
         absoluteUnit: 'radians',
         motor: '/Intake/Pivot/PositionRotations',
-        // CANCODER_TO_PIVOT = 1.77777778 (event-calgames). Measured in the CalGames logs at rest: CANcoder 0.6536 rot,
+        // CANCODER_TO_PIVOT = 1.77777778 (event-calgames). Measured in the 2026 logs at rest: CANcoder 0.6536 rot,
         // pivot 0.3677 rot (0.6536 / 1.7778 = 0.3677).
         sensorToMechanism: 1.77777778,
         where: 'SlapdownSubsystem.java: CANCODER_TO_PIVOT, and getPivotConfig() (RemoteCANcoder ID 4, SensorToMechanismRatio)',
@@ -297,7 +297,7 @@ const connectedMembers = [
 export const offseason2026: RobotProfile = { ...robot, canBuses: [{ name: 'CANivore', members: connectedMembers }] }
 
 /**
- * The same robot, running the code from the October 2026 event (CalGames): branch `event-calgames`, head
+ * The same robot, running the code from the October 2026 event: branch `event-calgames`, head
  * d339f29 (2026-10-18 10:21 PDT, "reduce supply current indexer"). The event logs came from 45e3eba, fb5f9b7 and
  * 123eec6, all ancestors of this head; later commits are 96479a0 and d339f29. Compared with main cb68b20:
  *  - The kickers' supply limit is 30 A, not 40 A (IndexerIO.java:198, commit d339f29). The indexer feed motor

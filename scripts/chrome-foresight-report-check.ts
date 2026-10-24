@@ -1,19 +1,20 @@
 /**
  * The Foresight report end to end: the built hindsight.html opened from file:// in headless Google Chrome, connected to
- * a CalGames log replayed as the robot's NT4 stream (tests/helpers/nt4-replay-server.ts), then printed to PDF with the
+ * one of the team's logs (tests/helpers/team-logs.ts) replayed as the robot's NT4 stream (tests/helpers/nt4-replay-server.ts), then printed to PDF with the
  * print stylesheet and its phone card saved as a PNG, exactly as "Save for Slack" does (minus the print dialog).
  *
  *   npm run build
  *   node --experimental-strip-types scripts/chrome-foresight-report-check.ts <out-dir> [--dark]
  *
- * Replays P0 (expect NO-GO: uncommitted code) and Q13 (expect GO), each tethered in the pit. Writes
+ * Replays log C (expect NO-GO: uncommitted code) and log A (expect GO), each tethered in the pit. Writes
  * foresight-<name>.report.pdf and foresight-<name>.card.png, and prints the verdict seen on screen.
  */
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { startReplayServer } from '../tests/helpers/nt4-replay-server.ts'
+import { LOGS } from '../tests/helpers/load.ts'
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const args = process.argv.slice(2)
@@ -26,7 +27,7 @@ const profile = mkdtempSync(`${tmpdir()}/foresight-report-`)
 const port = 9300 + Math.floor(Math.random() * 500)
 let chrome: ChildProcess | undefined
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const log = (p: string) => `${homedir()}/Downloads/${p}`
+const log = (k: 'a' | 'b' | 'c') => LOGS[k]
 
 async function cdp() {
   for (let i = 0; i < 50; i++) {
@@ -52,8 +53,8 @@ const evalIn = async (sessionId: string, expression: string) => {
 }
 
 const cases = [
-  { name: 'p0', file: 'akit_26-10-18_16-31-52_cacg_p0.wpilog', speed: 10, expect: 'NO-GO' },
-  { name: 'q13', file: 'akit_26-10-17_20-07-34_cacg_q13.wpilog', speed: 30, expect: 'GO' },
+  { name: 'c', file: 'c' as const, speed: 10, expect: 'NO-GO' },
+  { name: 'a', file: 'a' as const, speed: 30, expect: 'GO' },
 ]
 const results: object[] = []
 try {

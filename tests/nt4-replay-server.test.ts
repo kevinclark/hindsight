@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { decodeMulti } from '@msgpack/msgpack'
 import { startReplayServer, type ReplayOptions, type ReplayServer } from './helpers/nt4-replay-server.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
+import { TEAM, TEAM_LOGS_FILE, teamPath } from './helpers/team-logs.ts'
 
 const PROTOCOLS = ['v4.1.networktables.first.wpi.edu', 'networktables.first.wpi.edu']
 const P = '/AdvantageKit'
@@ -263,15 +263,15 @@ describe('NT4 replay server', () => {
   })
 })
 
-const CALGAMES = `${homedir()}/Downloads/akit_26-10-17_21-24-40_cacg_q21.wpilog`
+const LOG_B = teamPath(TEAM.logB)
 
 describe('NT4 replay server on a real 2026 match log', () => {
-  if (!existsSync(CALGAMES)) {
-    it.skip(`needs ${CALGAMES}, which is not on this machine`, () => undefined)
+  if (!existsSync(LOG_B)) {
+    it.skip(`needs log B, listed in ${TEAM_LOGS_FILE}`, () => undefined)
     return
   }
   it('turns FMSAttached true at 27.7-27.8 s and holds the battery near 12.5 V', async () => {
-    server = await startReplayServer({ bytes: readFileSync(CALGAMES), speed: 50 })
+    server = await startReplayServer({ bytes: readFileSync(LOG_B), speed: 50 })
     const c = await open(server)
     const fms = `${P}/DriverStation/FMSAttached`
     const battery = `${P}/SystemStats/BatteryVoltage`
@@ -288,7 +288,7 @@ describe('NT4 replay server on a real 2026 match log', () => {
   }, 15000)
 
   it('in pit mode never reports FMSAttached true', async () => {
-    server = await startReplayServer({ bytes: readFileSync(CALGAMES), speed: 50, pit: true })
+    server = await startReplayServer({ bytes: readFileSync(LOG_B), speed: 50, pit: true })
     const c = await open(server)
     const fms = `${P}/DriverStation/FMSAttached`
     c.subscribe(1, [fms, '/FMSInfo/FMSControlData'])

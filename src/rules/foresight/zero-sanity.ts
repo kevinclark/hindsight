@@ -4,7 +4,7 @@
  * Checks (Foresight, the live pit check, only): for each mechanism the robot profile pairs with an absolute encoder,
  * the motor's position (median of the last 2 s) against the encoder's, converted to mechanism degrees. Fires above 2°.
  * Mechanisms with no absolute encoder are listed as not checked.
- * Measured: at rest on the field the CalGames intake pivot agreed with its CANcoder within 0.24° (median 0.04–0.08°);
+ * Measured: at rest on the field the 2026 intake pivot agreed with its CANcoder within 0.24° (median 0.04–0.08°);
  * while moving, up to 6.7° (the two signals are sampled at different moments). The 2° line is assumed.
  * Why: a zero seeded wrongly at boot (e.g. the motor set to the encoder's rotations rather than the mechanism's)
  * puts the mechanism 100° off; the robot then drives it into a hard stop.

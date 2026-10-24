@@ -48,7 +48,7 @@ export interface PitCheckEvent {
   /** The robot's GitSHA and whether it had uncommitted changes. */
   sha: string
   dirty: boolean
-  /** The robot profile used, e.g. "2026 offseason robot @ event-calgames". */
+  /** The robot profile used, e.g. "2026 offseason robot @ the event branch". */
   robot: string
   when: string
 }

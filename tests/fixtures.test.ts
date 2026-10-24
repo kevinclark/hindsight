@@ -1,9 +1,9 @@
-// Core rules on small fixtures cut from the CalGames logs (fixtures/*.json). These run without the real logs.
+// Core rules on small fixtures cut from three of the team's 2026 logs (fixtures/*.json). These run without the real logs.
 import { describe, expect, it } from 'vitest'
 import { analyzeFixture, fired } from './helpers/load.ts'
 
-describe('Q13 fixture: auto collision, early disable, comms loss', () => {
-  const { analyses, problems } = analyzeFixture('q13-auto-and-comms')
+describe('auto-and-comms fixture: auto collision, early disable, comms loss', () => {
+  const { analyses, problems } = analyzeFixture('auto-and-comms')
   const a = analyses[0]
   const rules = fired(a.report)
   it('lines up the DS log with the robot log', () => {
@@ -14,7 +14,7 @@ describe('Q13 fixture: auto collision, early disable, comms loss', () => {
   it.each(['mech/zero-not-completed', 'comms/loss', 'comms/ds-log-truncated', 'auto/early-disable', 'collision/tilt'])('fires %s', (rule) => {
     expect(rules).toContain(rule)
   })
-  it('has the evidence numbers from the Q13 analysis', () => {
+  it('has the evidence numbers from the team\'s analysis of the match', () => {
     const f = (id: string) => a.report.findings.find((x) => x.rule === id)!
     expect(f('auto/early-disable').evidence['auto time left (s)']).toBeCloseTo(7.4, 1)
     expect(f('comms/loss').evidence['seconds with outputs off after each']).toBe('7.4, 4.3')
@@ -24,8 +24,8 @@ describe('Q13 fixture: auto collision, early disable, comms loss', () => {
   })
 })
 
-describe('Q21 fixture: flywheel followers', () => {
-  const a = analyzeFixture('q21-follower-mismatch').analyses[0]
+describe('follower-mismatch fixture: flywheel followers', () => {
+  const a = analyzeFixture('follower-mismatch').analyses[0]
   it('fires mech/follower-mismatch on follower 17 or 18', () => {
     const f = a.report.findings.find((x) => x.rule === 'mech/follower-mismatch')
     expect(f).toBeDefined()
@@ -33,8 +33,8 @@ describe('Q21 fixture: flywheel followers', () => {
   })
 })
 
-describe('P0 fixture: brownout', () => {
-  const a = analyzeFixture('p0-brownout').analyses[0]
+describe('brownout fixture', () => {
+  const a = analyzeFixture('brownout').analyses[0]
   const rules = fired(a.report)
   it.each(['power/brownout', 'can/device-dropout', 'build/dirty'])('fires %s', (rule) => {
     expect(rules).toContain(rule)
@@ -43,7 +43,7 @@ describe('P0 fixture: brownout', () => {
     expect(rules).not.toContain('mech/zero-not-completed')
     expect(a.report.skipped.map((s) => s.rule)).not.toContain('mech/zero-not-completed')
   })
-  it('has the brownout and dropout numbers from the P0 analysis', () => {
+  it('has the brownout and dropout numbers from the team\'s analysis of the match', () => {
     const b = a.report.findings.find((x) => x.rule === 'power/brownout')!
     expect(b.time).toBeCloseTo(532.77, 2)
     const d = a.report.findings.find((x) => x.rule === 'can/device-dropout')!

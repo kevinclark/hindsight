@@ -3,7 +3,7 @@
  *
  * Checks: each camera's accepted vision poses during the match against the odometry pose at the same moment.
  * Fires when more than 5 % are over 0.5 m away, out of at least 20 poses; with fewer, the camera is listed as not checked.
- * Why: CalGames 2026: 5–15 % of accepted poses were over 0.5 m off (up to 8.7 m), and P0 had 4 odometry jumps.
+ * Why: 2026 offseason event: 5–15 % of accepted poses were over 0.5 m off (up to 8.7 m), and log C had 4 odometry jumps.
  * Threshold: assumed from three logs; every log so far fires it.
  *
  * When odometry was off the field for most of the far poses, the finding says so: those distances measure odometry
@@ -30,7 +30,7 @@ export default rule({
     { id: 'odometry', cause: 'Odometry is the one that drifted (wheel slip, a bad gyro)', look: 'does the other camera agree with the vision poses? Wheel slip in the Match tab' },
   ],
   nextStep: 'Reject vision poses more than ~0.5 m from odometry, or weight them by ambiguity and tag distance; check camera mounts and calibration.',
-  incident: 'CalGames 2026: 5–15 % of accepted vision poses over 0.5 m from odometry (P0 analysis, "Other issues")',
+  incident: '2026 offseason event: 5–15 % of accepted vision poses over 0.5 m from odometry',
   forEach: 'camera',
 
   check(camera, match) {

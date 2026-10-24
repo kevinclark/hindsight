@@ -240,7 +240,7 @@ describe('reading a library\'s logs again', () => {
     const fake = async (path: string, name: string): Promise<Described> => {
       if (name === 'd.wpilog') throw new Error('unreadable test log')
       const real = await describeFile(path, name)
-      if (name === 'a.wpilog') return { ...real, meta: { ...real.meta, event: 'cacg', robot: { profileId: null, name: 'TestCode', how: 'signals', fit: 0.1 }, playedAt: 1, kind: 'dslog' } }
+      if (name === 'a.wpilog') return { ...real, meta: { ...real.meta, event: 'TEST', robot: { profileId: null, name: 'TestCode', how: 'signals', fit: 0.1 }, playedAt: 1, kind: 'dslog' } }
       if (name === 'e.wpilog') return { ...real, sha256: 'f'.repeat(64) }
       return real
     }
@@ -260,7 +260,7 @@ describe('reading a library\'s logs again', () => {
     expect(Object.keys(written.meta)).not.toContain('playedAt')
     expect(Object.keys(written.meta)).not.toContain('kind')
     const a = lib.catalog.bySha(record('a').sha256)!
-    expect(a).toMatchObject({ event: 'cacg', kind: 'wpilog', dateSource: 'robot clock' })
+    expect(a).toMatchObject({ event: 'TEST', kind: 'wpilog', dateSource: 'robot clock' })
     expect(a.robot).toEqual({ profileId: null, name: 'TestCode', how: 'signals', fit: 0.1 })
     expect(a.playedAt).not.toBe(1)
     // A fresh open of the library reads the same.
@@ -272,7 +272,7 @@ describe('reading a library\'s logs again', () => {
     const before = await manifestLines()
     const same = await redescribe(lib, { describer: 'T1', describe: async (path, name) => {
       const real = await describeFile(path, name)
-      return name === 'a.wpilog' ? { ...real, meta: { ...real.meta, event: 'cacg', robot: { profileId: null, name: 'TestCode', how: 'signals', fit: 0.1 } } } : real
+      return name === 'a.wpilog' ? { ...real, meta: { ...real.meta, event: 'TEST', robot: { profileId: null, name: 'TestCode', how: 'signals', fit: 0.1 } } } : real
     } })
     expect(same).toMatchObject({ wpilogs: 5, changed: 0, unchanged: 2, skipped: 2, missing: 1, failed: [] }) // a and b are skipped; d and e failed before, so they are read now
     const after = await manifestLines()

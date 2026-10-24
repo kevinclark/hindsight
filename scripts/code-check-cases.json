@@ -954,7 +954,7 @@
    "line": 310,
    "rule": "code/limit-switched-off",
    "verdict": "real",
-   "why": "real: flywheel supply limit 40 A switched off (stator 75 A on); measured 78-94 A per motor at CalGames 2026"
+   "why": "real: flywheel supply limit 40 A switched off (stator 75 A on); measured 78-94 A per motor at the team's 2026 offseason event"
   },
   {
    "repo": "2026-Offseason-Robot",

@@ -7,10 +7,11 @@
  *   npm run build
  *   node --experimental-strip-types scripts/ux-shots.ts <out-dir> --logs <folder of .wpilog> --dslog <file.dslog> [--compare <previous out-dir>]
  *
- * --logs    folder holding the match logs. Matches are picked by file-name suffix: _q13 (loaded together with --dslog),
- *           _p0 (the newest by name if there are two) and _q21. The Session view loads every .wpilog in the folder.
+ * --logs    folder holding the match logs. The three single-match views use the team's logs A (loaded together with
+ *           --dslog), C and B, found in the folder by the names tests/helpers/team-logs.ts lists. The Session view
+ *           loads every .wpilog in the folder.
  *           The Foresight views replay those same three logs as the robot's NT4 stream.
- * --dslog   the Driver Station log that goes with the _q13 match.
+ * --dslog   the Driver Station log that goes with log A.
  * --compare an earlier run's out-dir: index.html then shows its shot of the same name beside each new one, marked
  *           "changed" or "same" by a byte compare (PDFs: the creation/modification dates are masked first).
  *
@@ -23,9 +24,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startReplayServer } from '../tests/helpers/nt4-replay-server.ts'
+import { LOGS } from '../tests/helpers/load.ts'
 import { writeWpilog, type FixtureEntry } from '../tests/helpers/fixture-format.ts'
 import { makeSnapshotJson, type FakeTalon } from '../tests/helpers/make-snapshot.ts'
 
@@ -54,13 +56,13 @@ if (compareDir && !existsSync(compareDir)) { console.error(`--compare folder not
 const page = `file://${pageFile}`
 
 const allLogs = readdirSync(logsDir).filter((f) => f.endsWith('.wpilog')).sort()
-const pick = (suffix: string) => allLogs.filter((f) => f.endsWith(`_${suffix}.wpilog`)).at(-1) // newest by name (names carry the date)
+const pick = (k: 'a' | 'b' | 'c') => allLogs.find((f) => f === basename(LOGS[k]))
 const MATCHES = [
-  { id: 'q13', file: pick('q13'), withDs: true },
-  { id: 'p0', file: pick('p0'), withDs: false },
-  { id: 'q21', file: pick('q21'), withDs: false },
+  { id: 'a', file: pick('a'), withDs: true },
+  { id: 'c', file: pick('c'), withDs: false },
+  { id: 'b', file: pick('b'), withDs: false },
 ]
-for (const m of MATCHES) if (!m.file) { console.error(`no *_${m.id}.wpilog in ${logsDir}`); process.exit(2) }
+for (const m of MATCHES) if (!m.file) { console.error(`log ${m.id.toUpperCase()} (tests/helpers/team-logs.ts) is not in ${logsDir}`); process.exit(2) }
 if (!existsSync(dslogPath)) { console.error(`--dslog file not found: ${dslogPath}`); process.exit(2) }
 const logPath = (f: string) => join(logsDir, f)
 
@@ -353,9 +355,9 @@ async function builderView() {
 }
 
 const FORESIGHT = [
-  { id: 'p0', slot: 20, file: MATCHES[1].file!, pit: true, speed: 10, mode: 'tethered in the pit' },
-  { id: 'q13', slot: 21, file: MATCHES[0].file!, pit: true, speed: 30, mode: 'tethered in the pit' },
-  { id: 'q21-field', slot: 22, file: MATCHES[2].file!, pit: false, speed: 5, mode: 'field' },
+  { id: 'c', slot: 20, file: MATCHES[1].file!, pit: true, speed: 10, mode: 'tethered in the pit' },
+  { id: 'a', slot: 21, file: MATCHES[0].file!, pit: true, speed: 30, mode: 'tethered in the pit' },
+  { id: 'b-field', slot: 22, file: MATCHES[2].file!, pit: false, speed: 5, mode: 'field' },
 ]
 
 /** Foresight: the log replayed as the robot's NT4 stream; shots once there is a verdict (pit) or the field view. */
@@ -371,7 +373,7 @@ async function foresightView(c: (typeof FORESIGHT)[number]) {
     await sleep(1200) // as chrome-foresight-report-check.ts: one more second of updates, so the readings have settled
     await shootBoth(tab, c.slot, 'foresight', `Foresight live view, ${c.id.replace('-field', '').toUpperCase()} replayed as NT4, ${c.mode}`, c.id)
     if (c.pit) {
-      const slot = 25 + (c.id === 'p0' ? 0 : 2) + 4 // 29-32: after the three review reports and cards (23-28)
+      const slot = 25 + (c.id === 'c' ? 0 : 2) + 4 // 29-32: after the three review reports and cards (23-28)
       savePdf(slot, 'foresight-report', `Foresight printed report (PDF) and phone card (PNG): ${c.id.toUpperCase()}`, c.id, await printPdf(tab), tab)
       const png: string | null = await tab.eval('hindsight.foresightCardPng()')
       if (!png) throw new Error('hindsight.foresightCardPng() returned nothing')

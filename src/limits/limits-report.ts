@@ -6,7 +6,7 @@
  * 8033/robot/patches/2026-10-19-power-safety.md (from CTRE's Phoenix 6 docs).
  *
  * "Over the limit" means more than 5 A over it, as in the reference script (scripts/limits-reference.ts). Bursts of
- * 0.2 s or less are the limiter catching up (≤ 0.21 s at CalGames), not a limit that doesn't hold.
+ * 0.2 s or less are the limiter catching up (≤ 0.21 s at the 2026 offseason event), not a limit that doesn't hold.
  */
 
 import { has, num, type Match } from '../match/match.ts'

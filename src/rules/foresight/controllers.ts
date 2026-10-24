@@ -4,7 +4,7 @@
  * Checks (Foresight, the live pit check, only): each Driver Station port the robot profile lists (its controller-name
  * keys, `foresight.controllerNames`) reports a controller with a name right now, while the Driver Station is connected.
  * Why: a controller unplugged, or plugged into another port, leaves the driver with nothing on the field. In all
- * three CalGames match logs both Xbox controllers showed up on ports 0 and 1 within 0.2 s of the DS connecting.
+ * three 2026 match logs both Xbox controllers showed up on ports 0 and 1 within 0.2 s of the DS connecting.
  */
 import { rule } from '../rule.ts'
 

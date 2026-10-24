@@ -1,11 +1,11 @@
-// Foresight end to end without a robot: the CalGames logs replayed as the robot's NT4 stream (tests/helpers/
+// Foresight end to end without a robot: the team's 2026 logs A, B and C replayed as the robot's NT4 stream (tests/helpers/
 // nt4-replay-server.ts), read by the real client, store, engine and rules (src/foresight/live.ts).
 // Pit mode hides FMSAttached, as in the pit; the field-guard tests replay the logs as they were (FMS attaches at
 // 27–29 s robot time in all three).
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startReplayServer, type ReplayServer } from './helpers/nt4-replay-server.ts'
-import { CALGAMES, haveCalGames } from './helpers/load.ts'
+import { LOGS, haveLogs } from './helpers/load.ts'
 import { ForesightLive, type LiveStatus } from '../src/foresight/live.ts'
 import { FIELD_MESSAGE, isFieldLocked, resetFieldLockForTests, type SocketLike } from '../src/foresight/nt4-client.ts'
 import { SETTLE_SECONDS } from '../src/foresight/engine.ts'
@@ -34,26 +34,26 @@ const levels = (s: LiveStatus, level: string) => (s.result?.state === 'checked' 
 const warnings = (s: LiveStatus) => [...levels(s, 'red'), ...levels(s, 'amber')]
 const checkedPast = (t: number) => (s: LiveStatus) => s.result?.state === 'checked' && s.result.end > t
 
-describe.skipIf(!haveCalGames)('Foresight live, replaying CalGames logs in pit mode', () => {
-  it('P0: build/dirty fires after settle', async () => {
-    const { last } = await run(CALGAMES.p0, { pit: true, speed: 20, until: checkedPast(12.18 + SETTLE_SECONDS + 5) })
+describe.skipIf(!haveLogs)('Foresight live, replaying logs A, B and C in pit mode', () => {
+  it('C: build/dirty fires after settle', async () => {
+    const { last } = await run(LOGS.c, { pit: true, speed: 20, until: checkedPast(12.18 + SETTLE_SECONDS + 5) })
     expect(last.state).toBe('connected')
     expect(last.codeStartFrom).toBe('metadata')
     expect(last.codeStart).toBeCloseTo(12.18, 1)
-    expect(last.profile?.code.branch).toBe('event-calgames') // the branch P0 ran, not main
+    expect(last.profile?.code.branch).toBe('event-calgames') // the branch C ran, not main
     expect(warnings(last)).toContain('build/dirty')
   })
 
-  it('Q21: power/rest-voltage fires, 12.43–12.48 V', async () => {
-    const { last } = await run(CALGAMES.q21, { pit: true, speed: 20, until: checkedPast(11.76 + SETTLE_SECONDS + 15) })
+  it('B: power/rest-voltage fires, 12.43–12.48 V', async () => {
+    const { last } = await run(LOGS.b, { pit: true, speed: 20, until: checkedPast(11.76 + SETTLE_SECONDS + 15) })
     expect(warnings(last)).toEqual(['power/rest-voltage'])
     const f = last.result?.state === 'checked' ? last.result.verdict.items[0].finding : null
     expect(f?.measured?.[0].value).toBeGreaterThanOrEqual(12.43)
     expect(f?.measured?.[0].value).toBeLessThanOrEqual(12.48)
   })
 
-  it('Q13: nothing amber or red from settle to the first enable; no finding at all before settle', async () => {
-    const { updates } = await run(CALGAMES.q13, { pit: true, speed: 60, until: (s) => s.result?.state === 'enabled', maxMs: 30_000 })
+  it('A: nothing amber or red from settle to the first enable; no finding at all before settle', async () => {
+    const { updates } = await run(LOGS.a, { pit: true, speed: 60, until: (s) => s.result?.state === 'enabled', maxMs: 30_000 })
     const checked = updates.filter((s) => s.result?.state === 'checked')
     expect(checked.length).toBeGreaterThan(10)
     expect(checked.flatMap(warnings)).toEqual([])
@@ -65,7 +65,7 @@ describe.skipIf(!haveCalGames)('Foresight live, replaying CalGames logs in pit m
   }, 40_000)
 
   it('sends only subscribe and unsubscribe, never a binary frame', async () => {
-    const { server } = await run(CALGAMES.p0, { pit: true, speed: 20, until: checkedPast(45) })
+    const { server } = await run(LOGS.c, { pit: true, speed: 20, until: checkedPast(45) })
     live!.disconnect()
     await sleep(100)
     expect(server.received.filter((f) => f.kind === 'binary')).toEqual([])
@@ -83,8 +83,8 @@ describe.skipIf(!haveCalGames)('Foresight live, replaying CalGames logs in pit m
   })
 })
 
-describe.skipIf(!haveCalGames)('Foresight field guard, replaying CalGames logs as they were', () => {
-  for (const [name, path, attach] of [['Q13', CALGAMES.q13, 28.47], ['Q21', CALGAMES.q21, 27.76], ['P0', CALGAMES.p0, 27.27]] as const) {
+describe.skipIf(!haveLogs)('Foresight field guard, replaying logs A, B and C as they were', () => {
+  for (const [name, path, attach] of [['A', LOGS.a, 28.47], ['B', LOGS.b, 27.76], ['C', LOGS.c, 27.27]] as const) {
     it(`${name}: closes the socket when FMSAttached turns true (${attach} s) and never reconnects`, async () => {
       const { updates, last, server } = await run(path, { pit: false, speed: 10, until: (s) => s.state === 'field' })
       expect(last.state).toBe('field')

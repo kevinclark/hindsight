@@ -23,7 +23,7 @@ export default rule({
     { id: 'loose-connection', cause: 'A connection that opens and closes (battery connector, main breaker, roboRIO power) when the robot is bumped', look: 'did the brownouts follow a bump or hit (collision/impact)? Wiggle-test the battery connector and the roboRIO power plug' },
   ],
   nextStep: 'Find the loads on at each sag (Power tab), turn on current limits for the big ones, and load-test the battery used.',
-  incident: 'One 2026 match: brownouts from 532.8 s, battery collapse after ~3.5 Ah (8033/robot/2026-10-17-calgames-q13-log-analysis.md, P0 section)',
+  incident: 'One 2026 match: brownouts from 532.8 s, battery collapse after ~3.5 Ah',
 
   check(match) {
     const onsets = match.signal('brownedOut').turnsOn()

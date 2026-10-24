@@ -153,7 +153,7 @@ ones you name, and convert them so Hindsight can open them.
 3. Copy and convert the ones you want by part of their name, for example qualification match 28:
 
    ```bash
-   python3 tools/robot-snapshot.py --hoot-copy '*_Q28_*'
+   python3 tools/robot-snapshot.py --hoot-copy '*_Q4_*'
    ```
 
    If copying fails with an SFTP error, add `--scp-legacy`.

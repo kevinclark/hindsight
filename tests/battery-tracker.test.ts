@@ -1,4 +1,4 @@
-// Battery rules need FRC8033BatteryTracker keys, which the CalGames logs don't have. Synthetic logs here.
+// Battery rules need FRC8033BatteryTracker keys, which the team's 2026 logs don't have. Synthetic logs here.
 import { describe, expect, it } from 'vitest'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { analyzeFiles } from '../src/analyze.ts'

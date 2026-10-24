@@ -3,7 +3,7 @@
  *
  * Checks: the share of loops over 20 ms (/RealOutputs/LoggedRobot/FullCycleMS), the 99th percentile and the worst,
  * in auto and in teleop. Fires when either overruns on more than 10 % of loops.
- * Why: CalGames 2026: 14–27 % of auto loops overran (worst 134 ms). A 130 ms loop at 2.5 m/s is 0.33 m of blind
+ * Why: 2026 offseason event: 14–27 % of auto loops overran (worst 134 ms). A 130 ms loop at 2.5 m/s is 0.33 m of blind
  * travel on a trench approach.
  */
 import { maxOf, pct, round, rule } from '../rule.ts'
@@ -22,7 +22,7 @@ export default rule({
     { id: 'cpu', cause: 'The roboRIO is overloaded (other programs, too many threads or CAN calls)', look: '/SystemStats CPU use and CAN utilization in AdvantageScope' },
   ],
   nextStep: 'Use the Tracer/* entries to find the slow step in auto and move it off the main loop or cache it.',
-  incident: 'CalGames 2026: auto overran 14–27 % of loops, worst 134 ms (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 3)',
+  incident: '2026 offseason event: auto overran 14–27 % of loops, worst 134 ms',
 
   check(match) {
     const loop = match.signal('loopCycleMs')

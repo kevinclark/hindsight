@@ -3,12 +3,12 @@
  *
  * Checks: the share of the match each camera's Stale flag was on (fires above 15 %), and the camera's Connected
  * flag going false during the match.
- * Why: CalGames 2026: Back_Right was stale 18–23 % of the match against 5–8 % for Back_Left, and in Q21 it dropped
+ * Why: 2026 offseason event: Back_Right was stale 18–23 % of the match against 5–8 % for Back_Left, and in log B it dropped
  * out for 6 s while its network connection stayed up (the coprocessor pipeline stalled).
  * Threshold: assumed from three logs.
  * Foresight (the live pit check, robot disabled): drop-outs only. A disabled robot sees whatever tags happen to be in
  * view, so its stale share says nothing: Back_Right was stale 37–40 % of the disabled field stretch in all three
- * CalGames logs, a working camera facing no tags.
+ * 2026 logs, a working camera facing no tags.
  */
 import { lengthOf, type CameraView, type Episode, type MatchView } from '../view.ts'
 import { isFalse, isTrue, pct, plural, rule, secs, round, totalSeconds, type Answer, type Problem } from '../rule.ts'
@@ -25,7 +25,7 @@ export default rule({
     { id: 'view', cause: 'The camera is blocked or sees nothing useful (no tags in view, glare)', look: 'the camera image in the PhotonVision dashboard from the robot\'s usual positions' },
   ],
   nextStep: 'Check the coprocessor (CPU, temperature), the camera pipeline settings, and the camera\'s cable and power.',
-  incident: 'CalGames 2026: Back_Right stale ~3× as often as Back_Left; dropped 6 s in Q21 (2026-10-17-calgames-q13-log-analysis.md, "Other issues" item 4)',
+  incident: '2026 offseason event: Back_Right stale ~3× as often as Back_Left; dropped 6 s in log B',
   forEach: 'camera',
 
   check(camera, match): Answer {

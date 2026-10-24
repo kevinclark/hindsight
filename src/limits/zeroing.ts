@@ -4,7 +4,7 @@
  *
  * A current zero drives the mechanism into its hard stop and calls it zeroed when the current passes a threshold. If
  * the threshold equals the stator limit, the current only gets there when the limiter overshoots, so the zero
- * depends on overshoot (CalGames: the hood's 30 A threshold = its 30 A stator limit).
+ * depends on overshoot (2026 robot: the hood's 30 A threshold = its 30 A stator limit).
  */
 
 import { has, num, values, type Match } from '../match/match.ts'
