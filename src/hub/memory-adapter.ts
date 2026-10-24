@@ -2,7 +2,7 @@
  * A StorageAdapter that keeps everything in memory: the fake the tests use, and the reference for what any store must
  * do. `failUploadAfter` makes the next writeNew fail after that many bytes, as a dropped connection does mid-file.
  */
-import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isManifestPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
+import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isOwnAppendPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
 import { createHash } from 'node:crypto'
 
 const CHUNK = 1 << 20
@@ -50,7 +50,7 @@ export class MemoryAdapter implements StorageAdapter {
   }
 
   async appendManifest(path: string, content: string): Promise<void> {
-    if (!isManifestPath(checkPath(path))) throw new Error(`${path} is not a manifest path`)
+    if (!isOwnAppendPath(checkPath(path))) throw new Error(`${path} is not a file this machine appends to`)
     const existing = this.files.get(path)
     if (existing && !extendsManifest(new TextDecoder().decode(existing.bytes), content)) throw new ManifestConflict(path)
     this.writes.push(path)

@@ -7,7 +7,7 @@
  * every request. A token the provider can no longer renew throws SignInAgain.
  */
 import { createHash } from 'node:crypto'
-import { AlreadyExists, ChecksumMismatch, ManifestConflict, SignInAgain, checkPath, extendsManifest, isManifestPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
+import { AlreadyExists, ChecksumMismatch, ManifestConflict, SignInAgain, checkPath, extendsManifest, isOwnAppendPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
 
 const API = 'https://www.googleapis.com/drive/v3'
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
@@ -114,7 +114,7 @@ export class DriveAdapter implements StorageAdapter {
   }
 
   async appendManifest(path: string, content: string): Promise<void> {
-    if (!isManifestPath(checkPath(path))) throw new Error(`${path} is not a manifest path`)
+    if (!isOwnAppendPath(checkPath(path))) throw new Error(`${path} is not a file this machine appends to`)
     const existing = await this.find(path)
     const body = new TextEncoder().encode(content)
     if (existing) {

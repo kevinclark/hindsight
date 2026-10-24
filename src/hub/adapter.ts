@@ -78,7 +78,7 @@ export function checkPath(path: string): string {
 }
 
 /** A file one machine alone appends to: its manifest, or its triage history (`history/<machine id>.jsonl`). */
-export function isManifestPath(path: string): boolean {
+export function isOwnAppendPath(path: string): boolean {
   return /^(manifests|history)\/[A-Za-z0-9_-]+\.jsonl$/.test(path)
 }
 

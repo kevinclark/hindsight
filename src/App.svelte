@@ -169,9 +169,16 @@
     try { return parseHistory(localStorage.getItem(STORE) ?? '').events } catch { return [] }
   }
   // Lines to the library's file go one after another, so two quick marks reach the file in the order they were made.
+  // Events whose append failed: shown anyway, and retried on the next open from the browser store.
+  let unwritten: HistoryEvent[] = []
   let appending: Promise<unknown> = Promise.resolve()
   function appendToLibrary(lines: string) {
-    appending = appending.then(() => library!.appendHistory(lines)).catch((e: Error) => { historyNote = `The history could not be written to the library: ${e.message}` })
+    appending = appending.then(() => library!.appendHistory(lines)).catch((e: Error) => {
+      // Keep the marks: the browser store holds them, and the next open moves them into the library (migrationLines).
+      unwritten = mergeHistory(unwritten, parseHistory(lines).events)
+      try { localStorage.setItem(STORE, `${localStorage.getItem(STORE) ?? ''}${lines}`) } catch { /* no browser store either */ }
+      historyNote = `The history could not be written to the library, so it is kept in this browser and retried on the next open: ${e.message}`
+    })
   }
   async function openLibraryHistory() {
     if (!library) return
@@ -188,15 +195,17 @@
   appending = appending.then(openLibraryHistory)
   // Sync (in the Library) may have brought teammates' lines down: read the library's history again when the view changes.
   $effect(() => { void mode; if (library) appending = appending.then(refreshLibraryHistory) })
+  let generation = 0
   async function refreshLibraryHistory() {
-    try { history = parseHistory(await library!.history()).events } catch { /* the note from the last read stands */ }
+    const was = generation
+    try { const read = parseHistory(await library!.history()).events; if (was === generation) history = mergeHistory(read, unwritten) } catch { /* the note from the last read stands */ }
   }
   function keep(events: HistoryEvent[], changed: boolean) {
     if (library) {
+      generation++
       const had = new Set(history.map((e) => serializeHistory([e])))
       const fresh = events.filter((e) => !had.has(serializeHistory([e])))
       history = events
-      if (changed) unsaved = true
       if (fresh.length) appendToLibrary(serializeHistory(fresh))
       return
     }
@@ -356,8 +365,7 @@
 <div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder bind:this={profileBuilder} /></div>
 <div hidden={mode !== 'foresight'}>
   <ForesightView {history} {sessions} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
-  {#if historyNote}<p class="history screen-only" role="status">{historyNote}</p>{/if}
-  {#if unsaved && !library}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
+  {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
 {#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} /></div>{/if}
 <div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
@@ -381,9 +389,10 @@
 
 {#each problems as p (p)}<p class="problem" role="alert">{p}</p>{/each}
 
+{#if historyNote}<p class="history screen-only" role="status">{historyNote}</p>{/if}
 {#if history.length}
   <p class="history">
-    Known issues: {issues.size} tracked{#if marks.wrong.size}{' · '}{marks.wrong.size} marked not a real problem{/if}{#if marks.real.size}{' · '}{marks.real.size} marked a real problem{/if}{#if unsaved && !library}{' · '}<strong>changes not saved to a file yet</strong>{/if}
+    Known issues: {issues.size} tracked{#if marks.wrong.size}{' · '}{marks.wrong.size} marked not a real problem{/if}{#if marks.real.size}{' · '}{marks.real.size} marked a real problem{/if}{#if unsaved}{' · '}<strong>changes not saved to a file yet</strong>{/if}
     <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button>
   </p>
 {/if}

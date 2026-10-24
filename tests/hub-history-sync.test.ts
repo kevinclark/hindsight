@@ -46,6 +46,29 @@ describe('history in the library', () => {
     expect(await readText(a.store, 'history/ma.jsonl')).not.toContain('swapped the belt')
   })
 
+  it("the team's longer copy of this machine's own file (a lost library) is pulled down, additively; the upload count is the lines that went up", async () => {
+    const team = new MemoryAdapter()
+    const l1 = issue('k1', 'known', '2026-10-24T10:00:00.000Z')
+    const l2 = issue('k2', 'fixed', '2026-10-24T10:01:00.000Z')
+    const a = await machine('ma')
+    await a.appendHistory(`${l1}\n`)
+    const up = await syncWithTeam(a, team)
+    expect(up.historyPublished).toBe(1)
+    team.files.set('history/ma.jsonl', { bytes: new TextEncoder().encode(`${l1}\n${l2}\n`), modifiedTime: 5 })
+    const down = await syncWithTeam(a, team)
+    expect(down.history).toEqual([{ name: 'history/ma.jsonl', lines: 1 }])
+    expect(down.historyPublished).toBe(0)
+    expect(down.problems).toEqual([])
+    expect(await readText(a.store, 'history/ma.jsonl')).toBe(`${l1}\n${l2}\n`)
+    // a fresh library with the same id gets everything
+    const again = await LocalLibrary.open(join(work, 'ma2'), 'ma')
+    await syncWithTeam(again, team)
+    expect(await readText(again.store, 'history/ma.jsonl')).toBe(`${l1}\n${l2}\n`)
+    await again.appendHistory(`${issue('k3', 'known', '2026-10-24T10:02:00.000Z')}\n`)
+    const r = await syncWithTeam(again, team)
+    expect(r.historyPublished).toBe(1)
+  })
+
   it('a second sync with nothing new writes nothing', async () => {
     const team = new MemoryAdapter()
     const a = await machine('ma')
@@ -55,7 +78,7 @@ describe('history in the library', () => {
     const again = await syncWithTeam(a, team)
     expect(team.writes).toEqual([])
     expect(again.history).toEqual([])
-    expect(again.historyPublished).toBe(1)
+    expect(again.historyPublished).toBe(0)
   })
 
   it("a teammate's shorter or diverging history file is reported, not replaced", async () => {
@@ -135,6 +158,14 @@ describe('first open: the browser store moves into the library once', () => {
     expect(migrationLines(await a.historyText(), stored)).toBeNull() // the next open finds nothing to move
     expect(await a.appendHistory(stored)).toBe(0) // and even a forced second append writes nothing
     expect(((await readText(a.store, 'history/ma.jsonl')) ?? '').split('\n').filter(Boolean)).toEqual([l1, l2])
+  })
+})
+
+describe('a failed append', () => {
+  it('lines kept in the browser store are moved by the next open', async () => {
+    const a = await machine('ma')
+    const lost = issue('k', 'known', '2026-10-24T10:00:00.000Z')
+    expect(migrationLines(await a.historyText(), `${lost}\n`)).toEqual({ text: `${lost}\n`, count: 1 })
   })
 })
 

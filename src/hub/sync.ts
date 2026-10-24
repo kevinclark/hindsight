@@ -26,7 +26,7 @@ export interface SyncReport {
   published: number
   /** Files in the team's logs/ that no manifest mentions (a manifest write that failed, or files put there by hand). */
   unrecorded: string[]
-  /** Teammates' history files brought down, with how many lines each added; and whether this machine's file went up. */
+  /** History files brought down (teammates', or this machine's own when the team's copy was longer), with how many lines each added; and how many lines of this machine's file went up this sync (0 when nothing new or on a conflict). */
   history: { name: string; lines: number }[]
   historyPublished: number
   /** Anything that stopped part of the sync (a manifest that changed under us). */
@@ -148,14 +148,19 @@ async function syncHistory(lib: LocalLibrary, team: StorageAdapter, report: Sync
   }
   const local = (await readText(lib.store, own)) ?? ''
   const remote = (await readText(team, own)) ?? ''
-  if (local === remote) { report.historyPublished = linesOf(local); return }
+  if (local === remote) return
+  if (remote.startsWith(local)) {
+    // The team has more of this computer's history (a reinstall, a lost library): bring it down; strictly additive.
+    await lib.store.appendManifest(own, remote)
+    report.history.push({ name: own, lines: linesOf(remote) - linesOf(local) })
+    return
+  }
   try {
     await team.appendManifest(own, local)
-    report.historyPublished = linesOf(local)
+    report.historyPublished = linesOf(local) - linesOf(remote)
   } catch (e) {
     if (!(e instanceof ManifestConflict)) throw e
-    report.historyPublished = linesOf(remote)
-    report.problems.push(`The team's copy of this computer's history holds lines this copy lacks (another install with this id?): not uploaded, nothing overwritten`)
+    report.problems.push(`The team's copy of this computer's history differs from this copy (another install with this id?): not uploaded, nothing overwritten`)
   }
 }
 
