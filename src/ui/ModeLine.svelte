@@ -15,11 +15,12 @@
     <option value="event">Event</option>
     <option value="practice">Practice</option>
     {#if byHand}<option value="auto">Automatic (from the logs)</option>{/if}
-  </select></label>
+  </select></label>{#if hint}{' '}<span class="hint">{hint}</span>{/if}
 </p>
 
 <style>
   .mode-line { margin: 0.25rem 0; font-size: 0.85rem; color: var(--muted); }
+  .hint { display: block; }
   [data-mode-text] { color: var(--fg); font-weight: 600; }
   select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; min-height: 24px; box-sizing: border-box; }
 </style>
