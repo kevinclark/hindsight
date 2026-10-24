@@ -166,7 +166,8 @@ describe('motors and groups from a log', () => {
     expect(draft.json.signals?.alertGroups).toEqual(['/RealOutputs/Alerts'])
     expect(draft.json.otherDevices).toEqual([{ name: 'Drive Gyro', connected: '/Drive/Gyro/Connected' }])
     expect(draft.json.motorGroups.find((g) => g.name === 'Flywheel')).toMatchObject({ sameLoop: true, sameLoopSuggested: true })
-    expect(draft.warnings).toEqual([])
+    // The example log has no date, so its game is measured and the draft says so (tests/games.test.ts has the dated case).
+    expect(draft.warnings).toEqual(['This log has no date (the robot clock was not set and the file name has none), so auto and teleop were measured from this log: check them against the game.'])
     expect(draft.json.battery).toMatchObject({ id: ['/RealOutputs/Battery/Id'], gaugeValid: ['/BatteryGauge/Valid'], numCycles: [] })
     // An unconfirmed supply-or-stator current feeds no rule until the student says which.
     const drive = toProfile(draft.json).motorGroups.find((g) => g.name === 'Drive')!.motors[0]
@@ -769,6 +770,7 @@ describe('the code\'s motors and their log keys', () => {
     ])
     expect([g.groupFromCode, g.sameLoop, g.sameLoopSuggested, g.limitsFromCode, g.limits?.supplyA]).toEqual([true, true, true, true, 30])
     expect(draft.notes).toEqual([
+      'This log has no date (the robot clock was not set and the file name has none), so auto and teleop were measured from this log: check them against the game.',
       'The code builds 1 more Talon FX that this log has no current for: ShooterIOReal.java:2 (ID 10). Their current isn\'t in the battery model.',
       'The robot ran uncommitted changes on top of abc1234: this draft is from the commit, so check what the changes touched.',
     ])

@@ -33,6 +33,9 @@ for (const path of args) {
   const log = openWpilog(new Uint8Array(readFileSync(path)))
   const r = backtestLog(log, PROFILES)
   console.log(`\n${path.split('/').pop()}  (hand profile: ${r.hand ?? 'none fits'})`)
+  const game = draftProfile({ logs: [{ log, fileName: path.split('/').pop()! }] }).json.game
+  const hand = chooseProfile(log, PROFILES)
+  console.log(`  game: ${game?.name} ${game?.autoSeconds}/${game?.teleopSeconds}${hand.choice.misfit ? '' : ` · hand ${hand.profile.game.name} ${hand.profile.game.autoSeconds}/${hand.profile.game.teleopSeconds}`}`)
   console.log(`  motors: found ${r.found}${r.hand ? ` of ${r.handMotors}` : ''}, missed ${r.missed.length}, false positive ${r.falsePositives.length}${r.hand ? '' : ' (no hand profile: every motor counts here)'}`)
   for (const m of r.missed) console.log(`    missed ${m}`)
   for (const m of r.falsePositives) console.log(`    ${r.hand ? 'false positive' : 'found'} ${m}`)
