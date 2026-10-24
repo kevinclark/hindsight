@@ -230,9 +230,9 @@ export function carryConfirmations(from: ProfileJson, to: ProfileJson): void {
 }
 
 /**
- * The game the log was played under (profiles/games.ts), by the log's date. A log with no date gets auto and teleop
- * measured from it, the way a log no profile fits is read (match/match.ts), and a note: one practice run or a match cut
- * short gives lengths that aren't the game's.
+ * The game the log was played under: a probe match read with no profile that fits takes its season's game by the log's
+ * date (match/match.ts, profiles/games.ts), or measures auto and teleop from the log when it has no date. The note says
+ * when the game was measured or assumed: one practice run or a match cut short gives lengths that aren't the game's.
  */
 function seasonGame(log: WpilogFile, fileName: string, sig: ReturnType<typeof signalsFromLog>): { game: ProfileJson['game']; note?: string } {
   const probe = toProfile({ name: 'probe', motorGroups: [], signals: sig.signals })
@@ -240,13 +240,12 @@ function seasonGame(log: WpilogFile, fileName: string, sig: ReturnType<typeof si
   const when = playedAt(match).playedAt
   const found = when === null ? null : gameFor(when)
   if (!found) {
-    const first = GAMES[0]
-    const why = when === null ? 'This log has no date (the robot clock was not set and the file name has none)' : `This log is from before ${first.year}'s kickoff, the first game listed`
+    const why = when === null ? 'This log has no date (the robot clock was not set and the file name has none)' : `This log is from before ${GAMES[0].year}'s kickoff, the first game listed`
     return { game: { ...match.profile.game, name: `measured from ${fileName}` }, note: `${why}, so auto and teleop were measured from this log: check them against the game.` }
   }
   const { game, assumed } = found
   return {
-    game: { name: game.name, autoSeconds: game.autoSeconds, teleopSeconds: game.teleopSeconds },
+    game: match.profile.game,
     ...(assumed ? { note: `No kickoff listed for ${new Date(when!).getFullYear()}: assumed still ${game.name} (${game.autoSeconds} s auto, ${game.teleopSeconds} s teleop). Add the new game to src/profiles/games.ts.` } : {}),
   }
 }

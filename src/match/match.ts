@@ -20,6 +20,8 @@ import { isOtherLogKey, resolveBattery, resolveSignals } from '../profiles/sourc
 import { dseventsEndEpoch, MATCH_TYPES, type DseventsFile } from '../readers/dsevents.ts'
 import { otherLogSeries } from './other-logs.ts'
 import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } from './series.ts'
+import { playedAt } from './played-at.ts'
+import { gameFor } from '../profiles/games.ts'
 
 export interface Match {
   fileName: string
@@ -153,11 +155,21 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
   }
   const fms = num(match, s.fmsAttached)
   match.fms = !!fms && Array.from(fms.v).some((v) => v > 0.5)
+  // The clock doesn't depend on the match window, and the misfit case below needs the date.
+  match.epochOffset = computeEpochOffset(match)
   if (profileChoice.misfit) {
-    // The profile is for another robot or game: find the match with generous lengths, then measure the real ones.
-    match.profile = { ...profile, game: { name: 'measured from this log', autoSeconds: 20, teleopSeconds: 150 } }
-    findMatchWindow(match, fms)
-    match.profile = { ...profile, game: measuredGame(match) }
+    // The profile is for another robot or game, so its game may not be this log's: use the season's game by the log's
+    // date (profiles/games.ts). With no date, find the match with generous lengths, then measure the real ones.
+    const when = playedAt(match).playedAt
+    const season = when === null ? null : gameFor(when)
+    if (season) {
+      const { name, autoSeconds, teleopSeconds } = season.game
+      match.profile = { ...profile, game: { name, autoSeconds, teleopSeconds } }
+    } else {
+      match.profile = { ...profile, game: { name: 'measured from this log', autoSeconds: 20, teleopSeconds: 150 } }
+      findMatchWindow(match, fms)
+      match.profile = { ...profile, game: measuredGame(match) }
+    }
   }
   findMatchWindow(match, fms)
 
@@ -166,7 +178,6 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
     sha: lastString(match, s.gitSha), branch: lastString(match, s.gitBranch), date: lastString(match, s.gitDate),
     dirty: lastString(match, s.gitDirty),
   }
-  match.epochOffset = computeEpochOffset(match)
   return match
 }
 
@@ -215,7 +226,7 @@ const FIELD_AUTO_TO_TELEOP_SECONDS = 3
 const FIELD_AUTO_TO_TELEOP_MAX_SECONDS = 4.5
 
 /**
- * Auto and teleop lengths from the log itself, for a log no profile fits, rounded to whole seconds. On the field, an
+ * Auto and teleop lengths from the log itself, for a log no profile fits that has no date, rounded to whole seconds. On the field, an
  * auto period that ran until the pause before teleop is the auto length; a robot disabled earlier doesn't shorten it,
  * so then auto is the time from auto start to teleop start less the 3 s pause. Off the field, the first auto period.
  * Teleop runs from the teleop enable to the end of the match.

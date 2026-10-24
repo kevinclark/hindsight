@@ -110,9 +110,10 @@ describe('match identity in a plain WPILib log', () => {
     expect(analyses[0].match.matchLabel).toBe('Qualification 7')
   })
   it('with no profile that fits, a full-length auto followed by the 2026 field\'s 4 s pause is not an early disable', () => {
-    // Auto enabled 10 → 30.5 (20.5 s), teleop at 34.5: the misfit path measures auto from the log.
+    // Auto enabled 10 → 30.5 (20.5 s), teleop at 34.5. The log is dated 2026, so the misfit path plays 2026's game (20 s
+    // auto), not lengths measured from the log.
     const [a] = analyze([{ name: 'third.wpilog', bytes: writeWpilog(dlmMatch()) }], (() => undefined) as never)
-    expect(a.match.profile.game.autoSeconds).toBe(21)
+    expect(a.match.profile.game).toEqual({ name: '2026 REBUILT', autoSeconds: 20, teleopSeconds: 140 })
     expect(a.report.findings.filter((f) => f.rule === 'auto/early-disable')).toEqual([])
     // Cut short (disabled at 23.5 s, teleop 11 s later), auto is still teleop start less the pause, and it fires.
     const [cut] = analyze([{ name: 'cut.wpilog', bytes: writeWpilog(dlmMatch(23.5)) }], (() => undefined) as never)
