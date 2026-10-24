@@ -15,19 +15,17 @@
   import { changedLine, clockText, dueLine, ownerText, priorityIcon, priorityWord, rowTitle, statusLine, tags } from '../board/words.ts'
   import type { Change } from '../board/writes.ts'
   import type { BoardRole } from '../triage/history.ts'
+  import { CAUSE_WORDS, debugCauses, markText, readReverse } from '../board/debug.ts'
 
-  let { issue, board, rate, role, onBack, onChange }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange: (changes: Change[], note?: string) => void } = $props()
+  let { issue, board, rate, role, onBack, onChange, onDebug }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange: (changes: Change[], note?: string) => void; onDebug: () => void } = $props()
 
   const maker = $derived(makerOf(issue.rule))
   const options = $derived(suggestions(board.tl))
   const evidence = $derived(Object.entries(issue.latest?.evidence ?? {}))
-  const causes = $derived.by(() => {
-    const all = maker?.causes ?? []
-    const likely = new Set(issue.latest?.likely ?? [])
-    // The ones this log points to first, then Hindsight's own order. "Possible", never "likely": no backtest supports a ranking.
-    return [...all].sort((a, b) => Number(likely.has(b.id)) - Number(likely.has(a.id)))
-      .map((c) => ({ ...c, points: likely.has(c.id), ruled: issue.latest?.ruledOut?.[c.id] }))
-  })
+  // The test switch (debug workspace): causes in reverse order, named on screen while on.
+  const reverse = (() => { try { return readReverse(localStorage) } catch { return false } })()
+  // The ones this log points to first, then Hindsight's own order. "Possible", never "likely": no backtest supports a ranking.
+  const causes = $derived(debugCauses(maker?.causes ?? [], { likely: issue.latest?.likely, ruledOut: issue.latest?.ruledOut }, issue.causeMarks, reverse))
 
   // The form starts from what the board holds now.
   let priority = $state<Priority>('red')
@@ -99,15 +97,19 @@
       <p class="muted small">Latest: {issue.title}</p>
       {#if causes.length}
         <h5>Possible causes</h5>
+        {#if reverse}<p class="note" role="status"><b>Test setting on:</b> causes are in reverse order.</p>{/if}
         <ol class="causes">
           {#each causes as c (c.id)}
-            <li class:ruled={!!c.ruled}>
-              <span class="cause">{c.cause}</span> <span class="tag">{c.ruled ? 'ruled out' : 'possible'}</span>{#if c.points && !c.ruled}{' '}<span class="tag">this log points to it</span>{/if}
-              <span class="look">{c.ruled ? c.ruled : `Look at: ${c.look}`}</span>
+            {@const out = c.state === 'ruled-out' || !!c.hindsightRuledOut}
+            <li class:ruled={out}>
+              <span class="cause">{c.cause}</span> <span class="tag">{c.state === 'possible' && c.hindsightRuledOut ? 'ruled out' : CAUSE_WORDS[c.state].toLowerCase()}</span>{#if c.points && !out}{' '}<span class="tag">this log points to it</span>{/if}
+              <span class="look">{c.state !== 'possible' ? markText(c) : c.hindsightRuledOut ? `Hindsight: ${c.hindsightRuledOut}` : `Look at: ${c.look}`}{#if c.role}{' '}({c.role}){/if}</span>
+              {#if c.state !== 'possible' && c.hindsightRuledOut}<span class="look">Hindsight: {c.hindsightRuledOut}</span>{/if}
             </li>
           {/each}
         </ol>
         <p class="hint">"Possible", not "likely": no backtest supports a ranking of causes yet.</p>
+        <button type="button" class="primary" data-debug-open onclick={onDebug}>Debug this</button>
       {/if}
       <h5>Next step</h5>
       <p>{issue.nextStep}</p>
@@ -118,6 +120,9 @@
       {/if}
       {#if maker && 'incident' in maker}<p class="small muted"><b>Why this rule exists:</b> {maker.incident}</p>{/if}
     </section>
+    {#if issue.rule.startsWith('code/')}
+      <!-- FIX PREVIEW (slice 15): the code check's fix preview for a `code/` issue goes here (src/ui/FixPreview.svelte). Empty on purpose. -->
+    {/if}
     <section class="panel">
       <h4>Further reading</h4>
       {#if maker && 'sources' in maker && maker.sources.length}

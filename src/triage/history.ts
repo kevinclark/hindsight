@@ -54,7 +54,10 @@ export interface PitCheckEvent {
   when: string
 }
 
-export type BoardOp = 'priority' | 'status' | 'defer' | 'workaround' | 'note' | 'checked' | 'unchecked' | 'owner'
+export type BoardOp = 'priority' | 'status' | 'defer' | 'workaround' | 'note' | 'checked' | 'unchecked' | 'owner' | 'cause'
+/** What the student has found about one possible cause (the debug workspace): still possible (the default), ruled out by a test, or confirmed. */
+export type CauseState = 'possible' | 'ruled-out' | 'confirmed'
+export const CAUSE_STATES: readonly CauseState[] = ['possible', 'ruled-out', 'confirmed']
 export type BoardRole = 'software' | 'pit' | 'drive' | 'mentor'
 
 export interface BoardUntil {
@@ -81,8 +84,13 @@ export interface BoardEvent {
   op: BoardOp
   /** priority: high|medium|low; status: open|fixing|check; defer: any non-empty value sets a deferral (its text is not kept; the target is `until`); '' with no until clears;
    * workaround and note: free text; checked: the match it was checked for ("Q41"), a tick on the queue sheet (new op: an old build keeps
-   * the line unread and writes it back as it came); unchecked: the same shape, takes a tick back (a tick counts only if no later unchecked names its match); owner: software|pit|drive, '' clears (the role that owns the issue; also a new op). */
+   * the line unread and writes it back as it came); unchecked: the same shape, takes a tick back (a tick counts only if no later unchecked names its match); owner: software|pit|drive, '' clears (the role that owns the issue; also a new op);
+   * cause: possible|ruled-out|confirmed for the cause named in `cause` (a new op: an old build keeps the line unread and writes it back as it came). */
   value: string
+  /** Only on op 'cause': the cause's id in the rule (`Cause.id`). */
+  cause?: string
+  /** Only on op 'cause': for ruled-out, the test and what it showed ("unplugged the radio: the drops went on"); for the other states, a free note. */
+  text?: string
   /** Only on op 'defer'. */
   until?: BoardUntil
   match?: string
@@ -131,10 +139,10 @@ export interface OpaqueEvent {
 
 export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent | EventNote | OpaqueEvent
 
-const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note', 'checked', 'unchecked', 'owner']
+const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note', 'checked', 'unchecked', 'owner', 'cause']
 const NOTE_KINDS: readonly string[] = ['pit-change', 'missed', 'handoff-read']
 const BOARD_ROLES: readonly string[] = ['software', 'pit', 'drive', 'mentor']
-const BOARD_VALUES: Partial<Record<BoardOp, readonly string[]>> = { priority: ['high', 'medium', 'low'], status: ['open', 'fixing', 'check'], owner: ['software', 'pit', 'drive', ''] }
+const BOARD_VALUES: Partial<Record<BoardOp, readonly string[]>> = { priority: ['high', 'medium', 'low'], status: ['open', 'fixing', 'check'], owner: ['software', 'pit', 'drive', ''], cause: CAUSE_STATES }
 const UNTIL_KINDS: readonly string[] = ['next-match', 'gap', 'before-elims', 'end-of-event', 'next-event']
 
 function validBoard(e: any): boolean {
@@ -143,6 +151,7 @@ function validBoard(e: any): boolean {
   const allowed = BOARD_VALUES[e.op as BoardOp]
   if (allowed && !allowed.includes(e.value)) return false
   if ((e.op === 'checked' || e.op === 'unchecked') && e.value === '') return false
+  if (e.op === 'cause' && (typeof e.cause !== 'string' || e.cause === '' || (e.text !== undefined && typeof e.text !== 'string'))) return false
   if (e.op === 'defer' && e.value === '' && e.until !== undefined) return false
   if (e.op === 'defer' && e.until !== undefined && !(e.until && UNTIL_KINDS.includes(e.until.kind))) return false
   if (!e.by || typeof e.by.device !== 'string' || !BOARD_ROLES.includes(e.by.role)) return false
@@ -247,6 +256,8 @@ export function lastPassingSha(events: HistoryEvent[]): string | null {
   return go.sort(compareEvents).at(-1)?.sha ?? null
 }
 
+export interface CauseMark { state: CauseState; text: string; by: BoardEvent['by']; when: string; match?: string }
+
 export interface BoardState {
   key: string
   robot: string
@@ -257,6 +268,8 @@ export interface BoardState {
   workaround?: string
   /** The owning role (software, pit or drive); absent when none was set or the last owner line cleared it. */
   owner?: string
+  /** The latest state per cause id (the debug workspace). A cause back to "possible" with no text is left out. */
+  causes?: Record<string, CauseMark>
   /** Every note, oldest first. */
   notes: { text: string; by: BoardEvent['by']; when: string; match?: string }[]
   /** Queue-sheet ticks (op 'checked'), oldest first: the match each was checked for. A tick is not a change to the issue (`by`, `when` and `match` below ignore it). */
@@ -297,6 +310,11 @@ export function boardState(events: HistoryEvent[]): Map<string, BoardState> {
       else s.deferred = { ...(e.until ? { until: e.until } : {}), by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}), ...(e.event ? { event: e.event } : {}), ...(e.played ? { played: e.played } : {}) }
     } else if (e.op === 'workaround') s.workaround = e.value
     else if (e.op === 'owner') { if (e.value === '') delete s.owner; else s.owner = e.value }
+    else if (e.op === 'cause') {
+      const text = e.text ?? ''
+      if (e.value === 'possible' && text === '') { if (s.causes) { delete s.causes[e.cause!]; if (!Object.keys(s.causes).length) delete s.causes } }
+      else (s.causes ??= {})[e.cause!] = { state: e.value as CauseState, text, by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}) }
+    }
     else s.notes.push({ text: e.value, by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}) })
     s.by = e.by
     s.when = e.when

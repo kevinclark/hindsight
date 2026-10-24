@@ -170,6 +170,8 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
   }
 }
 
+/** The robot a Match was read with, as its summary names it (so a log's export keys a board issue the way the board does). */
+export function matchRobot(match: Match): MatchSummary['robot'] { return robotOf(match) }
 function robotOf(match: Match): MatchSummary['robot'] {
   const fit = match.profileChoice.fit ?? profileFit(match.log, match.profile)
   return {
@@ -188,6 +190,12 @@ export function summaryRobot(r: MatchSummary['robot']): { key: string; name: str
   const pick = { how: r.how, misfit: r.misfit ?? r.present < PROFILE_FIT_MIN * r.total, codebase: r.codebase }
   const named = namesRobot(pick)
   return { key: named ? r.profileId : `code name ${r.codebase ?? ''}`, name: robotName(r.name, pick), named }
+}
+
+/** The robot as a board line names it: the profile id, or `summaryRobot()`'s name for a guess that does not fit. A log's export files its issues the same way. */
+export function robotIdOf(r: MatchSummary['robot']): string {
+  const s = summaryRobot(r)
+  return s.named ? r.profileId : s.name
 }
 
 /**

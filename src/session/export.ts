@@ -6,12 +6,14 @@ import { VERSION } from '../version.ts'
 import { mergeFindings, ruleGrid, type MergedFinding, type Session } from './session.ts'
 import type { FindingChange } from './changes.ts'
 import type { IssueEvent } from '../triage/history.ts'
+import { boardEntry, ruleSources, type ExportBoard } from '../report/board-export.ts'
+import { robotIdOf } from './summary.ts'
 import { sinks, stoppedFiring, stoppedText, type Stopped } from './stopped.ts'
 
 export const SESSION_FINDINGS_SCHEMA = 'hindsight.session-findings/1'
 
 /** Pass the session as the team's marks show it (triage/track-record.ts sessionWithMarks): findings then carry `wrong` and `demoted`. */
-export function buildSessionJson(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}, changedOnReread?: FindingChange[]): object {
+export function buildSessionJson(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}, changedOnReread?: FindingChange[], board?: Pick<ExportBoard, 'states'>): object {
   return {
     schema: SESSION_FINDINGS_SCHEMA,
     tool: { name: 'hindsight', version: VERSION },
@@ -28,9 +30,12 @@ export function buildSessionJson(session: Session, issues: Map<string, IssueEven
       ...f,
       matches: f.matches.map((i) => session.matches[i].fileName),
       ...(f.wrong ? { wrong: f.wrong.map((w) => ({ match: session.matches[w.match].fileName, note: w.reason, since: w.when })) } : {}),
+      ...boardEntry(board, f.key, f.rule, f.matches.length ? robotIdOf(session.matches[f.matches[f.matches.length - 1]].robot) : ''),
       issue: issues.get(f.key) ? { status: issues.get(f.key)!.status, note: issues.get(f.key)!.note, since: issues.get(f.key)!.when } : null,
       ...stoppedJson(session, f, stoppedFiring(session, f, issues.get(f.key))),
     })),
+    // The public pages and numbers each rule that fired stands on (no schema bump).
+    rules: ruleSources(mergeFindings(session).map((f) => f.rule)),
     // Only after "Read again": what that changed in the findings (additive; the schema id stays /1).
     ...(changedOnReread ? { changedOnReread: { hindsightVersion: VERSION, changes: changedOnReread } } : {}),
   }

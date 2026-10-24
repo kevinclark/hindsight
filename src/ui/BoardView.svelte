@@ -18,6 +18,9 @@
   import BoardRow from './BoardRow.svelte'
   import BoardRates from './BoardRates.svelte'
   import BoardIssueDetail from './BoardIssueDetail.svelte'
+  import DebugWorkspace from './DebugWorkspace.svelte'
+  import { makerOf } from '../rules/index.ts'
+  import { rowTitle } from '../board/words.ts'
   import BoardHandoff from './BoardHandoff.svelte'
   import BoardMissed from './BoardMissed.svelte'
   import BoardQueue from './BoardQueue.svelte'
@@ -38,7 +41,7 @@
     if (role && s) writeRole(s, role)
   }
 
-  type View = 'board' | 'issue' | 'handoff' | 'missed' | 'queue'
+  type View = 'board' | 'issue' | 'debug' | 'handoff' | 'missed' | 'queue'
   let view = $state<View>('board')
   let openKey = $state<string | null>(null)
   let group = $state<'urgency' | 'mechanism'>('urgency')
@@ -157,7 +160,10 @@
     {#if scheduleNote && !board.noSchedule}<p class="note">{scheduleNote}</p>{/if}
     <BoardRates {rates} />
   {:else if view === 'issue' && issue}
-    <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} onBack={back} onChange={(c) => change(issue, c)} />
+    <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} onBack={back} onChange={(c) => change(issue, c)} onDebug={() => (view = 'debug')} />
+  {:else if view === 'debug' && issue}
+    <DebugWorkspace title={rowTitle(issue)} rule={issue.rule} meaning={makerOf(issue.rule)?.meaning ?? issue.title} latest={issue.title} causes={makerOf(issue.rule)?.causes ?? []} likely={issue.latest?.likely} ruledOut={issue.latest?.ruledOut} evidence={issue.latest?.evidence}
+      nextStep={issue.nextStep} marks={issue.causeMarks} {role} backLabel="Issue" onBack={() => (view = 'issue')} onChange={(c) => change(issue, c)} />
   {:else if view === 'handoff'}
     <BoardHandoff {board} {role} onBack={back} onOpen={open} onRead={() => note('handoff-read', '')} />
   {:else if view === 'missed'}

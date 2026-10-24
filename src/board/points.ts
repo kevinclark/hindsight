@@ -128,7 +128,12 @@ export interface DuePoint {
   redecide: string
   /** The match this is about ("Q41", "Q51"), or null. */
   match: string | null
+  /** The event is over (no match left on the schedule): "before the next match" is not true, the line says "open · the event is over". */
+  over?: true
 }
+
+/** A schedule with no match left on it, playoffs included: the event is over. */
+export const eventOver = (tl: Pick<Timeline, 'hasSchedule' | 'next' | 'hasPlayoffs'>): boolean => tl.hasSchedule && !tl.next && tl.hasPlayoffs
 
 const GAP_WORDS: Record<string, string> = { lunch: 'lunch', overnight: 'overnight', 'before playoffs': 'before playoffs' }
 export const gapText = (g: Pick<Gap, 'after' | 'name'>): string => `after Q${g.after}${g.name ? ` (${GAP_WORDS[g.name]})` : ''}`
@@ -136,7 +141,7 @@ export const gapText = (g: Pick<Gap, 'after' | 'name'>): string => `after Q${g.a
 /** The point "before the next match" (red). */
 export function beforeNext(tl: Timeline): DuePoint {
   const label = tl.next?.label ?? null
-  return { pos: tl.nextPos, text: label ? `before ${label}` : 'before the next match', until: label ?? 'the next match', redecide: label ? `at ${label}` : 'before the next match', match: label }
+  return { pos: tl.nextPos, text: label ? `before ${label}` : 'before the next match', until: label ?? 'the next match', redecide: label ? `at ${label}` : 'before the next match', match: label, ...(eventOver(tl) ? { over: true as const } : {}) }
 }
 
 /** The point at the end of the event. */

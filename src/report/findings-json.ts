@@ -1,7 +1,7 @@
 /**
  * "Download for Claude": findings.json, a self-contained summary of one match for deeper analysis later.
  *
- * Holds the findings with their evidence, summary statistics, short downsampled data windows around each finding,
+ * Holds the findings with their evidence (and what the team recorded on the board for them, when it recorded anything), summary statistics, short downsampled data windows around each finding,
  * match metadata and the fitted battery model. It never includes /RadioStatus/* (the status JSON carries a hashed
  * Wi-Fi key). Target size: under 2 MB.
  *
@@ -15,6 +15,7 @@ import type { Finding, Plot } from '../rules/types.ts'
 import { powerReport } from '../power/power-report.ts'
 import { buildPowerGrid } from '../power/battery-model.ts'
 import type { IssueEvent } from '../triage/history.ts'
+import { boardEntry, ruleSources, type ExportBoard } from './board-export.ts'
 
 export const SCHEMA = 'hindsight.findings/2'
 export { VERSION as TOOL_VERSION } from '../version.ts'
@@ -27,8 +28,10 @@ export interface WindowSeries { label: string; key: string | null; t: number[]; 
 /**
  * `wrong`: this match's "not a real problem" marks, by issue key; one stands in for the issue's known or fixed mark.
  * `real`: this match's "real problem" marks, given beside the issue's own status (a real mark files nothing away).
+ * `board`: the team's board lines (priority, status, deferral, notes, cause states) and the robot this log's issues are filed under;
+ * each finding then carries a `board` block when the team recorded something on it (roles only, never a name).
  */
-export function buildFindingsJson(match: Match, report: Report, issues: Map<string, IssueEvent> = new Map(), wrong: Map<string, IssueEvent> = new Map(), real: Map<string, IssueEvent> = new Map()): object {
+export function buildFindingsJson(match: Match, report: Report, issues: Map<string, IssueEvent> = new Map(), wrong: Map<string, IssueEvent> = new Map(), real: Map<string, IssueEvent> = new Map(), board?: ExportBoard): object {
   const power = powerReport(match)
   const issue = (f: Finding) => wrong.get(f.key) ?? issues.get(f.key)
   // The match rules (as before parents) or the parent that made the finding.
@@ -39,6 +42,7 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
     issue: issue(f) ? { status: issue(f)!.status, note: issue(f)!.note, since: issue(f)!.when } : null,
     // Only when marked, so findings.json without a history is unchanged.
     ...(real.get(f.key) ? { real: { note: real.get(f.key)!.note, since: real.get(f.key)!.when } } : {}),
+    ...boardEntry(board, f.key, f.rule, board?.robot ?? ''),
     who: maker(f)?.who ?? [],
     incident: maker(f)?.incident ?? null,
     window: f.plot ? windowFor(match, f.plot) : null,
@@ -66,6 +70,8 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
     findings: report.findings.map(entry),
     // Findings that name a group (src/rules/parents.ts), which the group's findings point at with explainedBy.
     ...(report.parents ? { parents: report.parents.map(entry) } : {}),
+    // The public pages and the numbers each rule that fired stands on (added with the debug workspace; no schema bump).
+    rules: ruleSources([...report.findings, ...(report.parents ?? [])].map((f) => f.rule)),
     notChecked: report.skipped,
     crashedRules: report.crashed,
     summary: summary(match),

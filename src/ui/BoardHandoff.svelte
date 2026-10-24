@@ -29,8 +29,12 @@
   <ul class="notes">{#each h.tried as t (t.when + t.text)}<li><b>{t.match ?? 'no match'}</b> · <span class="chip">{t.role}</span> <i>{rowTitle(t.issue)}:</i> {t.text}</li>{/each}</ul>
 {:else}<p class="muted">No notes yet on these issues.</p>{/if}
 {#if h.ruledOut.length}
-  <h5>Ruled out by the logs</h5>
-  <ul class="notes">{#each h.ruledOut as r (r.issue.key + r.cause)}<li><i>{rowTitle(r.issue)}:</i> {r.cause} <span class="tag">ruled out</span><br /><span class="small muted">{r.why}</span></li>{/each}</ul>
+  <h5>Ruled out</h5>
+  <ul class="notes">{#each h.ruledOut as r (r.issue.key + r.cause + r.by)}<li><i>{rowTitle(r.issue)}:</i> {r.cause} <span class="tag">ruled out</span>{' '}<span class="tag">{r.by === 'logs' ? "by Hindsight's evidence" : `by the team (${r.role})`}</span><br /><span class="small muted">{r.by === 'team' ? `Ruled out by ${r.why}` : r.why}</span></li>{/each}</ul>
+{/if}
+{#if h.confirmed.length}
+  <h5>Confirmed causes</h5>
+  <ul class="notes">{#each h.confirmed as c (c.issue.key + c.cause)}<li><i>{rowTitle(c.issue)}:</i> {c.cause} <span class="tag">confirmed</span>{' '}<span class="chip">{c.role}</span>{#if c.text}<br /><span class="small muted">{c.text}</span>{/if}</li>{/each}</ul>
 {/if}
 
 <h4>What we changed in the pit, match by match</h4>
