@@ -437,7 +437,7 @@ describe('code/limit-switched-off', () => {
       'Robot.java': robot('new Drum(15, 16);'),
     }
     const found = run(limitSwitchedOff, java).findings
-    expect(found.map((f) => [f.file, f.line, f.message])).toEqual([['Drum.java', 5, 'SupplyCurrentLimit is set to 40 A but SupplyCurrentLimitEnable is false, so TalonFX 15 and 16 run with no supply limit (its stator limit, 80 A, is on)']])
+    expect(found.map((f) => [f.file, f.line, f.message])).toEqual([['Drum.java', 5, 'SupplyCurrentLimit is set to 40 A but SupplyCurrentLimitEnable is false, so TalonFX 15 and 16 run with no supply limit (their stator limit, 80 A, is on)']])
   })
   it('reads the builder form, and a value passed in to a helper', () => {
     const java = {
@@ -456,6 +456,33 @@ describe('code/limit-switched-off', () => {
       'SupplyCurrentLimit is set to 30 A but SupplyCurrentLimitEnable is false, so TalonFX 9 runs with no supply limit',
     ])
   })
+  it('one helper flag for motors given different limits: one finding per limit, each with its own other limit', () => {
+    const java = {
+      'Roller.java': `class Roller {
+        TalonFX m;
+        Roller(int id, double amps, double stator) { m = new TalonFX(id); var c = new TalonFXConfiguration();
+          c.CurrentLimits.SupplyCurrentLimit = amps;
+          c.CurrentLimits.SupplyCurrentLimitEnable = false;
+          c.CurrentLimits.StatorCurrentLimit = stator; c.CurrentLimits.StatorCurrentLimitEnable = true; m.getConfigurator().apply(c); }
+      }`,
+      'Robot.java': robot('new Roller(9, 30.0, 80.0); new Roller(10, 60.0, 20.0); new Roller(11, 30.0, 80.0);'),
+    }
+    expect(run(limitSwitchedOff, java).findings.map((f) => [f.file, f.line, f.message])).toEqual([
+      ['Roller.java', 5, 'SupplyCurrentLimit is set to 30 A but SupplyCurrentLimitEnable is false, so TalonFX 9 and 11 run with no supply limit (their stator limit, 80 A, is on)'],
+      ['Roller.java', 5, 'SupplyCurrentLimit is set to 60 A but SupplyCurrentLimitEnable is false, so TalonFX 10 runs with no supply limit (its stator limit, 20 A, is on)'],
+    ])
+  })
+  it('points at the call that passes the flag in, and stays quiet for a Phoenix 5 limit configuration', () => {
+    const java = {
+      'Roller.java': `class Roller {
+        TalonFX m;
+        Roller(int id, boolean on) { m = new TalonFX(id); var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = 30.0; c.CurrentLimits.SupplyCurrentLimitEnable = on; m.getConfigurator().apply(c); }
+      }`,
+      'Lift.java': 'class Lift { TalonFX m = new TalonFX(3); Lift() { m.configSupplyCurrentLimit(new SupplyCurrentLimitConfiguration(false, 40.0, 45.0, 0.5)); } }',
+      'Robot.java': 'class Robot extends LoggedRobot {\n  Robot() {\n    new Roller(9, false);\n    new Lift();\n  }\n}',
+    }
+    expect(run(limitSwitchedOff, java).findings.map((f) => [f.file, f.line])).toEqual([['Robot.java', 3]])
+  })
   it('stays quiet when the flag is on or never written, when no limit is set, and in simulation', () => {
     const java = {
       'Arm.java': `class Arm {
@@ -463,6 +490,7 @@ describe('code/limit-switched-off', () => {
         Arm() {
           var on = new TalonFXConfiguration(); on.CurrentLimits.SupplyCurrentLimit = 40.0; on.CurrentLimits.SupplyCurrentLimitEnable = true; a.getConfigurator().apply(on);
           var unset = new TalonFXConfiguration(); unset.CurrentLimits.SupplyCurrentLimit = 40.0; b.getConfigurator().apply(unset);
+          var back = new TalonFXConfiguration(); back.CurrentLimits.SupplyCurrentLimit = 40.0; back.CurrentLimits.SupplyCurrentLimitEnable = false; back.CurrentLimits.SupplyCurrentLimitEnable = true; a.getConfigurator().apply(back);
           c.getConfigurator().apply(new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimitEnable(false).withSupplyCurrentLimitEnable(false)));
         }
       }`,

@@ -52,8 +52,14 @@ export interface AppliedConfig {
 
 /** Every configuration the code applies to a device it builds on the robot, one per apply call and chain of calls. */
 export function appliedConfigs(project: Project): AppliedConfig[] {
-  return project.nodes('method_invocation').filter((call) => deviceOfApply(call)).flatMap((apply) => settingsApplied(apply, project))
+  // Read once per project: the code check's rules and its settings both use it.
+  if (!applied.has(project)) applied.set(project, project.nodes('method_invocation').filter((call) => deviceOfApply(call)).flatMap((apply) => settingsApplied(apply, project)))
+  return applied.get(project)!
 }
+const applied = new WeakMap<Project, AppliedConfig[]>()
+
+/** Is this Phoenix 5's `new SupplyCurrentLimitConfiguration(…)` (or Stator…), where a setting can come from? */
+export const isPhoenix5Limit = (at: Node) => at.type === 'object_creation_expression' && !!PHOENIX5_LIMITS[typeNamed(at) ?? '']
 
 /** Phoenix 5's calls that apply a config to a device, and Phoenix 5's current limit config objects. */
 const PHOENIX5_APPLY = ['configAllSettings', 'configSupplyCurrentLimit', 'configStatorCurrentLimit']
