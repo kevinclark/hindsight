@@ -9,7 +9,7 @@ import { triage, type IssueEvent } from '../src/triage/history.ts'
 import { sessionWithMarks } from '../src/triage/track-record.ts'
 import { joinPieces, summarizeMatch } from '../src/session/summary.ts'
 import { buildSessionJson } from '../src/session/export.ts'
-import { PAGE1_ROWS, crashedNote } from '../src/report/session-model.ts'
+import { PAGE1_ROWS, crashedNote, sessionNotes } from '../src/report/session-model.ts'
 import { analyzeFixture, LOGS, haveLogs, readInput } from './helpers/load.ts'
 
 const METRICS = { minVolts: 8, secondsUnder7: 0, chargeAh: 1, resistanceMilliohms: null, followerSecondsOff: 2.0, brownoutVolts: 6, loopOverrunPct: 5, visionOutlierPct: null }
@@ -223,6 +223,15 @@ describe('review fixes', () => {
     expect(sessionModel(groupSessions([match(1, [], { robot: { ...fit, present: 5, total: 40, codebase: 'TestBot' } })])[0]).robots[0].name).toBe('TestBot (code name)')
     // A good fit by signals still names the profile.
     expect(sessionModel(groupSessions([match(1, [])])[0]).robots[0].name).toBe('Test robot')
+  })
+  it('the notes tell logs no profile fits (read with their own signals) from logs whose own profile fits badly', () => {
+    const none = { ...fit, present: 5, total: 40, misfit: true, codebase: 'TestBot' }
+    const badFit = { ...fit, how: 'codebase' as const, present: 10, total: 40 }
+    const notes = sessionNotes(groupSessions([match(1, [], { robot: none }), match(2, [], { robot: none }), match(3, [], { robot: badFit }), match(4, [])])[0])
+    expect(notes).toContainEqual(expect.stringMatching(/^2 of 4 matches fit no robot profile: the closest has as few as 5 of its 40 signals in them, so they were read with only the standard signals/))
+    expect(notes).toContainEqual(expect.stringMatching(/^1 of 4 matches don't fit their robot profile: as few as 10 of its 40 signals/))
+    // The printed report has no robot list to choose from.
+    expect(notes.join('\n')).not.toMatch(/choose one above/)
   })
   it('joining the pieces of a split match keeps a code name any piece logged', () => {
     const cut = { ...fit, present: 2, total: 40, misfit: true }

@@ -84,7 +84,8 @@ function ownSignals(log: WpilogFile, codebase: string): RobotProfile {
   return toProfile({ name: robotName('', { how: 'signals', misfit: true, codebase }), motorGroups: [], signals, battery: sig.battery, codebase, code: sig.code })
 }
 
-const MISFIT_TEXT = 'So the rules about specific motors, devices, cameras and mechanisms were not run, and the auto and teleop lengths are the season\'s game (measured from this log when it has no date or predates 2023).'
+const RULES_NOT_RUN = 'the rules about specific motors, devices, cameras and mechanisms were not run, and the auto and teleop lengths are the season\'s game (measured from this log when it has no date or predates 2023).'
+const MISFIT_TEXT = `So ${RULES_NOT_RUN}`
 
 
 export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?: RobotProfile): { profile: RobotProfile; choice: ProfileChoice } {
@@ -120,7 +121,7 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
       profile: ownSignals(log, codebase),
       choice: {
         how: 'signals', fit: best.fit, misfit: true, codebase,
-        note: `${named}; none fits it (the closest, "${best.p.name}", has ${best.fit.present} of its ${best.fit.total} signals in this log), so it is read with only the standard signals found in it. ${MISFIT_TEXT} Add a profile for this robot, or choose one.`,
+        note: `${named}; none fits it (the closest, "${best.p.name}", has ${best.fit.present} of its ${best.fit.total} signals in this log), so it is read with only the standard signals found in it: ${RULES_NOT_RUN} Add a profile for this robot, or choose one.`,
       },
     }
   }

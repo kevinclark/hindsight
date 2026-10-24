@@ -35,6 +35,8 @@ export interface ForesightInput {
   lastPassingSha: string | null
   /** A profile to use as is (the backtest pins one per log); otherwise chosen from what the robot says it is. */
   profile?: RobotProfile
+  /** How that profile was chosen, when the caller chose it (live.ts): a profile no log fits stays a misfit. */
+  choice?: ProfileChoice
   rules?: Rule[]
   /** The robot snapshot dropped on the page, if any (snapshot-checks.ts). Without one, its checks say "not checked". */
   snapshot?: SnapshotInput
@@ -67,7 +69,7 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   if (now < settleAt) return { state: 'settling', secondsLeft: settleAt - now, reason: 'start-up settling (camera and time-sync alerts clear in the first ~20 s)' }
   // Enables are looked for from code start, so one that ended just before settling still gets its recovery wait.
   const probeLog = openWpilog(store.windowLog(input.codeStart, now))
-  const picked = input.profile ? { profile: input.profile, choice: { how: 'given' as const, note: null, fit: null } } : chooseProfile(probeLog, PROFILES)
+  const picked = input.profile ? { profile: input.profile, choice: input.choice ?? { how: 'given' as const, note: null, fit: null } } : chooseProfile(probeLog, PROFILES)
   picked.choice = fitOnSubscribed(probeLog, picked.profile, picked.choice)
   for (const key of recentKeys(picked.profile)) store.recent.set(key, RECENT_SECONDS)
   // Enabled now? Then nothing; enabled earlier? Then check from a while after the last disable.

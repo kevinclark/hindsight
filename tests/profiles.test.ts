@@ -32,7 +32,7 @@ describe('choosing a robot profile', () => {
     expect(choice.how).toBe('codebase')
     expect(choice.note).toMatch(/some-feature/)
   })
-  it('an unknown robot gets the best fit by signals, with a warning when it fits badly', () => {
+  it('an unknown robot that fits no profile is flagged a misfit, and says why', () => {
     const { choice } = chooseProfile(log('2019 Robot', 'main'), profiles)
     expect(choice.how).toBe('signals')
     expect(choice.misfit).toBe(true)

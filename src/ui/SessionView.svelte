@@ -536,7 +536,7 @@
   </select></label></p>
   {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
   {#if crashedNote(session)}<p class="note warn">{crashedNote(session)}</p>{/if}
-  {#each misfitNotes(session) as n (n.lead)}<p class="note warn"><strong>{n.lead}</strong>: {n.rest}</p>{/each}
+  {#each misfitNotes(session) as n (n.lead)}<p class="note warn"><strong>{n.lead}</strong>: {n.rest.replace(/\.$/, ', or choose one above.')}</p>{/each}
   {#each session.matches.filter((m) => m.pieces) as m (m.fileName)}
     <p class="note warn">{m.matchLabel} is in {m.pieces!.length} logs ({m.pieces!.join(', ')}): the robot program restarted during the match. They count as one match here.</p>
   {/each}

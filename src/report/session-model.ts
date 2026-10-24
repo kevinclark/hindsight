@@ -222,7 +222,8 @@ export function crashedNote(session: Session): string | null {
 
 /**
  * The matches whose robot profile doesn't fit: those read with no robot's profile (none fits: the best guess by signals is
- * not applied, profiles/choose.ts) apart from those whose named or chosen profile fits badly. Lead in bold in the Session view.
+ * not applied, profiles/choose.ts) apart from those whose named or chosen profile fits badly. Lead in bold in the Session view,
+ * which adds where to choose one; the printed report has no robot list.
  */
 export function misfitNotes(session: Session): { lead: string; rest: string }[] {
   const misfits = session.matches.filter((m) => m.robot.present < PROFILE_FIT_MIN * m.robot.total)
@@ -231,8 +232,8 @@ export function misfitNotes(session: Session): { lead: string; rest: string }[] 
   const unprofiled = misfits.filter((m) => m.robot.how === 'signals')
   const badFit = misfits.filter((m) => m.robot.how !== 'signals')
   return [
-    ...(unprofiled.length ? [{ lead: `${unprofiled.length} of ${session.matches.length} matches fit no robot profile`, rest: `the closest has as few as ${fewest(unprofiled)} of its ${unprofiled[0].robot.total} signals in them, so they were read with only the standard signals found in them. ${NOT_RUN} Add a profile for this robot, or choose one above.` }] : []),
-    ...(badFit.length ? [{ lead: `${badFit.length} of ${session.matches.length} matches don't fit their robot profile`, rest: `as few as ${fewest(badFit)} of its ${badFit[0].robot.total} signals are in them. ${NOT_RUN} Add a profile for this robot, or choose one above.` }] : []),
+    ...(unprofiled.length ? [{ lead: `${unprofiled.length} of ${session.matches.length} matches fit no robot profile`, rest: `the closest has as few as ${fewest(unprofiled)} of its ${unprofiled[0].robot.total} signals in them, so they were read with only the standard signals found in them. ${NOT_RUN} Add a profile for this robot.` }] : []),
+    ...(badFit.length ? [{ lead: `${badFit.length} of ${session.matches.length} matches don't fit their robot profile`, rest: `as few as ${fewest(badFit)} of its ${badFit[0].robot.total} signals are in them. ${NOT_RUN} Add a profile for this robot.` }] : []),
   ]
 }
 

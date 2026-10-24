@@ -4,6 +4,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
+import { chooseProfile, profileKeys } from '../src/profiles/choose.ts'
+import { PROFILES } from '../src/profiles/index.ts'
 import { openWpilog, readNumbers, readRaw } from '../src/readers/wpilog.ts'
 import { RecordStore } from '../src/foresight/records.ts'
 import { evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/foresight/engine.ts'
@@ -630,5 +632,28 @@ describe('joining a watched device to the snapshot', () => {
     expect(snapshotBusFor(two, 'Any')).toBeNull()
     expect(snapshotDeviceFor(two, { bus: 'Any', model: 'TalonFX', id: 1 })).toMatch(/can't tell which bus/)
     expect(snapshotDeviceFor(one, { bus: 'rio', model: 'Pigeon2', id: 0 })).toMatchObject({ model: 'Pigeon 2', bus: '' })
+  })
+})
+
+describe('a robot no profile fits (Kevin, 2026-10-23: never apply a profile shown to be wrong)', () => {
+  const unknown = () => RecordStore.fromWpilog(openWpilog(writeWpilog([
+    { name: '/RealMetadata/Codebase', type: 'string', records: steady('2019 Robot') },
+    ...healthy().filter((e) => e.name.startsWith('/DriverStation/') || e.name.startsWith('/SystemStats/') || e.name === '/Timestamp'),
+  ])), null)
+  it('stays a misfit when live.ts passes the profile and choice it made at connect time', () => {
+    // Fitting the log's own signals to the log says nothing: with every key Foresight reads for them logged, they fit.
+    const { profile, choice } = chooseProfile(openWpilog(unknown().windowLog(-Infinity, NOW)), PROFILES)
+    const own = profileKeys(profile).filter((k) => foresightKeys(profile).includes(k))
+    expect(own.length).toBeGreaterThan(0)
+    const store = RecordStore.fromWpilog(openWpilog(writeWpilog([
+      { name: '/RealMetadata/Codebase', type: 'string', records: steady('2019 Robot') },
+      ...healthy().filter((e) => e.name.startsWith('/DriverStation/') || e.name.startsWith('/SystemStats/') || e.name === '/Timestamp'),
+      ...own.filter((k) => !healthy().some((e) => e.name === k)).map((name) => ({ name, type: 'double', records: steady(1) })),
+    ])), null)
+    expect(choice.misfit).toBe(true)
+    const r = evaluateForesight({ store, codeStart: START, now: NOW, lastPassingSha: null, profile, choice })
+    if (r.state !== 'checked') throw new Error(`not checked: ${r.state}`)
+    expect(r.match.profileChoice.misfit).toBe(true)
+    expect(r.match.profile.motorGroups).toEqual([])
   })
 })
