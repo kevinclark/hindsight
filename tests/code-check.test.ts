@@ -13,6 +13,7 @@ import duplicateCanId from '../src/code/check/rules/duplicate-can-id.ts'
 import neverEndingStep from '../src/code/check/rules/never-ending-step.ts'
 import staleSignal from '../src/code/check/rules/stale-signal.ts'
 import unusedConfig from '../src/code/check/rules/unused-config.ts'
+import limitSwitchedOff from '../src/code/check/rules/limit-switched-off.ts'
 import { codeRule, type CodeRule } from '../src/code/check/rule.ts'
 import { Project } from '../src/code/check/project.ts'
 import { isSubsystem } from '../src/code/check/types.ts'
@@ -417,6 +418,58 @@ describe('code/unused-config', () => {
     class Many { void all() { configs.forEach((TalonFXConfiguration c) -> motor.getConfigurator().apply(base)); } }
     class HoodIOSim { HoodIOSim(int id, TalonFXConfiguration config) { sim = new DCMotorSim(id); } }`
     expect(messages(unusedConfig, java)).toEqual([])
+  })
+})
+
+describe('code/limit-switched-off', () => {
+  const robot = (build: string) => `class Robot extends LoggedRobot { Robot() { ${build} } }`
+  it('fires where a limit is set and its enable flag is false, once for every motor that config reaches', () => {
+    const java = {
+      'Drum.java': `class Drum {
+        TalonFX a; TalonFX b;
+        Drum(int first, int second) { a = new TalonFX(first); b = new TalonFX(second); var config = new TalonFXConfiguration();
+          config.CurrentLimits.SupplyCurrentLimit = 40.0;
+          config.CurrentLimits.SupplyCurrentLimitEnable = false;
+          config.CurrentLimits.StatorCurrentLimit = 80.0;
+          config.CurrentLimits.StatorCurrentLimitEnable = true;
+          a.getConfigurator().apply(config); b.getConfigurator().apply(config); }
+      }`,
+      'Robot.java': robot('new Drum(15, 16);'),
+    }
+    const found = run(limitSwitchedOff, java).findings
+    expect(found.map((f) => [f.file, f.line, f.message])).toEqual([['Drum.java', 5, 'SupplyCurrentLimit is set to 40 A but SupplyCurrentLimitEnable is false, so TalonFX 15 and 16 run with no supply limit (its stator limit, 80 A, is on)']])
+  })
+  it('reads the builder form, and a value passed in to a helper', () => {
+    const java = {
+      'Elevator.java': `class Elevator {
+        TalonFX m = new TalonFX(7);
+        Elevator() { m.getConfigurator().apply(new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimit(60.0).withStatorCurrentLimitEnable(false))); }
+      }`,
+      'Roller.java': `class Roller {
+        TalonFX m;
+        Roller(int id, double amps, boolean on) { m = new TalonFX(id); var c = new TalonFXConfiguration(); c.CurrentLimits.SupplyCurrentLimit = amps; c.CurrentLimits.SupplyCurrentLimitEnable = on; m.getConfigurator().apply(c); }
+      }`,
+      'Robot.java': robot('new Elevator(); new Roller(9, 30.0, false); new Roller(10, 30.0, true);'),
+    }
+    expect(messages(limitSwitchedOff, java)).toEqual([
+      'StatorCurrentLimit is set to 60 A but StatorCurrentLimitEnable is false, so TalonFX 7 runs with no stator limit',
+      'SupplyCurrentLimit is set to 30 A but SupplyCurrentLimitEnable is false, so TalonFX 9 runs with no supply limit',
+    ])
+  })
+  it('stays quiet when the flag is on or never written, when no limit is set, and in simulation', () => {
+    const java = {
+      'Arm.java': `class Arm {
+        TalonFX a = new TalonFX(1); TalonFX b = new TalonFX(2); TalonFX c = new TalonFX(3);
+        Arm() {
+          var on = new TalonFXConfiguration(); on.CurrentLimits.SupplyCurrentLimit = 40.0; on.CurrentLimits.SupplyCurrentLimitEnable = true; a.getConfigurator().apply(on);
+          var unset = new TalonFXConfiguration(); unset.CurrentLimits.SupplyCurrentLimit = 40.0; b.getConfigurator().apply(unset);
+          c.getConfigurator().apply(new TalonFXConfiguration().withCurrentLimits(new CurrentLimitsConfigs().withStatorCurrentLimitEnable(false).withSupplyCurrentLimitEnable(false)));
+        }
+      }`,
+      'ArmIOSim.java': `class ArmIOSim { TalonFX s = new TalonFX(4); ArmIOSim() { var x = new TalonFXConfiguration(); x.CurrentLimits.SupplyCurrentLimit = 40.0; x.CurrentLimits.SupplyCurrentLimitEnable = false; s.getConfigurator().apply(x); } }`,
+      'Robot.java': robot('new Arm(); new ArmIOSim();'),
+    }
+    expect(messages(limitSwitchedOff, java)).toEqual([])
   })
 })
 

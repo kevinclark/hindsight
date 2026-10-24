@@ -13,6 +13,7 @@ import discardedResult from './rules/discarded-result.ts'
 import duplicateCanId from './rules/duplicate-can-id.ts'
 import impossibleRange from './rules/impossible-range.ts'
 import integerDivision from './rules/integer-division.ts'
+import limitSwitchedOff from './rules/limit-switched-off.ts'
 import neverEndingStep from './rules/never-ending-step.ts'
 import neverSet from './rules/never-set.ts'
 import optionalEquals from './rules/optional-equals.ts'
@@ -20,7 +21,7 @@ import staleSignal from './rules/stale-signal.ts'
 import unusedConfig from './rules/unused-config.ts'
 
 /** In the order the panel lists them: the ones that cost a match most directly first. */
-export const CODE_RULES: CodeRule[] = [duplicateCanId, neverSet, neverEndingStep, staleSignal, impossibleRange, optionalEquals, discardedResult, unusedConfig, integerDivision]
+export const CODE_RULES: CodeRule[] = [duplicateCanId, limitSwitchedOff, neverSet, neverEndingStep, staleSignal, impossibleRange, optionalEquals, discardedResult, unusedConfig, integerDivision]
 
 /** Runs the code rules over these files (call loadJava first). */
 export function checkCode(sources: { path: string; text: string }[], rules = CODE_RULES): CodeReport {

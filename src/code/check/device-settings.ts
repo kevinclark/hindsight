@@ -39,9 +39,20 @@ export function deviceSettings(project: Project): DeviceSetting[] {
 
 /** Every setting read, the supply lower limit included: the profile builder's. */
 export function readSettings(project: Project): DeviceSetting<ReadField>[] {
-  const applied = project.nodes('method_invocation').filter((call) => deviceOfApply(call)).flatMap((apply) => settingsApplied(apply, project))
+  const applied = appliedConfigs(project).flatMap(({ device, settings }) => settings.map(({ field, value, where }) => ({ ...device, field, value, where })))
   const unique = new Map(applied.map((s) => [JSON.stringify(s), s]))
   return [...unique.values()]
+}
+
+/** One configuration applied to one device, along one chain of calls: the device, and each setting with the code that set it. */
+export interface AppliedConfig {
+  device: { kind: string; id: number; bus: string }
+  settings: { field: ReadField; value: number | boolean; where: string; at: Node }[]
+}
+
+/** Every configuration the code applies to a device it builds on the robot, one per apply call and chain of calls. */
+export function appliedConfigs(project: Project): AppliedConfig[] {
+  return project.nodes('method_invocation').filter((call) => deviceOfApply(call)).flatMap((apply) => settingsApplied(apply, project))
 }
 
 /** Phoenix 5's calls that apply a config to a device, and Phoenix 5's current limit config objects. */
@@ -62,7 +73,7 @@ function deviceOfApply(call: Node): Node | null {
 }
 
 /** The settings one apply call gives, along each chain of calls that reaches it on the robot. */
-function settingsApplied(apply: Node, project: Project): DeviceSetting<ReadField>[] {
+function settingsApplied(apply: Node, project: Project): AppliedConfig[] {
   const device = deviceOfApply(apply)
   const [config] = parts(apply, 'arguments')
   const ways = (waysToReach(apply, project) ?? []).filter((chain) => ![apply, ...chain].some(inSimulation))
@@ -70,11 +81,13 @@ function settingsApplied(apply: Node, project: Project): DeviceSetting<ReadField
     const site = madeAlong(device, chain, project)
     const built = site ? deviceAlong(site.at, site.chain, project) : null
     if (!built) return []
-    return withOwnWrites(config ?? null, configSettings(config ?? null, chain, project), chain, project).map((s) => ({ kind: built.kind, id: built.id, bus: built.bus, ...s }))
+    return [{ device: { kind: built.kind, id: built.id, bus: built.bus }, settings: withOwnWrites(config ?? null, configSettings(config ?? null, chain, project), chain, project) }]
   })
 }
 
-type Set = { field: ReadField; value: number | boolean; where: string }
+type Set = { field: ReadField; value: number | boolean; where: string; at: Node }
+/** A setting written at this code. */
+const setAt = (field: ReadField, value: number | boolean, at: Node, project: Project): Set => ({ field, value, where: `${fileName(project.fileOf(at).path)}:${lineOf(at)}`, at })
 const CURRENT_FIELDS: ReadField[] = ['StatorCurrentLimit', 'StatorCurrentLimitEnable', 'SupplyCurrentLimit', 'SupplyCurrentLimitEnable', 'SupplyCurrentLowerLimit', 'SupplyCurrentLowerTime']
 const isWith = (expr: Node) => expr.type === 'method_invocation' && /^with[A-Z]/.test(nameOf(expr) ?? '')
 
@@ -102,12 +115,11 @@ function configSettings(config: Node | null, chain: Node[], project: Project): S
 function phoenix5Limit(made: Node, chain: Node[], project: Project): Set[] {
   const kind = PHOENIX5_LIMITS[typeNamed(made) ?? '']
   const [enable, limit] = parts(made, 'arguments')
-  const where = `${fileName(project.fileOf(made).path)}:${lineOf(made)}`
   const on = settingValue(enable ?? null, chain, project)
   const amps = settingValue(limit ?? null, chain, project)
   return [
-    ...(typeof amps === 'number' ? [{ field: `${kind}CurrentLimit` as ReadField, value: amps, where }] : []),
-    ...(typeof on === 'boolean' ? [{ field: `${kind}CurrentLimitEnable` as ReadField, value: on, where }] : []),
+    ...(typeof amps === 'number' ? [setAt(`${kind}CurrentLimit`, amps, made, project)] : []),
+    ...(typeof on === 'boolean' ? [setAt(`${kind}CurrentLimitEnable`, on, made, project)] : []),
   ]
 }
 
@@ -118,7 +130,7 @@ function builtLimits(expr: Node | null, chain: Node[], project: Project): Set[] 
   for (; at && isWith(at); at = field(at, 'object')) {
     const setting = READ_FIELDS.find((f) => `with${f}` === nameOf(at!))
     const value = setting ? settingValue(parts(at, 'arguments')[0] ?? null, chain, project) : null
-    if (setting && value !== null) out.unshift({ field: setting, value, where: `${fileName(project.fileOf(at).path)}:${lineOf(at)}` })
+    if (setting && value !== null) out.unshift(setAt(setting, value, at, project))
   }
   return at?.type === 'object_creation_expression' && typeNamed(at) === 'CurrentLimitsConfigs' ? out : null
 }
@@ -164,8 +176,7 @@ function fieldsSetOnVariable(variable: Node, chain: Node[], project: Project): S
     // A value passed in (`createRollerConfig(…, 20)`) is changed where it is passed: that line, not the helper's.
     const origin = madeAlong(field(assignment, 'right'), chain, project, { throughCalls: false, stopAt: isFlag })?.at
     const at = origin && !(origin.startIndex >= assignment.startIndex && origin.endIndex <= assignment.endIndex && origin.tree === assignment.tree) ? origin : assignment
-    const where = `${fileName(project.fileOf(at).path)}:${lineOf(at)}`
-    return value === null ? [] : [{ field: setting, value, where }]
+    return value === null ? [] : [setAt(setting, value, at, project)]
   })
 }
 
