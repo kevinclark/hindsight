@@ -39,6 +39,8 @@ export interface CutOff {
   setting: CutOffSetting
   words: string
   passed: boolean
+  /** An on-field playoff log is in the session (the playoffs have begun), whatever the setting. */
+  playoffSeen: boolean
   /** Why it has passed (or, when it has not, what it waits for), for people. */
   why: string
   /** FREEZE_BANNER once passed, else null. */
@@ -56,9 +58,10 @@ export const isPlayoffLog = (m: PlayoffLike): boolean =>
 
 export function cutOffState(setting: CutOffSetting, tl: Pick<Timeline, 'hasSchedule' | 'last' | 'lastQual'>, matches: readonly PlayoffLike[]): CutOff {
   const words = cutOffWords(setting)
-  const make = (passed: boolean, why: string): CutOff => ({ setting, words, passed, why, banner: passed ? FREEZE_BANNER : null })
+  const playoffSeen = matches.some(isPlayoffLog)
+  const make = (passed: boolean, why: string): CutOff => ({ setting, words, passed, playoffSeen, why, banner: passed ? FREEZE_BANNER : null })
   if (setting.kind === 'off') return make(false, 'the cut-off is off')
-  if (matches.some(isPlayoffLog)) return make(true, 'a playoff match has been played')
+  if (playoffSeen) return make(true, 'a playoff match has been played')
   const lastQual = tl.last?.qual ?? null
   if (setting.kind === 'after') {
     return lastQual !== null && lastQual >= setting.qual ? make(true, `${setting.match} has been played`) : make(false, `waits for ${setting.match} to be played`)

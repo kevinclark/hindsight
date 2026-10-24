@@ -254,7 +254,7 @@ function gapEstimate(tl: Timeline, g: Pick<Gap, 'after' | 'minutes'>): string {
   return startsIn !== null ? `starts in ≈ ${durText(startsIn)}, lasts ≈ ${durText(g.minutes)}, est.` : `lasts ≈ ${durText(g.minutes)}, est.`
 }
 
-export function suggestions(tl: Timeline, freeze?: { passed: boolean; red: boolean }): Suggestion[] {
+export function suggestions(tl: Timeline, freeze?: { passed: boolean; red: boolean; playoffSeen?: boolean }): Suggestion[] {
   const out: Suggestion[] = []
   const nextLabel = tl.next?.label
   out.push({
@@ -285,7 +285,8 @@ export function suggestions(tl: Timeline, freeze?: { passed: boolean; red: boole
   out.push({ id: 'event', label: 'Next event', estimate: 'weeks', until: { kind: 'next-event' }, point: nextEvent(), suggested: false })
   // After the cut-off (ADR 7, Kevin 2026-10-24): fixes are for reds only, so anything not red leads with the end of the event; the rest keep their order. "Before playoffs" is offered only while that gap is still ahead.
   if (freeze?.passed) {
-    const bpPast = !tl.hasSchedule || beforePlayoffs(tl).pos < tl.nextPos
+    // With a schedule the gap is behind once the team has passed it; with none there is no gap to place, so it is behind only once a playoff log has been seen (an "after Qn" cut-off can pass before that).
+    const bpPast = tl.hasSchedule ? beforePlayoffs(tl).pos < tl.nextPos : !!freeze.playoffSeen
     const ahead = bpPast ? out.filter((s) => s.id !== 'playoffs') : out
     if (!freeze.red) {
       const end = ahead.find((s) => s.id === 'end')!

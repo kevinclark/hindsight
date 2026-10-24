@@ -483,7 +483,7 @@ export function isChecked(i: BoardIssue, tickFor: string, now: number | null = n
 
 /** The deferral points to offer for an issue (ADR 6), with Hindsight's pick marked. */
 export function deferralOptions(board: Pick<Board, 'tl' | 'cutOff'>, issue: Pick<BoardIssue, 'priority'>): Suggestion[] {
-  return suggestions(board.tl, { passed: board.cutOff.passed, red: issue.priority === 'red' })
+  return suggestions(board.tl, { passed: board.cutOff.passed, red: issue.priority === 'red', playoffSeen: board.cutOff.playoffSeen })
 }
 
 // ---- the "not a real problem" rates, one row per rule that fired at the event ----

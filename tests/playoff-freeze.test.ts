@@ -278,9 +278,9 @@ describe('no deferral point already in the past (UX)', () => {
     for (const red of [true, false]) expect(ids(suggestions(tl, { passed: true, red }))).not.toContain('playoffs')
     expect(ids(suggestions(tl, { passed: false, red: true }))).toContain('playoffs')
   })
-  it('dropped with no schedule', () => {
+  it('dropped with no schedule once a playoff log has been seen (before that it stays offered: tests/before-playoffs.test.ts)', () => {
     const tl = timeline(session([match(5)]), null, label)
-    for (const red of [true, false]) expect(ids(suggestions(tl, { passed: true, red }))).not.toContain('playoffs')
+    for (const red of [true, false]) expect(ids(suggestions(tl, { passed: true, red, playoffSeen: true }))).not.toContain('playoffs')
   })
   it('a red keeps its pick (the next named gap, else the next match) among the rest', () => {
     const tl = timeline(session([match(5)]), SCHEDULE, label)

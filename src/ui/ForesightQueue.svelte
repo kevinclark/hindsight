@@ -11,8 +11,8 @@
   import { clockText } from '../board/words.ts'
   import type { BoardRole } from '../triage/history.ts'
 
-  let { checklist, changed = null, role, ticks, forLabel, filed, onTick, onRole }: {
-    checklist: QueueChecklist; /** The files between the last match's commit and the robot's, when the code folder could read both (or why not). */ changed?: { files: string[] } | { problem: string } | null; role: BoardRole | null; ticks: ReadonlyMap<System, Tick>; forLabel: string
+  let { checklist, changed = null, codeChosen = false, role, ticks, forLabel, filed, onTick, onRole }: {
+    checklist: QueueChecklist; /** The files between the last match's commit and the robot's, when the code folder could read both (or why not). */ changed?: { files: string[] } | { problem: string } | null; /** A code folder (or repo) is chosen: the files list may still be loading, so the "choose a folder" hint is not shown. */ codeChosen?: boolean; role: BoardRole | null; ticks: ReadonlyMap<System, Tick>; forLabel: string
     /** True when ticks are filed in the history (today's event session is loaded); false: kept on this page only. */
     filed: boolean
     onTick: (system: System, on: boolean) => void; onRole: (role: BoardRole | null) => void
@@ -40,7 +40,7 @@
   {#if checklist.freeze}
     {#if checklist.freeze.change}
       {@const c = checklist.freeze.change}
-      {#if c.amber}<p class="change amber" role="status" data-code-change><b>Flag:</b>{' '}{c.text}{#if c.kind === 'changed' && !changed}{' '}<span class="muted">Choose the robot-code folder below to see which files changed.</span>{/if}</p>
+      {#if c.amber}<p class="change amber" role="status" data-code-change><b>Flag:</b>{' '}{c.text}{#if c.kind === 'changed' && !codeChosen}{' '}<span class="muted">Choose the robot-code folder below to see which files changed.</span>{/if}</p>
       {:else}<p class="change same" data-code-change><span aria-hidden="true">✓</span>{' '}{c.text}</p>{/if}
       {#if c.kind === 'changed' && changed}
         {#if 'files' in changed}

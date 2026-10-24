@@ -165,9 +165,13 @@
   let schedule = $state.raw<ScheduledMatch[] | null>(null)
   let scheduleNote = $state<string | null>(null)
   const scheduleSig = $derived(eventMode && session ? `${session.id}|${session.event?.key ?? ''}|${session.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}` : '')
+  // Dropped only when the session or its event changes (or there is nothing to read), or the team changes; not on every new log of the same session: until the fresh read lands, the last one stands.
+  let scheduleOf = ''
   $effect(() => {
-    if (!scheduleSig) { schedule = null; scheduleNote = null; return }
+    if (!scheduleSig) { schedule = null; scheduleNote = null; scheduleOf = ''; return }
     const s = untrack(() => session)!
+    const key = `${s.id}|${s.event?.key ?? ''}|${tbaTeam()}`
+    if (key !== scheduleOf) { schedule = null; scheduleNote = null; scheduleOf = key }
     const [get, team] = [tbaGetter(), tbaTeam()]
     if (!get || team === null) { schedule = null; scheduleNote = null; return }
     let stale = false

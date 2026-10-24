@@ -188,9 +188,13 @@
   // place the same here. An earlier event's carried board never reads one; no key, no team, offline with no saved copy or an error: none (by name only).
   let fsSchedule = $state.raw<ScheduledMatch[] | null>(null)
   const scheduleSig = $derived(defSession && !carried ? `${defSession.id}|${defSession.event?.key ?? ''}|${defSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}` : '')
+  // The schedule is dropped only when the session or its event changes (or there is nothing to read), or the team changes; not on every new log of the same session: until the fresh read lands, the last one stands.
+  let fsScheduleOf = ''
   $effect(() => {
-    if (!scheduleSig) { fsSchedule = null; return }
+    if (!scheduleSig) { fsSchedule = null; fsScheduleOf = ''; return }
     const s = untrack(() => defSession)!
+    const key = `${s.id}|${s.event?.key ?? ''}|${tbaTeam()}`
+    if (key !== fsScheduleOf) { fsSchedule = null; fsScheduleOf = key }
     const [get, team] = [tbaGetter(), tbaTeam()]
     if (!get || team === null) { fsSchedule = null; return }
     let stale = false
@@ -361,7 +365,7 @@
   {/if}
 
   {#if queue && status}
-    <ForesightQueue checklist={queue} changed={changedList} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard && !carried)} onTick={tick} onRole={chooseRole} />
+    <ForesightQueue checklist={queue} changed={changedList} codeChosen={!!codeFolder.current} {role} {ticks} forLabel={board?.tickLabel ?? 'the next match'} filed={!!(defSession && board && onBoard && !carried)} onTick={tick} onRole={chooseRole} />
   {/if}
 
   {#if checked}
