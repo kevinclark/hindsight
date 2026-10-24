@@ -15,6 +15,7 @@ export default rule({
   id: 'power/rest-voltage',
   title: 'Battery not fully charged',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit'],
   meaning: 'The battery started the match partly discharged, so it sags sooner and deeper under load, closer to a brownout.',
   causes: [

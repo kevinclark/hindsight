@@ -90,7 +90,7 @@ export function firstSentence(text: string): string {
 export function trendLabel(m: MatchSummary, index: number): string {
   if (m.matchLabel.trim()) return shortMatchLabel(m.matchLabel, index)
   if (m.matchType === 1) return 'Pr'
-  if (m.matchType === 0) return 'On field'
+  if (m.matchType === 0 && m.onField) return 'On field'
   return shortMatchLabel('', index)
 }
 
@@ -98,7 +98,7 @@ export function trendLabel(m: MatchSummary, index: number): string {
 export function trendLabelLong(m: MatchSummary, index: number): string {
   if (m.matchLabel.trim()) return m.matchLabel
   if (m.matchType === 1) return 'Practice (no match number logged)'
-  if (m.matchType === 0) return 'On the field outside a scheduled match (FMS sent no match type)'
+  if (m.matchType === 0 && m.onField) return 'On the field outside a scheduled match (FMS sent no match type)'
   return `Log ${index + 1} (${m.fileName})`
 }
 
@@ -116,7 +116,8 @@ function lineFor(metric: TrendMetric, m: MatchSummary): number | null {
   return typeof setting === 'number' && Number.isFinite(setting) ? setting + MARGIN_VOLTS : null
 }
 
-export function trendRows(matches: MatchSummary[]): TrendRow[] {
+export function trendRows(matches: MatchSummary[], unit: 'match' | 'log' = 'match'): TrendRow[] {
+  const units = unit === 'match' ? 'matches' : 'logs'
   const labels = matches.map((m, i) => trendLabel(m, i))
   const rows = TREND_METRICS.map((metric): TrendRow => {
     const values = matches.map((m) => {
@@ -159,7 +160,7 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
       const lineText = lineVaries ? 'its brownout setting + 1 V' : `${+line!.toFixed(2)} ${metric.unit}`
       const missing = total - n
       verdict = missing === 0
-        ? `${side} ${lineText} in ${pastCount} of ${total} matches`
+        ? `${side} ${lineText} in ${pastCount} of ${total} ${units}`
         : `${side} ${lineText} in ${pastCount} of ${n} measured (${missing} not logged)`
       if (unjudged > 0) verdict += `; ${unjudged} not judged (no brownout setting)`
     }
@@ -170,7 +171,7 @@ export function trendRows(matches: MatchSummary[]): TrendRow[] {
     let next: TrendRow['next']
     if (n === 0) next = { text: '', source: 'none', ruleId: null }
     else if (!hasLine) next = { text: 'No rule for this number', source: 'no-rule', ruleId: null }
-    else if (pastCount === 0 && unjudged > 0) next = { text: 'Nothing found; some matches not judged (no brownout setting)', source: 'none', ruleId: null }
+    else if (pastCount === 0 && unjudged > 0) next = { text: `Nothing found; some ${units} not judged (no brownout setting)`, source: 'none', ruleId: null }
     else if (pastCount === 0) next = { text: 'Nothing: within the line', source: 'within', ruleId: metric.rule ?? null }
     else {
       const own = worstIndex === null ? undefined : matches[worstIndex].rules[metric.rule!]?.findings.find((f) => f.nextStep && f.severity !== 'info')?.nextStep

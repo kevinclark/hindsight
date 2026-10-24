@@ -13,6 +13,7 @@ export default rule({
   id: 'foresight/controllers',
   title: 'Controller missing',
   severity: 'warning',
+  judges: 'fault',
   foresightOnly: true,
   who: ['drive'],
   meaning: 'The Driver Station does not show a controller on a port the robot code reads, so that driver would have no control.',

@@ -12,6 +12,7 @@ export default rule({
   id: 'comms/ds-log-truncated',
   title: 'Driver Station log ends mid-match',
   severity: 'error',
+  judges: 'fault',
   who: ['drive'],
   meaning: 'The Driver Station app stopped logging while the match was still running: it crashed, was closed, or the laptop slept.',
   causes: [
@@ -34,8 +35,12 @@ export default rule({
     const { autoStart, matchEnd } = match
     if (autoStart === null || matchEnd === null) return match.couldNotCheck('no match in this log')
 
-    // Every DS log that stops inside the match counts, including the first of two when the DS app restarted.
-    const cutLogs = match.dsLogs.filter((log) => log.endTime > autoStart && log.endTime < matchEnd - 1)
+    // Every DS log that stops inside the match counts, including the first of two when the DS app restarted. Off the field
+    // that is inside a run: a DS app closed between runs cut nothing.
+    const cutLogs = match.dsLogs.filter((log) => {
+      const endsInside = log.endTime > autoStart && log.endTime < matchEnd - 1
+      return endsInside && match.inMatch(log.endTime)
+    })
     return cutLogs.map((log) => {
       const secondsEarly = matchEnd - log.endTime
       // The DS's last record with a robot voltage: when the DS last heard from the robot.

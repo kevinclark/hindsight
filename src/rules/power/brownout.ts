@@ -15,6 +15,7 @@ export default rule({
   id: 'power/brownout',
   title: 'roboRIO brownout',
   severity: 'error',
+  judges: 'fault',
   who: ['software', 'pit'],
   meaning: 'The battery voltage fell below the roboRIO\'s brownout level (the "brownout setting" below), so it switched every motor off until the voltage recovered. The robot went limp.',
   causes: [

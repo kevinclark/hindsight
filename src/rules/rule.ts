@@ -12,6 +12,7 @@
  *     id: 'power/rest-voltage',
  *     title: 'Battery not fully charged',
  *     severity: 'warning',
+ *     judges: 'performance',
  *     who: ['pit'],
  *     meaning: 'The battery started the match partly discharged, so it sags sooner and deeper under load.',
  *     causes: [
@@ -111,6 +112,12 @@ interface About {
   id: string
   title: string
   severity: Severity
+  /**
+   * What the rule judges, chosen for every rule: 'performance' when a short run would invalidate the evidence (a margin,
+   * rate or share of time); 'fault' when the finding is an event with its own duration, or a disconnect or break. A
+   * performance finding whose time falls in a run shorter than 10 s is dropped; a fault is kept however short the run (ADR 8).
+   */
+  judges: 'fault' | 'performance'
   who: Audience[]
   /** What it probably means when this fires: one or two sentences a student can act on. */
   meaning: string
@@ -212,7 +219,7 @@ export function link(definition: Link): Link {
  * A parent is a finding that names a group of findings: "25 CAN devices dropped within 0.25 s". The app lists the
  * group under it (nothing is deleted), and it adds nothing to any count. Parents live in parents.ts.
  */
-export interface Parent extends Omit<About, 'severity' | 'needsProfile' | 'foresightOnly' | 'sources' | 'thresholds'> {
+export interface Parent extends Omit<About, 'severity' | 'judges' | 'needsProfile' | 'foresightOnly' | 'sources' | 'thresholds'> {
   /** The rule whose findings it groups. */
   over: string
   /** True when this finding belongs in the same group as the first (earliest) one. */

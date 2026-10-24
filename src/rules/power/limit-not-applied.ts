@@ -21,6 +21,7 @@ export default rule({
   id: 'power/limit-not-applied',
   title: 'Current limit not holding',
   severity: 'error',
+  judges: 'fault',
   who: ['software'],
   meaning: 'The motors drew far more current than their configured limit: the limit is switched off, or it is on and not reaching the motors. Heavy current like this is a common reason for brownouts.',
   causes: [

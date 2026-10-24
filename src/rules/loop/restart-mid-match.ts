@@ -20,6 +20,7 @@ export default rule({
   id: 'loop/restart-mid-match',
   title: 'Robot program restarted mid-match',
   severity: 'error',
+  judges: 'fault',
   who: ['software', 'pit'],
   meaning: 'The robot program stopped during the match, so the robot did nothing until it started again (if it did). One match is then split over several logs.',
   causes: [

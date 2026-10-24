@@ -17,6 +17,7 @@ export default rule({
   id: 'foresight/firmware-mismatch',
   title: 'Firmware differs within a model',
   severity: 'warning',
+  judges: 'performance',
   foresightOnly: true,
   who: ['software', 'pit'],
   meaning: 'Devices of the same model run different firmware. One was probably swapped in and never updated, and it may not behave like the others.',

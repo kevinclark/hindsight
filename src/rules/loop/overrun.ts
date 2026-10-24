@@ -14,6 +14,7 @@ export default rule({
   id: 'loop/overrun',
   title: 'Loop overruns',
   severity: 'warning',
+  judges: 'performance',
   who: ['software'],
   meaning: 'The robot code often took longer than 20 ms to finish one loop. While it is late the robot runs blind, and a late loop can be many centimeters of travel.',
   causes: [

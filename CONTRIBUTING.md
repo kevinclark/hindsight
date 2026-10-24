@@ -22,6 +22,7 @@ export default rule({
   id: 'power/rest-voltage',
   title: 'Battery not fully charged',
   severity: 'warning',            // 'error' (cost or nearly cost a match), 'warning' (margin eroding), 'info'
+  judges: 'performance',          // 'fault' (something broke or disconnected) or 'performance' (a margin, rate or quality)
   who: ['pit'],                   // who acts on it: 'software', 'pit', 'drive'
   meaning: 'The battery started the match partly discharged, so it sags sooner and deeper under load.',
   causes: [                       // most likely first; each says what to look for, and where
@@ -54,6 +55,9 @@ export default rule({
 2. **Fill in the description first.** The comment at the top says what it checks (with the threshold) and why (the
    match and what happened). The app shows these under every finding, so write them for a student standing
    in the pit:
+   - `judges`: `'performance'` when a short run would invalidate the evidence (a margin, rate or share of time), `'fault'`
+     when the finding is an event with its own duration, or a disconnect or break. Off the field the robot is enabled in runs of any length: a performance
+     finding in a run under 10 s is dropped (a short run proves no margin), a fault is kept;
    - `meaning`: what it probably means, in a sentence or two;
    - `causes`: what could cause it, most likely first, each with what to look for and **where** (a tab in this app,
      a log key in AdvantageScope, a part on the robot, a file in the robot code);
@@ -220,6 +224,8 @@ match logs only, so a link that involves a Foresight check needs a case in `test
 
 - `/SystemStats/BatteryCurrent` is the roboRIO's own current (~0.5 A), not the battery's. For total current use
   `match.power()` (the sum of the motor supply currents, `src/power/battery-model.ts`).
+- Off the field there is no match: the rules judge every run, from the first enable to the end of the last, and a time is
+  said as "0:12 into run 3 of 7" (`match.when(t)` does it). Always use `match.when`, never your own "into the match".
 - Log times are seconds since the robot program started (robot time), not match time. Always say a time with
   `match.when(t)`: it puts match time first and robot time in parentheses, so people can find it in AdvantageScope. In a sentence use `match.whenAt(t)` and write no "at" of your own: a time
   before or after the match reads "before the match (...)", never "at before the match".

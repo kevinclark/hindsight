@@ -363,7 +363,11 @@ export class MatchView {
   readonly enabled: Window
   readonly auto: Window
   readonly teleop: Window
-  /** The match itself: from auto enable to the end of the last enable that belongs to the match. */
+  /**
+   * The match itself: from auto enable to the end of the last enable that belongs to the match. Off the field there is no
+   * match: it is every run, one interval each, so time between runs (the robot disabled, the Driver Station closed) is not
+   * judged but every run is (ADR 8).
+   */
   readonly wholeMatch: Window
   readonly autoStart: number | null
   readonly teleopStart: number | null
@@ -391,10 +395,12 @@ export class MatchView {
     this.autoStart = raw.matchStart
     this.teleopStart = raw.teleopStart
     this.matchEnd = raw.matchEnd
-    this.wholeMatch = raw.matchStart !== null && raw.matchEnd !== null ? [{ start: raw.matchStart, end: raw.matchEnd }] : []
+    this.wholeMatch = !raw.fms && raw.runs?.length ? raw.runs.map((r) => ({ start: r.start, end: r.end }))
+      : raw.matchStart !== null && raw.matchEnd !== null ? [{ start: raw.matchStart, end: raw.matchEnd }] : []
     this.onField = raw.fms
     this.beforeEnable = raw.foresight ? [{ start: raw.foresight.start, end: raw.foresight.end }] : []
-    this.windowWords = this.wholeMatch.length || !raw.foresight ? 'during the match' : raw.foresight.words ?? 'since start-up settled'
+    const runs = !raw.fms && raw.runs?.length > 1 ? raw.runs.length : 0
+    this.windowWords = runs ? `across the ${runs} runs` : this.wholeMatch.length || !raw.foresight ? 'during the match' : raw.foresight.words ?? 'since start-up settled'
   }
 
   /**

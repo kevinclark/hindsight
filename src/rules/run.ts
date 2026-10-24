@@ -2,7 +2,7 @@
  * The runner: builds the things each rule checks (motors, devices, cameras, ...) from the robot profile, calls each
  * rule's `check`, and turns what it returns into findings. Rules don't call this; read it only if you are curious.
  */
-import type { Match } from '../match/match.ts'
+import { runAt, SHORT_RUN_SECONDS, type Match } from '../match/match.ts'
 import type { Finding, Plot, PlotLine } from './types.ts'
 import type { Answer, Cause, Link, Parent, Problem, Rule, Severity } from './rule.ts'
 import { MatchView, MissingSignal, words, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
@@ -15,6 +15,11 @@ export interface Report {
   skipped: SkippedRule[]
   /** Rules that threw: a bug in the rule, shown so it isn't silent. */
   crashed: SkippedRule[]
+  /**
+   * Performance findings dropped because their time fell in a run shorter than SHORT_RUN_SECONDS (ADR 8): a short run proves
+   * no margin or rate: the rule of each one. Only set when some were dropped. Faults are never dropped.
+   */
+  droppedInShortRuns?: string[]
   /**
    * Findings the consolidators made to name a group of findings (src/rules/parents.ts). Kept out of `findings`, so
    * they add nothing to any count; the findings they group point at them with `explainedBy`. Left out when none.
@@ -50,6 +55,7 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
   const skipped: SkippedRule[] = []
   const crashed: SkippedRule[] = []
   const misfit = match.profileChoice.misfit ? match.profileChoice.fit : null
+  const droppedInShortRuns: string[] = []
   for (const rule of rules) {
     // Devices only the Hindsight companion watches need no profile: can/device-dropout still checks those.
     const watchedOnly = rule.forEach === 'device' && view.watchedDevices().some((w) => !w.profileFlag)
@@ -61,7 +67,11 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
     }
     try {
       const result = runOne(rule, view)
-      findings.push(...result.findings)
+      // Off the field each finding says which run it fell in; a performance finding in a run under 10 s is dropped (ADR 8).
+      const kept = result.findings.filter((f) => !inShortRun(match, rule, f))
+      droppedInShortRuns.push(...result.findings.filter((f) => !kept.includes(f)).map((f) => f.rule))
+      for (const f of kept) tagRun(match, f)
+      findings.push(...kept)
       if (result.notChecked.length) {
         // "Not checked" only when every item was skipped and nothing was found; otherwise "partly checked".
         const all = result.itemsSkipped === result.items && result.findings.length === 0
@@ -86,7 +96,25 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
   }
   findings.sort(worstFirst(rules))
   const parents = consolidate(findings, consolidators, crashed)
-  return { findings, skipped, crashed, ...(parents.length ? { parents } : {}) }
+  return { findings, skipped, crashed, ...(droppedInShortRuns.length ? { droppedInShortRuns } : {}), ...(parents.length ? { parents } : {}) }
+}
+
+/**
+ * Does the finding fall in a run shorter than SHORT_RUN_SECONDS, and is it a performance finding? (Off the field, not
+ * Foresight.) A finding stamped at the run's very start is about the moment before it (power/rest-voltage reads the 2 s
+ * before the enable), so the run's length says nothing about it: it stays.
+ */
+function inShortRun(match: Match, rule: Rule, f: Finding): boolean {
+  if (rule.judges !== 'performance' || match.foresight || f.time === null) return false
+  const r = runAt(match, f.time)
+  return !!r && r.inside && f.time > r.run.start && r.run.end - r.run.start < SHORT_RUN_SECONDS
+}
+
+/** Off the field: the run (from 1) the finding's time falls in, or after (a time in a gap is the run before it). */
+function tagRun(match: Match, f: Finding): void {
+  if (match.foresight || f.time === null) return
+  const r = runAt(match, f.time)
+  if (r) f.run = r.n
 }
 
 /**

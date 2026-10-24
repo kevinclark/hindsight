@@ -36,6 +36,10 @@
   import { REFUSED_WORDS, blankEventClusters, clockOffsetText, identifyEvents, type ResolvedEvent } from '../tba/identify.ts'
   import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
   import TbaFields from './TbaFields.svelte'
+  import ModeLine from './ModeLine.svelte'
+  import { chooseMode, renameSession, sessionNames } from './session-names.svelte.ts'
+  import { modeLine, modeOf } from '../session/mode.ts'
+  import { leftOutLine, leftOutWhy, runsLine, runsSummary, runsText, trendSet } from '../session/runs.ts'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
   // copies of logs by name, for summaries restored without their file. `linksFor` (desktop app): the library's code links for
@@ -52,7 +56,6 @@
   // Summaries collected so far, shared by every load so two loads at once can't overwrite each other.
   const collected: MatchSummary[] = []
   let overrides = $state<Record<string, string>>(readStore('hindsight.sessionOverrides'))
-  let renames = $state<Record<string, string>>(readStore('hindsight.sessionRenames'))
   let typedBatteries = $state<Record<string, string>>(readStore('hindsight.typedBatteries'))
   let heapMB = $state<number | null>(null)
   // Summaries saved in this browser, by file key (name, size, modified time): reused instead of reading a log again,
@@ -133,7 +136,7 @@
     })
     return () => { stale = true }
   })
-  const sessions = $derived(groupSessions(summaries, overrides, renames, found))
+  const sessions = $derived(groupSessions(summaries, overrides, sessionNames(), found))
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
   // Until one is picked, show the event (the matches that count), else the first session.
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
@@ -169,6 +172,11 @@
     })
     return rows.sort((a, b) => b.fired - a.fired || a.worst - b.worst || a.row - b.row)
   })
+  // Practice is judged by run (ADR 8): the runs in the session's logs, and the logs the Trends leave out (never enabled, or only runs under 10 s).
+  const practice = $derived(!!session && modeOf(session) === 'practice')
+  const unitWord = (isPractice: boolean, many: boolean) => (isPractice ? (many ? 'logs' : 'log') : many ? 'matches' : 'match')
+  const trendInfo = $derived(session ? trendSet(session) : null)
+  const leftOutText = $derived(practice && session ? leftOutLine(runsSummary(session.matches)) : '')
   // Pit runs: logs not on the field, on an event's days. Not matches: they have their own grid and are in no count above.
   const pitRuns = $derived(session?.pitRuns ?? [])
   const pitGrid = $derived.by(() => {
@@ -409,8 +417,7 @@
   function rename(s: Session) {
     const name = window.prompt('Session name', s.label)
     if (!name) return
-    renames = { ...renames, [s.id]: name.trim() }
-    writeStore('hindsight.sessionRenames', renames)
+    renameSession(s.id, name.trim())
   }
   function setBattery(fileName: string, id: string) {
     typedBatteries = { ...typedBatteries, [fileName]: id.trim() }
@@ -474,7 +481,7 @@
     const [a, b] = [r.first.build?.sha || '?', r.last.build?.sha || '?']
     return a === b ? `build ${a}` : `builds ${a}–${b}`
   }
-  const span = (r: StateRun) => (r.matches === 1 ? label(r.first) : `${label(r.first)} to ${label(r.last)}, ${r.matches} matches`)
+  const span = (r: StateRun) => (r.matches === 1 ? label(r.first) : `${label(r.first)} to ${label(r.last)}, ${r.matches} ${unitWord(practice, true)}`)
   // At most 2 decimals, without trailing zeros: 7.4, 1.2–2.1, 53.
   const fmt = (x: number) => String(+x.toFixed(Math.abs(x) >= 100 ? 0 : 2))
 </script>
@@ -485,7 +492,7 @@
   {@const stop = stopped.get(f.key)}
   <li class={f.severity} class:filed={allMarked(f)}>
     <span class="lead"><span class="sev"><span aria-hidden="true">{SEV_ICON[f.severity]}</span> {SEV_WORD[f.severity]}</span><span class={`chip ${f.confidence.replace(/ /g, '-')}`}>{CONFIDENCE_WORDS[f.confidence]}</span></span>
-    <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable)} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
+    <span class="title">{#if back.length}<strong class="back">Came back after a fix ({back.join(', ')})</strong> {/if}<code>{f.key}</code>: {rateText(f.matches.length, f.checkable, practice ? 'log' : 'match')} ({pct(f.interval[0])}–{pct(f.interval[1])})</span>
     {#if f.measured.length}
       <span class="measured">{f.measured.map((m) => `${m.label} ${fmt(m.min)}${m.max !== m.min ? `–${fmt(m.max)}` : ''}${m.unit ? ` ${m.unit}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold} ${m.unit}${m.medianMargin !== undefined ? `, ${past(m.medianMargin)}` : ''})` : ''}`).join('; ')}</span>
     {/if}
@@ -528,7 +535,7 @@
 {#if sessions.length}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
-      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{s.matches.length} match{s.matches.length === 1 ? '' : 'es'}{s.pitRuns?.length ? `, ${s.pitRuns.length} pit run${s.pitRuns.length === 1 ? '' : 's'}` : ''}</small></button>
+      <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{modeOf(s) === 'practice' ? `${s.matches.length} log${s.matches.length === 1 ? '' : 's'}` : `${s.matches.length} match${s.matches.length === 1 ? '' : 'es'}`}{s.pitRuns?.length ? `, ${s.pitRuns.length} pit run${s.pitRuns.length === 1 ? '' : 's'}` : ''}</small></button>
     {/each}
   </nav>
 {/if}
@@ -542,6 +549,8 @@
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
   </section>
+  <ModeLine text={modeLine(session)} mode={modeOf(session)} byHand={!!session.modeByHand} onChange={(m) => chooseMode(session.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />
+  {#if practice}<p class="note" data-runs-summary>{runsLine(runsSummary(session.matches))} A practice day is judged by run, not by match: each log counts once in the grid and the trends, however many runs it holds.</p>{/if}
   {#if session.event}<p class="note" data-event-note>The Blue Alliance says this was {session.event.name}{#if session.event.by === 'date'}{' '}<strong>(guess)</strong>{/if} ({session.event.key}), {session.event.start} to {session.event.end}: {session.event.matched} of the {session.event.of} qualification numbers in these logs are on the team's list there{session.event.by === 'date' ? ' (several events held as many; the robot clock chose, so this is a guess)' : ''}.{session.event.clockOffsetDays ? ` The robot clock is ${clockOffsetText(session.event.clockOffsetDays).replace('robot clock ', '')}.` : ''} {session.event.fromCache ? 'From a saved copy' : 'Fetched'} {new Date(session.event.fetchedAt).toLocaleString()}.</p>{/if}
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   {#if reread && reread.sessionId === session.id && !reread.dismissed}
@@ -560,7 +569,7 @@
     </section>
   {/if}
   {#each robots as r (r.key)}
-    <p class="note">Robot: <strong>{r.name}</strong>{#if !r.named}, no profile is for this robot{:else}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
+    <p class="note">Robot: <strong>{r.name}</strong>{#if !r.named}, no profile is for this robot{:else}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} ${unitWord(practice, r.matches.length !== 1)}` : ''}</p>
   {/each}
   {#if onDraft}{#each offers as { link: l, logs, total, refs } (l.code.repo)}
     <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}{refs > 1 ? ` (${logs} of these ${total} logs ran it; ${refs} commits in all)` : ''}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>
@@ -579,7 +588,7 @@
     <p class="note warn">{label(m)}: {m.clockNote}</p>
   {/each}
 
-  <h3>Rule × match</h3>
+  <h3>Rule × {practice ? 'log' : 'match'}</h3>
   <div class="grid-wrap">
     <table class="grid">
       <thead>
@@ -599,11 +608,12 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">Rules that fired in the most matches come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that match; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a match to open it in Match review.</p>
+  <p class="hint">Rules that fired in the most {practice ? 'logs' : 'matches'} come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that {practice ? 'log' : 'match'}; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a {practice ? 'log' : 'match'} to open it in Match review.</p>
 
   {#if pitRuns.length}
     <h3>Pit runs on this event's days</h3>
     <p class="hint" data-pit-runs>{pitRuns.length} log{pitRuns.length === 1 ? '' : 's'} not on the field, played on a day this event had matches (pit runs). They are not matches: the grid above, the match count and the confidence below leave them out. Rules that fired in at least one are shown here{pitGrid.length ? '' : '; none did'}.</p>
+    <p class="hint" data-pit-runs-summary>{runsLine(runsSummary(pitRuns))}{#if leftOutLine(runsSummary(pitRuns))}{' '}{leftOutLine(runsSummary(pitRuns)).replace('left out of trends', 'not in any trend (pit runs never are)')}.{/if}</p>
     {#if pitGrid.length}
       <div class="grid-wrap"><table class="grid" data-pit-grid>
         <thead><tr><th>rule</th>{#each pitRuns as m (m.fileName)}<th class="match"><button class="link" title={`${label(m)} · ${m.fileName}`} aria-label={`Pit run ${pitTime(m)}`} onclick={() => open(m)}>{pitTime(m)}</button></th>{/each}<th>pit runs</th></tr></thead>
@@ -623,11 +633,18 @@
     {/if}
   {/if}
 
-  <h3>Per match</h3>
-  <Trends matches={session.matches} {typedBatteries} labels={session.matches.map(shortLabel)} onOpen={open} />
+  <h3>Per {trendInfo!.unit}</h3>
+  {#if leftOutText}
+    <details class="once-fold" data-left-out>
+      <summary>{leftOutText}</summary>
+      <p class="hint">A log that was never enabled, or whose runs are all under 10 s, shows no margin or rate, so it is listed (with its runs, below) but not drawn here.</p>
+      <ul class="changes">{#each trendInfo!.leftOut as x (x.log.fileName)}<li>{label(x.log)}: {x.why}{x.log.runs?.count ? ` (${runsText(x.log)})` : ''}</li>{/each}</ul>
+    </details>
+  {/if}
+  <Trends matches={trendInfo!.logs} unit={trendInfo!.unit} {typedBatteries} labels={trendInfo!.logs.map(shortLabel)} onOpen={open} />
 
   <h3>Findings across the session</h3>
-  <p class="hint">Consistent: fired in most matches where it could be checked (3 or more). Intermittent: in some, or in every match of only 2 checked (too few to call consistent). Once: one match only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across matches).</p>
+  <p class="hint">Consistent: fired in most {practice ? 'logs' : 'matches'} where it could be checked (3 or more). Intermittent: in some, or in every one of only 2 checked (too few to call consistent). Once: one {practice ? 'log' : 'match'} only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across {practice ? 'logs' : 'matches'}).</p>
   <ul class="merged">
     {#each listed as f (f.key)}
       {@render row(f)}
@@ -654,7 +671,7 @@
   {/if}
   {#if filedRows.length}
     <details class="once-fold filed-fold">
-      <summary>{filedRows.length} marked not a real problem in every match {filedRows.length === 1 ? 'it' : 'they'} fired in</summary>
+      <summary>{filedRows.length} marked not a real problem in every {practice ? 'log' : 'match'} {filedRows.length === 1 ? 'it' : 'they'} fired in</summary>
       <ul class="merged">
         {#each filedRows as f (f.key)}
           {@render row(f)}
@@ -667,7 +684,7 @@
   {#if withLogging === 0}
     <p class="hint">Read these logs again (choose the folder) to see which signals each match logged.</p>
   {:else}
-    <p class="hint">Signals the checks need whose state changed from one match to the next, in the order the matches were played, with the code build each ran. Open a match's Logging tab for what each one guards.{withLogging < session.matches.length ? ` ${session.matches.length - withLogging} matches were read before Hindsight kept this and are left out.` : ''}</p>
+    <p class="hint">Signals the checks need whose state changed from one {practice ? 'log' : 'match'} to the next, in the order the {practice ? 'logs' : 'matches'} were played, with the code build each ran. Open a {practice ? 'log' : 'match'}'s Logging tab for what each one guards.{withLogging < session.matches.length ? ` ${session.matches.length - withLogging} {practice ? 'logs' : 'matches'} were read before Hindsight kept this and are left out.` : ''}</p>
     {#if changes.length === 0}
       <p>No signal appeared or vanished between matches.</p>
     {:else}
@@ -685,14 +702,15 @@
     {/if}
   {/if}
 
-  <h3>Matches in this session</h3>
+  <h3>{practice ? 'Logs' : 'Matches'} in this session</h3>
   <div class="grid-wrap"><table class="list">
-    <thead><tr><th>match</th><th>played</th><th>battery</th><th>session</th></tr></thead>
+    <thead><tr><th>{practice ? 'log' : 'match'}</th><th>played</th><th>runs</th><th>battery</th><th>session</th></tr></thead>
     <tbody>
       {#each [...session.matches.map((m) => [m, false] as const), ...pitRuns.map((m) => [m, true] as const)] as [m, pit] (m.fileName)}
         <tr>
           <td>{label(m)}{#if pit}{' '}<span class="pit">pit run</span>{/if}</td>
           <td>{m.playedAt ? new Date(m.playedAt).toLocaleString() : 'unknown'}{m.playedAtSource === 'file name' ? ' (from file name)' : ''}</td>
+          <td data-runs>{runsText(m)}{#if practice && leftOutWhy(m)}{' '}<span class="pit">not in trends</span>{/if}</td>
           <td>{#if m.batteryId}{m.batteryId} (logged){:else}<input size="6" placeholder="label" value={typedBatteries[m.fileName] ?? ''} onchange={(e) => setBattery(m.fileName, (e.currentTarget as HTMLInputElement).value)} />{/if}</td>
           <td>
             <select onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; if (v === '__new') newSessionFor(m.fileName); else moveMatch(m.fileName, v === '__auto' ? '' : v) }}>

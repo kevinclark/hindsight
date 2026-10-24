@@ -17,6 +17,7 @@ export default rule({
   id: 'collision/impact',
   title: 'Hard hit',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit', 'drive'],
   meaning: 'The robot took a hard sideways jolt. Hits like this can knock connectors, the radio or the battery loose, and cause dropouts afterwards.',
   causes: [

@@ -18,6 +18,7 @@ export default rule({
   id: 'mech/follower-mismatch',
   title: 'Motors on one loop at different speeds',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit'],
   meaning: 'A motor that should turn at the same speed as its leader ran slower for a while. Its speed was not holding, so the mechanism was delivering less than the code asked for.',
   causes: [

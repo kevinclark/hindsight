@@ -57,6 +57,7 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
       build: match.build,
       log: { start: match.logStart, end: match.logEnd, entries: match.log.entries.size, records: match.log.recordCount, warnings: match.log.warnings },
       matchWindow: { start: match.matchStart, teleopStart: match.teleopStart, end: match.matchEnd },
+      runs: match.runs,
       auto: match.auto,
       teleop: match.teleop,
       wallClockOffsetSeconds: match.epochOffset,

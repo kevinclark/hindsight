@@ -16,6 +16,8 @@ export default rule({
   id: '<area>/<name>',
   title: '<short title>',
   severity: 'warning',
+  // 'fault' if something broke or disconnected; 'performance' if it measures a margin, rate or quality (see rule.ts).
+  judges: 'performance',
   who: ['pit'],
   // What it probably means when it fires, in a sentence or two.
   meaning: '<e.g. The battery or its wiring could not hold voltage under load; the robot was close to browning out.>',

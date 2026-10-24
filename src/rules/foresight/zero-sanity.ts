@@ -22,6 +22,7 @@ export default rule({
   id: 'foresight/zero-sanity',
   title: 'Mechanism zero disagrees with its absolute encoder',
   severity: 'warning',
+  judges: 'performance',
   foresightOnly: true,
   who: ['software', 'pit'],
   meaning: 'The motor thinks the mechanism is somewhere other than where its absolute encoder says it is, so position commands will drive it to the wrong place.',

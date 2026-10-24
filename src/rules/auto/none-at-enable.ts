@@ -21,6 +21,7 @@ export default rule({
   id: 'auto/none-at-enable',
   title: 'No auto chosen at the start of the match',
   severity: 'warning',
+  judges: 'performance',
   who: ['drive'],
   meaning: 'The auto chooser still said "None" when the match started, so the robot ran no auto.',
   causes: [

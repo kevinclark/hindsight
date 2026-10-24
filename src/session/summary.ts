@@ -25,7 +25,8 @@ export { dateFromFileName, playedAt } from '../match/played-at.ts'
 /**
  * The shape of a saved MatchSummary. Summaries saved in the browser by an older Hindsight are still shown while their
  * shape is the same as this one's. Bump it whenever MatchSummary changes in a way old code can't be drawn from
- * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it.
+ * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it (`runs` is one: a summary without it
+ * shows as before, with the "Read again to update" cue).
  */
 export const SUMMARY_SHAPE = 3
 
@@ -87,6 +88,11 @@ export interface MatchSummary {
   pieces?: string[]
   /** Each signal the robot profile expects and its state in this log (the Logging tab). Absent in older summaries. */
   logging?: LoggedState[]
+  /**
+   * The runs in the log (ADR 8): how many, how long each lasted (seconds, in time order), and how many performance findings
+   * were dropped because they fell in a run under 10 s. On the field the FMS match is one run. A log never enabled has none.
+   */
+  runs?: { count: number; seconds: number[]; droppedShort: number }
 }
 
 export interface MatchMetrics {
@@ -160,6 +166,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
     rules, metrics: metrics(match), timing, problems: [],
     robot: robotOf(match),
     logging: coverage(match, report).lines.map((l) => ({ what: l.what, key: l.key, state: l.state })),
+    runs: { count: match.runs.length, seconds: match.runs.map((r) => Math.round((r.end - r.start) * 10) / 10), droppedShort: report.droppedInShortRuns?.length ?? 0 },
   }
 }
 
@@ -232,6 +239,9 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
     robot: { codebase: pieces.find((p) => p.robot.codebase)?.robot.codebase, ...pieces.reduce((a, b) => (b.robot.present / b.robot.total < a.robot.present / a.robot.total ? b : a)).robot },
     pieces: pieces.map((p) => p.fileName),
     logging: worstAcross(pieces.map((p) => p.logging)),
+    // The pieces of one match: their runs side by side (each piece started its own run).
+    // A piece saved before runs existed has none: the joined match has them only when every piece does.
+    runs: pieces.every((p) => p.runs) ? { count: sum(pieces.map((p) => p.runs!.count)), seconds: pieces.flatMap((p) => p.runs!.seconds), droppedShort: sum(pieces.map((p) => p.runs!.droppedShort)) } : undefined,
   }
 }
 
@@ -277,6 +287,7 @@ function visionOutliers(match: Match): number | null {
   const odoKey = match.profile.signals.odometryPose
   if (!has(match, odoKey) || match.matchStart === null || match.matchEnd === null) return null
   const odo = values<Pose2d>(match, odoKey)!
+  const view = new MatchView(match)
   let worst: number | null = null
   for (const cam of match.profile.cameras) {
     if (!has(match, cam.acceptedPose)) continue
@@ -284,7 +295,7 @@ function visionOutliers(match: Match): number | null {
     let n = 0, far = 0
     poses.v.forEach((pose, i) => {
       const t = poses.t[i]
-      if (t < match.matchStart! || t > match.matchEnd!) return
+      if (!view.inMatch(t)) return
       const o = heldAt(odo, t)
       if (!o) return
       n++

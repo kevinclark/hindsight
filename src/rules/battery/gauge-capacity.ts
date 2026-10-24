@@ -14,6 +14,7 @@ export default rule({
   id: 'battery/gauge-capacity',
   title: 'Battery capacity low (fuel gauge)',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit'],
   meaning: 'The battery\'s fuel gauge has learned that this battery holds much less charge than a healthy one. It will sag early and may collapse partway through a match.',
   causes: [

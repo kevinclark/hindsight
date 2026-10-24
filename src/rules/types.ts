@@ -35,10 +35,15 @@ export interface Finding {
   title: string
   /** The moment it happened, in robot (log) seconds (null for whole-match findings). */
   time: number | null
-  /** The same moment in seconds into the match (from the start of auto), or null. */
+  /** The same moment in seconds into the match (from the start of auto), or null. Off the field: seconds into the run that holds `time`. */
   matchTime: number | null
   /** The same moment in words, match time first: "1:47 into the match (teleop; robot time 532.8 s)". */
   when: string | null
+  /**
+   * Off the field only: the run (from 1) the finding's time falls in, a time between two runs counting for the run before it.
+   * `when` says it too ("0:12 into run 3 of 7"). Left out on the field, where the match is the one run.
+   */
+  run?: number
   /** What it is about (a motor, a camera, an axis), or null for the whole match. */
   about: string | null
   /** The issue's identity across matches: the rule, plus what it is about. Known-issue tracking uses it. */

@@ -12,7 +12,7 @@
 
   // `labels` is still passed by SessionView; the table labels logs itself (a log with no match number from its MatchType).
   // onOpen: open a match in Match review (the worst match is a link when it is given).
-  let { matches, typedBatteries, onOpen }: { matches: MatchSummary[]; typedBatteries: Record<string, string>; labels?: string[]; onOpen?: (m: MatchSummary) => void } = $props()
+  let { matches, typedBatteries, onOpen, unit = 'match' }: { matches: MatchSummary[]; typedBatteries: Record<string, string>; labels?: string[]; onOpen?: (m: MatchSummary) => void; unit?: 'match' | 'log' } = $props()
 
   // Five colours for batteries, used only when battery IDs exist (logged, or typed by hand).
   const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
@@ -20,7 +20,7 @@
   const batteries = $derived([...new Set(matches.map(battery).filter(Boolean))])
   const colour = (m: MatchSummary) => (battery(m) ? COLORS[batteries.indexOf(battery(m)) % COLORS.length] : 'var(--muted)')
 
-  const rows = $derived(trendRows(matches))
+  const rows = $derived(trendRows(matches, unit))
 
   const W = 100, H = 20, PX = 6, PY = 5
   function spark(row: TrendRow) {
@@ -38,7 +38,7 @@
 
 <table class="trends">
   <thead>
-    <tr><th>Metric (unit)</th><th>Verdict</th><th>Per match</th><th>Latest</th><th>Worst match</th><th>What to do</th></tr>
+    <tr><th>Metric (unit)</th><th>Verdict</th><th>Per {unit}</th><th>Latest</th><th>Worst {unit}</th><th>What to do</th></tr>
   </thead>
   <tbody>
     {#each rows as row (row.metric.key)}
@@ -52,7 +52,7 @@
         <td class="spark">
           {#if row.n > 0}
             {@const p = spark(row)}
-            <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${row.metric.label} per match: ${row.verdict}`}>
+            <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${row.metric.label} per ${unit}: ${row.verdict}`}>
               {#if row.line !== null}<line class="ref" x1={PX} x2={W - PX} y1={p.y(row.line)} y2={p.y(row.line)} />{/if}
               {#each matches as m, i (m.fileName)}
                 {@const v = row.values[i]}
@@ -67,7 +67,7 @@
           {/if}
         </td>
         <td class="num" data-label="Latest">{row.latest !== null ? fmt(row, row.latest) : row.n > 0 ? 'not logged' : ''}</td>
-        <td class="worst" data-label="Worst match">{#if w !== null}{row.worstWord === 'highest' ? 'highest: ' : ''}{#if onOpen}<button class="link" title={`Open ${trendLabelLong(matches[w], w)} in Match review`} onclick={() => onOpen(matches[w])}>{row.labels[w]}</button>{:else}<span title={trendLabelLong(matches[w], w)}>{row.labels[w]}</span>{/if} {fmt(row, row.values[w]!)}{/if}</td>
+        <td class="worst" data-label={`Worst ${unit}`}>{#if w !== null}{row.worstWord === 'highest' ? 'highest: ' : ''}{#if onOpen}<button class="link" title={`Open ${trendLabelLong(matches[w], w)} in Match review`} onclick={() => onOpen(matches[w])}>{row.labels[w]}</button>{:else}<span title={trendLabelLong(matches[w], w)}>{row.labels[w]}</span>{/if} {fmt(row, row.values[w]!)}{/if}</td>
         <td class="todo" data-label="What to do">
           {#if row.next.source === 'rule' || row.next.source === 'match'}
             <q>{row.next.text}</q> <span class="muted rule">{row.next.ruleId}</span>
@@ -80,9 +80,9 @@
   </tbody>
 </table>
 {#if batteries.length}
-  <p class="key">{#each batteries as b, i (b)}<span><span class="dot" style={`background:${COLORS[i % COLORS.length]}`}></span>{batteries.length > COLORS.length ? `${i + 1} ` : ''}{b}</span>{/each}<span><span class="dot" style="background:var(--muted)"></span>no battery ID</span><span><span class="dot" style="background:var(--warning)"></span>worst match past the line</span><span><span class="ring"></span>past the line, where only some matches are</span></p>
+  <p class="key">{#each batteries as b, i (b)}<span><span class="dot" style={`background:${COLORS[i % COLORS.length]}`}></span>{batteries.length > COLORS.length ? `${i + 1} ` : ''}{b}</span>{/each}<span><span class="dot" style="background:var(--muted)"></span>no battery ID</span><span><span class="dot" style="background:var(--warning)"></span>worst {unit} past the line</span><span><span class="ring"></span>past the line, where only some {unit === 'match' ? 'matches' : 'logs'} are</span></p>
 {:else}
-  <p class="key"><span><span class="dot" style="background:var(--warning)"></span>worst match past the line</span><span><span class="ring"></span>past the line, where only some matches are</span><span>No battery IDs yet: type them in the list below to colour the points by battery.</span></p>
+  <p class="key"><span><span class="dot" style="background:var(--warning)"></span>worst {unit} past the line</span><span><span class="ring"></span>past the line, where only some {unit === 'match' ? 'matches' : 'logs'} are</span><span>No battery IDs yet: type them in the list below to colour the points by battery.</span></p>
 {/if}
 
 <style>

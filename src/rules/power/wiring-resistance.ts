@@ -15,6 +15,7 @@ export default rule({
   id: 'power/wiring-resistance',
   title: 'Battery + wiring resistance',
   severity: 'warning',
+  judges: 'performance',
   who: ['pit'],
   meaning: 'Every amp the robot draws costs extra voltage in the battery and its wiring. At this resistance the voltage drops more than it should, which brings a brownout closer.',
   causes: [

@@ -15,6 +15,7 @@ export default rule({
   id: 'comms/emergency-stop',
   title: 'Robot e-stopped',
   severity: 'error',
+  judges: 'fault',
   who: ['drive'],
   meaning: 'Someone e-stopped the robot. It stays disabled until the roboRIO is rebooted, so on the field it sat out the rest of the match.',
   causes: [

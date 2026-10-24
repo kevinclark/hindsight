@@ -18,6 +18,7 @@ import { sinks, stoppedCard, stoppedFiring, stoppedShort, stoppedText } from '..
 import { summaryRobot, type MatchSummary, type RuleStatus } from '../session/summary.ts'
 import type { Severity } from '../rules/types.ts'
 import { trendRows } from '../session/trends.ts'
+import { trendSet, type TrendUnit } from '../session/runs.ts'
 import { titleHasValue } from './review-model.ts'
 import type { CardModel, Tone } from './card.ts'
 import { ruleById } from '../rules/index.ts'
@@ -91,6 +92,8 @@ export interface TrendPanel {
 }
 export interface Trends {
   width: number; height: number
+  /** What a row counts: matches on an event, logs on a practice day. */
+  unit: TrendUnit
   /** Space kept clear round the plot: the dots and the dashed line stay this far from the edge. */
   pad: number
   panels: TrendPanel[]
@@ -252,11 +255,11 @@ export function sessionNotes(session: Session): string[] {
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const letter = (i: number) => (i < LETTERS.length ? LETTERS[i] : String(i + 1))
 
-export function trendsModel(matches: MatchSummary[], typedBatteries: Record<string, string> = {}, width = 100, height = 16, pad = 3): Trends {
+export function trendsModel(matches: MatchSummary[], typedBatteries: Record<string, string> = {}, width = 100, height = 16, pad = 3, unit: TrendUnit = 'match'): Trends {
   const battery = (m: MatchSummary) => m.batteryId ?? typedBatteries[m.fileName] ?? ''
   const ids = [...new Set(matches.map(battery).filter(Boolean))]
   // The rows, verdicts and order are the Session view's (trendRows): the printed numbers cannot disagree with the screen.
-  const panels = trendRows(matches).map((row): TrendPanel => {
+  const panels = trendRows(matches, unit).map((row): TrendPanel => {
     const metric = row.metric
     const base = { key: metric.key, label: metric.label, unit: metric.unit, verdict: row.verdict }
     const w = row.worstIndex
@@ -273,7 +276,7 @@ export function trendsModel(matches: MatchSummary[], typedBatteries: Record<stri
       range: `${Math.min(...nums).toFixed(metric.digits)}–${Math.max(...nums).toFixed(metric.digits)}`,
     }
   })
-  return { width, height, pad, panels, batteries: ids.map((id, i) => ({ letter: letter(i), id })), order: matches.map(matchLabel), anyUnlabelled: matches.some((m) => !battery(m)) }
+  return { width, height, unit, pad, panels, batteries: ids.map((id, i) => ({ letter: letter(i), id })), order: matches.map(matchLabel), anyUnlabelled: matches.some((m) => !battery(m)) }
 }
 
 export function gridModel(session: Session): GridModel {
@@ -382,7 +385,7 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
     uncommitted: session.matches.filter((m) => m.build?.uncommitted).length,
     buildUnknown: session.matches.filter((m) => !m.build || (!m.build.sha && !m.build.branch)).length,
     bottomLine: bottomLine(session.matches.length, findings, filed.length),
-    findings, filed, ...fold(findings), notes: sessionNotes(session), trends: trendsModel(session.matches, typedBatteries), grid: gridModel(session),
+    findings, filed, ...fold(findings), notes: sessionNotes(session), trends: trendsModel(trendSet(session).logs, typedBatteries, undefined, undefined, undefined, trendSet(session).unit), grid: gridModel(session),
     jsonFile: `${sessionBase(session.label)}.session-findings.json`, schema: SESSION_FINDINGS_SCHEMA, version: VERSION,
   }
   return model

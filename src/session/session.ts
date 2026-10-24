@@ -25,11 +25,16 @@ import type { SummaryFinding } from './summary.ts'
 import { median } from '../match/series.ts'
 import { clockOffsetText, eventLabel, type ResolvedEvent } from '../tba/identify.ts'
 import { addEventDay, eventOfDay, type EventDayIndex } from '../tba/event-days.ts'
+import { dateText } from './day.ts'
+import { applyMode, inferredMode, modeChoice, type Mode } from './mode.ts'
 
 export interface Session {
   id: string
   label: string
   kind: 'event' | 'practice' | 'undated'
+  /** The mode the session is judged in (ADR 3): inferred from its kind, or the student's choice (`modeByHand`). See mode.ts. */
+  mode?: Mode
+  modeByHand?: boolean
   matches: MatchSummary[]
   /** The event The Blue Alliance named for a session of on-field logs with no event name. */
   event?: ResolvedEvent
@@ -52,7 +57,7 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
   const first = new Map<Session, number>()
   const add = (id: string, label: string, kind: Session['kind'], m: MatchSummary, at: number) => {
     let s = byId.get(id)
-    if (!s) { s = { id, label: renames[id] ?? label, kind, matches: [] }; byId.set(id, s); sessions.push(s); first.set(s, at) }
+    if (!s) { s = { id, label: renames[id] ?? label, kind, mode: inferredMode(kind), modeByHand: false, matches: [] }; byId.set(id, s); sessions.push(s); first.set(s, at) }
     s.matches.push(m)
     return s
   }
@@ -100,6 +105,7 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
       target.matches.sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity))
     } else add(`manual:${label}`, label, 'practice', m, Infinity)
   }
+  for (const s of sessions) applyMode(s, modeChoice(renames, s.id))
   return sessions
 }
 
@@ -121,11 +127,7 @@ export function joinSplitMatches(summaries: MatchSummary[]): MatchSummary[] {
   return out.map(joinPieces)
 }
 
-/** Local calendar date, YYYY-MM-DD. */
-export function dateText(ms: number): string {
-  const d = new Date(ms)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+export { dateText }
 
 export type Confidence = 'consistent' | 'intermittent' | 'once' | 'not enough data' | 'quiet'
 
@@ -258,6 +260,6 @@ export function standingKeys(session: Session): Set<string> {
 }
 
 /** "fired in 5 of 7 matches where it could be checked" */
-export function rateText(fired: number, checkable: number): string {
-  return `fired in ${fired} of ${checkable} match${checkable === 1 ? '' : 'es'} where it could be checked`
+export function rateText(fired: number, checkable: number, unit: 'match' | 'log' = 'match'): string {
+  return `fired in ${fired} of ${checkable} ${unit === 'log' ? 'log' : 'match'}${checkable === 1 ? '' : unit === 'log' ? 's' : 'es'} where it could be checked`
 }

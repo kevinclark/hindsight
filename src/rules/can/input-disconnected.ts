@@ -32,6 +32,7 @@ export default rule({
   id: 'can/input-disconnected',
   title: 'Device input went disconnected',
   severity: 'warning',
+  judges: 'fault',
   who: ['pit', 'software'],
   meaning: 'A device the robot code logs a Connected flag for stopped answering while the robot was enabled. If it is a motor, it stopped working until it came back.',
   causes: [

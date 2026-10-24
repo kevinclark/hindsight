@@ -18,6 +18,7 @@ export default rule({
   id: 'foresight/log-usb-stick',
   title: 'Robot log not going to the USB stick',
   severity: 'warning',
+  judges: 'fault',
   foresightOnly: true,
   who: ['pit', 'software'],
   meaning: 'Since the robot code started, its log folder has not been on a USB stick the whole time, so this match\'s log ends up on the roboRIO\'s own storage or nowhere: not on the stick you pull afterwards.',
