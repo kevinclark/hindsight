@@ -603,7 +603,7 @@
 
   {#if pitRuns.length}
     <h3>Pit runs on this event's days</h3>
-    <p class="hint" data-pit-runs>{pitRuns.length} log{pitRuns.length === 1 ? '' : 's'} not on the field, played on a day this event had matches (src/tba/event-days.ts, ADR 3). They are not matches: the grid above, the match count and the confidence below leave them out. Rules that fired in at least one are shown here{pitGrid.length ? '' : '; none did'}.</p>
+    <p class="hint" data-pit-runs>{pitRuns.length} log{pitRuns.length === 1 ? '' : 's'} not on the field, played on a day this event had matches (pit runs). They are not matches: the grid above, the match count and the confidence below leave them out. Rules that fired in at least one are shown here{pitGrid.length ? '' : '; none did'}.</p>
     {#if pitGrid.length}
       <div class="grid-wrap"><table class="grid" data-pit-grid>
         <thead><tr><th>rule</th>{#each pitRuns as m (m.fileName)}<th class="match"><button class="link" title={`${label(m)} · ${m.fileName}`} aria-label={`Pit run ${pitTime(m)}`} onclick={() => open(m)}>{pitTime(m)}</button></th>{/each}<th>pit runs</th></tr></thead>
