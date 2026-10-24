@@ -142,12 +142,12 @@ export function registerHub(window: () => BrowserWindow | null): void {
   /** The Blue Alliance, asked from here so the key never reaches the page. Only the three reads in src/tba/source.ts. */
   const tbaStore = fileTbaStore()
   let tba: { key: string; get: TbaGet } | null = null
-  ipcMain.handle('hub:tba', async (_e, path: string) => {
+  ipcMain.handle('hub:tba', async (_e, path: string, opts?: { eventEnd?: string }) => {
     const { tbaKey } = await loadSettings()
     if (!tbaKey) throw new Error('Add a The Blue Alliance read key under Your team first.')
     if (!isTbaPath(path)) throw new Error('Hindsight does not ask The Blue Alliance for that.')
     if (tba?.key !== tbaKey) tba = { key: tbaKey, get: createTba({ key: tbaKey, store: tbaStore }) }
-    return tba.get(path)
+    return tba.get(path, typeof opts?.eventEnd === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(opts.eventEnd) ? { eventEnd: opts.eventEnd } : undefined)
   })
 
   /** Read every robot log in this library again with the current describer; appends a `meta` record for each that reads differently. */

@@ -10,7 +10,9 @@ const BASE = 'https://www.thebluealliance.com/api/v3'
 /** An answer and when it was fetched (ms since 1970). `fromCache`: this call did not reach TBA (the copy was fresh enough, or TBA could not be reached). */
 export interface Fetched<T> { data: T; fetchedAt: number; fromCache: boolean }
 /** Read a TBA path ("/team/frc9999/events/2099/simple"). Throws a TbaError when there is no answer and no copy. */
-export type TbaGet = <T>(path: string) => Promise<Fetched<T>>
+export type TbaGet = <T>(path: string, opts?: TbaGetOptions) => Promise<Fetched<T>>
+/** What the caller knows that decides how long a copy is good for: the event's last day (YYYY-MM-DD) for its match list. */
+export interface TbaGetOptions { eventEnd?: string }
 
 export interface TbaStore {
   read(path: string): Promise<{ at: number; data: unknown } | undefined>
@@ -31,18 +33,27 @@ const PATHS = [
 ]
 export const isTbaPath = (p: unknown): p is string => typeof p === 'string' && PATHS.some((r) => r.test(p))
 
-/** A team's schedule changes during an event; everything else about a past event does not. */
+/**
+ * How long a copy is good for. A team's match list changes during an event, so for one still running or ahead it is 10
+ * minutes; a copy fetched after the event ended (2.5 days after its last day, whatever the zone) never changes: 30 days.
+ * A copy fetched during the event is not that copy: it is fetched once more afterwards.
+ * Everything else about an event changes rarely: 24 hours.
+ */
 const MINUTE = 60e3
-export const ttlOf = (path: string): number => (path.endsWith('/matches/simple') ? 10 * MINUTE : 24 * 60 * MINUTE)
+export const ttlOf = (path: string, fetchedAt: number, eventEnd?: string): number => {
+  if (!path.endsWith('/matches/simple')) return 24 * 60 * MINUTE
+  const end = eventEnd ? Date.parse(`${eventEnd}T00:00:00Z`) : NaN
+  return Number.isFinite(end) && fetchedAt > end + 2.5 * 86400e3 ? 30 * 24 * 60 * MINUTE : 10 * MINUTE
+}
 
 export function createTba(opts: { key: string; store: TbaStore; fetch?: typeof fetch; now?: () => number }): TbaGet {
   const { key, store } = opts
   const doFetch = opts.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a))
   const now = opts.now ?? Date.now
-  return async <T>(path: string): Promise<Fetched<T>> => {
+  return async <T>(path: string, o?: TbaGetOptions): Promise<Fetched<T>> => {
     if (!isTbaPath(path)) throw new TbaError('Hindsight does not ask The Blue Alliance for that.')
     const copy = await store.read(path).catch(() => undefined)
-    if (copy && now() - copy.at < ttlOf(path)) return { data: copy.data as T, fetchedAt: copy.at, fromCache: true }
+    if (copy && now() - copy.at < ttlOf(path, copy.at, o?.eventEnd)) return { data: copy.data as T, fetchedAt: copy.at, fromCache: true }
     try {
       const res = await doFetch(`${BASE}${path}`, { headers: { 'X-TBA-Auth-Key': key } })
       if (res.status === 401 || res.status === 403) throw new TbaError('The Blue Alliance did not accept the read key.', res.status)

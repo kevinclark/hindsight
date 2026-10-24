@@ -44,6 +44,6 @@ export function tbaMissing(): string | null {
 export function tbaGetter(): TbaGet | null {
   if (tbaTeam() === null || !tbaHasKey()) return null
   const app = hub()
-  if (app) return (path) => app.tba(path)
+  if (app) return (path, opts) => app.tba(path, opts)
   return createTba({ key: pageKey!, store: localStorageStore() })
 }

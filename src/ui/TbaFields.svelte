@@ -15,6 +15,7 @@
   <p class="row"><label>Team number <input type="number" min="1" max="99999" step="1" bind:value={team} aria-label="Team number" /></label>
     <label>Read key <input type="password" bind:value={key} autocomplete="off" placeholder={tbaHasKey() ? 'saved: type to replace' : 'paste the key'} aria-label="The Blue Alliance read key" /></label>
     <button class="button" onclick={() => { savePageTba(team ?? null, key); key = '' }}>Save</button></p>
+  <p class="meta">Any page opened from disk in this browser can read this key; the desktop app keeps it private.</p>
   {#if missing}<p class="meta">{missing}</p>{/if}
 </details>
 

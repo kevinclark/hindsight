@@ -14,7 +14,8 @@
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
   import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Places, type Selection } from '../hub/facets.ts'
-  import { eventLabel, identifyEvents } from '../tba/identify.ts'
+  import { eventPlaces } from '../hub/event-places.ts'
+  import { REFUSED_WORDS, identifyEvents } from '../tba/identify.ts'
   import { setAppHasKey, tbaGetter, tbaHasKey, tbaMissing } from './tba-setting.svelte.ts'
   import { baseName, dayText } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
@@ -191,14 +192,15 @@
       fileName: e.record.sha256, playedAt: e.record.playedAt, onField: e.record.onField, event: e.record.event,
       matchLabel: e.record.matchType === 2 && e.record.matchNumber ? `Qualification ${e.record.matchNumber}` : '',
     }))
-    if (!get || team === null) { places = new Map(); lookupNote = tbaMissing() ?? ''; return }
+    if (!get || team === null) { places = eventPlaces(all, new Map()); lookupNote = tbaMissing() ?? ''; return }
     let stale = false
     void identifyEvents(logs, team, get).then((r) => {
       if (stale) return
-      places = new Map([...r.byFile].map(([sha, ev]) => [sha, eventLabel(ev.name, ev.key)]))
-      const unnamed = r.clusters.filter((c) => !c.event)
+      places = eventPlaces(all, r.byFile)
+      const unnamed = r.clusters.filter((c) => c.why === 'no event' || c.why === 'tie')
+      const refused = r.clusters.some((c) => c.why === 'refused'), lost = r.clusters.filter((c) => c.why === 'unreachable').length
       const oldest = Math.min(Infinity, ...[...r.byFile.values()].map((v) => v.fromCache ? v.fetchedAt : Infinity))
-      lookupNote = `${r.byFile.size} log${r.byFile.size === 1 ? '' : 's'} named from The Blue Alliance${unnamed.length ? `; ${unnamed.length} group${unnamed.length === 1 ? '' : 's'} of logs with no event name matched no single event` : ''}${Number.isFinite(oldest) ? `; from a saved copy fetched ${new Date(oldest).toLocaleString()}` : ''}.`
+      lookupNote = `${r.byFile.size} log${r.byFile.size === 1 ? '' : 's'} named from The Blue Alliance${refused ? `. ${REFUSED_WORDS}` : ''}${lost ? `. The Blue Alliance could not be reached for ${lost} group${lost === 1 ? '' : 's'} of logs and no saved copy covers them` : ''}${unnamed.length ? `; ${unnamed.length} group${unnamed.length === 1 ? '' : 's'} of logs with no event name matched no single event` : ''}${Number.isFinite(oldest) ? `; from a saved copy fetched ${new Date(oldest).toLocaleString()}` : ''}.`
     }).catch(() => { if (!stale) lookupNote = 'The Blue Alliance could not be asked.' })
     return () => { stale = true }
   })
@@ -265,7 +267,7 @@
     const field = rows.filter((e) => e.record.onField)
     if (field.length === 0) return { label: 'practice place', placeholder: 'where' }
     const names = new Set(rows.map((e) => { const p = fmsPlace(e.record); return p?.resolved ? p.name : places.get(e.record.sha256) ?? null }))
-    if (field.length === rows.length && names.size === 1 && !names.has(null)) return { fixed: [...names][0]! }
+    if (rows.every((e) => e.record.onField || places.has(e.record.sha256)) && names.size === 1 && !names.has(null)) return { fixed: [...names][0]! }
     return { label: 'event', placeholder: 'name' }
   }
   /** The place typed for a day (from its first log: every log of the day shares it). */

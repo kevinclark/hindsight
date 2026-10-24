@@ -1,11 +1,12 @@
 // The Blue Alliance client, event identity and event days. Team 9999 and events 2099test / 2099next / 2099other are invented; the fake fetch answers from tables below.
 import { describe, expect, it } from 'vitest'
-import { createTba, isTbaPath, memoryStore, TbaError, type TbaStore } from '../src/tba/source.ts'
+import { createTba, isTbaPath, memoryStore, TbaError, ttlOf, type TbaStore } from '../src/tba/source.ts'
 import { blankEventClusters, dayIn, identifyEvents, qualNumber, type EventLog } from '../src/tba/identify.ts'
 import { groupSessions } from '../src/session/session.ts'
 import { gaps, parseSchedule, teamSchedule } from '../src/tba/schedule.ts'
 import { checkTbaKey } from '../src/hub/team-setting.ts'
 import type { MatchSummary } from '../src/session/summary.ts'
+import { eventPlaces } from '../src/hub/event-places.ts'
 import { facetValues, type RobotLabels } from '../src/hub/facets.ts'
 import type { Entry } from '../src/hub/catalog.ts'
 
@@ -21,7 +22,7 @@ const EVENTS: Record<string, { key: string; name: string; start_date: string; en
 }
 const MATCHES: Record<string, ReturnType<typeof qm>> = {
   '2099test': [...qm(5, 12, 19, 26, 33, 40), { key: '2099test_sf1m1', comp_level: 'sf', set_number: 1, match_number: 1 }],
-  '2099next': qm(5, 14, 21, 28, 35, 42),
+  '2099next': qm(5, 12, 21, 28, 35, 42),
   '2098old': qm(3, 12, 20, 27),
 }
 
@@ -87,7 +88,33 @@ describe('the client', () => {
     const broken: TbaStore = { read: async () => { throw new Error('x') }, write: async () => { throw new Error('y') } }
     expect((await createTba({ key: KEY, store: broken, fetch: fakeFetch() })('/event/2099test')).data).toMatchObject({ key: '2099test' })
   })
+  it('keeps a finished event\'s match list for 30 days, a running or coming one for 10 minutes', async () => {
+    const path = '/team/frc9999/event/2099test/matches/simple'
+    const day = 86400e3, end = Date.parse('2099-03-07T00:00:00Z')
+    expect(ttlOf(path, end + 3 * day, '2099-03-07')).toBe(30 * day)
+    expect(ttlOf(path, end + 1 * day, '2099-03-07')).toBe(10 * 60e3) // fetched while it may still be running
+    expect(ttlOf(path, end + 9 * day)).toBe(10 * 60e3) // the caller does not know the end
+    expect(ttlOf('/event/2099test', 0)).toBe(day)
+    const calls: string[] = [], store = memoryStore()
+    let t = end + 5 * day
+    const get = createTba({ key: KEY, store, fetch: fakeFetch(calls), now: () => t })
+    await get(path, { eventEnd: '2099-03-07' })
+    t += 20 * day
+    await get(path, { eventEnd: '2099-03-07' })
+    expect(calls).toHaveLength(1)
+    t += 11 * day
+    await get(path, { eventEnd: '2099-03-07' })
+    expect(calls).toHaveLength(2)
+    // a copy made during the event is fetched again once, afterwards
+    const during = memoryStore()
+    t = end
+    await createTba({ key: KEY, store: during, fetch: fakeFetch(calls), now: () => t })(path, { eventEnd: '2099-03-07' })
+    t = end + 5 * day
+    await createTba({ key: KEY, store: during, fetch: fakeFetch(calls), now: () => t })(path, { eventEnd: '2099-03-07' })
+    expect(calls).toHaveLength(4)
+  })
   it('checks a typed key without repeating it', () => {
+    expect(checkTbaKey('abc_DEF-1234567890xyz')).toBe('abc_DEF-1234567890xyz')
     expect(checkTbaKey(undefined)).toBeUndefined()
     expect(checkTbaKey('')).toBeNull()
     expect(checkTbaKey(null)).toBeNull()
@@ -131,18 +158,24 @@ describe('event identity', () => {
   })
   it('when two events hold as many, the date breaks the tie; when it cannot, it says tie', async () => {
     // 5 is in both 2099test and 2099next; 2098old has neither
-    const near = await run(quals('2099-03-06', 5))
+    const near = await run(quals('2099-03-06', 5, 12))
     expect(near.byFile.get('q5-2099-03-06')).toMatchObject({ key: '2099test', by: 'date' })
-    const far = await run(quals('2099-04-02', 5))
+    const far = await run(quals('2099-04-02', 5, 12))
     expect(far.byFile.get('q5-2099-04-02')).toMatchObject({ key: '2099next', by: 'date' })
     // exactly halfway between the two events' midpoints
     const mid = (Date.parse('2099-03-06T00:00:00Z') + Date.parse('2099-04-02T00:00:00Z')) / 2
-    const tie = await run([{ fileName: 'x', playedAt: mid, onField: true, event: '', matchLabel: 'Qualification 5' }])
+    const tie = await run([{ fileName: 'x', playedAt: mid, onField: true, event: '', matchLabel: 'Qualification 5' }, { fileName: 'y', playedAt: mid + 3600e3, onField: true, event: '', matchLabel: 'Qualification 12' }])
     expect(tie.clusters[0]).toMatchObject({ why: 'tie', event: null })
+    // one shared number is no evidence for the robot clock to decide on
+    expect((await run(quals('2099-03-06', 5))).clusters[0]).toMatchObject({ why: 'tie', event: null })
   })
   it('looks in the year either side', async () => {
     const r = await run(quals('2099-10-12', 3, 12, 20))
     expect(r.byFile.get('q3-2099-10-12')).toMatchObject({ key: '2098old' })
+  })
+  it('a refused key is said to be refused, not unreachable', async () => {
+    const r = await run(quals('2099-03-05', 5, 12), fakeFetch([], { status: 401 }))
+    expect(r.clusters[0]).toMatchObject({ why: 'refused', event: null })
   })
   it('a cluster TBA cannot be asked about says so and changes nothing; the others still resolve', async () => {
     const r = await run(quals('2099-03-05', 5, 12), fakeFetch([], { down: true }))
@@ -178,6 +211,17 @@ describe('event days', () => {
     expect(s.id).toBe('event:test:' + s.id.split(':')[2])
     expect(s.event?.key).toBe('2099test')
     expect(s.matches).toHaveLength(2)
+  })
+  it('a rename made to the old blank-event session still applies; one on the new id wins', () => {
+    const logs = [onField('a', '2099-01-10T18:00:00Z', 'Qualification 5')]
+    const day = (() => { const d = new Date(Date.parse('2099-01-10T18:00:00Z')); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
+    expect(groupSessions(logs, {}, { [`event::${day}`]: 'Our event' }, found('a'))[0].label).toBe('Our event')
+    const id = groupSessions(logs, {}, {}, found('a'))[0].id
+    expect(groupSessions(logs, {}, { [`event::${day}`]: 'Old', [id]: 'New' }, found('a'))[0].label).toBe('New')
+  })
+  it('an event the robot clock chose is labelled a guess', () => {
+    const guess = new Map([['a', { ...found('a').get('a')!, by: 'date' as const, clockOffsetDays: 0 }]])
+    expect(groupSessions([onField('a', '2099-03-05T18:00:00Z', 'Qualification 5')], {}, {}, guess)[0].label).toBe('Event Test Regional 2099 (guess)')
   })
   it('a log with an FMS name is never re-labelled by a resolution, and matches by code across the case of the name', () => {
     const [s] = groupSessions([onField('a', '2099-03-05T18:00:00Z', 'Qualification 5', 'TEST'), onField('b', '2099-03-05T19:00:00Z', 'Qualification 12')], {}, {}, found('a', 'b'))
@@ -245,19 +289,41 @@ describe('the team schedule', () => {
     const played = raw.map((m) => (m.match_number === 4 && m.comp_level === 'qm' ? { ...m, actual_time: (m.time ?? 0) + 20 * 60 } : m))
     expect(gaps(parseSchedule(played), 0).find((x) => x.after === 4)!.minutes).toBe(55)
   })
-  it('without times it still lists the gaps by match number, with no length, and names only the last', () => {
+  it('without times it still lists the gaps by match number, with no length', () => {
     const g = gaps(parseSchedule([row(3, null), row(9, null), row(15, null)]), 0)
-    expect(g.map((x) => [x.after, x.minutes, x.name])).toEqual([[3, null, null], [9, null, null], [15, null, 'before playoffs']])
-    expect(g.at(-1)!.next).toBeNull()
+    expect(g.map((x) => [x.after, x.minutes, x.name])).toEqual([[3, null, null], [9, null, null], [15, null, null]])
+  })
+  it('a team with no playoff match has no "before playoffs"', () => {
+    const g = gaps(parseSchedule(day([0, 50, 100, 160], 1)), 0)
+    expect(g.at(-1)).toEqual({ after: 4, next: null, minutes: null, name: null })
+    expect(gaps(parseSchedule(raw), 0).at(-1)!.name).toBe('before playoffs')
   })
   it('a day whose gaps are all alike has no lunch, and a day with fewer than three gaps is not judged', () => {
     const even = gaps(parseSchedule(day([0, 60, 120, 180, 240], 1)), 0)
-    expect(even.map((x) => x.name)).toEqual([null, null, null, null, 'before playoffs'])
-    expect(gaps(parseSchedule(day([0, 200, 400], 1)), 0).map((x) => x.name)).toEqual([null, null, 'before playoffs'])
+    expect(even.map((x) => x.name)).toEqual([null, null, null, null, null])
+    expect(gaps(parseSchedule(day([0, 200, 400], 1)), 0).map((x) => x.name)).toEqual([null, null, null])
   })
   it('reads the team\'s matches through the client, with the time they were fetched', async () => {
     const got = await teamSchedule(createTba({ key: KEY, store: memoryStore(), fetch: fakeFetch(), now: () => 42 }), 9999, '2099test')
     expect(got).toMatchObject({ fetchedAt: 42, fromCache: false })
     expect(got.data.map((m) => m.key)).toEqual(['2099x_qm5', '2099x_qm12', '2099x_qm19', '2099x_qm26', '2099x_qm33', '2099x_qm40', '2099test_sf1m1'])
+  })
+})
+
+describe('the Library\'s place for pit runs', () => {
+  const rec = (sha256: string, iso: string, over: Record<string, unknown> = {}) => ({ record: { sha256, kind: 'wpilog', stub: false, onField: false, event: '', playedAt: Date.parse(iso), robot: null, ...over }, tags: {} }) as unknown as Entry
+  const tz = 'America/Los_Angeles'
+  const ev = { key: '2099test', name: 'Test Regional', start: '', end: '', timezone: tz, clockOffsetDays: 0, matched: 1, of: 1, by: 'quals' as const, fetchedAt: 1, fromCache: false }
+  it('gives pit runs on an identified event\'s local days the event, and agrees with the Session view', () => {
+    const entries = [rec('f', '2099-03-06T04:00:00Z', { onField: true }), rec('late', '2099-03-06T06:00:00Z'), rec('morning', '2099-03-05T16:00:00Z'), rec('nextday', '2099-03-06T20:00:00Z')]
+    const places = eventPlaces(entries, new Map([['f', ev]]))
+    expect([...places].sort()).toEqual([['f', 'Test Regional 2099'], ['late', 'Test Regional 2099'], ['morning', 'Test Regional 2099']])
+    // the Session view's answer for the same four logs
+    const s = groupSessions([onField('f', '2099-03-06T04:00:00Z', 'Qualification 5'), summary('late', '2099-03-06T06:00:00Z'), summary('morning', '2099-03-05T16:00:00Z'), summary('nextday', '2099-03-06T20:00:00Z')], {}, {}, new Map([['f', ev]]))
+    expect(s.find((x) => x.kind === 'event')!.pitRuns!.map((m) => m.fileName).sort()).toEqual(['late', 'morning'])
+  })
+  it('does the same for an FMS-named event, with no lookup', () => {
+    const entries = [rec('f', '2099-03-05T18:00:00Z', { onField: true, event: 'TEST' }), rec('pit', '2099-03-05T12:00:00Z'), rec('stub', '2099-03-05T12:00:00Z', { stub: true }), rec('other', '2099-03-20T12:00:00Z')]
+    expect([...eventPlaces(entries, new Map())]).toEqual([['pit', 'TEST']])
   })
 })

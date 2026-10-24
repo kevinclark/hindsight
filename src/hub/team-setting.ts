@@ -31,11 +31,11 @@ export const needsLinkPass = (linked: readonly string[], after: readonly string[
 
 /**
  * A The Blue Alliance read key as typed: undefined (not given) leaves the saved key alone, null or an empty box clears it,
- * anything else must be letters and digits (TBA's are 64 of them). The message never repeats what was typed.
+ * anything else must be letters, digits, - or _ (TBA's are 64 characters). The message never repeats what was typed.
  */
 export function checkTbaKey(key: unknown): string | null | undefined {
   if (key === undefined) return undefined
   if (key === null || (typeof key === 'string' && key.trim() === '')) return null
-  if (typeof key !== 'string' || !/^[A-Za-z0-9]{16,128}$/.test(key.trim())) throw new Error('That does not look like a The Blue Alliance read key: it is letters and numbers only (account page, Read API Keys).')
+  if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(key.trim())) throw new Error('That does not look like a The Blue Alliance read key: it is letters, numbers, - and _ only (account page, Read API Keys).')
   return key.trim()
 }

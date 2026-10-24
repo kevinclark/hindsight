@@ -23,7 +23,8 @@ import { RULES } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import type { SummaryFinding } from './summary.ts'
 import { median } from '../match/series.ts'
-import { clockOffsetText, dayIn, eventLabel, type ResolvedEvent } from '../tba/identify.ts'
+import { clockOffsetText, eventLabel, type ResolvedEvent } from '../tba/identify.ts'
+import { addEventDay, eventOfDay, type EventDayIndex } from '../tba/event-days.ts'
 
 export interface Session {
   id: string
@@ -58,7 +59,7 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
   const resolvedOf = (m: MatchSummary) => (m.event ? undefined : events.get(m.fileName) ?? m.pieces?.map((p) => events.get(p)).find(Boolean))
   // The event a log belongs to: the FMS's name, else the one The Blue Alliance found. TBA keys carry the year; FMS names do not.
   const eventOf = (m: MatchSummary) => { const r = resolvedOf(m); return r ? r.key.slice(4).toLowerCase() : m.event.toLowerCase() }
-  const days = new Map<Session, Set<string>>()
+  const days: EventDayIndex<Session> = new Map()
   // Automatic grouping first, for every log the student hasn't moved. Logs that were not on the field wait for the event days.
   const pending: [MatchSummary, number][] = []
   sorted.forEach((m, i) => {
@@ -73,18 +74,18 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
     else {
       const day = dateText(m.playedAt)
       const r = resolvedOf(m)
-      const label = r ? `Event ${eventLabel(r.name, r.key)}${r.clockOffsetDays ? ` (${clockOffsetText(r.clockOffsetDays)})` : ''}`
+      // The old blank-event session had the id event::<day>: a rename made then still applies.
+      const label = r ? `Event ${eventLabel(r.name, r.key)}${r.by === 'date' ? ' (guess)' : ''}${r.clockOffsetDays ? ` (${clockOffsetText(r.clockOffsetDays)})` : ''}`
         : m.event ? `Event ${m.event} (${day})` : `Event starting ${day} (no event name logged)`
-      s = add(`event:${r ? r.key.slice(4) : m.event}:${day}`, label, 'event', m, i)
+      const id = `event:${r ? r.key.slice(4) : m.event}:${day}`
+      s = add(id, r ? renames[id] ?? renames[`event::${day}`] ?? label : label, 'event', m, i)
       if (r) s.event = r
     }
-    const set = days.get(s) ?? new Set<string>()
-    set.add(dayIn(m.playedAt, s.event?.timezone ?? null))
-    days.set(s, set)
+    addEventDay(days, s, m.playedAt, s.event?.timezone ?? null)
   })
   // The mode is decided per local day (ADR 3): a log not on the field, on a day an event had matches, is a pit run of that event.
   for (const [m, i] of pending) {
-    const home = sessions.find((s) => days.get(s)?.has(dayIn(m.playedAt!, s.event?.timezone ?? null)))
+    const home = eventOfDay(days, m.playedAt!)
     if (home) (home.pitRuns ??= []).push(m)
     else { const day = dateText(m.playedAt!); add(`practice:${day}`, `Practice ${day}`, 'practice', m, i) }
   }

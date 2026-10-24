@@ -8,7 +8,7 @@ import type { FetchReport, SyncReport } from './sync.ts'
 import type { Update } from './update.ts'
 import type { RedescribeReport } from './redescribe.ts'
 import type { TagField, TagTarget } from './types.ts'
-import type { Fetched } from '../tba/source.ts'
+import type { Fetched, TbaGetOptions } from '../tba/source.ts'
 
 export interface Progress { job: string; done: number; total: number; current: string }
 
@@ -93,7 +93,7 @@ export interface HubApi {
   /** Save the team number (null: none), the GitHub sources and, when given (undefined keeps it, null or '' clears it), the read key together. Makes no GitHub request; `linkNeeded` tells the page to run `linkCode()`. Throws if either is not valid. */
   setTeam(team: number | null, sources: string[], tbaKey?: string | null): Promise<TeamSettingSaved>
   /** One of the three The Blue Alliance reads (src/tba/source.ts) with the saved key, answered from the saved copy when offline. Throws without a key. */
-  tba<T>(path: string): Promise<Fetched<T>>
+  tba<T>(path: string, opts?: TbaGetOptions): Promise<Fetched<T>>
   /** Find, for logs that name only a code name, the repo that holds that code; makes GitHub requests (see codePlan). */
   linkCode(): Promise<LinkReport>
   /** Read this library's robot logs again with the current describer; resolves with what changed. */

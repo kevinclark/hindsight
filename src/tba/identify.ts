@@ -8,7 +8,7 @@
  * date only breaks a tie, and the distance between the clock and the event is recorded.
  */
 import { eventInfo, teamEvents, teamMatches } from './api.ts'
-import type { TbaGet } from './source.ts'
+import { TbaError, type TbaGet } from './source.ts'
 
 export const EVENT_GAP = 4 * 86400e3
 
@@ -27,7 +27,7 @@ export interface ResolvedEvent {
   /** How many of the cluster's qualification numbers the team's list for this event holds, of how many the cluster has. */
   matched: number
   of: number
-  /** 'quals' when the match numbers alone chose it; 'date' when several events held equally many and the date chose. */
+  /** 'quals' when the match numbers alone chose it; 'date' when several events held equally many and the date chose: a guess, shown as one. */
   by: 'quals' | 'date'
   /** The oldest of the copies the answer rests on (ms): what "as of" means when it came from the saved copy. */
   fetchedAt: number
@@ -39,8 +39,8 @@ export interface ClusterResult {
   files: string[]
   quals: number[]
   event: ResolvedEvent | null
-  /** Why there is no event: 'no quals', 'no event', 'tie' (two held equally many and the date did not choose), 'unreachable'. */
-  why: null | 'no quals' | 'no event' | 'tie' | 'unreachable'
+  /** Why there is no event: 'no quals', 'no event', 'tie' (two held equally many and the date could not fairly choose), 'unreachable', 'refused' (The Blue Alliance did not accept the read key). */
+  why: null | 'no quals' | 'no event' | 'tie' | 'unreachable' | 'refused'
   /** The keys that held the most, for a tie or a miss. */
   candidates: string[]
 }
@@ -74,6 +74,7 @@ export function dayIn(ms: number, timeZone: string | null): string {
 
 /** "2099 Test Regional": TBA names most events without the year. */
 export const eventLabel = (name: string, key: string): string => (/\b(19|20)\d\d\b/.test(name) ? name : `${name} ${key.slice(0, 4)}`)
+export const REFUSED_WORDS = 'The Blue Alliance did not accept the read key.'
 export const clockOffsetText = (days: number): string => (days === 0 ? '' : `robot clock ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} off`)
 
 /**
@@ -103,7 +104,7 @@ export async function identifyEvents(logs: EventLog[], team: number, get: TbaGet
       }
       const scored: { key: string; held: number; distance: number }[] = []
       for (const e of events.values()) {
-        const got = await teamMatches(get, team, e.key)
+        const got = await teamMatches(get, team, e.key, e.end_date)
         note(got)
         const list = new Set(got.data.filter((m) => m.comp_level === 'qm').map((m) => m.match_number))
         const held = quals.filter((q) => list.has(q)).length
@@ -114,7 +115,8 @@ export async function identifyEvents(logs: EventLog[], team: number, get: TbaGet
       result.candidates = scored.filter((s) => s.held === best && best > 0).map((s) => s.key)
       if (best === 0 || best < 0.8 * quals.length) { result.why = 'no event'; continue }
       const top = scored.filter((s) => s.held === best).sort((a, b) => a.distance - b.distance)
-      if (top.length > 1 && top[0].distance === top[1].distance) { result.why = 'tie'; continue }
+      // The robot clock can be wrong by months, so it may break a tie only when the numbers say something: one shared number is no evidence.
+      if (top.length > 1 && (quals.length < 2 || top[0].distance === top[1].distance)) { result.why = 'tie'; continue }
       const e = events.get(top[0].key)!
       const info = await eventInfo(get, e.key)
       note(info)
@@ -127,8 +129,8 @@ export async function identifyEvents(logs: EventLog[], team: number, get: TbaGet
         matched: best, of: quals.length, by: top.length > 1 ? 'date' : 'quals', fetchedAt: oldest, fromCache: !anyLive,
       }
       for (const f of files) byFile.set(f, result.event)
-    } catch {
-      result.why = 'unreachable'
+    } catch (e) {
+      result.why = e instanceof TbaError && (e.status === 401 || e.status === 403) ? 'refused' : 'unreachable'
     }
   }
   return { byFile, clusters }

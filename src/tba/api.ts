@@ -16,4 +16,5 @@ export interface TbaMatchSimple {
 
 export const teamEvents = (get: TbaGet, team: number, year: number): Promise<Fetched<TbaEventSimple[]>> => get(`/team/frc${team}/events/${year}/simple`)
 export const eventInfo = (get: TbaGet, eventKey: string): Promise<Fetched<TbaEvent>> => get(`/event/${eventKey}`)
-export const teamMatches = (get: TbaGet, team: number, eventKey: string): Promise<Fetched<TbaMatchSimple[]>> => get(`/team/frc${team}/event/${eventKey}/matches/simple`)
+/** `eventEnd`: the event's last day, so a finished event's list is kept (src/tba/source.ts ttlOf). */
+export const teamMatches = (get: TbaGet, team: number, eventKey: string, eventEnd?: string): Promise<Fetched<TbaMatchSimple[]>> => get(`/team/frc${team}/event/${eventKey}/matches/simple`, { eventEnd })

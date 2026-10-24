@@ -37,8 +37,8 @@ export function parseSchedule(raw: readonly TbaMatchSimple[]): ScheduledMatch[] 
 }
 
 /** The team's schedule at an event, with when it was fetched (from the saved copy when offline). */
-export async function teamSchedule(get: TbaGet, team: number, eventKey: string): Promise<Fetched<ScheduledMatch[]>> {
-  const got = await teamMatches(get, team, eventKey)
+export async function teamSchedule(get: TbaGet, team: number, eventKey: string, eventEnd?: string): Promise<Fetched<ScheduledMatch[]>> {
+  const got = await teamMatches(get, team, eventKey, eventEnd)
   return { ...got, data: parseSchedule(got.data) }
 }
 
@@ -64,10 +64,11 @@ export const LUNCH_TIMES_TYPICAL = 1.25
 export const LUNCH_MIN_GAPS = 3
 
 /**
- * The gaps after the team's qualification matches numbered `after` or later, in match order. A gap is named by its size
- * and where it falls (by match, not by clock time):
+ * The gaps after the team's qualification matches numbered `after` or later, in match order. `after` is the team's
+ * qualification just played (its number); a gap that began before it is not returned. A gap is named by its size and
+ * where it falls (by match, not by clock time):
  *  - overnight: a gap of 6 hours or more between two qualifications;
- *  - before playoffs: the gap after the team's last qualification (to its first playoff match when it has one);
+ *  - before playoffs: the gap after the team's last qualification, only when the team has a playoff match to wait for (a team that is out has none, and the gap is unnamed);
  *  - lunch: the one longest gap of a day's gaps (not the one before the night or the playoffs) that passes the lunch test above.
  */
 export function gaps(schedule: readonly ScheduledMatch[], after: number): Gap[] {
@@ -85,7 +86,7 @@ export function gaps(schedule: readonly ScheduledMatch[], after: number): Gap[] 
   const days: Gap[][] = [[]]
   all.forEach((g, i) => {
     const last = i === all.length - 1
-    if (last) g.name = 'before playoffs'
+    if (last && g.next) g.name = 'before playoffs'
     else if (g.minutes !== null && g.minutes >= OVERNIGHT_MINUTES) g.name = 'overnight'
     days.at(-1)!.push(g)
     if (g.name === 'overnight') days.push([])
