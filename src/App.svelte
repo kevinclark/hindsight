@@ -38,6 +38,9 @@
   import ProfileBuilder from './ui/ProfileBuilder.svelte'
   import { profilesNow } from './ui/kept-profiles.svelte.ts'
   import CodeFolderControl from './ui/CodeFolderControl.svelte'
+  import ModeLine from './ui/ModeLine.svelte'
+  import { chooseMode, sessionNames } from './ui/session-names.svelte.ts'
+  import { logModeLine, loneLogMode, modeOf } from './session/mode.ts'
   import { codeFolder } from './ui/code-folder.svelte.ts'
 
   // Every file dropped so far, so a .dslog dropped after its .wpilog still finds its match. "Clear" empties it.
@@ -105,6 +108,16 @@
     const name = current.match.fileName
     const own = sessions.find((s) => s.matches.some((m) => m.fileName === name || m.pieces?.includes(name)))
     return own ? standingKeys(own) : new Set<string>()
+  })
+
+  // The mode line of the open log (ADR 3): its session's, a pit run said so; a log no session holds is worded from the log alone.
+  const modeNow = $derived.by(() => {
+    if (!current) return null
+    const name = current.match.fileName
+    const own = sessions.find((s) => [...s.matches, ...(s.pitRuns ?? [])].some((m) => m.fileName === name || m.pieces?.includes(name)))
+    if (own) return { text: logModeLine(own, name), mode: modeOf(own), byHand: !!own.modeByHand, id: own.id }
+    const lone = loneLogMode({ onField: current.match.fms, event: current.match.event, matchLabel: current.match.matchLabel, playedAt: playedAt(current) }, sessionNames())
+    return { text: lone.line, mode: lone.mode, byHand: lone.byHand, id: lone.sessionId }
   })
 
   // Known issues: kept in this browser between visits, and saved to / loaded from hindsight-history.jsonl.
@@ -300,7 +313,7 @@
 <div hidden={mode !== 'snapshot'} class:screen-only={reportable}><SnapshotView /></div>
 <div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder bind:this={profileBuilder} /></div>
 <div hidden={mode !== 'foresight'}>
-  <ForesightView {history} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
+  <ForesightView {history} {sessions} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
 {#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} /></div>{/if}
@@ -360,6 +373,7 @@
       ]} />
     </span>
     <div class="rest">
+      {#if modeNow}<ModeLine text={modeNow.text} mode={modeNow.mode} byHand={modeNow.byHand} onChange={(m) => chooseMode(modeNow.id, m)} />{/if}
       <p class="meta">
         <code>{current.match.fileName}</code>{#each current.match.ds as d (d.fileName)}{' + '}<code>{d.fileName}</code>{/each} ·
         {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}

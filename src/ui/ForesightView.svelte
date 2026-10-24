@@ -23,8 +23,14 @@
   import { didNotRun } from '../report/foresight-model.ts'
   import ForesightReport from './ForesightReport.svelte'
   import CodeCheck from './CodeCheck.svelte'
+  import ModeLine from './ModeLine.svelte'
+  import { chooseMode, sessionNames } from './session-names.svelte.ts'
+  import { todayMode } from '../session/mode.ts'
+  import type { Session } from '../session/session.ts'
 
-  let { history, onPitCheck }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void } = $props()
+  let { history, onPitCheck, sessions = [] }: { history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void; sessions?: Session[] } = $props()
+  // The mode line (ADR 3): a pit check on an event day is a pit run; the laptop's day decides.
+  const today = $derived(todayMode(sessions, Date.now(), sessionNames()))
 
   const ADDRESSES = [
     { value: '172.22.11.2', label: 'USB tether' },
@@ -175,6 +181,7 @@
 <!-- A file dropped anywhere but the snapshot box would open in this tab and end the check. -->
 <svelte:window ondragover={(e) => e.preventDefault()} ondrop={(e) => e.preventDefault()} />
 <div class="screen-only">
+<ModeLine text={today.line} mode={today.mode} byHand={today.byHand} onChange={(m) => chooseMode(today.sessionId, m)} />
 {#if field}
   <section class="field" role="alert">
     <p class="big">{FIELD_MESSAGE}</p>

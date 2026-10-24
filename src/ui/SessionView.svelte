@@ -36,6 +36,9 @@
   import { REFUSED_WORDS, blankEventClusters, clockOffsetText, identifyEvents, type ResolvedEvent } from '../tba/identify.ts'
   import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
   import TbaFields from './TbaFields.svelte'
+  import ModeLine from './ModeLine.svelte'
+  import { chooseMode, renameSession, sessionNames } from './session-names.svelte.ts'
+  import { modeLine, modeOf } from '../session/mode.ts'
 
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
   // copies of logs by name, for summaries restored without their file. `linksFor` (desktop app): the library's code links for
@@ -52,7 +55,6 @@
   // Summaries collected so far, shared by every load so two loads at once can't overwrite each other.
   const collected: MatchSummary[] = []
   let overrides = $state<Record<string, string>>(readStore('hindsight.sessionOverrides'))
-  let renames = $state<Record<string, string>>(readStore('hindsight.sessionRenames'))
   let typedBatteries = $state<Record<string, string>>(readStore('hindsight.typedBatteries'))
   let heapMB = $state<number | null>(null)
   // Summaries saved in this browser, by file key (name, size, modified time): reused instead of reading a log again,
@@ -133,7 +135,7 @@
     })
     return () => { stale = true }
   })
-  const sessions = $derived(groupSessions(summaries, overrides, renames, found))
+  const sessions = $derived(groupSessions(summaries, overrides, sessionNames(), found))
   // Selected by id, so sessions re-sorting while logs load doesn't switch what you're looking at.
   // Until one is picked, show the event (the matches that count), else the first session.
   const session = $derived((sessions.find((s) => s.id === selectedId) ?? sessions.find((s) => s.kind === 'event') ?? sessions[0]) as Session | undefined)
@@ -409,8 +411,7 @@
   function rename(s: Session) {
     const name = window.prompt('Session name', s.label)
     if (!name) return
-    renames = { ...renames, [s.id]: name.trim() }
-    writeStore('hindsight.sessionRenames', renames)
+    renameSession(s.id, name.trim())
   }
   function setBattery(fileName: string, id: string) {
     typedBatteries = { ...typedBatteries, [fileName]: id.trim() }
@@ -542,6 +543,7 @@
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
   </section>
+  <ModeLine text={modeLine(session)} mode={modeOf(session)} byHand={!!session.modeByHand} onChange={(m) => chooseMode(session.id, m)} />
   {#if session.event}<p class="note" data-event-note>The Blue Alliance says this was {session.event.name}{#if session.event.by === 'date'}{' '}<strong>(guess)</strong>{/if} ({session.event.key}), {session.event.start} to {session.event.end}: {session.event.matched} of the {session.event.of} qualification numbers in these logs are on the team's list there{session.event.by === 'date' ? ' (several events held as many; the robot clock chose, so this is a guess)' : ''}.{session.event.clockOffsetDays ? ` The robot clock is ${clockOffsetText(session.event.clockOffsetDays).replace('robot clock ', '')}.` : ''} {session.event.fromCache ? 'From a saved copy' : 'Fetched'} {new Date(session.event.fetchedAt).toLocaleString()}.</p>{/if}
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
   {#if reread && reread.sessionId === session.id && !reread.dismissed}

@@ -25,11 +25,15 @@ import type { SummaryFinding } from './summary.ts'
 import { median } from '../match/series.ts'
 import { clockOffsetText, eventLabel, type ResolvedEvent } from '../tba/identify.ts'
 import { addEventDay, eventOfDay, type EventDayIndex } from '../tba/event-days.ts'
+import { applyMode, inferredMode, modeChoice, type Mode } from './mode.ts'
 
 export interface Session {
   id: string
   label: string
   kind: 'event' | 'practice' | 'undated'
+  /** The mode the session is judged in (ADR 3): inferred from its kind, or the student's choice (`modeByHand`). See mode.ts. */
+  mode?: Mode
+  modeByHand?: boolean
   matches: MatchSummary[]
   /** The event The Blue Alliance named for a session of on-field logs with no event name. */
   event?: ResolvedEvent
@@ -52,7 +56,7 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
   const first = new Map<Session, number>()
   const add = (id: string, label: string, kind: Session['kind'], m: MatchSummary, at: number) => {
     let s = byId.get(id)
-    if (!s) { s = { id, label: renames[id] ?? label, kind, matches: [] }; byId.set(id, s); sessions.push(s); first.set(s, at) }
+    if (!s) { s = { id, label: renames[id] ?? label, kind, mode: inferredMode(kind), modeByHand: false, matches: [] }; byId.set(id, s); sessions.push(s); first.set(s, at) }
     s.matches.push(m)
     return s
   }
@@ -100,6 +104,7 @@ export function groupSessions(summaries: MatchSummary[], overrides: Record<strin
       target.matches.sort((a, b) => (a.playedAt ?? Infinity) - (b.playedAt ?? Infinity))
     } else add(`manual:${label}`, label, 'practice', m, Infinity)
   }
+  for (const s of sessions) applyMode(s, modeChoice(renames, s.id))
   return sessions
 }
 
