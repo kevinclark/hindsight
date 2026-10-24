@@ -12,6 +12,7 @@
  */
 import { lengthOf, type CameraView, type Episode, type MatchView } from '../view.ts'
 import { isFalse, isTrue, pct, plural, rule, secs, round, totalSeconds, type Answer, type Problem } from '../rule.ts'
+import { PHOTON_CAMERA_API } from '../sources.ts'
 
 export default rule({
   id: 'vision/stale',
@@ -26,6 +27,12 @@ export default rule({
   ],
   nextStep: 'Check the coprocessor (CPU, temperature), the camera pipeline settings, and the camera\'s cable and power.',
   incident: '2026 offseason event: Back_Right stale ~3× as often as Back_Left; dropped 6 s in log B',
+  sources: [
+    { ...PHOTON_CAMERA_API, says: 'PhotonCamera.isConnected() returns whether the camera is connected and actively returning new data; the status is debounced.' },
+  ],
+  thresholds: [
+    { name: 'stale share of the match', value: 'above 15 %', basis: 'judgment', how: 'Assumed from three logs: one camera was stale 18 to 23 % of the match against 5 to 8 % for its neighbour.' },
+  ],
   forEach: 'camera',
 
   check(camera, match): Answer {

@@ -6,6 +6,7 @@
  * Why: Two 2026 matches (6.28 V and 6.15 V) came within 0.3 V of the 6.0 V setting a day before a third browned out.
  */
 import { below, rule, round, totalSeconds, volts } from '../rule.ts'
+import { WPILIB_BROWNOUTS } from '../sources.ts'
 import { batteryHealth, restBeforeAuto } from './battery-health.ts'
 
 const MARGIN_VOLTS = 1.0
@@ -24,6 +25,13 @@ export default rule({
   ],
   nextStep: 'Keep at least 1 V of margin: turn on supply limits on the big motor groups, use only batteries that pass a load test, and shed load in code when the voltage nears 7 V.',
   incident: 'Two 2026 matches: minimum 6.28 V and 6.15 V against a 6.0 V setting',
+  sources: [
+    { ...WPILIB_BROWNOUTS, says: 'The roboRIO 1 browns out below 6.3 V; a roboRIO 2 defaults to 6.75 V and RobotController.setBrownoutVoltage() changes it.' },
+  ],
+  thresholds: [
+    { name: 'margin over the brownout setting', value: '1.0 V', basis: 'judgment', how: 'Chosen. Two 2026 matches (6.28 V and 6.15 V) came within 0.3 V of a 6.0 V setting a day before a third browned out.' },
+    { name: 'seconds counted under', value: '7 V', basis: 'judgment', how: 'Chosen, just above the 6.75 V roboRIO 2 default brownout level.' },
+  ],
 
   check(match) {
     const battery = match.signal('batteryVoltage')

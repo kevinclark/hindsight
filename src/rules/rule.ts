@@ -2,6 +2,10 @@
  * How to write a rule. Read this file and one rule (src/rules/power/rest-voltage.ts is the simplest) and you know
  * everything you need. CONTRIBUTING.md walks through adding one.
  *
+ * Every rule cites at least one public page (`sources`, taken from src/rules/sources.ts, each opened and read first) and
+ * says for each number it judges by whether it was measured on logs or is a judgment (`thresholds`). The app shows the
+ * sources under the finding as "Further reading".
+ *
  * A rule is a description plus one function, `check`, that looks at ONE thing and answers "is something wrong?":
  *
  *   export default rule({
@@ -16,6 +20,8 @@
  *     ],
  *     nextStep: 'Put a battery reading 12.5 V or more at rest on the robot.',
  *     incident: 'A practice match that started at 12.44 V sagged deeper than the one before it',
+ *     sources: [{ ...CD_BATTERY_REST_SWAP, says: 'A poster advises swapping a battery out when the Driver Station reads 11.5 to 11.9 V at rest.' }],
+ *     thresholds: [{ name: 'rest voltage', value: '12.5 V', basis: 'judgment', how: "Hindsight's own line" }],
  *     check(match) {
  *       if (match.autoStart === null) return           // never enabled: nothing to check
  *       const rest = match.signal('batteryVoltage').median(match.before(match.autoStart, 2))
@@ -115,6 +121,13 @@ interface About {
   /** Why the rule exists: the failure it catches, and where it was seen or documented. */
   incident: string
   /**
+   * Public pages that back the rule: at least one (a rule without one fails type-check). Take them from
+   * src/rules/sources.ts and say what the page tells a reader about this rule. Nothing private goes here.
+   */
+  sources: [Source, ...Source[]]
+  /** Each number the rule judges by, and whether it was measured on logs or is a judgment. Leave out when it has none. */
+  thresholds?: Threshold[]
+  /**
    * The rule only makes sense when the robot profile fits the log (it needs the robot's motors, limits or the game's
    * lengths). Rules with forEach motor, motorGroup, device, camera or mechanism count as this already; set it for a
    * match rule that leans on the profile (e.g. its motor names). When no profile fits a log, these rules are listed as not checked.
@@ -125,6 +138,30 @@ interface About {
    * `match.pitStretch` is the stretch it checks.
    */
   foresightOnly?: boolean
+}
+
+/** One public page a rule cites. Shown with the finding as "Further reading". */
+export interface Source {
+  /** What the page is called, with the publisher: "WPILib: roboRIO brownouts". */
+  title: string
+  /** An https link to the page itself (a docs page, a datasheet, a forum post), opened and read before it was cited. */
+  url: string
+  /** vendor: the maker's docs or datasheet; manual: a product manual; standard: FIRST's rules; paper: a paper; forum: a Chief Delphi post. */
+  kind: 'vendor' | 'manual' | 'paper' | 'forum' | 'standard'
+  /** One line: what the page says that matters to this rule. */
+  says: string
+}
+
+/** One line a rule judges by: where it sits and where it came from. */
+export interface Threshold {
+  /** What the number is: "rest voltage". */
+  name: string
+  /** The number with its unit: "12.5 V". */
+  value: string
+  /** measured: found on logs (the how names the measurement, no match names). judgment: chosen, or taken from a source. */
+  basis: 'measured' | 'judgment'
+  /** For measured, the measurement; for judgment, who or what it was taken from. */
+  how: string
 }
 
 /** One possible cause: what it is, and what to look for and where to confirm or rule it out. */
@@ -175,7 +212,7 @@ export function link(definition: Link): Link {
  * A parent is a finding that names a group of findings: "25 CAN devices dropped within 0.25 s". The app lists the
  * group under it (nothing is deleted), and it adds nothing to any count. Parents live in parents.ts.
  */
-export interface Parent extends Omit<About, 'severity' | 'needsProfile' | 'foresightOnly'> {
+export interface Parent extends Omit<About, 'severity' | 'needsProfile' | 'foresightOnly' | 'sources' | 'thresholds'> {
   /** The rule whose findings it groups. */
   over: string
   /** True when this finding belongs in the same group as the first (earliest) one. */

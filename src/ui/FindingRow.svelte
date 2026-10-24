@@ -135,6 +135,16 @@
       </div>
       {#if rule}
         <p class="incident"><strong>Why this rule exists:</strong> {rule.incident}</p>
+        {#if 'sources' in rule}
+          <div class="incident">
+            <strong>Further reading:</strong>
+            <ul class="reading">
+              {#each rule.sources as source (source.url)}
+                <li><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a>{' '}<span class="kind">({source.kind})</span>: {source.says}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
         <p class="incident"><strong>Who acts:</strong> {who} · <strong>Tracked as:</strong> <code>{finding.key}</code></p>
       {/if}
       <div class="actions">
@@ -192,6 +202,9 @@
   .causes .ruled-out { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border); }
   .causes .ruled-out .tag { text-decoration: none; display: inline-block; }
   .incident { color: var(--muted); }
+  .reading { margin: 0.25rem 0 0; padding-left: 1.25rem; }
+  .reading li { margin: 0.15rem 0; }
+  .reading a { color: inherit; }
   .why { display: block; font-size: 0.8rem; color: var(--muted); }
   .explains { margin: 0 0 0.25rem 7.25rem; }
   .explains > summary { display: block; min-height: 24px; box-sizing: border-box; padding: 0.1rem 0.25rem; font-size: 0.85rem; color: var(--muted); }

@@ -12,6 +12,7 @@
  * teleop is a restarted piece of a match, which loop/restart-mid-match reports. Amber until it has caught a real match.
  */
 import { rule, round } from '../rule.ts'
+import { WPILIB_AUTO_CHOOSER } from '../sources.ts'
 import type { MatchView, Window } from '../view.ts'
 
 const NO_AUTO = /^none$/i
@@ -29,6 +30,12 @@ export default rule({
   ],
   nextStep: 'Pick the auto on the dashboard after the field connects, and have a second person read it back before every match.',
   incident: 'The chooser starts at "None" on every boot; a 2025 practice match ran its whole auto on "None" and the robot did not move',
+  sources: [
+    { ...WPILIB_AUTO_CHOOSER, says: 'The option set with setDefaultOption is the one selected when the dashboard starts; a person picks the auto before autonomous begins and the code reads it in autonomousInit.' },
+  ],
+  thresholds: [
+    { name: 'which enable is checked', value: 'the first enable, on the field', basis: 'measured', how: 'On 141 local logs (2026-10-19), 74 of the 83 first enables off the field with a chooser read "None", which is normal in the pit; on the field the first enable is the match.' },
+  ],
 
   check(match) {
     const first = match.enabled[0]

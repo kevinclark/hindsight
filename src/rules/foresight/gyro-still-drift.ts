@@ -8,6 +8,7 @@
  * or a robot being handled, both show up here; nothing tells them apart yet.
  */
 import { rule, round } from '../rule.ts'
+import { CTRE_PIGEON2, WPILIB_GYROS } from '../sources.ts'
 
 const STILL_SECONDS = 20
 
@@ -25,6 +26,14 @@ export default rule({
   ],
   nextStep: 'Leave the robot untouched for 20 s and watch the number; if it stays high long after power-on, check the gyro\'s mounting and connector.',
   incident: 'One 2026 match: 0.49° per 20 s early in the disabled stretch (foresight-proposal.md)',
+  sources: [
+    { ...WPILIB_GYROS, says: 'Gyro angles drift, more the longer the gyro is used; the robot must stay still while a gyro calibrates; over a short FRC match the drift is usually small.' },
+    { ...CTRE_PIGEON2, says: 'The Pigeon 2.0 has much improved drift and needs no calibration on boot or for temperature.' },
+  ],
+  thresholds: [
+    { name: 'window', value: 'the last 20 s of the disabled stretch', basis: 'judgment', how: 'Chosen.' },
+    { name: 'drift line', value: 'none yet: context only', basis: 'measured', how: 'On the 2026 field logs, disabled: 0.005 to 0.044° per 20 s just before enable, but 0.3 to 4.4° per 20 s in the first one to two minutes after boot.' },
+  ],
 
   check(match) {
     const stretch = match.pitStretch

@@ -7,6 +7,7 @@
  * travel on a trench approach.
  */
 import { maxOf, pct, round, rule } from '../rule.ts'
+import { ADVANTAGEKIT_LOGGING, CD_LOOP_OVERRUN } from '../sources.ts'
 import { describeSteps, SLOW_STEP_MS, slowSteps, startWith } from './tracer-steps.ts'
 
 export default rule({
@@ -23,6 +24,15 @@ export default rule({
   ],
   nextStep: 'Use the Tracer/* entries to find the slow step in auto and move it off the main loop or cache it.',
   incident: '2026 offseason event: auto overran 14–27 % of loops, worst 134 ms',
+  sources: [
+    { ...ADVANTAGEKIT_LOGGING, says: 'LoggedRobot/FullCycleMS records the time of all periodic code and should be less than the loop period, 20 ms by default.' },
+    { ...CD_LOOP_OVERRUN, says: 'A loop overrun means something in the code runs slower than it should; it is a warning that does not itself disable motors (the separate Watchdog Not Fed error does).' },
+  ],
+  thresholds: [
+    { name: 'loop time', value: '20 ms', basis: 'judgment', how: 'The default loop period (AdvantageKit docs), not measured.' },
+    { name: 'share of loops over 20 ms', value: 'more than 10 %', basis: 'judgment', how: 'Chosen. At the 2026 offseason event 14 to 27 % of auto loops overran.' },
+    { name: 'share that points at heavy code', value: 'over 20 %, or a median loop over 20 ms', basis: 'judgment', how: 'Chosen.' },
+  ],
 
   check(match) {
     const loop = match.signal('loopCycleMs')

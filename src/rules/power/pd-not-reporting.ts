@@ -11,6 +11,7 @@
  * controllers. Without it, Hindsight adds up the motor controllers' own supply currents instead.
  */
 import { maxOf, round, rule } from '../rule.ts'
+import { REV_PDH_SPECS, WPILIB_CONTROL_SYSTEM_HARDWARE, WPILIB_POWER_DISTRIBUTION } from '../sources.ts'
 import type { MatchView } from '../view.ts'
 
 const MOTORS_DRAWING_AMPS = 20 // total motor current that the board's channels must show if it is reporting
@@ -32,6 +33,15 @@ export default rule({
   ],
   nextStep: 'First check which board the robot has: a CTRE PDP 2.0 can\'t report. For a REV PDH or a CTRE PDP, check the code asks for that type and the board\'s CAN ID.',
   incident: 'Two robots\' logs had two records of 24 channels, all 0 A, while the robot drew hundreds of amps.',
+  sources: [
+    { ...WPILIB_POWER_DISTRIBUTION, says: 'PowerDistribution auto-detects a board only at CAN ID 0 (CTRE) or 1 (REV); per-channel current is read on PDP channels 0 to 15 or PDH channels 0 to 23.' },
+    { ...WPILIB_CONTROL_SYSTEM_HARDWARE, says: 'The PDP 2.0 has no built-in current logging; the original PDP has a CAN interface for logging current, temperature and battery voltage.' },
+    { ...REV_PDH_SPECS, says: 'The PDH measures each high-current channel from 0 to 127.9 A in 125 mA steps, and each low-current channel from 0 to 31.94 A.' },
+  ],
+  thresholds: [
+    { name: 'motor current the channels must show if reporting', value: '20 A in total', basis: 'judgment', how: 'Chosen.' },
+    { name: 'board voltage that means silent', value: '1 V or less', basis: 'judgment', how: 'Chosen.' },
+  ],
 
   check(match) {
     const channels = match.lists('powerDistributionCurrents')

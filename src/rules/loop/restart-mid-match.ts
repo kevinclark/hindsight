@@ -10,6 +10,7 @@
  * controller (port 0) was missing. In 81 logs (2025 and 2026) only one match's start or end enabled on the field.
  */
 import { rule, round } from '../rule.ts'
+import { WPILIB_BROWNOUTS, WPILIB_DS_LOG_VIEWER, WPILIB_STACKTRACES } from '../sources.ts'
 import type { MatchView, Signal } from '../view.ts'
 
 const SAME_MATCH_SECONDS = 30 * 60 // pieces of one match start within 30 min (the session view's rule, session.ts)
@@ -29,6 +30,15 @@ export default rule({
   ],
   nextStep: 'Read the Driver Station log\'s messages for this match (a stack trace means the code crashed), and load the match\'s other robot logs to see how long the robot had no program.',
   incident: 'One 2025 match: two restarts in teleop, three logs, no program for ~63 s of the last ~84 s',
+  sources: [
+    { ...WPILIB_STACKTRACES, says: 'An unhandled exception prints "An unexpected error has occurred." with a stack trace of the code that was running; the robot program may halt.' },
+    { ...WPILIB_DS_LOG_VIEWER, says: 'After a connection loss, a small "time since robot boot" means the roboRIO restarted; an FMS disconnect splits the log in two.' },
+    { ...WPILIB_BROWNOUTS, says: 'Below about 4.5 V the roboRIO may black out and restart its boot sequence once the voltage rises above 4.65 V.' },
+  ],
+  thresholds: [
+    { name: 'pieces of one match', value: 'start within 30 min of each other', basis: 'judgment', how: 'The session view\'s rule for which logs are one match.' },
+    { name: 'battery too high to be a slow sag', value: '9 V or more in the last 2 s', basis: 'judgment', how: 'Assumed: above this the battery was not sagging toward a roboRIO reset.' },
+  ],
 
   check(match) {
     if (!match.onField) return match.couldNotCheck('not a match on the field')

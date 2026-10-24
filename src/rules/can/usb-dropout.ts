@@ -10,6 +10,7 @@
  * .dsevents, so a match with none is "none seen", not proof of a sound USB link.
  */
 import { plural, round, rule } from '../rule.ts'
+import { CD_CANIVORE_USB, CD_USB_HUB_CPU, CTRE_CANIVORE_API } from '../sources.ts'
 
 /** The battery voltage is read over this long before each drop: the drops seen came 6 s or less after a sag. */
 const LOOK_BACK_SECONDS = 6
@@ -28,6 +29,14 @@ export default rule({
   ],
   nextStep: 'Plug the CANivore straight into the roboRIO, not through a hub, with the cable strain-relieved and away from motor wires.',
   incident: 'A public 2026 robot (two elimination matches): CANivore on a USB hub, 3 and 2 kernel "USB disconnect"s; fixed by moving it off the hub',
+  sources: [
+    { ...CD_CANIVORE_USB, says: 'A CANivore STAT LED double-blinking red means a bad or missing USB connection, and the bus stays down until a roboRIO restart; teams traced it to ESD from a logging USB drive on an extension cable and to unshielded cables.' },
+    { ...CD_USB_HUB_CPU, says: 'A team traced high roboRIO CPU use to a USB hub that rebooted repeatedly during matches, then moved both CANivores to the roboRIO CAN bus, which they said solved those issues.' },
+    { ...CTRE_CANIVORE_API, says: 'Phoenix logs "CANbus Disconnected" when it detects that a CANivore USB device has been disconnected, which helps tell a bad USB connection from a bad CAN connection.' },
+  ],
+  thresholds: [
+    { name: 'battery read before each drop', value: 'over the 6 s before', basis: 'measured', how: 'The drops seen came 6 s or less after a sag.' },
+  ],
 
   check(match) {
     const window = match.checkWindow

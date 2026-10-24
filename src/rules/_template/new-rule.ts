@@ -8,6 +8,7 @@
  * Everything a rule can ask is in src/rules/view.ts; the helpers (below, above, volts, ...) are in src/rules/rule.ts.
  */
 import { below, rule, round } from '../rule.ts'
+import { WPILIB_BROWNOUTS } from '../sources.ts'
 
 const LIMIT = 7 // name your thresholds, with the unit in the name if you can
 
@@ -26,6 +27,10 @@ export default rule({
   // The one thing to do next.
   nextStep: '<e.g. Swap the battery and run the same routine; if it still dips, check the wiring.>',
   incident: '<what it catches, where it was seen>',
+  // At least one public page you opened and read (take it from src/rules/sources.ts, or add it there), and what it says.
+  sources: [{ ...WPILIB_BROWNOUTS, says: '<e.g. Below 6.3 V (roboRIO 1) the controller switches every motor off.>' }],
+  // Each number the rule judges by: 'measured' on logs (say what you measured) or 'judgment' (say whose).
+  thresholds: [{ name: 'lowest battery voltage', value: `${LIMIT} V`, basis: 'judgment', how: '<e.g. just above the roboRIO brownout setting>' }],
 
   check(match) {
     // Guard first: return as soon as there is nothing wrong.

@@ -8,6 +8,7 @@
  * Not yet: field bump and trench zones (the game pack, phase 2).
  */
 import { beyond, rule, round, secs, type Problem } from '../rule.ts'
+import { GAME_MANUAL_2026 } from '../sources.ts'
 
 export default rule({
   id: 'collision/tilt',
@@ -23,6 +24,13 @@ export default rule({
   ],
   nextStep: 'Watch the match video at this time. If it was a field element, check what was raised and add a guard in code near that element.',
   incident: 'One 2026 match: −24° pitch for 0.8 s at the trench in auto',
+  sources: [
+    { ...GAME_MANUAL_2026, says: 'Section 5.5: the BUMP ramps are set at 15 degrees; section 5.6: the space under each TRENCH arm is 22.25 in tall.' },
+  ],
+  thresholds: [
+    { name: 'pitch or roll', value: 'beyond 15° either way', basis: 'judgment', how: 'Chosen to match the BUMP ramps\' 15 degrees (Game Manual 5.5); bump crossings tilt past it too, so the time limit below is what tells a wedge from a bump.' },
+    { name: 'time beyond the line', value: 'longer than 0.3 s', basis: 'measured', how: 'On every 2026 log: bump crossings stay beyond 15° for 0.2 s or less, and the one wedge seen lasted 0.82 s. The margin is thin (1.5 times the longest bump).' },
+  ],
 
   check(match) {
     const pitch = match.signal('gyroPitch').inDegrees('Pitch')

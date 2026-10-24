@@ -13,6 +13,7 @@
  * device fault.
  */
 import { isFalse, plural, round, rule } from '../rule.ts'
+import { CTRE_CAN_TROUBLESHOOTING, WPILIB_PREEMPTIVE } from '../sources.ts'
 import type { Episode, MatchView } from '../view.ts'
 import { secondsWatched, watched } from './bus.ts'
 
@@ -42,6 +43,15 @@ export default rule({
   ],
   nextStep: 'Tug-test the power and CAN connectors on the named device and the ones next to it, then check what else shares its wiring.',
   incident: 'A public 2026 robot, Q108: intake leader motor off at 282.2 s (29.2 s), 320.7 s (20.5 s), then from 342.4 s to the end; the team found the intake connector pulled apart',
+  sources: [
+    { ...CTRE_CAN_TROUBLESHOOTING, says: 'Flick, shake or jostle the CAN wiring to reproduce intermittent drops; bad crimps and connection points are the most common cause.' },
+    { ...WPILIB_PREEMPTIVE, says: 'Tug-test the robot connectors in the pit, including the large Anderson battery connector and the power and CAN connections.' },
+  ],
+  thresholds: [
+    { name: 'flags falling together that count as one event', value: 'within 0.1 s of the first', basis: 'judgment', how: 'Chosen.' },
+    { name: 'flags in one event that point at power, the bus or the code', value: '3 or more', basis: 'judgment', how: 'Chosen.' },
+    { name: 'a long disconnect (error)', value: 'more than 5 s in total', basis: 'judgment', how: 'Chosen. Checked on 26 logs: it fired on 4 and one is a confirmed case.' },
+  ],
 
   check(match) {
     const named = profileKeys(match)

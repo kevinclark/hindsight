@@ -7,6 +7,7 @@
  * Not yet: "+5 mΩ against this robot's history" needs the history file (phase 2).
  */
 import { rule, round } from '../rule.ts'
+import { CD_BATTERY_ACCEPTANCE, CD_BATTERY_IMPEDANCE, CD_BATTERY_IR_MATCH_ONLY, MK_ES17_12 } from '../sources.ts'
 
 const MOST_OHMS = 0.020
 
@@ -24,6 +25,16 @@ export default rule({
   ],
   nextStep: 'Tug-test and re-crimp the battery leads and main breaker lugs; then load-test the battery. Good is under 20 mΩ.',
   incident: 'Baseline: 2026 offseason event measured 11.0–11.4 mΩ; threshold from Chief Delphi',
+  sources: [
+    { ...CD_BATTERY_IMPEDANCE, says: 'The post says to ideally want an impedance reading under 20 milliohms.' },
+    { ...CD_BATTERY_ACCEPTANCE, says: 'One poster\'s competition criterion is internal resistance under 12 mΩ.' },
+    { ...CD_BATTERY_IR_MATCH_ONLY, says: 'A poster says high-performance batteries should have an internal resistance under 15 mΩ, and suggests keeping the lowest-resistance ones for matches only.' },
+    { ...MK_ES17_12, says: 'The ES17-12 data sheet gives an internal resistance of about 12 mΩ at 1 kHz for a new battery.' },
+  ],
+  thresholds: [
+    { name: 'battery + wiring resistance', value: '20 mΩ', basis: 'judgment', how: 'Taken from the Chief Delphi post above.' },
+    { name: 'what healthy looked like (baseline)', value: '11.0 to 11.4 mΩ', basis: 'measured', how: 'Three matches at the 2026 offseason event, from current steps (battery + wiring).' },
+  ],
 
   check(match) {
     const ohms = match.power().report.resistanceOhms

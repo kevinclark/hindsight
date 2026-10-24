@@ -6,6 +6,7 @@
  * Why: One 2026 match: the DS log ended at 420.5 s, 3 s into the first comms loss; the match ran to 433 s.
  */
 import { rule, round, secs } from '../rule.ts'
+import { WPILIB_DS_BEST_PRACTICES, WPILIB_DS_LOG_VIEWER } from '../sources.ts'
 
 export default rule({
   id: 'comms/ds-log-truncated',
@@ -20,6 +21,13 @@ export default rule({
   ],
   nextStep: 'Plug the DS laptop in, set the High performance power plan, close everything but the DS and dashboard, and check Event Viewer for a Driver Station crash.',
   incident: 'One 2026 match: DS log ends at 420.5 s; match ran to 433.1 s',
+  sources: [
+    { ...WPILIB_DS_LOG_VIEWER, says: 'An FMS disconnect splits the Driver Station log in two; the first log ends with a bad FMS connection event, usually from an Ethernet cable without a latching tab or a damaged port.' },
+    { ...WPILIB_DS_BEST_PRACTICES, says: 'Settings that keep the Driver Station laptop from sleeping or throttling during a match.' },
+  ],
+  thresholds: [
+    { name: 'log ends before the match', value: 'more than 1 s early', basis: 'judgment', how: 'Chosen.' },
+  ],
 
   check(match) {
     if (match.dsLogs.length === 0) return match.couldNotCheck('no .dslog loaded for this match (drop the .dslog together with the .wpilog)')

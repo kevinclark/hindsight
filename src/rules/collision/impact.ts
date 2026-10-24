@@ -7,6 +7,7 @@
  * Threshold: assumed. Logs B and C peaked at 2.6 and 2.8 g with no known collision; backtest before trusting it.
  */
 import { rule, round, type Problem } from '../rule.ts'
+import { CD_MAIN_BREAKER_CAUSES, CTRE_PIGEON2_API, WPILIB_PREEMPTIVE } from '../sources.ts'
 import type { MatchView } from '../view.ts'
 
 const LIMIT_G = 3
@@ -24,6 +25,14 @@ export default rule({
   ],
   nextStep: 'Watch the video at this time. After the match, check connectors, the radio and the battery strap for anything knocked loose.',
   incident: '#in-hindsight: controller drops after touching field metal (≥ 8 episodes, hindsight-research/issue-catalog-slack.md)',
+  sources: [
+    { ...CTRE_PIGEON2_API, says: 'A Pigeon 2 reports acceleration on each axis from -2.0 to +1.99994 g, gravity included.' },
+    { ...WPILIB_PREEMPTIVE, says: 'Pick up one side of the robot and drop it in the pits to find connections that fail under a jolt.' },
+    { ...CD_MAIN_BREAKER_CAUSES, says: 'One team found its main breaker could pop under a slight tap, possibly from impacts.' },
+  ],
+  thresholds: [
+    { name: 'sideways acceleration', value: 'above 3 g', basis: 'judgment', how: 'Assumed. Two logs without a known collision peaked at 2.6 and 2.8 g. A Pigeon 2 reports at most about 2 g per axis (CTRE API), so its sideways reading cannot pass about 2.8 g: a 3 g line cannot fire on one.' },
+  ],
 
   check(match) {
     const grid = match.grid()

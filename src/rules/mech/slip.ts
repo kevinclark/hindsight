@@ -18,6 +18,7 @@
  * Why: 2026-02-21 practice: the turret's drive gear fell off; the motor spun and the turret stayed where it was.
  */
 import { plural, round, rule } from '../rule.ts'
+import { CTRE_CANCODER, CTRE_REMOTE_SENSORS } from '../sources.ts'
 import type { Problem } from '../rule.ts'
 import type { MatchView } from '../view.ts'
 import type { SlipCheck } from '../../profiles/types.ts'
@@ -40,6 +41,15 @@ export default rule({
   ],
   nextStep: 'Hold the mechanism still and turn its motor by hand: if the motor turns freely, find the loose gear or pulley.',
   incident: '2026-02-21 practice: the turret drive gear fell off; the motor turned up to 261° in a second while the turret moved 0.2° (failure-detection-measurements §6)',
+  sources: [
+    { ...CTRE_REMOTE_SENSORS, says: 'SyncCANcoder keeps monitoring the remote CANcoder and reports if the two positions differ significantly, which suits a mount that could break and still report plausible data.' },
+    { ...CTRE_CANCODER, says: 'The CANcoder\'s absolute position is zeroed with its Magnet Offset config.' },
+  ],
+  thresholds: [
+    { name: 'motor travel in a second', value: 'more than 30°', basis: 'measured', how: 'The 55 practice logs of 2026-02-21 (turret): in the 39 logs before the drive gear fell off or after the fix, no second with the motor past 30° had the turret follow by less than a tenth.' },
+    { name: 'absolute angle follows by', value: 'less than a tenth of the motor travel', basis: 'measured', how: 'Same logs: lag and backlash keep it at a tenth or more; after the gear fell off the turret moved 5.1° at most.' },
+    { name: 'gap between motor and absolute angle changes by', value: 'more than half the motor travel', basis: 'judgment', how: 'Assumed. Added after two false slips in held-out logs, both in fast swings.' },
+  ],
 
   check(match) {
     const checks = match.profile.slipChecks ?? []

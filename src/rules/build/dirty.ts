@@ -6,6 +6,7 @@
  */
 import { isUncommitted } from '../../match/git-dirty.ts'
 import { rule } from '../rule.ts'
+import { WPILIB_DEPLOY_GIT } from '../sources.ts'
 
 export default rule({
   id: 'build/dirty',
@@ -19,6 +20,9 @@ export default rule({
   ],
   nextStep: 'Commit and push what was deployed, then redeploy from the commit. At events, deploy only from a clean tree.',
   incident: 'One 2026 match: GitDirty = "Uncommitted changes" (hindsight-proposal.md, conclusion 4)',
+  sources: [
+    { ...WPILIB_DEPLOY_GIT, says: 'GradleRIO can write the branch, commit hash and a DIRTY flag for uncommitted changes into a BuildConstants class, so robot code can log which revision is on the robot.' },
+  ],
 
   check(match) {
     const dirty = match.text('gitDirty').last()

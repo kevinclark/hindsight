@@ -7,6 +7,7 @@
  * three 2026 match logs both Xbox controllers showed up on ports 0 and 1 within 0.2 s of the DS connecting.
  */
 import { rule } from '../rule.ts'
+import { WPILIB_DS_MESSAGES, WPILIB_JOYSTICKS } from '../sources.ts'
 
 export default rule({
   id: 'foresight/controllers',
@@ -22,6 +23,10 @@ export default rule({
   ],
   nextStep: 'Plug the controllers in and check the Driver Station\'s USB tab lists them on ports 0 and 1 (drag to reorder, F1 to rescan).',
   incident: 'Controller drops on the field (#in-hindsight: at least 8 episodes); Foresight proposal §5',
+  sources: [
+    { ...WPILIB_JOYSTICKS, says: 'The Driver Station assigns each controller an index (the robot code port) and tries to keep the order between runs; the page says to check it each time the Driver Station starts.' },
+    { ...WPILIB_DS_MESSAGES, says: 'The Driver Station reports "Joystick Unplugged" among its diagnostic messages.' },
+  ],
 
   check(match) {
     const stretch = match.pitStretch

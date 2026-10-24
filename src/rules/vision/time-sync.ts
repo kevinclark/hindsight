@@ -7,6 +7,7 @@
  * Future" fired 1–3 times per match. Unsynced timestamps put vision poses at the wrong moment.
  */
 import { rule } from '../rule.ts'
+import { PHOTON_LATENCY, PHOTON_TIME_SYNC } from '../sources.ts'
 import type { AlertView } from '../view.ts'
 
 /** Alert texts this rule owns; alerts/passthrough leaves them to this rule so they aren't listed twice. */
@@ -30,6 +31,10 @@ export default rule({
   ],
   nextStep: 'Match PhotonVision versions between coprocessors and robot code, and confirm time sync connects after boot (PhotonVision dashboard).',
   incident: '2026 offseason event: TimeSyncServer warnings at every boot; "Vision Data Coming from The Future" 1–3× per match',
+  sources: [
+    { ...PHOTON_LATENCY, says: 'Calls translating a coprocessor timestamp into the roboRIO\'s timebase a fairly hard problem; in its latency test the roboRIO ran a TimeSync server and the coprocessor a client.' },
+    { ...PHOTON_TIME_SYNC, says: 'Describes a time synchronization protocol in which a client estimates its clock offset from a server; NetworkTables 4.1\'s sync could deliver messages timestamped in the future.' },
+  ],
 
   check(match) {
     const syncAlerts = match.alerts().filter(isTimeSyncAlert)

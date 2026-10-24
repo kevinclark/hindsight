@@ -11,6 +11,7 @@
  * slipping, fixed just before elims. The velocity loop only sees the leader, so nothing corrected it.
  */
 import { median, round, rule, secs } from '../rule.ts'
+import { CTRE_FOLLOWER_API } from '../sources.ts'
 import { FOLLOWER_LINE_SECONDS, MIN_STEADY_SECONDS, mostOffLeader, secondsOffLeader, traceGroup } from './follower-trace.ts'
 
 export default rule({
@@ -27,6 +28,14 @@ export default rule({
   ],
   nextStep: 'Check belt tension, pulleys and set screws on the slow motor. If the motors drive separate shafts, consider closing the loop on each shaft.',
   incident: 'One 2026 match: flywheel followers 17/18 ran 25 % slow while shooting, a slipping belt',
+  sources: [
+    { ...CTRE_FOLLOWER_API, says: 'A Follower control request makes a Talon mirror another Talon\'s output: torque, duty cycle or voltage, in the leader\'s mode.' },
+  ],
+  thresholds: [
+    { name: 'off the leader', value: 'more than 15 %', basis: 'judgment', how: 'Chosen. The one case seen ran 25 % slow (a slipping belt).' },
+    { name: 'time off the leader', value: '1 s or more', basis: 'judgment', how: 'Chosen.' },
+    { name: 'steady speed', value: 'leader above 20 rot/s and within 3 % of its speed 0.5 s earlier', basis: 'judgment', how: 'Chosen.' },
+  ],
   forEach: 'motorGroup',
 
   // Only a group whose followers copy the leader's output should spin at the leader's speed.

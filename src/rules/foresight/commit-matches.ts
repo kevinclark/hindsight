@@ -6,6 +6,7 @@
  * Why: code changed between matches is the change nobody re-checked; the pit check that passed was for other code.
  */
 import { rule } from '../rule.ts'
+import { WPILIB_DEPLOY_GIT } from '../sources.ts'
 
 export default rule({
   id: 'foresight/commit-matches',
@@ -20,6 +21,9 @@ export default rule({
   ],
   nextStep: 'Confirm the change was meant (git log between the two commits); if not, redeploy the commit that passed.',
   incident: 'Foresight phase 1 brief: "GitSHA the same as the last passing pit check"',
+  sources: [
+    { ...WPILIB_DEPLOY_GIT, says: 'GradleRIO can write the commit hash and a DIRTY flag into BuildConstants so robot code can log which revision is on the robot.' },
+  ],
 
   check(match) {
     const sha = match.text('gitSha').last()

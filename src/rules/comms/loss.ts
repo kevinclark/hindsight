@@ -12,6 +12,7 @@
  * lost packets or a long trip time in the DS log just before point to the wireless link.
  */
 import { isFalse, plural, rule, round, voltageList, type Severity } from '../rule.ts'
+import { WPILIB_DS_BEST_PRACTICES, WPILIB_DS_LOG_VIEWER } from '../sources.ts'
 import type { MatchView } from '../view.ts'
 
 const RADIO_REBOOT_SECONDS = 15
@@ -32,6 +33,16 @@ export default rule({
   ],
   nextStep: 'Load this match\'s .dslog too (on the DS laptop in C:\\Users\\Public\\Documents\\FRC\\Log Files): it tells a DS laptop problem from a radio or wireless one.',
   incident: 'One 2026 match: comms lost at 417.4 s (7.4 s dead) and 426.4 s (4.3 s)',
+  sources: [
+    { ...WPILIB_DS_LOG_VIEWER, says: 'A radio reboot shows as a connection loss of about 40 to 50 s with the radio unreachable; a good radio ping points at cabling; the log shows trip time, lost packets and roboRIO CPU.' },
+    { ...WPILIB_DS_BEST_PRACTICES, says: 'Set the Driver Station laptop to never sleep and to Best Performance, remove third-party antivirus, and keep the charger plugged in at the field.' },
+  ],
+  thresholds: [
+    { name: 'outputs off long enough to be a radio reboot', value: '15 s or more', basis: 'judgment', how: 'Chosen from the rule\'s own note that a radio boots in 20 to 40 s; WPILib\'s log viewer page says a radio reboot loses the link for about 40 to 50 s.' },
+    { name: 'a blip', value: 'outputs back on in under 0.5 s', basis: 'judgment', how: 'Chosen.' },
+    { name: 'blips that make a warning', value: '3 or more, nothing longer', basis: 'judgment', how: 'Chosen.' },
+    { name: 'lost packets that point at the wireless link', value: 'over 10 % in the 3 s before the loss', basis: 'judgment', how: 'Chosen.' },
+  ],
 
   check(match) {
     if (match.wholeMatch.length === 0) return match.couldNotCheck('no match in this log')

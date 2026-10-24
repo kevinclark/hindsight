@@ -12,6 +12,7 @@
  * one-tag results logged a pose; all 20,873 results with two or more did; no pose without a tag.
  */
 import { rule } from '../rule.ts'
+import { PHOTON_MULTITAG } from '../sources.ts'
 
 export default rule({
   id: 'foresight/camera-sees-tag',
@@ -27,6 +28,13 @@ export default rule({
   ],
   nextStep: 'Hold an AprilTag (36h11, the field\'s family) 0.5–2 m in front of the camera until this line clears.',
   incident: 'The team\'s 2026 pit checklist: "All cameras on and detecting AprilTags"',
+  sources: [
+    { ...PHOTON_MULTITAG, says: 'Enabling multi-target estimation turns off the per-tag camera-to-target calculations unless "Always Do Single-Target Estimation" is on.' },
+  ],
+  thresholds: [
+    { name: 'a pose from one tag', value: 'none', basis: 'measured', how: 'On the 2026 logs, 0 of 19,095 one-tag results logged a pose; all 20,873 results with two or more tags did.' },
+    { name: 'how long a pass lasts', value: 'until the robot is driven, or 15 min', basis: 'judgment', how: 'Chosen: the oldest records are gone after 15 min.' },
+  ],
   forEach: 'camera',
 
   check(camera, match) {

@@ -116,6 +116,14 @@
             {/each}
           </ol>
           {#if rule}<p class="why"><strong>Why this rule exists:</strong> {incidentFor(f)} <span class="small">Who acts: {rule.who.map((a) => WHO[a]).join(', ')}.</span></p>{/if}
+          {#if rule && 'sources' in rule}
+            <p class="why"><strong>Further reading:</strong></p>
+            <ul class="reading">
+              {#each rule.sources as source (source.url)}
+                <li><a href={source.url}>{source.title}</a>{' '}<span class="small">({source.kind}): {source.says} {source.url}</span></li>
+              {/each}
+            </ul>
+          {/if}
           {#if note}<p class="small">Tracked in the team's history as {note.status}{note.note ? `: ${note.note}` : ''}.</p>{/if}
         </div>
       {/each}
@@ -158,7 +166,7 @@
   .detail { break-before: page; }
   .d { break-inside: avoid; margin-bottom: 0.9rem; font-size: 9.5pt; }
   .d .title { font-weight: 700; font-size: 11pt; }
-  .d ol { margin: 0.1rem 0 0.2rem; padding-left: 1.3rem; }
+  .d ol, .d .reading { margin: 0.1rem 0 0.2rem; padding-left: 1.3rem; }
   .d li { margin: 0.1rem 0; }
   .look { color: var(--muted); }
   .tag { font-size: 7.5pt; font-weight: 700; padding: 0 0.3rem; margin-right: 0.3rem; border: 1px solid currentColor; border-radius: 3px; }

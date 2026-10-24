@@ -7,6 +7,7 @@
  * 0.02 s after their first enable (the team's Slack PSA blamed the DS space bar). No rule read the flag.
  */
 import { rule, round, secs, type Problem } from '../rule.ts'
+import { GAME_MANUAL_2026, WPILIB_DS } from '../sources.ts'
 
 const ONE_LOOP_SLACK = 0.1 // s: a disable logged up to a few loops before the e-stop flag is the same event (assumed)
 
@@ -23,6 +24,13 @@ export default rule({
   ],
   nextStep: 'Ask the drive team who pressed the e-stop (the button or the DS space bar) and why. Keep hands off the DS keyboard once the robot is enabled.',
   incident: 'One 2025 match: e-stopped 1.5 s before the end; on one day, three runs e-stopped 0.02 s after enable',
+  sources: [
+    { ...WPILIB_DS, says: 'The space bar is the Driver Station e-stop whether or not its window has focus; after an e-stop the roboRIO must be rebooted before the robot can be enabled again.' },
+    { ...GAME_MANUAL_2026, says: 'Section 5.9.1: each driver station has an E-Stop button to deactivate a robot in an emergency and an A-Stop button to disable a robot during auto.' },
+  ],
+  thresholds: [
+    { name: 'same event as the disable', value: 'a disable logged up to 0.1 s before the e-stop flag', basis: 'judgment', how: 'Assumed: a few loops of slack.' },
+  ],
 
   check(match) {
     const estop = match.signal('emergencyStop')

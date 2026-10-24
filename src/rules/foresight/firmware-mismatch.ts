@@ -9,6 +9,7 @@
  * Amber only: no log of ours has this reading yet, so it has never fired for real (proven.ts).
  */
 import { plural, rule } from '../rule.ts'
+import { CTRE_DEVICE_LIST } from '../sources.ts'
 import type { MatchView, WatchedDeviceView } from '../view.ts'
 import { hex32, versionText } from '../../match/companion.ts'
 
@@ -25,6 +26,9 @@ export default rule({
   ],
   nextStep: 'Update the odd devices to the firmware the others run, in Phoenix Tuner X (Batch Field Upgrade), then restart the robot code.',
   incident: 'Hindsight companion library (2026-10-20): it reads each device\'s firmware; the companion\'s own "Firmware mismatch" alert',
+  sources: [
+    { ...CTRE_DEVICE_LIST, says: 'Tuner X colours each device card by firmware: green is the latest, yellow a newer version available, purple an unexpected or beta version.' },
+  ],
 
   check(match) {
     const byModel = versionsByModel(match)
