@@ -90,6 +90,9 @@ const SAME_EVENT_MS = 4 * 86400e3
 export function isCarried(session: Session, todaySessionId: string, external: { key?: string; name: string } | null, now: number): boolean {
   if (session.id === todaySessionId) return false
   if (external?.key && session.event?.key) return session.event.key !== external.key // two named events: the keys decide, whatever the dates
+  // A session the field named (every competition log) has no TBA key of its own: TBA's key without its year is the field's name (session.ts).
+  const fms = session.matches.find((m) => m.onField && m.event)?.event?.toLowerCase()
+  if (external?.key && fms) return external.key.slice(4).toLowerCase() !== fms
   const norm = (x: string) => x.trim().toLowerCase()
   if (external && norm(sessionEventName(session)) === norm(external.name)) return false
   const last = Math.max(0, ...[...session.matches, ...(session.pitRuns ?? [])].map((m) => m.playedAt ?? 0))

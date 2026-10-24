@@ -388,6 +388,9 @@ describe('the fix pass, round 2', () => {
     const named = { ...scene, event: { key: '2099test', name: 'Test Regional' } } as unknown as typeof scene
     expect(isCarried(named, 'practice:x', { key: '2099other', name: 'Other Regional' }, day1 + 3.5 * 86400e3)).toBe(true)
     expect(isCarried(named, 'practice:x', { key: '2099test', name: 'Test Regional' }, day1 + 3.5 * 86400e3)).toBe(false)
+    // A session the field named (no TBA key of its own): TBA's key without its year against the field's name.
+    expect(isCarried(scene, 'practice:x', { key: '2099other', name: 'Other Regional' }, day1 + 3.5 * 86400e3)).toBe(true)
+    expect(isCarried(scene, 'practice:x', { key: '2099test', name: 'Test Regional' }, day1 + 3.5 * 86400e3)).toBe(false)
   })
 
   it('3: a tick dated after now reads clock ahead and is not fresh', () => {
