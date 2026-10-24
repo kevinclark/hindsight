@@ -66,8 +66,9 @@
       <div class="field"><label for={`${id}-note`}>Notes</label><textarea id={`${id}-note`} rows="2" bind:value={note} placeholder={chosen === 'confirmed' ? 'What confirmed it' : 'Anything you noticed'}></textarea></div>
     {/if}
     {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
-    <button type="button" class="primary" disabled={!role} onclick={save}>Save{role ? ` as ${role}` : ''}</button> <span class="small" role="status">{saved}</span>
+    <button type="button" class="primary" disabled={!role} onclick={save}>Save{role ? ` as ${role}` : ''}</button>
   </details>
+  <span class="small" role="status">{saved}</span>
 </li>
 
 <style>

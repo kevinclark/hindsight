@@ -33,6 +33,7 @@
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
   import { deviceId } from './triage/device-id.ts'
+  import { scopeOf } from './board/model.ts'
   import { robotIdOf, matchRobot } from './session/summary.ts'
   import { readRole, writeRole } from './board/role.ts'
   import { boardLines, type Change } from './board/writes.ts'
@@ -319,7 +320,13 @@
   }
 
   // What the team recorded on the board for this log's issues (priority, notes, cause states), filed under the robot as the board files it.
-  const boardFor = (a: Analysis): ExportBoard => { const r = refOf(a); return { states: boardState(history), robot: robotIdOf(matchRobot(a.match)), scope: { event: r.event, from: r.played, to: r.played } } }
+  // The export is scoped like the board: by the session that holds this log (its event and match span), so a deferral made
+  // after a later match of the same event still counts on a log with no event name; a log in no session falls back to itself.
+  const boardFor = (a: Analysis): ExportBoard => {
+    const r = refOf(a)
+    const held = sessions.find((s) => s.kind === 'event' && [...s.matches, ...(s.pitRuns ?? [])].some((m) => m.fileName === a.match.fileName || m.pieces?.includes(a.match.fileName)))
+    return { states: boardState(history), robot: robotIdOf(matchRobot(a.match)), scope: held ? scopeOf(held) : { event: r.event, from: r.played, to: r.played } }
+  }
   async function downloadForClaude() {
     if (!current || !shownCurrent) return
     // Lists what is inside first (ADR 5); the file is saved only on Save.
