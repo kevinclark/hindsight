@@ -65,18 +65,20 @@ export interface BoardUntil {
 
 /**
  * One change to the issue board (priority, status, deferral, workaround, note) for one issue on one robot. A new line
- * type, not new fields on `issue`: builds from before the board skip it (parseHistory), and every `issue` line folds as
- * it always did. "Closed" is never stored; it is derived from a clean match after the fix. No names go in a line.
+ * type, not new fields on `issue`: builds from before the board keep it unread (an OpaqueEvent, written back as it came,
+ * and a file loaded in analyze.ts does not report it), and every `issue` line folds as it always did. "Closed" is never stored; it is derived from a clean match after the fix. No names go in a line.
  */
 export interface BoardEvent {
   type: 'board'
+  /** Bump when a line old builds must not fold; adding a value to priority or status makes old builds keep the line without folding it. */
   v: 1
   /** The issue key as `IssueEvent.key`: "rule · about". */
   key: string
   /** The robot's profile id, or the name `summaryRobot()` gives; '' = unknown. */
   robot: string
   op: BoardOp
-  /** priority: high|medium|low; status: open|fixing|check; defer: '' clears; workaround and note: free text. */
+  /** priority: high|medium|low; status: open|fixing|check; defer: any non-empty value sets a deferral (its text is not kept; the target is `until`); '' with no until clears;
+   * workaround and note: free text. */
   value: string
   /** Only on op 'defer'. */
   until?: BoardUntil
@@ -86,12 +88,22 @@ export interface BoardEvent {
   /** sha256 of the log the change was made on. */
   log?: string
   by: { device: string; role: BoardRole }
-  /** Per device, increasing. */
+  /** Per device, increasing: 1 + the largest seq this device has in the history, so two tabs can't repeat one. */
   seq: number
   when: string
 }
 
-export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent
+/**
+ * A well-formed JSON line this build cannot type (a newer build's line, or a known type that fails its checks). It is
+ * never folded; it is kept so that saving the file writes the line back exactly as it came.
+ */
+export interface OpaqueEvent {
+  type: 'opaque'
+  raw: string
+  when: string
+}
+
+export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent | OpaqueEvent
 
 const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note']
 const BOARD_ROLES: readonly string[] = ['software', 'pit', 'drive', 'mentor']
@@ -103,6 +115,7 @@ function validBoard(e: any): boolean {
   if (!BOARD_OPS.includes(e.op)) return false
   const allowed = BOARD_VALUES[e.op as BoardOp]
   if (allowed && !allowed.includes(e.value)) return false
+  if (e.op === 'defer' && e.value === '' && e.until !== undefined) return false
   if (e.op === 'defer' && e.until !== undefined && !(e.until && UNTIL_KINDS.includes(e.until.kind))) return false
   if (!e.by || typeof e.by.device !== 'string' || !BOARD_ROLES.includes(e.by.role)) return false
   return Number.isFinite(e.seq) && typeof e.when === 'string'
@@ -110,14 +123,17 @@ function validBoard(e: any): boolean {
 
 /** Oldest first: by time, then device, then seq (old lines have device '' and seq 0). Ties otherwise keep file order. */
 export function compareEvents(x: HistoryEvent, y: HistoryEvent): number {
-  const dx = x.type === 'board' ? x.by.device : '', dy = y.type === 'board' ? y.by.device : ''
-  const sx = x.type === 'board' ? x.seq : 0, sy = y.type === 'board' ? y.seq : 0
+  const dx = x.type === 'board' ? x.by.device : ''
+  const dy = y.type === 'board' ? y.by.device : ''
+  const sx = x.type === 'board' ? x.seq : 0
+  const sy = y.type === 'board' ? y.seq : 0
   return x.when.localeCompare(y.when) || (dx < dy ? -1 : dx > dy ? 1 : 0) || sx - sy
 }
 
 export const HISTORY_FILE_NAME = 'hindsight-history.jsonl'
 
-/** Read a history file. Lines that aren't issue, pit-check or valid board events are skipped and counted, never fatal. */
+/** Read a history file. A JSON object line this build can't type is kept as an OpaqueEvent;
+ * `skipped` counts only lines that aren't JSON objects. Never fatal. */
 export function parseHistory(text: string): { events: HistoryEvent[]; skipped: number } {
   const events: HistoryEvent[] = []
   let skipped = 0
@@ -125,10 +141,12 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
     if (!line.trim()) continue
     try {
       const e = JSON.parse(line)
-      if (e.type === 'issue' && typeof e.key === 'string' && ['known', 'fixed', 'new'].includes(e.status)) events.push({ note: '', when: '', ...e })
-      else if (e.type === 'issue' && typeof e.key === 'string' && ['wrong', 'real', 'unmark'].includes(e.status) && typeof e.match === 'string' && e.match) events.push({ note: '', when: '', ...e })
-      else if (e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
-      else if (e.type === 'board' && validBoard(e)) events.push(e)
+      const isObject = typeof e === 'object' && e !== null && !Array.isArray(e)
+      if (isObject && e.type === 'issue' && typeof e.key === 'string' && ['known', 'fixed', 'new'].includes(e.status)) events.push({ note: '', when: '', ...e })
+      else if (isObject && e.type === 'issue' && typeof e.key === 'string' && ['wrong', 'real', 'unmark'].includes(e.status) && typeof e.match === 'string' && e.match) events.push({ note: '', when: '', ...e })
+      else if (isObject && e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
+      else if (isObject && e.type === 'board' && validBoard(e)) events.push(e)
+      else if (isObject) events.push({ type: 'opaque', raw: line, when: typeof e.when === 'string' ? e.when : '' })
       else skipped++
     } catch {
       skipped++
@@ -138,7 +156,7 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
 }
 
 export function serializeHistory(events: HistoryEvent[]): string {
-  return events.map((e) => JSON.stringify(e)).join('\n') + (events.length ? '\n' : '')
+  return events.map((e) => (e.type === 'opaque' ? e.raw : JSON.stringify(e))).join('\n') + (events.length ? '\n' : '')
 }
 
 /** Combine two lists of events, dropping exact duplicates (the same file loaded twice). */

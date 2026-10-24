@@ -7,10 +7,26 @@ export const DEVICE_ID_KEY = 'hindsight.deviceId'
 
 type Store = Pick<Storage, 'getItem' | 'setItem'>
 
+/** Used when storage throws (a private window): one random id for this page session. */
+let sessionId: string | null = null
+
 export function deviceId(store: Store, random: () => string = () => crypto.randomUUID()): string {
-  const kept = store.getItem(DEVICE_ID_KEY)
-  if (kept) return kept
+  try {
+    const kept = store.getItem(DEVICE_ID_KEY)
+    if (kept) return kept
+  } catch {
+    return sessionDeviceId(random)
+  }
   const made = random()
-  store.setItem(DEVICE_ID_KEY, made)
+  try {
+    store.setItem(DEVICE_ID_KEY, made)
+  } catch {
+    return sessionDeviceId(random)
+  }
   return made
+}
+
+function sessionDeviceId(random: () => string): string {
+  sessionId ??= random()
+  return sessionId
 }

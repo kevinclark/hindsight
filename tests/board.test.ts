@@ -128,19 +128,36 @@ describe('issue record v2: board lines', () => {
     expect(mergeHistory([k], [f])).toEqual([k, f])
   })
 
-  it('skips and counts a board line with a bad op, bad value, bad role or bad deferral', () => {
+  it('keeps, unfolded, a board line with a bad op, bad value, bad role or bad deferral', () => {
     const good = board('priority', 'high', '2026-10-20T00:00:01Z')
     const bad = [
       { ...good, op: 'close' },
       { ...good, value: 'urgent' },
       { ...good, by: { device: 'dev-a', role: 'boss' } },
       { ...good, op: 'defer', value: 'x', until: { kind: 'someday' } },
+      { ...good, op: 'defer', value: '', until: { kind: 'gap' } },
       { ...good, v: 2 },
       { ...good, seq: 'one' },
     ]
     const r = parseHistory([good, ...bad].map((e) => JSON.stringify(e)).join('\n'))
-    expect(r.events).toEqual([good])
-    expect(r.skipped).toBe(bad.length)
+    expect(r.events[0]).toEqual(good)
+    expect(r.events.slice(1).map((e) => e.type)).toEqual(bad.map(() => 'opaque'))
+    expect(r.skipped).toBe(0)
+    expect([...boardState(r.events).keys()]).toEqual([boardKey(KEY, 'test-robot')])
+    expect(boardState(r.events).get(boardKey(KEY, 'test-robot'))?.priority).toBe('high')
+  })
+
+  it('a re-save keeps, byte for byte, lines of an unknown type and a board line with an unknown status value', () => {
+    const unknownType = '{"type":"future","x":[1,2],  "when":"2026-10-20T00:00:01Z"}'
+    const newStatus = JSON.stringify({ ...board('status', 'blocked', '2026-10-20T00:00:02Z') }).replace('"v":1', '"v":1 ')
+    const text = `${unknownType}\n${newStatus}\n`
+    const r = parseHistory(text)
+    expect(r.skipped).toBe(0)
+    expect(serializeHistory(r.events)).toBe(text)
+    expect(r.events[0]).toEqual({ type: 'opaque', raw: unknownType, when: '2026-10-20T00:00:01Z' })
+    expect(boardState(r.events).size).toBe(0)
+    expect(triage(r.events).issues.size).toBe(0)
+    expect(lastPassingSha(r.events)).toBeNull()
   })
 })
 
@@ -157,6 +174,13 @@ describe('device id', () => {
     expect(s.m.get(DEVICE_ID_KEY)).toBe('id-1')
     expect(deviceId(s, () => `id-${++n}`)).toBe('id-1')
     expect(n).toBe(1)
+  })
+  it('a store whose getItem and setItem throw still gives a stable id', () => {
+    const broken = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
+    const a = deviceId(broken)
+    expect(a).toMatch(/^[0-9a-f-]{36}$/)
+    expect(deviceId(broken)).toBe(a)
+    expect(deviceId({ getItem: () => null, setItem: () => { throw new Error('denied') } })).toBe(a)
   })
   it('the default id is random and not a hostname', () => {
     const a = deviceId(memory()), b = deviceId(memory())
