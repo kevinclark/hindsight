@@ -30,6 +30,7 @@
   import { playedAt, reviewCard, reviewModel } from './report/review-model.ts'
   import { downloadText } from './ui/download.ts'
   import { VERSION } from './version.ts'
+  import { deviceId } from './triage/device-id.ts'
   import { HISTORY_FILE_NAME, mergeHistory, migrationLines, parseHistory, serializeHistory, triage, type HistoryEvent, type IssueStatus, type PitCheckEvent } from './triage/history.ts'
   import { howSure, matchRef, realHere, trackRecord, withMarks, wrongHere, type Fire } from './triage/track-record.ts'
   import type { Finding } from './rules/types.ts'
@@ -218,6 +219,15 @@
     const at = here ? { match: here.id, ...(here.event ? { event: here.event } : {}), ...(here.played !== null ? { played: new Date(here.played).toISOString() } : {}) } : {}
     keep([...history, { type: 'issue', key: finding.key, status, note, when: new Date().toISOString(), ...at }], true)
   }
+  // The issue board's changes: board lines and event notes, stamped with this device's id (the hub's machine id, else a random one kept on this page).
+  async function writeBoard(build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) {
+    let device: string
+    try { device = library ? (await library.info()).machineId : deviceId(localStorage) } catch {
+      // The hub did not answer (or this is the page): this page's own id, and if storage is blocked, one for this visit.
+      try { device = deviceId(localStorage) } catch { device = deviceId({ getItem: () => null, setItem: () => { throw new Error('none') } }) }
+    }
+    keep([...history, ...build(device, history)], true)
+  }
   function saveHistory() {
     downloadText(HISTORY_FILE_NAME, serializeHistory(history), 'application/x-ndjson')
     unsaved = false
@@ -350,7 +360,7 @@
 <div class="top" class:compact={mode === 'review' && !!current}>
 <header class:screen-only={reportable}>
   <h1>Hindsight</h1>
-  {#if !(mode === 'review' && current)}<p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>{/if}
+  {#if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>{/if}
 </header>
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
@@ -369,7 +379,7 @@
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
 {#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} /></div>{/if}
-<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
+<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={writeBoard} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 {#if !current || dragging}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>

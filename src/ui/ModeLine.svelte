@@ -15,12 +15,13 @@
     <option value="event">Event</option>
     <option value="practice">Practice</option>
     {#if byHand}<option value="auto">Automatic (from the logs)</option>{/if}
-  </select></label>{#if hint}{' '}<span class="hint">{hint}</span>{/if}
+  </select></label>{#if hint}{' '}<button type="button" class="help" aria-label={hint} title={hint}>?</button>{/if}
 </p>
 
 <style>
   .mode-line { margin: 0.25rem 0; font-size: 0.85rem; color: var(--muted); }
-  .hint { display: block; }
+  .help { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; box-sizing: border-box; border: 1px solid var(--muted); border-radius: 50%; font-size: 0.8rem; font-weight: 700; cursor: help; color: var(--fg); }
+  .help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   [data-mode-text] { color: var(--fg); font-weight: 600; }
   select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; min-height: 24px; box-sizing: border-box; }
 </style>

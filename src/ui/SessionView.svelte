@@ -4,6 +4,7 @@
   summary of each is kept, so a whole event's folder fits in memory.
 -->
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { askText } from './ask-text.svelte.ts'
   import { summarizeLogWithCode, summaryRobot, type MatchSummary } from '../session/summary.ts'
   import CodeFolderControl from './CodeFolderControl.svelte'
@@ -21,7 +22,7 @@
   import { staleNote } from '../session/stale.ts'
   import { changeText, diffFindings, snapshotFindings, type FindingChange, type FindingSnapshot } from '../session/changes.ts'
   import { VERSION } from '../version.ts'
-  import type { Triage } from '../triage/history.ts'
+  import type { HistoryEvent, Triage } from '../triage/history.ts'
   import { sessionWithMarks } from '../triage/track-record.ts'
   import { downloadText } from './download.ts'
   import Trends from './Trends.svelte'
@@ -35,7 +36,12 @@
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
   import { hub } from '../hub/bridge.ts'
   import { REFUSED_WORDS, blankEventClusters, clockOffsetText, identifyEvents, type ResolvedEvent } from '../tba/identify.ts'
-  import { tbaGetter, tbaTeam } from './tba-setting.svelte.ts'
+  import { tbaGetter, tbaHasKey, tbaMissing, tbaTeam } from './tba-setting.svelte.ts'
+  import BoardView from './BoardView.svelte'
+  import BoardQueuePrint from './BoardQueuePrint.svelte'
+  import { sessionEvent } from '../board/event.ts'
+  import { teamSchedule, type ScheduledMatch } from '../tba/schedule.ts'
+  import type { QueueSheet } from '../board/sheets.ts'
   import TbaFields from './TbaFields.svelte'
   import ModeLine from './ModeLine.svelte'
   import { chooseMode, renameSession, sessionNames } from './session-names.svelte.ts'
@@ -45,7 +51,7 @@
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
   // copies of logs by name, for summaries restored without their file. `linksFor` (desktop app): the library's code links for
   // logs by name; `onDraft` opens the profile builder on one.
-  let { marks, onOpen, findLogs, linksFor, onDraft, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; linksFor?: (names: string[]) => Promise<LibraryLink[]>; onDraft?: (link: LibraryLink) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
+  let { marks, history = [], onBoard, onOpen, findLogs, linksFor, onDraft, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; history?: HistoryEvent[]; onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; linksFor?: (names: string[]) => Promise<LibraryLink[]>; onDraft?: (link: LibraryLink) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
   const issues = $derived(marks.issues)
 
   let summaries = $state<MatchSummary[]>([])
@@ -145,6 +151,40 @@
   // another match of the event demotes is amber, with the reason. Findings, the grid's colours and the exports use it.
   const shown = $derived(session ? sessionWithMarks(session, marks) : undefined)
   const grid = $derived(session ? ruleGrid(session) : [])
+
+  // In event mode the Session view opens on the issue board (ADR 4); the findings, grid and trends are one click away.
+  let boardTab = $state<'board' | 'findings'>('board')
+  const eventMode = $derived(!!session && modeOf(session) === 'event' && !!onBoard)
+  const showBoard = $derived(eventMode && boardTab === 'board')
+  // The board leads the first screen: with it showing, the chooser, saved-copies line, event names and session buttons fold to one line that opens them.
+  let chromeOpen = $state(false)
+  let printQueue = $state<{ sheet: QueueSheet; title: string } | null>(null)
+  // The team's schedule at this event, for the next match, the gaps and the deferral points (ADR 6). Read again only when the
+  // session's on-field matches, event or Blue Alliance settings change, not on every summary that lands.
+  let schedule = $state.raw<ScheduledMatch[] | null>(null)
+  let scheduleNote = $state<string | null>(null)
+  const scheduleSig = $derived(eventMode && session ? `${session.id}|${session.event?.key ?? ''}|${session.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}` : '')
+  $effect(() => {
+    if (!scheduleSig) { schedule = null; scheduleNote = null; return }
+    const s = untrack(() => session)!
+    const [get, team] = [tbaGetter(), tbaTeam()]
+    if (!get || team === null) { schedule = null; scheduleNote = null; return }
+    let stale = false
+    void (async () => {
+      try {
+        const found = await sessionEvent(s, team, get)
+        if (stale) return
+        if (!found.event) { schedule = null; scheduleNote = `No schedule: ${found.why}.`; return }
+        const got = await teamSchedule(get, team, found.event.key, found.event.end)
+        if (stale) return
+        schedule = got.data
+        scheduleNote = `Schedule for ${found.event.key}${got.fromCache ? ' from a saved copy' : ''} as of ${new Date(got.fetchedAt).toLocaleTimeString()}; times are estimates.`
+      } catch (e) {
+        if (!stale) { schedule = null; scheduleNote = `No schedule: ${e instanceof Error ? e.message : String(e)}` }
+      }
+    })()
+    return () => { stale = true }
+  })
   const merged = $derived(shown ? mergeFindings(shown) : [])
   // "Once" rows (one match only, low confidence) fold under one summary; the rest stay listed. Same order inside each.
   // A row that came back after a fix stays listed whatever its confidence: it is the news, never folded away.
@@ -318,6 +358,7 @@
   }
   /** A load is running: New session and Read again wait for it. */
   const loading = $derived(!!progress && progress.done < progress.total)
+  const folded = $derived(eventMode && !chromeOpen && !loading)
 
   /** Start over: clear the summaries on the page and saved in this browser. What the student wrote down stays. */
   async function newSession() {
@@ -504,6 +545,10 @@
 {/snippet}
 
 <div class:screen-only={!!session} data-session-view>
+{#if folded && session}
+  <p class="oneline" data-folded>{session.matches.length + (session.pitRuns?.length ?? 0)} logs · event {session.label.replace(/^Event\s+/, '')} · <button class="link" onclick={() => (chromeOpen = true)}>Change logs…</button></p>
+{:else}
+{#if eventMode && chromeOpen}<p class="oneline"><button class="link" onclick={() => (chromeOpen = false)}>Fold the log chooser away</button></p>{/if}
 <p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
 
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
@@ -533,7 +578,8 @@
 {#if !hub()}<TbaFields />{/if}
 {#if lookupProblem}<p class="note warn">{lookupProblem}</p>{/if}
 
-{#if sessions.length}
+{/if}
+{#if sessions.length && !folded}
   <nav class="sessions" aria-label="Sessions">
     {#each sessions as s (s.id)}
       <button class:active={session?.id === s.id} onclick={() => (selectedId = s.id)}>{s.label} <small>{modeOf(s) === 'practice' ? `${s.matches.length} log${s.matches.length === 1 ? '' : 's'}` : `${s.matches.length} match${s.matches.length === 1 ? '' : 'es'}`}{s.pitRuns?.length ? `, ${s.pitRuns.length} pit run${s.pitRuns.length === 1 ? '' : 's'}` : ''}</small></button>
@@ -542,15 +588,24 @@
 {/if}
 
 {#if session}
-  <section class="head">
+  {#if !folded}<section class="head">
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
     <span class="actions">
       <button class="button" disabled={loading} class:prominent={sessionIsStale} onclick={() => readAgain(session)} title={`Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, ${findLogs ? 'it reads the library\'s copies' : 'it asks for the folder'}.`}>Read again</button>
       <button class="button" onclick={download}>Download for Claude</button>
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>
-  </section>
+  </section>{/if}
   <ModeLine text={modeLine(session)} mode={modeOf(session)} byHand={!!session.modeByHand} onChange={(m) => chooseMode(session.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />
+  {#if eventMode}
+    <div class="tabs" role="tablist" aria-label="Event view">
+      <button role="tab" aria-selected={boardTab === 'board'} class:active={boardTab === 'board'} onclick={() => (boardTab = 'board')}>Board</button>
+      <button role="tab" aria-selected={boardTab === 'findings'} class:active={boardTab === 'findings'} onclick={() => (boardTab = 'findings')}>Findings, grid and trends</button>
+    </div>
+  {/if}
+  {#if showBoard}
+    <BoardView session={shown!} {history} {marks} {schedule} {scheduleNote} profiles={[...PROFILES, ...stored]} onWrite={onBoard!} bind:printOut={printQueue} />
+  {:else}
   {#if practice}<p class="note" data-runs-summary>{runsLine(runsSummary(session.matches))} A practice day is judged by run, not by match: each log counts once in the grid and the trends, however many runs it holds.</p>{/if}
   {#if session.event}<p class="note" data-event-note>The Blue Alliance says this was {session.event.name}{#if session.event.by === 'date'}{' '}<strong>(guess)</strong>{/if} ({session.event.key}), {session.event.start} to {session.event.end}: {session.event.matched} of the {session.event.of} qualification numbers in these logs are on the team's list there{session.event.by === 'date' ? ' (several events held as many; the robot clock chose, so this is a guess)' : ''}.{session.event.clockOffsetDays ? ` The robot clock is ${clockOffsetText(session.event.clockOffsetDays).replace('robot clock ', '')}.` : ''} {session.event.fromCache ? 'From a saved copy' : 'Fetched'} {new Date(session.event.fetchedAt).toLocaleString()}.</p>{/if}
   {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
@@ -725,9 +780,10 @@
       {/each}
     </tbody>
   </table></div>
+  {/if}
 {/if}
 </div>
-{#if shown}<SessionReport session={shown} {issues} {typedBatteries} />{/if}
+{#if printQueue}<BoardQueuePrint sheet={printQueue.sheet} title={printQueue.title} />{:else if shown}<SessionReport session={shown} {issues} {typedBatteries} />{/if}
 
 <style>
   .intro, .hint, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
@@ -739,6 +795,10 @@
   .problem { color: var(--error); font-size: 0.85rem; }
   .sessions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
   .sessions button { min-height: 24px; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
+  .oneline { margin: 0.2rem 0; font-size: 0.85rem; color: var(--muted); }
+  .tabs { display: flex; gap: 0.25rem; margin: 0.6rem 0 0.2rem; border-bottom: 1px solid var(--border); }
+  .tabs button { min-height: 28px; padding: 0.45rem 1rem; border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+  .tabs button.active { color: var(--fg); border-bottom-color: var(--focus); font-weight: 600; }
   .sessions button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
   .pit { font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
   .sessions small { color: var(--muted); }

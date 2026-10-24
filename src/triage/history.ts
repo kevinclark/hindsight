@@ -53,7 +53,7 @@ export interface PitCheckEvent {
   when: string
 }
 
-export type BoardOp = 'priority' | 'status' | 'defer' | 'workaround' | 'note'
+export type BoardOp = 'priority' | 'status' | 'defer' | 'workaround' | 'note' | 'checked' | 'unchecked' | 'owner'
 export type BoardRole = 'software' | 'pit' | 'drive' | 'mentor'
 
 export interface BoardUntil {
@@ -79,7 +79,8 @@ export interface BoardEvent {
   robot: string
   op: BoardOp
   /** priority: high|medium|low; status: open|fixing|check; defer: any non-empty value sets a deferral (its text is not kept; the target is `until`); '' with no until clears;
-   * workaround and note: free text. */
+   * workaround and note: free text; checked: the match it was checked for ("Q41"), a tick on the queue sheet (new op: an old build keeps
+   * the line unread and writes it back as it came); unchecked: the same shape, takes a tick back (a tick counts only if no later unchecked names its match); owner: software|pit|drive, '' clears (the role that owns the issue; also a new op). */
   value: string
   /** Only on op 'defer'. */
   until?: BoardUntil
@@ -94,6 +95,29 @@ export interface BoardEvent {
   when: string
 }
 
+export type EventNoteKind = 'pit-change' | 'missed' | 'handoff-read'
+
+/**
+ * A note about the event rather than one issue: what the team changed in the pit (the latest per match wins), something
+ * Hindsight missed, or a handoff read. A new line type: old builds keep it as an OpaqueEvent and write it back unchanged.
+ * No names go in a line; `by` is a device and a role.
+ */
+export interface EventNote {
+  type: 'event-note'
+  v: 1
+  kind: EventNoteKind
+  /** The event's TBA key, or the session's event name when there is no key. */
+  event: string
+  /** The latest match when the note was written ("Q33"); '' when there is none. */
+  match: string
+  /** '' for handoff-read. */
+  text: string
+  by: { device: string; role: BoardRole }
+  /** Per device, increasing, counted with the device's board lines (boardStamp). */
+  seq: number
+  when: string
+}
+
 /**
  * A well-formed JSON line this build cannot type (a newer build's line, or a known type that fails its checks). It is
  * never folded; it is kept so that saving the file writes the line back exactly as it came.
@@ -104,11 +128,12 @@ export interface OpaqueEvent {
   when: string
 }
 
-export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent | OpaqueEvent
+export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent | EventNote | OpaqueEvent
 
-const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note']
+const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note', 'checked', 'unchecked', 'owner']
+const NOTE_KINDS: readonly string[] = ['pit-change', 'missed', 'handoff-read']
 const BOARD_ROLES: readonly string[] = ['software', 'pit', 'drive', 'mentor']
-const BOARD_VALUES: Partial<Record<BoardOp, readonly string[]>> = { priority: ['high', 'medium', 'low'], status: ['open', 'fixing', 'check'] }
+const BOARD_VALUES: Partial<Record<BoardOp, readonly string[]>> = { priority: ['high', 'medium', 'low'], status: ['open', 'fixing', 'check'], owner: ['software', 'pit', 'drive', ''] }
 const UNTIL_KINDS: readonly string[] = ['next-match', 'gap', 'before-elims', 'end-of-event', 'next-event']
 
 function validBoard(e: any): boolean {
@@ -116,18 +141,26 @@ function validBoard(e: any): boolean {
   if (!BOARD_OPS.includes(e.op)) return false
   const allowed = BOARD_VALUES[e.op as BoardOp]
   if (allowed && !allowed.includes(e.value)) return false
+  if ((e.op === 'checked' || e.op === 'unchecked') && e.value === '') return false
   if (e.op === 'defer' && e.value === '' && e.until !== undefined) return false
   if (e.op === 'defer' && e.until !== undefined && !(e.until && UNTIL_KINDS.includes(e.until.kind))) return false
   if (!e.by || typeof e.by.device !== 'string' || !BOARD_ROLES.includes(e.by.role)) return false
   return Number.isFinite(e.seq) && typeof e.when === 'string'
 }
 
+function validEventNote(e: any): boolean {
+  if (e.v !== 1 || !NOTE_KINDS.includes(e.kind) || typeof e.event !== 'string' || typeof e.match !== 'string' || typeof e.text !== 'string') return false
+  if (!e.by || typeof e.by.device !== 'string' || !BOARD_ROLES.includes(e.by.role)) return false
+  return Number.isFinite(e.seq) && typeof e.when === 'string'
+}
+
 /** Oldest first: by time, then device, then seq (old lines have device '' and seq 0). Ties otherwise keep file order. */
 export function compareEvents(x: HistoryEvent, y: HistoryEvent): number {
-  const dx = x.type === 'board' ? x.by.device : ''
-  const dy = y.type === 'board' ? y.by.device : ''
-  const sx = x.type === 'board' ? x.seq : 0
-  const sy = y.type === 'board' ? y.seq : 0
+  const stamped = (e: HistoryEvent) => (e.type === 'board' || e.type === 'event-note')
+  const dx = stamped(x) ? (x as BoardEvent | EventNote).by.device : ''
+  const dy = stamped(y) ? (y as BoardEvent | EventNote).by.device : ''
+  const sx = stamped(x) ? (x as BoardEvent | EventNote).seq : 0
+  const sy = stamped(y) ? (y as BoardEvent | EventNote).seq : 0
   return x.when.localeCompare(y.when) || (dx < dy ? -1 : dx > dy ? 1 : 0) || sx - sy
 }
 
@@ -147,6 +180,7 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
       else if (isObject && e.type === 'issue' && typeof e.key === 'string' && ['wrong', 'real', 'unmark'].includes(e.status) && typeof e.match === 'string' && e.match) events.push({ note: '', when: '', ...e })
       else if (isObject && e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
       else if (isObject && e.type === 'board' && validBoard(e)) events.push(e)
+      else if (isObject && e.type === 'event-note' && validEventNote(e)) events.push(e)
       else if (isObject) events.push({ type: 'opaque', raw: line, when: typeof e.when === 'string' ? e.when : '' })
       else skipped++
     } catch {
@@ -218,13 +252,20 @@ export interface BoardState {
   priority?: string
   status?: string
   /** The latest deferral; absent when none was set or the last defer line cleared it. */
-  deferred?: { until?: BoardUntil; by: BoardEvent['by']; when: string }
+  deferred?: { until?: BoardUntil; by: BoardEvent['by']; when: string; match?: string; event?: string; played?: string }
   workaround?: string
+  /** The owning role (software, pit or drive); absent when none was set or the last owner line cleared it. */
+  owner?: string
   /** Every note, oldest first. */
-  notes: { text: string; by: BoardEvent['by']; when: string }[]
-  /** Who made the latest change, and when. */
+  notes: { text: string; by: BoardEvent['by']; when: string; match?: string }[]
+  /** Queue-sheet ticks (op 'checked'), oldest first: the match each was checked for. A tick is not a change to the issue (`by`, `when` and `match` below ignore it). */
+  checked?: { match: string; by: BoardEvent['by']; when: string; event?: string; played?: string }[]
+  /** Who made the latest change, and when, and on which match (absent when the line named none). */
   by: BoardEvent['by']
   when: string
+  match?: string
+  /** True once a line other than a tick has changed the issue (a state made only of ticks has no "last change"). */
+  changed?: true
 }
 
 export const boardKey = (key: string, robot: string) => `${key}\u0000${robot}`
@@ -236,16 +277,57 @@ export function boardState(events: HistoryEvent[]): Map<string, BoardState> {
     if (e.type !== 'board') continue
     const k = boardKey(e.key, e.robot)
     const s = out.get(k) ?? { key: e.key, robot: e.robot, notes: [], by: e.by, when: e.when }
+    if (e.op === 'checked') {
+      ;(s.checked ??= []).push({ match: e.value, by: e.by, when: e.when, ...(e.event ? { event: e.event } : {}), ...(e.played ? { played: e.played } : {}) })
+      out.set(k, s)
+      continue
+    }
+    if (e.op === 'unchecked') {
+      // Takes back the ticks for that match made in the same event (or with no event named).
+      if (s.checked) s.checked = s.checked.filter((c) => !(c.match === e.value && (c.event ?? '') === (e.event ?? '')))
+      if (s.checked?.length === 0) delete s.checked
+      out.set(k, s)
+      continue
+    }
     if (e.op === 'priority') s.priority = e.value
     else if (e.op === 'status') s.status = e.value
     else if (e.op === 'defer') {
       if (e.value === '') delete s.deferred
-      else s.deferred = { ...(e.until ? { until: e.until } : {}), by: e.by, when: e.when }
+      else s.deferred = { ...(e.until ? { until: e.until } : {}), by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}), ...(e.event ? { event: e.event } : {}), ...(e.played ? { played: e.played } : {}) }
     } else if (e.op === 'workaround') s.workaround = e.value
-    else s.notes.push({ text: e.value, by: e.by, when: e.when })
+    else if (e.op === 'owner') { if (e.value === '') delete s.owner; else s.owner = e.value }
+    else s.notes.push({ text: e.value, by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}) })
     s.by = e.by
     s.when = e.when
+    s.changed = true
+    if (e.match) s.match = e.match
+    else delete s.match
     out.set(k, s)
+  }
+  return out
+}
+
+export interface EventNotes {
+  /** The latest pit-change line per match, by `eventNoteKey(event, match)`: a later line replaces an earlier one, and an empty text clears it. */
+  pitChange: Map<string, EventNote>
+  /** Every "missed by Hindsight" line, oldest first. */
+  missed: EventNote[]
+  /** Every handoff read, oldest first. */
+  handoffReads: EventNote[]
+}
+
+export const eventNoteKey = (event: string, match: string) => `${event}\u0000${match}`
+
+/** Replay the event-note lines oldest first (the same order as boardState). */
+export function eventNotes(events: HistoryEvent[]): EventNotes {
+  const out: EventNotes = { pitChange: new Map(), missed: [], handoffReads: [] }
+  for (const e of [...events].sort(compareEvents)) {
+    if (e.type !== 'event-note') continue
+    if (e.kind === 'pit-change') {
+      if (e.text === '') out.pitChange.delete(eventNoteKey(e.event, e.match))
+      else out.pitChange.set(eventNoteKey(e.event, e.match), e)
+    } else if (e.kind === 'missed') out.missed.push(e)
+    else out.handoffReads.push(e)
   }
   return out
 }
@@ -259,7 +341,7 @@ export function boardStamp(history: HistoryEvent[], device: string, now: Date = 
   let seq = 0
   let when = now.toISOString()
   for (const e of history) {
-    if (e.type === 'board' && e.by.device === device && e.seq > seq) seq = e.seq
+    if ((e.type === 'board' || e.type === 'event-note') && e.by.device === device && e.seq > seq) seq = e.seq
     if (e.when > when) when = e.when
   }
   return { seq: seq + 1, when }
