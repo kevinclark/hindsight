@@ -93,6 +93,8 @@
     if (logs.length === 0) return
     const d = draftProfile({ logs, snapshot: snapshot ?? undefined, hints: hints ?? undefined })
     if (stampTeam && d.json.team === undefined && teamNow() !== null) d.json.team = teamNow()!
+    // A draft from a log knows the codebase and commit, not the repo: a library log's code link does.
+    if (linkedRepo && d.json.code && !d.json.code.repo) d.json.code.repo = linkedRepo
     // Another log was dropped: keep what the student already confirmed.
     if (json) { carryConfirmations($state.snapshot(json) as ProfileJson, d.json); if (snapshot) refreshLimits(d.json, snapshot) }
     json = d.json
