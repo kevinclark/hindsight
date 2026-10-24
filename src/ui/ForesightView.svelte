@@ -245,6 +245,9 @@
   const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.actions.length} left`) : 'NOT CHECKED')
   const shownWhy = $derived(queue ? queue.reason : checked ? (practice.ready ? 'every live check on the practice-start list is done' : practice.actions.join(', ')) : why)
   const shownTone = $derived(verdictTone(shownWord))
+  // Not connected (never, or the connection closed): the box says what to do, and a connect that found no robot says it is not a failed check.
+  const notConnected = $derived(shownWord === 'NOT CHECKED' && !checked && !connected && result === null)
+  const robotNotFound = $derived(status?.state === 'closed' && status.valuesReceived === 0 && status.message !== 'Disconnected.')
   function tick(system: System, on: boolean) {
     if (!role) return
     if (defSession && board && robotId && onBoard && !carried) {
@@ -353,8 +356,9 @@
   </section>
 
   <section class={`verdict t-${shownTone}`} aria-live="polite">
-    <p class="big">{shownWord}</p>
-    <p>{shownWhy}</p>
+    <p class="big">{shownWord}{#if notConnected}<span class="tail">: connect the robot first.</span>{/if}</p>
+    <p>{notConnected ? 'Tether it (USB or Ethernet), robot on, Driver Station connected, then Connect.' : shownWhy}</p>
+    {#if notConnected && robotNotFound}<p>Robot not found: is the cable in? This is not a failed check.</p>{/if}
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
     {#if result?.state === 'settling'}<p class="small">Nothing is judged until {SETTLE_SECONDS} s after the robot code starts: start-up camera and time-sync alerts clear in that time.</p>{/if}
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
@@ -445,6 +449,7 @@
   .status { color: var(--muted); font-size: 0.85rem; flex: 1 1 18rem; }
   .button { padding: 0.4rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
   .verdict { margin: 1rem 0; padding: 1.25rem 1rem; border-radius: 10px; text-align: center; border: 2px solid var(--border); }
+  .big .tail { font-size: clamp(1.1rem, 3vw, 1.6rem); letter-spacing: 0; }
   .big { font-size: clamp(2rem, 9vw, 4rem); font-weight: 800; margin: 0; letter-spacing: 0.02em; }
   .verdict p { margin: 0.25rem 0; }
   .small { font-size: 0.8rem; color: var(--muted); }

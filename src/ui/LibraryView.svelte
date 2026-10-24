@@ -25,10 +25,12 @@
   import { asFile, codeSpec, sessionNames } from '../hub/session-files.ts'
   import { robotsToProfile, type RobotToProfile } from '../hub/drafts.ts'
   import { keptNow } from './kept-profiles.svelte.ts'
+  import { USB_ADDRESS } from '../foresight/addresses.ts'
 
   // `onOpenSession`: the filtered logs, in the Session view. `onOpenMatch`: one log, in Match review. `onDraft`: one log in the
   // profile builder, with "Use GitHub" filled in (`owner/repo@ref`).
-  let { onOpenSession, onOpenMatch, onDraft }: { onOpenSession: (files: File[]) => void; onOpenMatch: (files: File[]) => void; onDraft: (files: File[], spec: string) => void } = $props()
+  // `onReview`: switch to Match review (the empty library and a failed pull offer it for one match's log).
+  let { onOpenSession, onOpenMatch, onDraft, onReview }: { onOpenSession: (files: File[]) => void; onOpenMatch: (files: File[]) => void; onDraft: (files: File[], spec: string) => void; onReview?: () => void } = $props()
   const api = hub()
 
   let snapshot = $state.raw<LibrarySnapshot | null>(null)
@@ -61,6 +63,7 @@
   async function work<T>(label: string, body: () => Promise<T>): Promise<T | undefined> {
     if (!api || progress) return undefined
     problem = null
+    pullFailed = null // the last pull's failure is old news once anything else is tried
     progress = { job: label, done: 0, total: 0, current: '' }
     lastJob = null // a new job's own report replaces the old one
     ownWork = true
@@ -91,16 +94,29 @@
     const r = await work('Downloading', () => api!.fetchLogs(paths))
     if (r) fetchReport = r
   }
-  async function addRobot() {
+  /** A pull that never reached the robot (not a refusal because it is enabled or on the field): the words a student needs, and the real text kept under them. */
+  let pullFailed = $state<{ address: string; detail: string } | null>(null)
+  const NOT_REACHED = /^(Could not check the robot|The robot did not say whether)/
+  async function addRobot(address: string = robotAddress) {
     try { localStorage.setItem('hindsight.robotAddress', robotAddress) } catch { /* private window */ }
-    const r = await work('Reading robot', () => api!.addFromRobot(robotAddress))
+    pullFailed = null
+    const r = await work('Reading robot', async () => {
+      try { return await api!.addFromRobot(address) } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e)
+        if (/^That is not a robot address/.test(detail)) throw e
+        pullFailed = { address, detail }
+        return undefined
+      }
+    })
     if (!r) return
-    if ('refused' in r) problem = r.refused
+    if ('refused' in r) { if (NOT_REACHED.test(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
     else {
       report = r.report
       if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Add logs from the robot again later.`
     }
   }
+  /** The empty library's pull: the typed address, else the USB tether's (the same for every team). */
+  const pullUsb = () => addRobot(robotAddress.trim() || USB_ADDRESS.value)
   let update = $state<{ version: string; url: string } | null>(null)
 
   onMount(() => {
@@ -280,8 +296,8 @@
 <section class="bar">
   <button class="primary" onclick={addFolder} disabled={!!progress}>Add logs from a folder…</button>
   {#if drive?.signedIn}<button class="primary" onclick={() => (picking = 'ingest')} disabled={driveBusy}>Add logs from a Drive folder…</button>{/if}
-  <button class="primary" onclick={readAgain} disabled={driveBusy} title="Read every log on this computer again with this version of Hindsight and update what the list says about it (robot, event). Nothing in the logs changes.">Read logs again</button>
-  <span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={addRobot} disabled={driveBusy || !robotAddress.trim()}>Add logs from the robot</button></span>
+  {#if all.length}<button class="primary" onclick={readAgain} disabled={driveBusy} title="Read every log on this computer again with this version of Hindsight and update what the list says about it (robot, event). Nothing in the logs changes.">Read logs again</button>{/if}
+  <span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={() => addRobot()} disabled={driveBusy || !robotAddress.trim()}>Add logs from the robot</button></span>
   {#if progress}
     <span class="progress" role="status">
       {progress.job}{progress.total ? ` ${progress.done} of ${progress.total}` : '…'}{progress.current ? ` · ${progress.current}` : ''}
@@ -292,6 +308,13 @@
 </section>
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
+{#if pullFailed}
+  <section class="pullfail" role="alert" aria-label="Robot not found">
+    <p class="lead">Robot not found. Is the USB cable in and the robot on?</p>
+    <p class="row"><button class="primary strong" onclick={() => addRobot(pullFailed!.address)} disabled={driveBusy}>Try again</button> or <button class="secondary" onclick={addFolder} disabled={driveBusy}>Add a folder of logs</button>{#if onReview} or <button class="secondary" onclick={onReview}>Open one match's log</button>{/if}</p>
+    <p class="meta">What came back from {pullFailed.address}: {pullFailed.detail}</p>
+  </section>
+{/if}
 
 <details class="team" open={savedTeam === null && !codePlan?.sources.length}>
   <summary>Your team: {savedTeam === null ? 'no team number yet' : savedTeam}{codePlan?.sources.length ? ` · code from ${codePlan.sources.join(', ')}` : ' · no GitHub source yet'}</summary>
@@ -431,8 +454,8 @@
 {/if}
 
 <datalist id="places">{#each counts.place as [value] (value)}{#if !all.some((e) => (fmsPlace(e.record)?.name ?? places.get(e.record.sha256)) === value)}<option {value}></option>{/if}{/each}</datalist>
-<div class="layout">
-  <aside aria-label="Filters">
+<div class="layout" class:bare={all.length === 0}>
+  {#if all.length}<aside aria-label="Filters">
     {#each FACETS as f (f)}
       <fieldset>
         <legend>{FACET_LABELS[f]}</legend>
@@ -446,16 +469,21 @@
     {/each}
     <label class="stubs"><input type="checkbox" bind:checked={showStubs} /> Show stubs ({stubs.length})</label>
     {#if picked}<button class="link" onclick={() => (selection = {})}>Clear filters</button>{/if}
-  </aside>
+  </aside>{/if}
 
   <section class="list">
-    <div class="summary" role="status">
+    {#if all.length}<div class="summary" role="status">
       <strong>{filtered.length}</strong> log{filtered.length === 1 ? '' : 's'} · {size(bytes)} · <strong>{local.length}</strong> on this computer{filtered.length - local.length ? ` (${filtered.length - local.length} not)` : ''}{attachments ? ` · ${attachments} DS or hoot files attached` : ''}
       {#if fetchable.length}<button class="primary" onclick={download} disabled={driveBusy}>Download {fetchable.length} file{fetchable.length === 1 ? '' : 's'} ({size(fetchable.reduce((n, r) => n + r.size, 0))})</button>{/if}
       <button class="primary" onclick={openInSession} disabled={local.length === 0}>Open in Session view</button>
-    </div>
+    </div>{/if}
     {#if all.length === 0}
-      <p class="empty">No logs yet. Choose <em>Add logs from a folder…</em>: Hindsight copies what it finds into its library, files each log by what it says, and leaves your folder as it was.</p>
+      <div class="first" data-empty-library>
+        <p class="lead">Your team's robot logs live here.</p>
+        <p>Hindsight reads each one and lists what went wrong. It copies what it finds into its library and leaves your folder as it was.</p>
+        <p class="row"><button class="primary strong" onclick={addFolder} disabled={!!progress}>Add a folder of logs…</button> <button class="secondary" onclick={pullUsb} disabled={driveBusy}>Pull logs off the robot</button> <span class="meta">Plug in the USB cable first.</span></p>
+        {#if onReview}<p class="meta">Have one match's log?{' '}<button class="link" onclick={onReview}>Open it in Match review</button></p>{/if}
+      </div>
     {:else if filtered.length === 0}
       <p class="empty">No log matches these filters.</p>
     {/if}
@@ -528,6 +556,13 @@
   .confirm { border: 1px solid var(--warning); border-radius: 6px; padding: 0.4rem 0.75rem; max-width: 52rem; }
   button { font: inherit; color: var(--fg); }
   .primary { padding: 0.35rem 0.9rem; border: 1px solid var(--focus); border-radius: 6px; background: none; cursor: pointer; }
+  .primary.strong { font-weight: 600; }
+  .secondary { padding: 0.35rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); cursor: pointer; }
+  .secondary:disabled { color: var(--muted); cursor: default; }
+  .pullfail { border: 1px solid var(--error); border-radius: 8px; padding: 0.5rem 1rem; margin: 0.5rem 0 1rem; max-width: 52rem; }
+  .lead { font-size: 1.1rem; font-weight: 600; margin: 0.2rem 0; }
+  .first { max-width: 60ch; padding: 0.5rem 0; }
+  .first p { margin: 0.4rem 0; }
   .primary:disabled { border-color: var(--border); color: var(--muted); cursor: default; }
   .link { border: none; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; min-height: 24px; padding: 0 0.3rem; }
   .problem { color: var(--error); margin: 0.25rem 0; }
@@ -538,11 +573,12 @@
   .rows.plain { list-style: none; padding-left: 0; max-height: none; }
   .plain li { min-height: 28px; }
   .layout { display: grid; grid-template-columns: 14rem 1fr; gap: 1.5rem; align-items: start; }
+  .layout.bare { display: block; }
   @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
   aside { font-size: 0.85rem; }
   fieldset { border: none; padding: 0; margin: 0 0 0.9rem; }
   legend { font-weight: 600; padding: 0; margin-bottom: 0.15rem; }
-  aside label { display: flex; align-items: baseline; gap: 0.4rem; min-height: 22px; }
+  aside label { display: flex; align-items: baseline; gap: 0.4rem; min-height: 24px; }
   aside label span:nth-of-type(1) { flex: 1; overflow-wrap: anywhere; }
   .n { color: var(--muted); font-variant-numeric: tabular-nums; }
   .zero { color: var(--muted); }

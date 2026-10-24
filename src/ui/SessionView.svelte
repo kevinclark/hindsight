@@ -552,10 +552,17 @@
   <p class="oneline" data-folded>{session.matches.length + (session.pitRuns?.length ?? 0)} logs · event {session.label.replace(/^Event\s+/, '')} · <button class="link" onclick={() => (chromeOpen = true)}>Change logs…</button></p>
 {:else}
 {#if eventMode && chromeOpen}<p class="oneline"><button class="link" onclick={() => (chromeOpen = false)}>Fold the log chooser away</button></p>{/if}
+{#if !sessions.length}
+  <div class="first" data-empty-session>
+    <p class="lead">Read an event's matches, or a practice day's runs, together.</p>
+    <p>You get the board of what's broken before the next match, the trends, and how often each finding shows up. It needs a folder of logs{#if hub()}: choose one, or use <em>Open in Session view</em> on the Library page for the library's logs{/if}. You can also drop the log files here; each is read one at a time, so a big folder is fine.</p>
+  </div>
+{:else}
 <p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>
+{/if}
 
 <section class="drop" aria-label="Drop logs here" ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); load(e.dataTransfer?.files ?? null) }}>
-  <label class="button">Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
+  <label class="button" class:primary={!sessions.length}>Choose a folder… <input type="file" webkitdirectory multiple onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <label class="button">Choose logs… <input type="file" multiple accept=".wpilog" onchange={(e) => load((e.currentTarget as HTMLInputElement).files)} /></label>
   <CodeFolderControl suggest={session ? [...PROFILES, ...stored].find((p) => profileId(p) === namedRobots[0])?.code ?? null : undefined} linked={!namedRobots.length && offers.length ? codeSpec(offers[0].link) : undefined} />
   {#if summaries.length}<button class="button" disabled={loading} onclick={newSession} title="Clears the log summaries on this page and saved in this browser. Moved logs, session names, battery ids and known-issue marks are kept.">New session</button>{/if}
@@ -805,6 +812,10 @@
   .sessions button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
   .pit { font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
   .sessions small { color: var(--muted); }
+  .button.primary { border-color: var(--focus); font-weight: 600; }
+  .first { max-width: 80ch; }
+  .first p { margin: 0.3rem 0; }
+  .first .lead { font-size: 1.1rem; font-weight: 600; }
   .button.prominent { border-color: var(--warning); color: var(--warning); font-weight: 600; }
   .changed h3 { margin-top: 1rem; }
   .changed .error { color: var(--error); }
