@@ -64,7 +64,7 @@
       <span class="muted" role="status">{#if copied === 'yes'}Copied: paste it into a file in the robot folder and <code>git apply</code> it.{:else if copied === 'no'}The browser would not copy: select the diff above, or Save .patch.{/if}</span>
     </p>
     <ol class="steps" aria-label="How to apply it">
-      <li>Save .patch (it goes to Downloads).</li>
+      <li>Save .patch (into Downloads, unless you choose another folder: then use that path below).</li>
       <li>In the robot folder: <code>git apply ~/Downloads/{fileName}</code> (Windows: <code>%USERPROFILE%\Downloads\{fileName}</code>).</li>
       <li>Read <code>git diff</code>, then <code>git add</code> and <code>git commit</code> yourself.</li>
     </ol>
