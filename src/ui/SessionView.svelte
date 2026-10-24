@@ -13,7 +13,7 @@
   import { profilesNow } from './kept-profiles.svelte.ts'
   import { teamNow } from './team-setting.svelte.ts'
   import { robotChoices } from './robot-list.ts'
-  import { codeSpec, type LibraryLink } from '../hub/session-files.ts'
+  import { draftOffers, type LibraryLink } from '../hub/session-files.ts'
   import RobotOptions from './RobotOptions.svelte'
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
@@ -176,7 +176,7 @@
     void linksFor(names).then((found) => { if (!stale) codeLinks = found }).catch(() => { if (!stale) codeLinks = [] })
     return () => { stale = true }
   })
-  const draftOffers = $derived([...new Map(codeLinks.map((l) => [codeSpec(l), l])).values()])
+  const offers = $derived(draftOffers(codeLinks))
 
   /** Every log file in a session, counting the pieces of a match recorded in several logs. */
   const logsOf = (s: Session) => s.matches.flatMap((m) => m.pieces ?? [m.fileName])
@@ -528,8 +528,8 @@
   {#each robots as r (r.robot.profileId)}
     <p class="note">Robot: <strong>{r.robot.name}</strong>, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){robots.length > 1 ? ` · ${r.matches.length} match${r.matches.length === 1 ? '' : 'es'}` : ''}</p>
   {/each}
-  {#if onDraft}{#each draftOffers as l (codeSpec(l))}
-    <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>
+  {#if onDraft}{#each offers as { link: l, logs, total, refs } (l.code.repo)}
+    <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}{refs > 1 ? ` (${logs} of these ${total} logs ran it; ${refs} commits in all)` : ''}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>
   {/each}{/if}
   <p class="note"><label>Robot for this session: <select onchange={(e) => setRobot(session, (e.currentTarget as HTMLSelectElement).value)}>
     <option value="auto" selected={!chosenId}>automatic (from each log)</option>

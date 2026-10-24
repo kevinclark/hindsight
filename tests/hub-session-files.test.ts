@@ -1,6 +1,6 @@
 // Library logs named for the Session view, and found again by those names (summaries restored without their file).
 import { describe, expect, it } from 'vitest'
-import { codeSpec, findByName, libraryLinks, sessionNames } from '../src/hub/session-files.ts'
+import { codeSpec, draftOffers, findByName, libraryLinks, sessionNames } from '../src/hub/session-files.ts'
 import type { HubApi } from '../src/hub/bridge.ts'
 import type { Entry } from '../src/hub/catalog.ts'
 import type { CodeLink, LogRecord } from '../src/hub/types.ts'
@@ -53,5 +53,12 @@ describe('code links of library logs', () => {
     const byName: CodeLink = { repo: 'example-org/robot-9999', linkedBy: 'codebase', checkedAt: 1 }
     expect(codeSpec({ code: byName, build: { sha: 'abc1234', branch: 'event-test' } })).toBe('example-org/robot-9999@event-test')
     expect(codeSpec({ code: byName, build: null })).toBe('example-org/robot-9999@main')
+  })
+  it('offers one draft per repo, at the commit most of the logs ran', () => {
+    const at = (name: string, c: string, repo = 'example-org/robot-9999') => ({ name, code: { repo, linkedBy: 'sha', sha: c.repeat(40), checkedAt: 1 } as CodeLink, build: null })
+    const offers = draftOffers([at('q1', 'a'), at('q2', 'b'), at('q3', 'b'), at('q4', 'c'), at('q5', 'd', 'example-org/other')])
+    expect(offers.map((o) => [o.link.name, o.logs, o.total, o.refs])).toEqual([['q2', 2, 4, 3], ['q5', 1, 1, 1]])
+    expect(draftOffers([at('q1', 'a'), at('q2', 'b')])[0].link.name).toBe('q1')
+    expect(draftOffers([])).toEqual([])
   })
 })

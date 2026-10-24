@@ -57,3 +57,21 @@ export async function libraryLinks(api: HubApi, names: string[]): Promise<Librar
 
 /** "owner/repo@ref" for the profile builder's "Use GitHub": the commit when GitHub has it, else the branch the log ran on (main if it names none). */
 export const codeSpec = ({ code, build }: Pick<LibraryLink, 'code' | 'build'>): string => `${code.repo}@${code.linkedBy === 'sha' && code.sha ? code.sha : build?.branch || 'main'}`
+
+/** One offer to draft a profile, per repo: the ref most of the session's logs ran, how many logs ran it, and how many refs the logs ran in all. */
+export interface DraftOffer { link: LibraryLink; logs: number; total: number; refs: number }
+
+/** One draft offer per repo, at the ref most of these logs ran (a tie goes to the ref first seen). */
+export function draftOffers(links: LibraryLink[]): DraftOffer[] {
+  const byRepo = new Map<string, Map<string, LibraryLink[]>>()
+  for (const l of links) {
+    const refs = byRepo.get(l.code.repo) ?? new Map<string, LibraryLink[]>()
+    refs.set(codeSpec(l), [...(refs.get(codeSpec(l)) ?? []), l])
+    byRepo.set(l.code.repo, refs)
+  }
+  return [...byRepo.values()].map((refs) => {
+    const runs = [...refs.values()]
+    const most = runs.reduce((a, b) => (b.length > a.length ? b : a))
+    return { link: most[0], logs: most.length, total: runs.reduce((n, r) => n + r.length, 0), refs: runs.length }
+  })
+}
