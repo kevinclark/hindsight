@@ -319,7 +319,7 @@
   }
 
   // What the team recorded on the board for this log's issues (priority, notes, cause states), filed under the robot as the board files it.
-  const boardFor = (a: Analysis): ExportBoard => ({ states: boardState(history), robot: robotIdOf(matchRobot(a.match)) })
+  const boardFor = (a: Analysis): ExportBoard => { const r = refOf(a); return { states: boardState(history), robot: robotIdOf(matchRobot(a.match)), scope: { event: r.event, from: r.played, to: r.played } } }
   async function downloadForClaude() {
     if (!current || !shownCurrent) return
     // Lists what is inside first (ADR 5); the file is saved only on Save.

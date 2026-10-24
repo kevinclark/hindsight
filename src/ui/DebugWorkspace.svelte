@@ -41,9 +41,9 @@
 
   const list = $derived(debugCauses(causes, { likely: [...likely], ruledOut }, marks, reverse))
   const evid = $derived(Object.entries(evidence).filter(([, v]) => v !== undefined))
-  const note = $derived(rankNote(evid.length, list.filter((c) => c.points).length))
+  const note = $derived(rankNote(list.filter((c) => c.points).length))
   const counts = $derived({ out: list.filter((c) => c.state === 'ruled-out').length, ok: list.filter((c) => c.state === 'confirmed').length })
-  const save = (id: string, state: CauseState, text: string) => onChange(causeChange(id, state, text))
+  const save = (id: string, state: CauseState, text: string, test: string) => onChange(causeChange(id, state, text, test))
 </script>
 
 <div class="dbg" data-debug>
@@ -62,15 +62,15 @@
     <h4>What it means</h4>
     <p>{meaning}</p>
     <p class="small muted">Latest: {latest}</p>
+    <p><b>Next step:</b> {nextStep}</p>
   </section>
 
   <section class="panel">
     <h4>Possible causes ({list.length}){#if counts.out || counts.ok}{' '}<span class="small muted">· {counts.out} ruled out · {counts.ok} confirmed</span>{/if}</h4>
     {#if list.length}
       <p class="hint" data-rank>{note}</p>
-      <ol class="cards">{#each list as c, n (c.id)}<DebugCauseCard cause={c} n={n + 1} {role} onSave={(s, t) => save(c.id, s, t)} />{/each}</ol>
+      <ol class="cards">{#each list as c, n (c.id)}<DebugCauseCard cause={c} n={n + 1} {role} onSave={(s, t, k) => save(c.id, s, t, k)} />{/each}</ol>
     {:else}<p class="muted">This rule lists no causes.</p>{/if}
-    <p class="small"><b>Next step:</b> {nextStep}</p>
   </section>
 
   {#if evid.length}
@@ -105,5 +105,5 @@
   table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
   th, td { text-align: left; padding: 0.3rem 0.5rem 0.3rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
   .radio { display: flex; align-items: center; gap: 0.5rem; min-height: 28px; }
-  .radio input { width: 20px; height: 20px; }
+  .radio input { width: 24px; height: 24px; margin: 0; }
 </style>

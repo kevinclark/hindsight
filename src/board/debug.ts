@@ -21,6 +21,8 @@ export function writeReverse(store: Store, on: boolean): void {
   try { store.setItem(REVERSE_KEY, on ? 'on' : 'off') } catch { /* a private window: kept for this visit only */ }
 }
 
+/** The tag beside a cause that is not simply possible: one style and one case everywhere (workspace, issue detail, handoff). */
+export const CAUSE_TAGS: Record<'ruled-out' | 'confirmed', string> = { 'ruled-out': 'ruled out', confirmed: 'confirmed' }
 export const CAUSE_WORDS: Record<CauseState, string> = { possible: 'Possible', 'ruled-out': 'Ruled out', confirmed: 'Confirmed' }
 
 export interface DebugCause {
@@ -32,14 +34,16 @@ export interface DebugCause {
   /** The rule's own reason for ruling it out on this log: Hindsight's, shown as such. */
   hindsightRuledOut: string | null
   state: CauseState
-  /** For ruled-out: "<test>: <what it showed>"; otherwise the student's note. */
+  /** For ruled-out: the test that was run. */
+  test: string
+  /** For ruled-out: what the test showed; otherwise the student's note. */
   text: string
   /** Who recorded the state, as a role only. */
   role: BoardRole | null
   when: string | null
 }
 
-export type CauseMarks = Record<string, { state: CauseState; text: string; role?: BoardRole; by?: { role: BoardRole }; when: string }> | undefined
+export type CauseMarks = Record<string, { state: CauseState; test?: string; text: string; role?: BoardRole; by?: { role: BoardRole }; when: string }> | undefined
 
 /** What the finding offers the ranking: the cause ids this log points to and the ones it rules out. */
 export interface Ranking { likely?: string[]; ruledOut?: Record<string, string> }
@@ -55,28 +59,27 @@ export function debugCauses(causes: readonly Cause[], ranking: Ranking, marks: C
     const m = marks?.[c.id]
     return {
       id: c.id, cause: c.cause, look: c.look, points: likely.has(c.id), hindsightRuledOut: ranking.ruledOut?.[c.id] ?? null,
-      state: m?.state ?? 'possible', text: m?.text ?? '', role: m ? (m.role ?? m.by?.role ?? null) : null, when: m?.when ?? null,
+      state: m?.state ?? 'possible', test: m?.test ?? '', text: m?.text ?? '', role: m ? (m.role ?? m.by?.role ?? null) : null, when: m?.when ?? null,
     }
   })
   return reverse ? list.reverse() : list
 }
 
 /**
- * What the ranking rests on, in one sentence: the measured numbers the rule judged by (a finding's evidence values; Hindsight
- * keeps no other count of the signals a rule read) and whether the log points at any cause. Never "likely".
+ * What the order rests on, in one sentence, in three forms: this log points at some causes (they are listed first), or it
+ * singles out none (the rule's usual order). It never says "likely" and never ties the order to the evidence count.
  */
-export function rankNote(evidenceCount: number, pointed: number): string {
-  const basis = evidenceCount > 0 ? `from ${evidenceCount} measured number${evidenceCount === 1 ? '' : 's'} in this log` : 'with no measured number to go on'
-  const order = pointed > 0 ? `${pointed} cause${pointed === 1 ? ' is' : 's are'} listed first because this log points to ${pointed === 1 ? 'it' : 'them'}; the rest follow in the rule's usual order` : 'none is listed first because of this log; they follow the rule\'s usual order'
-  return `Ordered ${basis}: ${order}. They are possible causes, not likely ones: no backtest supports a ranking yet.`
+export function rankNote(pointed: number): string {
+  const order = pointed > 0 ? `${pointed} listed first: this log points to ${pointed === 1 ? 'it' : 'them'}; the rest are in Hindsight's usual order for this rule` : "Hindsight's usual order for this rule; this log singles out none"
+  return `${order}. They are possible causes, not likely ones: no backtest supports a ranking yet.`
 }
 
-/** "ruled out by <test>: <what it showed>": the test and its result joined as the line stores them. */
+/** "ruled out by <test>: <what it showed>". */
 export const ruledOutText = (test: string, showed: string): string => [test.trim(), showed.trim()].filter(Boolean).join(': ')
 
-/** What the student recorded, in words: "ruled out by <test>: <what it showed>", "confirmed: <note>". */
-export function markText(c: Pick<DebugCause, 'state' | 'text'>): string {
-  if (c.state === 'ruled-out') return `ruled out by ${c.text || 'a test (none written)'}`
+/** What the student recorded, in words. */
+export function markText(c: Pick<DebugCause, 'state' | 'test' | 'text'>): string {
+  if (c.state === 'ruled-out') return `ruled out by ${ruledOutText(c.test, c.text) || 'a test (none written)'}`
   if (c.state === 'confirmed') return `confirmed${c.text ? `: ${c.text}` : ''}`
   return `possible${c.text ? `: ${c.text}` : ''}`
 }

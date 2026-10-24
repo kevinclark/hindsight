@@ -23,6 +23,7 @@
   import { changeText, diffFindings, snapshotFindings, type FindingChange, type FindingSnapshot } from '../session/changes.ts'
   import { VERSION } from '../version.ts'
   import { boardState, type HistoryEvent, type Triage } from '../triage/history.ts'
+  import { scopeOf } from '../board/model.ts'
   import { saveForClaude } from './export-preview.svelte.ts'
   import { sessionWithMarks } from '../triage/track-record.ts'
   import Trends from './Trends.svelte'
@@ -469,7 +470,7 @@
   async function download() {
     if (!session) return
     // Lists what is inside first (ADR 5); the file is saved only on Save.
-    await saveForClaude(`${sessionBase(session.label)}.session-findings.json`, buildSessionJson(shown!, issues, typedBatteries, changesFor(session), { states: boardState(history) }))
+    await saveForClaude(`${sessionBase(session.label)}.session-findings.json`, buildSessionJson(shown!, issues, typedBatteries, changesFor(session), { states: boardState(history), scope: scopeOf(shown!) }))
   }
   // "Save for Slack": the phone card as a PNG, then the print dialog (Save as PDF; the title names the file).
   // `s` as the team's marks show it (`shown`).

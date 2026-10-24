@@ -250,6 +250,10 @@
   .board :global(ol.causes li) { margin: 0.5rem 0; }
   .board :global(.look) { display: block; color: var(--muted); font-size: 0.88rem; }
   .board :global(.ruled .cause) { text-decoration: line-through; }
+  .board :global(.titlerow) { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; align-items: center; }
+  .board :global(.titlerow h3) { margin: 0.3rem 0 0.2rem; }
+  .board :global(.readback) { list-style: none; padding: 0 0.5rem 0.4rem 6.8rem; border-bottom: 1px solid var(--border); }
+  .board :global(.causeline) { margin: 0.2rem 0; }
   .board :global(.crumbs) { margin: 0.5rem 0; }
   .board :global(.bigcard) { border: 2px solid var(--fg); border-radius: 6px; padding: 0.6rem 0.9rem; margin: 0.8rem 0; }
   .board :global(.flash) { border: 2px solid var(--fg); border-radius: 6px; padding: 0.5rem 0.8rem; font-weight: 600; }

@@ -10,6 +10,7 @@ import { boardKey, boardState, mergeHistory, parseHistory, serializeHistory, tri
 import { buildFindingsJson } from '../src/report/findings-json.ts'
 import { contentsLines, exportContents } from '../src/report/board-export.ts'
 import { buildSessionJson } from '../src/session/export.ts'
+import { tickAt } from '../src/board/ticks.ts'
 import { robotIdOf, matchRobot } from '../src/session/summary.ts'
 import { makerOf } from '../src/rules/index.ts'
 import { BASE, RAW, ROBOT, input, match, session } from './helpers/board-scene.ts'
@@ -20,13 +21,15 @@ const KEY = RULE
 const causes = makerOf(RULE)!.causes
 const who: Who = { device: 'dev-a', role: 'pit' }
 const t = (min: number) => new Date(BASE + min * 60e3)
-const mark = (cause: string, state: 'possible' | 'ruled-out' | 'confirmed', text: string, min: number, w: Who = who, history: HistoryEvent[] = []) =>
-  boardLines(history, w, t(min), { key: KEY, robot: ROBOT }, causeChange(cause, state, text), {})
+const mark = (cause: string, state: 'possible' | 'ruled-out' | 'confirmed', text: string, min: number, w: Who = who, history: HistoryEvent[] = [], test = '') =>
+  boardLines(history, w, t(min), { key: KEY, robot: ROBOT }, causeChange(cause, state, text, test), {})
+const SCOPE = { event: 'TEST', from: BASE, to: BASE + 6e5 }
+const IN = { match: 'TEST Qualification 2', event: 'TEST', played: t(1).toISOString() }
 
 describe('the cause op', () => {
   const [a, b] = causes
   it('folds the latest state per cause, beside the board state', () => {
-    const h1 = mark(a.id, 'ruled-out', 'swapped the battery: the dip stayed', 1)
+    const h1 = mark(a.id, 'ruled-out', 'the dip stayed', 1, who, [], 'swapped the battery')
     const h2 = mark(a.id, 'confirmed', 'a loose lug', 5, who, h1)
     const h3 = mark(b.id, 'possible', 'watch the pit run', 6, { device: 'dev-b', role: 'software' }, [...h1, ...h2])
     const s = boardState([...h1, ...h2, ...h3]).get(boardKey(KEY, ROBOT))!
@@ -36,7 +39,7 @@ describe('the cause op', () => {
     expect(s.changed).toBe(true)
   })
   it('back to possible with no text clears it; a possible with a note is kept', () => {
-    const h1 = mark(a.id, 'ruled-out', 'test reason: it showed', 1)
+    const h1 = mark(a.id, 'ruled-out', 'it showed', 1, who, [], 'test reason')
     const h2 = mark(a.id, 'possible', '', 2, who, h1)
     expect(boardState([...h1, ...h2]).get(boardKey(KEY, ROBOT))!.causes).toBeUndefined()
   })
@@ -61,7 +64,7 @@ describe('the cause op', () => {
   })
   describe('an old build', () => {
     // An old build types only the board ops it knows; a `cause` line is a well-formed JSON object it keeps as an OpaqueEvent.
-    const line = JSON.stringify(mark(a.id, 'ruled-out', 'test reason: it showed', 3)[0])
+    const line = JSON.stringify(mark(a.id, 'ruled-out', 'it showed', 3, who, [], 'test reason')[0])
     const heldByOld: OpaqueEvent = { type: 'opaque', raw: line, when: JSON.parse(line).when }
     const old: HistoryEvent[] = [{ type: 'issue', key: KEY, status: 'known', note: 'test reason', when: t(1).toISOString() }]
     it('writes the line back byte for byte', () => {
@@ -112,15 +115,17 @@ describe('the causes in order', () => {
     expect(list.find((c) => c.id === a.id)).toMatchObject({ hindsightRuledOut: 'the radio stayed linked', state: 'confirmed', role: 'pit' })
   })
   it('says what the ranking rests on, with "possible", never "likely"', () => {
-    expect(rankNote(4, 1)).toMatch(/from 4 measured numbers/)
-    expect(rankNote(1, 2)).toMatch(/from 1 measured number in/)
-    expect(rankNote(0, 0)).toMatch(/no measured number/)
-    for (const n of [rankNote(4, 1), rankNote(0, 0)]) { expect(n).toMatch(/possible causes, not likely ones/); expect(n.replace('not likely ones', '')).not.toMatch(/likely/) }
+    expect(rankNote(0)).toMatch(/^Hindsight's usual order for this rule; this log singles out none\./)
+    expect(rankNote(1)).toMatch(/^1 listed first: this log points to it;/)
+    expect(rankNote(2)).toMatch(/^2 listed first: this log points to them;/)
+    for (const n of [rankNote(0), rankNote(2)]) expect(n).not.toMatch(/measured number|ordered from/i)
+    for (const n of [rankNote(1), rankNote(0)]) { expect(n).toMatch(/possible causes, not likely ones/); expect(n.replace('not likely ones', '')).not.toMatch(/likely/) }
   })
   it('words the states', () => {
     expect(ruledOutText(' swapped the cable ', ' the drops went on ')).toBe('swapped the cable: the drops went on')
-    expect(markText({ state: 'ruled-out', text: 'a: b' })).toBe('ruled out by a: b')
-    expect(markText({ state: 'confirmed', text: '' })).toBe('confirmed')
+    expect(markText({ state: 'ruled-out', test: 'a: b', text: 'c' })).toBe('ruled out by a: b: c')
+    expect(markText({ state: 'ruled-out', test: '', text: '' })).toBe('ruled out by a test (none written)')
+    expect(markText({ state: 'confirmed', test: '', text: '' })).toBe('confirmed')
   })
 })
 
@@ -128,8 +133,8 @@ describe('the board and the handoff show the causes ruled out', () => {
   const s = session([match(2, { fires: [{ key: KEY }] }), match(3, { fires: [{ key: KEY }] })])
   const [a, b, c] = causes
   const lines = [
-    ...mark(a.id, 'ruled-out', 'unplugged the radio: the drops went on', 55),
-    ...mark(b.id, 'confirmed', 'a loose lug', 56, { device: 'dev-b', role: 'software' }, mark(a.id, 'ruled-out', 'x', 55)),
+    ...mark(a.id, 'ruled-out', 'the drops went on', 55, who, [], 'unplugged the radio'),
+    ...mark(b.id, 'confirmed', 'a loose lug', 56, { device: 'dev-b', role: 'software' }, mark(a.id, 'ruled-out', 'x', 55, who, [], 'x')),
   ]
   const board = buildBoard({ ...input(s, lines), now: t(70) })
   const issue = board.issues[0]
@@ -179,13 +184,13 @@ describe('the Claude export', () => {
   const robot = robotIdOf(matchRobot(a.match))
   const rule = a.report.findings.find((f) => makerOf(f.rule) && 'sources' in makerOf(f.rule)!)!
   const lines = (n: number): BoardEvent[] => {
-    const l1 = boardLines([], who, t(1), { key: rule.key, robot }, [{ op: 'priority', value: 'high' }, { op: 'note', value: 'test reason' }, { op: 'owner', value: 'pit' }, { op: 'defer', value: 'next-match', until: { kind: 'next-match', match: 'Q9' } }, { op: 'workaround', value: 'Avoid the long shot.' }], {})
-    const l2 = boardLines(l1, { device: 'dev-b', role: 'software' }, t(2), { key: rule.key, robot }, causeChange(rule.causes[0].id, 'ruled-out', 'swapped the battery: the dip stayed'), {})
+    const l1 = boardLines([], who, t(1), { key: rule.key, robot }, [{ op: 'priority', value: 'high' }, { op: 'note', value: 'test reason' }, { op: 'owner', value: 'pit' }, { op: 'defer', value: 'next-match', until: { kind: 'next-match', match: 'Q9' } }, { op: 'workaround', value: 'Avoid the long shot.' }, { op: 'checked', value: 'Q9' }], IN)
+    const l2 = boardLines(l1, { device: 'dev-b', role: 'software' }, t(2), { key: rule.key, robot }, causeChange(rule.causes[0].id, 'ruled-out', 'the dip stayed', 'swapped the battery'), {})
     return [...l1, ...l2].slice(0, n)
   }
   const plain = () => JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report)))
   it('with no history, differs from the old file only by the per-rule sources block', () => {
-    const withEmpty = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: boardState([]), robot })))
+    const withEmpty = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: boardState([]), robot, scope: SCOPE })))
     const { generatedAt: g1, ...x } = plain()
     const { generatedAt: g2, ...y } = withEmpty
     expect(y).toEqual(x)
@@ -198,10 +203,12 @@ describe('the Claude export', () => {
   })
   it('carries the board state per issue, notes, cause states and roles only, when present', () => {
     const states = boardState(lines(99))
-    const json = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states, robot })))
+    const json = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states, robot, scope: SCOPE })))
     const f = json.findings.find((x: any) => x.key === rule.key)
     expect(f.board).toMatchObject({ priority: 'high', owner: 'pit', notes: [{ text: 'test reason', role: 'pit' }], deferred: { workaround: 'Avoid the long shot.', role: 'pit' } })
-    expect(f.board.causes).toEqual([expect.objectContaining({ id: rule.causes[0].id, cause: rule.causes[0].cause, state: 'ruled-out', text: 'swapped the battery: the dip stayed', role: 'software' })])
+    expect(f.board.causes).toEqual([expect.objectContaining({ id: rule.causes[0].id, cause: rule.causes[0].cause, state: 'ruled-out', test: 'swapped the battery', text: 'the dip stayed', role: 'software' })])
+    // Queue ticks are not carried.
+    expect(f.board.checked).toBeUndefined()
     // Roles only: no device id anywhere in the file.
     expect(JSON.stringify(json)).not.toContain('dev-a')
     expect(JSON.stringify(json)).not.toContain('dev-b')
@@ -210,34 +217,45 @@ describe('the Claude export', () => {
   })
   it('carries cause states without notes, and notes without cause states', () => {
     const onlyCause = boardState(boardLines([], who, t(1), { key: rule.key, robot }, causeChange(rule.causes[0].id, 'confirmed', ''), {}))
-    const j1 = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: onlyCause, robot })))
+    const j1 = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: onlyCause, robot, scope: SCOPE })))
     expect(j1.findings.find((x: any) => x.key === rule.key).board).toEqual({ causes: [expect.objectContaining({ state: 'confirmed' })] })
     const onlyNote = boardState(boardLines([], who, t(1), { key: rule.key, robot }, [{ op: 'note', value: 'test reason' }], {}))
-    const j2 = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: onlyNote, robot })))
+    const j2 = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: onlyNote, robot, scope: SCOPE })))
     expect(j2.findings.find((x: any) => x.key === rule.key).board).toEqual({ notes: [expect.objectContaining({ text: 'test reason' })] })
+  })
+  it('scopes like the board: a deferral (and its workaround) from another event is left out; the rest carries', () => {
+    const other = boardLines([], who, t(1), { key: rule.key, robot }, [{ op: 'priority', value: 'high' }, { op: 'note', value: 'test reason' }, { op: 'workaround', value: 'Avoid the long shot.' }, { op: 'defer', value: 'next-match', until: { kind: 'next-match' } }], { match: 'OTHER Qualification 2', event: 'OTHER', played: t(1).toISOString() })
+    const json = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: boardState(other), robot, scope: SCOPE })))
+    const f = json.findings.find((x: any) => x.key === rule.key)
+    expect(f.board.deferred).toBeUndefined()
+    expect(f.board.workaround).toBeUndefined()
+    expect(f.board).toMatchObject({ priority: 'high', notes: [{ text: 'test reason' }] })
   })
   it('files the issue under the robot, so another robot\'s notes are not carried', () => {
     const states = boardState(boardLines([], who, t(1), { key: rule.key, robot: 'Another robot' }, [{ op: 'note', value: 'test reason' }], {}))
-    const json = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states, robot })))
+    const json = JSON.parse(JSON.stringify(buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states, robot, scope: SCOPE })))
     expect(json.findings.every((x: any) => !('board' in x))).toBe(true)
   })
   it('lists what is inside by counting the file itself, and says no names and no key hash', () => {
-    const json = buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: boardState(lines(99)), robot })
+    const json = buildFindingsJson(a.match, a.report, new Map(), new Map(), new Map(), { states: boardState(lines(99)), robot, scope: SCOPE })
     const c = exportContents(JSON.parse(JSON.stringify(json)))
-    expect(c).toMatchObject({ findings: a.report.findings.length, boardIssues: 1, notes: 1, causeStates: 1 })
+    expect(c).toMatchObject({ findings: a.report.findings.filter((f) => f.rule !== 'meta/not-checked').length, boardIssues: 1, notes: 1, causeStates: 1 })
     expect(c.windows).toBe(a.report.findings.filter((f) => f.plot).length)
     const text = contentsLines(c, 123456).join('\n')
     expect(text).toContain(`${c.findings} finding`)
     expect(text).toContain('1 note, 1 cause state')
-    expect(text).toMatch(/No names/)
+    expect(text).toMatch(/No names added by Hindsight/)
+    expect(text).toMatch(/Your own notes go in as you wrote them/)
     expect(text).toMatch(/Wi-Fi key hash/)
     expect(text).toMatch(/121 KB/)
+    // Bytes, not characters: a multi-byte character counts as its bytes.
+    expect(contentsLines(c, new TextEncoder().encode('é'.repeat(1024)).length).join('\n')).toMatch(/About 2 KB/)
   })
   it('the session file carries the board state and the rule sources too, and no device ids', () => {
     const s = session([match(2, { fires: [{ key: KEY }] }), match(3, { fires: [{ key: KEY }] })])
-    const states = boardState(mark(causes[0].id, 'ruled-out', 'test reason: it showed', 5))
+    const states = boardState(mark(causes[0].id, 'ruled-out', 'it showed', 5, who, [], 'test reason'))
     const plainJson = JSON.parse(JSON.stringify(buildSessionJson(s)))
-    const withBoard = JSON.parse(JSON.stringify(buildSessionJson(s, new Map(), {}, undefined, { states })))
+    const withBoard = JSON.parse(JSON.stringify(buildSessionJson(s, new Map(), {}, undefined, { states, scope: SCOPE })))
     expect(plainJson.findings.every((f: any) => !('board' in f))).toBe(true)
     expect(withBoard.findings[0].board.causes[0]).toMatchObject({ state: 'ruled-out', role: 'pit' })
     expect(Object.keys(withBoard.rules)).toEqual([RULE])
@@ -253,5 +271,49 @@ describe('where a change is written', () => {
   it('atLatest still names the latest on-field match for a cause line', () => {
     const s = session([match(2), match(3)])
     expect(atLatest(s)).toMatchObject({ match: expect.stringContaining('3') })
+  })
+})
+
+describe('ticks and clocks', () => {
+  const NOW = Date.parse('2099-03-05T21:00:00Z')
+  it('a tick just made on a laptop 30 s behind reads fresh, not ahead', () => {
+    expect(tickAt('pit', new Date(NOW + 30e3).toISOString(), NOW)).toMatchObject({ ahead: false, old: false })
+  })
+  it('a tick 6 minutes ahead reads clock ahead and old; 5 minutes is still fresh; 91 minutes back is old, not ahead', () => {
+    expect(tickAt('pit', new Date(NOW + 6 * 60e3).toISOString(), NOW)).toMatchObject({ ahead: true, old: true })
+    expect(tickAt('pit', new Date(NOW + 5 * 60e3).toISOString(), NOW)).toMatchObject({ ahead: false, old: false })
+    expect(tickAt('pit', new Date(NOW - 91 * 60e3).toISOString(), NOW)).toMatchObject({ ahead: false, old: true })
+    expect(tickAt('pit', new Date(NOW - 90 * 60e3).toISOString(), NOW)).toMatchObject({ old: false })
+  })
+})
+
+describe('the handoff reads the causes back', () => {
+  const [a, b] = causes
+  const s = session([match(2, { fires: [{ key: KEY }] }), match(3, { fires: [{ key: KEY }] })])
+  const h1 = mark(a.id, 'ruled-out', 'the drops went on', 55, who, [], 'unplugged the radio')
+  const board = buildBoard({ ...input(s, [...h1, ...mark(b.id, 'confirmed', 'a loose lug', 56, who, h1)]), now: t(70) })
+  const h = handoff(board)
+  it('puts each issue\'s own lines under it, with the test and its result apart', () => {
+    expect(h.causeLines.get(KEY)).toEqual([
+      expect.objectContaining({ kind: 'ruled-out', by: 'team', cause: a.cause, text: 'unplugged the radio: the drops went on', role: 'pit' }),
+      expect.objectContaining({ kind: 'confirmed', cause: b.cause, text: 'a loose lug' }),
+    ])
+  })
+  it('what was tried includes the cause tests, so a recorded test is never "no notes yet"', () => {
+    expect(h.tried.map((x) => x.text)).toEqual([`${a.cause}: ruled out by unplugged the radio: the drops went on`, `${b.cause}: confirmed: a loose lug`])
+  })
+})
+
+describe('the export dialog counts', () => {
+  it('counts the not-checked note apart and says when there is no data window', () => {
+    const c = { matches: 0, findings: 1, notChecked: 29, windows: 0, series: 0, points: 0, boardIssues: 0, notes: 0, causeStates: 0, rules: 1 }
+    const text = contentsLines(c, 5000).join('\n')
+    expect(text).toContain('1 finding, each with its evidence numbers; 29 rules not checked')
+    expect(text).toContain('No data windows')
+    expect(text).not.toContain('0 data windows')
+  })
+  it('exportContents reads the note from the file', () => {
+    const j = { findings: [{ rule: 'meta/not-checked' }, { rule: RULE }], notChecked: [1, 2, 3] }
+    expect(exportContents(j)).toMatchObject({ findings: 1, notChecked: 3 })
   })
 })

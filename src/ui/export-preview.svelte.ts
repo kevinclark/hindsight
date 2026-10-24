@@ -37,7 +37,7 @@ export function confirmExport(fileName: string, lines: string[]): Promise<boolea
 /** List what is inside `json`, and save it as `fileName` only on Save. Returns whether it was saved. */
 export async function saveForClaude(fileName: string, json: object): Promise<boolean> {
   const text = JSON.stringify(json, null, 1)
-  if (!(await confirmExport(fileName, contentsLines(exportContents(json), text.length)))) return false
+  if (!(await confirmExport(fileName, contentsLines(exportContents(json), new TextEncoder().encode(text).length)))) return false
   downloadText(fileName, text)
   return true
 }

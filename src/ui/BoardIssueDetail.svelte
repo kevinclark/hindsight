@@ -15,7 +15,7 @@
   import { changedLine, clockText, dueLine, ownerText, priorityIcon, priorityWord, rowTitle, statusLine, tags } from '../board/words.ts'
   import type { Change } from '../board/writes.ts'
   import type { BoardRole } from '../triage/history.ts'
-  import { CAUSE_WORDS, debugCauses, markText, readReverse } from '../board/debug.ts'
+  import { CAUSE_TAGS, debugCauses, markText, readReverse } from '../board/debug.ts'
 
   let { issue, board, rate, role, onBack, onChange, onDebug }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange: (changes: Change[], note?: string) => void; onDebug: () => void } = $props()
 
@@ -86,7 +86,7 @@
   <span class="small hdr-rate">Not a real problem, for this rule: {rate?.text ?? 'no marks yet'}</span>
 </div>
 {#if issue.deferral?.expired}<p class="note"><b>Deferral ended.</b> The workaround while it held: {issue.deferral.workaround || '(none written)'}</p>{/if}
-<h3 class="screen">{rowTitle(issue)}</h3>
+<div class="titlerow"><h3 class="screen">{rowTitle(issue)}</h3>{#if causes.length}<button type="button" class="primary" data-debug-open onclick={onDebug}>Debug this</button>{/if}</div>
 <p class="muted small"><code>{issue.rule}</code> · seen in {issue.firedIn.length} match{issue.firedIn.length === 1 ? '' : 'es'}{issue.sightings.some((s) => s.kind === 'pit') ? ` and ${issue.sightings.filter((s) => s.kind === 'pit').length} pit run${issue.sightings.filter((s) => s.kind === 'pit').length === 1 ? '' : 's'}` : ''} · on {issue.robot || 'an unknown robot'}</p>
 
 <div class="cols">
@@ -102,14 +102,13 @@
           {#each causes as c (c.id)}
             {@const out = c.state === 'ruled-out' || !!c.hindsightRuledOut}
             <li class:ruled={out}>
-              <span class="cause">{c.cause}</span> <span class="tag">{c.state === 'possible' && c.hindsightRuledOut ? 'ruled out' : CAUSE_WORDS[c.state].toLowerCase()}</span>{#if c.points && !out}{' '}<span class="tag">this log points to it</span>{/if}
-              <span class="look">{c.state !== 'possible' ? markText(c) : c.hindsightRuledOut ? `Hindsight: ${c.hindsightRuledOut}` : `Look at: ${c.look}`}{#if c.role}{' '}({c.role}){/if}</span>
+              <span class="cause">{c.cause}</span>{#if c.state !== 'possible' || c.hindsightRuledOut}{' '}<span class="tag">{CAUSE_TAGS[c.state === 'possible' ? 'ruled-out' : c.state]}</span>{/if}{#if c.points && !out}{' '}<span class="tag">this log points to it</span>{/if}
+              <span class="look">{c.state !== 'possible' ? markText(c) : c.hindsightRuledOut ? `Hindsight: ${c.hindsightRuledOut}` : `Look at: ${c.look}`}{#if c.role}{' '}<span class="chip">{c.role}</span>{/if}</span>
               {#if c.state !== 'possible' && c.hindsightRuledOut}<span class="look">Hindsight: {c.hindsightRuledOut}</span>{/if}
             </li>
           {/each}
         </ol>
         <p class="hint">"Possible", not "likely": no backtest supports a ranking of causes yet.</p>
-        <button type="button" class="primary" data-debug-open onclick={onDebug}>Debug this</button>
       {/if}
       <h5>Next step</h5>
       <p>{issue.nextStep}</p>

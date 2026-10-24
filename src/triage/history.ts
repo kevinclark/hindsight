@@ -89,7 +89,9 @@ export interface BoardEvent {
   value: string
   /** Only on op 'cause': the cause's id in the rule (`Cause.id`). */
   cause?: string
-  /** Only on op 'cause': for ruled-out, the test and what it showed ("unplugged the radio: the drops went on"); for the other states, a free note. */
+  /** Only on op 'cause', state ruled-out: the test that was run ("unplugged the radio"). */
+  test?: string
+  /** Only on op 'cause': for ruled-out, what the test showed ("the drops went on"); for the other states, a free note. */
   text?: string
   /** Only on op 'defer'. */
   until?: BoardUntil
@@ -151,7 +153,7 @@ function validBoard(e: any): boolean {
   const allowed = BOARD_VALUES[e.op as BoardOp]
   if (allowed && !allowed.includes(e.value)) return false
   if ((e.op === 'checked' || e.op === 'unchecked') && e.value === '') return false
-  if (e.op === 'cause' && (typeof e.cause !== 'string' || e.cause === '' || (e.text !== undefined && typeof e.text !== 'string'))) return false
+  if (e.op === 'cause' && (typeof e.cause !== 'string' || e.cause === '' || (e.text !== undefined && typeof e.text !== 'string') || (e.test !== undefined && typeof e.test !== 'string'))) return false
   if (e.op === 'defer' && e.value === '' && e.until !== undefined) return false
   if (e.op === 'defer' && e.until !== undefined && !(e.until && UNTIL_KINDS.includes(e.until.kind))) return false
   if (!e.by || typeof e.by.device !== 'string' || !BOARD_ROLES.includes(e.by.role)) return false
@@ -256,7 +258,7 @@ export function lastPassingSha(events: HistoryEvent[]): string | null {
   return go.sort(compareEvents).at(-1)?.sha ?? null
 }
 
-export interface CauseMark { state: CauseState; text: string; by: BoardEvent['by']; when: string; match?: string }
+export interface CauseMark { state: CauseState; /** The test that ruled it out (ruled-out only). */ test: string; text: string; by: BoardEvent['by']; when: string; match?: string }
 
 export interface BoardState {
   key: string
@@ -312,8 +314,9 @@ export function boardState(events: HistoryEvent[]): Map<string, BoardState> {
     else if (e.op === 'owner') { if (e.value === '') delete s.owner; else s.owner = e.value }
     else if (e.op === 'cause') {
       const text = e.text ?? ''
+      const test = e.value === 'ruled-out' ? e.test ?? '' : ''
       if (e.value === 'possible' && text === '') { if (s.causes) { delete s.causes[e.cause!]; if (!Object.keys(s.causes).length) delete s.causes } }
-      else (s.causes ??= {})[e.cause!] = { state: e.value as CauseState, text, by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}) }
+      else (s.causes ??= {})[e.cause!] = { state: e.value as CauseState, test, text, by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}) }
     }
     else s.notes.push({ text: e.value, by: e.by, when: e.when, ...(e.match ? { match: e.match } : {}) })
     s.by = e.by

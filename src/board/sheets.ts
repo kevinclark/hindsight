@@ -73,6 +73,8 @@ export function queueSheet(board: Board): QueueSheet {
 
 /** A cause that is out: by the logs (the rule's own reason on the latest finding, Hindsight's) or by the team (a test the debug workspace recorded, with the role that wrote it). */
 export interface RuledOut { issue: BoardIssue; cause: string; why: string; by: 'logs' | 'team'; role?: string }
+/** One cause line under an issue in the handoff: ruled out (by Hindsight's evidence or by a team test) or confirmed. */
+export interface CauseLine { kind: 'ruled-out' | 'confirmed'; by: 'logs' | 'team'; cause: string; text: string; role?: string }
 /** A cause the team confirmed in the debug workspace. */
 export interface Confirmed { issue: BoardIssue; cause: string; text: string; role: string }
 
@@ -86,6 +88,8 @@ export interface Handoff {
   ruledOut: RuledOut[]
   /** Causes the team confirmed for those issues. */
   confirmed: Confirmed[]
+  /** Each focus issue's own ruled-out and confirmed lines, by issue key: shown under its row. */
+  causeLines: Map<string, CauseLine[]>
   /** First seen after the last handoff was read, the board's own definition. With no handoff on record nothing is new (there is nothing to compare with), here and on the board. */
   newSince: BoardIssue[]
   /** True when no handoff has been read yet at this event. */
@@ -98,13 +102,23 @@ export function handoff(board: Board): Handoff {
   const redsDue = board.rows.filter((i) => isGate(i, board.tl))
   const deferralsDue = board.rows.filter((i) => i.cls === 'due')
   const focus = [...redsDue, ...deferralsDue, ...board.rows.filter((i) => i.status === 'check')].filter((i, n, a) => a.indexOf(i) === n)
-  const tried = focus.flatMap((issue) => issue.notes.map((n) => ({ issue, text: n.text, role: n.role, match: n.match, when: n.when }))).sort((a, b) => a.when.localeCompare(b.when))
   const nameOf = (issue: BoardIssue, id: string) => makerOf(issue.rule)?.causes.find((c) => c.id === id)?.cause ?? id
+  const testText = (m: { test: string; text: string }) => [m.test, m.text].filter(Boolean).join(': ') || 'a test (none written)'
+  // What was tried: the notes, and the tests recorded on causes (a ruled-out cause with its test, a confirmed one with its note).
+  const tried = focus.flatMap((issue) => [
+    ...issue.notes.map((n) => ({ issue, text: n.text, role: n.role, match: n.match, when: n.when })),
+    ...Object.entries(issue.causeMarks).filter(([, m]) => m.state !== 'possible').map(([id, m]) => ({ issue, text: m.state === 'ruled-out' ? `${nameOf(issue, id)}: ruled out by ${testText(m)}` : `${nameOf(issue, id)}: confirmed${m.text ? `: ${m.text}` : ''}`, role: m.role, match: m.match, when: m.when })),
+  ]).sort((a, b) => a.when.localeCompare(b.when))
   const ruledOut = focus.flatMap((issue): RuledOut[] => [
     ...Object.entries(issue.latest?.ruledOut ?? {}).map(([id, why]): RuledOut => ({ issue, cause: nameOf(issue, id), why, by: 'logs' })),
-    ...Object.entries(issue.causeMarks).filter(([, m]) => m.state === 'ruled-out').map(([id, m]): RuledOut => ({ issue, cause: nameOf(issue, id), why: m.text || 'a test (none written)', by: 'team', role: m.role })),
+    ...Object.entries(issue.causeMarks).filter(([, m]) => m.state === 'ruled-out').map(([id, m]): RuledOut => ({ issue, cause: nameOf(issue, id), why: testText(m), by: 'team', role: m.role })),
   ])
   const confirmed = focus.flatMap((issue): Confirmed[] => Object.entries(issue.causeMarks).filter(([, m]) => m.state === 'confirmed').map(([id, m]) => ({ issue, cause: nameOf(issue, id), text: m.text, role: m.role })))
+  const causeLines = new Map(focus.map((issue): [string, CauseLine[]] => [issue.key, [
+    ...Object.entries(issue.latest?.ruledOut ?? {}).map(([id, why]): CauseLine => ({ kind: 'ruled-out', by: 'logs', cause: nameOf(issue, id), text: why })),
+    ...Object.entries(issue.causeMarks).filter(([, m]) => m.state === 'ruled-out').map(([id, m]): CauseLine => ({ kind: 'ruled-out', by: 'team', cause: nameOf(issue, id), text: testText(m), role: m.role })),
+    ...Object.entries(issue.causeMarks).filter(([, m]) => m.state === 'confirmed').map(([id, m]): CauseLine => ({ kind: 'confirmed', by: 'team', cause: nameOf(issue, id), text: m.text, role: m.role })),
+  ]]))
   const firstRead = board.handoff === null
-  return { redsDue, deferralsDue, tried, ruledOut, confirmed, newSince: board.rows.filter((i) => i.isNew), firstRead, pitLines: board.pitLines }
+  return { redsDue, deferralsDue, tried, ruledOut, confirmed, causeLines, newSince: board.rows.filter((i) => i.isNew), firstRead, pitLines: board.pitLines }
 }

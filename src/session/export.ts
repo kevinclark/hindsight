@@ -13,7 +13,7 @@ import { sinks, stoppedFiring, stoppedText, type Stopped } from './stopped.ts'
 export const SESSION_FINDINGS_SCHEMA = 'hindsight.session-findings/1'
 
 /** Pass the session as the team's marks show it (triage/track-record.ts sessionWithMarks): findings then carry `wrong` and `demoted`. */
-export function buildSessionJson(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}, changedOnReread?: FindingChange[], board?: Pick<ExportBoard, 'states'>): object {
+export function buildSessionJson(session: Session, issues: Map<string, IssueEvent> = new Map(), typedBatteries: Record<string, string> = {}, changedOnReread?: FindingChange[], board?: Pick<ExportBoard, 'states' | 'scope'>): object {
   return {
     schema: SESSION_FINDINGS_SCHEMA,
     tool: { name: 'hindsight', version: VERSION },

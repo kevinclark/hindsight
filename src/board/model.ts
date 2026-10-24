@@ -97,7 +97,7 @@ export interface BoardIssue {
   notes: { text: string; role: BoardRole; match: string | null; when: string }[]
   lastChange: { role: BoardRole; match: string | null; when: string } | null
   /** What the debug workspace recorded per cause id: possible (with a note), ruled out by a test, or confirmed. A cause not here is possible. */
-  causeMarks: Record<string, { state: CauseState; text: string; role: BoardRole; when: string }>
+  causeMarks: Record<string, { state: CauseState; test: string; text: string; role: BoardRole; when: string; match: string | null }>
   /** Ticks for the queue sheet. */
   checked: { match: string; role: BoardRole; when: string }[]
   merged: MergedFinding
@@ -399,7 +399,7 @@ export function buildBoard(input: BoardInput): Board {
       nextStep: rule === ESTOP_RULE ? ESTOP_STEP : latest?.nextStep ?? maker?.nextStep ?? '', latest,
       notes: (state?.notes ?? []).map((n) => ({ text: n.text, role: n.by.role, match: shortStored(n.match), when: n.when })),
       lastChange: state?.changed ? { role: state.by.role, match: shortStored(state.match), when: state.when } : null,
-      causeMarks: Object.fromEntries(Object.entries(state?.causes ?? {}).map(([id, c]) => [id, { state: c.state, text: c.text, role: c.by.role, when: c.when }])),
+      causeMarks: Object.fromEntries(Object.entries(state?.causes ?? {}).map(([id, c]) => [id, { state: c.state, test: c.test, text: c.text, role: c.by.role, when: c.when, match: shortStored(c.match) }])),
       checked: (state?.checked ?? []).filter((c) => inScope(c, scope)).map((c) => ({ match: c.match, role: c.by.role, when: c.when })),
       merged,
     }
