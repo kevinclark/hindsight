@@ -588,7 +588,7 @@
 {/if}
 
 {#if session}
-  {#if !folded}<section class="head">
+  {#if !folded || !showBoard}<section class="head">
     <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
     <span class="actions">
       <button class="button" disabled={loading} class:prominent={sessionIsStale} onclick={() => readAgain(session)} title={`Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, ${findLogs ? 'it reads the library\'s copies' : 'it asks for the folder'}.`}>Read again</button>
