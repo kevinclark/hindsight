@@ -15,6 +15,10 @@ Hindsight infers event or practice mode from each log's FMS data, shows the mode
 change, and lets the user change it in one click. Debug is not a mode: it is a workspace opened from a finding or a
 symptom.
 
+The mode is decided per local day: a day with any on-field log is an event day, and a pit run on it is judged by run
+(ADR 8) and belongs to the event. (Added 2026-10-23 after review: deciding per log would turn a tethered pit run
+between matches into practice and split the event day in two.)
+
 ## Why
 
 Inference removes a setup step. Modes that change on their own are a known cause of mode confusion (Sarter & Woods,
