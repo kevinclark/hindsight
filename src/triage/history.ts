@@ -66,7 +66,8 @@ export interface BoardUntil {
 /**
  * One change to the issue board (priority, status, deferral, workaround, note) for one issue on one robot. A new line
  * type, not new fields on `issue`: builds from before the board keep it unread (an OpaqueEvent, written back as it came,
- * and a file loaded in analyze.ts does not report it), and every `issue` line folds as it always did. "Closed" is never stored; it is derived from a clean match after the fix. No names go in a line.
+ * and a file loaded in analyze.ts does not report it), and every `issue` line folds as it always did. "Closed" is
+ * never stored; it is derived from a clean match after the fix. No names go in a line.
  */
 export interface BoardEvent {
   type: 'board'
