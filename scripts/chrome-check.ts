@@ -53,8 +53,10 @@ for (const [gi, files] of groups.entries()) {
   await send('Page.navigate', { url: page }, sessionId)
   await sleep(1000)
   const baseRss = rendererRssMB()
+  // The app opens on Now: go to Match review, and use that page's own file input (its accept list has grown since this was written).
+  await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText === 'Match review').click()`)
   const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
-  const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog,.dslog,.jsonl"]' }, sessionId)
+  const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '#app > div:not([hidden]) > section.drop input[type=file][accept]' }, sessionId)
   let peak = baseRss
   const sampler = setInterval(() => { peak = Math.max(peak, rendererRssMB()) }, 50)
   const started = Date.now()
