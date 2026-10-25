@@ -7,7 +7,7 @@ from files you already have, and you confirm what it couldn't tell.
 
 ## 1. Drop what you have
 
-Open `hindsight.html`, choose **Robot profile**, and drop:
+Open `hindsight.html`, open **Tools › Robot profile** at the top, and drop:
 
 | File | Where it comes from | What it gives |
 |---|---|---|

@@ -309,7 +309,10 @@
 <!-- A file dropped anywhere but the snapshot box would open in this tab and end the check. -->
 <svelte:window ondragover={(e) => e.preventDefault()} ondrop={(e) => e.preventDefault()} />
 <div class="screen-only">
+<div class="head">
+<h2 class="name">Foresight: the robot check before each match</h2>
 <ModeLine text={today.line} mode={today.mode} byHand={today.byHand} onChange={(m) => chooseMode(today.sessionId, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />
+</div>
 {#if field}
   <section class="field" role="alert">
     <p class="big">{FIELD_MESSAGE}</p>
@@ -422,6 +425,9 @@
 <ForesightReport bind:this={reportView} {totalChecks} {status} {checked} verdict={shownWord} why={shownWhy} deferred={deferredBy} {onchecks} {battery} {controllers} />
 
 <style>
+  /* The view's name shares the mode line's row, at its size: the Connect row stays in the first screen. */
+  .head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 1rem; }
+  .head .name { margin: 0.25rem 0; font-size: 0.85rem; }
   .connect + .connect { margin-top: 0.5rem; }
   .connect { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; }
   .connect input { font: inherit; padding: 0.25rem 0.4rem; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }

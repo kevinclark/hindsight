@@ -74,7 +74,7 @@ it once more. If it stops again, send the folder to a mentor.
 
 ## Look at it in Hindsight
 
-Open `hindsight.html`, choose **Robot snapshot** at the top, and drop `snapshot.json` onto the page. Hindsight
+Open `hindsight.html`, open **Tools › Robot snapshot** at the top, and drop `snapshot.json` onto the page. Hindsight
 picks the robot profile whose CAN IDs it finds on the bus. You can choose another one from the list.
 
 - **Sticky faults** come first. Undervoltage, BridgeBrownout and BootDuringEnable are the power problems: the
@@ -96,7 +96,7 @@ changed: devices, firmware, settings, sticky faults. Live readings like voltage 
 **Limits wizard:** each step's "Check it" card also takes a `snapshot.json`. Take one after you set the limit in
 Phoenix Tuner X. It proves the setting reached every motor in the group, followers included.
 
-## Use it in Foresight (the pit check)
+## Use it in Foresight (the Robot check tab, the pit check)
 
 Foresight's pit checklist has four lines only a snapshot can tick: *All CAN devices licensed and ID'd*, *CANcoder
 offsets correct and unchanged*, *Swerve ratio unchanged*, and *Current limits as the code sets them*. Foresight never

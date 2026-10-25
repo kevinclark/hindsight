@@ -95,11 +95,11 @@ describe('Now on an event day with no schedule', () => {
     const s = session([match(2), match(3)])
     return nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 2, event: boardOf(s, min(200), null), have: { team: true, key: false }, scheduleNote: null, still: null, now: min(200), clockText: at, ...over })
   }
-  it('says the next match is not known yet and links to where the key is set, in the Library on the desktop app', () => {
+  it('says the next match is not known yet and points to the Set up card below, with no link, on the desktop app', () => {
     const st = noSchedule()
     expect(st.kind).toBe('event-no-schedule')
     expect(st.big).toBe('Next match: not known yet')
-    expect(st.keyLine).toMatchObject({ lead: 'Add The Blue Alliance read key in', link: { text: 'the Library', action: { kind: 'go', place: 'library' } }, rest: ': it names the event and the schedule.' })
+    expect(st.keyLine).toEqual({ lead: 'Add The Blue Alliance read key in Set up this laptop, below', link: null, rest: ': it names the event and the schedule.' })
     expect(st.tasks.map((t) => t.title)).toEqual(["Pull the last match's log", 'Triage before the next match', 'Queue check for the next match'])
   })
   it('on the page the key is set in the Session view; a missing team number is named too', () => {
@@ -139,7 +139,7 @@ describe('Now on a practice day', () => {
     expect(st.kind).toBe('practice')
     expect(st.big).toBe(`Practice · ${dateText(min(200))}`)
     expect(st.tasks.map((t) => t.id)).toEqual(['practice-check', 'runs', 'still'])
-    expect(task(st, 'practice-check')).toMatchObject({ title: 'Start-of-practice check', detail: 'in Foresight · about 5 min, robot on', button: 'Open Foresight', action: { kind: 'go', place: 'foresight' } })
+    expect(task(st, 'practice-check')).toMatchObject({ title: 'Start-of-practice check', detail: 'in Robot check · about 5 min, robot on', button: 'Open Robot check', action: { kind: 'go', place: 'foresight' } })
     expect(task(st, 'runs')).toMatchObject({ title: "Pull today's runs", detail: '3 logs from today in the library. Plug in the USB cable, then Pull.', action: { kind: 'pull' } })
     expect(task(st, 'still')).toMatchObject({ title: "Still open: 12 issues on Test Regional's board", detail: '5 red · in Session › Board', action: { kind: 'board' } })
   })
@@ -163,13 +163,13 @@ describe('Now with no logs', () => {
     const st = none('hub')
     expect(st.kind).toBe('no-logs')
     expect(st.tasks.map((t) => [t.id, t.primary])).toEqual([['open-log', true], ['add-folder', false], ['pull-logs', false]])
-    expect(st.jobs.map((j) => j.place)).toEqual(['Match review', 'Session › Board', 'Foresight', 'Library'])
+    expect(st.jobs.map((j) => j.place)).toEqual(['Match review', 'Session › Board', 'Robot check', 'Library'])
     expect(st.modeLine).toBe(false)
   })
   it('the page swaps every hub-only task and the Library line for opening a log', () => {
     const st = none('page')
     expect(st.tasks.map((t) => t.id)).toEqual(['open-log'])
-    expect(st.jobs.map((j) => j.place)).toEqual(['Match review', 'Session › Board', 'Foresight'])
+    expect(st.jobs.map((j) => j.place)).toEqual(['Match review', 'Session › Board', 'Robot check'])
   })
 })
 
@@ -257,7 +257,7 @@ describe('the fix pass', () => {
   })
   it('8 and 9. each detail names where the button lands, and the outside state says what the click shows', () => {
     const st = eventNow()
-    expect(task(st, 'queue').detail).toMatch(/in Foresight$/)
+    expect(task(st, 'queue').detail).toMatch(/in Robot check$/)
     expect(task(st, 'triage').detail).toMatch(/in Session › Board$/)
     expect(task(eventNow({ build: 'page', libraryToday: null }), 'pull').detail).toMatch(/opens in Match review/)
     const out = nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 37, event: null, have: { team: true, key: true }, scheduleNote: null, still: null, now: min(200), clockText: at })

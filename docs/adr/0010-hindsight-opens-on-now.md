@@ -48,3 +48,7 @@ it has to stay true to the board and the schedule; with no schedule it says the 
 - On the single-file page the hub-only tasks become "open a log" (a file chooser; a log dropped on Now also opens in
   Match review).
 - The tagline, other tabs' empty states (slice 3) and the setup card and typed match number (ADR 11) landed beside it.
+- The tab row is Now · Match review · Session · Robot check · Library (desktop app) · Tools (Limits wizard, Robot
+  snapshot, Robot profile), in the order Now's "What Hindsight does" lines use. "Robot check" is Foresight's tab (its
+  view keeps the name in its heading). Chosen without a first-click test, on the owner's call to ship the best guess
+  and adjust from feedback; the review judged its gain within the rubric's noise.

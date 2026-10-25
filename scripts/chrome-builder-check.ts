@@ -81,7 +81,7 @@ await send('Emulation.setDeviceMetricsOverride', { width: 1100, height: 2600, de
 const url = `file://${resolve(page)}`
 await send('Page.navigate', { url }, sessionId)
 await sleep(1000)
-const openMode = async () => { await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText === 'Robot profile').click()`); await sleep(200) }
+const openMode = async () => { await evalIn(sessionId, `document.querySelector('.modes .menu-button').click()`); await sleep(200); await evalIn(sessionId, `[...document.querySelectorAll('.modes [role=menuitem]')].find(b => b.innerText.trim() === 'Robot profile').click()`); await sleep(200) }
 await openMode()
 
 const { result: { root } } = await send('DOM.getDocument', { depth: -1 }, sessionId)

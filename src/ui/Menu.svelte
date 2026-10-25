@@ -8,11 +8,15 @@
   import { menuTarget } from './menu-keys.ts'
 
   export interface MenuItem { id: string; label: string; hint?: string; onselect: () => void }
-  let { label, items, align = 'left' }: {
+  let { label, items, align = 'left', current = false, tab = false }: {
     /** Button text (without the arrow). */
     label: string
     items: MenuItem[]
     align?: 'left' | 'right'
+    /** The menu holds the place on screen (a tab bar's Tools while a tool is open): the button reads as the active tab. */
+    current?: boolean
+    /** Looks like a tab beside others (the App's mode bar): the same padding, a plain background, muted until current. */
+    tab?: boolean
   } = $props()
 
   let open = $state(false)
@@ -52,7 +56,7 @@
 <svelte:window onpointerdown={(e) => { if (open && !root.contains(e.target as Node)) close(false) }} />
 
 <div class="menu" class:right={align === 'right'} bind:this={root} onfocusout={(e) => { if (open && !root.contains(e.relatedTarget as Node | null) && e.relatedTarget) close(false) }}>
-  <button bind:this={button} type="button" class="menu-button" class:open aria-haspopup="menu" aria-expanded={open} aria-controls={open ? `${id}-list` : undefined} onclick={() => (open ? close(false) : show('first'))} onkeydown={onButtonKey}>
+  <button bind:this={button} type="button" class="menu-button" class:open class:current class:tab aria-current={current ? 'page' : undefined} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? `${id}-list` : undefined} onclick={() => (open ? close(false) : show('first'))} onkeydown={onButtonKey}>
     {label}<span class="caret" aria-hidden="true">▾</span>
   </button>
   {#if open}
@@ -69,6 +73,9 @@
 <style>
   .menu { position: relative; display: inline-block; }
   .menu-button { min-height: 28px; padding: 0.15rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
+  .menu-button.current { color: var(--fg); border-color: var(--focus); font-weight: 600; }
+  .menu-button.tab { min-height: 33px; padding: 0.3rem 0.9rem; background: none; color: var(--muted); }
+  .menu-button.tab.current { color: var(--fg); }
   .menu-button:hover, .menu-button.open { border-color: var(--muted); }
   .menu-button:focus-visible, .list button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
   .caret { margin-left: 0.35rem; font-size: 0.8em; color: var(--muted); }

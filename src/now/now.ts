@@ -50,8 +50,8 @@ export interface NowState {
   kind: NowKind
   /** The big line. */
   big: string
-  /** Under the big line, where the read key is set: "Add The Blue Alliance read key in [the Library]: it names the event and the schedule." */
-  keyLine: { lead: string; link: NowLink; rest: string } | null
+  /** Under the big line, where the read key is set: "Add The Blue Alliance read key in Set up this laptop, below" (desktop app, no link) or "... in [the Session view]" (the page) */
+  keyLine: { lead: string; link: NowLink | null; rest: string } | null
   /** Why no schedule was read, when the key and team are both set. */
   scheduleNote: string | null
   tasks: NowTask[]
@@ -156,9 +156,10 @@ function pullTask(input: NowInput, board: Pick<Board, 'tl'> | null, vague: strin
 function keyLine(input: NowInput): NowState['keyLine'] {
   const missing = [input.have.team ? '' : 'your team number', input.have.key ? '' : 'The Blue Alliance read key'].filter(Boolean)
   if (missing.length === 0) return null
-  // The read key is set in the Library's "Your team" box (desktop app), or in the Session view's fields (the page).
-  const hub = input.build === 'hub'
-  return { lead: `Add ${missing.join(' and ')} in`, link: { text: hub ? 'the Library' : 'the Session view', action: go(hub ? 'library' : 'session') }, rest: ': it names the event and the schedule.' }
+  // Desktop app: the "Set up this laptop" card is on this same screen (shown while a team number or key is missing, which is
+  // when this line shows), with those fields: point to it, no link. The page keeps its pointer to the Session view's fields.
+  if (input.build === 'hub') return { lead: `Add ${missing.join(' and ')} in Set up this laptop, below`, link: null, rest: ': it names the event and the schedule.' }
+  return { lead: `Add ${missing.join(' and ')} in`, link: { text: 'the Session view', action: go('session') }, rest: ': it names the event and the schedule.' }
 }
 
 const alsoMatch: NowLink = { text: 'check one match', action: go('review') }
@@ -180,7 +181,7 @@ export function nowState(input: NowInput): NowState {
       jobs: [
         { job: 'Read one match', place: 'Match review', action: go('review') },
         { job: "Track what's broken", place: 'Session › Board', action: go('session') },
-        { job: 'Check the robot before a match', place: 'Foresight', action: go('foresight') },
+        { job: 'Check the robot before a match', place: 'Robot check', action: go('foresight') },
         ...(hub ? [{ job: 'Keep every log', place: 'Library', action: go('library') }] : []),
       ],
     }
@@ -202,7 +203,7 @@ export function nowState(input: NowInput): NowState {
     return {
       ...empty, kind: 'practice', big: `Practice · ${dateText(input.now)}`,
       tasks: [
-        { id: 'practice-check', title: 'Start-of-practice check', detail: 'in Foresight · about 5 min, robot on', done: false, button: 'Open Foresight', action: go('foresight'), primary: true },
+        { id: 'practice-check', title: 'Start-of-practice check', detail: 'in Robot check · about 5 min, robot on', done: false, button: 'Open Robot check', action: go('foresight'), primary: true },
         runs, still,
       ],
       also: [alsoMatch],
@@ -223,7 +224,7 @@ export function nowState(input: NowInput): NowState {
     if (next) big = `Next match: ${next.label}${next.startsAt !== null ? ` at ${clock(next.startsAt)}` : ''}${next.leftMinutes !== null ? ` · in ${next.leftMinutes} min` : ''}`
     else if (input.schedule?.length) big = 'Next match: none left on the team\'s schedule'
   }
-  const queue: NowTask = { id: 'queue', title: `Queue check for ${matchName}`, detail: 'Robot tethered, Driver Station connected, then Connect · in Foresight', done: false, button: 'Start the queue check', action: go('foresight'), primary: false }
+  const queue: NowTask = { id: 'queue', title: `Queue check for ${matchName}`, detail: 'Robot tethered, Driver Station connected, then Connect · in Robot check', done: false, button: 'Start the queue check', action: go('foresight'), primary: false }
   let triage: NowTask
   if (!board) {
     const n = input.libraryToday

@@ -79,12 +79,18 @@
     await load(files)
   }
   // The Library is part of the desktop app (src/hub/): the page opened from disk has no library, so no tab for it.
+  // The daily places, in the order Now's "What Hindsight does" lines use. The three expert tools sit behind one labelled menu.
   const MODES = [
     { id: 'now', label: 'Now' } as const,
+    { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'foresight', label: 'Robot check' },
     ...(hub() ? [{ id: 'library', label: 'Library' } as const] : []),
-    { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'wizard', label: 'Limits wizard' },
-    { id: 'snapshot', label: 'Robot snapshot' }, { id: 'profile', label: 'Robot profile' }, { id: 'foresight', label: 'Foresight' },
   ] as const
+  const TOOLS = [
+    { id: 'wizard', label: 'Limits wizard', hint: 'measure a supply current limit with the robot' },
+    { id: 'snapshot', label: 'Robot snapshot', hint: 'read a snapshot.json from the robot' },
+    { id: 'profile', label: 'Robot profile', hint: 'draft a robot profile from logs' },
+  ] as const
+  const activeTool = $derived(TOOLS.find((t) => t.id === mode))
   if (hub()) document.getElementById('app')?.classList.add('wide')
   // The desktop app asks GitHub once on start whether a newer release is out.
   let update = $state<{ version: string; url: string } | null>(null)
@@ -437,7 +443,8 @@
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
-  {#each MODES as m (m.id)}<button class:active={mode === m.id} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
+  {#each MODES as m (m.id)}<button class:active={mode === m.id} data-label={m.label} aria-current={mode === m.id ? 'page' : undefined} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
+  <Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (mode = t.id) }))} />
 </nav>
 </div>
 
@@ -642,6 +649,8 @@
   .modes { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.75rem; }
   .modes button { padding: 0.3rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .modes button.active { color: var(--fg); border-color: var(--focus); font-weight: 600; }
+  /* Reserve the bold width, so the tabs don't shift when the active one changes. */
+  .modes > button::after { content: attr(data-label); display: block; height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
   .tabs { display: flex; gap: 0.25rem; margin: 0 0 0.4rem; border-bottom: 1px solid var(--border); }
   .tabs button { padding: 0.45rem 1rem; border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .tabs button.active { color: var(--fg); border-bottom-color: var(--focus); font-weight: 600; }
