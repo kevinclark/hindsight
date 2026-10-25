@@ -36,14 +36,15 @@ it has to stay true to the board and the schedule; with no schedule it says the 
   is the Session view's own (`buildBoard`), the schedule is read as Foresight reads it (`src/tba/session-schedule.ts`),
   and the event-day signal from outside the Session view is one shared reader (`src/ui/today-signal.svelte.ts`) used by
   Now and Foresight.
-- "Next match" names the first match that has **not started**. The board's next match is the one after the latest log, so
-  until the last match's log is pulled it can be a match already played; Now skips the qualifications whose start has
-  passed. The pull task reads "Pull Q33's log" until that log is the session's latest, then "Q33's log is in".
+- "Next match" names the first match that has **not started**, counting a match as started only once The Blue Alliance
+  has an actual time for it (planned starts only when the schedule copy has no actual times at all: events run late),
+  and never earlier than the board's own next match (a pulled log's match is never next). The schedule is read again
+  every 10 minutes. The pull task reads "Pull Q33's log" until that log is the session's latest, then "Q33's log is in".
 - The Session view does not watch the library: it reads the logs it is given. Now therefore hands it today's library
   logs (the same ones, by the Library's own path) when "Open the board" is pressed, after a pull or a folder is added
   from Now, and when the number of today's logs in the library grows while the Session view holds a session.
 - A pull tries USB first, then the Ethernet and by-name addresses the team number gives, moving on only when the robot
-  did not answer. Now never probes the robot before the button is pressed, and never says it is connected.
+  did not answer (the robot's socket never opened: "Robot not found"). Now never probes the robot before the button is pressed, and never says it is connected.
 - On the single-file page the hub-only tasks become "open a log" (a file chooser; a log dropped on Now also opens in
   Match review).
-- Not in this slice: the tagline, the setup card and typed match number, other tabs' empty states.
+- The tagline, other tabs' empty states (slice 3) and the setup card and typed match number (ADR 11) landed beside it.
