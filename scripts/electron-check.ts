@@ -41,7 +41,7 @@ try {
   await page.eval(`new Promise((r) => { const t = () => (window.hub ? r(true) : setTimeout(t, 100)); t() })`)
   await sleep(500)
   const started = Date.now()
-  await page.eval(`[...document.querySelectorAll('button')].find((b) => /Add logs from a folder/.test(b.textContent)).click()`)
+  await page.eval(`[...document.querySelectorAll('button')].find((b) => /Add a folder of logs/.test(b.textContent)).click()`)
   await until(page, `!!document.querySelector('.report[aria-label="What was added"]')`, 'the ingest report')
   const ingestSeconds = (Date.now() - started) / 1000
   await sleep(500)

@@ -245,9 +245,9 @@
   const shownWord = $derived(queue ? queue.word : checked ? (practice.ready ? 'Ready to drive' : `${practice.actions.length} left`) : 'NOT CHECKED')
   const shownWhy = $derived(queue ? queue.reason : checked ? (practice.ready ? 'every live check on the practice-start list is done' : practice.actions.join(', ')) : why)
   const shownTone = $derived(verdictTone(shownWord))
-  // Not connected (never, or the connection closed): the box says what to do, and a connect that found no robot says it is not a failed check.
+  // Not connected (never, or the connection closed): the box says what to do, and a connect whose socket closed before any value (no robot answered) says it is not a failed check.
   const notConnected = $derived(shownWord === 'NOT CHECKED' && !checked && !connected && result === null)
-  const robotNotFound = $derived(status?.state === 'closed' && status.valuesReceived === 0 && status.message !== 'Disconnected.')
+  const robotNotFound = $derived(status?.state === 'closed' && status.valuesReceived === 0 && status.message.startsWith('Connection closed'))
   function tick(system: System, on: boolean) {
     if (!role) return
     if (defSession && board && robotId && onBoard && !carried) {
@@ -357,8 +357,8 @@
 
   <section class={`verdict t-${shownTone}`} aria-live="polite">
     <p class="big">{shownWord}{#if notConnected}<span class="tail">: connect the robot first.</span>{/if}</p>
-    <p>{notConnected ? 'Tether it (USB or Ethernet), robot on, Driver Station connected, then Connect.' : shownWhy}</p>
     {#if notConnected && robotNotFound}<p>Robot not found: is the cable in? This is not a failed check.</p>{/if}
+    <p>{notConnected ? 'Tether it (USB or Ethernet), robot on, Driver Station connected, then Connect.' : shownWhy}</p>
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
     {#if result?.state === 'settling'}<p class="small">Nothing is judged until {SETTLE_SECONDS} s after the robot code starts: start-up camera and time-sync alerts clear in that time.</p>{/if}
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}

@@ -392,7 +392,7 @@
 <div class="top" class:compact={mode === 'review' && !!current}>
 <header class:screen-only={reportable}>
   <h1>Hindsight</h1>
-  {#if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs leave this computer only for your team's Drive folder, once you sign in. When you set them up it asks The Blue Alliance for the schedule and GitHub for your code (no log is sent), and on start it asks GitHub whether a newer Hindsight is out.{:else}Your logs never leave this computer. When you set them up it asks The Blue Alliance for the schedule and GitHub for your code (no log is sent).{/if}</p>{/if}
+  {#if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
 </header>
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}

@@ -247,10 +247,10 @@
   <h3>Stator-limit tests</h3>
   <div class="sub locked">
     <h4>Drive wheel slip <span class="chip">waiting for your team to agree the procedure</span></h4>
-    <p class="stop"><strong>Do not run this test until your team has agreed the procedure.</strong></p>
+    <p><strong>Do not run this test until your team has agreed the procedure.</strong></p>
     <p>What it will measure: slip is where wheel velocity becomes non-zero and stator current drops (CTRE's criterion; odometry is wheel-based and can't see slip). The stator limit goes 10–15 % below the slip current.</p>
     <details><summary>The proposed procedure (for your team to discuss, not for running)</summary>
-      <p>The robot drives into a fixed wall on carpet while drive voltage ramps up (<code>VoltageOut</code>). Safety: bumpers on, hold-to-run button, automatic stop at slip, ≤ 3 s per ramp, nobody within 2 m, motors cool between ramps, a mentor present. Our drive limits (120 A stator, 40 A supply) sit below CTRE's ~130 A slip example, so the test would need both raised in Tuner X for the test only. The ramp command is the team's to write.</p>
+      <p>The robot drives into a fixed wall on carpet while drive voltage ramps up (<code>VoltageOut</code>). Safety: bumpers on, hold-to-run button, automatic stop at slip, ≤ 3 s per ramp, nobody within 2 m, motors cool between ramps, a mentor present. Typical drive limits (for example 120 A stator, 40 A supply) sit below CTRE's ~130 A slip example, so the test would need both raised in Tuner X for the test only. The ramp command is the team's to write.</p>
     </details>
   </div>
   <div class="sub">
@@ -278,7 +278,6 @@
   .sub:first-of-type { border-top: none; }
   .unverified { font-size: 0.8rem; color: var(--warning); }
   .locked { opacity: 0.85; }
-  .stop { color: var(--error); }
   .chip { font-size: 0.75rem; font-weight: normal; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--warning); color: var(--fg); }
   .quiz { font-size: 0.85rem; margin-top: 0.4rem; }
   .quiz summary { cursor: pointer; color: var(--focus); }

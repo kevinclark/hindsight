@@ -555,7 +555,7 @@
 {#if !sessions.length}
   <div class="first" data-empty-session>
     <p class="lead">Read an event's matches, or a practice day's runs, together.</p>
-    <p>You get the board of what's broken before the next match, the trends, and how often each finding shows up. It needs a folder of logs{#if hub()}: choose one, or use <em>Open in Session view</em> on the Library page for the library's logs{/if}. You can also drop the log files here; each is read one at a time, so a big folder is fine.</p>
+    <p>You get the board of what's broken before the next match, the trends, and how often each finding shows up. It needs a folder of logs. You can also drop the log files here; each is read one at a time, so a big folder is fine.</p>
   </div>
 {:else}
 <p class="intro">Choose a whole folder of match logs (an event, a practice day), or drop the log files here. Each log is read and summarised one at a time, so a big folder is fine. Logs are grouped into sessions; each finding says how often it showed up across them.</p>

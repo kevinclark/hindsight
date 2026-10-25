@@ -100,19 +100,13 @@
   async function addRobot(address: string = robotAddress) {
     try { localStorage.setItem('hindsight.robotAddress', robotAddress) } catch { /* private window */ }
     pullFailed = null
-    const r = await work('Reading robot', async () => {
-      try { return await api!.addFromRobot(address) } catch (e) {
-        const detail = e instanceof Error ? e.message : String(e)
-        if (/^That is not a robot address/.test(detail)) throw e
-        pullFailed = { address, detail }
-        return undefined
-      }
-    })
+    // Only a refusal can mean the robot never answered: anything thrown came after the idle check reached it (SFTP, reading), so it keeps its own words.
+    const r = await work('Reading robot', () => api!.addFromRobot(address))
     if (!r) return
     if ('refused' in r) { if (NOT_REACHED.test(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
     else {
       report = r.report
-      if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Add logs from the robot again later.`
+      if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Pull logs off the robot again later.`
     }
   }
   /** The empty library's pull: the typed address, else the USB tether's (the same for every team). */
@@ -294,10 +288,11 @@
   <p class="meta">The library is part of the Hindsight desktop app. This page was opened from a file, so it has none.</p>
 {:else}
 <section class="bar">
-  <button class="primary" onclick={addFolder} disabled={!!progress}>Add logs from a folder…</button>
+  <!-- With no logs, the empty state below holds these two actions, so the bar does not offer them twice. -->
+  {#if all.length}<button class="primary" onclick={addFolder} disabled={!!progress}>Add a folder of logs…</button>{/if}
   {#if drive?.signedIn}<button class="primary" onclick={() => (picking = 'ingest')} disabled={driveBusy}>Add logs from a Drive folder…</button>{/if}
   {#if all.length}<button class="primary" onclick={readAgain} disabled={driveBusy} title="Read every log on this computer again with this version of Hindsight and update what the list says about it (robot, event). Nothing in the logs changes.">Read logs again</button>{/if}
-  <span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={() => addRobot()} disabled={driveBusy || !robotAddress.trim()}>Add logs from the robot</button></span>
+  {#if all.length}<span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={() => addRobot()} disabled={driveBusy || !robotAddress.trim()}>Pull logs off the robot</button></span>{/if}
   {#if progress}
     <span class="progress" role="status">
       {progress.job}{progress.total ? ` ${progress.done} of ${progress.total}` : '…'}{progress.current ? ` · ${progress.current}` : ''}
