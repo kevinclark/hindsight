@@ -120,7 +120,7 @@ panel. Neither is committed.
 
 ## The robot
 
-`Add logs from the robot` lists the roboRIO over SFTP (the `ssh2` package; nothing runs on the robot) only while it is
+`Pull logs off the robot` lists the roboRIO over SFTP (the `ssh2` package; nothing runs on the robot) only while it is
 disabled and not on the field (read over NT4 with Foresight's read-only client and field guard; if it can't tell, it
 refuses). It skips files modified in the last 30 s or still growing. It never deletes on the robot.
 

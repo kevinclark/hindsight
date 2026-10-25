@@ -314,8 +314,8 @@
 <svelte:window ondragover={(e) => { e.preventDefault() }} />
 
 <p class="intro">
-  Drop your match logs (<code>.wpilog</code>, several is better), your robot snapshot (<code>snapshot.json</code>), or a saved <code>profile.json</code>
-  to draft a robot profile you can check and keep. Optionally choose your robot-code folder (only its <code>.java</code> files and
+  <strong>Drafts a robot profile</strong> (motors, groups, current limits) that you check and keep, so the other pages judge your robot rather than a guess.
+  It needs your match logs (<code>.wpilog</code>, several is better), your robot snapshot (<code>snapshot.json</code>) or a saved <code>profile.json</code>: drop them here. Optionally choose your robot-code folder (only its <code>.java</code> files and
   <code>.git</code> branch files are read) or a public GitHub repo at the log's commit: the code fills in CAN IDs, which current is
   supply and which stator, groups and current limits, each marked "from code" for you to confirm. Files never leave the computer.
 </p>

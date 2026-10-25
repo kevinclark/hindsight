@@ -418,7 +418,7 @@
 <div class="top" class:compact={mode === 'review' && !!current}>
 <header class:screen-only={reportable}>
   <h1>Hindsight</h1>
-  {#if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Lints FRC robot match logs. Runs in this page; your files never leave this computer.</p>{/if}
+  {#if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
 </header>
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
@@ -439,7 +439,7 @@
   <ForesightView signal={todaySig} {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
-{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} /></div>{/if}
+{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{/if}
 <div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={writeBoard} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 {#if !current || dragging}

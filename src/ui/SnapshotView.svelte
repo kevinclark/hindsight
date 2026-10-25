@@ -86,9 +86,10 @@
 <svelte:window ondragover={(e) => { e.preventDefault() }} />
 
 <p class="intro">
-  A <strong>robot snapshot</strong> is what every CTRE device on the robot says about itself: model, CAN ID, firmware, the current limits it is
-  really running, and its sticky faults. Take one with <code>python3 tools/robot-snapshot.py</code> while the robot is on and tethered
-  (see <code>docs/robot-snapshot.md</code>), then drop its <code>snapshot.json</code> here. Drop a second one to see what changed between them.
+  <strong>Shows what every CTRE device on the robot says about itself</strong> (model, CAN ID, firmware, the current limits it is
+  really running, its sticky faults) and compares it with the robot profile. It needs a <strong>snapshot</strong>: take one with
+  <code>python3 tools/robot-snapshot.py</code> while the robot is on and tethered (see <code>docs/robot-snapshot.md</code>), then choose or drop
+  its <code>snapshot.json</code> here. Drop a second one to see what changed between them.
 </p>
 
 <section class="drop" class:dragging aria-label="Drop a snapshot"
