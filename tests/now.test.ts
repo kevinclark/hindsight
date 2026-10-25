@@ -199,9 +199,11 @@ describe('which session is today\'s', () => {
 })
 
 describe('a refused pull', () => {
-  it('"Robot not found" only when the socket closed before any answer, on each message checkRobotIdle can produce', () => {
-    expect(notReached('Could not check the robot: Connection closed')).toBe(true)
-    expect(notReached('Could not check the robot: Connection closed (code 1006)')).toBe(true)
+  it('"Robot not found" only when the socket never opened, on each message checkRobotIdle can produce', () => {
+    expect(notReached('Could not reach the robot: Connection closed (code 1006)')).toBe(true)
+    expect(notReached('Could not reach the robot: nothing answered at 172.22.11.2 within 8 s.')).toBe(true)
+    expect(notReached('Could not check the robot: Connection closed (code 1006)')).toBe(false)
+    expect(notReached('Could not check the robot: The robot sent no value saying whether the field is attached (…). Disconnected.')).toBe(false)
     expect(notReached('The robot did not say whether it is disabled and off the field, so nothing was pulled.')).toBe(false)
     expect(notReached('The robot is enabled. Disable it before pulling logs.')).toBe(false)
     expect(notReached('The robot is on the field (FMS attached). Logs are not pulled on the field.')).toBe(false)
