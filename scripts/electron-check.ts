@@ -40,6 +40,9 @@ try {
   const page = await connect(port)
   await page.eval(`new Promise((r) => { const t = () => (window.hub ? r(true) : setTimeout(t, 100)); t() })`)
   await sleep(500)
+  // The app opens on Now: the screenshots below are of the Library, so go there first.
+  await page.eval(`[...document.querySelectorAll('.modes button')].find((b) => b.textContent.trim() === 'Library').click()`)
+  await sleep(300)
   const started = Date.now()
   await page.eval(`[...document.querySelectorAll('button')].find((b) => /Add a folder of logs/.test(b.textContent)).click()`)
   await until(page, `!!document.querySelector('.report[aria-label="What was added"]')`, 'the ingest report')

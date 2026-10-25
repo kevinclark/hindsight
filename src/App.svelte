@@ -19,13 +19,17 @@
   import { standingKeys, type Session } from './session/session.ts'
   import SnapshotView from './ui/SnapshotView.svelte'
   import ForesightView from './ui/ForesightView.svelte'
+  import NowView from './ui/NowView.svelte'
+  import { todaySignal } from './ui/today-signal.svelte.ts'
+  import type { Place } from './now/now.ts'
+  import { dateText } from './session/day.ts'
   import LibraryView from './ui/LibraryView.svelte'
   import { hub } from './hub/bridge.ts'
   import { loadTeam, teamNow } from './ui/team-setting.svelte.ts'
   import { loadTba } from './ui/tba-setting.svelte.ts'
   import { robotChoices } from './ui/robot-list.ts'
   import RobotOptions from './ui/RobotOptions.svelte'
-  import { codeSpec, libraryLinks, libraryLogs, type LibraryLink } from './hub/session-files.ts'
+  import { asFile, codeSpec, libraryLinks, libraryLogs, sessionNames as libraryNames, type LibraryLink } from './hub/session-files.ts'
   import ReviewReport from './ui/ReviewReport.svelte'
   import { buildCard } from './report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from './report/card-png.ts'
@@ -60,8 +64,11 @@
   let problems = $state<string[]>([])
   let selected = $state(0)
   let tab = $state<'match' | 'power' | 'limits' | 'logging'>('match')
-  // Review match logs, a whole session of them, the limits wizard, or a robot snapshot (device settings and faults).
-  let mode = $state<'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight' | 'library'>(hub() ? 'library' : 'review')
+  // Now (what to do at this moment: the screen the app opens on, ADR 10); review match logs, a whole session of them, the
+  // limits wizard, or a robot snapshot (device settings and faults).
+  let mode = $state<'now' | 'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight' | 'library'>('now')
+  // Whether today is an event day by the outside signals (The Blue Alliance, the library), and the clock: read once, shared by Now and Foresight.
+  const todaySig = todaySignal()
   // Robot profiles kept in this browser (built in the Robot profile mode), offered beside the built-in ones.
   const stored = $derived(profilesNow())
 
@@ -73,6 +80,7 @@
   }
   // The Library is part of the desktop app (src/hub/): the page opened from disk has no library, so no tab for it.
   const MODES = [
+    { id: 'now', label: 'Now' } as const,
     ...(hub() ? [{ id: 'library', label: 'Library' } as const] : []),
     { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'wizard', label: 'Limits wizard' },
     { id: 'snapshot', label: 'Robot snapshot' }, { id: 'profile', label: 'Robot profile' }, { id: 'foresight', label: 'Foresight' },
@@ -83,7 +91,7 @@
   void hub()?.updateInfo().then((u) => { update = u })
   void loadTeam()
   void loadTba()
-  let sessionView = $state<{ addFiles(files: File[]): Promise<void> }>()
+  let sessionView = $state<{ addFiles(files: File[], opts?: { select?: boolean }): Promise<void> }>()
   // Session summaries restored without their file read the library's copy (desktop app only).
   const findInLibrary = hub() ? (names: string[]) => libraryLogs(hub()!, names) : undefined
   const linksInLibrary = hub() ? (names: string[]) => libraryLinks(hub()!, names) : undefined
@@ -102,6 +110,38 @@
     mode = 'session'
     await sessionView?.addFiles(files)
   }
+  // Now's buttons. Today's logs in the library go into the Session view (it does not watch the library: it reads what it is given).
+  let loadingToday: Promise<void> | null = null
+  /** Today's library logs into the Session view. `select` false (the library grew on its own): the session on screen stays; true (the board button): today's is shown. */
+  function loadToday(select = false): Promise<void> {
+    // One load at a time: a pull's own call and the library-changed call (NowView) land together.
+    return (loadingToday ??= (async () => {
+      const app = hub()
+      if (!app) return
+      const day = dateText(Date.now())
+      const { entries } = await app.library()
+      const mine = entries.filter((e) => e.local && !e.record.stub && e.record.playedAt !== null && dateText(e.record.playedAt) === day)
+      if (mine.length) await sessionView?.addFiles(libraryNames(mine).map((n) => asFile(n, app)), { select })
+    })().finally(() => { loadingToday = null }))
+  }
+  /** A practice day's "Event board not opened yet": the newest event's logs (on-field logs and what was played in the 4 days before them), shown in the Session view. */
+  async function loadLatestEvent(): Promise<void> {
+    const app = hub()
+    if (!app) return
+    const { entries } = await app.library()
+    const mine = entries.filter((e) => e.local && !e.record.stub && e.record.playedAt !== null)
+    const field = mine.filter((e) => e.record.onField)
+    if (!field.length) return
+    const newest = field.reduce((a, b) => (b.record.playedAt! > a.record.playedAt! ? b : a))
+    const last = newest.record.playedAt!
+    const same = mine.filter((e) => e.record.playedAt! <= last && e.record.playedAt! > last - 4 * 86400e3 && (!e.record.onField || !newest.record.event || e.record.event === newest.record.event))
+    await sessionView?.addFiles(libraryNames(same).map((n) => asFile(n, app)))
+  }
+  async function showBoard(which: 'today' | 'latest' = 'today') {
+    if (which === 'latest') await loadLatestEvent(); else await loadToday(true)
+    mode = 'session'
+  }
+  const goPlace = (place: Place) => { mode = place }
   // With a log loaded the dashed drop row is gone (dropping anywhere still works): Choose logs… stays beside the File menu.
   function chosen(e: Event) { const input = e.currentTarget as HTMLInputElement; load(input.files ?? []); input.value = '' }
   let busy = $state(false)
@@ -314,8 +354,8 @@
   function onDrop(e: DragEvent) {
     e.preventDefault()
     dragging = false
-    // In the wizard, logs go to a step's own "Check it" box, not to Match review.
-    if (mode !== 'review') return
+    // In the wizard, logs go to a step's own "Check it" box, not to Match review. Dropped on Now they open in Match review.
+    if (mode === 'now' && e.dataTransfer?.files.length) { mode = 'review'; tab = 'match' } else if (mode !== 'review') return
     if (e.dataTransfer?.files) load(e.dataTransfer.files)
   }
 
@@ -406,8 +446,11 @@
 <div hidden={mode !== 'wizard'} class:screen-only={reportable}><Wizard matches={analyses} /></div>
 <div hidden={mode !== 'snapshot'} class:screen-only={reportable}><SnapshotView /></div>
 <div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder bind:this={profileBuilder} /></div>
+<div hidden={mode !== 'now'} class:screen-only={reportable}>
+  <NowView {sessions} {history} {marks} signal={todaySig} openLogs={analyses.length} onGo={goPlace} onBoard={showBoard} onOpenLog={openFromSession} onOpenLogs={openInSession} onAdded={() => loadToday()} />
+</div>
 <div hidden={mode !== 'foresight'}>
-  <ForesightView {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
+  <ForesightView signal={todaySig} {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>
 {#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{/if}

@@ -62,7 +62,7 @@ export function scheduleLabel(m: Pick<ScheduledMatch, 'level' | 'number' | 'set'
 export const qualOf = (matchLabel: string): number | null => qualNumber(matchLabel)
 
 /** The position of a scheduled match (see the file header). */
-function posOf(m: ScheduledMatch, schedule: readonly ScheduledMatch[]): number {
+export function posOf(m: ScheduledMatch, schedule: readonly ScheduledMatch[]): number {
   if (m.level === 'qm') return m.number
   return PLAYOFFS + schedule.filter((x) => x.level !== 'qm').indexOf(m)
 }
