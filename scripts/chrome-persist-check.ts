@@ -34,7 +34,7 @@ await send('Page.navigate', { url: `file://${resolve('hindsight.html')}` }, sid)
 await sleep(1000)
 await click('Session')
 const { result: { root } } = await send('DOM.getDocument', {}, sid)
-const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog"]' }, sid)
+const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog"][multiple]:not([webkitdirectory])' }, sid)
 await send('DOM.setFileInputFiles', { nodeId, files }, sid)
 for (let i = 0; i < 100; i++) { await sleep(200); if (new RegExp(`^${files.length} of ${files.length} logs`).test(await evalIn(`document.querySelector('.progress')?.innerText ?? ''`))) break }
 const out: Record<string, unknown> = { loaded: await sessionText() }

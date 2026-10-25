@@ -309,7 +309,7 @@
 <!-- A file dropped anywhere but the snapshot box would open in this tab and end the check. -->
 <svelte:window ondragover={(e) => e.preventDefault()} ondrop={(e) => e.preventDefault()} />
 <div class="screen-only">
-<h2 class="place">Foresight: the robot check before each match</h2>
+<h2>Foresight: the robot check before each match</h2>
 <ModeLine text={today.line} mode={today.mode} byHand={today.byHand} onChange={(m) => chooseMode(today.sessionId, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />
 {#if field}
   <section class="field" role="alert">

@@ -227,7 +227,8 @@ async function view(name: string, body: () => Promise<void>) {
 }
 
 // --- the views ------------------------------------------------------------------------------------------------
-const LOG_INPUT = 'input[type=file][accept=".wpilog,.dslog,.jsonl"]' // a bare input[type=file] would hit the Snapshot view's .json input
+// The Match review's own drop input: the visible view's (a bare input[type=file] would hit the Snapshot view's .json input, and the accept list has grown).
+const LOG_INPUT = '#app > div:not([hidden]) > section.drop input[type=file][accept]'
 const FIXTURES = join(ROOT, 'fixtures', 'robot-snapshot')
 
 async function emptyScreen() {
@@ -241,6 +242,8 @@ async function matchReview(index: number, m: (typeof MATCHES)[number]) {
   const label = m.id.toUpperCase()
   const tab = await freshPage()
   try {
+    // The app opens on Now: go to Match review first.
+    await tab.clickText('.modes button', 'Match review')
     await tab.setFiles(LOG_INPUT, m.withDs ? [logPath(m.file!), dslogPath] : [logPath(m.file!)])
     await tab.waitFor(`document.querySelector('.match-head h2') !== null || document.querySelector('.problem') !== null`, 90, 'the match heading')
     if (await tab.eval(`document.querySelector('.match-head h2') === null`)) throw new Error(`log did not load: ${await tab.eval(`document.querySelector('.problem').innerText`)}`)
