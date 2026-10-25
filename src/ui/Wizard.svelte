@@ -21,7 +21,8 @@
   const sweepable = $derived(profile.motorGroups.filter((g) => g.spinUp))
 
   let session = $state<LimitsSession | null>(null)
-  let groupName = $state(offseason2026.motorGroups.find((g) => g.spinUp)?.name ?? '')
+  // Nothing chosen at first: the wizard opens on "Choose a mechanism", never on one robot's.
+  let groupName = $state('')
   let sweepText = $state('none, 60, 50, 40, 30')
   let problem = $state('')
   let busy = $state(-1)
@@ -91,7 +92,8 @@
 </script>
 
 <p class="intro">
-  The wizard walks you through finding a supply current limit by measuring it. Each card says what to do, where, and
+  <strong>Finds the supply current limit for one mechanism by measuring it</strong>, and shows what each limit costs in spin-up time.
+  It needs the robot, Phoenix Tuner X, a charged battery and the <code>.wpilog</code> of each run. Each card says what to do, where, and
   what "done" looks like. <strong>It never changes the robot code or the motors</strong>: you set things in Phoenix Tuner
   X, run the robot, and drop the log in. Save your progress to <code>{SESSION_FILE_NAME}</code>; the page can't save files by itself.
 </p>
@@ -99,8 +101,8 @@
 
 {#if !session}
   <section class="card">
-    <h3>1. Pick the mechanism</h3>
-    <label>Mechanism <select bind:value={groupName}>{#each sweepable as g (g.name)}<option value={g.name}>{g.name}</option>{/each}</select></label>
+    <h3>1. Choose a mechanism</h3>
+    <label>Mechanism <select bind:value={groupName}><option value="">Choose a mechanism</option>{#each sweepable as g (g.name)}<option value={g.name}>{g.name}</option>{/each}</select></label>
     {#if group}
       {#if limitsKnown(group.limits)}
         <p>Now: supply limit {group.limits.supplyA ?? '—'} A, <strong>{group.limits.supplyEnabled ? 'on' : 'switched off'}</strong>; stator limit {group.limits.statorA ?? '—'} A ({group.limits.statorEnabled ? 'on' : 'off'}). Set in <code>{group.limits.where}</code>.</p>
@@ -111,7 +113,7 @@
     <label>Sweep (A, "none" = no limit) <input bind:value={sweepText} size="28" /></label>
     <p class="why"><strong>Why:</strong> a supply limit trades spin-up time for battery voltage. Measuring a few values shows where it starts to cost real time: the "knee".</p>
     <details class="quiz"><summary>Check your understanding: why start with no limit?</summary><p>It's the baseline. Every other step is compared with it: "how much slower than with no limit?"</p></details>
-    <div class="actions"><button onclick={start}>Start the sweep</button>
+    <div class="actions"><button onclick={start} disabled={!group}>Start the sweep</button>{#if !group} <span class="note">Choose a mechanism first.</span>{/if}
       <label class="file">or load a saved session <input type="file" accept=".json" onchange={(e) => loadSession((e.currentTarget as HTMLInputElement).files)} /></label></div>
   </section>
 {:else}
@@ -244,11 +246,11 @@
 <section class="card">
   <h3>Stator-limit tests</h3>
   <div class="sub locked">
-    <h4>Drive wheel slip <span class="chip">waiting for Kevin to agree the procedure</span></h4>
-    <p class="stop"><strong>Do not run this test yet: Kevin has not agreed the procedure.</strong></p>
+    <h4>Drive wheel slip <span class="chip">waiting for your team to agree the procedure</span></h4>
+    <p><strong>Do not run this test until your team has agreed the procedure.</strong></p>
     <p>What it will measure: slip is where wheel velocity becomes non-zero and stator current drops (CTRE's criterion; odometry is wheel-based and can't see slip). The stator limit goes 10–15 % below the slip current.</p>
-    <details><summary>The proposed procedure (for discussing with Kevin, not for running)</summary>
-      <p>The robot drives into a fixed wall on carpet while drive voltage ramps up (<code>VoltageOut</code>). Safety: bumpers on, hold-to-run button, automatic stop at slip, ≤ 3 s per ramp, nobody within 2 m, motors cool between ramps, a mentor present. Our drive limits (120 A stator, 40 A supply) sit below CTRE's ~130 A slip example, so the test would need both raised in Tuner X for the test only. The ramp command is the team's to write.</p>
+    <details><summary>The proposed procedure (for your team to discuss, not for running)</summary>
+      <p>The robot drives into a fixed wall on carpet while drive voltage ramps up (<code>VoltageOut</code>). Safety: bumpers on, hold-to-run button, automatic stop at slip, ≤ 3 s per ramp, nobody within 2 m, motors cool between ramps, a mentor present. Typical drive limits (for example 120 A stator, 40 A supply) sit below CTRE's ~130 A slip example, so the test would need both raised in Tuner X for the test only. The ramp command is the team's to write.</p>
     </details>
   </div>
   <div class="sub">
@@ -276,13 +278,13 @@
   .sub:first-of-type { border-top: none; }
   .unverified { font-size: 0.8rem; color: var(--warning); }
   .locked { opacity: 0.85; }
-  .stop { color: var(--error); }
   .chip { font-size: 0.75rem; font-weight: normal; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--warning); color: var(--fg); }
   .quiz { font-size: 0.85rem; margin-top: 0.4rem; }
   .quiz summary { cursor: pointer; color: var(--focus); }
   details summary { min-height: 24px; line-height: 24px; }
   .actions { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin: 0.5rem 0; }
   button { padding: 0.35rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); font: inherit; cursor: pointer; }
+  button:disabled { color: var(--muted); cursor: default; }
   button.link { border: none; background: none; text-decoration: underline; color: var(--muted); }
   label { display: inline-flex; gap: 0.4rem; align-items: center; margin: 0.25rem 1rem 0.25rem 0; font-size: 0.9rem; flex-wrap: wrap; }
   label { max-width: 100%; }
