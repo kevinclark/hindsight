@@ -95,11 +95,11 @@ describe('Now on an event day with no schedule', () => {
     const s = session([match(2), match(3)])
     return nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 2, event: boardOf(s, min(200), null), have: { team: true, key: false }, scheduleNote: null, still: null, now: min(200), clockText: at, ...over })
   }
-  it('says the next match is not known yet and links to where the key is set, in the Library on the desktop app', () => {
+  it('says the next match is not known yet and points to the Set up card below, with no link, on the desktop app', () => {
     const st = noSchedule()
     expect(st.kind).toBe('event-no-schedule')
     expect(st.big).toBe('Next match: not known yet')
-    expect(st.keyLine).toMatchObject({ lead: 'Add The Blue Alliance read key in', link: { text: 'the Library', action: { kind: 'go', place: 'library' } }, rest: ': it names the event and the schedule.' })
+    expect(st.keyLine).toEqual({ lead: 'Add The Blue Alliance read key in Set up this laptop, below', link: null, rest: ': it names the event and the schedule.' })
     expect(st.tasks.map((t) => t.title)).toEqual(["Pull the last match's log", 'Triage before the next match', 'Queue check for the next match'])
   })
   it('on the page the key is set in the Session view; a missing team number is named too', () => {

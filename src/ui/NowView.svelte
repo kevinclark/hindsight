@@ -206,7 +206,7 @@
     <!-- The fix in place (ADR b): type the next match, or add the read key; the same fields the board shows. -->
     <NextMatchFields session={eventSession} {scheduleNote} idPrefix="now-next" heading={false} />
   {:else if view.keyLine}
-    <p class="keyline" data-now-key>{view.keyLine.lead}{' '}<button type="button" class="link" onclick={() => link(view.keyLine!.link)}>{view.keyLine.link.text}</button>{view.keyLine.rest}</p>
+    <p class="keyline" data-now-key>{view.keyLine.lead}{#if view.keyLine.link}{' '}<button type="button" class="link" onclick={() => link(view.keyLine!.link!)}>{view.keyLine.link.text}</button>{/if}{view.keyLine.rest}</p>
   {:else if view.scheduleNote}
     <p class="keyline" data-now-key>{view.scheduleNote}</p>
   {/if}
