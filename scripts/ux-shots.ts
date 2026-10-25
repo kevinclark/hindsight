@@ -123,6 +123,12 @@ class Tab {
     if (!ok) throw new Error(`no ${selector} with text "${text}"`)
     await sleep(300)
   }
+  /** A tool behind the Tools menu: open the menu, choose the item. */
+  async openTool(text: string) {
+    await this.eval(`document.querySelector('.modes .menu-button').click()`)
+    await sleep(150)
+    await this.clickText('.modes [role=menuitem]', text)
+  }
   /** Poll `expression` until it is truthy, up to `seconds`. */
   async waitFor(expression: string, seconds: number, what: string) {
     for (let i = 0; i < seconds * 10; i++) { if (await this.eval(expression)) return; await sleep(100) }
@@ -295,7 +301,7 @@ async function sessionView() {
 async function wizardView() {
   const tab = await freshPage()
   try {
-    await tab.clickText('.modes button', 'Limits wizard')
+    await tab.openTool('Limits wizard')
     await shootBoth(tab, 16, 'wizard', 'Limits wizard (first step)', 'none')
   } finally { await tab.close() }
 }
@@ -303,7 +309,7 @@ async function wizardView() {
 async function snapshotView() {
   const tab = await freshPage()
   try {
-    await tab.clickText('.modes button', 'Robot snapshot')
+    await tab.openTool('Robot snapshot')
     const input = 'input[type=file][accept=".json"][multiple]'
     await tab.setFiles(input, [join(FIXTURES, 'example-profile.json'), join(FIXTURES, 'snapshot-before.json')])
     await sleep(800)
@@ -346,7 +352,7 @@ function builderInputs(): string[] {
 async function builderView() {
   const tab = await freshPage()
   try {
-    await tab.clickText('.modes button', 'Robot profile')
+    await tab.openTool('Robot profile')
     await tab.setFiles('input[type=file][multiple][accept=".wpilog,.json"]', builderInputs())
     await tab.waitFor(`document.querySelectorAll('tr[data-motor]').length > 0`, 20, 'the builder to list motors')
     await sleep(500)
@@ -365,7 +371,7 @@ async function foresightView(c: (typeof FORESIGHT)[number]) {
   const server = await startReplayServer({ bytes: new Uint8Array(readFileSync(logPath(c.file))), pit: c.pit, speed: c.speed })
   const tab = await freshPage()
   try {
-    await tab.clickText('.modes button', 'Foresight')
+    await tab.clickText('.modes button', 'Robot check')
     await tab.eval(`(() => { const i = document.querySelector('.connect input'); i.value = ${JSON.stringify(`127.0.0.1:${server.port}`)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
     await tab.clickText('.connect button', 'Connect')
     const ready = c.pit ? `['GO', 'NO-GO'].includes(document.querySelector('.verdict .big')?.innerText ?? '')` : `document.querySelector('.field') !== null`

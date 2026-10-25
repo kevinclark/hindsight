@@ -37,7 +37,9 @@ ws.addEventListener('message', (e) => { const m = JSON.parse(String(e.data)); if
 await send('Emulation.setDeviceMetricsOverride', { width: 1100, height: 2400, deviceScaleFactor: 1, mobile: false }, sessionId)
 await send('Page.navigate', { url: `file://${resolve(page)}` }, sessionId)
 await sleep(1000)
-await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText === 'Robot snapshot').click()`)
+await evalIn(sessionId, `document.querySelector('.modes .menu-button').click()`)
+await sleep(200)
+await evalIn(sessionId, `[...document.querySelectorAll('.modes [role=menuitem]')].find(b => b.innerText.trim() === 'Robot snapshot').click()`)
 await sleep(200)
 
 async function setFiles(files: string[]) {

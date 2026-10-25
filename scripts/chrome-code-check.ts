@@ -53,7 +53,7 @@ try {
   await send('Network.enable', {}, sessionId)
   await send('Page.navigate', { url: `file://${resolve('hindsight.html')}` }, sessionId)
   await sleep(800)
-  await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText === 'Foresight').click()`)
+  await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText === 'Robot check').click()`)
   await sleep(300)
   if (github) {
     await evalIn(sessionId, `[...document.querySelectorAll('.code-check button')].find(b => b.innerText === 'Use GitHub…').click()`)

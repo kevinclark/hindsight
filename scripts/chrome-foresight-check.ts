@@ -73,7 +73,7 @@ async function scenario(name: string, address: string, seconds: number, done: (s
   if (flag('--mode') === 'event') await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('hindsight.sessionRenames', JSON.stringify({ ['mode:practice:' + new Date().toLocaleDateString('sv')]: 'event' }))` }, sessionId)
   await send('Page.navigate', { url: page }, sessionId)
   await sleep(800)
-  await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText === 'Foresight').click()`)
+  await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText === 'Robot check').click()`)
   await sleep(200)
   await evalIn(sessionId, `(() => { const i = document.querySelector('.connect input'); i.value = ${JSON.stringify(address)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await evalIn(sessionId, `[...document.querySelectorAll('.connect button')].find(b => b.innerText === 'Connect').click()`)

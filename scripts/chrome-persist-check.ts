@@ -45,7 +45,7 @@ out.inReview = await evalIn(`document.querySelector('.match-head h2')?.innerText
 await click('Session')
 await sleep(300)
 out.backInSession = await sessionText()
-await click('Limits wizard'); await sleep(200); await click('Match review'); await sleep(200)
+await click('Tools'); await sleep(200); await click('Limits wizard'); await sleep(200); await click('Match review'); await sleep(200)
 out.reviewStillLoaded = await evalIn(`document.querySelector('.match-head h2')?.innerText ?? 'no match'`)
 await send('Page.reload', {}, sid)
 await sleep(2500)

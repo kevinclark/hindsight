@@ -24,7 +24,7 @@ writes to it: Foresight only subscribes.
 ## Steps
 
 1. **Open the page from a file.** Double-click `hindsight.html` on the onchecks laptop (its address bar shows `file://`).
-   Click **Foresight** at the top.
+   Click **Robot check** at the top (its screen is headed "Foresight").
 2. **Connect.** Robot: `172.22.11.2` for USB, `10.TE.AM.2` for Ethernet (team 254 is `10.2.54.2`; the page builds it, and the by-name address, from the team number in the Session view's Blue Alliance fields or the app's team setting; with none set only USB is offered). Click **Connect**. Within about 5 s the line
    next to the button should say `Connected. Robot: 2026 offseason robot (<branch>); reading 109 signals.`
    If it says it cannot tell the robot is in the pit, or the connection closes: go to step 11 and note the message.

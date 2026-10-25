@@ -79,12 +79,16 @@
     await load(files)
   }
   // The Library is part of the desktop app (src/hub/): the page opened from disk has no library, so no tab for it.
+  // The daily places, in the order Now's "What Hindsight does" lines use. The three expert tools sit behind one labelled menu.
   const MODES = [
     { id: 'now', label: 'Now' } as const,
+    { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'foresight', label: 'Robot check' },
     ...(hub() ? [{ id: 'library', label: 'Library' } as const] : []),
-    { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'wizard', label: 'Limits wizard' },
-    { id: 'snapshot', label: 'Robot snapshot' }, { id: 'profile', label: 'Robot profile' }, { id: 'foresight', label: 'Foresight' },
   ] as const
+  const TOOLS = [
+    { id: 'wizard', label: 'Limits wizard' }, { id: 'snapshot', label: 'Robot snapshot' }, { id: 'profile', label: 'Robot profile' },
+  ] as const
+  const activeTool = $derived(TOOLS.find((t) => t.id === mode))
   if (hub()) document.getElementById('app')?.classList.add('wide')
   // The desktop app asks GitHub once on start whether a newer release is out.
   let update = $state<{ version: string; url: string } | null>(null)
@@ -437,7 +441,8 @@
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
-  {#each MODES as m (m.id)}<button class:active={mode === m.id} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
+  {#each MODES as m (m.id)}<button class:active={mode === m.id} aria-current={mode === m.id ? 'page' : undefined} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
+  <Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, onselect: () => (mode = t.id) }))} />
 </nav>
 </div>
 

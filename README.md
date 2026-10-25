@@ -18,7 +18,7 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   the next step, the possible causes (each with what to look for and where; the ones this log points to first, any it
   rules out struck through), and why the rule exists. Advice knows what you loaded: with the `.dslog` in, it says
   what the DS log shows rather than asking for it. "Not checked" lists rules that couldn't run on this log.
-- **Switching views** (Match review, Session, Limits wizard) keeps everything loaded in each. A **reload** keeps the
+- **Switching views** (Match review, Session, Robot check, Tools › Limits wizard) keeps everything loaded in each. A **reload** keeps the
   Session: each log's summary (never the log) is saved in this browser, keyed by file name, size and modified time,
   and restored with a note and a "Clear saved copies" control. After a Hindsight update the old summaries are still
   shown, marked as read with an older Hindsight; **Read again** (in the session's header) reads that session's logs
@@ -51,7 +51,7 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
   state you record: possible, ruled out by a test (with what it showed), or confirmed. They are board lines (op `cause`) in the
   team's history. A setting under "Test setting" shows the causes in reverse order, for testing whether answers follow the rank.
 
-- **Save for Slack** (beside each Download for Claude, in Match review and Foresight) opens the print dialog on a
+- **Save for Slack** (beside each Download for Claude, in Match review and Robot check) opens the print dialog on a
   report layout, not on the app: page 1 is the bottom line, each error with its one number, next step and plot, then
   warnings and info one line each; later pages hold what each error might mean, its causes and why the rule exists.
   Pick **Save as PDF** in the dialog (the file is named `<log>.report`). The same click saves `<log>.card.png`, a
@@ -124,7 +124,7 @@ endpoint and zip downloads don't allow calls from web pages. One source is in us
 the other. The scripts take `--github
 owner/repo[@ref]` (`golden.ts`, `report.ts`), keeping GitHub's file lists in the same cache file.
 
-To add a robot: **Robot profile** drafts one from your logs, a robot snapshot and (optionally) your code folder, and keeps it in the browser or saves a `profile.json` (`docs/robot-profile.md`; code in `src/builder/`). A built-in profile is a TypeScript file in `src/profiles/`, listed in `src/profiles/index.ts`.
+To add a robot: **Robot profile** (Tools menu) drafts one from your logs, a robot snapshot and (optionally) your code folder, and keeps it in the browser or saves a `profile.json` (`docs/robot-profile.md`; code in `src/builder/`). A built-in profile is a TypeScript file in `src/profiles/`, listed in `src/profiles/index.ts`.
 
 ### Robots without AdvantageKit
 
@@ -197,7 +197,7 @@ settings**: it tells students what to set and which line to change, and they do 
   5 A over the limit, the longest burst (≤ 0.2 s is the limiter catching up), and time at the limit. Plus a what-if
   for one group's supply limit (the Power tab's model, with its error), the robot current budget on the weakest
   fleet battery, and the hard-stop zeroing check.
-- **Limits wizard** (top of the page): a supply-limit sweep the students run with the robot. Pick the mechanism, then
+- **Limits wizard** (Tools menu, top of the page): a supply-limit sweep the students run with the robot. Pick the mechanism, then
   for each limit: set it in Phoenix Tuner X, run 3 spin-ups from standstill, drop the log in. It measures each run,
   checks the limit took effect on every motor, flags runs that can't be compared, and recommends the limit at the knee,
   with the code line to change and a final read-back check. Progress saves to `limits-session.json`.
@@ -273,7 +273,7 @@ where it matters.
 
 ## Robot snapshot
 
-**Robot snapshot** (top of the page) reads a `snapshot.json` taken with `python3 tools/robot-snapshot.py` while the
+**Robot snapshot** (Tools menu, top of the page) reads a `snapshot.json` taken with `python3 tools/robot-snapshot.py` while the
 robot is on and tethered: every CTRE device's model, CAN ID and firmware, the current limits each motor is really
 running against the profile's, and sticky faults (Undervoltage, BridgeBrownout, BootDuringEnable first). A second
 snapshot shows exactly what changed. The collector only reads (five allowlisted actions, HTTP GET, no retries) and can
@@ -291,7 +291,7 @@ a scenario file: [docs/sim-run.md](docs/sim-run.md).
 
 ## Foresight: the pre-match go/no-go, live (phase 1)
 
-Built to `8033/robot/foresight-phase1-brief.md`. **Foresight** (top of the page) connects to the robot over a tether
+Built to `8033/robot/foresight-phase1-brief.md`. **Foresight** (the Robot check tab, top of the page) connects to the robot over a tether
 in the pit or the queue and runs the same rules and robot profile on the robot's live NetworkTables, before the match
 instead of after it. One verdict, readable at arm's length: **GO**, **NO-GO** or **NOT CHECKED**, then the findings
 worst first, each red with the one thing to do before the robot goes on the field (swap the battery, redeploy from a
