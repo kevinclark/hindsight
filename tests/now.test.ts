@@ -33,11 +33,11 @@ describe('Now on an event day with the schedule', () => {
     expect(st.modeLine).toBe(true)
   })
   it('leaves the minutes out when the start is not within the timeline window, and the time when there is none', () => {
-    expect(eventNow({}, [match(2), match(3)], min(200) - 3 * 24 * 60 * 60e3).big).toBe(`Next match: Q2 at ${at(min(0))}`)
+    expect(eventNow({}, [match(2), match(3)], min(200) - 3 * 24 * 60 * 60e3).big).toBe(`Next match: Q4 at ${at(min(180))}`) // Q2 and Q3's logs are in, so Q4 is the floor
     const noTimes = SCHEDULE.map((m) => ({ ...m, scheduled: null, predicted: null, actual: null }))
     const s = session([match(2), match(3)])
     const st = nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 0, event: boardOf(s, min(200), noTimes as never), schedule: noTimes as never, have: { team: true, key: true }, scheduleNote: null, still: null, now: min(200), clockText: at })
-    expect(st.big).toBe('Next match: Q2')
+    expect(st.big).toBe('Next match: Q4')
   })
   it('the pull task names the latest match that has started, until its log is the session\'s latest', () => {
     const pull = task(eventNow(), 'pull')
@@ -262,5 +262,27 @@ describe('the fix pass', () => {
     expect(task(eventNow({ build: 'page', libraryToday: null }), 'pull').detail).toMatch(/opens in Match review/)
     const out = nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 37, event: null, have: { team: true, key: true }, scheduleNote: null, still: null, now: min(200), clockText: at })
     expect(task(out, 'triage').detail).toBe('37 logs from today in the library · opens the board: reds due before the next match')
+  })
+})
+
+describe('the fix pass, verified', () => {
+  it('a pulled log floors the next match even when the schedule copy has no actual time for it yet', () => {
+    const sched = SCHEDULE.map((m) => (m.level === 'qm' && m.number <= 3 ? { ...m, actual: m.scheduled } : m))
+    const s = session([red(2, ['a', 'b']), red(3, ['a', 'b']), red(4, ['a', 'b'])])
+    const now = min(200)
+    const board = buildBoard({ ...input(s, [], sched), now: new Date(now) })
+    const st = nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 3, event: board, have: { team: true, key: true }, scheduleNote: null, still: null, now, clockText: at, schedule: sched })
+    expect(board.tl.next?.label).toBe('Q5')
+    expect(st.big).toMatch(/^Next match: Q5/)
+    expect(st.tasks.find((t) => t.id === 'pull')).toMatchObject({ title: "Q4's log is in", done: true })
+    expect(st.tasks.find((t) => t.id === 'triage')?.detail).toMatch(new RegExp(`^${redsDue(board)} reds due before Q5`))
+  })
+  it('counts the same reds as the board gate when Now and the board name the same match', () => {
+    const base = buildBoard({ ...input(session([match(2), match(3)]), [], SCHEDULE), now: new Date(min(200)) })
+    const rows = [
+      { open: true, priority: 'red', grey: false, awaitingClean: false, status: 'open', due: { pos: base.tl.nextPos } },
+      { open: true, priority: 'red', grey: false, awaitingClean: false, status: 'deferred', due: { pos: base.tl.nextPos }, deferral: { point: { pos: base.tl.nextPos } } },
+    ] as never
+    expect(redsDueBefore({ rows }, base.tl.next!.pos)).toBe(redsDue({ tl: base.tl, rows }))
   })
 })

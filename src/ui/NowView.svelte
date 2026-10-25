@@ -42,11 +42,12 @@
   const stored = $derived(profilesNow())
 
   // Today's event session (the mode line found it, or the latest of this event on its second day) and the team's schedule at it,
-  // read as Foresight reads it: again only when the session, its event, the team or the key changes.
+  // read as Foresight reads it: again when the session, its event, the team or the key changes, and every 10 min (the saved copy's
+  // lifetime, src/tba/source.ts) so actual times The Blue Alliance posts during the day reach the next match and the pull task.
   const eventSession = $derived(today.mode === 'event' ? eventSessionFor(sessions, today.sessionId, signal.external, clock) : null)
   let schedule = $state.raw<ScheduledMatch[] | null>(null)
   let scheduleNote = $state<string | null>(null)
-  const scheduleSig = $derived(eventSession ? `${eventSession.id}|${eventSession.event?.key ?? ''}|${eventSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}` : '')
+  const scheduleSig = $derived(eventSession ? `${eventSession.id}|${eventSession.event?.key ?? ''}|${eventSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}|${Math.floor(clock / 600e3)}` : '')
   let scheduleOf = ''
   $effect(() => {
     if (!scheduleSig) { schedule = null; scheduleNote = null; scheduleOf = ''; return }

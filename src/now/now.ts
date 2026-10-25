@@ -101,7 +101,7 @@ export const redsDue = (board: Pick<Board, 'tl' | 'rows'>): number => board.rows
  */
 export function redsDueBefore(board: Pick<Board, 'rows'>, pos: number): number {
   const before = pos - 0.5
-  return board.rows.filter((i) => i.open && i.priority === 'red' && !i.grey && !i.awaitingClean && (i.status === 'deferred' ? !!i.deferral && i.deferral.point.pos <= before : i.due.pos <= before)).length
+  return board.rows.filter((i) => i.open && i.priority === 'red' && !i.grey && !i.awaitingClean && (i.status === 'deferred' ? !!i.deferral && i.deferral.point.pos < before : i.due.pos <= before)).length
 }
 
 /**
@@ -124,10 +124,12 @@ export function latestStarted(schedule: readonly ScheduledMatch[], now: number):
 
 /**
  * The next match that has not started, qualification or playoff, straight from the schedule. The board's `tl.next` is the first match
- * after the latest log, so until the last match's log is pulled it can be one already played. Null: none left.
+ * after the latest log, so until the last match's log is pulled it can be one already played. Null: none left. `from`: the
+ * board's next position, as a floor: once a match's log is in, that match is not next even when the schedule copy has no actual
+ * time for it yet (The Blue Alliance posts actuals late, and a copy can be minutes old).
  */
-export function upcoming(schedule: readonly ScheduledMatch[], now: number): { label: string; startsAt: number | null; leftMinutes: number | null; pos: number } | null {
-  const m = schedule.find((x) => startedAt(x, schedule, now) === null)
+export function upcoming(schedule: readonly ScheduledMatch[], now: number, from = 0): { label: string; startsAt: number | null; leftMinutes: number | null; pos: number } | null {
+  const m = schedule.find((x) => posOf(x, schedule) >= from && startedAt(x, schedule, now) === null)
   if (!m) return null
   const startsAt = startOf(m)
   return { label: scheduleLabel(m), startsAt, leftMinutes: minutesFromNow(startsAt, now, 2 * 1440), pos: posOf(m, schedule) }
@@ -141,7 +143,8 @@ function pullTask(input: NowInput, board: Pick<Board, 'tl'> | null, vague: strin
   // In when its log is the session's latest: a qualification by number, or any log played after the match began (a playoff match, or a late log).
   const done = !!started && !!last && ((last.playedAt !== null && last.playedAt > started.at) || (started.match.level === 'qm' && last.qual !== null && last.qual >= started.match.number))
   const name = started ? scheduleLabel(started.match) : null
-  if (done) return { id: 'pull', title: `${name}'s log is in`, detail: '', done: true, button: null, action: null, primary: false }
+  // Named by the log that is in (it can be a later match than the schedule copy knows has started).
+  if (done) return { id: 'pull', title: `${last.qual !== null && started.match.level === 'qm' && last.qual > started.match.number ? last.label : name}'s log is in`, detail: '', done: true, button: null, action: null, primary: false }
   const age = started ? Math.floor((input.now - started.at) / 60e3) : null
   const ago = name && age !== null && age >= 1 ? `${name} started ${age} min ago. ` : ''
   if (hub) {
@@ -210,7 +213,7 @@ export function nowState(input: NowInput): NowState {
   const board = input.event
   const tl = board?.tl ?? null
   const kind: NowKind = !board ? 'event-outside' : tl!.hasSchedule ? 'event' : 'event-no-schedule'
-  const next = tl && kind === 'event' && input.schedule ? upcoming(input.schedule, input.now) : null
+  const next = tl && kind === 'event' && input.schedule ? upcoming(input.schedule, input.now, tl.next?.pos ?? 0) : null
   const matchName = next?.label ?? 'the next match'
   const clock = input.clockText ?? defaultClock
   let big = 'Next match: not known yet'
