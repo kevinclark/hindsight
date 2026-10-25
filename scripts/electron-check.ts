@@ -51,10 +51,13 @@ try {
   await page.screenshot(join(shots, '1-library-report.png'))
   const report = await page.eval<string>(`document.querySelector('.report[aria-label="What was added"] h2').textContent + ' | ' + document.querySelector('.summary').textContent.replace(/\\s+/g, ' ')`)
   // The Team Drive panel as a build with no Google client shows it.
+  await page.eval(`[...document.querySelectorAll('button')].find((b) => /^This laptop/.test(b.textContent.trim())).click()`)
+  await sleep(300)
   await page.eval(`document.querySelector('details.team').open = true`)
   await sleep(300)
   await page.screenshot(join(shots, '1b-library-team-drive-panel.png'))
   await page.eval(`document.querySelector('details.team').open = false`)
+  await page.eval(`[...document.querySelectorAll('button')].find((b) => /^This laptop/.test(b.textContent.trim())).click()`)
   // Type a driver on one log and a place on its day (tags are saved to the manifest), then filter to that driver.
   await page.eval(`(() => { const i = document.querySelector('input.driver'); i.value = 'driver one'; i.dispatchEvent(new Event('change', { bubbles: true })) })()`)
   await until(page, `[...document.querySelectorAll('aside fieldset')].some((f) => /Driver/.test(f.querySelector('legend').textContent) && /driver one/.test(f.textContent))`, 'the driver facet to list the tag', 20000)

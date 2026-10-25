@@ -214,9 +214,11 @@ export function nowState(input: NowInput): NowState {
   const tl = board?.tl ?? null
   const kind: NowKind = !board ? 'event-outside' : tl!.hasSchedule ? 'event' : 'event-no-schedule'
   const next = tl && kind === 'event' && input.schedule ? upcoming(input.schedule, input.now, tl.next?.pos ?? 0) : null
-  const matchName = next?.label ?? 'the next match'
+  // No schedule, but a match number typed on this laptop: the board's timeline carries it as its next match (src/board/typed-next.ts).
+  const typed = kind === 'event-no-schedule' && tl?.next ? tl.next : null
+  const matchName = next?.label ?? typed?.label ?? 'the next match'
   const clock = input.clockText ?? defaultClock
-  let big = 'Next match: not known yet'
+  let big = typed ? `Next match: ${typed.label}` : 'Next match: not known yet'
   if (kind === 'event') {
     if (next) big = `Next match: ${next.label}${next.startsAt !== null ? ` at ${clock(next.startsAt)}` : ''}${next.leftMinutes !== null ? ` · in ${next.leftMinutes} min` : ''}`
     else if (input.schedule?.length) big = 'Next match: none left on the team\'s schedule'

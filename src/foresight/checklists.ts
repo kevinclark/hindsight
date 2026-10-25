@@ -112,9 +112,9 @@ export function deferralSession(sessions: readonly Session[], todaySessionId: st
 }
 
 /** The board for a session, as the Session view builds it (marks applied). `schedule` is the team's Blue Alliance schedule when it was read (src/tba/session-schedule.ts); null reads due points by name only, and the cut-off default passes only on a playoff log. */
-export function boardFor(session: Session, history: HistoryEvent[], profile: RobotProfile, now: Date, schedule: readonly ScheduledMatch[] | null = null): Board {
+export function boardFor(session: Session, history: HistoryEvent[], profile: RobotProfile, now: Date, schedule: readonly ScheduledMatch[] | null = null, typedNext: number | null = null): Board {
   const marks = triage(history)
-  return buildBoard({ session: sessionWithMarks(session, marks), history, marks, schedule, profiles: [profile], now })
+  return buildBoard({ session: sessionWithMarks(session, marks), history, marks, schedule, profiles: [profile], now, typedNext })
 }
 
 /**

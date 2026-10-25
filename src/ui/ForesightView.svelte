@@ -38,6 +38,7 @@
   import ForesightQueue from './ForesightQueue.svelte'
   import ForesightPractice from './ForesightPractice.svelte'
   import CodeCheck from './CodeCheck.svelte'
+  import { typedNextFor } from './typed-next.svelte.ts'
   import { codeFolder } from './code-folder.svelte.ts'
   import { changedFiles } from '../code/git.ts'
   import { codeChangeFlag } from '../board/freeze.ts'
@@ -179,7 +180,7 @@
     void sessionSchedule(s, team, get).then((got) => { if (!stale) fsSchedule = got.schedule })
     return () => { stale = true }
   })
-  const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date(), carried ? null : fsSchedule) : null)
+  const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date(), carried ? null : fsSchedule, carried ? null : typedNextFor(defSession)) : null)
   const deferrals = $derived(board && profile && defSession ? openDeferrals(board, profile, carried ? sessionEventName(defSession) : undefined) : null)
   const deferralNote = $derived(!queueMode ? null : !robotId ? 'The robot is not identified yet, so no deferrals are read.' : !defSession ? 'No event session for this robot is loaded in the Session view, so no deferrals are read.' : null)
   // The role this laptop ticks under (the same setting as the board's), and ticks when no event is loaded to file them with.

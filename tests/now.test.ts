@@ -286,3 +286,15 @@ describe('the fix pass, verified', () => {
     expect(redsDueBefore({ rows }, base.tl.next!.pos)).toBe(redsDue({ tl: base.tl, rows }))
   })
 })
+
+describe('a next match typed on this laptop (slice 2)', () => {
+  it('names the typed match in the headline, the triage and the queue check when there is no schedule', () => {
+    const s = session([red(2, ['a']), match(3)])
+    const board = buildBoard({ ...input(s, [], null), now: new Date(min(200)), typedNext: 41 })
+    const st = nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 2, event: board, have: { team: true, key: false }, scheduleNote: null, still: null, now: min(200), clockText: at, schedule: null })
+    expect(st.kind).toBe('event-no-schedule')
+    expect(st.big).toBe('Next match: Q41')
+    expect(st.tasks.find((t) => t.id === 'triage')?.title).toBe('Triage before Q41')
+    expect(st.tasks.find((t) => t.id === 'queue')?.title).toBe('Queue check for Q41')
+  })
+})

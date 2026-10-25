@@ -169,6 +169,8 @@ export interface BoardInput {
   profiles: readonly RobotProfile[]
   /** The moment the board is read: the time left to the next match counts from it. */
   now?: Date
+  /** A next qualification number typed in (src/board/typed-next.ts), used only when there is no schedule; its own timeline input, never a schedule. */
+  typedNext?: number | null
 }
 
 const ms = (iso: string | undefined): number | null => { const t = iso ? Date.parse(iso) : NaN; return Number.isNaN(t) ? null : t }
@@ -299,7 +301,7 @@ export const HOLDS = 'holds'
 export function buildBoard(input: BoardInput): Board {
   const { session, history, marks, schedule, profiles } = input
   const labels = session.matches.map((m, i) => shortMatchLabel(m.matchLabel, i))
-  const tl = timeline(session, schedule, (m) => labels[session.matches.indexOf(m)] ?? shortMatchLabel(m.matchLabel, 0), input.now?.getTime())
+  const tl = timeline(session, schedule, (m) => labels[session.matches.indexOf(m)] ?? shortMatchLabel(m.matchLabel, 0), input.now?.getTime(), input.typedNext)
   const scope = scopeOf(session)
   const states = boardState(history)
   const statusLines = lastStatusLines(history)
