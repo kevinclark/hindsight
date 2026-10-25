@@ -16,6 +16,7 @@ import { Nt4Client, isFieldLocked, nt4Url, type SocketLike } from '../foresight/
 import { GUARD_CONTROL_DATA } from '../foresight/keys.ts'
 import type { SourceFile } from './ingest.ts'
 import { kindOf } from './types.ts'
+export { notReached } from './robot-reach.ts'
 
 export const ROBOT_LOG_ROOTS = ['/home/lvuser/logs', '/U/logs']
 export const USB_PARENT = '/media'

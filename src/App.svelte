@@ -91,7 +91,7 @@
   void hub()?.updateInfo().then((u) => { update = u })
   void loadTeam()
   void loadTba()
-  let sessionView = $state<{ addFiles(files: File[]): Promise<void> }>()
+  let sessionView = $state<{ addFiles(files: File[], opts?: { select?: boolean }): Promise<void> }>()
   // Session summaries restored without their file read the library's copy (desktop app only).
   const findInLibrary = hub() ? (names: string[]) => libraryLogs(hub()!, names) : undefined
   const linksInLibrary = hub() ? (names: string[]) => libraryLinks(hub()!, names) : undefined
@@ -112,7 +112,8 @@
   }
   // Now's buttons. Today's logs in the library go into the Session view (it does not watch the library: it reads what it is given).
   let loadingToday: Promise<void> | null = null
-  function loadToday(): Promise<void> {
+  /** Today's library logs into the Session view. `select` false (the library grew on its own): the session on screen stays; true (the board button): today's is shown. */
+  function loadToday(select = false): Promise<void> {
     // One load at a time: a pull's own call and the library-changed call (NowView) land together.
     return (loadingToday ??= (async () => {
       const app = hub()
@@ -120,11 +121,24 @@
       const day = dateText(Date.now())
       const { entries } = await app.library()
       const mine = entries.filter((e) => e.local && !e.record.stub && e.record.playedAt !== null && dateText(e.record.playedAt) === day)
-      if (mine.length) await sessionView?.addFiles(libraryNames(mine).map((n) => asFile(n, app)))
+      if (mine.length) await sessionView?.addFiles(libraryNames(mine).map((n) => asFile(n, app)), { select })
     })().finally(() => { loadingToday = null }))
   }
-  async function showBoard() {
-    await loadToday()
+  /** A practice day's "Event board not opened yet": the newest event's logs (on-field logs and what was played in the 4 days before them), shown in the Session view. */
+  async function loadLatestEvent(): Promise<void> {
+    const app = hub()
+    if (!app) return
+    const { entries } = await app.library()
+    const mine = entries.filter((e) => e.local && !e.record.stub && e.record.playedAt !== null)
+    const field = mine.filter((e) => e.record.onField)
+    if (!field.length) return
+    const newest = field.reduce((a, b) => (b.record.playedAt! > a.record.playedAt! ? b : a))
+    const last = newest.record.playedAt!
+    const same = mine.filter((e) => e.record.playedAt! <= last && e.record.playedAt! > last - 4 * 86400e3 && (!e.record.onField || !newest.record.event || e.record.event === newest.record.event))
+    await sessionView?.addFiles(libraryNames(same).map((n) => asFile(n, app)))
+  }
+  async function showBoard(which: 'today' | 'latest' = 'today') {
+    if (which === 'latest') await loadLatestEvent(); else await loadToday(true)
     mode = 'session'
   }
   const goPlace = (place: Place) => { mode = place }
@@ -433,7 +447,7 @@
 <div hidden={mode !== 'snapshot'} class:screen-only={reportable}><SnapshotView /></div>
 <div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder bind:this={profileBuilder} /></div>
 <div hidden={mode !== 'now'} class:screen-only={reportable}>
-  <NowView {sessions} {history} {marks} signal={todaySig} openLogs={analyses.length} onGo={goPlace} onBoard={showBoard} onOpenLog={openFromSession} onOpenLogs={openInSession} onAdded={loadToday} />
+  <NowView {sessions} {history} {marks} signal={todaySig} openLogs={analyses.length} onGo={goPlace} onBoard={showBoard} onOpenLog={openFromSession} onOpenLogs={openInSession} onAdded={() => loadToday()} />
 </div>
 <div hidden={mode !== 'foresight'}>
   <ForesightView signal={todaySig} {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />

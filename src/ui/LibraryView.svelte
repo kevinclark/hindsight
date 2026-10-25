@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { notReached } from '../hub/robot-reach.ts'
   import { hub, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
   import DriveFolderPicker from './DriveFolderPicker.svelte'
   import type { IngestPlan } from '../hub/ingest.ts'
@@ -96,14 +97,13 @@
   }
   /** A pull that never reached the robot (not a refusal because it is enabled or on the field): the words a student needs, and the real text kept under them. */
   let pullFailed = $state<{ address: string; detail: string } | null>(null)
-  const NOT_REACHED = /^(Could not check the robot|The robot did not say whether)/
   async function addRobot(address: string = robotAddress) {
     try { localStorage.setItem('hindsight.robotAddress', robotAddress) } catch { /* private window */ }
     pullFailed = null
     // Only a refusal can mean the robot never answered: anything thrown came after the idle check reached it (SFTP, reading), so it keeps its own words.
     const r = await work('Reading robot', () => api!.addFromRobot(address))
     if (!r) return
-    if ('refused' in r) { if (NOT_REACHED.test(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
+    if ('refused' in r) { if (notReached(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
     else {
       report = r.report
       if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Pull logs off the robot again later.`

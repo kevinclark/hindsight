@@ -8,7 +8,8 @@
  * (`no-logs`).
  */
 import { isGate, robotOf, type Board } from '../board/model.ts'
-import { minutesFromNow } from '../board/points.ts'
+import { minutesFromNow, posOf, scheduleLabel } from '../board/points.ts'
+import { startOf, type ScheduledMatch } from '../tba/schedule.ts'
 import { deferralSession, isCarried, sessionEventName } from '../foresight/checklists.ts'
 import { dateText } from '../session/day.ts'
 import type { Mode } from '../session/mode.ts'
@@ -24,8 +25,8 @@ export type NowAction =
   | { kind: 'open-log' }
   | { kind: 'open-logs' }
   | { kind: 'add-folder' }
-  /** The Session view's board, with today's library logs (re)loaded first on the desktop app. */
-  | { kind: 'board' }
+  /** The Session view's board, with today's library logs (re)loaded first on the desktop app; `latest`: the newest event's logs instead (a practice day). */
+  | { kind: 'board'; which?: 'today' | 'latest' }
 
 export interface NowTask {
   id: 'pull' | 'triage' | 'queue' | 'practice-check' | 'runs' | 'still' | 'open-log' | 'add-folder' | 'pull-logs'
@@ -76,6 +77,10 @@ export interface NowInput {
   have: { team: boolean; key: boolean }
   /** Why the schedule could not be read (`sessionSchedule`'s note), when it could not. */
   scheduleNote: string | null
+  /** The team's schedule the board was built with (null: none was read). */
+  schedule?: readonly ScheduledMatch[] | null
+  /** Hub: the library holds on-field logs, so an earlier event's board can be opened. */
+  earlierEvent?: boolean
   /** Practice day: the latest event's board, as `deferralSession` picks it. */
   still: { event: string; open: number; red: number } | null
   now: number
@@ -87,39 +92,57 @@ const defaultClock = (ms: number): string => new Date(ms).toLocaleTimeString([],
 const plural = (n: number, one: string, many: string = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 const go = (place: Place): NowAction => ({ kind: 'go', place })
 
-/** The qualification the team's schedule says has started by `now` (the highest-numbered), or null. Playoff matches carry no start in the timeline. */
-export function latestStarted(tl: Pick<Board['tl'], 'starts'>, now: number): { qual: number; startedAt: number } | null {
-  let best: { qual: number; startedAt: number } | null = null
-  for (const [qual, at] of tl.starts) if (at !== null && at <= now && (!best || qual > best.qual)) best = { qual, startedAt: at }
-  return best
-}
-
 /** The reds due before the next match: the board's gate, the number the queue sheet counts. */
 export const redsDue = (board: Pick<Board, 'tl' | 'rows'>): number => board.rows.filter((i) => isGate(i, board.tl)).length
 
 /**
- * The next match that has not started. The board's `tl.next` is the first scheduled match after the latest log in the session, so
- * until the last match's log is pulled it can be a match that was already played; Now skips the qualifications that have started.
+ * The reds due before a match at position `pos` (src/board/points.ts), as the board would place them if that match were next:
+ * an undeferred red is due at the next match, a deferred one when its point comes up. The board's own rows and points, no second model.
  */
-export function upcoming(tl: Board['tl'], now: number): { label: string; startsAt: number | null; leftMinutes: number | null } | null {
-  const next = tl.next
-  if (!next) return null
-  const started = latestStarted(tl, now)
-  if (next.level !== 'qm' || !started || next.number > started.qual) return { label: next.label, startsAt: next.startsAt, leftMinutes: next.leftMinutes }
-  const later = [...tl.starts.keys()].filter((n) => n > started.qual).sort((a, b) => a - b)[0]
-  if (later === undefined) return null
-  const startsAt = tl.starts.get(later) ?? null
-  return { label: `Q${later}`, startsAt, leftMinutes: minutesFromNow(startsAt, now, 2 * 1440) }
+export function redsDueBefore(board: Pick<Board, 'rows'>, pos: number): number {
+  const before = pos - 0.5
+  return board.rows.filter((i) => i.open && i.priority === 'red' && !i.grey && !i.awaitingClean && (i.status === 'deferred' ? !!i.deferral && i.deferral.point.pos <= before : i.due.pos <= before)).length
+}
+
+/**
+ * When a scheduled match counts as started: The Blue Alliance has an actual time for it that has passed, or (only when the whole
+ * schedule carries no actual time, an offline copy) its planned start has. A late-running event's planned start is not a start.
+ */
+export function startedAt(m: ScheduledMatch, schedule: readonly ScheduledMatch[], now: number): number | null {
+  if (m.actual !== null) return m.actual <= now ? m.actual : null
+  if (schedule.some((x) => x.actual !== null)) return null
+  const t = startOf(m)
+  return t !== null && t <= now ? t : null
+}
+
+/** The latest scheduled match (in play order) that has started. */
+export function latestStarted(schedule: readonly ScheduledMatch[], now: number): { match: ScheduledMatch; at: number } | null {
+  let best: { match: ScheduledMatch; at: number } | null = null
+  for (const m of schedule) { const at = startedAt(m, schedule, now); if (at !== null) best = { match: m, at } }
+  return best
+}
+
+/**
+ * The next match that has not started, qualification or playoff, straight from the schedule. The board's `tl.next` is the first match
+ * after the latest log, so until the last match's log is pulled it can be one already played. Null: none left.
+ */
+export function upcoming(schedule: readonly ScheduledMatch[], now: number): { label: string; startsAt: number | null; leftMinutes: number | null; pos: number } | null {
+  const m = schedule.find((x) => startedAt(x, schedule, now) === null)
+  if (!m) return null
+  const startsAt = startOf(m)
+  return { label: scheduleLabel(m), startsAt, leftMinutes: minutesFromNow(startsAt, now, 2 * 1440), pos: posOf(m, schedule) }
 }
 
 function pullTask(input: NowInput, board: Pick<Board, 'tl'> | null, vague: string): NowTask {
   const hub = input.build === 'hub'
-  const started = board?.tl.hasSchedule ? latestStarted(board.tl, input.now) : null
-  const last = board?.tl.last?.qual ?? null
-  const done = !!started && last !== null && last >= started.qual
-  const name = started ? `Q${started.qual}` : null
+  const schedule = board?.tl.hasSchedule ? input.schedule ?? null : null
+  const started = schedule ? latestStarted(schedule, input.now) : null
+  const last = board?.tl.last ?? null
+  // In when its log is the session's latest: a qualification by number, or any log played after the match began (a playoff match, or a late log).
+  const done = !!started && !!last && ((last.playedAt !== null && last.playedAt > started.at) || (started.match.level === 'qm' && last.qual !== null && last.qual >= started.match.number))
+  const name = started ? scheduleLabel(started.match) : null
   if (done) return { id: 'pull', title: `${name}'s log is in`, detail: '', done: true, button: null, action: null, primary: false }
-  const age = started ? Math.floor((input.now - started.startedAt) / 60e3) : null
+  const age = started ? Math.floor((input.now - started.at) / 60e3) : null
   const ago = name && age !== null && age >= 1 ? `${name} started ${age} min ago. ` : ''
   if (hub) {
     return { id: 'pull', title: name ? `Pull ${name}'s log` : vague, detail: `${ago}Plug in the USB cable, then Pull.`, done: false, button: 'Pull from the robot', action: { kind: 'pull' }, primary: true }
@@ -167,8 +190,12 @@ export function nowState(input: NowInput): NowState {
       : { id: 'runs', title: "Open today's logs", detail: 'Choose them; they open in the Session view.', done: false, button: 'Open logs…', action: { kind: 'open-logs' }, primary: false }
     const s = input.still
     const still: NowTask = s && s.open > 0
-      ? { id: 'still', title: `Still open: ${plural(s.open, 'issue')} on ${s.event}'s board`, detail: s.red ? `${s.red} red` : 'none red', done: false, button: 'Open the board', action: { kind: 'board' }, primary: false }
-      : { id: 'still', title: 'Nothing open', detail: s ? `${s.event}'s board has no open issue.` : 'No event board yet.', done: !!s, button: s ? 'Open the board' : null, action: s ? { kind: 'board' } : null, primary: false }
+      ? { id: 'still', title: `Still open: ${plural(s.open, 'issue')} on ${s.event}'s board`, detail: `${s.red ? `${s.red} red` : 'none red'} · in Session › Board`, done: false, button: 'Open the board', action: { kind: 'board' }, primary: false }
+      : s ? { id: 'still', title: 'Nothing open', detail: `${s.event}'s board has no open issue · in Session › Board`, done: true, button: 'Open the board', action: { kind: 'board' }, primary: false }
+      // No board was built: that is not an all-clear. The library may hold an earlier event's logs.
+      : input.earlierEvent ? { id: 'still', title: 'Event board not opened yet', detail: "Loads the newest event's logs · in Session › Board", done: false, button: 'Open the board', action: { kind: 'board', which: 'latest' }, primary: false }
+      : hub ? { id: 'still', title: 'No event board yet', detail: 'Logs from an event make one.', done: false, button: null, action: null, primary: false }
+      : { id: 'still', title: 'Event board not opened yet', detail: "Choose an event's logs · in Session › Board", done: false, button: 'Open the Session view', action: go('session'), primary: false }
     return {
       ...empty, kind: 'practice', big: `Practice · ${dateText(input.now)}`,
       tasks: [
@@ -183,29 +210,30 @@ export function nowState(input: NowInput): NowState {
   const board = input.event
   const tl = board?.tl ?? null
   const kind: NowKind = !board ? 'event-outside' : tl!.hasSchedule ? 'event' : 'event-no-schedule'
-  const next = tl && kind === 'event' ? upcoming(tl, input.now) : null
+  const next = tl && kind === 'event' && input.schedule ? upcoming(input.schedule, input.now) : null
   const matchName = next?.label ?? 'the next match'
   const clock = input.clockText ?? defaultClock
   let big = 'Next match: not known yet'
   if (kind === 'event') {
     if (next) big = `Next match: ${next.label}${next.startsAt !== null ? ` at ${clock(next.startsAt)}` : ''}${next.leftMinutes !== null ? ` · in ${next.leftMinutes} min` : ''}`
-    else if (tl!.last) big = 'Next match: none left on the team\'s schedule'
+    else if (input.schedule?.length) big = 'Next match: none left on the team\'s schedule'
   }
-  const queue: NowTask = { id: 'queue', title: `Queue check for ${matchName}`, detail: 'Robot tethered, Driver Station connected, then Connect.', done: false, button: 'Start the queue check', action: go('foresight'), primary: false }
+  const queue: NowTask = { id: 'queue', title: `Queue check for ${matchName}`, detail: 'Robot tethered, Driver Station connected, then Connect · in Foresight', done: false, button: 'Start the queue check', action: go('foresight'), primary: false }
   let triage: NowTask
   if (!board) {
     const n = input.libraryToday
     const hubNone = hub && n === 0
     triage = {
       id: 'triage', title: "Open today's logs on the board",
-      detail: hub ? (n ? `${plural(n, 'log')} from today in the library` : 'No logs from today in the library yet: pull one first.') : "Choose today's logs in the Session view.",
+      detail: hub ? (n ? `${plural(n, 'log')} from today in the library · opens the board: reds due before the next match` : 'No logs from today in the library yet: pull one first.') : "Choose today's logs in the Session view · in Session › Board",
       done: false, button: hubNone ? null : hub ? 'Open the board' : 'Open the Session view', action: hubNone ? null : hub ? { kind: 'board' } : go('session'), primary: false,
     }
   } else {
-    const due = redsDue(board)
+    // Count at the match Now names (the board's gate counts at its own next match, which can be one already played).
+    const due = next ? redsDueBefore(board, next.pos) : redsDue(board)
     triage = {
       id: 'triage', title: `Triage before ${matchName}`,
-      detail: due ? `${plural(due, 'red')} due before ${matchName}` : `No reds due before ${matchName}`,
+      detail: `${due ? `${plural(due, 'red')} due before ${matchName}` : `No reds due before ${matchName}`} · in Session › Board`,
       done: false, button: 'Open the board', action: { kind: 'board' }, primary: false,
     }
   }
@@ -244,6 +272,3 @@ export function stillSession(sessions: readonly Session[], todaySessionId: strin
   const s = deferralSession(sessions, todaySessionId, robot)
   return s ? { session: s, name: sessionEventName(s) } : null
 }
-
-/** Whether a pull's refusal means the robot did not answer (as opposed to "it is enabled", "it is on the field"). Matches the words `checkRobotIdle` (src/hub/robot.ts) uses. */
-export const robotNotFound = (reason: string): boolean => /^Could not check the robot|^The robot did not say whether/.test(reason)

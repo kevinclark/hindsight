@@ -20,7 +20,8 @@
   import { dateText } from '../session/day.ts'
   import type { Session } from '../session/session.ts'
   import type { HistoryEvent, Triage } from '../triage/history.ts'
-  import { eventSessionFor, nowState, robotNotFound, stillSession, type NowAction, type NowLink, type Place } from '../now/now.ts'
+  import { eventSessionFor, nowState, stillSession, type NowAction, type NowLink, type Place } from '../now/now.ts'
+  import { notReached } from '../hub/robot-reach.ts'
   import ModeLine from './ModeLine.svelte'
   import { chooseMode, sessionNames } from './session-names.svelte.ts'
   import type { TodaySignal } from './today-signal.svelte.ts'
@@ -30,7 +31,7 @@
   // brought in (a pull or a folder), so the app loads today's into the Session view without switching. `openLogs`: logs open in Match review.
   let { sessions, history, marks, signal, openLogs, onGo, onBoard, onOpenLog, onOpenLogs, onAdded }: {
     sessions: Session[]; history: HistoryEvent[]; marks: Triage; signal: TodaySignal; openLogs: number
-    onGo: (place: Place) => void; onBoard: () => void | Promise<void>
+    onGo: (place: Place) => void; onBoard: (which?: 'today' | 'latest') => void | Promise<void>
     onOpenLog: (files: File[]) => void; onOpenLogs: (files: File[]) => void; onAdded: () => void | Promise<void>
   } = $props()
   const api = hub()
@@ -74,7 +75,7 @@
   const hasLogs = $derived((api ? signal.libraryLogs.some((r) => !r.stub) : false) || sessions.length > 0 || openLogs > 0)
   const view = $derived(nowState({
     build, mode: today.mode, hasLogs, libraryToday, event: eventBoard, have: { team: tbaTeam() !== null, key: tbaHasKey() },
-    scheduleNote, still, now: clock,
+    scheduleNote, still, now: clock, schedule, earlierEvent: !!api && signal.libraryLogs.some((r) => !r.stub && r.onField),
   }))
   // Logs added to the library from anywhere (the Library tab, a sync) while the Session view already holds a session: it does not
   // watch the library, so Now hands it today's logs again (the same ones, the new log among them) and "Pull Q33's log" can read done.
@@ -134,16 +135,16 @@
         note = `Connecting to the robot over ${a.label} (${a.value})…`
         tried.push(a.label)
         const r = await api.addFromRobot(a.value)
-        if ('refused' in r) { reason = r.refused; if (robotNotFound(r.refused)) continue; break }
+        if ('refused' in r) { reason = r.refused; if (notReached(r.refused)) continue; break }
         note = `${reportText(r.report, 'the robot')}${r.stillWriting.length ? ` ${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written: pull again later.` : ''}`
         await signal.readLibrary()
         await onAdded()
         return
       }
-      failure = { reason, notFound: robotNotFound(reason), tried: tried.join(', ') }
+      failure = { reason, notFound: notReached(reason), tried: tried.join(', ').replace(/ tether/g, '') }
       note = ''
     } catch (e) {
-      failure = { reason: e instanceof Error ? e.message : String(e), notFound: false, tried: tried.join(', ') }
+      failure = { reason: e instanceof Error ? e.message : String(e), notFound: false, tried: tried.join(', ').replace(/ tether/g, '') }
       note = ''
     } finally { busy = null }
   }
@@ -161,7 +162,7 @@
   function run(a: NowAction) {
     switch (a.kind) {
       case 'go': failure = null; onGo(a.place); break
-      case 'board': failure = null; void onBoard(); break
+      case 'board': failure = null; void onBoard(a.which); break
       case 'pull': void pull(); break
       case 'add-folder': void addFolder(); break
       case 'open-log': case 'open-logs': choose(a.kind); break
@@ -178,7 +179,7 @@
   <p class="meta" role="status">Reading the library…</p>
 {:else if failure}
   <div class="fail" role="alert">
-    <p class="head">Connecting to the robot over {failure.tried}…</p>
+    <p class="head">Tried {failure.tried}.</p>
     {#if failure.notFound}
       <p class="bad">Robot not found.</p>
       <p>Is the USB cable in and the robot on?</p>
