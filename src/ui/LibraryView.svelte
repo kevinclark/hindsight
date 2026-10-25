@@ -152,7 +152,7 @@
     void api.team().then((t) => { teamBox = t.team; savedTeam = t.team; codeText = t.sources.join(', '); setAppHasKey(!!t.tbaKey) }).catch(() => {})
     void api.codePlan().then((p) => { codePlan = p }).catch(() => {})
   })
-  const driveWords = $derived(!drive ? '' : !drive.signedIn ? 'Drive: not signed in' : !drive.teamFolder ? 'Drive: no team folder' : drive.lastSync ? `Drive: synced ${new Date(drive.lastSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Drive: not synced yet')
+  const driveWords = $derived(!drive ? '' : !drive.configured ? 'Drive: not set up' : !drive.signedIn ? 'Drive: not signed in' : !drive.teamFolder ? 'Drive: no team folder' : drive.lastSync ? `Drive: synced ${new Date(drive.lastSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Drive: not synced yet')
   const setupSummary = $derived([savedTeam === null ? 'no team yet' : `team ${savedTeam}`, tbaHasKey() ? 'key saved' : 'no key', driveWords].filter(Boolean).join(', '))
   let linkReport = $state.raw<LinkReport | null>(null)
   let lastJob = $state.raw<LastJob | null>(null)

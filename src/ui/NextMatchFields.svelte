@@ -72,7 +72,7 @@
       <button type="button" class="linkish" onclick={() => (changing = true)}>Change</button>
       {#if !(tbaHasKey() && tbaTeam() !== null)}<span class="muted">·</span> <button type="button" class="linkish" onclick={() => (keying = true)}>or add the read key</button>{/if}
     </p>
-  {:else}
+  {:else if !(active && keying)}
     <form class="line" onsubmit={saveNumber}>
       {#if heading}<strong>Next match: {active ? `Q${saved}` : 'not known yet'}</strong>{/if}
       {#if saved !== null && !active}<span class="muted">Q{saved} was typed, but {why === 'playoffs' ? 'playoffs have started' : 'its log is already in'}.</span>{/if}
