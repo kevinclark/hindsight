@@ -25,8 +25,7 @@
   import { tbaGetter, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
   import { sessionSchedule } from '../tba/session-schedule.ts'
   import type { ScheduledMatch } from '../tba/schedule.ts'
-  import { teamEvents } from '../tba/api.ts'
-  import { eventFromLibrary, eventFromSchedule, type TodayEvent } from '../session/today-event.ts'
+  import type { TodaySignal } from './today-signal.svelte.ts'
   import { atLatest, boardLines } from '../board/writes.ts'
   import { readRole, writeRole } from '../board/role.ts'
   import { verdictTone } from '../report/foresight-model.ts'
@@ -50,8 +49,10 @@
   import type { Session } from '../session/session.ts'
   import type { BoardRole } from '../triage/history.ts'
 
-  let { history, onPitCheck, sessions = [], onBoard }: {
+  let { history, onPitCheck, sessions = [], onBoard, signal }: {
     history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void; sessions?: Session[]
+    /** Whether today is an event day by the outside signals, and the clock (App.svelte makes one, Now shares it). */
+    signal: TodaySignal
     /** Writes board lines (App.svelte writeBoard): the queue checklist's ticks. Without it ticks stay on this page. */
     onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void
   } = $props()
@@ -68,35 +69,12 @@
   // say it is an event day too (src/session/today-event.ts). The single-file page has neither and keeps the old behaviour.
   // The schedule's events are read once (the answer for a day is worked out from them each time); the library is read again as
   // the day goes on, so a log pulled in that day flips Practice to Event without a reload. A hand choice still wins (todayMode).
-  let clock = $state(Date.now())
-  $effect(() => { const t = setInterval(() => { clock = Date.now() }, 30_000); return () => clearInterval(t) })
-  let tbaEvents = $state.raw<Parameters<typeof eventFromSchedule>[0]>([])
-  let libraryLogs = $state.raw<Parameters<typeof eventFromLibrary>[0]>([])
-  let libraryReadAt = 0
-  let reading = false
-  async function readLibrary() {
-    const app = hub()
-    if (!app) return
-    libraryReadAt = Date.now()
-    reading = true
-    try { libraryLogs = (await app.library()).entries.map((e) => e.record) } catch { /* no library answer: the last one stands */ } finally { reading = false }
-  }
-  $effect(() => {
-    const app = hub()
-    if (!app) return
-    const get = tbaGetter(), team = tbaTeam()
-    let cancelled = false
-    void (async () => {
-      try { if (get && team !== null) { const events = (await teamEvents(get, team, new Date().getFullYear())).data; if (!cancelled) tbaEvents = events } } catch { /* offline with no saved copy, or no key: the library is next */ }
-    })()
-    void readLibrary()
-    const stop = app.onProgress((p) => { if (p === null) void readLibrary() })
-    return () => { cancelled = true; stop() }
-  })
+  // Both signals are read once for the app (src/ui/today-signal.svelte.ts), which Now shares.
+  const clock = $derived(signal.clock)
+  const external = $derived(signal.external)
   // On each status update, while no event day is known, read the library again at most every 10 s.
   // Only while connected, with no event day known from either signal, and with no read in flight; neither the clock nor the answer re-runs it.
-  $effect(() => { void status; if (hub() && connected && !reading && !untrack(() => external) && Date.now() - libraryReadAt > 10_000) void readLibrary() })
-  const external = $derived<TodayEvent | null>(eventFromSchedule(tbaEvents, clock) ?? eventFromLibrary(libraryLogs, clock))
+  $effect(() => { void status; if (hub() && connected && !untrack(() => external)) signal.readLibraryIfOlder(10_000) })
   const today = $derived(todayMode(sessions, clock, sessionNames(), external))
 
   // The Ethernet and by-name addresses are built from the team number (src/foresight/addresses.ts); USB is the same for every team.

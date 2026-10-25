@@ -285,8 +285,9 @@
   }
 
   /** From the Library: read these logs into the session, as if chosen with "Choose logs…", and show the session that holds them. */
-  export async function addFiles(list: File[]): Promise<void> {
+  export async function addFiles(list: File[], opts: { select?: boolean } = {}): Promise<void> {
     await load(list)
+    if (opts.select === false) return // a load nobody asked to see: the session on screen stays
     const shown = sessionHolding(list.map((f) => f.name))
     if (shown) selectedId = shown.id
   }

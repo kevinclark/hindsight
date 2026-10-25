@@ -32,6 +32,18 @@ describe('is the robot idle?', () => {
     const r = await checkRobotIdle('127.0.0.1:1', { waitMs: 1500 })
     expect(r.ok).toBe(false)
   })
+  // A socket that never opens (a robot that is off or not cabled) is "not reached"; one that opens and then says nothing was reached.
+  const fakeSocket = (open: boolean) => () => {
+    const s = { binaryType: '', readyState: 0, onopen: null as ((e: unknown) => void) | null, onmessage: null, onclose: null, onerror: null, send() {}, close() {} }
+    if (open) setTimeout(() => s.onopen?.({}), 10)
+    return s
+  }
+  it('words a socket that never opened as not reached, and one that opened as reached', async () => {
+    const never = await checkRobotIdle('10.0.0.2', { waitMs: 200, makeSocket: fakeSocket(false) })
+    expect(never).toMatchObject({ ok: false, reason: expect.stringMatching(/^Could not reach the robot: nothing answered at 10\.0\.0\.2/) })
+    const silent = await checkRobotIdle('10.0.0.2', { waitMs: 200, makeSocket: fakeSocket(true) })
+    expect(silent).toMatchObject({ ok: false, reason: expect.stringMatching(/^The robot did not say whether/) })
+  })
 })
 
 describe('what is on the robot', () => {

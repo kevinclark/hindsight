@@ -16,6 +16,7 @@ import { Nt4Client, isFieldLocked, nt4Url, type SocketLike } from '../foresight/
 import { GUARD_CONTROL_DATA } from '../foresight/keys.ts'
 import type { SourceFile } from './ingest.ts'
 import { kindOf } from './types.ts'
+export { notReached } from './robot-reach.ts'
 
 export const ROBOT_LOG_ROOTS = ['/home/lvuser/logs', '/U/logs']
 export const USB_PARENT = '/media'
@@ -41,8 +42,13 @@ export function checkRobotIdle(address: string, options: { waitMs?: number; make
     const waitMs = options.waitMs ?? 8000
     let settled = false
     let client: Nt4Client | null = null
+    // Whether the robot's NT4 socket ever opened: before it does, nothing has answered (a robot that is off or not cabled
+    // usually never opens the socket at all, so the wait runs out); after it does, the robot was reached.
+    let opened = false
     const finish = (r: Idle) => { if (settled) return; settled = true; clearTimeout(timer); client?.close(); resolve(r) }
-    const timer = setTimeout(() => finish({ ok: false, reason: 'The robot did not say whether it is disabled and off the field, so nothing was pulled.' }), waitMs)
+    const timer = setTimeout(() => finish({ ok: false, reason: opened
+      ? 'The robot did not say whether it is disabled and off the field, so nothing was pulled.'
+      : `Could not reach the robot: nothing answered at ${address} within ${Math.round(waitMs / 1000)} s.` }), waitMs)
     try {
       client = new Nt4Client(nt4Url(address, 'hindsight-pull'), {
         onValues: (values) => {
@@ -53,7 +59,8 @@ export function checkRobotIdle(address: string, options: { waitMs?: number; make
           }
         },
         onField: () => finish({ ok: false, reason: 'The robot is on the field (FMS attached). Logs are not pulled on the field.' }),
-        onClose: (reason) => finish({ ok: false, reason: `Could not check the robot: ${reason}` }),
+        onOpen: () => { opened = true },
+        onClose: (reason) => finish({ ok: false, reason: `${opened ? 'Could not check the robot' : 'Could not reach the robot'}: ${reason}` }),
       }, options.makeSocket)
       client.connect()
     } catch (e) { finish({ ok: false, reason: e instanceof Error ? e.message : String(e) }) }
