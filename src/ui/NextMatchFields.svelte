@@ -13,12 +13,14 @@
   import { saveSetup, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
   import { saveTypedNext, typedNextFor } from './typed-next.svelte.ts'
 
-  let { session, scheduleNote = null, idPrefix = 'next' }: {
+  let { session, scheduleNote = null, idPrefix = 'next', heading = true }: {
     session: Pick<Session, 'event' | 'matches' | 'label'>
     /** Why the schedule could not be read, when it was asked for ("No schedule: offline, no saved copy"). */
     scheduleNote?: string | null
     /** Two copies on a page need different ids for their labels. */
     idPrefix?: string
+    /** False where the page already says "Next match: …" in its own headline (the Now screen): the fields only. */
+    heading?: boolean
   } = $props()
 
   const saved = $derived(typedNextFor(session))
@@ -65,14 +67,14 @@
 <div class="next-fields" data-next-match-fields>
   {#if active && !changing && !keying}
     <p class="line">
-      <strong>Next match: Q{saved}</strong>
-      <span class="muted">· typed on this laptop, counts until its log is in ·</span>
+      {#if heading}<strong>Next match: Q{saved}</strong>{/if}
+      <span class="muted">{heading ? '· ' : ''}typed on this laptop, counts until its log is in ·</span>
       <button type="button" class="linkish" onclick={() => (changing = true)}>Change</button>
       {#if !(tbaHasKey() && tbaTeam() !== null)}<span class="muted">·</span> <button type="button" class="linkish" onclick={() => (keying = true)}>or add the read key</button>{/if}
     </p>
   {:else}
     <form class="line" onsubmit={saveNumber}>
-      <strong>Next match: {active ? `Q${saved}` : 'not known yet'}</strong>
+      {#if heading}<strong>Next match: {active ? `Q${saved}` : 'not known yet'}</strong>{/if}
       {#if saved !== null && !active}<span class="muted">Q{saved} was typed, but {why === 'playoffs' ? 'playoffs have started' : 'its log is already in'}.</span>{/if}
       <label for="{idPrefix}-number">{active ? 'Change it' : 'Type it'}</label>
       <span class="q">Q</span><input id="{idPrefix}-number" inputmode="numeric" autocomplete="off" size="4" placeholder={saved === null ? '41' : ''} bind:value={typed} aria-describedby="{idPrefix}-problem" />

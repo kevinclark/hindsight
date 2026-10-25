@@ -23,6 +23,9 @@
   import { eventSessionFor, nowState, stillSession, type NowAction, type NowLink, type Place } from '../now/now.ts'
   import { notReached } from '../hub/robot-reach.ts'
   import ModeLine from './ModeLine.svelte'
+  import NextMatchFields from './NextMatchFields.svelte'
+  import SetupCard from './SetupCard.svelte'
+  import { typedNextFor } from './typed-next.svelte.ts'
   import { chooseMode, sessionNames } from './session-names.svelte.ts'
   import type { TodaySignal } from './today-signal.svelte.ts'
 
@@ -61,7 +64,7 @@
     return () => { stale = true }
   })
   const profiles = $derived([...PROFILES, ...stored])
-  const eventBoard = $derived(eventSession ? buildBoard({ session: sessionWithMarks(eventSession, marks), history, marks, schedule, profiles, now: new Date(clock) }) : null)
+  const eventBoard = $derived(eventSession ? buildBoard({ session: sessionWithMarks(eventSession, marks), history, marks, schedule, profiles, now: new Date(clock), typedNext: typedNextFor(eventSession) }) : null)
   // A practice day: what the latest event's board still has open.
   const still = $derived.by(() => {
     if (today.mode !== 'practice') return null
@@ -199,7 +202,10 @@
   </div>
 {:else}
   <h2 class="big" data-now-big>{view.big}</h2>
-  {#if view.keyLine}
+  {#if view.kind === 'event-no-schedule' && eventSession}
+    <!-- The fix in place (ADR b): type the next match, or add the read key; the same fields the board shows. -->
+    <NextMatchFields session={eventSession} {scheduleNote} idPrefix="now-next" heading={false} />
+  {:else if view.keyLine}
     <p class="keyline" data-now-key>{view.keyLine.lead}{' '}<button type="button" class="link" onclick={() => link(view.keyLine!.link)}>{view.keyLine.link.text}</button>{view.keyLine.rest}</p>
   {:else if view.scheduleNote}
     <p class="keyline" data-now-key>{view.scheduleNote}</p>
@@ -235,6 +241,8 @@
   {#if view.modeLine}
     <ModeLine text={today.line} mode={today.mode} byHand={today.byHand} onChange={(m) => chooseMode(today.sessionId, m)} hint="Changes whether Hindsight treats today as an event day (matches, the queue check) or as practice (runs, the start-of-practice check). Each log is judged from its own field data." />
   {/if}
+  <!-- Once, by a lead: hidden when every step that applies is done; after the tasks, so it never pushes the first task down. -->
+  <SetupCard onOpenLibrary={() => onGo('library')} />
 {/if}
 </section>
 
