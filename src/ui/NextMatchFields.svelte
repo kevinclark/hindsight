@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
   import type { Session } from '../session/session.ts'
-  import { lastOnField, qualOf } from '../board/points.ts'
+  import { activeTyped, lastOnField, qualOf, staleWhy } from '../board/points.ts'
   import { parseNext } from '../board/typed-next.ts'
   import { saveSetup, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
   import { saveTypedNext, typedNextFor } from './typed-next.svelte.ts'
@@ -23,9 +23,12 @@
 
   const saved = $derived(typedNextFor(session))
   const lastQual = $derived.by(() => { const m = lastOnField({ matches: session.matches } as Session); return m ? qualOf(m.matchLabel) : null })
-  /** A number was typed, but that match (or a later one) has been played: it is ignored and the field asks again. */
-  const stale = $derived(saved !== null && lastQual !== null && saved <= lastQual)
-  const active = $derived(saved !== null && !stale)
+  // One rule for "does the typed number still mean something" (src/board/points.ts), the same one the timeline uses.
+  const active = $derived(activeTyped({ matches: session.matches }, saved) !== null)
+  const why = $derived(staleWhy({ matches: session.matches }, saved))
+  /** With a number active the fields fold to one line; these open the forms again. */
+  let changing = $state(false)
+  let keying = $state(false)
 
   let typed = $state('')
   let keyText = $state('')
@@ -37,10 +40,14 @@
     e.preventDefault()
     const n = parseNext(typed)
     if (n === null) { problem = 'Type the match number, like 41 or Q41.'; return }
-    if (lastQual !== null && n <= lastQual) { problem = `Q${lastQual} is already played; type a later match.`; return }
+    if (activeTyped({ matches: session.matches }, n) === null) {
+      problem = staleWhy({ matches: session.matches }, n) === 'playoffs' ? 'Playoffs have started: a qualification is not next.' : `Q${lastQual} is already played; type a later match.`
+      return
+    }
     saveTypedNext(session, typed)
     problem = null
     typed = ''
+    changing = false
   }
   async function saveKey(e: Event) {
     e.preventDefault()
@@ -56,17 +63,26 @@
 </script>
 
 <div class="next-fields" data-next-match-fields>
-  <form class="line" onsubmit={saveNumber}>
-    <strong>Next match: {active ? `Q${saved}` : 'not known yet'}</strong>
-    {#if active}<span class="muted">typed on this laptop; counts until its log is in.</span>
-    {:else if stale}<span class="muted">Q{saved} was typed, and a log at or after it is in.</span>{/if}
-    <label for="{idPrefix}-number">{active ? 'Change it' : 'Type it'}</label>
-    <span class="q">Q</span><input id="{idPrefix}-number" inputmode="numeric" autocomplete="off" size="4" placeholder="41" bind:value={typed} aria-describedby="{idPrefix}-problem" />
-    <button type="submit">Save</button>
-  </form>
-  {#if tbaHasKey() && tbaTeam() !== null}
-    <p class="muted">A key and team are saved{scheduleNote ? `, but ${scheduleNote.replace(/^No schedule:\s*/, '')}` : ', but no schedule came back for this event'}. Type the match until it does.</p>
+  {#if active && !changing && !keying}
+    <p class="line">
+      <strong>Next match: Q{saved}</strong>
+      <span class="muted">· typed on this laptop, counts until its log is in ·</span>
+      <button type="button" class="linkish" onclick={() => (changing = true)}>Change</button>
+      {#if !(tbaHasKey() && tbaTeam() !== null)}<span class="muted">·</span> <button type="button" class="linkish" onclick={() => (keying = true)}>or add the read key</button>{/if}
+    </p>
   {:else}
+    <form class="line" onsubmit={saveNumber}>
+      <strong>Next match: {active ? `Q${saved}` : 'not known yet'}</strong>
+      {#if saved !== null && !active}<span class="muted">Q{saved} was typed, but {why === 'playoffs' ? 'playoffs have started' : 'its log is already in'}.</span>{/if}
+      <label for="{idPrefix}-number">{active ? 'Change it' : 'Type it'}</label>
+      <span class="q">Q</span><input id="{idPrefix}-number" inputmode="numeric" autocomplete="off" size="4" placeholder={saved === null ? '41' : ''} bind:value={typed} aria-describedby="{idPrefix}-problem" />
+      <button type="submit">Save</button>
+      {#if active}<button type="button" class="linkish" onclick={() => (changing = false)}>Cancel</button>{/if}
+    </form>
+  {/if}
+  {#if tbaHasKey() && tbaTeam() !== null}
+    {#if !active}<p class="muted">A key and team are saved{scheduleNote ? `, but ${scheduleNote.replace(/^No schedule:\s*/, '')}` : ', but no schedule came back for this event'}. Type the match until it does.</p>{/if}
+  {:else if !active || keying}
     <form class="line" onsubmit={saveKey}>
       <span class="or">or add your team's The Blue Alliance read key (it names the event and the schedule):</span>
       {#if tbaTeam() === null}
@@ -76,6 +92,7 @@
       <label for="{idPrefix}-key">Read key</label>
       <input id="{idPrefix}-key" type="password" autocomplete="off" size="22" placeholder={tbaHasKey() ? 'saved: type to replace' : 'paste the key'} bind:value={keyText} />
       <button type="submit" disabled={busy}>Save</button>
+      {#if active}<button type="button" class="linkish" onclick={() => (keying = false)}>Cancel</button>{/if}
     </form>
   {/if}
   <p id="{idPrefix}-problem" class="problem" role="alert">{problem ?? ''}</p>
@@ -91,6 +108,8 @@
   button:disabled { border-color: var(--border); color: var(--muted); cursor: default; }
   .next-fields .line input { width: 6rem; }
   .next-fields .line input[type='password'] { width: 15rem; }
+  .linkish { min-width: 24px; border: none; background: none; color: var(--fg); text-decoration: underline; padding: 0.2rem 0.3rem; }
+  ::placeholder { color: var(--muted); opacity: 1; }
   .q { margin-right: -0.4rem; }
   .problem { color: var(--error); margin: 0.2rem 0 0; min-height: 0; }
   .problem:empty { display: none; }

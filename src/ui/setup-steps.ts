@@ -10,8 +10,8 @@ export interface SetupState {
   tbaKey: boolean
   /** At least one GitHub source (the app's saved sources, or the page's chosen code). */
   github: boolean
-  /** Hub only: signed in to Google, and a team folder chosen. */
-  google: { signedIn: boolean; teamFolder: boolean }
+  /** Hub only: this build has a Google client (else the step could never be done), and whether sign-in and a team folder are done. */
+  google: { configured: boolean; signedIn: boolean; teamFolder: boolean }
 }
 
 export type SetupStepId = 'team' | 'tba' | 'github' | 'google'
@@ -26,13 +26,20 @@ export interface SetupStep {
   applicable: boolean
 }
 
+/** In the order a lead does them: who we are, what names the event, then the shared library, then code. */
 export function setupSteps(s: SetupState): SetupStep[] {
   return [
-    { id: 'team', title: 'Team number', adds: "filters the robot lists to your team's robots, and finds your matches", done: s.team !== null, applicable: true },
+    { id: 'team', title: 'Team number', adds: "filters the robot lists to your team's robots", done: s.team !== null, applicable: true },
     { id: 'tba', title: 'The Blue Alliance read key', adds: 'names the event and its schedule; without it each laptop types the next match', done: s.tbaKey, applicable: true },
+    { id: 'google', title: 'Google sign-in and team folder', adds: 'the shared library and triage history across laptops', done: s.google.signedIn && s.google.teamFolder, applicable: s.hub && s.google.configured },
     { id: 'github', title: 'GitHub source', adds: 'links logs to their code for code checks', done: s.github, applicable: true },
-    { id: 'google', title: 'Google sign-in and team folder', adds: 'the shared library and triage history across laptops', done: s.google.signedIn && s.google.teamFolder, applicable: s.hub },
   ]
+}
+
+/** "2 of 4 done", over the steps that apply to this build. */
+export function setupProgress(steps: readonly SetupStep[]): { done: number; of: number } {
+  const applicable = steps.filter((x) => x.applicable)
+  return { done: applicable.filter((x) => x.done).length, of: applicable.length }
 }
 
 /** The steps still to do on this build. */

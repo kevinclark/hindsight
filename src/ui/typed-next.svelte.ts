@@ -25,7 +25,7 @@ export function saveTypedNext(session: Pick<Session, 'event' | 'matches' | 'labe
   const n = parseNext(text)
   if (n === null) return false
   const id = eventIdsOf(session)[0]
-  if (!writeNext(store(), id, n)) kept.set(id, n)
+  if (writeNext(store(), id, n)) kept.delete(id); else kept.set(id, n)
   version++
   return true
 }

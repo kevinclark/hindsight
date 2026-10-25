@@ -10,7 +10,7 @@
   import { hub, type DriveStatus } from '../hub/bridge.ts'
   import { codeFolder } from './code-folder.svelte.ts'
   import { saveSetup, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
-  import { setupSteps, showSetupCard, type SetupStepId } from './setup-steps.ts'
+  import { setupProgress, setupSteps, showSetupCard, type SetupStepId } from './setup-steps.ts'
 
   let { onOpenLibrary }: { onOpenLibrary?: () => void } = $props()
   const api = hub()
@@ -33,7 +33,7 @@
   const steps = $derived(setupSteps({
     hub: !!api, team: tbaTeam(), tbaKey: tbaHasKey(),
     github: api ? sources.length > 0 : !!codeFolder.chosen,
-    google: { signedIn: !!drive?.signedIn, teamFolder: !!drive?.teamFolder },
+    google: { configured: !!drive?.configured, signedIn: !!drive?.signedIn, teamFolder: !!drive?.teamFolder },
   }))
 
   async function run(step: SetupStepId, work: () => Promise<string | null>) {
@@ -73,7 +73,7 @@
 {#if showSetupCard(steps)}
   <section class="setup" aria-labelledby="setup-title" data-setup-card>
     <h3 id="setup-title">Set up this laptop</h3>
-    <p class="muted">Once, by a lead. All optional: each step says what it adds, and nothing waits for it.</p>
+    <p class="muted">Once, by a lead · {setupProgress(steps).done} of {setupProgress(steps).of} done · optional · each step says what it adds</p>
     <ol>
       {#each steps.filter((x) => x.applicable) as step (step.id)}
         <li class:done={step.done}>
@@ -123,5 +123,6 @@
   .setup form input { width: 13rem; }
   .setup form input[inputmode='numeric'] { width: 6rem; }
   button:disabled { border-color: var(--border); color: var(--muted); cursor: default; }
+  ::placeholder { color: var(--muted); opacity: 1; }
   .problem { color: var(--error); margin: 0.2rem 0 0; }
 </style>

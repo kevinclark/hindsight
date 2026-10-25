@@ -2,9 +2,10 @@
 // Invented data (event TEST, robot "Test robot"); no real match, team or verdict.
 import { describe, expect, it } from 'vitest'
 import { buildBoard, deferralOptions, type BoardIssue } from '../src/board/model.ts'
-import { beforePlayoffs, endOfEvent, resolveUntil, suggestions, timeline } from '../src/board/points.ts'
+import { activeTyped, beforePlayoffs, endOfEvent, resolveUntil, staleWhy, suggestions, timeline } from '../src/board/points.ts'
 import { queueSheet } from '../src/board/sheets.ts'
 import { parseNext, readNext, writeNext, type NextStore } from '../src/board/typed-next.ts'
+import type { MatchSummary } from '../src/session/summary.ts'
 import type { BoardEvent } from '../src/triage/history.ts'
 import { shortMatchLabel } from '../src/ui/match-label.ts'
 import { BASE, ROBOT, SCHEDULE, input, match, session } from './helpers/board-scene.ts'
@@ -100,6 +101,41 @@ describe('a deferral "until Q41" made with Q41 typed', () => {
     const h = [bl('workaround', 'test workaround', iso(105)), bl('defer', 'next-match', iso(105), { until: { kind: 'next-match' }, match: 'Q5' })]
     expect(issue(board([5], 41, h)).deferral!.expired).toBe(false)
     expect(issue(board([5, 41], 41, h)).deferral!.expired).toBe(true)
+  })
+})
+
+describe('a deferral to a later match than the typed one (the central point: the typed match is not a schedule)', () => {
+  const until = (u: BoardEvent['until']) => [bl('workaround', 'test workaround', iso(1)), bl('defer', u!.kind, iso(1), { until: u })]
+  it('until Q43 with Q41 typed: open after Q41 is played, over once Q43 is', () => {
+    const h = until({ kind: 'next-match', match: 'Q43' })
+    expect(issue(board([5], 41, h)).deferral!.expired).toBe(false)
+    expect(issue(board([5, 41], 41, h)).deferral!.expired).toBe(false)
+    expect(issue(board([5, 41, 42], 41, h)).deferral!.expired).toBe(false)
+    expect(issue(board([5, 41, 43], 41, h)).deferral!.expired).toBe(true)
+  })
+  it('the gap after Q43 with Q41 typed: open after Q41 and Q43, over once Q44 is', () => {
+    const h = until({ kind: 'gap', match: 'Q43' })
+    expect(issue(board([5, 41], 41, h)).deferral!.expired).toBe(false)
+    expect(issue(board([5, 41, 43], 41, h)).deferral!.expired).toBe(false)
+    expect(issue(board([5, 41, 43, 44], 41, h)).deferral!.expired).toBe(true)
+  })
+})
+
+describe('playoffs make a typed qualification stale', () => {
+  const playoff = (n: number): MatchSummary => ({ ...match(n), matchLabel: `Elimination ${n}`, matchType: 3 } as MatchSummary)
+  const practice = (n: number): MatchSummary => ({ ...match(n), matchLabel: `Practice ${n}`, matchType: 1 } as MatchSummary)
+  it('stale when the latest on-field log is a playoff match, even above the last qualification', () => {
+    const s = session([match(5), playoff(1)])
+    expect(activeTyped(s, 41)).toBeNull()
+    expect(staleWhy(s, 41)).toBe('playoffs')
+    expect(timeline(s, null, label, undefined, 41).next).toBeNull()
+  })
+  it('a practice log as the latest keeps it; a played qualification is stale for another reason', () => {
+    const s = session([match(5), practice(1)])
+    expect(activeTyped(s, 41)).toBe(41)
+    expect(timeline(s, null, label, undefined, 41).next?.label).toBe('Q41')
+    expect(staleWhy(session([match(5)]), 5)).toBe('played')
+    expect(staleWhy(session([match(5)]), 6)).toBeNull()
   })
 })
 

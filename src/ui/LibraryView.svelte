@@ -152,7 +152,8 @@
     void api.team().then((t) => { teamBox = t.team; savedTeam = t.team; codeText = t.sources.join(', '); setAppHasKey(!!t.tbaKey) }).catch(() => {})
     void api.codePlan().then((p) => { codePlan = p }).catch(() => {})
   })
-  const setupSummary = $derived([savedTeam === null ? 'no team yet' : `team ${savedTeam}`, tbaHasKey() ? 'key saved' : 'no key'].join(', '))
+  const driveWords = $derived(!drive ? '' : !drive.signedIn ? 'Drive: not signed in' : !drive.teamFolder ? 'Drive: no team folder' : drive.lastSync ? `Drive: synced ${new Date(drive.lastSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Drive: not synced yet')
+  const setupSummary = $derived([savedTeam === null ? 'no team yet' : `team ${savedTeam}`, tbaHasKey() ? 'key saved' : 'no key', driveWords].filter(Boolean).join(', '))
   let linkReport = $state.raw<LinkReport | null>(null)
   let lastJob = $state.raw<LastJob | null>(null)
   const linkLabel = $derived(!codePlan ? 'Link code' : codePlan.logs === 0
@@ -306,6 +307,7 @@
   <!-- With no logs, the empty state below holds these two actions, so the bar does not offer them twice. -->
   {#if all.length}<button class="primary" onclick={addFolder} disabled={!!progress}>Add a folder of logs…</button>{/if}
   {#if drive?.signedIn}<button class="primary" onclick={() => (picking = 'ingest')} disabled={driveBusy}>Add logs from a Drive folder…</button>{/if}
+  {#if drive?.signedIn && drive.teamFolder}<button class="primary" onclick={planSync} disabled={driveBusy}>Sync with the team…</button>{/if}
   {#if all.length}<button class="primary" onclick={readAgain} disabled={driveBusy} title="Read every log on this computer again with this version of Hindsight and update what the list says about it (robot, event). Nothing in the logs changes.">Read logs again</button>{/if}
   {#if all.length}<span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={() => addRobot()} disabled={driveBusy || !robotAddress.trim()}>Pull logs off the robot</button></span>{/if}
   {#if progress}
@@ -316,6 +318,20 @@
   {/if}
   <span class="meta where">Library: <code>{snapshot?.libraryDir ?? '…'}</code></span>
 </section>
+
+  {#if picking && api}
+    <DriveFolderPicker {api} label={picking === 'team' ? 'Use as team folder' : 'Read logs from'} onPick={(id) => (picking === 'team' ? chooseTeam(id) : planIngest(id))} onCancel={() => (picking = null)} />
+  {/if}
+  {#if plan}
+    <p class="confirm" role="alert">
+      {#if plan.kind === 'ingest'}
+        {plan.plan.logs} log file{plan.plan.logs === 1 ? '' : 's'} there; {plan.plan.alreadyKnown} already in the library (not downloaded). <strong>Downloads {plan.plan.toRead} file{plan.plan.toRead === 1 ? '' : 's'}, {size(plan.plan.bytesToRead)}, in full, once.</strong> Nothing on Drive is changed; the copies go in this computer's library.
+      {:else}
+        <strong>Uploads {plan.plan.uploads} log{plan.plan.uploads === 1 ? '' : 's'}, {size(plan.plan.uploadBytes)}</strong> to the team folder (a log that came from Drive is copied inside Drive instead), brings in teammates' lists, and publishes this computer's. Nothing is deleted or overwritten.
+      {/if}
+      <button class="primary" onclick={confirm}>Go ahead</button> <button class="link" onclick={() => (plan = null)}>Cancel</button>
+    </p>
+  {/if}
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 {#if pullFailed}
@@ -356,19 +372,6 @@
       <button class="link" onclick={signOut}>Sign out of Google</button>
     </p>
     {#if !drive.keepsSignIn}<p class="problem">{drive.keepWarning}</p>{/if}
-  {/if}
-  {#if picking && api}
-    <DriveFolderPicker {api} label={picking === 'team' ? 'Use as team folder' : 'Read logs from'} onPick={(id) => (picking === 'team' ? chooseTeam(id) : planIngest(id))} onCancel={() => (picking = null)} />
-  {/if}
-  {#if plan}
-    <p class="confirm" role="alert">
-      {#if plan.kind === 'ingest'}
-        {plan.plan.logs} log file{plan.plan.logs === 1 ? '' : 's'} there; {plan.plan.alreadyKnown} already in the library (not downloaded). <strong>Downloads {plan.plan.toRead} file{plan.plan.toRead === 1 ? '' : 's'}, {size(plan.plan.bytesToRead)}, in full, once.</strong> Nothing on Drive is changed; the copies go in this computer's library.
-      {:else}
-        <strong>Uploads {plan.plan.uploads} log{plan.plan.uploads === 1 ? '' : 's'}, {size(plan.plan.uploadBytes)}</strong> to the team folder (a log that came from Drive is copied inside Drive instead), brings in teammates' lists, and publishes this computer's. Nothing is deleted or overwritten.
-      {/if}
-      <button class="primary" onclick={confirm}>Go ahead</button> <button class="link" onclick={() => (plan = null)}>Cancel</button>
-    </p>
   {/if}
 </details>
 </div>
