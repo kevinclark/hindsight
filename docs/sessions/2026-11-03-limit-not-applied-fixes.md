@@ -1,9 +1,9 @@
-# 2026-11-03: limit-not-applied: the share is the worst motor's (item 3); item 1 held
+# 2026-11-03: limit-not-applied: the share is the worst motor's (item 3); item 1 (a missing Enable flag)
 
 Brief: `docs/briefs/2026-11-03-limit-not-applied-fixes.md` (80c35e6), items 1 and 3. Both were built, reviewed and
-measured. Only item 3 is on main. Item 1 waits on a branch for the maintainer's ruling, because no data covers it
-(below). The old open items 2, 4 and 5 stay open; with item 1 they are now items 1 to 4 in the contract's "Open for
-the maintainer".
+measured. Item 3 landed first; item 1 was held for the maintainer's ruling because the count below found no case,
+then landed later the same day, when a real case turned up (below). The old open items 2, 4 and 5 stay open as
+items 1 to 3 in the contract's "Open for the maintainer".
 
 ## On main: item 3
 
@@ -22,9 +22,9 @@ the maintainer".
 - The open items were renumbered: old 1, 2, 4 and 5 are now 1 to 4. The pilot note
   (`2026-11-03-limit-not-applied-contract.md`) is a dated record and keeps the old numbers.
 
-## Held: item 1 (a missing Enable flag)
+## Item 1 (a missing Enable flag): held, then landed
 
-- Branch `claude/limit-missing-enable-flag`, one commit on top of item 3, pushed and not merged.
+- Branch `claude/limit-missing-enable-flag` (24b2fcb), one commit on top of item 3, merged to main later the same day.
 - The change: a profile limit with no `supplyEnabled`/`statorEnabled` used to read as switched off (amber
   "switched off in code (deliberate?)", `limit-off` likely). On the branch it is not known:
   - no "switched off" words in the title;
@@ -36,6 +36,13 @@ the maintainer".
 - **No data covers it**: 0 of 131 findings on the logs below, and 0 of 51 groups in the 8 built-in profiles leave a
   flag out. The maintainer's standing rule is that behaviour no data exercises waits for a real case, and the approval
   came before that count was known, so it went back for a ruling.
+- **The real case**: the built-in profiles hide it. The 2026 competition robot's code (HighlanderRobotics/Rebuilt
+  2cd2843, `TurretSubsystem.java`) sets `SupplyCurrentLimit` for two groups (lines 529-531 and 555-557) and never
+  sets `SupplyCurrentLimitEnable` anywhere in the file. `src/profiles/2026-competition.ts` writes `supplyEnabled: true`
+  for both by hand (Phoenix 6's default), but `src/builder/code-draft.ts:125` leaves the flag out when the code has no
+  line, so a profile drafted from that code has two groups with no flag. On main before this merge, both read
+  "switched off in code", which is wrong: the default is on. So the 0 of 51 count measured hand-written profiles,
+  not the code. The maintainer ruled to land it.
 - If it lands, these other readers of a missing flag need the same reading. They are not changed anywhere yet:
   - `src/limits/limits-report.ts:81-82` (the Limits tab): `!!L.supplyEnabled`, so a missing flag reads as **off**.
   - `src/ui/Wizard.svelte:108`: `supplyEnabled ? 'on' : 'switched off'` (stator: `'on' : 'off'`), so it shows
