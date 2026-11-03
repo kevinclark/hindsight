@@ -145,7 +145,7 @@ code-review's list.
 
 ## For the maintainer
 
-1. **Open items 1 to 5** (the contract's "Open for the maintainer"). Today's behaviour, unpinned, each with evidence:
+1. **Open items 1 to 5** (the contract's "Open for the maintainer"). Items 1 and 3 are approved for fixing (2026-11-03), per `docs/briefs/2026-11-03-limit-not-applied-fixes.md`. Today's behaviour, unpinned, each with evidence:
    - (1) A limit with no Enable flag in the profile reads as "switched off (deliberate?)". AGENTS.md says Phoenix 6
      defaults Enable to true, and the builder leaves the flag out when the code has no Enable line. 0 of the 51
      groups in the 8 built-in profiles have this, so no data covers it.
@@ -157,7 +157,9 @@ code-review's list.
 
    The reviewer judged (1) and (3) plain defects. Each fix changes the rule and its golden output, so it is its own
    change.
-2. **Deletion candidates (6; nothing deleted).** Each has 0 unique kills in the final run. Each tests only this rule,
+2. **Deletion candidates (6; deleted in `af158ef` on the maintainer's approval by name, 2026-11-03).** On the tip, the two
+   files went from 25 tests to 19 and the whole suite to 1836 passed + 4 skipped. The second candidate had also pinned
+   item 3's mislabelled share (5 % from the other three motors); the fixes brief replaces it with a contract test. Each has 0 unique kills in the final run. Each tests only this rule,
    and the contract tests prove what it proves. The joint check above covers all of them together.
    - `tests/power-rules.test.ts` › `power/limit-not-applied: the share of time over the limit` › `is evidence only: 3 %
      of the enabled time over 110 % with no run over 120 % for 0.2 s gives no finding` (LN-13)
