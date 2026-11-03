@@ -1,5 +1,23 @@
 # 2026-11-03: contract and kill matrix for `src/rules/power/limit-not-applied.ts`
 
+## Handoff
+
+- leftovers: none in this session. Open items 1 and 3 are briefed (`docs/briefs/2026-11-03-limit-not-applied-fixes.md`,
+  80c35e6), and the parent session ("Impatient programming integration ideas") starts that session. Items 2, 4 and 5
+  wait for the maintainer's ruling. They were handed to the same parent session to track or rule (message
+  999b0834, 2026-11-03), on the maintainer's condition that the parent handles the open items.
+- repos: hindsight: this note only (`docs/sessions/2026-11-03-limit-not-applied-contract.md`), committed by the seat.
+  Nothing else to stage.
+- lessons: none for the delegate. At its request, all 13 (the 10 under "What the skill should change for
+  TypeScript/vitest", plus the cold Vite cache/ENOTEMPTY, the deletion candidate that pins a defect's value, and a
+  worktree's incomplete node_modules) went to the parent session, which is folding them into regenerable-contract
+  v2.1.
+- focus: done session:local_a62cdb7f-8fe8-40a2-8985-f34dcfe0bea0 --why "limit-not-applied contract pilot: landed
+  f311070 (2026-11-03), 6 tests deleted on approval af158ef, fixes brief 80c35e6; open items handed to the parent
+  session"
+- verified: origin/main = 3f1169f (af158ef, 80c35e6 and 3f1169f on it); CI contracts green on af158ef and f311070;
+  the worktree is clean, and HEAD = origin/main; 0 limit-not-applied tests left in power-rules and severity-rules.
+
 Brief: `docs/briefs/2026-11-03-limit-not-applied-contract.md`. Convention: skill `general:regenerable-contract` v2
 (plugin 0.60.194). This is the first TypeScript/vitest unit; focus (JS) and ha-pwrcell (Python) came first. Branch
 `claude/brave-goldstine-2b6ba6` from `1f77fad`. Every mutation run used a scratch copy (`git archive | tar -x`), never
