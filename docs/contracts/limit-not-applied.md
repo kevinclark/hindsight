@@ -212,7 +212,7 @@ the runner has `checkedOnlyPart` for "partly checked". LN-09, LN-10 and LN-12 ch
   other code may differ (LN-09, LN-11). Scope: this rule.
 
 ## Equivalent mutants
-From Stryker 9.6.1 on this file, contract file alone, after the 2026-11-03 fixes (196 mutants; line numbers are that
+From Stryker 9.6.1 on this file, contract file alone, after the 2026-11-03 fix (189 mutants; line numbers are that
 file's; `docs/sessions/2026-11-03-limit-not-applied-fixes.md`). This one survives and changes nothing observable.
 Removing the empty-piece filter at L146–149 is not among them: without it, LN-21's test runs out of time (3 timeouts
 and 1 runner crash in that run).
