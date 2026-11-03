@@ -34,6 +34,12 @@ Suite: `npx vitest run tests/limit-not-applied.contract.test.ts --reporter=junit
   (`power/limit-not-applied · <about>`), severity is the problem's or the rule's, `likely`/`ruledOut` rank the causes,
   `plot` becomes `lines` and `threshold`. A `MissingSignal` thrown from `check` makes the whole group "not checked".
 
+Two terms, used only in these senses below:
+- **ran the pinned commit**: the log's commit (`build.sha`) starts with the profile's `code.sha`
+  (`ranPinnedCommit()`).
+- **ran the profile's code**: ran the pinned commit, **or** ran another commit whose current-limit lines the
+  comparison found `same` (`limitLinesVsProfile(group)?.verdict === 'same'`).
+
 ## Obligations
 
 ### Compatibility: what is already live
@@ -79,24 +85,25 @@ Suite: `npx vitest run tests/limit-not-applied.contract.test.ts --reporter=junit
   prints it (`40`, `37.5`), `<off>` is ` that is switched off in code (deliberate?)` when the profile's enable flag
   for that kind is not `true`, else empty, and `<code>` is from LN-11. Why: the title is what a student reads first;
   the wording is fixed so it reads the same in every report. Kind: behaviour.
-- **LN-09** Severity: amber (`warning`) when the limit is switched off and the log ran the profile's code (it ran the
-  profile's commit, or another commit whose current-limit lines are `same`); otherwise the rule's red (`error`): a
-  limit switched on and still exceeded, or switched off in code the profile wasn't copied from (lines `different`,
-  `unknown`, or no comparison). The log ran the profile's commit when its commit starts with the profile's short
-  hash. Why: switched off in the code this log ran may be deliberate (the mechanism may not need a limit); when the
-  log ran other code, "off" isn't known for it. Kind: behaviour.
+- **LN-09** Severity: amber (`warning`) when the limit is switched off and the log **ran the profile's code**;
+  otherwise the rule's red (`error`): a limit switched on and still exceeded, or switched off in code the profile
+  wasn't copied from (lines `different`, `unknown`, or no comparison). Why: switched off in the code this log ran
+  may be deliberate (the mechanism may not need a limit); when the log ran other code, "off" isn't known for it.
+  Kind: behaviour.
 - **LN-10** Causes and next step:
   - switched off (whatever code the log ran): `likely: ['limit-off']`, nothing ruled out, and the next step, word for
     word, `The <kind> limit is switched off in <where>. On purpose? Mark it as a known issue. If not, switch it on and
     measure the mechanism before and after.`
-  - switched on, and the log ran the profile's code (LN-09): `likely: ['not-saved', 'default-limit']`, `limit-off`
-    ruled out with `the limit is switched on in the code`, and the rule's own next step.
-  - switched on, other code: no cause marked likely, none ruled out, the rule's own next step.
+  - switched on, and the log **ran the profile's code** (the pinned commit, or another commit with `same` lines):
+    `likely: ['not-saved', 'default-limit']`, `limit-off` ruled out with `the limit is switched on in the code`, and
+    the rule's own next step.
+  - switched on, and the log did not run the profile's code: no cause marked likely, none ruled out, the rule's own
+    next step.
   Why: off in code is the cause when it is off; on in the very code the log ran means the config probably didn't
   reach the motor. Kind: behaviour.
 - **LN-11** How the code the log ran is described, with `<branch>` and `<pin>` the profile's `code.branch` and
   `code.sha`, and `<ran>` the first 7 characters of the log's commit, or `unknown code` when the log has none:
-  - the log ran the profile's commit: `<code>` is empty, and the comparison is neither read nor shown;
+  - the log **ran the pinned commit**: `<code>` is empty, and the comparison is neither read nor shown;
   - another commit, lines `same`: `<code>` is ` (same current-limit lines as <branch> <pin>; this log ran <ran>)`,
     lines evidence `the same as <pin> in <files, joined by ", "> (read from the robot code)`;
   - lines `different`: `<code>` is ` (as of <branch> <pin>; this log ran <ran>)`, lines evidence
@@ -150,7 +157,14 @@ Fixed, word for word: the title (LN-08, LN-11), the switched-off next step (LN-1
 formats (LN-11, LN-12), `measured`'s label (LN-14) and the plot's line label (LN-15).
 Free: the words of the descriptor's prose (`meaning`, each cause's `cause` and `look`, the rule's `nextStep`,
 `incident`, the sources' `says`, the thresholds' text), as long as each is said (LN-19). It follows CONTRIBUTING.md
-"How a rule should read".
+"How a rule should read". The words are free, but what each cause id means is not, because LN-10 marks and rules
+them out by id:
+- `limit-off`: the limit is configured but switched off in code (its Enable flag is false).
+- `not-saved`: the configuration never reached the motor (the apply call failed, a follower was missed, or the
+  controller was replaced).
+- `default-limit`: the motor runs the controller's default limits (Phoenix 6: 70 A supply, 120 A stator), not the
+  one chosen: the code doesn't set this limit, or supply and stator were mixed up.
+- `wrong-value`: the limit is set higher than the mechanism needs.
 
 ## Unspecified by design
 - The order of a group's supply and stator findings in the report (the runner sorts by severity, then time).
@@ -170,9 +184,10 @@ may be a defect. Each waits for a ruling; until then, a rebuild may do either.
    but whose stator current isn't logged for one motor gives no finding, only `missing <stator key>`.
 3. **The share's motor is labelled "(worst motor)"** but is the motor with the largest share, which can be another
    motor than `worst motor` (LN-13's test shows one).
-4. **The 0.2 s line is shorter than the longest burst it was set from**: the thresholds say the limiter's bursts
-   lasted "0.21 s or less" above the limit. If any of those were above 120 % for more than 0.2 s, the rule fires on
-   them. The measurement itself is not in this repository.
+4. **The 0.2 s line sits close to the limiter's longest burst.** The thresholds say the limiter's bursts lasted
+   "0.21 s or less" above the limit; `src/limits/sweep.ts` records the longest as 0.208 s above 110 % (one drive
+   motor at 40 A) and sets the Limits wizard's "did not take" line at 0.3 s. This rule judges 120 %, where bursts
+   are no longer than at 110 %, so it may never see one over 0.2 s; whether any was is not in this repository.
 
 ## Ruled out
 - Judging from the share of time over 110 % (an earlier evidence line). Why: at the 2026 offseason event it was made
