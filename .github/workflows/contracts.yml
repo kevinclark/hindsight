@@ -1,0 +1,37 @@
+# Every obligation in docs/contracts/*.md is proven by a passing test that carries its id (scripts/contract-check).
+name: contracts
+
+on:
+  push:
+    paths:
+      - docs/contracts/**
+      - scripts/contract-check
+      - src/**
+      - tests/**
+      - package*.json
+      - .github/workflows/contracts.yml
+  pull_request:
+    paths:
+      - docs/contracts/**
+      - scripts/contract-check
+      - src/**
+      - tests/**
+      - package*.json
+      - .github/workflows/contracts.yml
+
+permissions:
+  contents: read
+
+jobs:
+  contract-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      # No install scripts: the tests need neither Electron's download nor a native build.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: python3 scripts/contract-check

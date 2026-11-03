@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+r"""Every obligation in docs/contracts/*.md is proven by a passing test that carries its id.
+
+For each contract: read the obligation ids (`- **PS-07** ...`; a bullet saying "Retired" is skipped) and its
+`Suite: \`<command>\`` line, a shell command run at the repo root that writes JUnit XML to the path it is given as
+`{junit}` (or, without `{junit}`, prints it on stdout). A test proves the ids its name starts with: pytest
+`test_PS07_PS08_...` or `[PS-07][PS-08] ...` (vitest joins describe names with ` > `: the first part with ids counts).
+Prints each id as met / FAILING / UNPROVEN and any test id the contract does not define (UNKNOWN). A skipped test
+is not a proof. Exit 1 on any of those three, or when the suite ran no test. Stdlib only.
+Adapted from earlier pytest and node:test versions of this script; this copy also reads vitest's JUnit names.
+Usage: scripts/contract-check [CONTRACT.md ...]   (default: every docs/contracts/*.md)
+"""
+import glob
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OBLIGATION = re.compile(r"^- \*\*([A-Z]+-\d+)\*\*(.*)$")
+SUITE = re.compile(r"^Suite: `([^`]+)`\s*$")
+BRACKET_IDS = re.compile(r"^((?:\[[A-Z]+-\d+\])+)")
+PYTEST_IDS = re.compile(r"^test_((?:[A-Z]+\d+_)+)")
+
+
+def read_contract(path):
+    ids, suite = [], None
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            m = OBLIGATION.match(line)
+            if m and not re.match(r"\s*Retired\b", m.group(2)):
+                ids.append(m.group(1))
+            m = SUITE.match(line)
+            if m:
+                suite = m.group(1)
+    return ids, suite
+
+
+def test_ids(name):
+    """The obligation ids a test name starts with, as `PS-07`."""
+    for part in name.split(" > "):
+        m = BRACKET_IDS.match(part)
+        if m:
+            return re.findall(r"\[([A-Z]+-\d+)\]", m.group(1))
+    m = PYTEST_IDS.match(name)
+    if m:
+        return [re.sub(r"^([A-Z]+)(\d+)$", r"\1-\2", part) for part in m.group(1).rstrip("_").split("_")]
+    return []
+
+
+def run_suite(cmd):
+    """{test name: passed} from the suite's JUnit XML; raises if the suite wrote none."""
+    fd, junit = tempfile.mkstemp(suffix=".xml")
+    os.close(fd)
+    try:
+        p = subprocess.run(cmd.replace("{junit}", junit), shell=True, cwd=ROOT, capture_output=True, text=True)
+        try:
+            root = ET.parse(junit).getroot() if "{junit}" in cmd else ET.fromstring(p.stdout)
+        except ET.ParseError:
+            sys.stderr.write(p.stdout[-2000:] + p.stderr[-2000:])
+            raise SystemExit(f"contract-check: `{cmd}` wrote no JUnit XML (exit {p.returncode})")
+    finally:
+        os.unlink(junit)
+    results = {}
+    for case in root.iter("testcase"):
+        # a skipped test proves nothing: it counts as not passing
+        bad = any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))
+        results[case.get("name")] = results.get(case.get("name"), True) and not bad
+    return results
+
+
+def check(path):
+    ids, suite = read_contract(path)
+    name = os.path.relpath(path, ROOT)
+    if not ids or not suite:
+        print(f"{name}: no obligations or no Suite: line")
+        return False
+    prefixes = {i.split("-")[0] for i in ids}
+    proofs = {i: [] for i in ids}
+    unknown = []
+    results = run_suite(suite)
+    for test, passed in results.items():
+        for tid in test_ids(test or ""):
+            if tid in proofs:
+                proofs[tid].append(passed)
+            elif tid.split("-")[0] in prefixes:
+                unknown.append((tid, test))
+    ok = bool(results) and not unknown
+    print(f"{name}: {len(ids)} obligations, {len(results)} tests")
+    for i in ids:
+        status = "met" if proofs[i] and all(proofs[i]) else "FAILING" if proofs[i] else "UNPROVEN"
+        ok = ok and status == "met"
+        print(f"  {i}  {status:8}  {len(proofs[i])} test(s)")
+    for tid, test in unknown:
+        print(f"  {tid}  UNKNOWN   in test: {test}")
+    return ok
+
+
+def main(argv):
+    paths = argv or sorted(glob.glob(os.path.join(ROOT, "docs", "contracts", "*.md")))
+    results = [check(os.path.abspath(p)) for p in paths]
+    print(f"contracts: {len(paths)}, all met: {all(results)}")
+    return 0 if all(results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
