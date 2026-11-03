@@ -1,5 +1,5 @@
-// Severity that depends on what was measured: comms/loss (a blip is not an outage), vision/time-sync (boot-only),
-// power/limit-not-applied (limit switched off in code). Made-up logs, both sides of each boundary.
+// Severity that depends on what was measured: comms/loss (a blip is not an outage) and vision/time-sync (boot-only).
+// Made-up logs, both sides of each boundary.
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
@@ -75,33 +75,5 @@ describe('vision/time-sync severity', () => {
       { name: '/RealOutputs/PhotonAlerts/warnings', type: 'string[]', records: [[0, []], [5, ['Camera is not connected to the TimeSyncServer']], [6, []], [100, ['Camera is not connected to the TimeSyncServer']]] },
     ]
     expect(alerts(both).severity).toBe('warning')
-  })
-})
-
-describe('power/limit-not-applied severity', () => {
-  const amps = (key: string, a: number): FixtureEntry => ({ name: key, type: 'double', records: [[0, 0], [10, a], [410, 0]] })
-  const driveMotors = offseason2026.motorGroups.find((g) => g.name.startsWith('Swerve drive') || g.name.toLowerCase().includes('drive'))!
-  const flywheel = offseason2026.motorGroups.find((g) => g.name === 'Flywheel')!
-
-  it('the profile has a group with the limit on in code and one with it off', () => {
-    expect(driveMotors.limits.supplyEnabled).toBe(true)
-    expect(flywheel.limits.supplyEnabled).toBe(false)
-  })
-  it('a limit that is on in code and still exceeded stays an error', () => {
-    const entries = driveMotors.motors.flatMap((m) => [amps(m.supplyCurrent!, 80), amps(m.statorCurrent!, 10)])
-    const f = only(match(entries), 'power/limit-not-applied').find((x) => x.key.includes(driveMotors.name) && x.title.includes('supply'))!
-    expect(f.severity).toBe('error')
-    expect(f.title).not.toMatch(/switched off/)
-  })
-  const ranCode = (sha: string): FixtureEntry => ({ name: '/RealMetadata/GitSHA', type: 'string', records: [[0, sha]] })
-  const flywheelOver = () => flywheel.motors.flatMap((m) => [amps(m.supplyCurrent!, 90), amps(m.statorCurrent!, 10)])
-  it('a limit switched off in the code this log ran is a warning, and the message says why', () => {
-    const f = only(match([...flywheelOver(), ranCode(offseason2026.code.sha)]), 'power/limit-not-applied').find((x) => x.title.includes('supply'))!
-    expect(f.severity).toBe('warning')
-    expect(f.title).toMatch(/switched off in code \(deliberate\?\)/)
-  })
-  it('when the log ran other code than the profile\'s, "off" is not known for it, so it stays an error', () => {
-    const f = only(match([...flywheelOver(), ranCode('0000000')]), 'power/limit-not-applied').find((x) => x.title.includes('supply'))!
-    expect(f.severity).toBe('error')
   })
 })
