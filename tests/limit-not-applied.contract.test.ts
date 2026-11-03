@@ -233,6 +233,28 @@ test('[LN-10] switched on in code the profile wasn\'t copied from: no cause is m
   expect(f.nextStep).toBe(limitNotApplied.nextStep)
 })
 
+/** The profile gives the supply limit's number but leaves its Enable flag out. */
+const noFlag = () => robot({ supplyEnabled: undefined })
+
+test('[LN-08] a limit whose Enable flag the profile leaves out: the title doesn\'t say it is switched off', () => {
+  expect(only(leftSupply(90), noFlag()).title).toBe('Roller supply current reached 90 A against a 40 A limit')
+  expect(only({ ...leftSupply(90), ran: 'def5678' }, noFlag()).title).toBe('Roller supply current reached 90 A against a 40 A limit (as of main abc1234; this log ran def5678)')
+})
+
+test('[LN-09] a limit whose Enable flag the profile leaves out is red, even when the log ran the profile\'s code', () => {
+  expect(only(leftSupply(90), noFlag()).severity).toBe('error')
+  expect(only({ ...leftSupply(90), ran: 'def5678' }, noFlag(), { verdict: 'same', files: ['RollerIO.java'] }).severity).toBe('error')
+  expect(only({ ...leftSupply(90), ran: 'def5678' }, noFlag()).severity).toBe('error')
+})
+
+test('[LN-10] a limit whose Enable flag the profile leaves out: no cause is marked or ruled out, and the rule\'s own next step, whatever code the log ran', () => {
+  const runs = [only(leftSupply(90), noFlag()), only({ ...leftSupply(90), ran: 'def5678' }, noFlag(), { verdict: 'same', files: ['RollerIO.java'] }), only({ ...leftSupply(90), ran: 'def5678' }, noFlag())]
+  for (const f of runs) {
+    expect(causeView(f)).toEqual([['limit-off', false, null], ['not-saved', false, null], ['default-limit', false, null], ['wrong-value', false, null]])
+    expect(f.nextStep).toBe(limitNotApplied.nextStep)
+  }
+})
+
 const LINES = "current-limit lines vs the profile's commit"
 const SWITCHED = 'limit switched on in code'
 
@@ -288,6 +310,19 @@ test('[LN-12] the evidence: its keys in order, and each value', () => {
 
 test('[LN-12] the seconds over are rounded to one decimal', () => {
   expect(only(leftSupply(90, 20, 20.26)).evidence['seconds over 120 % of the limit (worst motor)']).toBe(0.3)
+})
+
+test('[LN-12] a limit whose Enable flag the profile leaves out: the evidence says it is not set in the profile', () => {
+  expect(only(leftSupply(90), noFlag()).evidence[SWITCHED]).toBe('not set in the profile')
+  expect(only({ ...leftSupply(90), ran: 'def5678' }, noFlag()).evidence[SWITCHED]).toBe('not set in the profile')
+})
+
+test('[LN-08][LN-09][LN-10][LN-12] a stator limit whose Enable flag the profile leaves out is read the same way', () => {
+  const stator = only({ keys: { [R.stator]: [[0, 5], [20, 150], [21, 5]] } }, robot({ statorEnabled: undefined }))
+  expect(stator.title).toBe('Roller stator current reached 150 A against a 60 A limit')
+  expect(stator.severity).toBe('error')
+  expect(stator.evidence[SWITCHED]).toBe('not set in the profile')
+  expect(causeView(stator)).toEqual([['limit-off', false, null], ['not-saved', false, null], ['default-limit', false, null], ['wrong-value', false, null]])
 })
 
 test('[LN-12][LN-13] the share is the worst motor\'s own, counting even one-sample blips, even when another motor spent longer over 110 %', () => {

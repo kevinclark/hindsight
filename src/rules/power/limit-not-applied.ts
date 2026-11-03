@@ -6,6 +6,7 @@
  * limit is switched off in code: amber when the log ran the profile's commit, or another commit whose current-limit
  * lines a robot-code folder shows are the same (src/code/limit-lines.ts); red otherwise, as other code may differ. Only
  * the lines in the files `where` names are compared: a limit set through a name defined in another file isn't followed.
+ * A profile that leaves a limit's Enable flag out doesn't say whether it is on: red, with no cause marked.
  * The share of enabled time over 110 % of the limit is evidence only: at the 2026 offseason event it is made of
  * 154–233 bursts per motor per match with a median of 0.02 s (one 50 Hz sample) and a longest of 0.26 s, the limiter
  * catching up at each acceleration, so on its own it does not mean the limit is failing.
@@ -64,23 +65,27 @@ export default rule({
       const worst = worstOverLimit(group, kind, limit, match)
       if (worst === null) continue
       const share = shareOverLimit(worst.motor, kind, limit, match)
+      const off = isOn === false
 
       // Switched off in code: that is the cause. Switched on (in the code the profile came from): the config likely
-      // didn't reach the motor.
+      // didn't reach the motor. A profile with no Enable flag for this kind says neither, so no cause is marked.
       let likely: string[] | undefined
       let nextStep: string | undefined
       const ruledOut: Record<string, string> = {}
-      if (!isOn) {
+      if (off) {
         likely = ['limit-off']
         nextStep = `The ${kind} limit is switched off in ${group.limits.where}. On purpose? Mark it as a known issue. If not, switch it on and measure the mechanism before and after.`
-      } else if (sameCode) {
+      } else if (isOn && sameCode) {
         likely = ['not-saved', 'default-limit']
         ruledOut['limit-off'] = 'the limit is switched on in the code'
       }
-      const switchedOff = isOn ? '' : ' that is switched off in code (deliberate?)'
+      const switchedOff = off ? ' that is switched off in code (deliberate?)' : ''
       // Switched off in the code this log ran may be deliberate (the mechanism may not need a limit): a warning. When the
       // log ran other code than the profile's, "off" is not known for this log, so it stays an error.
-      const offInThisCode = !isOn && sameCode
+      const offInThisCode = off && sameCode
+      // A flag the profile leaves out was read from no code, so no commit is named for it.
+      const yesNo = isOn ? 'yes' : 'no'
+      const onInCode = isOn === undefined ? 'not set in the profile' : `${yesNo}${asOf}`
       problems.push({
         severity: offInThisCode ? 'warning' : undefined,
         likely,
@@ -95,7 +100,7 @@ export default rule({
           'seconds over 120 % of the limit (worst motor)': round(worst.secondsOver, 1),
           'share of enabled time over 110 % of the limit (worst motor) (%)': round(share, 1),
           'configured limit (A)': limit,
-          'limit switched on in code': `${isOn ? 'yes' : 'no'}${asOf}`,
+          'limit switched on in code': onInCode,
           'set in': group.limits.where,
           'current-limit lines vs the profile\'s commit': linesWords,
         },

@@ -83,13 +83,16 @@ Two terms, used only in these senses below:
 - **LN-08** The title is, word for word, `<group> <kind> current reached <peak> against a <limit> A limit<off><code>`:
   `<peak>` is `amps(peak)` (whole amps, `toFixed(0)`, then ` A`), `<limit>` is the profile's number as JavaScript
   prints it (`40`, `37.5`), `<off>` is ` that is switched off in code (deliberate?)` when the profile's enable flag
-  for that kind is not `true`, else empty, and `<code>` is from LN-11. Why: the title is what a student reads first;
-  the wording is fixed so it reads the same in every report. Kind: behaviour.
-- **LN-09** Severity: amber (`warning`) when the limit is switched off and the log **ran the profile's code**;
-  otherwise the rule's red (`error`): a limit switched on and still exceeded, or switched off in code the profile
-  wasn't copied from (lines `different`, `unknown`, or no comparison). Why: switched off in the code this log ran
-  may be deliberate (the mechanism may not need a limit); when the log ran other code, "off" isn't known for it.
-  Kind: behaviour.
+  for that kind is `false`, else empty (a flag the profile leaves out is not known, so it is empty too), and `<code>`
+  is from LN-11. Why: the title is what a student reads first; the wording is fixed so it reads the same in every
+  report. Kind: behaviour.
+- **LN-09** Severity: amber (`warning`) when the limit is switched off (its flag `false`) and the log **ran the
+  profile's code**; otherwise the rule's red (`error`): a limit switched on and still exceeded, switched off in code
+  the profile wasn't copied from (lines `different`, `unknown`, or no comparison), or with no flag in the profile,
+  whatever code the log ran. Why: switched off in the code this log ran may be deliberate (the mechanism may not need
+  a limit); when the log ran other code, or the profile doesn't say, "off" isn't known for it. A flag left out is not
+  read as "on" either: Phoenix 6 defaults Enable to true, but a hand-written profile may simply not say. Kind:
+  behaviour.
 - **LN-10** Causes and next step:
   - switched off (whatever code the log ran): `likely: ['limit-off']`, nothing ruled out, and the next step, word for
     word, `The <kind> limit is switched off in <where>. On purpose? Mark it as a known issue. If not, switch it on and
@@ -99,8 +102,10 @@ Two terms, used only in these senses below:
     the rule's own next step.
   - switched on, and the log did not run the profile's code: no cause marked likely, none ruled out, the rule's own
     next step.
+  - no flag for that kind in the profile (whatever code the log ran): the same, no cause marked likely, none ruled
+    out, the rule's own next step.
   Why: off in code is the cause when it is off; on in the very code the log ran means the config probably didn't
-  reach the motor. Kind: behaviour.
+  reach the motor; a flag nobody read can neither be the cause nor rule one out. Kind: behaviour.
 - **LN-11** How the code the log ran is described, with `<branch>` and `<pin>` the profile's `code.branch` and
   `code.sha`, and `<ran>` the first 7 characters of the log's commit, or `unknown code` when the log has none: - the
   log **ran the pinned commit**: `<code>` is empty, and the comparison is neither used nor shown; - another commit,
@@ -113,8 +118,9 @@ Two terms, used only in these senses below:
 - **LN-12** The evidence, keys in this order: `worst motor` (its name); `peak <kind> current (A)` (the peak, 1
   decimal); `seconds over 120 % of the limit (worst motor)` (1 decimal); `share of enabled time over 110 % of the
   limit (worst motor) (%)` (LN-13, 1 decimal); `configured limit (A)` (the profile's number); `limit switched on in
-  code` (`yes` or `no`, followed by `<code>` from LN-11); `set in` (the profile's `where`); `current-limit lines vs
-  the profile's commit` (LN-11; left out when there is none). Why: the evidence is the student's proof list, and its
+  code` (`yes` or `no`, followed by `<code>` from LN-11; `not set in the profile`, alone, when the profile has no flag
+  for that kind); `set in` (the profile's `where`); `current-limit lines vs the profile's commit` (LN-11; left out
+  when there is none). Why: the evidence is the student's proof list, and its
   labels are read by people, so they are fixed. Kind: behaviour.
 - **LN-13** The share is evidence only, and it is `worst motor`'s (LN-07): `100 ×` the seconds that motor's current
   was strictly above 110 % of the limit while enabled and connected (LN-05, LN-06; stretches of any length, one sample
@@ -179,29 +185,22 @@ them out by id:
 ## Open for the maintainer
 These are today's behaviour, measured on the live code (2026-11-03), and no contract test pins them, because each
 may be a defect. Each waits for a ruling; until then, a rebuild may do either.
-1. **An enable flag the profile leaves out reads as switched off.** A group with `supplyA: 40` and no
-   `supplyEnabled` gets an amber "switched off in code (deliberate?)" finding. AGENTS.md says Phoenix 6 defaults both
-   Enable flags to true, so such a limit runs; the profile builder (`src/builder/code-draft.ts`) leaves the flag out
-   when the code has no Enable line. The Limits tab reads it the same way (`src/limits/limits-report.ts`). **No data
-   covers this** (0 of 131 findings on the 778 library and public logs, 0 of 51 profile groups leave the flag out,
-   2026-11-03); profiles kept in a browser weren't checked. A fix (not known: red, no cause marked, evidence `not set in
-   the profile`) is written and reviewed but waits for the maintainer's ruling
-   (`docs/sessions/2026-11-03-limit-not-applied-fixes.md`).
-2. **A missing key for one kind hides a finding of the other kind.** A group whose supply current is over the limit
+1. **A missing key for one kind hides a finding of the other kind.** A group whose supply current is over the limit
    but whose stator current isn't logged for one motor gives no finding, only `missing <stator key>`.
-3. **The 0.2 s line sits close to the limiter's longest burst.** The thresholds say the limiter's bursts lasted
+2. **The 0.2 s line sits close to the limiter's longest burst.** The thresholds say the limiter's bursts lasted
    "0.21 s or less" above the limit; `src/limits/sweep.ts` records the longest as 0.208 s above 110 % (one drive
    motor at 40 A) and sets the Limits wizard's "did not take" line at 0.3 s. This rule judges 120 %, where bursts
    are no longer than at 110 %, so it may never see one over 0.2 s; whether any was is not in this repository.
-4. **A profile with no pinned commit matches every log.** A profile read from a profile.json without code
+3. **A profile with no pinned commit matches every log.** A profile read from a profile.json without code
    (`toProfile` in `src/builder/json.ts`) has `code.sha: ''`, and every commit starts with `''`, so every log **ran
    the pinned commit**: a switched-off limit is amber (LN-09), and a switched-on one has `limit-off` ruled out with
    "the limit is switched on in the code" (LN-10), though no code was read.
 
-The review of this contract (2026-11-03) judged item 1 and a fifth item plain defects rather than choices: item 1
-contradicts AGENTS.md ("no on/off mean *not known*", builder section). The fifth, the share labelled "(worst motor)"
-being the largest share of any motor, was fixed on approval (LN-13, 2026-11-03). Item 2 loses a real finding where
-the runner has `checkedOnlyPart` for "partly checked". LN-09, LN-10 and LN-12 change with each ruling.
+The review of this contract (2026-11-03) judged two more items plain defects rather than choices, and they were
+fixed on approval: an Enable flag the profile leaves out read as switched off (now not known: LN-08 to LN-10, LN-12),
+and the share labelled "(worst motor)" was the largest share of any motor (now the worst motor's: LN-13). It found
+item 1 loses a real finding where the runner has `checkedOnlyPart` for "partly checked". LN-09, LN-10 and LN-12 may
+change with each ruling.
 
 ## Ruled out
 - Judging from the share of time over 110 % (an earlier evidence line). Why: at the 2026 offseason event it was made
@@ -212,11 +211,11 @@ the runner has `checkedOnlyPart` for "partly checked". LN-09, LN-10 and LN-12 ch
   other code may differ (LN-09, LN-11). Scope: this rule.
 
 ## Equivalent mutants
-From Stryker 9.6.1 on this file, contract file alone, after the 2026-11-03 fix (189 mutants; line numbers are that
+From Stryker 9.6.1 on this file, contract file alone, after the 2026-11-03 fixes (196 mutants; line numbers are that
 file's; `docs/sessions/2026-11-03-limit-not-applied-fixes.md`). This one survives and changes nothing observable.
-Removing the empty-piece filter at L146–149 is not among them: without it, LN-21's test runs out of time (3 timeouts
+Removing the empty-piece filter at L151–154 is not among them: without it, LN-21's test runs out of time (3 timeouts
 and 1 runner crash in that run).
-- L149 `p.end > p.start` → `>=`: it keeps zero-length pieces of the enabled-and-connected window. Cutting another drop
+- L154 `p.end > p.start` → `>=`: it keeps zero-length pieces of the enabled-and-connected window. Cutting another drop
   out of a zero-length piece leaves at most one zero-length piece, so they don't multiply (LN-21 passes), and
   `Signal.episodes` drops any clip with no length.
 
