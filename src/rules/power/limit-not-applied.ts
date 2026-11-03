@@ -63,7 +63,7 @@ export default rule({
       if (limit === undefined) continue
       const worst = worstOverLimit(group, kind, limit, match)
       if (worst === null) continue
-      const share = shareOverLimit(group, kind, limit, match)
+      const share = shareOverLimit(worst.motor, kind, limit, match)
 
       // Switched off in code: that is the cause. Switched on (in the code the profile came from): the config likely
       // didn't reach the motor.
@@ -90,10 +90,10 @@ export default rule({
         at: worst.start,
         about: `${group.name} ${kind}`,
         evidence: {
-          'worst motor': worst.motor,
+          'worst motor': worst.motor.name,
           [`peak ${kind} current (A)`]: round(worst.peak, 1),
           'seconds over 120 % of the limit (worst motor)': round(worst.secondsOver, 1),
-          'share of enabled time over 110 % of the limit (worst motor) (%)': share ? round(share.percent, 1) : undefined,
+          'share of enabled time over 110 % of the limit (worst motor) (%)': round(share, 1),
           'configured limit (A)': limit,
           'limit switched on in code': `${isOn ? 'yes' : 'no'}${asOf}`,
           'set in': group.limits.where,
@@ -157,29 +157,21 @@ function currentOf(motor: MotorView, kind: 'supply' | 'stator') {
   return kind === 'supply' ? motor.supply() : motor.stator()
 }
 
-/** The motor that spent the largest share of the enabled time over 110 % of the limit (null if none was over). */
-function shareOverLimit(group: GroupView, kind: 'supply' | 'stator', limit: number, match: MatchView) {
-  const enabledSeconds = lengthOf(match.enabled)
-  let worst = { motor: '', percent: 0, peak: 0, start: 0 }
-  for (const motor of group.motors) {
-    const over = currentOf(motor, kind).episodes(beyond(limit * 1.1), { during: enabledAndConnected(motor, match) })
-    const percent = (100 * totalSeconds(over)) / enabledSeconds
-    if (over.length === 0 || percent <= worst.percent) continue
-    const highest = over.reduce((a, b) => (b.peak > a.peak ? b : a))
-    worst = { motor: motor.name, percent, peak: highest.peak, start: highest.start }
-  }
-  return worst.motor === '' || enabledSeconds === 0 ? null : worst
+/** The share of the enabled time, in %, that the motor spent over 110 % of the limit while on CAN. */
+function shareOverLimit(motor: MotorView, kind: 'supply' | 'stator', limit: number, match: MatchView) {
+  const over = currentOf(motor, kind).episodes(beyond(limit * 1.1), { during: enabledAndConnected(motor, match) })
+  return (100 * totalSeconds(over)) / lengthOf(match.enabled)
 }
 
 /** The motor whose current went highest while over 120 % of the limit for more than 0.2 s (null if none did). */
 function worstOverLimit(group: GroupView, kind: 'supply' | 'stator', limit: number, match: MatchView) {
-  let worst = { motor: '', peak: 0, start: 0, secondsOver: 0 }
+  let worst: { motor: MotorView, peak: number, start: number, secondsOver: number } | null = null
   for (const motor of group.motors) {
     const over = currentOf(motor, kind).episodes(beyond(limit * 1.2), { during: enabledAndConnected(motor, match), longerThan: 0.2 })
     for (const e of over) {
-      if (e.peak <= worst.peak) continue
-      worst = { motor: motor.name, peak: e.peak, start: e.start, secondsOver: totalSeconds(over) }
+      if (worst && e.peak <= worst.peak) continue
+      worst = { motor, peak: e.peak, start: e.start, secondsOver: totalSeconds(over) }
     }
   }
-  return worst.motor === '' ? null : worst
+  return worst
 }
