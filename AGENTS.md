@@ -21,6 +21,8 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 - A cleanup that must not change what a rule finds is proved, not argued: `npm run golden -- <out.json> <log
   folder> ...` before and after, then `cmp`. It records every finding, evidence value, plot and not-checked
   reason. Rules that never fire on the logs you have are covered only by the unit tests.
+  The whole team library the app has synced sits in `~/.hindsight/app-data-*/library/logs` (807 files on
+  2026-11-03), a dot-folder Spotlight doesn't index, so look there with `find` before calling a local set complete.
 - A new rule adds a "not checked" entry, and one to meta/not-checked's count and evidence, on every log that
   lacks its keys, so golden can't stay byte-identical. Prove it adds nothing else: strip those from both runs and
   require zero residual differences per log (2026-10-20: 264 logs, can/device-rebooted).
@@ -36,6 +38,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 
 - Golden doesn't cover the builder. Prove a builder change by diffing `scripts/builder-backtest.ts` output (and a
   motors/groups survey) over every library and public log before and after; read every line that changed.
+- The built-in profiles are hand-written and fill in defaults the code leaves out, so "no profile has X" counted on
+  them says nothing about a profile drafted from code. Before writing "no data covers it", read the robot code too
+  (2026-11-03: 0 of 51 built-in groups lacked a supply Enable flag; the 2026 robot's code lacked it for 2).
 - Drafts from code (`code-motors.ts`, `code-draft.ts`) never guess: a folder pairs with the IO whose
   `updateInputs(inputs)` fills it, else the nearest chain; a tie, or a key two code motors claim, gives nothing,
   unless those motors agree on ID, bus, kind and leader (one motor built in each robot version's arm): then the ID,
