@@ -290,29 +290,33 @@ test('[LN-12] the seconds over are rounded to one decimal', () => {
   expect(only(leftSupply(90, 20, 20.26)).evidence['seconds over 120 % of the limit (worst motor)']).toBe(0.3)
 })
 
-test('[LN-13] the share is the largest share of enabled time any motor spent over 110 %, counting even one-sample blips', () => {
+test('[LN-12][LN-13] the share is the worst motor\'s own, counting even one-sample blips, even when another motor spent longer over 110 %', () => {
   // Enabled 100 s. Left: 44.5 A (111 %) for 0.1 s five times = 0.5 s, then 90 A for 1 s. Right: 45 A for 2 s.
   const blips: Trace = [[0, 5]]
   for (let t = 20; t < 25; t += 1) blips.push([t, 44.5], [t + 0.1, 5])
   blips.push([40, 90], [41, 5])
   const f = only({ keys: { [L.supply]: blips, [R.supply]: [[0, 5], [60, 45], [62, 5]] } })
   expect(f.evidence['worst motor']).toBe('Roller left')
-  // The right motor's 2 % beats the left's 1.5 %: the share can name another motor than the worst motor.
-  expect(f.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(2)
+  // The left motor's 1.5 %, not the right motor's 2 %: the evidence says "(worst motor)".
+  expect(f.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(1.5)
 })
 
-test('[LN-13] the share is the largest, whichever motor comes first in the profile', () => {
-  // Left (first): 90 A for 3 s, 3 % of the 100 s enabled. Right: 45 A for 1 s, 1 %.
-  const f = only({ keys: { [L.supply]: [[0, 5], [20, 90], [23, 5]], [R.supply]: [[0, 5], [40, 45], [41, 5]] } })
-  expect(f.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(3)
+test('[LN-13] the share is the worst motor\'s, whichever place it has in the profile', () => {
+  // Left (first) is the worst motor: 90 A for 3 s, 3 % of the 100 s enabled. Right: 45 A for 1 s, 1 %.
+  const first = only({ keys: { [L.supply]: [[0, 5], [20, 90], [23, 5]], [R.supply]: [[0, 5], [40, 45], [41, 5]] } })
+  expect(first.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(3)
+  // Right (second) is the worst motor: 90 A for 1 s, 1 %. Left: 45 A for 3 s, 3 %.
+  const second = only({ keys: { [L.supply]: [[0, 5], [20, 45], [23, 5]], [R.supply]: [[0, 5], [40, 90], [41, 5]] } })
+  expect(second.evidence['worst motor']).toBe('Roller right')
+  expect(second.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(1)
 })
 
 test('[LN-13] the share counts only enabled, connected time over strictly 110 %, out of all the enabled time', () => {
-  // Enabled 10-60 s and 70-120 s: 100 s. Left at 90 A from 50 s to 80 s: 10 s + 10 s enabled, less 1 s off CAN at
-  // 75 s. Right at exactly 110 % (44 A) the whole time: not over.
+  // Enabled 10-60 s and 70-120 s: 100 s. Left (the worst motor) at exactly 110 % (44 A) from 20 s to 40 s: not over.
+  // Then at 90 A from 50 s to 80 s: 10 s + 10 s enabled, less 1 s off CAN at 75 s. Right at 44 A the whole time.
   const f = only({
     enabled: [[10, 60], [70, 120]],
-    keys: { [L.supply]: [[0, 5], [50, 90], [80, 5]], [L.connected]: [[0, true], [75, false], [76, true]], [R.supply]: [[0, 44]] },
+    keys: { [L.supply]: [[0, 5], [20, 44], [40, 5], [50, 90], [80, 5]], [L.connected]: [[0, true], [75, false], [76, true]], [R.supply]: [[0, 44]] },
   })
   expect(f.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(19)
 })

@@ -116,13 +116,14 @@ Two terms, used only in these senses below:
   code` (`yes` or `no`, followed by `<code>` from LN-11); `set in` (the profile's `where`); `current-limit lines vs
   the profile's commit` (LN-11; left out when there is none). Why: the evidence is the student's proof list, and its
   labels are read by people, so they are fixed. Kind: behaviour.
-- **LN-13** The share is evidence only: the largest, over the group's motors, of `100 ×` the seconds that motor's
-  current was strictly above 110 % of the limit while enabled and connected (LN-05, LN-06; stretches of any length,
-  one sample included), divided by all the enabled seconds, whichever motor in the profile's order has it. It may come
-  from another motor than `worst motor`. It is on every finding (a stretch over 120 % is over 110 % in the same
-  window), and it never makes a finding on its own. Why: at the 2026 offseason event the time over 110 % was 154–233
-  bursts per motor per match, median 0.02 s (one 50 Hz sample), longest 0.26 s: the limiter catching up at each
-  acceleration, so on its own it does not mean the limit is failing (the rule's thresholds). Kind: behaviour.
+- **LN-13** The share is evidence only, and it is `worst motor`'s (LN-07): `100 ×` the seconds that motor's current
+  was strictly above 110 % of the limit while enabled and connected (LN-05, LN-06; stretches of any length, one sample
+  included), divided by all the enabled seconds, even when another motor of the group spent longer over 110 %. It is
+  on every finding (a stretch over 120 % is over 110 % in the same window), and it never makes a finding on its own.
+  Why: at the 2026 offseason event the time over 110 % was 154–233 bursts per motor per match, median 0.02 s (one
+  50 Hz sample), longest 0.26 s: the limiter catching up at each acceleration, so on its own it does not mean the
+  limit is failing (the rule's thresholds). The evidence says "(worst motor)", so it is that motor's. Kind:
+  behaviour.
 - **LN-14** `measured` is one entry: `{ label: 'peak <kind> current', value: <peak rounded to whole amps>, unit: 'A',
   threshold: <limit × 1.2 rounded to whole amps> }`. Why: a session compares how far past the line each match went
   (`Problem.measured` in `rule.ts`). Kind: behaviour.
@@ -181,26 +182,26 @@ may be a defect. Each waits for a ruling; until then, a rebuild may do either.
 1. **An enable flag the profile leaves out reads as switched off.** A group with `supplyA: 40` and no
    `supplyEnabled` gets an amber "switched off in code (deliberate?)" finding. AGENTS.md says Phoenix 6 defaults both
    Enable flags to true, so such a limit runs; the profile builder (`src/builder/code-draft.ts`) leaves the flag out
-   when the code has no Enable line. The Limits tab reads it the same way (`src/limits/limits-report.ts`). None of
-   the 51 motor groups in the 8 built-in profiles has a limit without its flag (2026-11-03); profiles kept in a
-   browser weren't checked.
+   when the code has no Enable line. The Limits tab reads it the same way (`src/limits/limits-report.ts`). **No data
+   covers this** (0 of 131 findings on the 778 library and public logs, 0 of 51 profile groups leave the flag out,
+   2026-11-03); profiles kept in a browser weren't checked. A fix (not known: red, no cause marked, evidence `not set in
+   the profile`) is written and reviewed but waits for the maintainer's ruling
+   (`docs/sessions/2026-11-03-limit-not-applied-fixes.md`).
 2. **A missing key for one kind hides a finding of the other kind.** A group whose supply current is over the limit
    but whose stator current isn't logged for one motor gives no finding, only `missing <stator key>`.
-3. **The share's motor is labelled "(worst motor)"** but is the motor with the largest share, which can be another
-   motor than `worst motor` (LN-13's test shows one).
-4. **The 0.2 s line sits close to the limiter's longest burst.** The thresholds say the limiter's bursts lasted
+3. **The 0.2 s line sits close to the limiter's longest burst.** The thresholds say the limiter's bursts lasted
    "0.21 s or less" above the limit; `src/limits/sweep.ts` records the longest as 0.208 s above 110 % (one drive
    motor at 40 A) and sets the Limits wizard's "did not take" line at 0.3 s. This rule judges 120 %, where bursts
    are no longer than at 110 %, so it may never see one over 0.2 s; whether any was is not in this repository.
-5. **A profile with no pinned commit matches every log.** A profile read from a profile.json without code
+4. **A profile with no pinned commit matches every log.** A profile read from a profile.json without code
    (`toProfile` in `src/builder/json.ts`) has `code.sha: ''`, and every commit starts with `''`, so every log **ran
    the pinned commit**: a switched-off limit is amber (LN-09), and a switched-on one has `limit-off` ruled out with
    "the limit is switched on in the code" (LN-10), though no code was read.
 
-The review of this contract (2026-11-03) judged items 1 and 3 plain defects rather than choices: item 1 contradicts
-AGENTS.md ("no on/off mean *not known*", builder section), and item 3 is a wrong label that LN-12 fixes word for word.
-Item 2 loses a real finding where the runner has `checkedOnlyPart` for "partly checked". LN-09, LN-10 and LN-12
-change with each ruling.
+The review of this contract (2026-11-03) judged item 1 and a fifth item plain defects rather than choices: item 1
+contradicts AGENTS.md ("no on/off mean *not known*", builder section). The fifth, the share labelled "(worst motor)"
+being the largest share of any motor, was fixed on approval (LN-13, 2026-11-03). Item 2 loses a real finding where
+the runner has `checkedOnlyPart` for "partly checked". LN-09, LN-10 and LN-12 change with each ruling.
 
 ## Ruled out
 - Judging from the share of time over 110 % (an earlier evidence line). Why: at the 2026 offseason event it was made
@@ -211,22 +212,13 @@ change with each ruling.
   other code may differ (LN-09, LN-11). Scope: this rule.
 
 ## Equivalent mutants
-From Stryker 9.6.1 on this file at `1f77fad` (218 mutants); line numbers are that file's. These 14 survive the
-contract file and the whole suite (`docs/sessions/2026-11-03-limit-not-applied-contract.md`); each changes nothing
-observable. Removing the empty-piece filter at L146–149 is not among them: without it, LN-21's test runs out of time.
+From Stryker 9.6.1 on this file, contract file alone, after the 2026-11-03 fix (189 mutants; line numbers are that
+file's; `docs/sessions/2026-11-03-limit-not-applied-fixes.md`). This one survives and changes nothing observable.
+Removing the empty-piece filter at L146–149 is not among them: without it, LN-21's test runs out of time (3 timeouts
+and 1 runner crash in that run).
 - L149 `p.end > p.start` → `>=`: it keeps zero-length pieces of the enabled-and-connected window. Cutting another drop
   out of a zero-length piece leaves at most one zero-length piece, so they don't multiply (LN-21 passes), and
   `Signal.episodes` drops any clip with no length.
-- L163 `worst = {}` (no starting share): the first motor over 110 % is taken, as it is against 0
-  (`percent <= undefined` is false). With no motor over 110 %, `{}` would be returned and `round(undefined, 1)` would
-  throw, but that is unreachable: the share is only asked for after a motor was over 120 % for 0.2 s in the same
-  window.
-- L163 starting motor `''` → `"Stryker was here!"`; L171 the whole test → `false`, `worst.motor === ''` → `false`,
-  `||` → `&&`, its `''` → `"Stryker was here!"`, and `enabledSeconds === 0` → `false` (6 mutants): they only change
-  what is returned when no motor was over 110 % or the robot was never enabled, and the share is only asked for when
-  a motor was above 120 % for more than 0.2 s while enabled and connected, which is also over 110 % in that window.
-- L167 `over.length === 0` → `false`: a motor with no stretch over 110 % has share 0, which `percent <=
-  worst.percent` already skips (the share is never below 0).
-- L167 `<=` → `<`: on a tie the later motor's share is kept, and only the share's percent is used, which is equal.
-- L168 the four mutants of `b.peak > a.peak ? b : a` (`true`, `false`, `>=`, `<=`): they choose which of the
-  share motor's stretches gives `peak` and `start`, which the rule never reads (only `percent` is used).
+
+The 13 equivalents the first contract recorded in the old share search (the largest share over the group's motors)
+went with that code, when the share became the worst motor's (2026-11-03).
