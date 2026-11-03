@@ -236,7 +236,7 @@ test('[LN-10] switched on in code the profile wasn\'t copied from: no cause is m
 const LINES = "current-limit lines vs the profile's commit"
 const SWITCHED = 'limit switched on in code'
 
-test('[LN-11] the log ran the profile\'s commit: nothing is added to the title, and no lines comparison is shown or read', () => {
+test('[LN-11] the log ran the pinned commit: nothing is added to the title, and no lines comparison is shown or used', () => {
   const f = only(leftSupply(90), robot(), { verdict: 'different', files: ['RollerIO.java'], lines: ['- RollerIO.java: x'] })
   expect(f.title).toBe('Roller supply current reached 90 A against a 40 A limit')
   expect(f.evidence[SWITCHED]).toBe('yes')
@@ -341,6 +341,9 @@ test('[LN-16] a motor whose current isn\'t in the log: the group is not checked,
   expect(findings).toEqual([])
   expect(skipped).toBe('Roller: missing /Roller/Right/SupplyCurrentAmps')
   expect(run({ keys: { [R.stator]: [] } }, robot({ supplyA: undefined })).skipped).toBe('Roller: missing /Roller/Right/StatorCurrentAmps')
+  // The profile names no key: the line says so, with the motor.
+  const { supplyCurrent: _, ...noKey } = motor('Left')
+  expect(run(leftSupply(90), robot({}, [noKey, motor('Right')])).skipped).toBe('Roller: missing Roller left supply current (not in the robot profile)')
 })
 
 test('[LN-17] current is judged by its size: a negative current past the limit counts', () => {
@@ -376,3 +379,10 @@ test('[LN-20] an error other than a missing signal is not swallowed: the rule cr
   group.motors[0] = { ...group.motors[0], connected: () => { throw new Error('a bug in a signal read') } }
   expect(() => limitNotApplied.check(group, view)).toThrow('a bug in a signal read')
 })
+
+test('[LN-21] a Connected flag that flickers many times costs time in proportion, not in doubling', () => {
+  // 40 drops off CAN, 0.1 s each, while the left motor is held at 90 A from 15 s to 17 s.
+  const flicker: Trace = [[0, true]]
+  for (let i = 0; i < 40; i++) flicker.push([20 + i * 0.2, false], [20.1 + i * 0.2, true])
+  expect(only({ keys: { [L.supply]: [[0, 5], [15, 90], [17, 5]], [L.connected]: flicker } }).time).toBe(15)
+}, 5_000)

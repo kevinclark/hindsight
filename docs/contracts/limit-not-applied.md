@@ -102,29 +102,27 @@ Two terms, used only in these senses below:
   Why: off in code is the cause when it is off; on in the very code the log ran means the config probably didn't
   reach the motor. Kind: behaviour.
 - **LN-11** How the code the log ran is described, with `<branch>` and `<pin>` the profile's `code.branch` and
-  `code.sha`, and `<ran>` the first 7 characters of the log's commit, or `unknown code` when the log has none:
-  - the log **ran the pinned commit**: `<code>` is empty, and the comparison is neither read nor shown;
-  - another commit, lines `same`: `<code>` is ` (same current-limit lines as <branch> <pin>; this log ran <ran>)`,
-    lines evidence `the same as <pin> in <files, joined by ", "> (read from the robot code)`;
-  - lines `different`: `<code>` is ` (as of <branch> <pin>; this log ran <ran>)`, lines evidence
-    `different from <pin>: <lines, joined by "; ">`;
-  - lines `unknown`: the same `<code>`, lines evidence `not compared: <why>`;
-  - no comparison (no code folder): the same `<code>`, and no lines evidence.
-  Why: a student must see which code the "switched on/off" claim was read from (`tests/limit-lines.test.ts`).
-  Kind: behaviour.
+  `code.sha`, and `<ran>` the first 7 characters of the log's commit, or `unknown code` when the log has none: - the
+  log **ran the pinned commit**: `<code>` is empty, and the comparison is neither used nor shown; - another commit,
+  lines `same`: `<code>` is ` (same current-limit lines as <branch> <pin>; this log ran <ran>)`, lines evidence `the
+  same as <pin> in <files, joined by ", "> (read from the robot code)`; - lines `different`: `<code>` is ` (as of
+  <branch> <pin>; this log ran <ran>)`, lines evidence `different from <pin>: <lines, joined by "; ">`; - lines
+  `unknown`: the same `<code>`, lines evidence `not compared: <why>`; - no comparison (no code folder): the same
+  `<code>`, and no lines evidence. Why: a student must see which code the "switched on/off" claim was read from
+  (`tests/limit-lines.test.ts`). Kind: behaviour.
 - **LN-12** The evidence, keys in this order: `worst motor` (its name); `peak <kind> current (A)` (the peak, 1
   decimal); `seconds over 120 % of the limit (worst motor)` (1 decimal); `share of enabled time over 110 % of the
-  limit (worst motor) (%)` (LN-13, 1 decimal; left out when no motor was over 110 %); `configured limit (A)` (the
-  profile's number); `limit switched on in code` (`yes` or `no`, followed by `<code>` from LN-11); `set in` (the
-  profile's `where`); `current-limit lines vs the profile's commit` (LN-11; left out when there is none). Why: the
-  evidence is the student's proof list, and its labels are read by people, so they are fixed. Kind: behaviour.
+  limit (worst motor) (%)` (LN-13, 1 decimal); `configured limit (A)` (the profile's number); `limit switched on in
+  code` (`yes` or `no`, followed by `<code>` from LN-11); `set in` (the profile's `where`); `current-limit lines vs
+  the profile's commit` (LN-11; left out when there is none). Why: the evidence is the student's proof list, and its
+  labels are read by people, so they are fixed. Kind: behaviour.
 - **LN-13** The share is evidence only: the largest, over the group's motors, of `100 ×` the seconds that motor's
   current was strictly above 110 % of the limit while enabled and connected (LN-05, LN-06; stretches of any length,
   one sample included), divided by all the enabled seconds, whichever motor in the profile's order has it. It may come
-  from another motor than `worst motor`. It never makes a finding on its own. Why: at the 2026 offseason event the
-  time over 110 % was 154–233 bursts per motor per match, median 0.02 s (one 50 Hz sample), longest 0.26 s: the
-  limiter catching up at each acceleration, so on its own it does not mean the limit is failing (the rule's
-  thresholds). Kind: behaviour.
+  from another motor than `worst motor`. It is on every finding (a stretch over 120 % is over 110 % in the same
+  window), and it never makes a finding on its own. Why: at the 2026 offseason event the time over 110 % was 154–233
+  bursts per motor per match, median 0.02 s (one 50 Hz sample), longest 0.26 s: the limiter catching up at each
+  acceleration, so on its own it does not mean the limit is failing (the rule's thresholds). Kind: behaviour.
 - **LN-14** `measured` is one entry: `{ label: 'peak <kind> current', value: <peak rounded to whole amps>, unit: 'A',
   threshold: <limit × 1.2 rounded to whole amps> }`. Why: a session compares how far past the line each match went
   (`Problem.measured` in `rule.ts`). Kind: behaviour.
@@ -133,9 +131,11 @@ Two terms, used only in these senses below:
   student sees the whole group against the line, not only the worst motor. Kind: behaviour.
 
 ### Failure modes and edges
-- **LN-16** When a motor's current for a kind being checked is not in the log (or the profile names no key for it),
-  the group is not checked, and the line names the key: `<group>: missing <key>`. Why: a group can't be called clean
-  from part of its motors (AGENTS.md, rules). Kind: failure mode.
+- **LN-16** When a motor's current for a kind being checked can't be read, the group is not checked, with the runner's
+  missing-signal line: `<group>: missing <key>` when the log lacks the key; `<group>: missing <motor> <kind> current
+  (not in the robot profile)` when the profile names none; and, for a key only another log type has, the motor's
+  signal with where it is (`missing()` in `view.ts`). Why: a group can't be called clean from part of its motors
+  (AGENTS.md, rules). Kind: failure mode.
 - **LN-17** The size of the current is judged, either sign: a stator current of −95.5 A is over a 60 A limit, and its
   peak is 95.5 A. Why: a TalonFX logs stator current signed by direction; a limit caps its size. Kind: behaviour.
 - **LN-18** The rule judges a fault: a finding in a run shorter than 10 s is kept. Why: ADR 8: a fault is an event
@@ -150,6 +150,10 @@ Two terms, used only in these senses below:
 - **LN-20** An error from a signal read other than `MissingSignal` is not caught: it leaves `check`, so the runner
   lists the rule as crashed. Why: a crash is shown so a bug in a rule isn't silent (`run.ts`); only a missing
   Connected flag means "count all the enabled time" (LN-06). Kind: failure mode.
+- **LN-21** A Connected flag that drops many times costs time in proportion to the drops: 40 drops in one match give
+  their answer at once, not after minutes. Why: cutting each drop out of the enabled time must drop the empty pieces
+  it leaves; kept, the pieces double with every drop, and 24 drops took 8 s and 26 ran out of memory (measured
+  2026-11-03). A controller with a loose CAN connection flickers that often. Kind: non-functional.
 
 ## Output wording
 Fixed, word for word: the title (LN-08, LN-11), the switched-off next step (LN-10), the ruled-out reason
@@ -188,6 +192,15 @@ may be a defect. Each waits for a ruling; until then, a rebuild may do either.
    "0.21 s or less" above the limit; `src/limits/sweep.ts` records the longest as 0.208 s above 110 % (one drive
    motor at 40 A) and sets the Limits wizard's "did not take" line at 0.3 s. This rule judges 120 %, where bursts
    are no longer than at 110 %, so it may never see one over 0.2 s; whether any was is not in this repository.
+5. **A profile with no pinned commit matches every log.** A profile read from a profile.json without code
+   (`toProfile` in `src/builder/json.ts`) has `code.sha: ''`, and every commit starts with `''`, so every log **ran
+   the pinned commit**: a switched-off limit is amber (LN-09), and a switched-on one has `limit-off` ruled out with
+   "the limit is switched on in the code" (LN-10), though no code was read.
+
+The review of this contract (2026-11-03) judged items 1 and 3 plain defects rather than choices: item 1 contradicts
+AGENTS.md ("no on/off mean *not known*", builder section), and item 3 is a wrong label that LN-12 fixes word for word.
+Item 2 loses a real finding where the runner has `checkedOnlyPart` for "partly checked". LN-09, LN-10 and LN-12
+change with each ruling.
 
 ## Ruled out
 - Judging from the share of time over 110 % (an earlier evidence line). Why: at the 2026 offseason event it was made
@@ -198,12 +211,16 @@ may be a defect. Each waits for a ruling; until then, a rebuild may do either.
   other code may differ (LN-09, LN-11). Scope: this rule.
 
 ## Equivalent mutants
-From Stryker 9.6.1 on this file at `1f77fad` (218 mutants); line numbers are that file's. These 16 survive the
-contract file and the whole suite (final run, below); each changes nothing observable.
-- L146 the `.filter((p) => p.end > p.start)` removed, L149 its test → `true`, and L149 `>` → `>=`: they keep empty
-  or reversed pieces of the enabled-and-connected window, and `Signal.episodes` drops any clip with no length.
-- L163 `worst = {}` (no starting share): `percent <= undefined` is false, so the first motor over 110 % is taken,
-  as it is against 0; if no motor is, the share is `undefined` and its evidence line is left out, as with `null`.
+From Stryker 9.6.1 on this file at `1f77fad` (218 mutants); line numbers are that file's. These 14 survive the
+contract file and the whole suite (`docs/sessions/2026-11-03-limit-not-applied-contract.md`); each changes nothing
+observable. Removing the empty-piece filter at L146–149 is not among them: without it, LN-21's test runs out of time.
+- L149 `p.end > p.start` → `>=`: it keeps zero-length pieces of the enabled-and-connected window. Cutting another drop
+  out of a zero-length piece leaves at most one zero-length piece, so they don't multiply (LN-21 passes), and
+  `Signal.episodes` drops any clip with no length.
+- L163 `worst = {}` (no starting share): the first motor over 110 % is taken, as it is against 0
+  (`percent <= undefined` is false). With no motor over 110 %, `{}` would be returned and `round(undefined, 1)` would
+  throw, but that is unreachable: the share is only asked for after a motor was over 120 % for 0.2 s in the same
+  window.
 - L163 starting motor `''` → `"Stryker was here!"`; L171 the whole test → `false`, `worst.motor === ''` → `false`,
   `||` → `&&`, its `''` → `"Stryker was here!"`, and `enabledSeconds === 0` → `false` (6 mutants): they only change
   what is returned when no motor was over 110 % or the robot was never enabled, and the share is only asked for when

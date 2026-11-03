@@ -4,11 +4,10 @@ r"""Every obligation in docs/contracts/*.md is proven by a passing test that car
 For each contract: read the obligation ids (`- **PS-07** ...`; a bullet saying "Retired" is skipped) and its
 `Suite: \`<command>\`` line, a shell command run at the repo root that writes JUnit XML to the path it is given as
 `{junit}` (or, without `{junit}`, prints it on stdout). A test proves the ids its name starts with: pytest
-`test_PS07_PS08_...` or `[PS-07][PS-08] ...` (for vitest, the test's own name after any `describe > ` prefix).
+`test_PS07_PS08_...` or `[PS-07][PS-08] ...` (vitest joins describe names with ` > `: the first part with ids counts).
 Prints each id as met / FAILING / UNPROVEN and any test id the contract does not define (UNKNOWN). A skipped test
 is not a proof. Exit 1 on any of those three, or when the suite ran no test. Stdlib only.
-Copied from ha-pwrcell's scripts/contract-check (pytest), which adapted focus's (node:test); this copy also reads
-vitest's JUnit names.
+Adapted from earlier pytest and node:test versions of this script; this copy also reads vitest's JUnit names.
 Usage: scripts/contract-check [CONTRACT.md ...]   (default: every docs/contracts/*.md)
 """
 import glob
@@ -31,7 +30,7 @@ def read_contract(path):
     with open(path, encoding="utf-8") as f:
         for line in f:
             m = OBLIGATION.match(line)
-            if m and "Retired" not in m.group(2):
+            if m and not re.match(r"\s*Retired\b", m.group(2)):
                 ids.append(m.group(1))
             m = SUITE.match(line)
             if m:
@@ -41,10 +40,10 @@ def read_contract(path):
 
 def test_ids(name):
     """The obligation ids a test name starts with, as `PS-07`."""
-    name = name.split(" > ")[-1]
-    m = BRACKET_IDS.match(name)
-    if m:
-        return re.findall(r"\[([A-Z]+-\d+)\]", m.group(1))
+    for part in name.split(" > "):
+        m = BRACKET_IDS.match(part)
+        if m:
+            return re.findall(r"\[([A-Z]+-\d+)\]", m.group(1))
     m = PYTEST_IDS.match(name)
     if m:
         return [re.sub(r"^([A-Z]+)(\d+)$", r"\1-\2", part) for part in m.group(1).rstrip("_").split("_")]
