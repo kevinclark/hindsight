@@ -275,6 +275,12 @@ describe('fixes from the review of 2026-10-20 (Fable + code-review high)', () =>
     }
     expect(messages(duplicateCanId, java)).toEqual([])
   })
+  it('duplicate-can-id: a constructor\'s local given a second value has no one value; one never reassigned still does', () => {
+    const reassigned = 'class Robot extends TimedRobot { TalonFX a, b; Robot() { int id = 5; id = 6; a = new TalonFX(id); b = new TalonFX(5); } }'
+    expect(messages(duplicateCanId, reassigned)).toEqual([])
+    const once = 'class Robot extends TimedRobot { TalonFX a, b; Robot() { int id = 5; a = new TalonFX(id); b = new TalonFX(5); } }'
+    expect(messages(duplicateCanId, once)).toHaveLength(2)
+  })
   it('duplicate-can-id: `if (x)` and `if (!x)` are the two arms of one fork', () => {
     const java = 'class Robot extends TimedRobot { TalonFX a, b; Robot() { if (Robot.isReal()) { a = new TalonFX(1); } if (!Robot.isReal()) { b = new TalonFX(1); } } }'
     expect(messages(duplicateCanId, java)).toEqual([])
