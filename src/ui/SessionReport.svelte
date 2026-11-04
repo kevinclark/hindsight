@@ -19,6 +19,9 @@
   const SYMBOL = { fired: '●', quiet: '·', 'not checked': '–' } as const
   const WORD = { fired: 'fired', quiet: 'quiet', 'not checked': 'not checked' } as const
   const turned = $derived(m.matchCount > 6)
+  // The stopped ones come after the live ones (session-model.ts order): a sub-heading before the first, like the Session view's own list.
+  const firstStopped = $derived(m.rows.findIndex((f) => f.sinks))
+  const stoppedCount = $derived(m.rows.filter((f) => f.sinks).length)
 </script>
 
 <article class="print-only report" aria-hidden="true">
@@ -36,7 +39,8 @@
       <p class="small">No {m.filed.length ? 'other ' : ''}errors or warnings in any match.</p>
     {:else}
       <ul class="finds">
-        {#each m.rows as f (f.key)}
+        {#each m.rows as f, i (f.key)}
+          {#if i === firstStopped}<li class="head"><h3>Stopped firing: potentially fixed ({stoppedCount})</h3></li>{/if}
           <li class="sr-find">
             <span class={`sev ${f.severity}`}>{f.sevWord}</span>
             <span class={`conf ${f.confidence.replace(/ /g, '-')}`}>{f.confidenceWord}</span>
@@ -131,6 +135,8 @@
   .t .small { display: block; overflow-wrap: anywhere; font-size: 7pt; line-height: 1.08; }
   .stopped { display: block; font-size: 7.5pt; line-height: 1.1; overflow-wrap: anywhere; }
   .stopped.sunk { font-weight: 700; }
+  .finds li.head { display: block; border-bottom: none; padding-top: 0.2rem; break-after: avoid; }
+  h3 { font-size: 8.5pt; margin: 0; }
   .badge { font-size: 7.5pt; font-weight: 700; padding: 0 0.3rem; border: 1px solid var(--error); border-radius: 3px; color: var(--error); }
   .multiples { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.15rem 0.4rem; margin-top: 0.15rem; }
   figure { margin: 0; break-inside: avoid; }

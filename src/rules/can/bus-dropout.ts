@@ -40,6 +40,7 @@ export default rule({
   ],
   needsProfile: true,
 
+  needsEnabled: true,
   check(match) {
     if (!match.profile.canBuses?.length) return match.couldNotCheck('the robot profile maps no CAN bus')
     const problems: Problem[] = []
