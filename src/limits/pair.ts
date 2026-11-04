@@ -11,7 +11,7 @@
  * the supply limit, so the lower limit never engages and only the stator limit governs it.
  */
 import type { MotorGroup, RobotProfile } from '../profiles/types.ts'
-import { PHOENIX_DEFAULTS, limitsKnown, lowerLimitOff } from './limits-report.ts'
+import { PHOENIX_DEFAULTS, limitOn, limitsKnown, lowerLimitOff } from './limits-report.ts'
 
 const MAIN_BREAKER_A = 120
 /** Winding resistance of a Kraken X60 (12 V / 483 A FOC stall to 12 V / 366 A trapezoidal): 25–33 mΩ. Assumed for every motor. */
@@ -26,9 +26,11 @@ export interface PairCheck {
   lowerIsDefault: boolean
   /** The burst cap is above the limit the code has today: say plainly not to raise it yet. */
   raisesBurst: boolean
-  /** Today's supply limit: null when switched off, or when the profile doesn't know it (todayKnown false). */
+  /** Today's supply limit: null when switched off, or when the profile doesn't know it or its Enable flag (todayKnown false). */
   todaySupplyA: number | null
   todayKnown: boolean
+  /** Today's supply limit when the profile gives its number but not its Enable flag: a raise past it can't be ruled out. */
+  todaySupplyOnNotKnown: number | null
   /** Sustained caps of the groups that run together added up (this group with the new pair), against the main breaker. */
   sustained: { rows: { group: string; motors: number; perMotorA: number; totalA: number }[]; totalA: number; ok: boolean }
   /**
@@ -36,7 +38,7 @@ export interface PairCheck {
    * against the main breaker. Null when the profile has no group named like a drive.
    */
   pinnedDrive: { group: string; motors: number; perMotorA: [number, number]; totalA: [number, number]; ok: boolean } | null
-  /** The drive group, when the profile doesn't know its limits: the pinned push isn't worked out (pinnedDrive null). */
+  /** The drive group, when the profile doesn't know its limits or its stator flag: the pinned push isn't worked out (pinnedDrive null). */
   driveNotKnown: string | null
   /** Groups with no supply limit at all (nothing caps their sustained current). */
   unlimited: string[]
@@ -49,8 +51,9 @@ export interface PairCheck {
  * supply limit. NaN when the profile doesn't know its limits.
  */
 function sustainedPerMotor(g: MotorGroup): number {
-  if (!limitsKnown(g.limits)) return NaN
-  if (g.limits.supplyEnabled === false) return Infinity // no supply limit at all: nothing caps it
+  const on = limitOn(g.limits, 'supply')
+  if (!limitsKnown(g.limits) || on === null) return NaN // on: its lower limit; off: nothing. The profile doesn't say which
+  if (on === false) return Infinity // no supply limit at all: nothing caps it
   if (lowerLimitOff(g.limits)) return g.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA
   return Math.min(g.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA, g.limits.supplyLowerA ?? PHOENIX_DEFAULTS.supplyLowerA)
 }
@@ -67,12 +70,15 @@ export function checkPair(profile: RobotProfile, group: MotorGroup, burstA: numb
     return { group: g.name, motors: g.motors.length, perMotorA, totalA: perMotorA * g.motors.length }
   })
   const totalA = rows.reduce((s, r) => s + (Number.isNaN(r.totalA) ? 0 : r.totalA), 0)
-  const todayKnown = limitsKnown(group.limits)
-  const today = !todayKnown || group.limits.supplyEnabled === false ? null : (group.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA)
+  const supplyOn = limitsKnown(group.limits) ? limitOn(group.limits, 'supply') : null
+  const todayKnown = supplyOn !== null
+  const today = supplyOn ? (group.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA) : null
+  // The pinned push needs the drive's stator limit: not known when its limits or its stator flag aren't.
+  const statorKnown = (g: MotorGroup) => limitsKnown(g.limits) && limitOn(g.limits, 'stator') !== null
   const pinned = (g: MotorGroup): [number, number] | null => {
-    if (!limitsKnown(g.limits)) return null
-    const st = g.limits.statorEnabled === false ? null : (g.limits.statorA ?? PHOENIX_DEFAULTS.statorA)
-    return st === null ? null : [st * st * MOTOR_OHMS[0] / BUS_VOLTS, st * st * MOTOR_OHMS[1] / BUS_VOLTS]
+    if (!statorKnown(g) || !limitOn(g.limits, 'stator')) return null
+    const st = g.limits.statorA ?? PHOENIX_DEFAULTS.statorA
+    return [st * st * MOTOR_OHMS[0] / BUS_VOLTS, st * st * MOTOR_OHMS[1] / BUS_VOLTS]
   }
   const drive = profile.motorGroups.find((g) => /drive/i.test(g.name))
   const drivePinned = drive ? pinned(drive) : null
@@ -81,13 +87,14 @@ export function checkPair(profile: RobotProfile, group: MotorGroup, burstA: numb
     raisesBurst: today !== null && burstA > today,
     todaySupplyA: today,
     todayKnown,
+    todaySupplyOnNotKnown: limitsKnown(group.limits) && supplyOn === null && burstA > group.limits.supplyA! ? group.limits.supplyA! : null,
     sustained: { rows, totalA, ok: totalA <= MAIN_BREAKER_A },
     pinnedDrive: drive && drivePinned ? {
       group: drive.name, motors: drive.motors.length, perMotorA: drivePinned,
       totalA: [drivePinned[0] * drive.motors.length, drivePinned[1] * drive.motors.length],
       ok: drivePinned[1] * drive.motors.length <= MAIN_BREAKER_A,
     } : null,
-    driveNotKnown: drive && !limitsKnown(drive.limits) ? drive.name : null,
+    driveNotKnown: drive && !statorKnown(drive) ? drive.name : null,
     unlimited: rows.filter((r) => r.perMotorA === Infinity).map((r) => r.group),
     notKnown: rows.filter((r) => Number.isNaN(r.perMotorA)).map((r) => r.group),
   }
