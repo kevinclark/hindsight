@@ -37,9 +37,10 @@ if (first) void app.whenReady().then(() => {
   createWindow()
   // An installed Windows or Linux build (and a signed Mac one) fetches a newer release in the background and installs it on quit.
   // Anywhere else the page's banner points to the release. A failed check is logged and ignored.
-  if (selfUpdates({ isPackaged: app.isPackaged, platform: process.platform, macSigned: typeof __MAC_SIGNED__ === 'boolean' && __MAC_SIGNED__ })) {
+  if (selfUpdates({ isPackaged: app.isPackaged, platform: process.platform, macSigned: __MAC_SIGNED__ })) {
     void import('electron-updater')
-      .then(({ autoUpdater }) => autoUpdater.checkForUpdatesAndNotify())
+      // electron-updater's autoUpdater is a lazy getter Node can't see as a named export of the CommonJS module: read it off the default.
+      .then((m) => (m.default ?? m).autoUpdater.checkForUpdatesAndNotify())
       .catch((e) => console.log(`update check failed: ${e instanceof Error ? e.message : String(e)}`))
   }
 })

@@ -16,7 +16,7 @@
     "golden": "node --max-old-space-size=16000 --experimental-strip-types scripts/golden.ts",
     "build:app": "vite build && vite build -c vite.electron.config.ts",
     "app": "npm run build:app && electron .",
-    "dist:app": "npm run build:app && electron-builder"
+    "dist:app": "npm run build:app && electron-builder -c.mac.identity=-"
   },
   "dependencies": {
     "electron-updater": "6.8.11",
@@ -66,7 +66,6 @@
         "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "identity": "-",
       "hardenedRuntime": true
     },
     "win": {

@@ -23,9 +23,9 @@ on:
 permissions:
   contents: read
 
-# Two merges never race for one version number.
+# Two merges never race for one version number (per branch: a branch build never displaces a pending main release).
 concurrency:
-  group: release-main
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -98,15 +98,18 @@ jobs:
             printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
             export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
             export HINDSIGHT_MAC_SIGNED=true
-            sign=(-c.mac.identity=null -c.mac.notarize=true)
+            sign=(-c.mac.notarize=true)   # identity found in CSC_LINK; -c.mac.identity=null would skip signing
             echo signed > signing-mac.txt
           else
             unset CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+            sign=(-c.mac.identity=-)   # ad hoc
             echo unsigned > signing-mac.txt
           fi
           npm run build:app
           npx electron-builder --mac dmg zip --arm64 --x64 --publish never "${sign[@]}"
           rm -f "$RUNNER_TEMP/AuthKey.p8"
+          test -e release/latest-mac.yml
+          if [ -n "$MAC_CSC_LINK" ]; then codesign -dv --verbose=2 release/mac-arm64/Hindsight.app 2>&1 | grep -E 'Authority=Developer ID Application|TeamIdentifier'; fi
           mv signing-mac.txt release/
       - name: Build and package (Windows)
         if: matrix.name == 'windows'
@@ -116,6 +119,7 @@ jobs:
         run: |
           npm run build:app
           npx electron-builder --win nsis --x64 --publish never
+          test -e release/latest.yml
       - name: Build and package (Linux)
         if: matrix.name == 'linux'
         env:
@@ -124,6 +128,7 @@ jobs:
         run: |
           npm run build:app
           npx electron-builder --linux AppImage --x64 --publish never
+          test -e release/latest-linux.yml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: hindsight-${{ matrix.name }}
@@ -169,18 +174,18 @@ jobs:
               [ -e "$f" ] && echo "- $f: $(sha256sum "$f" | cut -d' ' -f1)"
             done
             echo
-            echo "First time you open a download (these files are not signed; an update that installs itself does not ask again):"
-            if [ "$mac_signed" = false ]; then
-              echo "- Mac (Hindsight-$VERSION-mac-*.dmg, arm64 for Apple silicon, x64 for Intel): drag Hindsight to Applications and open it. If it says it can't be opened, open System Settings, Privacy & Security, click Open Anyway."
-            fi
-            echo "- Windows (.exe): if it says \"Windows protected your PC\", click More info, then Run anyway."
-            echo "- Linux (.AppImage): make it executable (chmod +x), then run it."
+            echo "First time you open a download (an update that installs itself never asks):"
             if [ "$mac_signed" = true ]; then
-              echo
-              echo "The Mac build is signed and notarized: it opens without a warning."
+              echo "- Mac (Hindsight-$VERSION-mac-*.dmg, arm64 for Apple silicon, x64 for Intel): signed and notarized, drag Hindsight to Applications and open it. If your copy is older and unsigned, download this one once; later ones install themselves."
+            else
+              echo "- Mac (Hindsight-$VERSION-mac-*.dmg, arm64 for Apple silicon, x64 for Intel): not signed. Drag Hindsight to Applications and open it. If it says it can't be opened, open System Settings, Privacy & Security, click Open Anyway."
             fi
+            echo "- Windows (.exe, not signed): if it says \"Windows protected your PC\", click More info, then Run anyway."
+            echo "- Linux (.AppImage): make it executable (chmod +x), then run it."
           } > ../notes.md
           args=()
           for f in *.dmg *.zip *.exe *.AppImage latest*.yml *.blockmap; do [ -e "$f" ] && args+=("$f"); done
-          gh release create "v$VERSION" "${args[@]}" \
+          # A draft until every file is attached: the app and electron-updater never see a release without its latest*.yml.
+          gh release create "v$VERSION" "${args[@]}" --draft \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Hindsight $VERSION" --notes-file ../notes.md
+          gh release edit "v$VERSION" --draft=false --latest --repo "$GITHUB_REPOSITORY"

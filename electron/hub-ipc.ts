@@ -10,7 +10,7 @@ import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { driveFolderFiles, folderIdFrom } from '../src/hub/drive-source.ts'
 import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
-import { checkForUpdate } from '../src/hub/update.ts'
+import { checkForUpdate, selfUpdates } from '../src/hub/update.ts'
 import { JobRunner, type Work } from '../src/hub/jobs.ts'
 import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
@@ -37,8 +37,10 @@ export function registerHub(window: () => BrowserWindow | null): void {
   const seenFile = () => join(app.getPath('userData'), 'seen.json')
   const send = (channel: string, payload: unknown) => window()?.webContents.send(channel, payload)
 
-  // The one request to the public repo's releases, made once on start (not by a dev run, which is not an installed version).
-  const update = app.isPackaged ? checkForUpdate(app.getVersion()) : Promise.resolve(null)
+  // The one request to the public repo's releases, made once on start: only where the app can't update itself (an unsigned Mac
+  // build), never from a dev run, which is not an installed version.
+  const banner = app.isPackaged && !selfUpdates({ isPackaged: true, platform: process.platform, macSigned: __MAC_SIGNED__ })
+  const update = banner ? checkForUpdate(app.getVersion()) : Promise.resolve(null)
 
   /** One job at a time (an import, a sync, a download): they share the library's manifest and the user's attention. */
   const job = <T>(name: string, work: Work<T>): Promise<T> =>

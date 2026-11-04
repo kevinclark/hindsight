@@ -13,7 +13,7 @@ Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hin
 Download the app for your system from [Releases](https://github.com/kevinclark/hindsight/releases/latest). Every change to the app that passes the tests becomes a new release.
 
 - Windows and Linux: the app checks for a newer release when it starts and installs it when you quit.
-- Mac: once releases are signed and notarized, the app updates itself the same way. Until then it shows a banner linking to the newest release, and the first open of each new download needs System Settings > Privacy & Security > Open Anyway.
+- Mac: a signed and notarized build updates itself the same way. An unsigned one shows a banner linking to the newest release instead, and the first open of each new download needs System Settings > Privacy & Security > Open Anyway; download the first signed release once by hand, and later ones install themselves.
 
 ## Use it
 
