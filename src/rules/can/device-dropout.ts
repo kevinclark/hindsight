@@ -46,6 +46,7 @@ export default rule({
     { name: 'battery voltage that points at the power path', value: 'under 7 V', basis: 'judgment', how: 'Chosen, just above the 6.75 V roboRIO 2 default brownout level; the one case seen dropped at 5.85 to 6.31 V.' },
     { name: 'voltage read before each drop', value: 'the lowest in the 0.5 s before', basis: 'judgment', how: 'A Connected flag goes false about this long after the device stops answering (Phoenix\'s isConnected).' },
   ],
+  needsEnabled: true,
   forEach: 'device',
 
   check(device, match) {

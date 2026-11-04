@@ -52,6 +52,7 @@ export default rule({
     { name: 'gap between motor and absolute angle changes by', value: 'more than half the motor travel', basis: 'judgment', how: 'Assumed. Added after two false slips in held-out logs, both in fast swings.' },
   ],
 
+  needsEnabled: true,
   check(match) {
     const checks = match.profile.slipChecks ?? []
     if (checks.length === 0) return match.couldNotCheck('the robot profile pairs no motor with an absolute angle (slipChecks)')

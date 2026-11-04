@@ -37,6 +37,7 @@ export default rule({
   thresholds: [
     { name: 'movement that counts as moving', value: 'the mechanism\'s moveDegrees, a few degrees', basis: 'judgment', how: 'Set per mechanism in the robot profile.' },
   ],
+  needsEnabled: true,
   forEach: 'mechanism',
 
   check(mechanism, match) {

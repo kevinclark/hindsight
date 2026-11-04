@@ -28,7 +28,8 @@ export { dateFromFileName, playedAt } from '../match/played-at.ts'
  * (a field renamed or removed, a meaning changed); adding an optional field doesn't need it (`runs` is one: a summary without it
  * shows as before, with the "Read again to update" cue).
  */
-export const SUMMARY_SHAPE = 3
+// 4: never-enabled logs read quiet for the rules that judge only enabled time (needsEnabled); now not checked.
+export const SUMMARY_SHAPE = 4
 
 export type RuleStatus = 'fired' | 'quiet' | 'not checked'
 
