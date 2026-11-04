@@ -385,6 +385,7 @@ function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchV
     causes,
     nextStep: p.nextStep ?? rule.nextStep,
     about,
+    ...(itemName && itemName !== about ? { item: itemName } : {}),
     key: about ? `${rule.id} · ${about}` : rule.id,
     evidence: definedOnly(p.evidence),
     measured: p.measured,

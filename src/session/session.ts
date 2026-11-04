@@ -183,6 +183,8 @@ export interface MergedFinding {
   /** The issue's identity (rule · what it is about), the same key known-issue tracking uses. */
   key: string
   rule: string
+  /** The item's name when it differs from what the key says it is about (Finding.item). */
+  item?: string
   severity: Finding['severity']
   /** The latest match's wording. */
   title: string
@@ -241,7 +243,7 @@ export function mergeFindings(session: Session): MergedFinding[] {
     })
     const demoted = f.map((x) => x.demoted).filter((d) => !!d).sort((a, b) => a.when.localeCompare(b.when)).at(-1)
     out.push({
-      key, rule, severity: worst.severity, title: f[f.length - 1].title,
+      key, rule, ...(f[0].item ? { item: f[0].item } : {}), severity: worst.severity, title: f[f.length - 1].title,
       matches: idx, checkable, confidence: confidence(idx.length, checkable), interval: wilson(idx.length, checkable), measured,
       ...(wrongIn.has(key) ? { wrong: wrongIn.get(key) } : {}), ...(demoted ? { demoted } : {}),
     })
