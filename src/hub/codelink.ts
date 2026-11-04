@@ -6,8 +6,8 @@
  *   - API: one `GET /orgs/{org}/repos?per_page=100` per 100 repos of an org (or `GET /repos/{owner}/{repo}` for a named
  *     repo), and one `GET /repos/{owner}/{repo}/commits/{sha}` per (candidate repo, build commit), read only for `.sha`;
  *   - raw.githubusercontent.com (not counted by GitHub): each repo's `src/main/java/frc/robot/Robot.java` at its default
- *     branch, searched for `recordMetadata("Codebase", "<text>")`. No other branch or tag is tried.
- * Stops at the first answer saying no requests remain; what was linked before is kept. `maxRequests` (the pass run when logs
+ *     branch, searched for `recordMetadata("Codebase", "<text>")`, `RAW_READS_AT_ONCE` at a time. No other branch or tag is tried.
+ * Stops at the first refusal, or before a request once an answer said none remain; what was linked before is kept. `maxRequests` (the pass run when logs
  * are added) stops it the same way after that many API requests, and says so as `capped`, which is not GitHub's limit.
  * No node: imports (the page uses `describeCodeLink`).
  */
@@ -22,6 +22,9 @@ const CODEBASE = /recordMetadata\(\s*"Codebase"\s*,\s*"([^"]+)"/
 
 /** The most API requests linking the logs of one add makes: leaves 40 of the 60 an hour for the profile builder's "Use GitHub". */
 export const ADD_LINK_REQUESTS = 20
+
+/** Robot.java reads in flight at once: the 43 repos of one org took 5.0-14.6 s one at a time and 1.0-1.8 s six at a time (2026-11-04). */
+const RAW_READS_AT_ONCE = 6
 
 export interface RepoInfo { full: string; defaultBranch: string; pushedAt: string }
 
@@ -43,7 +46,7 @@ export interface LinkResult {
   unmatched: number
   repos: number
   requests: { api: number; raw: number }
-  /** Set when GitHub said no requests remain; ms since 1970 when they come back. */
+  /** Set when a request was refused or not made because GitHub said none remain; ms since 1970 when they come back. Not set when the last request left was the last one needed. */
   rateLimitedUntil: number | null
   /** Set when `maxRequests` was reached and the rest was left for the Link code button; what was found is kept. */
   capped: boolean
@@ -67,8 +70,9 @@ export async function linkCode(sources: string[], records: LogRecord[], options:
   const now = options.now ?? Date.now
   const result: LinkResult = { links: new Map(), unmatched: 0, repos: 0, requests: { api: 0, raw: 0 }, rateLimitedUntil: null, capped: false, problems: [] }
   let remaining = Infinity
+  let resetAt: number | null = null
   const api = async (path: string): Promise<Response> => {
-    if (remaining <= 0) throw new RateLimited(result.rateLimitedUntil ?? now())
+    if (remaining <= 0) throw new RateLimited(resetAt ?? now())
     if (result.requests.api >= (options.maxRequests ?? Infinity)) throw new Capped()
     result.requests.api++
     const res = await get(`${API}${path}`, { headers: { Accept: 'application/vnd.github+json' } })
@@ -76,10 +80,10 @@ export async function linkCode(sources: string[], records: LogRecord[], options:
     if (left !== null) remaining = Number(left)
     if (left === '0' || res.status === 429) {
       const reset = Number(res.headers.get('x-ratelimit-reset'))
-      result.rateLimitedUntil = Number.isFinite(reset) && reset > 0 ? reset * 1000 : now()
+      resetAt = Number.isFinite(reset) && reset > 0 ? reset * 1000 : now()
       remaining = 0
-      // A 200 with the last request spent is still an answer; a refusal is not.
-      if (res.status === 403 || res.status === 429) throw new RateLimited(result.rateLimitedUntil)
+      // A 200 with the last request spent is still an answer, and stops the pass only if another request is needed; a refusal stops it now.
+      if (res.status === 403 || res.status === 429) throw new RateLimited(resetAt)
     }
     return res
   }
@@ -94,14 +98,17 @@ export async function linkCode(sources: string[], records: LogRecord[], options:
     result.repos = repos.length
     const wanted = new Set(todo.map((r) => r.robot!.name))
     const byCodebase = new Map<string, RepoInfo[]>()
-    let n = 0
-    if (wanted.size > 0) for (const repo of repos) {
-      if (options.cancelled?.()) break
-      options.onProgress?.(n++, repos.length, repo.full)
-      const text = await readRaw(get, repo, result)
+    let started = 0
+    const texts = wanted.size === 0 ? [] : await mapAtMost(repos, RAW_READS_AT_ONCE, (repo) => {
+      if (options.cancelled?.()) return Promise.resolve(null)
+      options.onProgress?.(started++, repos.length, repo.full)
+      return readRaw(get, repo, result)
+    })
+    // In listing order, as if read one at a time: candidates keep the order the source listed them.
+    texts.forEach((text, i) => {
       const name = text ? CODEBASE.exec(text)?.[1] : undefined
-      if (name && wanted.has(name)) byCodebase.set(name, [...(byCodebase.get(name) ?? []), repo])
-    }
+      if (name && wanted.has(name)) byCodebase.set(name, [...(byCodebase.get(name) ?? []), repos[i]])
+    })
 
     // 2. Each log: candidates by Codebase text, the commit if it has one.
     // Only a definite answer (the commit's full hash, or "not there") is remembered; a failed check is asked again next time it is needed.
@@ -168,6 +175,15 @@ async function list(source: string, api: (path: string) => Promise<Response>): P
     out.push(...rows.map(one))
     if (rows.length < 100) return out
   }
+}
+
+/** `read` over every item, at most `atOnce` in flight; results in the items' order. */
+async function mapAtMost<T, R>(items: T[], atOnce: number, read: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await read(items[i]) } }
+  await Promise.all(Array.from({ length: Math.min(atOnce, items.length) }, worker))
+  return out
 }
 
 async function readRaw(get: typeof fetch, repo: RepoInfo, result: LinkResult): Promise<string | null> {

@@ -108,10 +108,6 @@ export function registerHub(window: () => BrowserWindow | null): void {
     }
   }
   ipcMain.handle('hub:codePlan', codePlan)
-  ipcMain.handle('hub:setCodeSources', async (_e, sources: string[]): Promise<CodePlan> => {
-    await saveSettings({ codeSources: checkTeamSetting(null, sources).sources })
-    return codePlan()
-  })
   /** The full pass: find the repo each code-named log ran, from the saved GitHub sources, uncapped; writes a `meta` record for each log linked. */
   const linkPass = async (): Promise<LinkReport> => {
     const lib = await open()
