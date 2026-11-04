@@ -2,14 +2,15 @@
  * Sharing the library through the team's store. Each machine writes only its own manifest; sync
  *  1. brings teammates' manifests down (they are append-only, so a copy is replaced only by a longer one),
  *  2. puts up the logs this machine brought in that the team store lacks (one at a time, each checked on arrival): copied
- *     inside Drive when they came from there, else uploaded,
+ *     inside Drive when they came from there, else uploaded; it stops after FAILURES_IN_A_ROW failures in a row, since
+ *     those mean something systemic (a rate limit run out, a lost sign-in) and each would cost a minute of back-off,
  *  3. publishes this machine's records for them: the remote manifest is read first, must hold nothing this copy lacks,
  *     and a log's record is written only after its file is there, so a failed upload leaves no record.
  * The triage history (`history/<machine id>.jsonl`) travels the same way, by the same rule, in step 1b: teammates' files
  * down, this machine's up; a copy is replaced only by a longer one that starts with it, anything else is a problem.
  * Nothing is deleted or overwritten on either side.
  */
-import { ManifestConflict, readText, type FileInfo, type StorageAdapter } from './adapter.ts'
+import { ManifestConflict, SignInAgain, readText, type FileInfo, type StorageAdapter } from './adapter.ts'
 import type { LocalLibrary } from './library-store.ts'
 import { fileSource } from './local-adapter.ts'
 import type { LogRecord } from './types.ts'
@@ -42,6 +43,12 @@ function isThere(remote: FileInfo | undefined, r: LogRecord): boolean {
   if (remote.md5 && r.md5 && remote.md5 !== r.md5) return false
   return true
 }
+
+/**
+ * Failed puts in a row after which sync stops trying the remaining logs (the next sync tries them). A run-out rate limit
+ * costs ~61 s of back-off per log (drive-adapter.ts), so 5 is up to ~5 min before the stop.
+ */
+export const FAILURES_IN_A_ROW = 5
 
 export interface SyncOptions {
   onProgress?(done: number, total: number, current: string): void
@@ -88,16 +95,29 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   const todo = mine.filter((r) => !isThere(remote.get(r.path), r))
   report.alreadyThere = mine.length - todo.length
   let done = 0
+  let inARow = 0
   for (const r of todo) {
-    options.onProgress?.(done++, todo.length, r.names[0])
+    options.onProgress?.(done, todo.length, r.names[0])
+    done++ // not inside the call above: `?.` skips its arguments when there is no onProgress
     if (options.cancelled?.()) break
     const there = remote.get(r.path)
     if (there) { report.failed.push({ path: r.path, reason: `the team store has a different file at this path (${there.size} bytes, or other checksums); left alone and not published` }); continue }
     try {
-      report.uploaded.push(await putLog(lib, team, r))
-      remote.set(r.path, { path: r.path, size: r.size, modifiedTime: r.modifiedTime, sha256: r.sha256 })
+      const { info, how } = await putLog(lib, team, r)
+      report.uploaded.push({ path: r.path, size: info.size, how })
+      remote.set(r.path, info)
+      inARow = 0
     } catch (e) {
-      report.failed.push({ path: r.path, reason: e instanceof Error ? e.message : String(e) })
+      // A lost sign-in ends the job with its own error, so the app asks to sign in; this run's report is given up on
+      // purpose: what landed is found by the next sync's listing and published then.
+      if (e instanceof SignInAgain) throw e
+      const reason = e instanceof Error ? e.message : String(e)
+      report.failed.push({ path: r.path, reason })
+      if (++inARow === FAILURES_IN_A_ROW) {
+        const left = todo.length - done
+        report.problems.push(`Stopped after ${inARow} failures in a row (the last: ${reason})${left ? `; ${left} log${left === 1 ? '' : 's'} not tried: run sync again` : ''}`)
+        break
+      }
     }
   }
   options.onProgress?.(todo.length, todo.length, '')
@@ -170,18 +190,22 @@ async function syncHistory(lib: LocalLibrary, team: StorageAdapter, report: Sync
  * every remaining log. A copy Drive reports without a checksum fails too, and is published by the next sync once Drive
  * lists its checksums. A copy whose size or checksums differ from the library's file fails and stays at its path: later
  * syncs report it as a different file there until it is removed by hand.
+ * Returns what the publish step checks with isThere. For a copy, Drive's own answer: the same predicate on the same object
+ * as the check below, so changing one means changing the other (no test can tell them apart). For an upload, the
+ * record's numbers: writeNew proved the sent bytes against the record's sha-256, and the shape of Drive's
+ * upload-completion answer has not been read live (a missing size would read as 0 and un-publish a good upload).
  */
-async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord): Promise<SyncReport['uploaded'][number]> {
+async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord): Promise<{ info: FileInfo; how: SyncReport['uploaded'][number]['how'] }> {
   if (r.sourceId && team.copyInto) {
     const copy = await team.copyInto(r.sourceId, r.path)
     if (!isThere(copy, r)) throw new Error(`the copy inside Drive is not the library's file (${copy.size} bytes, or other checksums); left there and not published`)
     if (!copy.sha256 && !copy.md5) throw new Error('Drive reported no checksum for the copy; not published until the next sync can check it')
-    return { path: r.path, size: copy.size, how: 'copy inside Drive' }
+    return { info: copy, how: 'copy inside Drive' }
   }
   const from = await fileSource(lib.store.at(r.path))
   try {
-    const info = await team.writeNew(r.path, from, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}) })
-    return { path: r.path, size: info.size, how: 'upload' }
+    await team.writeNew(r.path, from, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}) })
+    return { info: { path: r.path, size: r.size, modifiedTime: r.modifiedTime, sha256: r.sha256 }, how: 'upload' }
   } finally { await from.close() }
 }
 
