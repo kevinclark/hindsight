@@ -11,9 +11,9 @@ import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { driveFolderFiles } from '../src/hub/drive-source.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { ingest, localFolderFiles, planIngest } from '../src/hub/ingest.ts'
-import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
+import { FAILURES_IN_A_ROW, fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
 import { describeFile } from '../src/hub/describe-file.ts'
-import { readText } from '../src/hub/adapter.ts'
+import { SignInAgain, readText } from '../src/hub/adapter.ts'
 import { parseManifest } from '../src/hub/types.ts'
 import { robotLog } from './helpers/hub-logs.ts'
 import { FakeDrive } from './helpers/fake-drive.ts'
@@ -260,5 +260,60 @@ describe('Drive to Drive', () => {
     expect(await ownLogsIn(team, a)).toBe(0)
     expect((await syncWithTeam(a, team)).failed).toEqual([])
     expect(await ownLogsIn(team, a)).toBe(1)
+  })
+
+  // Several failures in a row mean something systemic (a rate limit run out, a lost sign-in): stop instead of spending
+  // a minute of back-off on every remaining log.
+  async function copiedMany(n: number) {
+    const drive = new FakeDrive()
+    const teamFolder = drive.addFolder('root', 'team-folder')
+    const old = drive.addFolder('root', 'old logs')
+    for (let i = 0; i < n; i++) drive.addFile(old, `log${i}.wpilog`, robotLog({ clockMs: CLOCK + i * 3600e3, enabled: [20, 55], seed: `m${i}` }))
+    const mk = (root: string) => new DriveAdapter({ rootId: root, token: async () => 'good', fetch: drive.fetch, sleep: async () => {} })
+    const a = await machine('ma')
+    await ingest(a, await driveFolderFiles(mk(old), old, work), options)
+    return { a, team: mk(teamFolder) }
+  }
+
+  it(`stops after ${FAILURES_IN_A_ROW} failures in a row, leaves the rest untried, says so, and still publishes what landed`, async () => {
+    const { a, team } = await copiedMany(FAILURES_IN_A_ROW + 3)
+    const copy = team.copyInto!.bind(team)
+    let tries = 0
+    team.copyInto = async (id, path) => { if (++tries === 1) return copy(id, path); throw new Error('429') }
+    const synced = await syncWithTeam(a, team)
+    expect(tries).toBe(1 + FAILURES_IN_A_ROW)
+    expect(synced.uploaded.length).toBe(1)
+    expect(synced.failed.length).toBe(FAILURES_IN_A_ROW)
+    expect(synced.problems).toEqual([`Stopped after ${FAILURES_IN_A_ROW} failures in a row (the last: 429); 2 logs not tried: run sync again`])
+    expect(await ownLogsIn(team, a)).toBe(1)
+    team.copyInto = copy // the next sync tries the rest
+    const again = await syncWithTeam(a, team)
+    expect(again.uploaded.length).toBe(FAILURES_IN_A_ROW + 2)
+    expect(again.problems).toEqual([])
+  })
+
+  it('a log that lands between failures starts the count again', async () => {
+    const { a, team } = await copiedMany(2 * FAILURES_IN_A_ROW)
+    const copy = team.copyInto!.bind(team)
+    let tries = 0
+    team.copyInto = async (id, path) => { if (++tries % FAILURES_IN_A_ROW === 0) return copy(id, path); throw new Error('403') }
+    const synced = await syncWithTeam(a, team)
+    expect(tries).toBe(2 * FAILURES_IN_A_ROW)
+    expect(synced.failed.length).toBe(2 * (FAILURES_IN_A_ROW - 1))
+    expect(synced.problems).toEqual([])
+  })
+
+  it('the last log failing fifth in a row says it stopped, and names no logs left untried', async () => {
+    const { a, team } = await copiedMany(FAILURES_IN_A_ROW)
+    team.copyInto = async () => { throw new Error('403') }
+    expect((await syncWithTeam(a, team)).problems).toEqual([`Stopped after ${FAILURES_IN_A_ROW} failures in a row (the last: 403)`])
+  })
+
+  it('a lost sign-in ends the sync at once with its own error instead of counting as a failed log', async () => {
+    const { a, team } = await copiedMany(FAILURES_IN_A_ROW + 1)
+    let tries = 0
+    team.copyInto = async () => { tries++; throw new SignInAgain() }
+    await expect(syncWithTeam(a, team)).rejects.toBeInstanceOf(SignInAgain)
+    expect(tries).toBe(1)
   })
 })
