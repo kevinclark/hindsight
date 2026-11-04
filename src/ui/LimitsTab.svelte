@@ -32,7 +32,8 @@
     'limits not known': 'limits not known: no snapshot or code gave them',
   }
   const capText = (g: GroupLimits) => (Number.isNaN(g.capPerMotorA) ? 'not known' : Number.isFinite(g.capPerMotorA) ? `${g.capPerMotorA} A per motor` : 'nothing: both limits switched off')
-  const limitText = (g: GroupLimits, l: LimitView) => (g.verdict === 'limits not known' ? 'not known' : l.limitA === null ? 'not set' : `${l.limitA} A, ${l.on ? 'on' : 'OFF'}`)
+  const onWord = (l: LimitView) => (l.on === null ? 'on or off not known' : l.on ? 'on' : 'OFF')
+  const limitText = (g: GroupLimits, l: LimitView) => (g.verdict === 'limits not known' ? 'not known' : l.limitA === null ? (l.on === false ? 'OFF' : 'not set') : `${l.limitA} A, ${onWord(l)}`)
 </script>
 
 <table class="summary" aria-label="Summary of the groups below">
@@ -63,8 +64,8 @@
   <section class="group">
     <h3>{g.group} <span class={`chip ${g.verdict.replace(/ /g, '-')}`}>{VERDICT[g.verdict]}</span></h3>
     <dl class="config">
-      <div><dt>Supply limit</dt><dd class:off={g.supply.limitA !== null && !g.supply.on}>{limitText(g, g.supply)}</dd><dd class="note">{g.supply.note}</dd></div>
-      <div><dt>Stator limit</dt><dd class:off={g.stator.limitA !== null && !g.stator.on}>{limitText(g, g.stator)}</dd><dd class="note">{g.stator.note}</dd></div>
+      <div><dt>Supply limit</dt><dd class:off={g.supply.on === false}>{limitText(g, g.supply)}</dd><dd class="note">{g.supply.note}</dd></div>
+      <div><dt>Stator limit</dt><dd class:off={g.stator.on === false}>{limitText(g, g.stator)}</dd><dd class="note">{g.stator.note}</dd></div>
       <div><dt>Battery draw capped at</dt><dd class:off={g.capPerMotorA === Infinity}>{capText(g)}</dd><dd class="note">{g.motorCount} motors{g.verdict === 'limits not known' ? '' : ` · at the limit ${(100 * g.shareAtLimit).toFixed(1)} % of enabled time`}</dd></div>
       <div><dt>Set in</dt><dd><code>{g.where}</code></dd></div>
     </dl>

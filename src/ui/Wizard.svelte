@@ -8,7 +8,7 @@
   import { offseason2026 } from '../profiles/2026-offseason.ts'
   import { checkStep, comparability, groupOf, newSession, parseSession, serializeSession, SESSION_FILE_NAME, sweepResult, type LimitsSession } from '../limits/session.ts'
   import { zeroingChecks } from '../limits/zeroing.ts'
-  import { limitsKnown } from '../limits/limits-report.ts'
+  import { limitOn, limitsKnown, onOffWords } from '../limits/limits-report.ts'
   import { matchWhen } from '../match/match.ts'
   import { downloadText } from './download.ts'
   import Scatter from './Scatter.svelte'
@@ -105,7 +105,7 @@
     <label>Mechanism <select bind:value={groupName}><option value="">Choose a mechanism</option>{#each sweepable as g (g.name)}<option value={g.name}>{g.name}</option>{/each}</select></label>
     {#if group}
       {#if limitsKnown(group.limits)}
-        <p>Now: supply limit {group.limits.supplyA ?? '—'} A, <strong>{group.limits.supplyEnabled ? 'on' : 'switched off'}</strong>; stator limit {group.limits.statorA ?? '—'} A ({group.limits.statorEnabled ? 'on' : 'off'}). Set in <code>{group.limits.where}</code>.</p>
+        <p>Now: supply limit {group.limits.supplyA ?? '—'} A, <strong>{onOffWords(limitOn(group.limits, 'supply'))}</strong>; stator limit {group.limits.statorA ?? '—'} A ({onOffWords(limitOn(group.limits, 'stator'))}). Set in <code>{group.limits.where}</code>.</p>
       {:else}
         <p>Now: <strong>limits not known</strong> ({group.limits.where}). Drop a robot snapshot in the builder, or set them in the profile, to compare with today's.</p>
       {/if}
