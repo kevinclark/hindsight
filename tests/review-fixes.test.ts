@@ -5,9 +5,6 @@ import { readFileSync } from 'node:fs'
 import { analyzeFiles } from '../src/analyze.ts'
 import { writeDslog, writeWpilog, type Fixture, type FixtureEntry } from './helpers/fixture-format.ts'
 import { fired } from './helpers/load.ts'
-import { attachDslog } from '../src/match/match.ts'
-import { readDslog } from '../src/readers/dslog.ts'
-import { runRules } from '../src/rules/index.ts'
 
 const autoAndComms = JSON.parse(readFileSync('fixtures/auto-and-comms.json', 'utf8')) as Fixture
 
@@ -37,18 +34,18 @@ describe('Driver Station logs are matched to the match window, not the whole rob
   })
 })
 
-describe('a loaded DS log on a log with no match', () => {
-  it('lists comms/ds-log-truncated as not checked ("no match in this log"), with no finding', () => {
-    // The real fixture's DS log, but the robot was never enabled: nothing to compare the DS log's end against.
-    // analyzeFiles never pairs a DS log with a log that has no match window, so the DS log is attached directly.
-    const neverEnabled = autoAndComms.entries.map((e) => (e.name === '/DriverStation/Enabled' ? { ...e, records: [[0, false]] as [number, boolean][] } : e))
-    const match = analyzeFiles([{ name: 'autoAndComms.wpilog', bytes: writeWpilog(neverEnabled) }], offseason2026).analyses[0].match
-    attachDslog(match, readDslog(writeDslog(autoAndComms.dslog!)), autoAndComms.dslog!.name)
-    expect(match.ds, 'the DS log was loaded').toHaveLength(1)
-    expect(match.matchStart).toBeNull()
-    const report = runRules(match)
-    expect(report.findings.filter((f) => f.rule === 'comms/ds-log-truncated')).toEqual([])
-    expect(report.skipped.find((s) => s.rule === 'comms/ds-log-truncated')?.reason).toBe('no match in this log')
+describe('comms/ds-log-truncated on a log with no match', () => {
+  const neverEnabled = autoAndComms.entries.map((e) => (e.name === '/DriverStation/Enabled' ? { ...e, records: [[0, false]] as [number, boolean][] } : e))
+  const reason = (r: ReturnType<typeof analyzeFiles>) => r.analyses[0].report.skipped.find((s) => s.rule === 'comms/ds-log-truncated')?.reason
+  it('is not checked ("no match in this log"), with no finding, whether or not a .dslog was dropped with it', () => {
+    for (const withDs of [true, false]) {
+      const files = [{ name: 'autoAndComms.wpilog', bytes: writeWpilog(neverEnabled) }]
+      if (withDs) files.push({ name: autoAndComms.dslog!.name, bytes: writeDslog(autoAndComms.dslog!) })
+      const r = analyzeFiles(files, offseason2026)
+      expect(r.analyses[0].match.matchStart).toBeNull()
+      expect(r.analyses[0].report.findings.filter((f) => f.rule === 'comms/ds-log-truncated')).toEqual([])
+      expect(reason(r)).toBe('no match in this log')
+    }
   })
 })
 
