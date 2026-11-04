@@ -153,13 +153,18 @@ const robot: RobotProfile = {
     },
     {
       name: 'Intake rollers',
+      sameLoop: true, // the follower copies the leader's output, turning the opposite way (SlapdownSubsystem.java:86, Opposed)
       // Leader 9 (Robot.java:76), follower 10 (SlapdownSubsystem.java:86).
-      // The two rollers name their temperature differently in the log.
-      motors: [{ m: 'Leader', canId: 9, temp: 'TemperatureCelsius' }, { m: 'Follower', canId: 10, temp: 'TempC' }].map(({ m, canId, temp }) => ({
+      // The two rollers name their temperature and velocity differently in the log.
+      motors: [
+        { m: 'Leader', canId: 9, temp: 'TemperatureCelsius', velocity: 'VelocityRotsPerSec' },
+        { m: 'Follower', canId: 10, temp: 'TempC', velocity: 'VelocityRotPerSec' },
+      ].map(({ m, canId, temp, velocity }) => ({
         name: `Intake roller ${m.toLowerCase()}`,
         canId,
         supplyCurrent: `/Intake/Roller ${m}/SupplyCurrentAmps`,
         statorCurrent: `/Intake/Roller ${m}/StatorCurrentAmps`,
+        velocity: `/Intake/Roller ${m}/${velocity}`,
         connected: `/Intake/Roller ${m}/Connected`,
         temperature: `/Intake/Roller ${m}/${temp}`,
         updating: `/Intake/Roller ${m}/StatorCurrentAmps`,
