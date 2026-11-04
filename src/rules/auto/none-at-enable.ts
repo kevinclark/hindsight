@@ -39,9 +39,9 @@ export default rule({
   thresholds: [
     { name: 'which enable is checked', value: 'the first auto on the field', basis: 'measured', how: 'On 141 local logs (2026-10-19), 74 of the 83 first enables off the field with a chooser read "None", which is normal in the pit. A log can hold queue or pit enables before the match: 4 of 74 on-field library logs (2026-11-04), none of which would fire.' },
   ],
+  needsEnabled: true,
 
   check(match) {
-    if (match.enabled.length === 0) return match.couldNotCheck('the robot was never enabled')
     if (!match.has('fmsAttached')) return match.couldNotCheck('the log has no FMS-attached flag')
     const fmsAttached = match.signal('fmsAttached')
     const first = match.auto.find((auto) => fmsAttached.at(auto.start) > 0.5)

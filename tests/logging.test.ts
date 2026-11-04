@@ -74,8 +74,10 @@ describe('auto/none-at-enable', () => {
     const a = analyze(robotLog({ fmsAt: 25, chooser: [[5, 'None']] }))
     expect(a.report.skipped.find((s) => s.rule === 'auto/none-at-enable')?.reason).toBe('no auto on the field in this log')
   })
-  it('stays quiet when the first enable is teleop (a restarted piece of a match)', () => {
-    expect(findings(robotLog({ firstAuto: false, chooser: [[5, 'None']] }))).toEqual([])
+  it('says "not checked" when the log has no auto at all (a restarted piece of a match)', () => {
+    const a = analyze(robotLog({ firstAuto: false, chooser: [[5, 'None']] }))
+    expect(a.report.findings.filter((f) => f.rule === 'auto/none-at-enable')).toEqual([])
+    expect(a.report.skipped.find((s) => s.rule === 'auto/none-at-enable')?.reason).toBe('no auto on the field in this log')
   })
   it('says "not checked" when the chooser was first logged after auto started', () => {
     const a = analyze(robotLog({ chooser: [[22, 'None']] }))
