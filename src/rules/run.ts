@@ -233,6 +233,10 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
   const notChecked: string[] = []
   // A pit check has nothing to judge in a match log (no disabled stretch): it stays quiet.
   if (rule.foresightOnly && view.beforeEnable.length === 0) return { findings, notChecked, items: 0, itemsSkipped: 0 }
+  // Only enabled time is judged and there was none (a Foresight view's disabled pit stretch counts): not "quiet", not checked.
+  if (rule.needsEnabled && view.enabled.length === 0 && view.beforeEnable.length === 0) {
+    return { findings, notChecked: ['the robot was never enabled'], items: 1, itemsSkipped: 1 }
+  }
   let items: ReturnType<typeof itemsFor>
   let listed: number
   try {
@@ -381,6 +385,7 @@ function toFinding(rule: Rule, p: Problem, itemName: string | null, view: MatchV
     causes,
     nextStep: p.nextStep ?? rule.nextStep,
     about,
+    ...(itemName && itemName !== about ? { item: itemName } : {}),
     key: about ? `${rule.id} · ${about}` : rule.id,
     evidence: definedOnly(p.evidence),
     measured: p.measured,

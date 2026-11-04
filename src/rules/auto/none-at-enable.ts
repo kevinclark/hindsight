@@ -1,15 +1,17 @@
 /**
  * Was an auto chosen when the match started?
  *
- * Checks: the log's first enable is autonomous with the field (FMS) attached, and the auto chooser reads "None" at
- * that moment.
+ * Checks: the first auto in the log that started with the field (FMS) attached, and whether the auto chooser reads
+ * "None" at that moment.
  * Why: the chooser starts at "None" every time the robot code starts, and the drive team picks the auto by hand after
  * the field connects (three 2026 matches: 1.0–6.1 s after the FMS attached). Forget it, and the robot sits
  * still for the whole auto.
  *
- * Only the first enable, and only on the field (measured on 141 local logs, 2026-10-19): off the field, 74 of the 83
- * first enables with a chooser read "None", and that is normal in the pit. On the field, a log whose first enable is
- * teleop is a restarted piece of a match, which loop/restart-mid-match reports. Amber until it has caught a real match.
+ * Only the first auto on the field (measured on 141 local logs, 2026-10-19): off the field, 74 of the 83 first
+ * enables with a chooser read "None", and that is normal in the pit. A log can hold a queue or pit enable before the
+ * match, so the log's first enable is not always the match (4 of 74 on-field library logs, 2026-11-04; none of them
+ * would have fired). A log with no auto on the field (a restarted piece of a match starts in teleop) is
+ * loop/restart-mid-match's. Amber until it has caught a real match.
  */
 import { rule, round } from '../rule.ts'
 import { WPILIB_AUTO_CHOOSER } from '../sources.ts'
@@ -35,16 +37,15 @@ export default rule({
     { ...WPILIB_AUTO_CHOOSER, says: 'The option set with setDefaultOption is the one selected when the dashboard starts; a person picks the auto before autonomous begins and the code reads it in autonomousInit.' },
   ],
   thresholds: [
-    { name: 'which enable is checked', value: 'the first enable, on the field', basis: 'measured', how: 'On 141 local logs (2026-10-19), 74 of the 83 first enables off the field with a chooser read "None", which is normal in the pit; on the field the first enable is the match.' },
+    { name: 'which enable is checked', value: 'the first auto on the field', basis: 'measured', how: 'On 141 local logs (2026-10-19), 74 of the 83 first enables off the field with a chooser read "None", which is normal in the pit. A log can hold queue or pit enables before the match: 4 of 74 on-field library logs (2026-11-04), none of which would fire.' },
   ],
+  needsEnabled: true,
 
   check(match) {
-    const first = match.enabled[0]
-    if (!first) return match.couldNotCheck('the robot was never enabled')
     if (!match.has('fmsAttached')) return match.couldNotCheck('the log has no FMS-attached flag')
-    const onField = match.signal('fmsAttached').at(first.start) > 0.5
-    const autonomous = match.auto[0]?.start === first.start
-    if (!onField || !autonomous) return match.couldNotCheck('the first enable was not auto on the field')
+    const fmsAttached = match.signal('fmsAttached')
+    const first = match.auto.find((auto) => fmsAttached.at(auto.start) > 0.5)
+    if (!first) return match.couldNotCheck('no auto on the field in this log')
 
     const chooser = match.text('autoChoice')
     const chosen = chooser.at(first.start)
@@ -55,7 +56,7 @@ export default rule({
     if (!NO_AUTO.test(chosen)) return
 
     const pickedLater = firstPickAfter(chooser.series, first.start)
-    const moved = distanceDriven(match, match.auto.slice(0, 1))
+    const moved = distanceDriven(match, [first])
 
     return {
       message: `No auto chosen: the auto chooser read "${chosen}" when auto started at ${match.when(first.start)}`,

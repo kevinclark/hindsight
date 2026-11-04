@@ -34,6 +34,21 @@ describe('Driver Station logs are matched to the match window, not the whole rob
   })
 })
 
+describe('comms/ds-log-truncated on a log with no match', () => {
+  const neverEnabled = autoAndComms.entries.map((e) => (e.name === '/DriverStation/Enabled' ? { ...e, records: [[0, false]] as [number, boolean][] } : e))
+  const reason = (r: ReturnType<typeof analyzeFiles>) => r.analyses[0].report.skipped.find((s) => s.rule === 'comms/ds-log-truncated')?.reason
+  it('is not checked ("no match in this log"), with no finding, whether or not a .dslog was dropped with it', () => {
+    for (const withDs of [true, false]) {
+      const files = [{ name: 'autoAndComms.wpilog', bytes: writeWpilog(neverEnabled) }]
+      if (withDs) files.push({ name: autoAndComms.dslog!.name, bytes: writeDslog(autoAndComms.dslog!) })
+      const r = analyzeFiles(files, offseason2026)
+      expect(r.analyses[0].match.matchStart).toBeNull()
+      expect(r.analyses[0].report.findings.filter((f) => f.rule === 'comms/ds-log-truncated')).toEqual([])
+      expect(reason(r)).toBe('no match in this log')
+    }
+  })
+})
+
 describe('the match window ignores enables before the match', () => {
   const entries: FixtureEntry[] = [
     { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [40, true], [60, false], [200, true], [220, false], [223, true], [363, false]] },

@@ -57,8 +57,27 @@ describe('auto/none-at-enable', () => {
     expect(findings(robotLog({ fmsAt: null, chooser: [[5, 'None']] }))).toEqual([])
     expect(findings(robotLog({ fmsAt: 25, chooser: [[5, 'None']] }))).toEqual([])
   })
-  it('stays quiet when the first enable is teleop (a restarted piece of a match)', () => {
-    expect(findings(robotLog({ firstAuto: false, chooser: [[5, 'None']] }))).toEqual([])
+  it('judges the first auto on the field, not the log\'s first enable (a teleop enable off the field came first)', () => {
+    const entries: Entries = [
+      { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [30, false], [45, true], [60, false]] },
+      { name: '/DriverStation/Autonomous', type: 'boolean', records: [[10, false], [45, true], [60, false]] },
+      { name: '/DriverStation/FMSAttached', type: 'boolean', records: [[10, false], [40, true]] },
+      { name: '/DriverStation/DSAttached', type: 'boolean', records: [[10, true]] },
+      { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[10, 12.5], [60, 12.4]] },
+      { name: '/NetworkInputs/SmartDashboard/Autos', type: 'string', records: [[5, 'None']] },
+    ]
+    const [f] = findings(entries)
+    expect(f.title).toMatch(/No auto chosen: the auto chooser read "None" when auto started/)
+    expect(f.time).toBe(45)
+  })
+  it('says "not checked" when no auto in the log started on the field', () => {
+    const a = analyze(robotLog({ fmsAt: 25, chooser: [[5, 'None']] }))
+    expect(a.report.skipped.find((s) => s.rule === 'auto/none-at-enable')?.reason).toBe('no auto on the field in this log')
+  })
+  it('says "not checked" when the log has no auto at all (a restarted piece of a match)', () => {
+    const a = analyze(robotLog({ firstAuto: false, chooser: [[5, 'None']] }))
+    expect(a.report.findings.filter((f) => f.rule === 'auto/none-at-enable')).toEqual([])
+    expect(a.report.skipped.find((s) => s.rule === 'auto/none-at-enable')?.reason).toBe('no auto on the field in this log')
   })
   it('says "not checked" when the chooser was first logged after auto started', () => {
     const a = analyze(robotLog({ chooser: [[22, 'None']] }))

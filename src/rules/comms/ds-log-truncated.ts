@@ -31,9 +31,9 @@ export default rule({
   ],
 
   check(match) {
-    if (match.dsLogs.length === 0) return match.couldNotCheck('no .dslog loaded for this match (drop the .dslog together with the .wpilog)')
     const { autoStart, matchEnd } = match
     if (autoStart === null || matchEnd === null) return match.couldNotCheck('no match in this log')
+    if (match.dsLogs.length === 0) return match.couldNotCheck('no .dslog loaded for this match (drop the .dslog together with the .wpilog)')
 
     // Every DS log that stops inside the match counts, including the first of two when the DS app restarted. Off the field
     // that is inside a run: a DS app closed between runs cut nothing.

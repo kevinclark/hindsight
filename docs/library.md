@@ -69,8 +69,10 @@ panel. Neither is committed.
   404, 422 or the limit) counts as "not there" for that run, adds a problem line, and is asked again next time. Writing a
   link that is the same as the one held (but for `checkedAt`) writes nothing. A log with no reading stamped yet gets the link
   record under this build's id, so "Read logs again" will skip it until a newer version; run it first. Not done: sharing
-  `src/code/github.ts` (it has no org listing or commits lookup), and re-checking commits known to be missing. It stops at the first "no requests remain" answer, says when the
-  limit resets and keeps what it linked. Two repos recording one text: the one holding the commit wins; with no commit, a name
+  `src/code/github.ts` (it has no org listing or commits lookup), and re-checking commits known to be missing. It stops at a refusal (403 or 429), or before the next request once an answer
+  said none remain (a 200 that spends the last request still counts), says when the limit resets and keeps what it linked.
+  The `Robot.java` reads run six at a time; one that fails other than with a 404 adds a problem line, so the pass is tried
+  again on the next save. A cancelled pass is tried again too. Two repos recording one text: the one holding the commit wins; with no commit, a name
   without "template" or "training", then the latest push; the others are kept as `candidates`. The link is stored as a `meta`
   record (`code`: repo, `linkedBy` `sha` or `codebase`, full sha when by commit, `checkedAt`). No tag or branch other than
   the default is tried, so a Codebase line that moved off the default branch is not found.
