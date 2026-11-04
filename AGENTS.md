@@ -56,6 +56,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 - A group's limits with no number and no on/off mean *not known* (5531e0e): the Limits tab, budget and wizard say so,
   never Phoenix's defaults. Phoenix 6 (CurrentLimitsConfigs): SupplyCurrentLowerTime 0 turns the lower limit off, and both
   Enable flags default to true, so a limit set without its Enable line runs.
+  Per kind inside a known group (`limitOn`, `src/limits/limits-report.ts`): no number and no flag is Phoenix's default;
+  a number with no flag is on or off *not known*, because a hand-written profile may simply not say (LN-09). A profile
+  drafted from code leaves the flag out when the code has no Enable line (16 of 152 code-drafted groups, 2026-11-04).
 
 ## Plain-node scripts
 

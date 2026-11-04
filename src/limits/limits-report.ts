@@ -22,6 +22,27 @@ export const PHOENIX_DEFAULTS = { supplyA: 70, statorA: 120, supplyLowerA: 40, s
  */
 export const limitsKnown = (l: CurrentLimits) => [l.supplyA, l.statorA, l.supplyEnabled, l.statorEnabled].some((x) => x !== undefined)
 
+/**
+ * Whether a limit runs, from the profile's Enable flag. A flag the profile sets is the answer. With no flag and no
+ * number the profile says nothing about this kind, so it is read the way the Limits tab always has: Phoenix's default
+ * runs (true). With a number and no flag it is not known (null): Phoenix 6 defaults the flag to true, but a
+ * hand-written profile may simply not say (limit-not-applied, LN-09). Call it only for a group whose limits are known.
+ */
+export function limitOn(l: CurrentLimits, kind: 'supply' | 'stator'): boolean | null {
+  const [limitA, enabled] = kind === 'supply' ? [l.supplyA, l.supplyEnabled] : [l.statorA, l.statorEnabled]
+  if (enabled !== undefined) return enabled
+  return limitA === undefined ? true : null
+}
+
+/** How the wizard says one limit: "40 A, on", "40 A, switched off", "40 A, on or off: …", or Phoenix's default. */
+export function limitWords(l: CurrentLimits, kind: 'supply' | 'stator'): string {
+  const [limitA, defaultA] = kind === 'supply' ? [l.supplyA, PHOENIX_DEFAULTS.supplyA] : [l.statorA, PHOENIX_DEFAULTS.statorA]
+  const on = limitOn(l, kind)
+  if (on === false) return limitA === undefined ? 'switched off' : `${limitA} A, switched off`
+  if (limitA === undefined) return `not set: Phoenix's default ${defaultA} A`
+  return on ? `${limitA} A, on` : `${limitA} A, on or off: the profile doesn't say`
+}
+
 /** Phoenix 6 ignores SupplyCurrentLowerLimit when SupplyCurrentLowerTime is 0 (CurrentLimitsConfigs, 26.x): the supply limit holds. */
 export const lowerLimitOff = (l: CurrentLimits) => l.supplyLowerSeconds === 0
 
@@ -47,10 +68,13 @@ export interface CurrentStats {
 
 export interface LimitView {
   kind: 'supply' | 'stator'
-  /** The configured value, and whether the code switches it on. */
+  /** The configured value, and whether the code switches it on (null: the profile doesn't say, see limitOn). */
   limitA: number | null
-  on: boolean
-  /** What actually limits the motor: the configured value when on; nothing (or the stator limit) when off. */
+  on: boolean | null
+  /**
+   * What actually limits the motor: the configured value when on; nothing (or the stator limit) when off; the number
+   * if the code switches it on, when the profile doesn't say (on null).
+   */
   note: string
   motors: CurrentStats[]
 }
@@ -78,8 +102,6 @@ function groupLimits(match: Match, g: MotorGroup): GroupLimits {
   const L = g.limits
   const supplyLimit = L.supplyA ?? null
   const statorLimit = L.statorA ?? null
-  const supplyOn = !!L.supplyEnabled && supplyLimit !== null
-  const statorOn = !!L.statorEnabled && statorLimit !== null
   const lower = {
     limitA: L.supplyLowerA ?? PHOENIX_DEFAULTS.supplyLowerA,
     seconds: L.supplyLowerSeconds ?? PHOENIX_DEFAULTS.supplyLowerSeconds,
@@ -88,31 +110,41 @@ function groupLimits(match: Match, g: MotorGroup): GroupLimits {
   // Limits not known: no note claims a default, and currents are shown with no limit to compare them with.
   const known = limitsKnown(L)
   const unknown = L.where.startsWith('not known') ? L.where : `not known: ${L.where}`
+  // A group whose limits aren't known says nothing about on or off either.
+  const supplyOn = known ? limitOn(L, 'supply') : null
+  const statorOn = known ? limitOn(L, 'stator') : null
+  const off = (kind: string, defaultA: number) => `switched off in code: this removes Phoenix's default ${defaultA} A ${kind} limit`
+  const notSaid = (limitA: number | null, flag: string) => `${limitA} A if the code switches it on: the profile doesn't say. Phoenix switches it on unless the code sets ${flag} = false`
   const supply: LimitView = {
     kind: 'supply', limitA: supplyLimit, on: supplyOn,
-    note: !known ? unknown : supplyOn && lowerLimitOff(L) ? `capped at ${supplyLimit} A; no lower limit (the code sets its time to 0)`
-      : supplyOn ? `capped at ${supplyLimit} A; after ${lower.seconds} s at the cap it drops to ${lower.limitA} A${lower.fromDefaults ? ' (Phoenix defaults: the code doesn\'t set these)' : ''}`
-      : supplyLimit !== null ? `switched off in code: this removes Phoenix's default ${PHOENIX_DEFAULTS.supplyA} A supply limit` : `not set: Phoenix's default ${PHOENIX_DEFAULTS.supplyA} A applies`,
+    note: !known ? unknown : supplyOn === false ? off('supply', PHOENIX_DEFAULTS.supplyA) : supplyOn === null ? notSaid(supplyLimit, 'SupplyCurrentLimitEnable')
+      : supplyLimit === null ? `not set: Phoenix's default ${PHOENIX_DEFAULTS.supplyA} A applies`
+      : lowerLimitOff(L) ? `capped at ${supplyLimit} A; no lower limit (the code sets its time to 0)`
+      : `capped at ${supplyLimit} A; after ${lower.seconds} s at the cap it drops to ${lower.limitA} A${lower.fromDefaults ? ' (Phoenix defaults: the code doesn\'t set these)' : ''}`,
     motors: g.motors.flatMap((m) => (m.supplyCurrent && has(match, m.supplyCurrent) ? [stats(match, m.name, num(match, m.supplyCurrent)!, known ? (supplyLimit ?? PHOENIX_DEFAULTS.supplyA) : Infinity)] : [])),
   }
   const stator: LimitView = {
     kind: 'stator', limitA: statorLimit, on: statorOn,
-    note: !known ? unknown : statorOn ? `capped at ${statorLimit} A` : statorLimit !== null ? `switched off in code: this removes Phoenix's default ${PHOENIX_DEFAULTS.statorA} A stator limit` : `not set: Phoenix's default ${PHOENIX_DEFAULTS.statorA} A applies`,
+    note: !known ? unknown : statorOn === false ? off('stator', PHOENIX_DEFAULTS.statorA) : statorOn === null ? notSaid(statorLimit, 'StatorCurrentLimitEnable')
+      : statorLimit === null ? `not set: Phoenix's default ${PHOENIX_DEFAULTS.statorA} A applies` : `capped at ${statorLimit} A`,
     motors: g.motors.flatMap((m) => (m.statorCurrent && has(match, m.statorCurrent) ? [stats(match, m.name, num(match, m.statorCurrent)!, known ? (statorLimit ?? PHOENIX_DEFAULTS.statorA) : Infinity)] : [])),
   }
-  // What actually caps battery draw: each limit that exists (configured and on, or not set so Phoenix's default
-  // applies; a limit switched off in code is gone). Supply can't exceed stator, so the stator limit caps it too.
-  const supplyCap = supplyOn ? supplyLimit! : supplyLimit === null ? PHOENIX_DEFAULTS.supplyA : Infinity
-  const statorCap = statorOn ? statorLimit! : statorLimit === null ? PHOENIX_DEFAULTS.statorA : Infinity
-  const capPerMotorA = known ? Math.min(supplyCap, statorCap) : NaN
-  const limiting = supplyOn ? supply : statorOn ? stator : supply
+  // What actually caps battery draw: each limit that runs (configured and on, or not set so Phoenix's default
+  // applies; a limit switched off in code is gone). Supply can't exceed stator, so the stator limit caps it too. A
+  // limit whose flag the profile doesn't give could be either, so the cap is known only when both readings agree.
+  const caps = (on: boolean | null, limitA: number | null, defaultA: number) => (on === false ? [Infinity] : on === null ? [limitA ?? Infinity, Infinity] : [limitA ?? defaultA])
+  const possible = !known ? [NaN] : caps(supplyOn, supplyLimit, PHOENIX_DEFAULTS.supplyA).flatMap((s) => caps(statorOn, statorLimit, PHOENIX_DEFAULTS.statorA).map((t) => Math.min(s, t)))
+  const capPerMotorA = possible.every((c) => c === possible[0]) ? possible[0] : NaN
+  // The limit the share is measured against: a configured one that may be on, the supply limit first.
+  const mayRun = (l: LimitView) => l.on !== false && l.limitA !== null
+  const limiting = mayRun(supply) ? supply : mayRun(stator) ? stator : supply
   const enabledSeconds = match.enabled.reduce((s, iv) => s + iv.end - iv.start, 0)
   const atLimit = limiting.motors.length ? Math.max(...limiting.motors.map((m) => m.secondsAtLimit)) : 0
   const shareAtLimit = enabledSeconds > 0 ? atLimit / enabledSeconds : 0
   const peak = Math.max(0, ...supply.motors.map((m) => m.peak))
   const verdict = !known ? 'limits not known' : supply.motors.length === 0 ? 'no current logged'
     : shareAtLimit >= 0.2 ? 'limit-bound'
-    : peak < 0.7 * capPerMotorA ? 'unconstrained'
+    : peak < 0.7 * Math.min(...possible) ? 'unconstrained'
     : 'reaches the limit'
   return { group: g.name, where: L.where, supplyLines: L.supplyLines ?? null, motorCount: g.motors.length, supply, stator, lower, capPerMotorA, shareAtLimit, verdict }
 }
