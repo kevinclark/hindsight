@@ -59,7 +59,7 @@ export type Stopped = NotSeenSince | SinceFixed
  * Has this finding stopped firing? The issue's fixed mark leads; when it fired again after the mark (the view's
  * "Came back after a fix"), nothing is said here.
  */
-export function stoppedFiring(session: Session, f: Pick<MergedFinding, 'key' | 'rule' | 'matches'>, issue?: IssueEvent): Stopped | null {
+export function stoppedFiring(session: Session, f: Pick<MergedFinding, 'key' | 'rule' | 'item' | 'matches'>, issue?: IssueEvent): Stopped | null {
   if (issue?.status === 'fixed') return sinceFixedMark(session, f, issue)
   return notSeenSince(session, f.rule)
 }
@@ -84,7 +84,7 @@ export function notSeenSince(session: Session, rule: string): NotSeenSince | nul
 }
 
 /** After a fixed mark: the matches since it where the rule looked and this issue stayed quiet. Null if it came back. */
-export function sinceFixedMark(session: Session, f: Pick<MergedFinding, 'key' | 'rule' | 'matches'>, issue: IssueEvent): SinceFixed | null {
+export function sinceFixedMark(session: Session, f: Pick<MergedFinding, 'key' | 'rule' | 'item' | 'matches'>, issue: IssueEvent): SinceFixed | null {
   const markedAt = Date.parse(issue.when)
   if (Number.isNaN(markedAt)) return null
   const all = session.matches.map((_, i) => i)
@@ -99,11 +99,13 @@ export function sinceFixedMark(session: Session, f: Pick<MergedFinding, 'key' | 
 }
 
 /** The rule looked at this issue in this match: it wasn't "not checked" there, nor was the issue's own item. */
-function lookedFor(m: MatchSummary, f: Pick<MergedFinding, 'key' | 'rule'>): boolean {
+function lookedFor(m: MatchSummary, f: Pick<MergedFinding, 'key' | 'rule' | 'item'>): boolean {
   const r = m.rules[f.rule]
   if (!r || r.status === 'not checked') return false
   // A rule that checks each motor or camera names the ones it skipped: "partly checked; Hood: never moved".
-  const about = f.key === f.rule ? null : f.key.slice(f.rule.length + ' · '.length)
+  // The runner starts each reason with the item's name, which is not always what the key says it is about
+  // (limit-not-applied: the item "Drive", the key "… · Drive supply").
+  const about = f.key === f.rule ? null : f.item ?? f.key.slice(f.rule.length + ' · '.length)
   return !(about && r.reason?.split('; ').some((part) => part.startsWith(`${about}: `)))
 }
 

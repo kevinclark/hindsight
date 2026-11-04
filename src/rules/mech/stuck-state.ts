@@ -44,6 +44,7 @@ export default rule({
   ],
   needsProfile: true,
 
+  needsEnabled: true,
   check(match) {
     const machine = match.profile.stateMachine
     if (!machine) return match.couldNotCheck('the robot profile names no state machine')

@@ -160,6 +160,31 @@ describe("a student's fixed mark leads, and counts only matches after its time",
   })
 })
 
+describe("a fixed mark on a finding whose key's 'about' is not the item's name (limit-not-applied: 'Drive supply' for the item 'Drive')", () => {
+  it('a later match where that item was not checked is not counted as quiet', () => {
+    const s = session('XX.', { about: 'Drive supply' })
+    // The runner prefixes reasons with the item's name ("Drive: ..."), and the finding carries that name as `item`.
+    for (const m of s.matches) for (const f of m.rules[RULE].findings) f.item = 'Drive'
+    s.matches[2].rules[RULE] = { status: 'quiet', reason: 'partly checked; Drive: no supply current logged', findings: [] }
+    const f = mergeFindings(s).find((x) => x.key === `${RULE} · Drive supply`)!
+    expect(stoppedFiring(s, f, fixed(START + 1.5 * HOUR, f.key))).toMatchObject({ kind: 'fixed mark', quiet: 0 })
+  })
+  it('a finding with no item (the item is its about) is counted as before', () => {
+    const s = session('XX.', { about: 'Drive' })
+    s.matches[2].rules[RULE] = { status: 'quiet', reason: 'partly checked; Drive: no supply current logged', findings: [] }
+    const f = mergeFindings(s).find((x) => x.key === `${RULE} · Drive`)!
+    expect(stoppedFiring(s, f, fixed(START + 1.5 * HOUR, f.key))).toMatchObject({ quiet: 0 })
+  })
+})
+
+describe('the item name comes from the first finding that has one', () => {
+  it('a summary saved before `item` existed can sit first', () => {
+    const s = session('XX.', { about: 'Drive supply' })
+    s.matches[1].rules[RULE].findings[0].item = 'Drive'
+    expect(mergeFindings(s).find((x) => x.key === `${RULE} · Drive supply`)?.item).toBe('Drive')
+  })
+})
+
 describe('code changed in between: the log builds of the last firing and the next clean match', () => {
   it('adds "code changed in between: abc1234 → def5678" when they differ', () => {
     const s = session('XXXX...', { shas: ['abc1234', 'abc1234', 'abc1234', 'abc1234', 'def5678', 'def5678', 'def5678'] })

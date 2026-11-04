@@ -103,4 +103,27 @@ describe('what the runner does with an answer', () => {
     const r = runRules(a.match, [{ ...template, id: 'example/pit', foresightOnly: true, check: (m) => ({ message: 'pit', at: m.pitStretch.end }) }])
     expect(r).toEqual({ findings: [], skipped: [], crashed: [] })
   })
+  describe('needsEnabled', () => {
+    const neverEnabled = writeWpilog([
+      { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [35, false]] },
+      { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[10, 12.3], [35, 12.2]] },
+    ])
+    const quiet = analyzeFiles([{ name: 'test.wpilog', bytes: neverEnabled }], offseason2026).analyses[0].match
+    const judgesEnabled = { ...template, id: 'example/enabled-only', needsEnabled: true, check: () => undefined }
+    it('a log that was never enabled gives a needsEnabled rule "not checked", not quiet', () => {
+      const r = runRules(quiet, [judgesEnabled])
+      expect(r.findings.map((f) => f.rule)).toEqual(['meta/not-checked'])
+      expect(r.skipped).toEqual([{ rule: 'example/enabled-only', reason: 'the robot was never enabled' }])
+    })
+    it('the same log is unchanged for a rule without the flag', () => {
+      const r = runRules(quiet, [{ ...judgesEnabled, id: 'example/whole-log', needsEnabled: undefined }])
+      expect(r).toEqual({ findings: [], skipped: [], crashed: [] })
+    })
+    it('a Foresight view (a pit stretch to judge) is not skipped', () => {
+      const pit = { ...quiet, foresight: { start: 10, end: 35, lastPassingSha: null } }
+      const r = runRules(pit, [{ ...judgesEnabled, check: (m) => ({ message: 'pit', at: m.pitStretch ? 20 : 0 }) }])
+      expect(r.skipped).toEqual([])
+      expect(r.findings.map((f) => f.rule)).toEqual(['example/enabled-only'])
+    })
+  })
 })
