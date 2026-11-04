@@ -167,6 +167,10 @@ A rule that judges the robot sitting disabled in the pit sets `foresightOnly: tr
 (the stretch it checks, up to now). It doesn't run on match logs. `src/rules/foresight/motor-temperature.ts` is the
 simplest one.
 
+A rule that judges only enabled time sets `needsEnabled: true`: on a log where the robot was never enabled the runner
+lists it as not checked ("the robot was never enabled") instead of letting it count as quiet. Leave it off a rule that
+judges the whole log (`power/brownout`).
+
 ### When one finding explains another (links)
 
 Some findings are one story: the battery collapsed, so the robot browned out, so a motor controller lost power and

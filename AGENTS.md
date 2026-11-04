@@ -28,7 +28,8 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   require zero residual differences per log (2026-10-20: 264 logs, can/device-rebooted).
 - A session counts a quiet match as clean ("not seen since", src/session/stopped.ts), so a `check` whose early
   return means "this didn't happen in the match" (never enabled, not on the field, never moved) calls
-  `match.couldNotCheck`, never a bare `return`. A rule for only some motors or groups declares `only`: an item
+  `match.couldNotCheck`, never a bare `return` (a rule that judges only enabled time sets `needsEnabled: true`, which covers
+  the never-enabled case). A rule for only some motors or groups declares `only`: an item
   that returns nothing counts as checked (2026-10-21: 12 rules changed, 264-log golden 0 residual).
 - Read AdvantageKit's GitDirty only through `isUncommitted()` (`src/match/git-dirty.ts`), never a regex of your
   own: older AdvantageKit writes "Uncomitted changes" (one m), and `/uncommitted/i` missed 10 of 520 library

@@ -135,7 +135,7 @@
   .t .small { display: block; overflow-wrap: anywhere; font-size: 7pt; line-height: 1.08; }
   .stopped { display: block; font-size: 7.5pt; line-height: 1.1; overflow-wrap: anywhere; }
   .stopped.sunk { font-weight: 700; }
-  .finds li.head { display: block; border-bottom: none; padding-top: 0.2rem; }
+  .finds li.head { display: block; border-bottom: none; padding-top: 0.2rem; break-after: avoid; }
   h3 { font-size: 8.5pt; margin: 0; }
   .badge { font-size: 7.5pt; font-weight: 700; padding: 0 0.3rem; border: 1px solid var(--error); border-radius: 3px; color: var(--error); }
   .multiples { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.15rem 0.4rem; margin-top: 0.15rem; }

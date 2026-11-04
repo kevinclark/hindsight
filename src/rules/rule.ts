@@ -146,9 +146,10 @@ interface About {
    */
   foresightOnly?: boolean
   /**
-   * The rule judges only enabled time (in Foresight, the disabled pit stretch). A match log where the robot was never
-   * enabled gives it nothing to look at, so it is listed as not checked instead of counting as quiet. Leave it off a
-   * rule that judges the whole log (power/brownout).
+   * The rule judges only enabled time. A match log where the robot was never enabled gives it nothing to look at, so it
+   * is listed as not checked instead of counting as quiet. A Foresight view (it has a pit stretch) is never skipped;
+   * whether the rule reads that stretch is its own business (the CAN rules do, through watched()). Leave it off a rule
+   * that judges the whole log (power/brownout).
    */
   needsEnabled?: boolean
 }
