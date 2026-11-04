@@ -107,11 +107,60 @@ describe('linking a log to its code', () => {
     expect(gh.api()).toBe(4) // nothing is asked after the refusal
   })
 
-  it('keeps links made before a limit that arrives with an answer (remaining 0 on a 200)', async () => {
+  it('does not report a stop when the last request left was the last one needed (remaining 0 on a 200)', async () => {
     const gh = fakeGitHub({ remaining: 0 })
     const r = await linkCode(['testorg'], [log('l1')], { get: gh.get })
     expect(r.links.size).toBe(1) // the listing succeeded with its last request; no commit checks were needed
+    expect(r.rateLimitedUntil).toBeNull() // nothing was stopped, so the page must not say so
+  })
+
+  it('stops before the next request after an answer left none (remaining 0 on a 200), reporting that answer\'s reset time', async () => {
+    const gh = fakeGitHub({ remaining: 0 })
+    const r = await linkCode(['testorg'], [log('l1', { build: { sha: 'abc1234', branch: 'm' } })], { get: gh.get })
+    expect(gh.api()).toBe(1) // the listing only: no commit check is sent once none remain
     expect(r.rateLimitedUntil).toBe(1800000000 * 1000)
+    expect(r.links.has('l1')).toBe(false) // its commit checks never ran, so it is left for next time
+  })
+
+  it('reads Robot.java at most six at a time, and keeps candidates in the order the source listed them', async () => {
+    const many: Repo[] = Array.from({ length: 20 }, (_, i) => ({ name: `r${String(i).padStart(2, '0')}`, pushed: '2026-01-01T00:00:00Z', codebase: 'TestCode' }))
+    const gh = fakeGitHub({ repos: many })
+    let inFlight = 0
+    let most = 0
+    const slow = (async (input: string | URL | Request) => {
+      if (!String(input).startsWith('https://raw.githubusercontent.com/')) return gh.get(input)
+      most = Math.max(most, ++inFlight)
+      // Later repos answer sooner, so finishing order is the reverse of listing order.
+      await new Promise((done) => setTimeout(done, 20 - many.findIndex((r) => String(input).includes(`/${r.name}/`))))
+      inFlight--
+      return gh.get(input)
+    }) as typeof fetch
+    const r = await linkCode(['testorg'], [log('l1')], { get: slow })
+    expect(most).toBe(6)
+    expect(r.requests.raw).toBe(20)
+    expect(r.links.get('l1')).toMatchObject({ repo: 'testorg/r00', candidates: many.slice(1).map((x) => `testorg/${x.name}`) })
+  })
+
+  it('says which Robot.java it could not read (not a 404), and leaves that repo out of the candidates for this run', async () => {
+    const gh = fakeGitHub()
+    const throttled = (async (input: string | URL | Request) =>
+      String(input).includes('/robot-template/') ? new Response('slow down', { status: 429 }) : gh.get(input)) as typeof fetch
+    const r = await linkCode(['testorg'], [log('l1')], { get: throttled })
+    expect(r.problems).toEqual(['testorg/robot-template: could not read src/main/java/frc/robot/Robot.java (GitHub answered 429); treated as not recording a Codebase for now'])
+    expect(r.links.get('l1')!.candidates).toEqual(['testorg/robot-training', 'testorg/robot-older'])
+    expect(r.rateLimitedUntil).toBeNull() // raw reads are not GitHub's API limit
+  })
+
+  it('starts no Robot.java read and links nothing once cancelled', async () => {
+    const many: Repo[] = Array.from({ length: 20 }, (_, i) => ({ name: `r${i}`, pushed: '2026-01-01T00:00:00Z', codebase: 'TestCode' }))
+    const gh = fakeGitHub({ repos: many })
+    let reads = 0
+    const counting = (async (input: string | URL | Request) => { if (String(input).startsWith('https://raw.')) reads++; return gh.get(input) }) as typeof fetch
+    let cancelled = false
+    const r = await linkCode(['testorg'], [log('l1')], { get: counting, cancelled: () => cancelled, onProgress: (done) => { if (done === 7) cancelled = true } })
+    expect(reads).toBe(8) // repos 0-7: the read whose progress set the flag (index 7) still runs; no later one starts
+    expect(r.requests.raw).toBe(8)
+    expect(r.links.size).toBe(0)
   })
 
   it('pages an org of more than 100 repos', async () => {

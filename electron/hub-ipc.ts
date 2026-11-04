@@ -108,10 +108,6 @@ export function registerHub(window: () => BrowserWindow | null): void {
     }
   }
   ipcMain.handle('hub:codePlan', codePlan)
-  ipcMain.handle('hub:setCodeSources', async (_e, sources: string[]): Promise<CodePlan> => {
-    await saveSettings({ codeSources: checkTeamSetting(null, sources).sources })
-    return codePlan()
-  })
   /** The full pass: find the repo each code-named log ran, from the saved GitHub sources, uncapped; writes a `meta` record for each log linked. */
   const linkPass = async (): Promise<LinkReport> => {
     const lib = await open()
@@ -121,7 +117,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
       const found = await linkCode(sources, lib.catalog.all(), { cancelled: () => j.cancelled, onProgress: progress })
       // A log with no reading yet is stamped with this version but not this describer: it ranks as current, yet "Read logs again" still reads it.
       const { written, unchanged } = await applyLinks(lib, found.links, `${app.getVersion()}+linked`)
-      if (found.rateLimitedUntil === null && found.problems.length === 0) await saveSettings({ linkedSources: sources })
+      // Only a pass that finished counts as done: a cancelled, limited or failed one is run again on the next save.
+      if (!j.cancelled && found.rateLimitedUntil === null && found.problems.length === 0) await saveSettings({ linkedSources: sources })
       return { linked: found.links.size, written, unchanged, unmatched: found.unmatched, repos: found.repos, requests: found.requests, rateLimitedUntil: found.rateLimitedUntil, problems: found.problems }
     })
   }
