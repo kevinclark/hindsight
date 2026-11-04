@@ -23,6 +23,7 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   reason. Rules that never fire on the logs you have are covered only by the unit tests.
   The whole team library the app has synced sits in `~/.hindsight/app-data-*/library/logs` (807 files on
   2026-11-03), a dot-folder Spotlight doesn't index, so look there with `find` before calling a local set complete.
+  Groups for a whole-library golden: `find ~/.hindsight/app-data-a/library/logs -type f \( -name '*.wpilog' -o -name '*.dslog' -o -name '*.dsevents' \) -exec dirname {} \; | sort -u` (47 folders, 758 analysed logs, about 2 min a side on 2026-11-04). The JSON doesn't say whether a log was enabled: auto/none-at-enable's not-checked reason "the robot was never enabled" marks those logs.
 - A new rule adds a "not checked" entry, and one to meta/not-checked's count and evidence, on every log that
   lacks its keys, so golden can't stay byte-identical. Prove it adds nothing else: strip those from both runs and
   require zero residual differences per log (2026-10-20: 264 logs, can/device-rebooted).
