@@ -10,7 +10,8 @@
  *
  * The rule must be red on the match to mark and fire on at least one other: a wrong mark demotes only reds
  * (track-record.ts demotion), so a warning rule such as power/margin has nothing to show. On the three 2026 logs used
- * here, power/limit-not-applied does. A run that can't go on stops with exit code 1 and says why.
+ * here, power/limit-not-applied does. A run that can't go on, or ends with an outcome above wrong, stops with exit code 1
+ * and says why.
  *
  * Writes check.json, the history file it made, and screenshots to <out-dir>. The reason it types is a made-up test
  * string; nothing here is a real label.
@@ -171,6 +172,24 @@ await sleep(400)
 result.afterReal = { match: others[0], head: await head(), rows: await rows() }
 await shot('4-real.png')
 
+// 5. The outcomes: an empty browser shows no How sure; with the history the other matches' rows are amber with the
+// reason and How sure; the real mark brings the first one back to red.
+type Row = { severity: string, notes: string[], howSure: string | null }
+const wrong: string[] = []
+const noHistoryRows = (result.noHistory as { rows: Row[] }).rows
+if (!noHistoryRows.length) wrong.push(`no ${RULE} row on ${others[0]} without the history`)
+for (const r of noHistoryRows) if (r.howSure !== null) wrong.push(`${others[0]} without the history shows How sure: ${r.howSure}`)
+const demoted = Object.entries(result.withHistory as Record<string, { rows: Row[] }>).flatMap(([m, v]) => v.rows.map((r) => ({ m, ...r })))
+if (!demoted.length) wrong.push(`no ${RULE} row on any other match with the history loaded`)
+for (const r of demoted) {
+  if (!r.severity.startsWith('warning')) wrong.push(`${r.m} with the history is '${r.severity.split(' ')[0]}', not 'warning'`)
+  if (!r.howSure) wrong.push(`${r.m} with the history has no How sure line`)
+  if (!r.notes.some((n) => n.includes(REASON))) wrong.push(`${r.m} with the history doesn't show the reason`)
+}
+const real = (result.afterReal as { rows: Row[] }).rows[0]
+if (!real?.severity.startsWith('error')) wrong.push(`${others[0]} after the Real problem mark is '${real?.severity.split(' ')[0] ?? 'no row'}', not 'error'`)
+if (wrong.length) await fail(`${wrong.length} outcome(s) wrong:\n  ${wrong.join('\n  ')}`)
+
 writeFileSync(join(out, 'check.json'), JSON.stringify(result, null, 1))
-console.log(JSON.stringify(result, null, 1))
+console.log(`chrome-wrong-mark-check: passed (${demoted.length} row(s) amber with the reason and How sure on ${others.length} other match(es), red again after the Real problem mark); details in ${join(out, 'check.json')}`)
 await close()
