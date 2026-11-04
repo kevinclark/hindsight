@@ -132,7 +132,7 @@ jobs:
             release/*.zip
             release/*.exe
             release/*.AppImage
-            release/*.yml
+            release/latest*.yml
             release/*.blockmap
             release/signing-*.txt
           if-no-files-found: error
@@ -165,7 +165,7 @@ jobs:
             echo "Windows and Linux builds update themselves. A signed and notarized Mac build does too; an unsigned one shows a banner and you download the new dmg."
             echo
             echo "sha256:"
-            for f in *.dmg *.zip *.exe *.AppImage *.yml *.blockmap; do
+            for f in *.dmg *.zip *.exe *.AppImage latest*.yml *.blockmap; do
               [ -e "$f" ] && echo "- $f: $(sha256sum "$f" | cut -d' ' -f1)"
             done
             echo
@@ -181,6 +181,6 @@ jobs:
             fi
           } > ../notes.md
           args=()
-          for f in *.dmg *.zip *.exe *.AppImage *.yml *.blockmap; do [ -e "$f" ] && args+=("$f"); done
+          for f in *.dmg *.zip *.exe *.AppImage latest*.yml *.blockmap; do [ -e "$f" ] && args+=("$f"); done
           gh release create "v$VERSION" "${args[@]}" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Hindsight $VERSION" --notes-file ../notes.md
