@@ -24,8 +24,9 @@ export const limitsKnown = (l: CurrentLimits) => [l.supplyA, l.statorA, l.supply
 
 /**
  * Whether a limit runs, from the profile's Enable flag. A flag the profile sets is the answer. With no flag and no
- * number, the code doesn't set the limit, so Phoenix's default runs: true. With a number and no flag it is not known
- * (null): Phoenix 6 defaults the flag to true, but a hand-written profile may simply not say (limit-not-applied, LN-09).
+ * number the profile says nothing about this kind, so it is read the way the Limits tab always has: Phoenix's default
+ * runs (true). With a number and no flag it is not known (null): Phoenix 6 defaults the flag to true, but a
+ * hand-written profile may simply not say (limit-not-applied, LN-09). Call it only for a group whose limits are known.
  */
 export function limitOn(l: CurrentLimits, kind: 'supply' | 'stator'): boolean | null {
   const [limitA, enabled] = kind === 'supply' ? [l.supplyA, l.supplyEnabled] : [l.statorA, l.statorEnabled]
@@ -33,8 +34,14 @@ export function limitOn(l: CurrentLimits, kind: 'supply' | 'stator'): boolean | 
   return limitA === undefined ? true : null
 }
 
-/** How the wizard says it: "on", "switched off", or that the profile doesn't say. */
-export const onOffWords = (on: boolean | null) => (on === null ? 'on or off: the profile doesn\'t say' : on ? 'on' : 'switched off')
+/** How the wizard says one limit: "40 A, on", "40 A, switched off", "40 A, on or off: …", or Phoenix's default. */
+export function limitWords(l: CurrentLimits, kind: 'supply' | 'stator'): string {
+  const [limitA, defaultA] = kind === 'supply' ? [l.supplyA, PHOENIX_DEFAULTS.supplyA] : [l.statorA, PHOENIX_DEFAULTS.statorA]
+  const on = limitOn(l, kind)
+  if (on === false) return limitA === undefined ? 'switched off' : `${limitA} A, switched off`
+  if (limitA === undefined) return `not set: Phoenix's default ${defaultA} A`
+  return on ? `${limitA} A, on` : `${limitA} A, on or off: the profile doesn't say`
+}
 
 /** Phoenix 6 ignores SupplyCurrentLowerLimit when SupplyCurrentLowerTime is 0 (CurrentLimitsConfigs, 26.x): the supply limit holds. */
 export const lowerLimitOff = (l: CurrentLimits) => l.supplyLowerSeconds === 0
@@ -64,7 +71,10 @@ export interface LimitView {
   /** The configured value, and whether the code switches it on (null: the profile doesn't say, see limitOn). */
   limitA: number | null
   on: boolean | null
-  /** What actually limits the motor: the configured value when on; nothing (or the stator limit) when off. */
+  /**
+   * What actually limits the motor: the configured value when on; nothing (or the stator limit) when off; the number
+   * if the code switches it on, when the profile doesn't say (on null).
+   */
   note: string
   motors: CurrentStats[]
 }
@@ -122,9 +132,9 @@ function groupLimits(match: Match, g: MotorGroup): GroupLimits {
   // What actually caps battery draw: each limit that runs (configured and on, or not set so Phoenix's default
   // applies; a limit switched off in code is gone). Supply can't exceed stator, so the stator limit caps it too. A
   // limit whose flag the profile doesn't give could be either, so the cap is known only when both readings agree.
-  const caps = (on: boolean | null, limitA: number | null, defaultA: number) => (on === false ? [Infinity] : on === null ? [limitA!, Infinity] : [limitA ?? defaultA])
-  const possible = caps(supplyOn, supplyLimit, PHOENIX_DEFAULTS.supplyA).flatMap((s) => caps(statorOn, statorLimit, PHOENIX_DEFAULTS.statorA).map((t) => Math.min(s, t)))
-  const capPerMotorA = known && possible.every((c) => c === possible[0]) ? possible[0] : NaN
+  const caps = (on: boolean | null, limitA: number | null, defaultA: number) => (on === false ? [Infinity] : on === null ? [limitA ?? Infinity, Infinity] : [limitA ?? defaultA])
+  const possible = !known ? [NaN] : caps(supplyOn, supplyLimit, PHOENIX_DEFAULTS.supplyA).flatMap((s) => caps(statorOn, statorLimit, PHOENIX_DEFAULTS.statorA).map((t) => Math.min(s, t)))
+  const capPerMotorA = possible.every((c) => c === possible[0]) ? possible[0] : NaN
   // The limit the share is measured against: a configured one that may be on, the supply limit first.
   const mayRun = (l: LimitView) => l.on !== false && l.limitA !== null
   const limiting = mayRun(supply) ? supply : mayRun(stator) ? stator : supply

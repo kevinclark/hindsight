@@ -29,6 +29,8 @@ export interface PairCheck {
   /** Today's supply limit: null when switched off, or when the profile doesn't know it or its Enable flag (todayKnown false). */
   todaySupplyA: number | null
   todayKnown: boolean
+  /** Today's supply limit when the profile gives its number but not its Enable flag: a raise past it can't be ruled out. */
+  todaySupplyOnNotKnown: number | null
   /** Sustained caps of the groups that run together added up (this group with the new pair), against the main breaker. */
   sustained: { rows: { group: string; motors: number; perMotorA: number; totalA: number }[]; totalA: number; ok: boolean }
   /**
@@ -68,12 +70,13 @@ export function checkPair(profile: RobotProfile, group: MotorGroup, burstA: numb
     return { group: g.name, motors: g.motors.length, perMotorA, totalA: perMotorA * g.motors.length }
   })
   const totalA = rows.reduce((s, r) => s + (Number.isNaN(r.totalA) ? 0 : r.totalA), 0)
-  const todayKnown = limitsKnown(group.limits) && limitOn(group.limits, 'supply') !== null
-  const today = !todayKnown || limitOn(group.limits, 'supply') === false ? null : (group.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA)
+  const supplyOn = limitsKnown(group.limits) ? limitOn(group.limits, 'supply') : null
+  const todayKnown = supplyOn !== null
+  const today = supplyOn ? (group.limits.supplyA ?? PHOENIX_DEFAULTS.supplyA) : null
   // The pinned push needs the drive's stator limit: not known when its limits or its stator flag aren't.
   const statorKnown = (g: MotorGroup) => limitsKnown(g.limits) && limitOn(g.limits, 'stator') !== null
   const pinned = (g: MotorGroup): [number, number] | null => {
-    if (!statorKnown(g) || limitOn(g.limits, 'stator') === false) return null
+    if (!statorKnown(g) || !limitOn(g.limits, 'stator')) return null
     const st = g.limits.statorA ?? PHOENIX_DEFAULTS.statorA
     return [st * st * MOTOR_OHMS[0] / BUS_VOLTS, st * st * MOTOR_OHMS[1] / BUS_VOLTS]
   }
@@ -84,6 +87,7 @@ export function checkPair(profile: RobotProfile, group: MotorGroup, burstA: numb
     raisesBurst: today !== null && burstA > today,
     todaySupplyA: today,
     todayKnown,
+    todaySupplyOnNotKnown: limitsKnown(group.limits) && supplyOn === null && burstA > group.limits.supplyA! ? group.limits.supplyA! : null,
     sustained: { rows, totalA, ok: totalA <= MAIN_BREAKER_A },
     pinnedDrive: drive && drivePinned ? {
       group: drive.name, motors: drive.motors.length, perMotorA: drivePinned,

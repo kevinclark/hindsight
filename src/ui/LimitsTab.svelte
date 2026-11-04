@@ -119,7 +119,7 @@
       <thead><tr><th>group</th><th>drawing then</th><th>allowed (limits now)</th>{#if budgetWhatIf}<th>allowed ({whatIfGroup} at {whatIfCap} A)</th>{/if}</tr></thead>
       <tbody>
         {#each budgetNow.rows as r, i (r.group)}
-          <tr><th scope="row">{r.group}</th><td>{r.observedA.toFixed(0)} A</td><td>{r.capTotalA.toFixed(0)} A{#if Number.isNaN(r.capPerMotorA)} <small>(limits not known: what it drew)</small>{/if}</td>{#if budgetWhatIf}<td>{budgetWhatIf.rows[i].capTotalA.toFixed(0)} A</td>{/if}</tr>
+          <tr><th scope="row">{r.group}</th><td>{r.observedA.toFixed(0)} A</td><td>{r.capTotalA.toFixed(0)} A{#if Number.isNaN(r.capPerMotorA)} <small>(limits, or whether they are on, not known: what it drew)</small>{/if}</td>{#if budgetWhatIf}<td>{budgetWhatIf.rows[i].capTotalA.toFixed(0)} A</td>{/if}</tr>
         {/each}
       </tbody>
     </table>

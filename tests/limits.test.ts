@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { checkPair } from '../src/limits/pair.ts'
 import { readFileSync } from 'node:fs'
 import { analyzeFiles } from '../src/analyze.ts'
-import { limitOn, limitsReport, onOffWords } from '../src/limits/limits-report.ts'
+import { limitsReport, limitWords } from '../src/limits/limits-report.ts'
+import { PROFILES } from '../src/profiles/index.ts'
 import type { CurrentLimits } from '../src/profiles/types.ts'
 import { findSpinUps, modalBin, recommend, settingTookEffect } from '../src/limits/sweep.ts'
 import { checkStep, comparability, newSession, parseSession, serializeSession, sweepResult } from '../src/limits/session.ts'
@@ -195,6 +196,10 @@ describe('an Enable flag the profile leaves out', () => {
   const drive = offseason2026.motorGroups.find((g) => g.name === 'Drive')!
   const flywheel = offseason2026.motorGroups.find((g) => g.name === 'Flywheel')!
   const withLimits = (group: string, limits: CurrentLimits) => ({ ...offseason2026, motorGroups: offseason2026.motorGroups.map((g) => (g.name === group ? { ...g, limits } : g)) })
+  const limitsReportOf = (profile: typeof offseason2026) => {
+    const unlogged = { ...profile, motorGroups: profile.motorGroups.map((g) => ({ ...g, motors: g.motors.map(({ name }) => ({ name })) })) }
+    return limitsReport({ profile: unlogged, enabled: [], logEnd: 0 } as unknown as Parameters<typeof limitsReport>[0])
+  }
   const report = (profile: typeof offseason2026, group: string) => {
     const unlogged = { ...profile, motorGroups: profile.motorGroups.map((g) => ({ ...g, motors: g.motors.map(({ name }) => ({ name })) })) }
     return limitsReport({ profile: unlogged, enabled: [], logEnd: 0 } as unknown as Parameters<typeof limitsReport>[0]).find((g) => g.group === group)!
@@ -223,10 +228,30 @@ describe('an Enable flag the profile leaves out', () => {
     expect(r.capPerMotorA).toBe(40)
   })
 
-  it('the Limits tab still compares the currents with the number', () => {
-    const r = report(withLimits('Hood', { supplyA: 60, statorA: 80, statorEnabled: true, where: 'x' }), 'Hood')
-    expect(r.supply.limitA).toBe(60)
-    expect(r.verdict).not.toBe('limits not known')
+  it('the Limits tab measures the share at the limit against a flagless supply number, before a stator limit known to be on', () => {
+    // Bench spin-ups of the Flywheel group with logged currents: the share is the supply number's, as when it is on.
+    const flagless = withLimits('Flywheel', { supplyA: 40, statorA: 80, statorEnabled: true, where: 'x' })
+    const on = withLimits('Flywheel', { supplyA: 40, supplyEnabled: true, statorA: 80, statorEnabled: true, where: 'x' })
+    const share = (profile: typeof offseason2026) => {
+      const match = analyzeFiles([{ name: 'bench-none.wpilog', bytes: benchLog({ limitA: null }) }], profile).analyses[0].match
+      return limitsReport(match).find((g) => g.group === 'Flywheel')!
+    }
+    const [a, b] = [share(flagless), share(on)]
+    expect(a.supply.motors.length).toBeGreaterThan(0)
+    expect(a.shareAtLimit).toBeGreaterThan(0)
+    expect(a.shareAtLimit).toBe(b.shareAtLimit)
+    expect(a.verdict).toBe(b.verdict)
+  })
+
+  it('every built-in profile: a group whose limits aren\'t known says nothing about on or off; an unset limit with no flag is Phoenix\'s default, on', () => {
+    for (const profile of PROFILES) {
+      for (const g of limitsReportOf(profile)) {
+        const l = profile.motorGroups.find((x) => x.name === g.group)!.limits
+        if (g.verdict === 'limits not known') expect([g.supply.on, g.stator.on], `${profile.name} / ${g.group}`).toEqual([null, null])
+        if (l.supplyA === undefined && l.supplyEnabled === undefined && g.verdict !== 'limits not known') expect(g.supply.on).toBe(true)
+        if (l.statorA === undefined && l.statorEnabled === undefined && g.verdict !== 'limits not known') expect(g.stator.on).toBe(true)
+      }
+    }
   })
 
   it('a limit switched off with no number reads as off, not as Phoenix\'s default (2025 offseason Climber pivot)', () => {
@@ -236,9 +261,11 @@ describe('an Enable flag the profile leaves out', () => {
     expect(r.capPerMotorA).toBe(Infinity)
   })
 
-  it('the wizard\'s words: on, switched off, or not in the profile', () => {
-    expect(['on', 'off', 'missing'].map((x) => onOffWords(limitOn({ supplyA: 40, ...(x === 'missing' ? {} : { supplyEnabled: x === 'on' }), where: 'x' }, 'supply'))))
-      .toEqual(['on', 'switched off', 'on or off: the profile doesn\'t say'])
+  it('the wizard\'s words: on, switched off, not in the profile, or Phoenix\'s default', () => {
+    expect(['on', 'off', 'missing'].map((x) => limitWords({ supplyA: 40, ...(x === 'missing' ? {} : { supplyEnabled: x === 'on' }), where: 'x' }, 'supply')))
+      .toEqual(['40 A, on', '40 A, switched off', '40 A, on or off: the profile doesn\'t say'])
+    expect(limitWords({ statorA: 80, statorEnabled: true, where: 'x' }, 'supply')).toBe('not set: Phoenix\'s default 70 A')
+    expect(limitWords({ supplyEnabled: false, statorA: 120, statorEnabled: false, where: 'x' }, 'supply')).toBe('switched off')
   })
 
   it('the pair leaves a group with no supply flag out of the sustained sum and names it', () => {
@@ -252,6 +279,10 @@ describe('an Enable flag the profile leaves out', () => {
     const profile = withLimits('Drive', { supplyA: 40, statorA: 120, statorEnabled: true, where: 'x' })
     const own = checkPair(profile, profile.motorGroups.find((g) => g.name === 'Drive')!, 80, 30, 1)
     expect([own.todaySupplyA, own.todayKnown, own.raisesBurst]).toEqual([null, false, false])
+    // It still warns: 80 A may be a raise over today's 40 A.
+    expect(own.todaySupplyOnNotKnown).toBe(40)
+    expect(checkPair(profile, profile.motorGroups.find((g) => g.name === 'Drive')!, 30, 30, 1).todaySupplyOnNotKnown).toBeNull()
+    expect(checkPair(offseason2026, drive, 70, 30, 1).todaySupplyOnNotKnown).toBeNull()
   })
 
   it('the pinned push isn\'t worked out from a stator limit whose flag is missing, and says so', () => {

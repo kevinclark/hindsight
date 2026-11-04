@@ -8,7 +8,7 @@
   import { offseason2026 } from '../profiles/2026-offseason.ts'
   import { checkStep, comparability, groupOf, newSession, parseSession, serializeSession, SESSION_FILE_NAME, sweepResult, type LimitsSession } from '../limits/session.ts'
   import { zeroingChecks } from '../limits/zeroing.ts'
-  import { limitOn, limitsKnown, onOffWords } from '../limits/limits-report.ts'
+  import { limitsKnown, limitWords } from '../limits/limits-report.ts'
   import { matchWhen } from '../match/match.ts'
   import { downloadText } from './download.ts'
   import Scatter from './Scatter.svelte'
@@ -105,7 +105,7 @@
     <label>Mechanism <select bind:value={groupName}><option value="">Choose a mechanism</option>{#each sweepable as g (g.name)}<option value={g.name}>{g.name}</option>{/each}</select></label>
     {#if group}
       {#if limitsKnown(group.limits)}
-        <p>Now: supply limit {group.limits.supplyA ?? '—'} A, <strong>{onOffWords(limitOn(group.limits, 'supply'))}</strong>; stator limit {group.limits.statorA ?? '—'} A ({onOffWords(limitOn(group.limits, 'stator'))}). Set in <code>{group.limits.where}</code>.</p>
+        <p>Now: supply limit <strong>{limitWords(group.limits, 'supply')}</strong>; stator limit {limitWords(group.limits, 'stator')}. Set in <code>{group.limits.where}</code>.</p>
       {:else}
         <p>Now: <strong>limits not known</strong> ({group.limits.where}). Drop a robot snapshot in the builder, or set them in the profile, to compare with today's.</p>
       {/if}
@@ -218,9 +218,12 @@
           {#if pr.todaySupplyA === null && pr.todayKnown}
             <p class="note">The {session.group.toLowerCase()} has no supply limit today (switched off), so {pr.burstA} A lowers it. Still, don't raise any other group's burst cap until the robot code sheds load as the battery voltage falls.</p>
           {/if}
-          <p class:warn={!pr.sustained.ok || pr.notKnown.length > 0}><strong>Main breaker, a slipping push or long run</strong> (motors held at their limit, spinning): the sustained caps of the groups {result.budget ? 'that were running together at the worst moment of the loaded match' : 'on the robot (load a match log to count only those that run together)'}: {pr.sustained.rows.map((r) => `${r.group} ${Number.isNaN(r.perMotorA) ? 'limits not known' : Number.isFinite(r.perMotorA) ? `${r.motors} × ${r.perMotorA} A` : 'no limit'}`).join(' + ')}{Number.isFinite(pr.sustained.totalA) ? ` = ${pr.notKnown.length ? 'at least ' : ''}${Math.round(pr.sustained.totalA)} A, ${pr.sustained.ok ? (pr.notKnown.length ? 'under 120 A without them' : 'at or under 120 A') : 'over 120 A'}.` : '.'}{pr.notKnown.length ? ` ${pr.notKnown.join(', ')}: limits not known (drop a robot snapshot in the builder, or set them in the profile).` : ''}{pr.unlimited.length ? ` ${pr.unlimited.join(', ')} ${pr.unlimited.length === 1 ? 'has' : 'have'} no supply limit, so nothing caps ${pr.unlimited.length === 1 ? 'it' : 'them'}: give ${pr.unlimited.length === 1 ? 'it' : 'each'} a supply limit first.` : ''}{!pr.sustained.ok && Number.isFinite(pr.sustained.totalA) ? ' Lower the sustained caps of the groups that run at the same time (the drive most of all), or make sure they never all run hard together.' : ''}</p>
+          {#if pr.todaySupplyOnNotKnown !== null}
+            <p class="warn"><strong>Don't raise the burst cap yet.</strong> Today's supply limit is {pr.todaySupplyOnNotKnown} A if the code switches it on: the profile doesn't say. Treat {pr.burstA} A as a raise until it does.</p>
+          {/if}
+          <p class:warn={!pr.sustained.ok || pr.notKnown.length > 0}><strong>Main breaker, a slipping push or long run</strong> (motors held at their limit, spinning): the sustained caps of the groups {result.budget ? 'that were running together at the worst moment of the loaded match' : 'on the robot (load a match log to count only those that run together)'}: {pr.sustained.rows.map((r) => `${r.group} ${Number.isNaN(r.perMotorA) ? 'limits, or whether they are on, not known' : Number.isFinite(r.perMotorA) ? `${r.motors} × ${r.perMotorA} A` : 'no limit'}`).join(' + ')}{Number.isFinite(pr.sustained.totalA) ? ` = ${pr.notKnown.length ? 'at least ' : ''}${Math.round(pr.sustained.totalA)} A, ${pr.sustained.ok ? (pr.notKnown.length ? 'under 120 A without them' : 'at or under 120 A') : 'over 120 A'}.` : '.'}{pr.notKnown.length ? ` ${pr.notKnown.join(', ')}: limits, or whether they are on, not known (drop a robot snapshot in the builder, or set them in the profile).` : ''}{pr.unlimited.length ? ` ${pr.unlimited.join(', ')} ${pr.unlimited.length === 1 ? 'has' : 'have'} no supply limit, so nothing caps ${pr.unlimited.length === 1 ? 'it' : 'them'}: give ${pr.unlimited.length === 1 ? 'it' : 'each'} a supply limit first.` : ''}{!pr.sustained.ok && Number.isFinite(pr.sustained.totalA) ? ' Lower the sustained caps of the groups that run at the same time (the drive most of all), or make sure they never all run hard together.' : ''}</p>
           {#if pr.driveNotKnown}
-            <p class="warn"><strong>Main breaker, a pinned push:</strong> not checked: the {pr.driveNotKnown.toLowerCase()} group's limits aren't known.</p>
+            <p class="warn"><strong>Main breaker, a pinned push:</strong> not checked: the {pr.driveNotKnown.toLowerCase()} group's stator limit, or whether it is on, isn't known.</p>
           {/if}
           {#if pr.pinnedDrive}
             {@const pd = pr.pinnedDrive}
