@@ -243,7 +243,7 @@ export function mergeFindings(session: Session): MergedFinding[] {
     })
     const demoted = f.map((x) => x.demoted).filter((d) => !!d).sort((a, b) => a.when.localeCompare(b.when)).at(-1)
     out.push({
-      key, rule, ...(f[0].item ? { item: f[0].item } : {}), severity: worst.severity, title: f[f.length - 1].title,
+      key, rule, ...(f.find((x) => x.item) ? { item: f.find((x) => x.item)!.item } : {}), severity: worst.severity, title: f[f.length - 1].title,
       matches: idx, checkable, confidence: confidence(idx.length, checkable), interval: wilson(idx.length, checkable), measured,
       ...(wrongIn.has(key) ? { wrong: wrongIn.get(key) } : {}), ...(demoted ? { demoted } : {}),
     })

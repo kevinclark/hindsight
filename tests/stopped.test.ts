@@ -177,6 +177,14 @@ describe("a fixed mark on a finding whose key's 'about' is not the item's name (
   })
 })
 
+describe('the item name comes from the first finding that has one', () => {
+  it('a summary saved before `item` existed can sit first', () => {
+    const s = session('XX.', { about: 'Drive supply' })
+    s.matches[1].rules[RULE].findings[0].item = 'Drive'
+    expect(mergeFindings(s).find((x) => x.key === `${RULE} · Drive supply`)?.item).toBe('Drive')
+  })
+})
+
 describe('code changed in between: the log builds of the last firing and the next clean match', () => {
   it('adds "code changed in between: abc1234 → def5678" when they differ', () => {
     const s = session('XXXX...', { shas: ['abc1234', 'abc1234', 'abc1234', 'abc1234', 'def5678', 'def5678', 'def5678'] })
