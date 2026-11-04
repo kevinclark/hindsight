@@ -1,6 +1,5 @@
 # Builds Hindsight for Mac, Windows and Linux from a commit that passed the tests, and on main publishes it as a GitHub release
-# (v0.1.<commit count>) that electron-updater and the app's update banner read. A push to claude/auto-release builds and uploads
-# artifacts only. Run it by hand (Actions > release > Run workflow) for the same artifacts from any branch; only main publishes.
+# (v0.1.<commit count>) that electron-updater and the app's update banner read. Run it by hand (Actions > release > Run workflow) for the same artifacts from any branch; only main publishes.
 # Mac is signed and notarized when the MAC_CSC_LINK secret exists, ad hoc otherwise (docs/release.md).
 name: release
 
@@ -8,7 +7,6 @@ on:
   push:
     branches:
       - main
-      - claude/auto-release
     paths:
       - src/**
       - electron/**

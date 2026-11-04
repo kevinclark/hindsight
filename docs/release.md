@@ -2,7 +2,7 @@
 
 Every push to `main` that touches the app (see the paths in `.github/workflows/release.yml`) runs the tests, builds Mac, Windows and
 Linux, and publishes release `v0.1.<commit count>`. The version is set at build time; package.json keeps its own number.
-A push to `claude/auto-release` builds and uploads artifacts but never publishes.
+A run by hand from another branch (Actions > release > Run workflow) builds and uploads artifacts but never publishes.
 
 Repository secrets:
 
