@@ -8,6 +8,13 @@ becomes a rule that checks every later match for it.
 Phase 1 of the design in `8033/robot/hindsight-proposal.md` (decisions) and `hindsight-research/design-detail.md`
 (detail), built to `8033/robot/hindsight-build-brief.md`.
 
+## Install and updates
+
+Download the app for your system from [Releases](https://github.com/kevinclark/hindsight/releases/latest). Every change to the app that passes the tests becomes a new release.
+
+- Windows and Linux: the app checks for a newer release when it starts and installs it when you quit.
+- Mac: once releases are signed and notarized, the app updates itself the same way. Until then it shows a banner linking to the newest release, and the first open of each new download needs System Settings > Privacy & Security > Open Anyway.
+
 ## Use it
 
 - **Offline (events):** copy `hindsight.html` to the laptop you review and check from (a pit laptop; teams that keep

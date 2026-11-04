@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkForUpdate, isNewer } from '../src/hub/update.ts'
+import { checkForUpdate, isNewer, selfUpdates } from '../src/hub/update.ts'
 
 const releases = (list: object[]): typeof fetch => async () => new Response(JSON.stringify(list), { status: 200 })
 
@@ -23,5 +23,20 @@ describe('update banner', () => {
     expect(await checkForUpdate('0.2.0', releases([{ tag_name: 'v0.2.0', html_url: 'x' }]))).toBeNull()
     expect(await checkForUpdate('0.1.0', async () => new Response('rate limited', { status: 403 }))).toBeNull()
     expect(await checkForUpdate('0.1.0', async () => { throw new TypeError('offline') })).toBeNull()
+  })
+})
+
+describe('self-update decision', () => {
+  const on = { isPackaged: true, macSigned: false }
+  it('runs for an installed Windows or Linux build, unsigned or not', () => {
+    expect(selfUpdates({ ...on, platform: 'win32' })).toBe(true)
+    expect(selfUpdates({ ...on, platform: 'linux' })).toBe(true)
+  })
+  it('runs on a Mac only when the build is signed', () => {
+    expect(selfUpdates({ ...on, platform: 'darwin' })).toBe(false)
+    expect(selfUpdates({ ...on, platform: 'darwin', macSigned: true })).toBe(true)
+  })
+  it('never runs from a dev run, whatever the platform', () => {
+    for (const platform of ['win32', 'linux', 'darwin']) expect(selfUpdates({ isPackaged: false, platform, macSigned: true })).toBe(false)
   })
 })

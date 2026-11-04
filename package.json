@@ -19,6 +19,7 @@
     "dist:app": "npm run build:app && electron-builder"
   },
   "dependencies": {
+    "electron-updater": "6.8.11",
     "ssh2": "1.17.0",
     "tree-sitter-java-orchard": "0.5.22",
     "web-tree-sitter": "0.27.0"
@@ -65,12 +66,14 @@
         "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "identity": "-"
+      "identity": "-",
+      "hardenedRuntime": true
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
@@ -84,6 +87,13 @@
       "category": "Development"
     },
     "artifactName": "Hindsight-${version}-${os}-${arch}.${ext}",
-    "npmRebuild": false
+    "npmRebuild": false,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "kevinclark",
+        "repo": "hindsight"
+      }
+    ]
   }
 }

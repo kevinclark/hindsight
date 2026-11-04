@@ -32,3 +32,14 @@ export async function checkForUpdate(current: string, doFetch: typeof fetch = fe
     return newest && isNewer(newest.version, current) ? newest : null
   } catch { return null }
 }
+
+/**
+ * Whether the app updates itself (electron-updater) rather than only showing the banner. Only an installed build: a dev run
+ * has nothing to replace. Windows and Linux update unsigned; Squirrel.Mac needs a signed build, which the release workflow
+ * marks with __MAC_SIGNED__. Where this is false the banner stays the way to learn of a release.
+ */
+export function selfUpdates(o: { isPackaged: boolean; platform: string; macSigned: boolean }): boolean {
+  if (!o.isPackaged) return false
+  if (o.platform === 'win32' || o.platform === 'linux') return true
+  return o.platform === 'darwin' && o.macSigned
+}

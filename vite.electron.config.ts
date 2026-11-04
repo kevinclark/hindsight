@@ -11,6 +11,8 @@ export default defineConfig({
     __BUILD_ID__: JSON.stringify(describerHash()),
     __GOOGLE_CLIENT_ID__: JSON.stringify(process.env.HINDSIGHT_GOOGLE_CLIENT_ID ?? ''),
     __GOOGLE_CLIENT_SECRET__: JSON.stringify(process.env.HINDSIGHT_GOOGLE_CLIENT_SECRET ?? ''),
+    // True only in a Mac build the release workflow signed with a Developer ID and notarized: only then can the app update itself (Squirrel.Mac).
+    __MAC_SIGNED__: JSON.stringify(process.env.HINDSIGHT_MAC_SIGNED === 'true'),
   },
   build: {
     outDir: 'dist-electron',
@@ -22,6 +24,6 @@ export default defineConfig({
       formats: ['cjs'],
       fileName: (_format, name) => `${name}.cjs`,
     },
-    rollupOptions: { external: [/^node:/, 'electron', 'ssh2'] },
+    rollupOptions: { external: [/^node:/, 'electron', 'electron-updater', 'ssh2'] },
   },
 })

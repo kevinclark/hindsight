@@ -85,4 +85,4 @@ jobs:
             robot-snapshot-v0.*) pre="--prerelease" ;;
           esac
           gh release create "$GITHUB_REF_NAME" robot-snapshot-mac.zip robot-snapshot-windows.zip \
-            --repo "$GITHUB_REPOSITORY" --title "Robot snapshot ${GITHUB_REF_NAME#robot-snapshot-v}" --notes-file ../notes.md $pre
+            --repo "$GITHUB_REPOSITORY" --title "Robot snapshot ${GITHUB_REF_NAME#robot-snapshot-v}" --notes-file ../notes.md --latest=false $pre
