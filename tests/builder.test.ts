@@ -1040,6 +1040,7 @@ describe('backtest against the hand profiles (real logs)', () => {
 const NOT_COMPARED = ['power/limit-not-applied', 'mech/zero-not-completed', 'vision/outliers', 'vision/stale', 'can/device-dropout', 'can/input-disconnected', 'mech/stuck-state', 'power/pd-not-reporting', 'meta/not-checked']
 
 describe.skipIf(!haveLogs)('a team with no profile (8033 2026 logs A, B and C, built-in profiles hidden)', () => {
+  if (!haveLogs) return // a skipped describe still runs its body: without the logs there is nothing to read
   const inputs: InputFile[] = [LOGS.a, LOGS.b, LOGS.c].map(readInput)
   const logs = inputs.map((f) => openWpilog(f.bytes))
   const hand = chooseProfile(logs[0], PROFILES).profile
