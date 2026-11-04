@@ -11,6 +11,14 @@ export interface RobotGroup { label: string | null; profiles: RobotProfile[] }
 
 const teamLabel = (p: RobotProfile): string => (p.team === undefined ? 'No team' : `Team ${p.team}`)
 
+/** Put a profile under its team's heading, adding the heading at the end the first time that team appears. */
+function addUnderTeam(groups: RobotGroup[], p: RobotProfile): void {
+  const label = teamLabel(p)
+  const g = groups.find((x) => x.label === label)
+  if (g) g.profiles.push(p)
+  else groups.push({ label, profiles: [p] })
+}
+
 /**
  * `team` set: your team's built-in profiles, then kept ones whose team is yours or unset (a kept profile made before profiles
  * had a team shows here); other teams' profiles are left out, except those in `inUse` (profile ids this session's logs use
@@ -21,22 +29,11 @@ export function robotChoices(builtIn: RobotProfile[], kept: RobotProfile[], team
   const all = [...builtIn, ...kept]
   if (team === null) {
     const groups: RobotGroup[] = []
-    for (const p of all) {
-      const label = teamLabel(p)
-      const g = groups.find((x) => x.label === label)
-      if (g) g.profiles.push(p)
-      else groups.push({ label, profiles: [p] })
-    }
+    for (const p of all) addUnderTeam(groups, p)
     return groups
   }
   const mine = (p: RobotProfile, isKept: boolean) => (isKept ? p.team === undefined || p.team === team : p.team === team)
   const groups: RobotGroup[] = [{ label: null, profiles: [...builtIn.filter((p) => mine(p, false)), ...kept.filter((p) => mine(p, true))] }]
-  for (const p of all) {
-    if (groups[0].profiles.includes(p) || !inUse.includes(profileId(p))) continue
-    const label = teamLabel(p)
-    const g = groups.find((x) => x.label === label)
-    if (g) g.profiles.push(p)
-    else groups.push({ label, profiles: [p] })
-  }
+  for (const p of all) if (!groups[0].profiles.includes(p) && inUse.includes(profileId(p))) addUnderTeam(groups, p)
   return groups
 }

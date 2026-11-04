@@ -48,6 +48,11 @@ export interface Finding {
   about: string | null
   /** The issue's identity across matches: the rule, plus what it is about. Known-issue tracking uses it. */
   key: string
+  /**
+   * The name of the thing the rule was checking (a motor group, a camera), when it differs from `about`. The runner
+   * starts each not-checked reason with it ("Drive: ..."), so a session finds its own item's reasons by it.
+   */
+  item?: string
   /** The numbers behind the finding. Keys are plain-English labels. */
   evidence: Record<string, number | string>
   /** The judged number against its threshold (first), plus context numbers. See Problem.measured. */

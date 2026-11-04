@@ -86,8 +86,6 @@ export interface HubApi {
   /** The job that finished last, or null if none has since the app started. */
   lastJob(): Promise<LastJob | null>
   codePlan(): Promise<CodePlan>
-  /** Save the GitHub orgs (name) and repos (owner/name) to link code from. */
-  setCodeSources(sources: string[]): Promise<CodePlan>
   /** The saved team number and GitHub sources. */
   team(): Promise<TeamSettingSaved>
   /** Save the team number (null: none), the GitHub sources and, when given (undefined keeps it, null or '' clears it), the read key together. Makes no GitHub request; `linkNeeded` tells the page to run `linkCode()`. Throws if either is not valid. */

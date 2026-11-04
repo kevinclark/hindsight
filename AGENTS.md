@@ -23,12 +23,14 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   reason. Rules that never fire on the logs you have are covered only by the unit tests.
   The whole team library the app has synced sits in `~/.hindsight/app-data-*/library/logs` (807 files on
   2026-11-03), a dot-folder Spotlight doesn't index, so look there with `find` before calling a local set complete.
+  Groups for a whole-library golden: `find ~/.hindsight/app-data-a/library/logs -type f \( -name '*.wpilog' -o -name '*.dslog' -o -name '*.dsevents' \) -exec dirname {} \; | sort -u` (47 folders, 758 analysed logs, about 2 min a side on 2026-11-04). The JSON doesn't say whether a log was enabled: auto/none-at-enable's not-checked reason "the robot was never enabled" marks those logs.
 - A new rule adds a "not checked" entry, and one to meta/not-checked's count and evidence, on every log that
   lacks its keys, so golden can't stay byte-identical. Prove it adds nothing else: strip those from both runs and
   require zero residual differences per log (2026-10-20: 264 logs, can/device-rebooted).
 - A session counts a quiet match as clean ("not seen since", src/session/stopped.ts), so a `check` whose early
   return means "this didn't happen in the match" (never enabled, not on the field, never moved) calls
-  `match.couldNotCheck`, never a bare `return`. A rule for only some motors or groups declares `only`: an item
+  `match.couldNotCheck`, never a bare `return` (a rule that judges only enabled time sets `needsEnabled: true`, which covers
+  the never-enabled case). A rule for only some motors or groups declares `only`: an item
   that returns nothing counts as checked (2026-10-21: 12 rules changed, 264-log golden 0 residual).
 - Read AdvantageKit's GitDirty only through `isUncommitted()` (`src/match/git-dirty.ts`), never a regex of your
   own: older AdvantageKit writes "Uncomitted changes" (one m), and `/uncommitted/i` missed 10 of 520 library

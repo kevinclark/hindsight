@@ -33,6 +33,7 @@ export default rule({
     { name: 'time beyond the line', value: 'longer than 0.3 s', basis: 'measured', how: 'On every 2026 log: bump crossings stay beyond 15° for 0.2 s or less, and the one wedge seen lasted 0.82 s. The margin is thin (1.5 times the longest bump).' },
   ],
 
+  needsEnabled: true,
   check(match) {
     const pitch = match.signal('gyroPitch').inDegrees('Pitch')
     const roll = match.signal('gyroRoll').inDegrees('Roll')

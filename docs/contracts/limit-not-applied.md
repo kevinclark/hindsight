@@ -15,7 +15,7 @@ Suite: `npx vitest run tests/limit-not-applied.contract.test.ts --reporter=junit
 
 ## Interface
 - `export default rule({...})` from `src/rules/power/limit-not-applied.ts`: a `Rule` (`src/rules/rule.ts`) with
-  `forEach: 'motorGroup'` and `check(group: GroupView, match: MatchView): Problem[] | void`. Its descriptor
+  `forEach: 'motorGroup'`, `needsEnabled: true` (a log never enabled is "not checked", not quiet) and `check(group: GroupView, match: MatchView): Problem[] | void`. Its descriptor
   (`meaning`, `causes`, `nextStep`, `incident`, `sources`, `thresholds`) is registered in `src/rules/index.ts`.
 - Collaborators it uses and must not reimplement:
   - `GroupView` (`src/rules/view.ts`): `name`, `motors` (in profile order), `limits` (`supplyA`, `supplyEnabled`,

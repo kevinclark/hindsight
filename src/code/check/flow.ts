@@ -8,7 +8,7 @@
 import { BODIES, classAround, codeOf, enclosing, field, isInside, modifiersOf, nameOf, parts, superclassName, typeNamed, type Node } from './java.ts'
 import { ROBOT_BASES } from './libraries.ts'
 import { baseType, type Project } from './project.ts'
-import { localNamed, typeOf } from './types.ts'
+import { localNamed, scopeOf, typeOf } from './types.ts'
 import { valueOf } from './values.ts'
 
 /** A value worked out along a chain of calls. */
@@ -96,7 +96,7 @@ export function madeAlong(expr: Node | null, chain: Node[], project: Project, op
   if (!name) return memberAlong(expr, chain, project, along)
   const local = expr.type === 'identifier' ? localNamed(expr, name) : null
   if (local?.type === 'formal_parameter') return along(argumentFor(local, chain[0], project), chain.slice(1))
-  const set = local ? setOnce(local, enclosing(local, ['block']) ?? local) : setOnceInClass(expr, name, project)
+  const set = local ? setOnce(local) : setOnceInClass(expr, name, project)
   return set ? along(set, local ? chain : chainAt(set, chain, project)) : null
 }
 
@@ -326,10 +326,15 @@ function argumentFor(parameter: Node, call: Node | undefined, project: Project):
   return takes(declaration, passed.length) ? (passed[parametersOf(declaration).findIndex((p) => p.equals(parameter))] ?? null) : null
 }
 
-/** The one value a local ever gets (its starting value, when nothing assigns it again), or null. */
-function setOnce(declared: Node, scope: Node): Node | null {
+/**
+ * The one value a local ever gets (its starting value, when nothing assigns it again anywhere it can be used), or null.
+ * A constructor's body isn't a `block`, so its locals are looked for in the whole constructor (`scopeOf`).
+ */
+function setOnce(declared: Node): Node | null {
   const start = field(declared, 'value')
   const name = nameOf(declared)
+  const scope = scopeOf(declared)
+  if (!scope) return null
   const assigned = scope.descendantsOfType('assignment_expression').some((a) => a && nameOf(field(a, 'left') ?? a) === name)
   return start && !assigned && !stepped(scope, (target) => target.text === name) ? start : null
 }
