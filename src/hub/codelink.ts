@@ -98,10 +98,9 @@ export async function linkCode(sources: string[], records: LogRecord[], options:
     result.repos = repos.length
     const wanted = new Set(todo.map((r) => r.robot!.name))
     const byCodebase = new Map<string, RepoInfo[]>()
-    let started = 0
-    const texts = wanted.size === 0 ? [] : await mapAtMost(repos, RAW_READS_AT_ONCE, (repo) => {
+    const texts = wanted.size === 0 ? [] : await mapAtMost(repos, RAW_READS_AT_ONCE, (repo, i) => {
       if (options.cancelled?.()) return Promise.resolve(null)
-      options.onProgress?.(started++, repos.length, repo.full)
+      options.onProgress?.(i, repos.length, repo.full)
       return readRaw(get, repo, result)
     })
     // In listing order, as if read one at a time: candidates keep the order the source listed them.
@@ -177,11 +176,11 @@ async function list(source: string, api: (path: string) => Promise<Response>): P
   }
 }
 
-/** `read` over every item, at most `atOnce` in flight; results in the items' order. */
-async function mapAtMost<T, R>(items: T[], atOnce: number, read: (item: T) => Promise<R>): Promise<R[]> {
+/** `read` over every item, at most `atOnce` in flight, started in the items' order; results in the items' order. */
+async function mapAtMost<T, R>(items: T[], atOnce: number, read: (item: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
   let next = 0
-  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await read(items[i]) } }
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await read(items[i], i) } }
   await Promise.all(Array.from({ length: Math.min(atOnce, items.length) }, worker))
   return out
 }
@@ -190,8 +189,14 @@ async function readRaw(get: typeof fetch, repo: RepoInfo, result: LinkResult): P
   result.requests.raw++
   try {
     const res = await get(`${RAW}/${repo.full}/${encodeURIComponent(repo.defaultBranch)}/${ROBOT_JAVA}`)
-    return res.ok ? await res.text() : null
-  } catch { return null }
+    if (res.ok) return await res.text()
+    // A 404 means no Robot.java there; anything else (a 429 from reading too fast, a 5xx) leaves the repo unread, so say so.
+    if (res.status !== 404) result.problems.push(`${repo.full}: could not read ${ROBOT_JAVA} (GitHub answered ${res.status}); treated as not recording a Codebase for now`)
+    return null
+  } catch (e) {
+    result.problems.push(`${repo.full}: could not read ${ROBOT_JAVA} (${e instanceof Error ? e.message : String(e)}); treated as not recording a Codebase for now`)
+    return null
+  }
 }
 
 /** The full commit hash if the repo has the commit, null on a 404 or 422 (not there). Only `.sha` is read from the answer. */

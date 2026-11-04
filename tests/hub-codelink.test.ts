@@ -141,6 +141,28 @@ describe('linking a log to its code', () => {
     expect(r.links.get('l1')).toMatchObject({ repo: 'testorg/r00', candidates: many.slice(1).map((x) => `testorg/${x.name}`) })
   })
 
+  it('says which Robot.java it could not read (not a 404), and leaves that repo out of the candidates for this run', async () => {
+    const gh = fakeGitHub()
+    const throttled = (async (input: string | URL | Request) =>
+      String(input).includes('/robot-template/') ? new Response('slow down', { status: 429 }) : gh.get(input)) as typeof fetch
+    const r = await linkCode(['testorg'], [log('l1')], { get: throttled })
+    expect(r.problems).toEqual(['testorg/robot-template: could not read src/main/java/frc/robot/Robot.java (GitHub answered 429); treated as not recording a Codebase for now'])
+    expect(r.links.get('l1')!.candidates).toEqual(['testorg/robot-training', 'testorg/robot-older'])
+    expect(r.rateLimitedUntil).toBeNull() // raw reads are not GitHub's API limit
+  })
+
+  it('starts no Robot.java read and links nothing once cancelled', async () => {
+    const many: Repo[] = Array.from({ length: 20 }, (_, i) => ({ name: `r${i}`, pushed: '2026-01-01T00:00:00Z', codebase: 'TestCode' }))
+    const gh = fakeGitHub({ repos: many })
+    let reads = 0
+    const counting = (async (input: string | URL | Request) => { if (String(input).startsWith('https://raw.')) reads++; return gh.get(input) }) as typeof fetch
+    let cancelled = false
+    const r = await linkCode(['testorg'], [log('l1')], { get: counting, cancelled: () => cancelled, onProgress: (done) => { if (done === 7) cancelled = true } })
+    expect(reads).toBe(8) // repos 0-7: the read whose progress set the flag (index 7) still runs; no later one starts
+    expect(r.requests.raw).toBe(8)
+    expect(r.links.size).toBe(0)
+  })
+
   it('pages an org of more than 100 repos', async () => {
     const many: Repo[] = Array.from({ length: 101 }, (_, i) => ({ name: `r${i}`, pushed: '2026-01-01T00:00:00Z' }))
     const gh = fakeGitHub({ repos: many })
