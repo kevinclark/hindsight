@@ -114,6 +114,11 @@ describe('power/limit-not-applied with a code folder', () => {
     expect(f.title).toContain(`same current-limit lines as main ${pinned.slice(0, 7)}`)
     expect(f.evidence[LINES]).toBe(`the same as ${pinned.slice(0, 7)} in DrumSubsystem.java (read from the robot code)`)
   })
+  it('the finding carries the group name as `item` (its about is "<group> supply"), for the session\'s fixed-mark count', async () => {
+    const f = await flywheelFinding(otherLinesChanged, folder())
+    expect(f.about).toBe('Flywheel supply')
+    expect(f.item).toBe('Flywheel')
+  })
   it('another commit with different limit lines: red, with the lines that differ', async () => {
     const f = await flywheelFinding(limitChanged, folder())
     expect(f.severity).toBe('error')
