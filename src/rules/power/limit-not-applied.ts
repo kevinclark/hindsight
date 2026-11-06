@@ -2,7 +2,9 @@
  * Is each motor's current staying under its configured limit?
  *
  * Checks: for each motor group with limits in the robot profile, supply and stator current above 120 % of the limit
- * for more than 0.2 s while enabled. (Shorter bursts are the limiter catching up: ≤ 0.21 s at the 2026 offseason event.) Says when the
+ * for more than 0.2 s while enabled, with at least 2 records over the line (one record held across a logging gap says
+ * nothing about how long the current stayed there; at 4 Hz that is at least 0.5 s). (Shorter bursts are the limiter
+ * catching up: ≤ 0.21 s at the 2026 offseason event.) Says when the
  * limit is switched off in code: amber when the log ran the profile's commit, or another commit whose current-limit
  * lines a robot-code folder shows are the same (src/code/limit-lines.ts); red otherwise, as other code may differ. Only
  * the lines in the files `where` names are compared: a limit set through a name defined in another file isn't followed.
@@ -38,7 +40,7 @@ export default rule({
     { ...CTRE_CURRENT_LIMITS, says: 'Current limits must be enabled with their own enable config as well as set; the supply limit drops to the lower limit after being active for the lower time.' },
   ],
   thresholds: [
-    { name: 'current over the limit', value: 'above 120 % for more than 0.2 s', basis: 'measured', how: 'At the 2026 offseason event, bursts above the limit lasted 0.21 s or less: the limiter catching up.' },
+    { name: 'current over the limit', value: 'above 120 % for more than 0.2 s, in at least 2 records', basis: 'measured', how: 'At the 2026 offseason event, bursts above the limit lasted 0.21 s or less: the limiter catching up. One record held across a logging gap is not a stretch: it says nothing about how long the current stayed there, so a slowly logged current needs two records (0.5 s at 4 Hz).' },
     { name: 'share of enabled time over 110 % (evidence only)', value: 'not a verdict', basis: 'measured', how: 'At the 2026 offseason event it was 154 to 233 bursts per motor per match, median 0.02 s (one 50 Hz sample), longest 0.26 s.' },
   ],
   needsEnabled: true,
@@ -169,11 +171,12 @@ function shareOverLimit(motor: MotorView, kind: 'supply' | 'stator', limit: numb
   return (100 * totalSeconds(over)) / lengthOf(match.enabled)
 }
 
-/** The motor whose current went highest while over 120 % of the limit for more than 0.2 s (null if none did). */
+/** The motor whose current went highest while over 120 % of the limit for more than 0.2 s, in at least 2 records (null if none did). */
 function worstOverLimit(group: GroupView, kind: 'supply' | 'stator', limit: number, match: MatchView) {
   let worst: { motor: MotorView, peak: number, start: number, secondsOver: number } | null = null
   for (const motor of group.motors) {
-    const over = currentOf(motor, kind).episodes(beyond(limit * 1.2), { during: enabledAndConnected(motor, match), longerThan: 0.2 })
+    // A stretch needs two records over the line: one record held across a logging gap says nothing about how long the current stayed.
+    const over = currentOf(motor, kind).episodes(beyond(limit * 1.2), { during: enabledAndConnected(motor, match), longerThan: 0.2 }).filter((e) => e.records >= 2)
     for (const e of over) {
       if (worst && e.peak <= worst.peak) continue
       worst = { motor, peak: e.peak, start: e.start, secondsOver: totalSeconds(over) }

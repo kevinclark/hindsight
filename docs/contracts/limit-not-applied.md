@@ -23,7 +23,8 @@ Suite: `npx vitest run tests/limit-not-applied.contract.test.ts --reporter=junit
     throw `MissingSignal` when the profile or the log lacks the key.
   - `Signal.episodes(test, { during, longerThan })`: the stretches where the test holds, clipped to `during`;
     `longerThan` keeps only stretches strictly longer. Each has `start`, `seconds` and `peak` (the largest absolute
-    value, the value held at its start included).
+    value, the value held at its start included) and `records` (how many of the signal's records fall in
+    `[start, end)`; a value held from before the stretch is not one).
   - `MatchView`: `enabled` (a `Window`), `profile.code` (`branch`, `sha`), `build.sha`, `ranPinnedCommit()` (the
     log's commit starts with the profile's), `limitLinesVsProfile(group)` (a `LimitLines` answer or `null`, from
     `match.limitLines`), `couldNotCheck(reason)`.
@@ -60,8 +61,12 @@ Two terms, used only in these senses below:
   change nothing). A group can have one finding of each kind. Why: Phoenix has
   two separate limits, each with its own enable flag (the rule's sources). Kind: behaviour.
 - **LN-04** A kind fires when some motor of the group has a stretch where the size of its current is strictly above
-  120 % of the limit (`limit × 1.2`; 48 A for a 40 A limit is not over) lasting strictly longer than 0.2 s; stretches
-  are not added together, and how far over the line it goes doesn't matter. Why: at the 2026 offseason event the
+  120 % of the limit (`limit × 1.2`; 48 A for a 40 A limit is not over) lasting strictly longer than 0.2 s **and holding at least 2 of the signal's records over the line**; stretches
+  are not added together, and how far over the line it goes doesn't matter. A stretch with one record counts for
+  nothing, in the choice of the worst motor (LN-07) and in the seconds over alike: one record held across a logging
+  gap says nothing about how long the current stayed there. At a slow rate the effective minimum is two sample gaps
+  (0.5 s at 4 Hz). A value held from before the stretch, or into it from a disable or a Connected drop, is not a
+  record. Why: at the 2026 offseason event the
   limiter catching up made bursts of 0.21 s or less above the limit, 154–233 per motor per match with a median of
   0.02 s (the rule's thresholds); a limit that is not applied holds the current over it for seconds (78–94 A for a
   40 A limit during spin-up). Kind: behaviour.

@@ -50,7 +50,7 @@ const folder = (): CodeFolder => ({ repo: new GitRepo(nodeGitDir(dir)!), cache: 
 
 /** A log that ran `sha`, with the flywheel's supply current at 90 A against the 40 A limit. */
 function flywheelLog(sha: string): Uint8Array {
-  const amps = (key: string, a: number): FixtureEntry => ({ name: key, type: 'double', records: [[0, 0], [10, a], [410, 0]] })
+  const amps = (key: string, a: number): FixtureEntry => ({ name: key, type: 'double', records: [[0, 0], [10, a], [20, a], [410, 0]] })
   return writeWpilog([
     { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [410, false]] },
     { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
