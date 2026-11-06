@@ -4,7 +4,8 @@
 // of the team's real 2026 matches.
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
-import { offseason2026 } from '../src/profiles/2026-offseason.ts'
+import { offseason2026, offseason2026Event } from '../src/profiles/2026-offseason.ts'
+import { onOneBus } from '../src/profiles/connected.ts'
 import { BUS_DEVICES } from '../src/rules/can/bus-dropout.ts'
 import { LINKS } from '../src/rules/index.ts'
 import { consolidate } from '../src/rules/run.ts'
@@ -49,6 +50,17 @@ describe('the 2026 profile\'s CAN bus', () => {
     expect(bus.members.map((m) => m.name)).toEqual(devices.map((d) => d.name))
     expect(bus.members.map((m) => m.key)).toEqual(devices.map((d) => d.key))
     expect(bus.members.filter((m) => /apriltag|vision|camera/i.test(m.key + m.name))).toEqual([])
+  })
+
+  it('the event profile\'s bus is read from its own motors, so a motor changed there can\'t leave the bus behind', () => {
+    const [eventBus] = offseason2026Event.canBuses ?? []
+    const eventMotors = offseason2026Event.motorGroups.flatMap((g) => g.motors).filter((m) => m.connected)
+    expect(offseason2026Event.motorGroups.length).toBeGreaterThan(offseason2026.motorGroups.length)
+    expect(eventBus.name).toBe('CANivore')
+    expect(eventBus.members).not.toBe(bus.members) // its own list, not the one inherited from the base profile
+    expect(eventBus.members.slice(0, eventMotors.length).map((m) => m.key)).toEqual(eventMotors.map((m) => m.connected))
+    const renamed = onOneBus('CANivore', { ...offseason2026Event, motorGroups: [{ ...offseason2026Event.motorGroups[0], motors: [{ ...eventMotors[0], name: 'Renamed' }] }] })
+    expect(renamed.canBuses?.[0].members[0].name).toBe('Renamed')
   })
 })
 

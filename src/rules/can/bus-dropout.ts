@@ -10,7 +10,7 @@
 import { isFalse, plural, round, rule, type Problem } from '../rule.ts'
 import { CD_CANIVORE_USB, CTRE_CAN_TROUBLESHOOTING } from '../sources.ts'
 import type { Episode, MatchView, Signal } from '../view.ts'
-import { canBuses, dropAround, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, TOGETHER_SECONDS, watched, windowStart, type CanBus } from './bus.ts'
+import { canBuses, dropAround, isBusWide, LOW_VOLTS, plotDrops, readDrops, secondsWatched, TOGETHER_SECONDS, watched, windowStart, type CanBus, type DropReading } from './bus.ts'
 
 /** The evidence line that names the bus's devices (links.ts reads it to tell which alerts are about the bus). */
 export const BUS_DEVICES = 'devices that report their health on this bus'
@@ -60,25 +60,26 @@ export default rule({
 function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
   const battery = match.signal('batteryVoltage')
   // A bus already off when the watched window began is timed from that start and has no battery reading.
-  const { timed, alreadyOff, voltages, text: voltageText } = readDrops(match, battery, drops)
-  const first = timed[0].start
+  const { readings, voltages } = readDrops(match, battery, drops)
+  const first = readings[0].timed.start
   const earlier = lowestEarlier(match, battery, first)
   const low = voltages.length > 0 && voltages.every((v) => v < LOW_VOLTS)
   // A deeper but shorter sag earlier doesn't rule a sag out (one 2025 match: cause unknown), but it does stop it being "likely".
   const sagExplains = low && !(earlier <= Math.min(...voltages))
   // How long the bus was gone: until the last member came back, per drop.
-  const gone = drops.map((d, i) => lastBackAt(bus, d.start) - timed[i].start)
+  const goneFor = (r: DropReading) => lastBackAt(bus, r.drop.start) - r.timed.start
+  const gone = goneFor(readings[0])
   const statuses = reportedStatuses(match, bus, drops[0].start + TOGETHER_SECONDS)
-  const pastEnd = match.matchEnd !== null && first + gone[0] > match.matchEnd ? ' (past the end of the match)' : ''
+  const pastEnd = match.matchEnd !== null && first + gone > match.matchEnd ? ' (past the end of the match)' : ''
   const times = drops.length > 1 ? `, ${drops.length} times, first` : ''
   // At the first drop, which members came back (after how long) and which were still off at the end of the log.
   const { cameBack, neverBack } = whoCameBack(bus, drops[0].start, match)
   const withoutThem = Math.max(0, ...neverBack.map((m) => secondsWatched(match, m.drop)))
-  const when = alreadyOff[0] ? `already off when ${windowStart(match)} ${match.whenAt(first)}` : match.whenAt(first)
+  const when = readings[0].alreadyOff ? `already off when ${windowStart(match)} ${match.whenAt(first)}` : match.whenAt(first)
   // Some devices came back and kept reporting while others never did: the break is between them, not at the CANivore.
   const keptReporting = neverBack.length > 0 && cameBack.length > 0
   const howLong = neverBack.length === 0
-    ? `for ${gone[0].toFixed(0)} s${pastEnd}`
+    ? `for ${gone.toFixed(0)} s${pastEnd}`
     : `${neverBack.length} of them never came back (still off at the end of the log, ${round(withoutThem)} s of the enabled match without them)`
   const kept = keptReporting
     ? `; ${plural(cameBack.length, 'device')} on the same bus came back and kept reporting: the break is in the CAN wiring between them and the rest`
@@ -103,15 +104,15 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
     evidence: {
       [BUS_DEVICES]: bus.members.map((m) => m.name).join(', '),
       drops: drops.length,
-      'seconds until every device was back': gone.map((g, i) => (stillOffAtEnd(match, bus, drops[i]) ? 'never' : g.toFixed(1))).join(', '),
+      'seconds until every device was back': readings.map((r) => (stillOffAtEnd(match, bus, r.drop) ? 'never' : goneFor(r).toFixed(1))).join(', '),
       'back after (s)': neverBack.length ? cameBack.map((m) => `${m.name} ${m.seconds.toFixed(1)}`).join(', ') || 'none' : undefined,
       'still off at the end of the log': neverBack.length ? neverBack.map((m) => m.name).join(', ') : undefined,
       'status the devices reported': statuses.length ? statuses.join(', ') : undefined,
-      'lowest battery voltage in the 0.5 s before each drop (V)': voltageText.join(', '),
+      'lowest battery voltage in the 0.5 s before each drop (V)': readings.map((r) => r.text).join(', '),
       'lowest battery voltage earlier while enabled, with no bus drop (V)': Number.isFinite(earlier) ? round(earlier) : undefined,
     },
     measured: [{ label: 'whole-bus drops', value: drops.length, unit: '' }],
-    plot: plotDrops(battery, timed, 5, first + gone[0] + 2),
+    plot: plotDrops(battery, readings.map((r) => r.timed), 5, first + gone + 2),
   }
 }
 

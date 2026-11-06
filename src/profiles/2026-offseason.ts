@@ -12,6 +12,7 @@
  */
 
 import { ADVANTAGEKIT_SIGNALS } from './advantagekit.ts'
+import { onOneBus } from './connected.ts'
 import type { MotorGroup, RobotProfile } from './types.ts'
 
 const swerveModules = ['Front Left', 'Front Right', 'Back Left', 'Back Right']
@@ -291,15 +292,10 @@ const robot: RobotProfile = {
 }
 
 /**
- * Every device that reports a Connected flag, as members of the one bus (see the header: one CANivore for all of
- * them). A whole-bus drop is then one finding about the CANivore, not one per device (can/bus-dropout).
+ * Every device that reports a Connected flag is on the one bus (see the header: one CANivore for all of them). A
+ * whole-bus drop is then one finding about the CANivore, not one per device (can/bus-dropout).
  */
-const connectedMembers = [
-  ...robot.motorGroups.flatMap((g) => g.motors.flatMap((m) => (m.connected ? [{ name: m.name, key: m.connected }] : []))),
-  ...robot.otherDevices.map((d) => ({ name: d.name, key: d.connected })),
-]
-
-export const offseason2026: RobotProfile = { ...robot, canBuses: [{ name: 'CANivore', members: connectedMembers }] }
+export const offseason2026: RobotProfile = onOneBus('CANivore', robot)
 
 /**
  * The same robot, running the code from the October 2026 event: branch `event-calgames`, head
@@ -325,8 +321,8 @@ function eventGroup(name: string): MotorGroup {
 
 const mainIndexerMotors = eventGroup('Indexer').motors
 
-export const offseason2026Event: RobotProfile = {
-  ...offseason2026, // incl. canBuses: this profile reuses the base motor objects, so the bus members stay in step; if a motor is renamed here, rebuild the bus
+export const offseason2026Event: RobotProfile = onOneBus('CANivore', {
+  ...offseason2026,
   // event-calgames-new-autos was merged into event-calgames (at 123eec6), so its logs ran this code too.
   code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'event-calgames', sha: 'd339f29', alsoBranches: ['event-calgames-new-autos'] },
 
@@ -365,4 +361,4 @@ export const offseason2026Event: RobotProfile = {
     z.zeroCurrent
       ? { ...z, zeroCurrent: { ...z.zeroCurrent, where: 'DrumSubsystem.java:53 (HOOD_CURRENT_ZEROING_THRESHOLD_AMPS), stator limit DrumSubsystem.java:342' } }
       : z),
-}
+})
