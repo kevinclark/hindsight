@@ -25,6 +25,7 @@
   import ModeLine from './ModeLine.svelte'
   import NextMatchFields from './NextMatchFields.svelte'
   import SetupCard from './SetupCard.svelte'
+  import WhatsNew from './WhatsNew.svelte'
   import { typedNextFor } from './typed-next.svelte.ts'
   import { chooseMode, sessionNames } from './session-names.svelte.ts'
   import type { TodaySignal } from './today-signal.svelte.ts'
@@ -201,6 +202,7 @@
     <p><button type="button" class="link" onclick={() => { failure = null }}>← Back to Now</button></p>
   </div>
 {:else}
+  <WhatsNew {hasLogs} />
   <h2 class="big" data-now-big>{view.big}</h2>
   {#if view.kind === 'event-no-schedule' && eventSession}
     <!-- The fix in place (ADR b): type the next match, or add the read key; the same fields the board shows. -->

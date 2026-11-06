@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import { changelog } from './vite.changelog.ts'
 import { sourceHash } from './vite.build-id.ts'
 
 // web-tree-sitter finds its .wasm with `new URL(..., import.meta.url)`, which would inline a second 279 KB copy: the code
@@ -20,7 +21,7 @@ export default defineConfig({
   base: './',
   plugins: [svelte(), viteSingleFile(), oneTreeSitterWasm],
   // Saved summaries are kept per version of the source: changed code may read logs differently.
-  define: { __BUILD_ID__: JSON.stringify(sourceHash()) },
+  define: { __BUILD_ID__: JSON.stringify(sourceHash()), __CHANGELOG__: JSON.stringify(changelog()) },
   build: { target: 'es2022' },
   test: {
     include: ['tests/**/*.test.ts'],
