@@ -406,20 +406,7 @@ export function clock(seconds: number): string {
  * "0:12 into run 3 of 7 (teleop; robot time 532.8 s)".
  */
 export function matchWhen(match: Match, t: number): string {
-  const robot = `robot time ${t.toFixed(1)} s`
-  const s = matchSeconds(match, t)
-  if (s === null) return robot
-  // A log with a single run reads as before: the one run is the whole window.
-  if (!match.fms && match.runs?.length > 1) {
-    const r = runAt(match, t)
-    if (!r) return `before the first run (${robot})`
-    if (r.inside) return `${clock(s)} into run ${r.n} of ${r.of} (${phaseAt(match, t)}; ${robot})`
-    if (r.n === r.of) return `after the last run (${robot})`
-    return `between run ${r.n} and run ${r.n + 1} of ${r.of} (${robot})`
-  }
-  if (s < 0) return `before the match (${robot})`
-  if (match.matchEnd !== null && t > match.matchEnd + 0.5) return `after the match (${robot})`
-  return `${clock(s)} into the match (${phaseAt(match, t)}; ${robot})`
+  return moment(match, t).words
 }
 
 /**
@@ -427,8 +414,28 @@ export function matchWhen(match: Match, t: number): string {
  * "after the match (...)" with no "at" (never "at before the match").
  */
 export function matchWhenAt(match: Match, t: number): string {
-  const when = matchWhen(match, t)
-  return /^(before|after|between) /.test(when) ? when : `at ${when}`
+  const { words, isPoint } = moment(match, t)
+  return isPoint ? `at ${words}` : words
+}
+
+/** Time t in words, and whether those words name a point in time ("at" reads right before them) or a stretch. */
+function moment(match: Match, t: number): { words: string; isPoint: boolean } {
+  const point = (words: string) => ({ words, isPoint: true })
+  const stretch = (words: string) => ({ words, isPoint: false })
+  const robot = `robot time ${t.toFixed(1)} s`
+  const s = matchSeconds(match, t)
+  if (s === null) return point(robot)
+  // A log with a single run reads as before: the one run is the whole window.
+  if (!match.fms && match.runs?.length > 1) {
+    const r = runAt(match, t)
+    if (!r) return stretch(`before the first run (${robot})`)
+    if (r.inside) return point(`${clock(s)} into run ${r.n} of ${r.of} (${phaseAt(match, t)}; ${robot})`)
+    if (r.n === r.of) return stretch(`after the last run (${robot})`)
+    return stretch(`between run ${r.n} and run ${r.n + 1} of ${r.of} (${robot})`)
+  }
+  if (s < 0) return stretch(`before the match (${robot})`)
+  if (match.matchEnd !== null && t > match.matchEnd + 0.5) return stretch(`after the match (${robot})`)
+  return point(`${clock(s)} into the match (${phaseAt(match, t)}; ${robot})`)
 }
 
 /** Phase name at time t, for evidence text. */

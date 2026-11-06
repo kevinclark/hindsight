@@ -2,7 +2,7 @@
 // under 10 s is dropped and counted, and the rules say which they are. Made-up logs only.
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
-import { RUN_JOIN_SECONDS, SHORT_RUN_SECONDS, runsOf, runAt, matchWhen } from '../src/match/match.ts'
+import { RUN_JOIN_SECONDS, SHORT_RUN_SECONDS, runsOf, runAt, matchWhen, matchWhenAt } from '../src/match/match.ts'
 import { FORESIGHT_RULES, RULES } from '../src/rules/index.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { summarizeMatch } from '../src/session/summary.ts'
@@ -47,6 +47,10 @@ describe('off the field the window is every run', () => {
     expect(matchWhen(match, 150)).toBe('between run 2 and run 3 of 3 (robot time 150.0 s)')
     expect(matchWhen(match, 5)).toBe('before the first run (robot time 5.0 s)')
     expect(matchWhen(match, 300)).toBe('after the last run (robot time 300.0 s)')
+    expect(matchWhenAt(match, 215)).toBe('at 0:15 into run 3 of 3 (teleop; robot time 215.0 s)')
+    expect(matchWhenAt(match, 150)).toBe('between run 2 and run 3 of 3 (robot time 150.0 s)')
+    expect(matchWhenAt(match, 5)).toBe('before the first run (robot time 5.0 s)')
+    expect(matchWhenAt(match, 300)).toBe('after the last run (robot time 300.0 s)')
     expect(runAt(match, 150)).toMatchObject({ n: 2, of: 3, inside: false })
   })
   it('a log with one run reads as before: "into the match"', () => {
