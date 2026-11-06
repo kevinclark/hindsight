@@ -57,6 +57,7 @@ describe('the 2026 profile\'s CAN bus', () => {
     const eventMotors = offseason2026Event.motorGroups.flatMap((g) => g.motors).filter((m) => m.connected)
     expect(offseason2026Event.motorGroups.length).toBeGreaterThan(offseason2026.motorGroups.length)
     expect(eventBus.name).toBe('CANivore')
+    expect(eventBus.members).not.toBe(bus.members) // its own list, not the one inherited from the base profile
     expect(eventBus.members.slice(0, eventMotors.length).map((m) => m.key)).toEqual(eventMotors.map((m) => m.connected))
     const renamed = onOneBus('CANivore', { ...offseason2026Event, motorGroups: [{ ...offseason2026Event.motorGroups[0], motors: [{ ...eventMotors[0], name: 'Renamed' }] }] })
     expect(renamed.canBuses?.[0].members[0].name).toBe('Renamed')
