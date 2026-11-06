@@ -6,6 +6,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { askText } from './ask-text.svelte.ts'
+  import { hasPin } from '../profiles/pin.ts'
   import { summarizeLogWithCode, summaryRobot, type MatchSummary } from '../session/summary.ts'
   import CodeFolderControl from './CodeFolderControl.svelte'
   import { codeFolder } from './code-folder.svelte.ts'
@@ -636,7 +637,7 @@
     </section>
   {/if}
   {#each robots as r (r.key)}
-    <p class="note">Robot: <strong>{r.name}</strong>{#if !r.named}, no profile is for this robot{:else}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code> ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} ${unitWord(practice, r.matches.length !== 1)}` : ''}</p>
+    <p class="note">Robot: <strong>{r.name}</strong>{#if !r.named}, no profile is for this robot{:else}{#if hasPin(r.robot.code)}, code as of {r.robot.code.branch} <code>{r.robot.code.sha}</code>{:else}, code not known{/if} ({HOW_WORDS[r.robot.how]}){/if}{robots.length > 1 ? ` · ${r.matches.length} ${unitWord(practice, r.matches.length !== 1)}` : ''}</p>
   {/each}
   {#if onDraft}{#each offers as { link: l, logs, total, refs } (l.code.repo)}
     <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}{refs > 1 ? ` (${logs} of these ${total} logs ran it; ${refs} commits in all)` : ''}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>

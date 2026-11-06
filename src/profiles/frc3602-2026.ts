@@ -5,7 +5,8 @@
  *
  * Built from the log alone, not the robot code:
  *  - Battery voltage comes from the dashboard value, logged about 17 times a second while enabled (a robot loop logs
- *    50): findings that read it say a short dip can fall between samples.
+ *    50): findings that read it say a short dip can fall between samples, except rules that average over time
+ *    (the rest voltage's 2 s median).
  *  - No per-motor supply currents. The two spindexer currents on the dashboard are left out on purpose: summing two
  *    of the robot's motors would make the battery model and the main breaker's heating look far too light.
  *  - No gyro pitch or roll, no brownout flag or setting, no loop time.

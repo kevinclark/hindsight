@@ -5,6 +5,7 @@
 <script lang="ts">
   import { analyzeFilesWithCode, type Analysis, type InputFile } from './analyze.ts'
   import { isUncommitted } from './match/git-dirty.ts'
+  import { hasPin } from './profiles/pin.ts'
   import { buildFindingsJson, findingsFileName } from './report/findings-json.ts'
   import MatchTab from './ui/MatchTab.svelte'
   import Menu from './ui/Menu.svelte'
@@ -527,7 +528,7 @@
       <details class="more">
         <summary>Robot: <strong>{robotName(current.match.profile.name, current.match.profileChoice)}</strong></summary>
         <p class="meta">
-          {#if !namesRobot(current.match.profileChoice)}No profile is for this robot ·{:else}Code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>
+          {#if !namesRobot(current.match.profileChoice)}No profile is for this robot ·{:else}{#if hasPin(current.match.profile.code)}Code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>{:else}Code not known{/if}
           ({HOW_WORDS[current.match.profileChoice.how]}) ·{/if}
           <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
             <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>

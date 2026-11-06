@@ -230,8 +230,8 @@ describe("a team-340-shaped log: TalonFX structs, no battery voltage", () => {
     const [f] = fired('power/main-breaker-margin')
     expect(f).toBeDefined()
     expect(f.evidence['carried most of it']).toMatch(/^Drive/)
-    // Followers logged at 4 Hz are named on the finding.
-    expect(f.evidence['logged slowly (short dips or spikes can be missed)']).toMatch(/follower supply are logged about 4 times a second/)
+    // The rule averages 90 s of current, so followers logged at 4 Hz can't change its answer: no slow-logging note.
+    expect(f.evidence['logged slowly (short dips or spikes can be missed)']).toBeUndefined()
     expect(f.plot?.unit).toBe('A')
   })
   it('does not mistake a stale 4 Hz follower for a slipping one', () => {
@@ -278,10 +278,10 @@ describe("a team-3602-shaped log: dashboard battery voltage at 15 Hz, no motor c
   const [a] = analyze([{ name: '3602.wpilog', bytes: team3602Log() }], frc3602_2026)
   const find = (id: string) => a.report.findings.find((f) => f.rule === id)
 
-  it('checks the rest voltage, and says the voltage is logged slowly', () => {
+  it('checks the rest voltage, with no slow-logging note (it takes a 2 s median)', () => {
     const f = find('power/rest-voltage')
     expect(f?.title).toMatch(/rested at 12\.2\d? V/)
-    expect(f?.evidence['logged slowly (short dips or spikes can be missed)']).toMatch(/battery voltage is logged about 15 times a second while enabled \(every ~67 ms\)/)
+    expect(f?.evidence['logged slowly (short dips or spikes can be missed)']).toBeUndefined()
   })
   it('finds the early disable in auto from DS: and FMSControlData', () => {
     expect(find('auto/early-disable')?.title).toMatch(/with 6\.5 s of auto left/)

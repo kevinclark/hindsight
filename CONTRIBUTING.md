@@ -171,6 +171,9 @@ A rule that judges only enabled time sets `needsEnabled: true`: on a log where t
 lists it as not checked ("the robot was never enabled") instead of letting it count as quiet. Leave it off a rule that
 judges the whole log (`power/brownout`).
 
+A rule that judges a median or a long average sets `averagesOverTime: true`: a slowly logged signal then adds no
+"logged slowly" note, down to 4 Hz, the slowest rate measured. Never set it on a rule that looks for a peak.
+
 ### When one finding explains another (links)
 
 Some findings are one story: the battery collapsed, so the robot browned out, so a motor controller lost power and

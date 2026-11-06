@@ -7,6 +7,8 @@ import template from '../src/rules/_template/new-rule.ts'
 import { writeWpilog } from './helpers/fixture-format.ts'
 import { analyzeFixture, fired } from './helpers/load.ts'
 import { RULES } from '../src/rules/index.ts'
+import type { Rule } from '../src/rules/rule.ts'
+import type { MatchView } from '../src/rules/view.ts'
 
 const log = writeWpilog([
   { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [35, false]] },
@@ -102,6 +104,42 @@ describe('what the runner does with an answer', () => {
   it('a foresightOnly rule stays quiet on a match log', () => {
     const r = runRules(a.match, [{ ...template, id: 'example/pit', foresightOnly: true, check: (m) => ({ message: 'pit', at: m.pitStretch.end }) }])
     expect(r).toEqual({ findings: [], skipped: [], crashed: [] })
+  })
+  describe('averagesOverTime', () => {
+    // Battery voltage logged at 4 Hz while enabled: slow enough for the note.
+    const volts: [number, number][] = []
+    for (let t = 10; t < 35; t += 0.25) volts.push([t, 12.3])
+    const slowLog = writeWpilog([
+      { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [35, false]] },
+      { name: '/SystemStats/BatteryVoltage', type: 'double', records: volts },
+    ])
+    const m = analyzeFiles([{ name: 'test.wpilog', bytes: slowLog }], offseason2026).analyses[0].match
+    const reads: Rule = { ...template, id: 'example/reads-voltage', check: (v: MatchView) => { v.signal('/SystemStats/BatteryVoltage', 'battery voltage'); return { message: 'read it', at: 20 } } }
+    const NOTE = 'logged slowly (short dips or spikes can be missed)'
+    it('a rule that reads a slow signal carries the slow-logging note', () => {
+      expect(runRules(m, [reads]).findings.find((f) => f.rule === 'example/reads-voltage')?.evidence[NOTE]).toMatch(/battery voltage is logged about 4 times a second/)
+    })
+    it('a rule that averages over time carries none, on a finding or as "partly checked"', () => {
+      const avg = { ...reads, id: 'example/averages', averagesOverTime: true }
+      expect(runRules(m, [avg]).findings.find((f) => f.rule === 'example/averages')?.evidence[NOTE]).toBeUndefined()
+      const quietAvg: Rule = { ...avg, check: (v: MatchView) => { v.signal('/SystemStats/BatteryVoltage', 'battery voltage'); return undefined } }
+      expect(runRules(m, [quietAvg]).skipped).toEqual([])
+      expect(runRules(m, [{ ...quietAvg, averagesOverTime: undefined }]).skipped).toEqual([{ rule: 'example/averages', reason: expect.stringMatching(/^partly checked; battery voltage is logged about 4 times a second/) }])
+    })
+    it('a rule that averages over time keeps the note below the slowest rate measured (4 Hz)', () => {
+      const slower: [number, number][] = []
+      for (let t = 10; t < 35; t += 0.5) slower.push([t, 12.3])
+      const log = writeWpilog([
+        { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [35, false]] },
+        { name: '/SystemStats/BatteryVoltage', type: 'double', records: slower },
+      ])
+      const match = analyzeFiles([{ name: 'test.wpilog', bytes: log }], offseason2026).analyses[0].match
+      const avg = { ...reads, id: 'example/averages', averagesOverTime: true }
+      expect(runRules(match, [avg]).findings.find((f) => f.rule === 'example/averages')?.evidence[NOTE]).toMatch(/logged about 2 times a second/)
+    })
+    it('the two shipped rules that average over time are flagged, and no other', () => {
+      expect(RULES.filter((r) => r.averagesOverTime).map((r) => r.id).sort()).toEqual(['power/main-breaker-margin', 'power/rest-voltage'])
+    })
   })
   describe('needsEnabled', () => {
     const neverEnabled = writeWpilog([

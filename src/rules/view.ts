@@ -46,6 +46,8 @@ export interface Episode {
   peak: number
   lowest: number
   highest: number
+  /** How many of the signal's records fall in [start, end). A value held from before the stretch is not one. */
+  records: number
 }
 
 /** A numeric signal (booleans are 0 and 1). Values hold until the next record: they are never interpolated. */
@@ -204,15 +206,15 @@ export class Signal {
   }
 
   private describe(iv: Interval): Episode {
-    let peak = 0, lowest = Infinity, highest = -Infinity
+    let peak = 0, lowest = Infinity, highest = -Infinity, records = 0
     const visit = (v: number) => { peak = Math.max(peak, Math.abs(v)); lowest = Math.min(lowest, v); highest = Math.max(highest, v) }
     visit(this.at(iv.start)) // the value held from before the episode counts too
     // Start at the episode (binary search), not at the top of the log: a signal that flickers thousands of times
     // made this quadratic (0.6 s on one log).
     for (let i = Math.max(0, indexAt(this.series.t, iv.start)); i < this.series.t.length && this.series.t[i] < iv.end; i++) {
-      if (this.series.t[i] >= iv.start) visit(this.series.v[i])
+      if (this.series.t[i] >= iv.start) { visit(this.series.v[i]); records++ }
     }
-    return { start: iv.start, end: iv.end, seconds: iv.end - iv.start, peak, lowest, highest }
+    return { start: iv.start, end: iv.end, seconds: iv.end - iv.start, peak, lowest, highest, records }
   }
 }
 
@@ -519,12 +521,12 @@ export class MatchView {
    * for the student. A robot loop logs at 50 Hz; a dashboard or throttled telemetry often logs at 4–20 Hz, and a
    * brownout-sized dip (tens of milliseconds) can then fall between two samples.
    */
-  slowSignals(): { label: string; note: string }[] {
+  slowSignals(below = SLOW_HZ): { label: string; note: string }[] {
     // Signals at the same rate share one note ("A, B and C are logged about 4 times a second ...").
     const byRate = new Map<number, string[]>()
     for (const [key, label] of this.sampled) {
       const rate = sampleRate(num(this.raw, key)!, this.enabled)
-      if (!rate || rate.fastHz >= SLOW_HZ) continue
+      if (!rate || rate.fastHz >= below) continue
       const hz = Math.max(1, Math.round(rate.typicalHz))
       byRate.set(hz, [...(byRate.get(hz) ?? []), label])
     }
@@ -843,6 +845,8 @@ const EARLIEST_PLAUSIBLE_EPOCH = Date.UTC(2023, 0, 1) / 1000
 
 /** Below this rate (records per second while enabled), a measured signal gets a sampling note on its findings. */
 export const SLOW_HZ = 30
+/** The same, for a rule that averages over time: the slowest rate a long average has been measured at. */
+export const SLOWEST_AVERAGED_HZ = 4
 
 /**
  * How often a signal is logged while enabled: `fastHz` from the 10th-percentile gap between records (the rate it

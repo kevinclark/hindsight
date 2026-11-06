@@ -76,8 +76,8 @@ const only = (log: Log = {}, profile = robot(), limitLines?: LimitLines): Findin
   expect(findings).toHaveLength(1)
   return findings[0]
 }
-/** The left motor's supply current at `amps` from `from` to `to` s, 5 A otherwise. */
-const leftSupply = (amps: number, from = 20, to = 21): Log => ({ keys: { [L.supply]: [[0, 5], [from, amps], [to, 5]] } })
+/** The left motor's supply current at `amps` from `from` to `to` s, 5 A otherwise. Two records over the line (LN-04), the second halfway. */
+const leftSupply = (amps: number, from = 20, to = 21): Log => ({ keys: { [L.supply]: [[0, 5], [from, amps], [(from + to) / 2, amps], [to, 5]] } })
 
 test('[LN-01] the rule\'s id, title, severity, kind and cause ids are the ones already live', () => {
   const { id, title, severity, judges, who, forEach, causes } = limitNotApplied
@@ -95,16 +95,16 @@ test('[LN-02] a group with no supply and no stator limit is not checked, and say
 })
 
 test('[LN-03] each kind with a limit is checked on its own; a kind with no limit is not checked and not reported', () => {
-  const both = run({ keys: { [L.supply]: [[0, 5], [20, 90], [21, 5]], [R.stator]: [[0, 5], [30, 150], [31, 5]] } })
+  const both = run({ keys: { [L.supply]: [[0, 5], [20, 90], [20.5, 90], [21, 5]], [R.stator]: [[0, 5], [30, 150], [30.5, 150], [31, 5]] } })
   expect(both.findings.map((f) => f.about).sort()).toEqual(['Roller stator', 'Roller supply'])
   expect(both.skipped).toBeUndefined()
-  const supplyOnly = run({ keys: { [L.supply]: [[0, 5], [20, 90], [21, 5]], [R.stator]: [[0, 5], [30, 150], [31, 5]] } }, robot({ statorA: undefined }))
+  const supplyOnly = run({ keys: { [L.supply]: [[0, 5], [20, 90], [20.5, 90], [21, 5]], [R.stator]: [[0, 5], [30, 150], [30.5, 150], [31, 5]] } }, robot({ statorA: undefined }))
   expect(supplyOnly.findings.map((f) => f.about)).toEqual(['Roller supply'])
   expect(supplyOnly.skipped).toBeUndefined()
-  const statorOnly = run({ keys: { [L.supply]: [[0, 5], [20, 90], [21, 5]], [R.stator]: [[0, 5], [30, 150], [31, 5]] } }, robot({ supplyA: undefined }))
+  const statorOnly = run({ keys: { [L.supply]: [[0, 5], [20, 90], [20.5, 90], [21, 5]], [R.stator]: [[0, 5], [30, 150], [30.5, 150], [31, 5]] } }, robot({ supplyA: undefined }))
   expect(statorOnly.findings.map((f) => f.about)).toEqual(['Roller stator'])
   // A kind with no limit isn't read at all: its currents missing from the log change nothing.
-  const noStatorLogged = run({ keys: { [L.supply]: [[0, 5], [20, 90], [21, 5]], [L.stator]: [], [R.stator]: [] } }, robot({ statorA: undefined }))
+  const noStatorLogged = run({ keys: { [L.supply]: [[0, 5], [20, 90], [20.5, 90], [21, 5]], [L.stator]: [], [R.stator]: [] } }, robot({ statorA: undefined }))
   expect(noStatorLogged.findings.map((f) => f.about)).toEqual(['Roller supply'])
   expect(noStatorLogged.skipped).toBeUndefined()
 })
@@ -114,17 +114,39 @@ test('[LN-04] it fires only above 120 % of the limit, not at it', () => {
   expect(run(leftSupply(48)).findings).toEqual([])
   expect(only(leftSupply(48.01)).about).toBe('Roller supply')
   // 60 A stator limit: 72 A.
-  expect(run({ keys: { [R.stator]: [[0, 5], [20, 72], [21, 5]] } }).findings).toEqual([])
-  expect(only({ keys: { [R.stator]: [[0, 5], [20, 72.01], [21, 5]] } }).about).toBe('Roller stator')
+  expect(run({ keys: { [R.stator]: [[0, 5], [20, 72], [20.5, 72], [21, 5]] } }).findings).toEqual([])
+  expect(only({ keys: { [R.stator]: [[0, 5], [20, 72.01], [20.5, 72.01], [21, 5]] } }).about).toBe('Roller stator')
 })
 
 test('[LN-04] it fires only for a stretch longer than 0.2 s: exactly 0.2 s is the limiter catching up', () => {
   // 0.3 s to 0.5 s is exactly 0.2 s in floating point (10.3 s to 10.5 s is not).
-  const early = (to: number): Log => ({ enabled: [[0.1, 110]], keys: { [L.supply]: [[0, 5], [0.3, 90], [to, 5]] } })
+  const early = (to: number): Log => ({ enabled: [[0.1, 110]], keys: { [L.supply]: [[0, 5], [0.3, 90], [0.4, 90], [to, 5]] } })
   expect(run(early(0.5)).findings).toEqual([])
   expect(only(early(0.500001)).time).toBeCloseTo(0.3, 6)
   expect(run(leftSupply(90, 20, 20.15)).findings).toEqual([])
   expect(only(leftSupply(90, 20, 20.25)).time).toBe(20)
+})
+
+test('[LN-04] a stretch counts only with at least 2 records over the line: one record held across a gap says nothing about how long', () => {
+  // One record at 90 A, then the next record 0.3 s later: held 0.3 s, but only one record saw it.
+  expect(run({ keys: { [L.supply]: [[0, 5], [20, 90], [20.3, 5]] } }).findings).toEqual([])
+  // The same 0.3 s with a second record over the line: a finding.
+  const two: Trace = [[0, 5], [20, 90], [20.15, 90], [20.3, 5]]
+  expect(only({ keys: { [L.supply]: two } }).time).toBe(20)
+  // At 4 Hz (records 0.25 s apart) the shortest stretch that counts is two records, 0.5 s.
+  const at4Hz = (n: number): Trace => [[0, 5], ...Array.from({ length: n }, (_, i): [number, number] => [20 + i * 0.25, 90]), [20 + n * 0.25, 5]]
+  expect(run({ keys: { [L.supply]: at4Hz(1) } }).findings).toEqual([])
+  expect(only({ keys: { [L.supply]: at4Hz(2) } }).time).toBe(20)
+})
+
+test('[LN-04] one motor\'s single held record does not make it the worst motor, or add to the seconds over', () => {
+  const finding = only({ keys: {
+    // Left: one record at 150 A held 1 s (not a stretch). Right: two records at 90 A over 1 s.
+    [L.supply]: [[0, 5], [20, 150], [21, 5]],
+    [R.supply]: [[0, 5], [30, 90], [30.5, 90], [31, 5]],
+  } })
+  expect(finding.evidence['worst motor']).toBe('Roller right')
+  expect(finding.evidence['seconds over 120 % of the limit (worst motor)']).toBe(1)
 })
 
 test('[LN-04] a stretch over the limit counts however far over it goes, and the stretches are not added up', () => {
@@ -135,23 +157,23 @@ test('[LN-04] a stretch over the limit counts however far over it goes, and the 
 })
 
 test('[LN-05] only enabled time counts: current over the limit while disabled, or clipped to under 0.2 s by the enable, is not a finding', () => {
-  expect(run({ keys: { [L.supply]: [[0, 5], [2, 90], [8, 5]] } }).findings).toEqual([])
+  expect(run({ keys: { [L.supply]: [[0, 5], [2, 90], [5, 90], [8, 5]] } }).findings).toEqual([])
   // 90 A from 109.9 s to 112 s: 0.1 s of it enabled.
-  expect(run({ keys: { [L.supply]: [[0, 5], [109.9, 90], [112, 5]] } }).findings).toEqual([])
+  expect(run({ keys: { [L.supply]: [[0, 5], [109.9, 90], [110.95, 90], [112, 5]] } }).findings).toEqual([])
   // 90 A from 9.5 s to 10.5 s: 0.5 s of it enabled, from the enable at 10 s.
-  expect(only({ keys: { [L.supply]: [[0, 5], [9.5, 90], [10.5, 5]] } }).time).toBe(10)
+  expect(only({ keys: { [L.supply]: [[0, 5], [9.5, 90], [10.1, 90], [10.3, 90], [10.5, 5]] } }).time).toBe(10)
 })
 
 test('[LN-06] time after a motor\'s Connected flag goes false is not counted: its last current is held, not drawn', () => {
   // The left motor logs 90 A at 20 s and nothing more; it drops off CAN at 20.1 s.
   const dropped = { [L.supply]: [[0, 5], [20, 90]] as Trace, [L.connected]: [[0, true], [20.1, false]] as Trace }
   expect(run({ keys: dropped }).findings).toEqual([])
-  // Back on CAN at 30 s, still reading the held 90 A: counted again from there.
-  expect(only({ keys: { ...dropped, [L.connected]: [[0, true], [20.1, false], [30, true]] } }).time).toBe(30)
+  // Back on CAN at 30 s, logging 90 A again at 31 s and 32 s (a held value alone is no record, LN-04): counted again from there.
+  expect(only({ keys: { [L.supply]: [[0, 5], [20, 90], [31, 90], [32, 90]], [L.connected]: [[0, true], [20.1, false], [30, true]] } }).time).toBe(30)
 })
 
 test('[LN-06] a motor with no Connected flag, in the profile or in the log, counts all of its enabled time', () => {
-  const held = { [L.supply]: [[0, 5], [20, 90]] as Trace }
+  const held = { [L.supply]: [[0, 5], [20, 90], [21, 90]] as Trace }
   expect(only({ keys: held }).evidence['seconds over 120 % of the limit (worst motor)']).toBe(90)
   expect(only({ keys: held }, robot({}, [motor('Left', { connected: false }), motor('Right')])).evidence['seconds over 120 % of the limit (worst motor)']).toBe(90)
   expect(run({ keys: held }).skipped).toBeUndefined()
@@ -159,8 +181,8 @@ test('[LN-06] a motor with no Connected flag, in the profile or in the log, coun
 
 test('[LN-07] one finding per kind: the motor whose qualifying stretch went highest, at that stretch\'s start', () => {
   const f = only({ keys: {
-    [L.supply]: [[0, 5], [20, 70], [21, 5], [40, 80], [41, 5]],
-    [R.supply]: [[0, 5], [30, 95], [30.5, 5], [50, 99], [50.1, 5]],
+    [L.supply]: [[0, 5], [20, 70], [20.5, 70], [21, 5], [40, 80], [40.5, 80], [41, 5]],
+    [R.supply]: [[0, 5], [30, 95], [30.25, 95], [30.5, 5], [50, 99], [50.05, 99], [50.1, 5]],
   } })
   // The right motor's 99 A lasted 0.1 s, so it doesn't qualify; its 95 A stretch beats the left's 80 A.
   expect(f.evidence['worst motor']).toBe('Roller right')
@@ -169,7 +191,7 @@ test('[LN-07] one finding per kind: the motor whose qualifying stretch went high
 })
 
 test('[LN-07] the peak is the stretch\'s largest value, and the seconds are all of that motor\'s qualifying stretches', () => {
-  const f = only({ keys: { [L.supply]: [[0, 5], [20, 60], [20.3, 88.84], [20.6, 5], [40, 70], [41.2, 5], [60, 90], [60.1, 5]] } })
+  const f = only({ keys: { [L.supply]: [[0, 5], [20, 60], [20.3, 88.84], [20.45, 88.84], [20.6, 5], [40, 70], [40.6, 70], [41.2, 5], [60, 90], [60.05, 90], [60.1, 5]] } })
   expect(f.evidence['peak supply current (A)']).toBe(88.8)
   expect(f.time).toBe(20)
   // 0.6 s + 1.2 s; the 0.1 s stretch is too short to count.
@@ -177,7 +199,7 @@ test('[LN-07] the peak is the stretch\'s largest value, and the seconds are all 
 })
 
 test('[LN-07] on a tie the first motor in the profile\'s order is the worst motor', () => {
-  const f = only({ keys: { [L.supply]: [[0, 5], [40, 90], [41, 5]], [R.supply]: [[0, 5], [20, 90], [21, 5]] } })
+  const f = only({ keys: { [L.supply]: [[0, 5], [40, 90], [40.5, 90], [41, 5]], [R.supply]: [[0, 5], [20, 90], [20.5, 90], [21, 5]] } })
   expect(f.evidence['worst motor']).toBe('Roller left')
   expect(f.time).toBe(40)
 })
@@ -185,7 +207,7 @@ test('[LN-07] on a tie the first motor in the profile\'s order is the worst moto
 test('[LN-08] the finding\'s title, word for word, when the log ran the profile\'s commit', () => {
   expect(only(leftSupply(90.4)).title).toBe('Roller supply current reached 90 A against a 40 A limit')
   expect(only(leftSupply(90.4), robot({ supplyA: 37.5 })).title).toBe('Roller supply current reached 90 A against a 37.5 A limit')
-  expect(only({ keys: { [R.stator]: [[0, 5], [20, 150.6], [21, 5]] } }, robot({ statorEnabled: false })).title)
+  expect(only({ keys: { [R.stator]: [[0, 5], [20, 150.6], [20.5, 150.6], [21, 5]] } }, robot({ statorEnabled: false })).title)
     .toBe('Roller stator current reached 151 A against a 60 A limit that is switched off in code (deliberate?)')
 })
 
@@ -302,7 +324,7 @@ test('[LN-12] the evidence: its keys in order, and each value', () => {
     [SWITCHED, 'yes'],
     ['set in', 'RollerIO.java:12-15'],
   ])
-  const stator = only({ keys: { [R.stator]: [[0, 5], [20, 99.96], [20.3, 5]] } })
+  const stator = only({ keys: { [R.stator]: [[0, 5], [20, 99.96], [20.15, 99.96], [20.3, 5]] } })
   expect(Object.keys(stator.evidence)).toContain('peak stator current (A)')
   expect(stator.evidence['peak stator current (A)']).toBe(100)
   expect(stator.evidence['configured limit (A)']).toBe(60)
@@ -318,7 +340,7 @@ test('[LN-12] a limit whose Enable flag the profile leaves out: the evidence say
 })
 
 test('[LN-08][LN-09][LN-10][LN-12] a stator limit whose Enable flag the profile leaves out is read the same way', () => {
-  const stator = only({ keys: { [R.stator]: [[0, 5], [20, 150], [21, 5]] } }, robot({ statorEnabled: undefined }))
+  const stator = only({ keys: { [R.stator]: [[0, 5], [20, 150], [20.5, 150], [21, 5]] } }, robot({ statorEnabled: undefined }))
   expect(stator.title).toBe('Roller stator current reached 150 A against a 60 A limit')
   expect(stator.severity).toBe('error')
   expect(stator.evidence[SWITCHED]).toBe('not set in the profile')
@@ -329,8 +351,8 @@ test('[LN-12][LN-13] the share is the worst motor\'s own, counting even one-samp
   // Enabled 100 s. Left: 44.5 A (111 %) for 0.1 s five times = 0.5 s, then 90 A for 1 s. Right: 45 A for 2 s.
   const blips: Trace = [[0, 5]]
   for (let t = 20; t < 25; t += 1) blips.push([t, 44.5], [t + 0.1, 5])
-  blips.push([40, 90], [41, 5])
-  const f = only({ keys: { [L.supply]: blips, [R.supply]: [[0, 5], [60, 45], [62, 5]] } })
+  blips.push([40, 90], [40.5, 90], [41, 5])
+  const f = only({ keys: { [L.supply]: blips, [R.supply]: [[0, 5], [60, 45], [61, 45], [62, 5]] } })
   expect(f.evidence['worst motor']).toBe('Roller left')
   // The left motor's 1.5 %, not the right motor's 2 %: the evidence says "(worst motor)".
   expect(f.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(1.5)
@@ -338,10 +360,10 @@ test('[LN-12][LN-13] the share is the worst motor\'s own, counting even one-samp
 
 test('[LN-13] the share is the worst motor\'s, whichever place it has in the profile', () => {
   // Left (first) is the worst motor: 90 A for 3 s, 3 % of the 100 s enabled. Right: 45 A for 1 s, 1 %.
-  const first = only({ keys: { [L.supply]: [[0, 5], [20, 90], [23, 5]], [R.supply]: [[0, 5], [40, 45], [41, 5]] } })
+  const first = only({ keys: { [L.supply]: [[0, 5], [20, 90], [21.5, 90], [23, 5]], [R.supply]: [[0, 5], [40, 45], [40.5, 45], [41, 5]] } })
   expect(first.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(3)
   // Right (second) is the worst motor: 90 A for 1 s, 1 %. Left: 45 A for 3 s, 3 %.
-  const second = only({ keys: { [L.supply]: [[0, 5], [20, 45], [23, 5]], [R.supply]: [[0, 5], [40, 90], [41, 5]] } })
+  const second = only({ keys: { [L.supply]: [[0, 5], [20, 45], [21.5, 45], [23, 5]], [R.supply]: [[0, 5], [40, 90], [40.5, 90], [41, 5]] } })
   expect(second.evidence['worst motor']).toBe('Roller right')
   expect(second.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(1)
 })
@@ -351,18 +373,18 @@ test('[LN-13] the share counts only enabled, connected time over strictly 110 %,
   // Then at 90 A from 50 s to 80 s: 10 s + 10 s enabled, less 1 s off CAN at 75 s. Right at 44 A the whole time.
   const f = only({
     enabled: [[10, 60], [70, 120]],
-    keys: { [L.supply]: [[0, 5], [20, 44], [40, 5], [50, 90], [80, 5]], [L.connected]: [[0, true], [75, false], [76, true]], [R.supply]: [[0, 44]] },
+    keys: { [L.supply]: [[0, 5], [20, 44], [30, 44], [40, 5], [50, 90], [55, 90], [71, 90], [72, 90], [77, 90], [78, 90], [80, 5]], [L.connected]: [[0, true], [75, false], [76, true]], [R.supply]: [[0, 44]] },
   })
   expect(f.evidence['share of enabled time over 110 % of the limit (worst motor) (%)']).toBe(19)
 })
 
 test('[LN-13] the share is evidence only: no motor above 120 % for 0.2 s, no finding, however long it spent over 110 %', () => {
-  expect(run({ keys: { [L.supply]: [[0, 5], [20, 47.9], [100, 5]] } }).findings).toEqual([])
+  expect(run({ keys: { [L.supply]: [[0, 5], [20, 47.9], [60, 47.9], [100, 5]] } }).findings).toEqual([])
 })
 
 test('[LN-14] the number judged: the peak in whole amps against 120 % of the limit', () => {
   expect(only(leftSupply(90.6)).measured).toEqual([{ label: 'peak supply current', value: 91, unit: 'A', threshold: 48 }])
-  expect(only({ keys: { [R.stator]: [[0, 5], [20, 99.4], [21, 5]] } }, robot({ statorA: 62 })).measured)
+  expect(only({ keys: { [R.stator]: [[0, 5], [20, 99.4], [20.5, 99.4], [21, 5]] } }, robot({ statorA: 62 })).measured)
     .toEqual([{ label: 'peak stator current', value: 99, unit: 'A', threshold: 74 }])
 })
 
@@ -370,7 +392,7 @@ test('[LN-15] the plot: every motor\'s current of that kind, from 2 s before to 
   const f = only(leftSupply(90, 30, 31))
   expect(f.plot).toMatchObject({ unit: 'A', from: 28, to: 34, threshold: { value: 40, label: '40 A limit' } })
   expect(f.plot!.lines.map((l) => l.label)).toEqual(['Roller left supply', 'Roller right supply'])
-  const stator = only({ keys: { [R.stator]: [[0, 5], [50, 99], [51, 5]] } })
+  const stator = only({ keys: { [R.stator]: [[0, 5], [50, 99], [50.5, 99], [51, 5]] } })
   expect(stator.plot!.lines.map((l) => l.label)).toEqual(['Roller left stator', 'Roller right stator'])
   expect(stator.plot).toMatchObject({ from: 48, to: 54, threshold: { value: 60, label: '60 A limit' } })
 })
@@ -386,21 +408,20 @@ test('[LN-16] a motor whose current isn\'t in the log: the group is not checked,
 })
 
 test('[LN-17] current is judged by its size: a negative current past the limit counts', () => {
-  const f = only({ keys: { [R.stator]: [[0, 5], [20, -95.5], [21, 5]] } })
+  const f = only({ keys: { [R.stator]: [[0, 5], [20, -95.5], [20.5, -95.5], [21, 5]] } })
   expect(f.evidence['peak stator current (A)']).toBe(95.5)
   expect(f.title).toBe('Roller stator current reached 96 A against a 60 A limit')
 })
 
 test('[LN-18] a fault: a finding in a run under 10 s is kept', () => {
-  expect(only({ enabled: [[10, 15]], keys: { [L.supply]: [[0, 5], [11, 90], [12, 5]] } }).time).toBe(11)
+  expect(only({ enabled: [[10, 15]], keys: { [L.supply]: [[0, 5], [11, 90], [11.5, 90], [12, 5]] } }).time).toBe(11)
 })
 
-test('[LN-19] the descriptor follows the rule format: every prose field said, two measured thresholds, CTRE\'s pages cited', () => {
+test('[LN-19] the descriptor follows the rule format: every prose field said, two measured thresholds and one chosen, CTRE\'s pages cited', () => {
   const r = limitNotApplied
   for (const text of [r.meaning, r.nextStep, r.incident, ...r.causes.flatMap((c) => [c.cause, c.look])]) expect(text.trim()).not.toBe('')
-  expect(r.thresholds).toHaveLength(2)
+  expect(r.thresholds!.map((t) => t.basis)).toEqual(['measured', 'judgment', 'measured'])
   for (const t of r.thresholds!) {
-    expect(t.basis).toBe('measured')
     for (const text of [t.name, t.value, t.how]) expect(text.trim()).not.toBe('')
   }
   const catalog = Object.values(SOURCES).filter((x) => typeof x === 'object' && x !== null && 'url' in x)
@@ -423,5 +444,5 @@ test('[LN-21] a Connected flag that flickers many times costs time in proportion
   // 40 drops off CAN, 0.1 s each, while the left motor is held at 90 A from 15 s to 17 s.
   const flicker: Trace = [[0, true]]
   for (let i = 0; i < 40; i++) flicker.push([20 + i * 0.2, false], [20.1 + i * 0.2, true])
-  expect(only({ keys: { [L.supply]: [[0, 5], [15, 90], [17, 5]], [L.connected]: flicker } }).time).toBe(15)
+  expect(only({ keys: { [L.supply]: [[0, 5], [15, 90], [16, 90], [17, 5]], [L.connected]: flicker } }).time).toBe(15)
 }, 5_000)

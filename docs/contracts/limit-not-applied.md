@@ -23,7 +23,8 @@ Suite: `npx vitest run tests/limit-not-applied.contract.test.ts --reporter=junit
     throw `MissingSignal` when the profile or the log lacks the key.
   - `Signal.episodes(test, { during, longerThan })`: the stretches where the test holds, clipped to `during`;
     `longerThan` keeps only stretches strictly longer. Each has `start`, `seconds` and `peak` (the largest absolute
-    value, the value held at its start included).
+    value, the value held at its start included) and `records` (how many of the signal's records fall in
+    `[start, end)`; a value held from before the stretch is not one).
   - `MatchView`: `enabled` (a `Window`), `profile.code` (`branch`, `sha`), `build.sha`, `ranPinnedCommit()` (the
     log's commit starts with the profile's), `limitLinesVsProfile(group)` (a `LimitLines` answer or `null`, from
     `match.limitLines`), `couldNotCheck(reason)`.
@@ -60,8 +61,12 @@ Two terms, used only in these senses below:
   change nothing). A group can have one finding of each kind. Why: Phoenix has
   two separate limits, each with its own enable flag (the rule's sources). Kind: behaviour.
 - **LN-04** A kind fires when some motor of the group has a stretch where the size of its current is strictly above
-  120 % of the limit (`limit × 1.2`; 48 A for a 40 A limit is not over) lasting strictly longer than 0.2 s; stretches
-  are not added together, and how far over the line it goes doesn't matter. Why: at the 2026 offseason event the
+  120 % of the limit (`limit × 1.2`; 48 A for a 40 A limit is not over) lasting strictly longer than 0.2 s **and holding at least 2 of the signal's records over the line**; stretches
+  are not added together, and how far over the line it goes doesn't matter. A stretch with one record counts for
+  nothing, in the choice of the worst motor (LN-07) and in the seconds over alike: one record held across a logging
+  gap says nothing about how long the current stayed there. At a slow rate the effective minimum is two sample gaps
+  (0.5 s at 4 Hz). A value held from before the stretch, or into it from a disable or a Connected drop, is not a
+  record. Why: at the 2026 offseason event the
   limiter catching up made bursts of 0.21 s or less above the limit, 154–233 per motor per match with a median of
   0.02 s (the rule's thresholds); a limit that is not applied holds the current over it for seconds (78–94 A for a
   40 A limit during spin-up). Kind: behaviour.
@@ -148,8 +153,8 @@ Two terms, used only in these senses below:
 - **LN-18** The rule judges a fault: a finding in a run shorter than 10 s is kept. Why: ADR 8: a fault is an event
   with its own duration, kept however short the run; a performance finding would be dropped. Kind: behaviour.
 - **LN-19** The descriptor follows the rule format (`rule.ts`, CONTRIBUTING.md): `meaning`, `nextStep`, `incident`
-  and each cause's `cause` and `look` are said (not empty); `thresholds` has two entries, the 120 %/0.2 s line and
-  the 110 % share, both `basis: 'measured'`, each with a `name`, `value` and `how`; `sources` cites at least one page
+  and each cause's `cause` and `look` are said (not empty); `thresholds` has three entries in this order, the 120 %/0.2 s line (`basis: 'measured'`), the 2-record line (`basis: 'judgment'`) and
+  the 110 % share (`basis: 'measured'`), each with a `name`, `value` and `how`; `sources` cites at least one page
   of `src/rules/sources.ts` unchanged (CTRE's current-limit pages, on ctr-electronics.com), each with what it
   `says`. Why: the app shows these to students as the finding's explanation and "Further reading"; a rule cites
   public pages and says where each number came from (`rule.ts`). The words themselves are free (Output wording).
@@ -195,6 +200,15 @@ may be a defect. Each waits for a ruling; until then, a rebuild may do either.
    (`toProfile` in `src/builder/json.ts`) has `code.sha: ''`, and every commit starts with `''`, so every log **ran
    the pinned commit**: a switched-off limit is amber (LN-09), and a switched-on one has `limit-off` ruled out with
    "the limit is switched on in the code" (LN-10), though no code was read.
+4. **One unchanged value held for seconds gives no finding** (LN-04). A log written on change could hold one reading of
+   90 A for 5 s; that is one record, so it is quiet. Measured 2026-11-05: over 778 logs the longest one-record stretch
+   over the line was 0.21 s on real limits, and a motor current that doesn't change under load is a dead sensor or a
+   simulator.
+5. **A stretch clipped at enable counts only the records inside it** (LN-04, LN-05). With enable at 10 s and 90 A at
+   9.9 s and 10.2 s, then under at 10.6 s, two readings show it but the stretch has one record, so it is quiet. 0 of 467
+   stretches over the line on those 778 logs were clipped in.
+6. **The Limits tab keeps its own definition of a burst** (`src/limits/limits-report.ts:166`). It reads limit + margin, not
+   120 %, and has no record filter, so a one-record 0.21 s burst can show red there while this rule is quiet.
 
 The review of this contract (2026-11-03) judged two more items plain defects rather than choices, and they were
 fixed on approval: an Enable flag the profile leaves out read as switched off (now not known: LN-08 to LN-10, LN-12),

@@ -152,6 +152,14 @@ interface About {
    * that judges the whole log (power/brownout).
    */
   needsEnabled?: boolean
+  /**
+   * The rule judges a median or a long average, so a short dip or spike between records barely moves its answer: a
+   * 90 s heating average moved at most about 4 points of 120 A when the current was held at 4 Hz. The runner adds no
+   * "logged slowly" note to its findings or "partly checked" to its quiet result for a signal at 4 Hz or faster
+   * (`SLOWEST_AVERAGED_HZ`); nothing slower has been measured, so a slower one keeps the note. Set it only for a rule
+   * that averages over seconds, never for one that looks for a peak.
+   */
+  averagesOverTime?: boolean
 }
 
 /** One public page a rule cites. Shown with the finding as "Further reading". */
@@ -226,7 +234,7 @@ export function link(definition: Link): Link {
  * A parent is a finding that names a group of findings: "25 CAN devices dropped within 0.25 s". The app lists the
  * group under it (nothing is deleted), and it adds nothing to any count. Parents live in parents.ts.
  */
-export interface Parent extends Omit<About, 'severity' | 'judges' | 'needsProfile' | 'foresightOnly' | 'needsEnabled' | 'sources' | 'thresholds'> {
+export interface Parent extends Omit<About, 'severity' | 'judges' | 'needsProfile' | 'foresightOnly' | 'needsEnabled' | 'averagesOverTime' | 'sources' | 'thresholds'> {
   /** The rule whose findings it groups. */
   over: string
   /** True when this finding belongs in the same group as the first (earliest) one. */

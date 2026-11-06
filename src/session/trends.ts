@@ -23,7 +23,7 @@ export interface TrendMetric {
   atLinePasses?: boolean
 }
 
-/** The brownout setting + 1.0 V that power/margin judges against. The 6 V roboRIO 2 default only gives the voltage row a line to have: the drawn line is each log's own setting + 1 V, and a log with no setting is not judged. */
+/** The brownout setting + 1.0 V that power/margin judges against. 6 V is only a line for the row to have (one team's setting; the roboRIO 2 default is 6.75 V, roboRIO 1 is fixed at 6.3 V): the drawn line is each log's own setting + 1 V, and a log with no setting is not judged. */
 export const MARGIN_VOLTS = 1
 export const DEFAULT_BROWNOUT = 6
 

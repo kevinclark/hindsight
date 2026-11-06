@@ -7,6 +7,7 @@
  */
 
 import { PROFILE_FIT_MIN } from '../profiles/choose.ts'
+import { pinText } from '../profiles/pin.ts'
 import { VERSION } from '../version.ts'
 import type { IssueEvent } from '../triage/history.ts'
 import {
@@ -389,13 +390,6 @@ export function sessionModel(session: Session, issues: Map<string, IssueEvent> =
     jsonFile: `${sessionBase(session.label)}.session-findings.json`, schema: SESSION_FINDINGS_SCHEMA, version: VERSION,
   }
   return model
-}
-
-/** "1a2b3c4 on main", or "" when the profile names no commit ("unknown" is what a profile with no pinned code says). */
-function pinText(code: { sha?: string; branch?: string }): string {
-  const sha = code.sha && code.sha !== 'unknown' ? code.sha.slice(0, 7) : ''
-  const branch = code.branch && code.branch !== 'unknown' ? code.branch : ''
-  return sha || branch ? `${sha || '?'} on ${branch || '?'}` : ''
 }
 
 function buildsOf(matches: MatchSummary[]): SessionModel['builds'] {
