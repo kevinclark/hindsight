@@ -40,7 +40,8 @@ export default rule({
     { ...CTRE_CURRENT_LIMITS, says: 'Current limits must be enabled with their own enable config as well as set; the supply limit drops to the lower limit after being active for the lower time.' },
   ],
   thresholds: [
-    { name: 'current over the limit', value: 'above 120 % for more than 0.2 s, in at least 2 records', basis: 'measured', how: 'At the 2026 offseason event, bursts above the limit lasted 0.21 s or less: the limiter catching up. One record held across a logging gap is not a stretch: it says nothing about how long the current stayed there, so a slowly logged current needs two records (0.5 s at 4 Hz).' },
+    { name: 'current over the limit', value: 'above 120 % for more than 0.2 s', basis: 'measured', how: 'At the 2026 offseason event, bursts above the limit lasted 0.21 s or less: the limiter catching up.' },
+    { name: 'records over the line', value: 'at least 2', basis: 'judgment', how: 'Chosen. One record held across a logging gap says nothing about how long the current stayed there. At a slow rate the shortest stretch that counts is two gaps (0.5 s at 4 Hz).' },
     { name: 'share of enabled time over 110 % (evidence only)', value: 'not a verdict', basis: 'measured', how: 'At the 2026 offseason event it was 154 to 233 bursts per motor per match, median 0.02 s (one 50 Hz sample), longest 0.26 s.' },
   ],
   needsEnabled: true,

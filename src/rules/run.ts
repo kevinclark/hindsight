@@ -5,7 +5,7 @@
 import { runAt, SHORT_RUN_SECONDS, type Match } from '../match/match.ts'
 import type { Finding, Plot, PlotLine } from './types.ts'
 import type { Answer, Cause, Link, Parent, Problem, Rule, Severity } from './rule.ts'
-import { MatchView, MissingSignal, words, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
+import { MatchView, MissingSignal, SLOW_HZ, SLOWEST_AVERAGED_HZ, words, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
 
 export interface SkippedRule { rule: string; reason: string }
 
@@ -265,8 +265,8 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
       const answer: Answer = item.check()
       const problems = answer === undefined ? [] : Array.isArray(answer) ? answer : [answer]
       // A signal logged slowly can hide a short dip or spike: say so on each finding, and as "partly checked".
-      // A rule that averages over time (`averagesOverTime`) can't be changed by a dip between records: no note.
-      const slow = rule.averagesOverTime ? [] : view.slowSignals()
+      // A rule that averages over time (`averagesOverTime`) barely moves with a dip between records: no note, down to the rate measured.
+      const slow = view.slowSignals(rule.averagesOverTime ? SLOWEST_AVERAGED_HZ : SLOW_HZ)
       // A signal read from somewhere other than the robot log's own key: say where, on each finding.
       const finish = (p: Problem) => withSources(withSampling(toFinding(rule, p, item.name, view), slow), view.readFrom)
       findings.push(...problems.map(finish))

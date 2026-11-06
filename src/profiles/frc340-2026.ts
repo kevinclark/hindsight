@@ -10,7 +10,7 @@
  *  - No battery voltage or brownout flag in either log, so the battery rules can't run. Motor currents are summed
  *    for the main breaker's heating (power/main-breaker-margin), which needs no voltage.
  *  - Followers are published about 4 times a second, leaders 50 (measured on both logs while enabled): rules that
- *    read a follower say so on their findings.
+ *    read a follower say so on their findings, except rules that average over time (the main breaker's heating).
  *  - The mechanisms changed between the two events, so each event has its own profile; the one whose motors are in
  *    a log fits it best and is chosen for it.
  */

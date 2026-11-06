@@ -1,9 +1,12 @@
-// How a profile's pinned code reads. Plain node loads this (the report and session code import it), so it imports nothing.
+// How a profile's pinned code reads. Plain node loads this (the report and session code import it), so it imports only types.
 // A profile built from a public log has no commit: its code says 'unknown' for the branch and sha.
 
-type Pin = { sha?: string; branch?: string }
+import type { CodePin } from './types.ts'
 
-const known = (text: string | undefined): text is string => !!text && text !== 'unknown'
+type Pin = Partial<Pick<CodePin, 'sha' | 'branch'>>
+
+/** Whether a pin's branch or sha names something. */
+export const known = (text: string | undefined): text is string => !!text && text !== 'unknown'
 
 /** Whether the profile's code names a commit or a branch ("unknown" is what a profile with no pinned code says). */
 export function hasPin(code: Pin): boolean {

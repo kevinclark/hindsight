@@ -417,12 +417,11 @@ test('[LN-18] a fault: a finding in a run under 10 s is kept', () => {
   expect(only({ enabled: [[10, 15]], keys: { [L.supply]: [[0, 5], [11, 90], [11.5, 90], [12, 5]] } }).time).toBe(11)
 })
 
-test('[LN-19] the descriptor follows the rule format: every prose field said, two measured thresholds, CTRE\'s pages cited', () => {
+test('[LN-19] the descriptor follows the rule format: every prose field said, two measured thresholds and one chosen, CTRE\'s pages cited', () => {
   const r = limitNotApplied
   for (const text of [r.meaning, r.nextStep, r.incident, ...r.causes.flatMap((c) => [c.cause, c.look])]) expect(text.trim()).not.toBe('')
-  expect(r.thresholds).toHaveLength(2)
+  expect(r.thresholds!.map((t) => t.basis)).toEqual(['measured', 'judgment', 'measured'])
   for (const t of r.thresholds!) {
-    expect(t.basis).toBe('measured')
     for (const text of [t.name, t.value, t.how]) expect(text.trim()).not.toBe('')
   }
   const catalog = Object.values(SOURCES).filter((x) => typeof x === 'object' && x !== null && 'url' in x)

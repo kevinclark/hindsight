@@ -153,8 +153,8 @@ Two terms, used only in these senses below:
 - **LN-18** The rule judges a fault: a finding in a run shorter than 10 s is kept. Why: ADR 8: a fault is an event
   with its own duration, kept however short the run; a performance finding would be dropped. Kind: behaviour.
 - **LN-19** The descriptor follows the rule format (`rule.ts`, CONTRIBUTING.md): `meaning`, `nextStep`, `incident`
-  and each cause's `cause` and `look` are said (not empty); `thresholds` has two entries, the 120 %/0.2 s line and
-  the 110 % share, both `basis: 'measured'`, each with a `name`, `value` and `how`; `sources` cites at least one page
+  and each cause's `cause` and `look` are said (not empty); `thresholds` has three entries in this order, the 120 %/0.2 s line (`basis: 'measured'`), the 2-record line (`basis: 'judgment'`) and
+  the 110 % share (`basis: 'measured'`), each with a `name`, `value` and `how`; `sources` cites at least one page
   of `src/rules/sources.ts` unchanged (CTRE's current-limit pages, on ctr-electronics.com), each with what it
   `says`. Why: the app shows these to students as the finding's explanation and "Further reading"; a rule cites
   public pages and says where each number came from (`rule.ts`). The words themselves are free (Output wording).
@@ -200,6 +200,15 @@ may be a defect. Each waits for a ruling; until then, a rebuild may do either.
    (`toProfile` in `src/builder/json.ts`) has `code.sha: ''`, and every commit starts with `''`, so every log **ran
    the pinned commit**: a switched-off limit is amber (LN-09), and a switched-on one has `limit-off` ruled out with
    "the limit is switched on in the code" (LN-10), though no code was read.
+4. **One unchanged value held for seconds gives no finding** (LN-04). A log written on change could hold one reading of
+   90 A for 5 s; that is one record, so it is quiet. Measured 2026-11-05: over 778 logs the longest one-record stretch
+   over the line was 0.21 s on real limits, and a motor current that doesn't change under load is a dead sensor or a
+   simulator.
+5. **A stretch clipped at enable counts only the records inside it** (LN-04, LN-05). With enable at 10 s and 90 A at
+   9.9 s and 10.2 s, then under at 10.6 s, two readings show it but the stretch has one record, so it is quiet. 0 of 467
+   stretches over the line on those 778 logs were clipped in.
+6. **The Limits tab keeps its own definition of a burst** (`src/limits/limits-report.ts:166`). It reads limit + margin, not
+   120 %, and has no record filter, so a one-record 0.21 s burst can show red there while this rule is quiet.
 
 The review of this contract (2026-11-03) judged two more items plain defects rather than choices, and they were
 fixed on approval: an Enable flag the profile leaves out read as switched off (now not known: LN-08 to LN-10, LN-12),

@@ -153,10 +153,11 @@ interface About {
    */
   needsEnabled?: boolean
   /**
-   * The rule judges a median or a long average, so a short dip or spike between records can't change its answer, and
-   * the runner adds no "logged slowly" note to its findings or "partly checked" to its quiet result. The slowest rate
-   * measured: a 90 s heating average moved at most about 4 points of 120 A when the current was held at 4 Hz. Nothing
-   * slower has been measured, so set it only for a rule that averages over seconds, never for one that looks for a peak.
+   * The rule judges a median or a long average, so a short dip or spike between records barely moves its answer: a
+   * 90 s heating average moved at most about 4 points of 120 A when the current was held at 4 Hz. The runner adds no
+   * "logged slowly" note to its findings or "partly checked" to its quiet result for a signal at 4 Hz or faster
+   * (`SLOWEST_AVERAGED_HZ`); nothing slower has been measured, so a slower one keeps the note. Set it only for a rule
+   * that averages over seconds, never for one that looks for a peak.
    */
   averagesOverTime?: boolean
 }

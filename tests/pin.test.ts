@@ -16,7 +16,7 @@ describe('the code a profile is pinned to', () => {
     expect(hasPin(pinned)).toBe(true)
     expect(pinText({ branch: 'main', sha: 'def5678abc' })).toBe('def5678 on main')
   })
-  it('a profile with no known commit says "Code not known"', () => {
+  it('a profile with no known commit has no pin', () => {
     expect(hasPin(noPin)).toBe(false)
     expect(pinText(noPin)).toBe('')
   })

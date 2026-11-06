@@ -521,12 +521,12 @@ export class MatchView {
    * for the student. A robot loop logs at 50 Hz; a dashboard or throttled telemetry often logs at 4–20 Hz, and a
    * brownout-sized dip (tens of milliseconds) can then fall between two samples.
    */
-  slowSignals(): { label: string; note: string }[] {
+  slowSignals(below = SLOW_HZ): { label: string; note: string }[] {
     // Signals at the same rate share one note ("A, B and C are logged about 4 times a second ...").
     const byRate = new Map<number, string[]>()
     for (const [key, label] of this.sampled) {
       const rate = sampleRate(num(this.raw, key)!, this.enabled)
-      if (!rate || rate.fastHz >= SLOW_HZ) continue
+      if (!rate || rate.fastHz >= below) continue
       const hz = Math.max(1, Math.round(rate.typicalHz))
       byRate.set(hz, [...(byRate.get(hz) ?? []), label])
     }
@@ -845,6 +845,8 @@ const EARLIEST_PLAUSIBLE_EPOCH = Date.UTC(2023, 0, 1) / 1000
 
 /** Below this rate (records per second while enabled), a measured signal gets a sampling note on its findings. */
 export const SLOW_HZ = 30
+/** The same, for a rule that averages over time: the slowest rate a long average has been measured at. */
+export const SLOWEST_AVERAGED_HZ = 4
 
 /**
  * How often a signal is logged while enabled: `fastHz` from the 10th-percentile gap between records (the rate it

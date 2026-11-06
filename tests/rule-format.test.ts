@@ -126,6 +126,17 @@ describe('what the runner does with an answer', () => {
       expect(runRules(m, [quietAvg]).skipped).toEqual([])
       expect(runRules(m, [{ ...quietAvg, averagesOverTime: undefined }]).skipped).toEqual([{ rule: 'example/averages', reason: expect.stringMatching(/^partly checked; battery voltage is logged about 4 times a second/) }])
     })
+    it('a rule that averages over time keeps the note below the slowest rate measured (4 Hz)', () => {
+      const slower: [number, number][] = []
+      for (let t = 10; t < 35; t += 0.5) slower.push([t, 12.3])
+      const log = writeWpilog([
+        { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [35, false]] },
+        { name: '/SystemStats/BatteryVoltage', type: 'double', records: slower },
+      ])
+      const match = analyzeFiles([{ name: 'test.wpilog', bytes: log }], offseason2026).analyses[0].match
+      const avg = { ...reads, id: 'example/averages', averagesOverTime: true }
+      expect(runRules(match, [avg]).findings.find((f) => f.rule === 'example/averages')?.evidence[NOTE]).toMatch(/logged about 2 times a second/)
+    })
     it('the two shipped rules that average over time are flagged, and no other', () => {
       expect(RULES.filter((r) => r.averagesOverTime).map((r) => r.id).sort()).toEqual(['power/main-breaker-margin', 'power/rest-voltage'])
     })
