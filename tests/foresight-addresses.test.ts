@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { robotAddresses, validTeam } from '../src/foresight/addresses.ts'
+import { pullAddresses, robotAddresses, validTeam } from '../src/foresight/addresses.ts'
 
 const values = (team: number | null) => robotAddresses(team).addresses.map((a) => a.value)
 
@@ -22,5 +22,14 @@ describe('the robot addresses come from the team number', () => {
     }
     expect(robotAddresses(254).note).toBeNull()
     expect(validTeam(254)).toBe(true)
+  })
+})
+
+describe('pullAddresses', () => {
+  it('tries Ethernet first, then USB, then by name', () => {
+    expect(pullAddresses(8033).map((a) => a.value)).toEqual(['10.80.33.2', '172.22.11.2', 'roborio-8033-frc.local'])
+  })
+  it('tries only USB without a team number', () => {
+    expect(pullAddresses(null).map((a) => a.value)).toEqual(['172.22.11.2'])
   })
 })

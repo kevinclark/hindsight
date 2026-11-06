@@ -26,7 +26,7 @@
   import { asFile, codeSpec, sessionNames } from '../hub/session-files.ts'
   import { robotsToProfile, type RobotToProfile } from '../hub/drafts.ts'
   import { keptNow } from './kept-profiles.svelte.ts'
-  import { USB_ADDRESS } from '../foresight/addresses.ts'
+  import { pullAddresses } from '../foresight/addresses.ts'
 
   // `onOpenSession`: the filtered logs, in the Session view. `onOpenMatch`: one log, in Match review. `onDraft`: one log in the
   // profile builder, with "Use GitHub" filled in (`owner/repo@ref`).
@@ -109,8 +109,14 @@
       if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Pull logs off the robot again later.`
     }
   }
-  /** The empty library's pull: the typed address, else the USB tether's (the same for every team). */
-  const pullUsb = () => addRobot(robotAddress.trim() || USB_ADDRESS.value)
+  /** The empty library's pull: the typed address, else Ethernet, then USB, then by name, moving on only when the robot did not answer. */
+  async function pullFirstThatAnswers() {
+    const typed = robotAddress.trim()
+    for (const address of typed ? [typed] : pullAddresses(savedTeam).map((a) => a.value)) {
+      await addRobot(address)
+      if (!pullFailed) return
+    }
+  }
   let update = $state<{ version: string; url: string } | null>(null)
 
   onMount(() => {
@@ -336,8 +342,8 @@
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 {#if pullFailed}
   <section class="pullfail" role="alert" aria-label="Robot not found">
-    <p class="lead">Robot not found. Is the USB cable in and the robot on?</p>
-    <p class="row"><button class="primary strong" onclick={() => addRobot(pullFailed!.address)} disabled={driveBusy}>Try again</button> or <button class="secondary" onclick={addFolder} disabled={driveBusy}>Add a folder of logs</button>{#if onReview} or <button class="secondary" onclick={onReview}>Open one match's log</button>{/if}</p>
+    <p class="lead">Robot not found. Is the cable in and the robot on?</p>
+    <p class="row"><button class="primary strong" onclick={pullFirstThatAnswers} disabled={driveBusy}>Try again</button> or <button class="secondary" onclick={addFolder} disabled={driveBusy}>Add a folder of logs</button>{#if onReview} or <button class="secondary" onclick={onReview}>Open one match's log</button>{/if}</p>
     <p class="meta">What came back from {pullFailed.address}: {pullFailed.detail}</p>
   </section>
 {/if}
@@ -498,7 +504,7 @@
       <div class="first" data-empty-library>
         <p class="lead">Your team's robot logs live here.</p>
         <p>Hindsight reads each one and lists what went wrong. It copies what it finds into its library and leaves your folder as it was.</p>
-        <p class="row"><button class="primary strong" onclick={addFolder} disabled={!!progress}>Add a folder of logs…</button> <button class="secondary" onclick={pullUsb} disabled={driveBusy}>Pull logs off the robot</button> <span class="meta">Plug in the USB cable first.</span></p>
+        <p class="row"><button class="primary strong" onclick={addFolder} disabled={!!progress}>Add a folder of logs…</button> <button class="secondary" onclick={pullFirstThatAnswers} disabled={driveBusy}>Pull logs off the robot</button> <span class="meta">Plug in the cable first.</span></p>
         {#if onReview}<p class="meta">Have one match's log?{' '}<button class="link" onclick={onReview}>Open it in Match review</button></p>{/if}
       </div>
     {:else if filtered.length === 0}

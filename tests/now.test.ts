@@ -42,7 +42,7 @@ describe('Now on an event day with the schedule', () => {
   it('the pull task names the latest match that has started, until its log is the session\'s latest', () => {
     const pull = task(eventNow(), 'pull')
     expect(pull).toMatchObject({ title: "Pull Q4's log", done: false, button: 'Pull from the robot', action: { kind: 'pull' }, primary: true })
-    expect(pull.detail).toBe('Q4 started 20 min ago. Plug in the USB cable, then Pull.')
+    expect(pull.detail).toBe('Q4 started 20 min ago. Plug in the cable, then Pull.')
   })
   it('the pull task reads done, muted and without a button, once that log is in', () => {
     const done = task(eventNow({}, [match(2), match(3), match(4)]), 'pull')
@@ -140,7 +140,7 @@ describe('Now on a practice day', () => {
     expect(st.big).toBe(`Practice · ${dateText(min(200))}`)
     expect(st.tasks.map((t) => t.id)).toEqual(['practice-check', 'runs', 'still'])
     expect(task(st, 'practice-check')).toMatchObject({ title: 'Start-of-practice check', detail: 'in Robot check · about 5 min, robot on', button: 'Open Robot check', action: { kind: 'go', place: 'foresight' } })
-    expect(task(st, 'runs')).toMatchObject({ title: "Pull today's runs", detail: '3 logs from today in the library. Plug in the USB cable, then Pull.', action: { kind: 'pull' } })
+    expect(task(st, 'runs')).toMatchObject({ title: "Pull today's runs", detail: '3 logs from today in the library. Plug in the cable, then Pull.', action: { kind: 'pull' } })
     expect(task(st, 'still')).toMatchObject({ title: "Still open: 12 issues on Test Regional's board", detail: '5 red · in Session › Board', action: { kind: 'board' } })
   })
   it('says nothing is open when the board has nothing, and when there is no event board', () => {
@@ -153,7 +153,7 @@ describe('Now on a practice day', () => {
     expect(st.tasks.some((t) => t.action?.kind === 'pull')).toBe(false)
   })
   it('with no log today the pull line has no count', () => {
-    expect(task(practice({ libraryToday: 0 }), 'runs').detail).toBe('Plug in the USB cable, then Pull.')
+    expect(task(practice({ libraryToday: 0 }), 'runs').detail).toBe('Plug in the cable, then Pull.')
   })
 })
 

@@ -16,7 +16,7 @@ import type { CurrentLimits, Motor, MotorGroup, RobotProfile, ZeroingMechanism }
 export const PROFILE_SCHEMA = 'hindsight.profile/1'
 
 /** Where a value came from, shown beside it in the builder. */
-export type Source = 'log' | 'snapshot' | 'code' | 'code hint' | 'you'
+export type Source = 'log' | 'snapshot' | 'code' | 'code hint' | 'notes' | 'you'
 
 export interface MotorJson extends Motor {
   /** Where the motor is in the log (its struct entry or key stem): how the builder knows it. */

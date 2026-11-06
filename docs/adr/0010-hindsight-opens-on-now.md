@@ -43,7 +43,7 @@ it has to stay true to the board and the schedule; with no schedule it says the 
 - The Session view does not watch the library: it reads the logs it is given. Now therefore hands it today's library
   logs (the same ones, by the Library's own path) when "Open the board" is pressed, after a pull or a folder is added
   from Now, and when the number of today's logs in the library grows while the Session view holds a session.
-- A pull tries USB first, then the Ethernet and by-name addresses the team number gives, moving on only when the robot
+- A pull tries Ethernet first, then USB, then by name (Ethernet and by-name need the team number; changed from USB first on the owner's call, 2026-11-05), moving on only when the robot
   did not answer (the robot's socket never opened: "Robot not found"). Now never probes the robot before the button is pressed, and never says it is connected.
 - On the single-file page the hub-only tasks become "open a log" (a file chooser; a log dropped on Now also opens in
   Match review).

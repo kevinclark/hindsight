@@ -15,6 +15,7 @@ import { idFromDeviceKey } from '../match/companion.ts'
 import { limitsKnown } from '../limits/limits-report.ts'
 import type { CurrentLimits } from '../profiles/types.ts'
 import { firstText } from '../profiles/formats.ts'
+import { applyCanNotes } from './can-notes.ts'
 import { applyCode } from './code-draft.ts'
 import { GAMES, gameFor } from '../profiles/games.ts'
 import { playedAt } from '../match/played-at.ts'
@@ -181,6 +182,8 @@ export function draftProfile(input: { logs: DraftLog[]; snapshot?: Snapshot; hin
   // The code's word on kinds, IDs, groups and limits; then a snapshot's, which says what the robot actually holds.
   const fromCode = input.hints ? applyCode(json, input.hints, log, /uncom+itted/i.test(firstText(log, sig.signals.gitDirty))) : []
   if (input.snapshot) applySnapshot(json, input.snapshot)
+  const fromNotes = !input.snapshot && input.hints?.canNotes.length ? applyCanNotes(json, input.hints.canNotes, log) : 0
+  if (fromNotes) fromCode.push(`${fromNotes} CAN ID${fromNotes === 1 ? '' : 's'} came from the code's notes file, which people keep by hand: check ${fromNotes === 1 ? 'it' : 'them'}, or add a snapshot.`)
   if (input.hints) json.builtFrom = { ...json.builtFrom!, code: input.hints.sha ?? 'unknown commit' }
   const guessed = sig.guessed.map((s) => ({ signal: s, key: sig.signals[s] as string, alternatives: sig.alternatives[s] ?? [] }))
   const leftOut = others.length ? [`${others.length} log${others.length === 1 ? ' is' : 's are'} from another robot (${[...new Set(others.map((l) => codebaseOf(l.log) || 'no code name'))].join(', ')}) and ${others.length === 1 ? 'was' : 'were'} left out: ${others.map((l) => l.fileName).join(', ')}.`] : []
@@ -209,8 +212,8 @@ export function carryConfirmations(from: ProfileJson, to: ProfileJson): void {
     const o = motor.logPath ? old.get(motor.logPath) : undefined
     if (!o) continue
     motor.name = o.name
-    // An ID the code gave is the new draft's to give again (the code may be another commit now); the student's is kept.
-    if (o.canId !== undefined && motor.canIdFrom !== 'log' && o.canIdFrom !== 'code') { motor.canId = o.canId; motor.bus = o.bus; motor.canIdFrom = o.canIdFrom }
+    // An ID the code or its notes gave is the new draft's to give again (the code may be another commit now); the student's is kept.
+    if (o.canId !== undefined && motor.canIdFrom !== 'log' && o.canIdFrom !== 'code' && o.canIdFrom !== 'notes') { motor.canId = o.canId; motor.bus = o.bus; motor.canIdFrom = o.canIdFrom }
     if (motor.current && !o.current) {
       if (o.supplyCurrent === motor.current) { motor.supplyCurrent = motor.current; delete motor.current }
       else if (o.statorCurrent === motor.current) { motor.statorCurrent = motor.current; delete motor.current }
@@ -260,6 +263,8 @@ export const allMotors = (json: ProfileJson) => json.motorGroups.flatMap((g) => 
 export function applySnapshot(json: ProfileJson, snapshot: Snapshot): void {
   const talons = snapshot.devices.filter((d) => d.isMotor)
   const motors = allMotors(json).map((x) => x.motor)
+  // What the robot holds outranks what a person wrote down.
+  for (const m of motors) if (m.canIdFrom === 'notes') { delete m.canId; delete m.canIdFrom }
   const taken = new Set<string>()
   const deviceFor = (m: MotorJson) => (m.canId === undefined ? undefined : talons.find((d) => d.id === m.canId && (m.bus === undefined || d.bus === m.bus)))
   for (const m of motors) { const d = deviceFor(m); if (d) { taken.add(d.key); m.bus = d.bus } }

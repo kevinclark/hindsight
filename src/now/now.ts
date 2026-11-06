@@ -148,7 +148,7 @@ function pullTask(input: NowInput, board: Pick<Board, 'tl'> | null, vague: strin
   const age = started ? Math.floor((input.now - started.at) / 60e3) : null
   const ago = name && age !== null && age >= 1 ? `${name} started ${age} min ago. ` : ''
   if (hub) {
-    return { id: 'pull', title: name ? `Pull ${name}'s log` : vague, detail: `${ago}Plug in the USB cable, then Pull.`, done: false, button: 'Pull from the robot', action: { kind: 'pull' }, primary: true }
+    return { id: 'pull', title: name ? `Pull ${name}'s log` : vague, detail: `${ago}Plug in the cable, then Pull.`, done: false, button: 'Pull from the robot', action: { kind: 'pull' }, primary: true }
   }
   return { id: 'pull', title: name ? `Open ${name}'s log` : "Open the last match's log", detail: `${ago}Choose it; it opens in Match review.`, done: false, button: 'Open a log…', action: { kind: 'open-log' }, primary: true }
 }
@@ -173,7 +173,7 @@ export function nowState(input: NowInput): NowState {
       { id: 'open-log', title: "Open one match's log", detail: 'a log file you already have, or drop it anywhere on this page', done: false, button: 'Open a log…', action: { kind: 'open-log' }, primary: true },
       ...(hub ? [
         { id: 'add-folder', title: 'Add a folder of logs', detail: 'from AdvantageScope or a USB stick', done: false, button: 'Add a folder…', action: { kind: 'add-folder' }, primary: false } satisfies NowTask,
-        { id: 'pull-logs', title: 'Pull logs off the robot', detail: 'plug in the USB cable first', done: false, button: 'Pull logs', action: { kind: 'pull' }, primary: false } satisfies NowTask,
+        { id: 'pull-logs', title: 'Pull logs off the robot', detail: 'plug in the cable first', done: false, button: 'Pull logs', action: { kind: 'pull' }, primary: false } satisfies NowTask,
       ] : []),
     ]
     return {
@@ -190,7 +190,7 @@ export function nowState(input: NowInput): NowState {
   if (input.mode === 'practice') {
     const today = input.libraryToday
     const runs: NowTask = hub
-      ? { id: 'runs', title: "Pull today's runs", detail: `${today ? `${plural(today, 'log')} from today in the library. ` : ''}Plug in the USB cable, then Pull.`, done: false, button: 'Pull from the robot', action: { kind: 'pull' }, primary: false }
+      ? { id: 'runs', title: "Pull today's runs", detail: `${today ? `${plural(today, 'log')} from today in the library. ` : ''}Plug in the cable, then Pull.`, done: false, button: 'Pull from the robot', action: { kind: 'pull' }, primary: false }
       : { id: 'runs', title: "Open today's logs", detail: 'Choose them; they open in the Session view.', done: false, button: 'Open logs…', action: { kind: 'open-logs' }, primary: false }
     const s = input.still
     const still: NowTask = s && s.open > 0

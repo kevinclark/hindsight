@@ -10,10 +10,11 @@
  * `codeHead`.
  */
 import { GitUnreadable, type GitRepo } from '../code/git.ts'
-import { javaFilesAt, type CodeSource } from '../code/source.ts'
+import { filesAt, type CodeSource } from '../code/source.ts'
 import { isTestCode, valueAlong, waysToReach } from '../code/check/flow.ts'
 import { deviceBuilt, inSimulation } from '../code/check/devices.ts'
 import { readSettings, type DeviceSetting, type ReadField } from '../code/check/device-settings.ts'
+import { isCanNotesPath, parseCanNotes, type CanNote } from './can-notes.ts'
 import { codeMotors, type CodeMotor } from './code-motors.ts'
 import { codeOf, fileName, lineOf, parts, typeNamed, type Node } from '../code/check/java.ts'
 import { baseType, Project } from '../code/check/project.ts'
@@ -37,6 +38,8 @@ export interface CodeHints {
   motors: CodeMotor[]
   /** The settings the code applies to each device: current limits among them (code/check/device-settings.ts). */
   settings: DeviceSetting<ReadField>[]
+  /** The team's own CAN ID list in the code (notes/canids.md), when it keeps one (can-notes.ts). */
+  canNotes: CanNote[]
   /** The commit the folder is on (from .git), if it could be read. */
   sha: string | null
   branch: string | null
@@ -63,7 +66,8 @@ export function codeHints(files: CodeFile[], head: CodeHead): CodeHints {
     } catch (error) {
       notes.push(`Couldn't read the motors' log keys from the code (${error instanceof Error ? error.message : error}): only the CAN ID choices are labelled.`)
     }
-    return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), motors, settings, ...git, notes: [...notes, ...git.notes] }
+    const canNotes = files.filter((f) => isCanNotesPath(f.path)).flatMap((f) => parseCanNotes(f.text))
+    return { sites: sites.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9) || a.file.localeCompare(b.file)), motors, settings, canNotes, ...git, notes: [...notes, ...git.notes] }
   } finally {
     project.close()
   }
@@ -98,7 +102,7 @@ function sitesOf(talon: Node, project: Project): TalonSite[] {
 /** Hints from the code at a branch or commit (GitHub): every Java file's text at that commit. */
 export async function hintsAt(source: CodeSource, ref: string): Promise<CodeHints> {
   const sha = await source.resolve(ref)
-  return codeHints(await javaFilesAt(source, sha), { sha, branch: branchOf(sha, ref) })
+  return codeHints(await filesAt(source, sha, (path) => path.endsWith('.java') || isCanNotesPath(path)), { sha, branch: branchOf(sha, ref) })
 }
 
 /** The commit a branch or hash names (GitHub), or why it can't be told. */

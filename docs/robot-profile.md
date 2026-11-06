@@ -13,7 +13,7 @@ Open `hindsight.html`, open **Tools › Robot profile** at the top, and drop:
 |---|---|---|
 | One or more match logs (`.wpilog`) | the roboRIO's USB stick or `/home/lvuser/logs` | your motors, how they group, the standard signals, which code ran (branch and commit) |
 | `snapshot.json` (optional, best) | `python3 tools/robot-snapshot.py` with the robot on (see `robot-snapshot.md`) | each Talon FX's CAN ID and bus, and the current limits it is really running |
-| Your robot-code folder (optional) | **Choose code folder…**; nothing in it is changed or uploaded | hints: where the code builds each Talon FX, and with which CAN ID |
+| Your robot-code folder (optional) | **Choose code folder…**; nothing in it is changed or uploaded | hints: where the code builds each Talon FX, and with which CAN ID; with no snapshot, a CAN ID list in `notes/canids.md` (also `canIDs.md`, `motorIds.md`) fills the IDs still open, by name, marked "from notes" |
 
 Several logs draft better than one: a key that only some matches logged is still found. Only logs of one robot are
 used (the latest log's code name); logs of another robot are listed and left out. Dropping another log later keeps

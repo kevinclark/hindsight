@@ -28,9 +28,10 @@ export function nameWords(s: string): Set<string> {
 }
 
 /** A Tuner X default name ("Talon FX vers. C (Device ID 1)"), or none. */
-export const isDefaultName = (d: Device) => d.name.trim() === '' || /^Talon FX/i.test(d.name.trim()) && /Device ID\s*\d+/i.test(d.name)
+export const isDefaultName = (d: Pick<Device, 'name'>) => d.name.trim() === '' || /^Talon FX/i.test(d.name.trim()) && /Device ID\s*\d+/i.test(d.name)
 
-export interface NameMatch { path: string; device: Device; score: number }
+export type NamedDevice = Pick<Device, 'key' | 'name' | 'isMotor' | 'count'>
+export interface NameMatch<D extends NamedDevice = Device> { path: string; device: D; score: number }
 
 /**
  * Match motors (by their log path) to the snapshot's Talon FX by name. A motor gets a device when its best overlap
@@ -38,14 +39,14 @@ export interface NameMatch { path: string; device: Device; score: number }
  * the larger word set, so "Drive" alone doesn't take "Front Left Drive", plus a half for the words of the motor's own
  * name (the path's last part): in /Drive/FrontLeft/Turn the subsystem's "Drive" must not tie "FL Drive" with "FL Steer".
  */
-export function matchByName(paths: string[], snapshot: Snapshot): NameMatch[] {
+export function matchByName<D extends NamedDevice>(paths: string[], snapshot: { devices: D[] }): NameMatch<D>[] {
   const devices = snapshot.devices.filter((d) => d.isMotor && d.count === 1 && !isDefaultName(d))
   const score = (a: Set<string>, own: Set<string>, b: Set<string>) => {
     const shared = [...a].filter((w) => b.has(w)).length
     if (shared === 0) return 0
     return shared / Math.max(a.size, b.size) + (own.size ? (0.5 * [...own].filter((w) => b.has(w)).length) / own.size : 0)
   }
-  const pairs: NameMatch[] = []
+  const pairs: NameMatch<D>[] = []
   for (const path of paths) {
     const pw = nameWords(path)
     const own = nameWords(path.split('/').filter(Boolean).at(-1) ?? '')
@@ -53,9 +54,9 @@ export function matchByName(paths: string[], snapshot: Snapshot): NameMatch[] {
     if (ranked.length && ranked[0].s > 0 && (ranked.length === 1 || ranked[0].s > ranked[1].s)) pairs.push({ path, device: ranked[0].device, score: ranked[0].s })
   }
   // One device per motor: when two motors pick one device, the better score keeps it; a tie keeps neither.
-  const byDevice = new Map<string, NameMatch[]>()
+  const byDevice = new Map<string, NameMatch<D>[]>()
   for (const p of pairs) { const k = p.device.key; if (!byDevice.has(k)) byDevice.set(k, []); byDevice.get(k)!.push(p) }
-  const out: NameMatch[] = []
+  const out: NameMatch<D>[] = []
   for (const ps of byDevice.values()) {
     ps.sort((a, b) => b.score - a.score)
     if (ps.length === 1 || ps[0].score > ps[1].score) out.push(ps[0])

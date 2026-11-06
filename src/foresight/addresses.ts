@@ -10,6 +10,12 @@ export const USB_ADDRESS: RobotAddress = { value: '172.22.11.2', label: 'USB tet
 /** A team number the 10.TE.AM.2 rule can express: TE is 0 to 255 (WPILib), so 1 to 25599. */
 export const validTeam = (team: number | null | undefined): team is number => Number.isInteger(team) && team! >= 1 && team! <= 25599
 
+/** The order a log pull tries them: Ethernet first, then USB, then by name. Without a team number only USB can be tried. */
+export function pullAddresses(team: number | null | undefined): RobotAddress[] {
+  const [usb, ethernet, byName] = robotAddresses(team).addresses
+  return ethernet ? [ethernet, usb, byName] : [usb]
+}
+
 export function robotAddresses(team: number | null | undefined): { addresses: RobotAddress[]; note: string | null } {
   if (!validTeam(team)) return { addresses: [USB_ADDRESS], note: "A team number (the Session view's Blue Alliance fields, or the app's team setting) adds the Ethernet and by-name addresses." }
   return {

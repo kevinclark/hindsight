@@ -8,7 +8,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { hub, type RobotResult } from '../hub/bridge.ts'
-  import { robotAddresses } from '../foresight/addresses.ts'
+  import { pullAddresses } from '../foresight/addresses.ts'
   import { buildBoard } from '../board/model.ts'
   import { sessionWithMarks } from '../triage/track-record.ts'
   import { PROFILES } from '../profiles/index.ts'
@@ -130,11 +130,11 @@
     failure = null
     note = ''
     busy = 'pull'
-    const addresses = robotAddresses(tbaTeam()).addresses
+    const addresses = pullAddresses(tbaTeam())
     const tried: string[] = []
     let reason = ''
     try {
-      // USB first, then the Ethernet and by-name addresses the team number gives; the next only when the robot did not answer.
+      // Ethernet first, then USB, then by name (pullAddresses); the next only when the robot did not answer.
       for (const a of addresses) {
         note = `Connecting to the robot over ${a.label} (${a.value})…`
         tried.push(a.label)
@@ -186,7 +186,7 @@
     <p class="head">Tried {failure.tried}.</p>
     {#if failure.notFound}
       <p class="bad">Robot not found.</p>
-      <p>Is the USB cable in and the robot on?</p>
+      <p>Is the cable in and the robot on?</p>
       <p class="meta">{failure.reason}</p>
     {:else}
       <p class="bad">{failure.reason}</p>

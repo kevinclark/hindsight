@@ -11,6 +11,7 @@
   import { allMotors, applySnapshot, carryConfirmations, draftProfile, draftWarnings, NOT_INFERRED, refreshLimits, setDevice, type DraftLog } from '../builder/draft.ts'
   import { parseProfileJson, type GroupJson, type MotorJson, type ProfileJson } from '../builder/json.ts'
   import { forgetProfile, keepProfile, keptId, keptProfiles } from '../builder/store.ts'
+  import { isCanNotesPath } from '../builder/can-notes.ts'
   import { codeHead, codeHints, hintsAt, shaWarning, siteLabel, type CodeFile, type CodeHints } from '../builder/code-hints.ts'
   import { loadJavaInPage } from '../code/check/browser-java.ts'
   import { browserGitHub, gitRepoOfFiles } from '../code/browser-code-folder.ts'
@@ -52,7 +53,7 @@
   // The keptId of the kept profile being edited (opened from the list, or kept since): keeping replaces it, renamed or not.
   let keptAs = $state<string | null>(null)
 
-  const SOURCE_WORDS: Record<string, string> = { log: 'log', snapshot: 'snapshot', code: 'code', you: 'you', 'code hint': 'code hint' }
+  const SOURCE_WORDS: Record<string, string> = { log: 'log', snapshot: 'snapshot', code: 'code', you: 'you', 'code hint': 'code hint', notes: 'notes' }
   /** Why a group is one, as the builder shows it: the code, or a guess from the log's key names. */
   const GROUP_WORDS: Record<string, string> = { code: 'the code', swerve: 'guess: swerve names', 'one array': 'guess: one array key', 'leader/follower': 'guess: leader and follower names', you: 'you' }
   const talons = $derived((snapshot?.devices ?? []).filter((d) => d.isMotor))
@@ -159,7 +160,7 @@
     const read: CodeFile[] = []
     for (const f of files) {
       const path = f.webkitRelativePath || f.name
-      if (path.endsWith('.java')) read.push({ path, text: await f.text() })
+      if (path.endsWith('.java') || isCanNotesPath(path)) read.push({ path, text: await f.text() })
     }
     if (mine !== generation) return
     try {
