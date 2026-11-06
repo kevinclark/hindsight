@@ -147,6 +147,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The whole history and its tags, for what changed since the last release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: files
@@ -161,18 +166,11 @@ jobs:
           mac_signed=false
           if [ "$(cat signing-mac.txt)" = signed ]; then mac_signed=true; fi
           {
-            echo "Hindsight $VERSION, built from commit ${GITHUB_SHA::12} after the test suite passed."
+            echo "## What's new"
+            sh ../scripts/release-changes.sh
             echo
-            echo "The commit's package.json says version $PKG_VERSION; the build sets the version to $VERSION (0.1.<commits on main>) before packaging."
-            echo
-            echo "Windows and Linux builds update themselves. A signed and notarized Mac build does too; an unsigned one shows a banner and you download the new dmg."
-            echo
-            echo "sha256:"
-            for f in *.dmg *.zip *.exe *.AppImage latest*.yml *.blockmap; do
-              [ -e "$f" ] && echo "- $f: $(sha256sum "$f" | cut -d' ' -f1)"
-            done
-            echo
-            echo "First time you open a download (an update that installs itself never asks):"
+            echo "## Installing"
+            echo "Copies already installed update themselves. First time you open a download:"
             if [ "$mac_signed" = true ]; then
               echo "- Mac (Hindsight-$VERSION-mac-*.dmg, arm64 for Apple silicon, x64 for Intel): signed and notarized, drag Hindsight to Applications and open it. If your copy is older and unsigned, download this one once; later ones install themselves."
             else
@@ -180,6 +178,16 @@ jobs:
             fi
             echo "- Windows (.exe, not signed): if it says \"Windows protected your PC\", click More info, then Run anyway."
             echo "- Linux (.AppImage): make it executable (chmod +x), then run it."
+            echo
+            echo "<details><summary>Build details</summary>"
+            echo
+            echo "Built from commit ${GITHUB_SHA::12} after the test suite passed. package.json says $PKG_VERSION; the build sets the version to $VERSION (0.1.<commits on main>)."
+            echo
+            for f in *.dmg *.zip *.exe *.AppImage latest*.yml *.blockmap; do
+              [ -e "$f" ] && echo "- $f: $(sha256sum "$f" | cut -d' ' -f1)"
+            done
+            echo
+            echo "</details>"
           } > ../notes.md
           args=()
           for f in *.dmg *.zip *.exe *.AppImage latest*.yml *.blockmap; do [ -e "$f" ] && args+=("$f"); done
