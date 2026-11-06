@@ -26,6 +26,7 @@ export default rule({
   title: 'Close to tripping the main breaker',
   severity: 'warning',
   judges: 'performance',
+  averagesOverTime: true, // a 90 s heating average
   who: ['software', 'drive'],
   meaning: 'The total current was high for long enough to heat the 120 A main breaker into the range where it can trip. If it trips, the whole robot goes dead until someone resets it by hand.',
   causes: [

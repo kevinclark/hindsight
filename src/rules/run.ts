@@ -265,7 +265,8 @@ function runOne(rule: Rule, view: MatchView): { findings: Finding[]; notChecked:
       const answer: Answer = item.check()
       const problems = answer === undefined ? [] : Array.isArray(answer) ? answer : [answer]
       // A signal logged slowly can hide a short dip or spike: say so on each finding, and as "partly checked".
-      const slow = view.slowSignals()
+      // A rule that averages over time (`averagesOverTime`) can't be changed by a dip between records: no note.
+      const slow = rule.averagesOverTime ? [] : view.slowSignals()
       // A signal read from somewhere other than the robot log's own key: say where, on each finding.
       const finish = (p: Problem) => withSources(withSampling(toFinding(rule, p, item.name, view), slow), view.readFrom)
       findings.push(...problems.map(finish))
