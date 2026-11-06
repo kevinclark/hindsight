@@ -9,6 +9,7 @@
  */
 import { hasEntry, type WpilogFile } from '../readers/wpilog.ts'
 import type { RobotProfile } from './types.ts'
+import { hasPin } from './pin.ts'
 import { codeIdentity, KEYS_SAME_ON_EVERY_ROBOT, NAMES_SAME_ON_EVERY_ROBOT } from './formats.ts'
 import { isOtherLogKey, keysOf } from './sources.ts'
 import { signalsFromLog } from '../builder/signals.ts'
@@ -108,7 +109,7 @@ export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?
       profile: p,
       choice: {
         how: 'codebase', fit: profileFit(log, p), misfit: low(profileFit(log, p)),
-        note: `No profile is pinned to the branch this log ran (${branch || 'unknown'}); using "${p.name}" as of ${p.code.branch} ${p.code.sha}. Current limits may differ from what ran.`,
+        note: `No profile is pinned to the branch this log ran (${branch || 'unknown'}); using "${p.name}"${hasPin(p.code) ? ` as of ${p.code.branch} ${p.code.sha}` : ' (code not known)'}. Current limits may differ from what ran.`,
       },
     }
   }

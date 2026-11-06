@@ -168,7 +168,7 @@ export class ForesightLive {
     this.client.subscribe(FORESIGHT_PREFIXES.map(topicFor), { all: true, periodic: PERIODIC, prefix: true })
     this.status.profile = profile
     this.status.subscribed = [...this.status.subscribed, ...keys]
-    this.connectedMessage = `Connected. Robot: ${profile.name}${profile.code.branch ? ` (${profile.code.branch})` : ''}; reading ${this.status.subscribed.length} signals, and every Hindsight companion key (${FORESIGHT_PREFIXES.join(', ')}).`
+    this.connectedMessage = `Connected. Robot: ${profile.name}${profile.code.branch && profile.code.branch !== 'unknown' ? ` (${profile.code.branch})` : ''}; reading ${this.status.subscribed.length} signals, and every Hindsight companion key (${FORESIGHT_PREFIXES.join(', ')}).`
     this.status.message = this.connectedMessage
     this.emit()
   }
