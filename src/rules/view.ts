@@ -16,6 +16,7 @@ import { ranPinnedCommit, type LimitLines } from '../code/limit-lines.ts'
 import { has, matchSeconds, matchTimeLeft, matchWhen, matchWhenAt, num, phaseAt, values, type Match } from '../match/match.ts'
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
 import type { BatteryKeys, CurrentLimits, ResolvedProfile } from '../profiles/types.ts'
+import { connectedFlags } from '../profiles/connected.ts'
 import { otherLogOf } from '../profiles/sources.ts'
 import { deviceFlagKeys } from '../profiles/formats.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
@@ -431,10 +432,8 @@ export class MatchView {
    * devices only the Hindsight companion watches (`watched`: read once a second, so a drop shows up to 1.5 s late).
    */
   connectedDevices(): { name: string; key: string; watched?: boolean }[] {
-    const motors = this.profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => (m.connected ? [{ name: m.name, key: m.connected }] : [])))
-    const others = this.profile.otherDevices.map((d) => ({ name: d.name, key: d.connected }))
     const watchedOnly = this.watchedDevices().filter((w) => !w.profileFlag).map((w) => ({ name: w.name, key: w.connected().key, watched: true }))
-    return [...motors, ...others, ...watchedOnly]
+    return [...connectedFlags(this.profile), ...watchedOnly]
   }
 
   private watchedList: WatchedDeviceView[] | null = null
