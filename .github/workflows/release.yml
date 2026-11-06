@@ -104,7 +104,14 @@ jobs:
             echo unsigned > signing-mac.txt
           fi
           npm run build:app
-          npx electron-builder --mac dmg zip --arm64 --x64 --publish never "${sign[@]}"
+          # Apple's ticket server can drop the connection while stapling (NSURLError -1005, twice on 2026-11-05). Building again is safe.
+          for attempt in 1 2 3; do
+            npx electron-builder --mac dmg zip --arm64 --x64 --publish never "${sign[@]}" && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "Mac build attempt $attempt failed; trying again in 60 s"
+            rm -rf release
+            sleep 60
+          done
           rm -f "$RUNNER_TEMP/AuthKey.p8"
           test -e release/latest-mac.yml
           if [ -n "$MAC_CSC_LINK" ]; then codesign -dv --verbose=2 release/mac-arm64/Hindsight.app 2>&1 | grep -E 'Authority=Developer ID Application|TeamIdentifier'; fi
