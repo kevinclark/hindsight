@@ -16,8 +16,3 @@ export function pinText(code: Pin): string {
   const branch = known(code.branch) ? code.branch : ''
   return sha || branch ? `${sha || '?'} on ${branch || '?'}` : ''
 }
-
-/** "Code as of main 1a2b3c4", or "Code not known" when the profile names no commit. */
-export function codeAsOf(code: Pin): string {
-  return hasPin(code) ? `Code as of ${code.branch} ${code.sha}` : 'Code not known'
-}
