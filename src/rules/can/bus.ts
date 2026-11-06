@@ -43,7 +43,11 @@ export function dropAround(drops: Episode[], t: number) {
   return drops.find((e) => Math.abs(e.start - t) <= TOGETHER_SECONDS)
 }
 
-/** While enabled, plus (Foresight) the disabled stretch being checked. */
+/**
+ * While enabled, plus (Foresight) the disabled stretch being checked. Every enable in the log, so a queue or pit enable
+ * in a match log counts, and its drop reads "before the match". Left this way until a real case says otherwise:
+ * 4 of 89 on-field logs have such enables and none has a drop in them (2026-11-05).
+ */
 export function watched(match: MatchView) {
   return [...match.enabled, ...match.beforeEnable]
 }
@@ -68,37 +72,35 @@ export function windowStart(match: MatchView): string {
   return match.beforeEnable.length > 0 ? 'the check started' : 'the robot enabled'
 }
 
-/** The battery before each drop, with a drop already under way timed from the start of the watched window. */
-export interface DropReadings {
-  /** The drops, each starting where it is timed from (the window start for a drop already under way). */
-  timed: Episode[]
+/** One drop as the findings tell it. */
+export interface DropReading {
+  /** The drop, starting where it is timed from (the window start for a drop already under way). */
+  timed: Episode
   /** True for a drop already under way when the first watched window began. */
-  alreadyOff: boolean[]
-  /** The voltages of the drops that began while watched: the sag verdicts rest on these only. */
-  voltages: number[]
-  /** One entry per drop for the evidence: its voltage, or that it was already off. */
-  text: string[]
-  /** How the drops' voltage sentence says "every": all of them, or only those that began while watched. */
-  everyDrop: string
+  alreadyOff: boolean
+  /** For the evidence: its voltage, or that it was already off. */
+  text: string
 }
 
 /**
  * The lowest battery voltage in the `lookBack` s before each drop (the flag goes false after the device misses its
  * frames: 0.5 s for a flag the robot code reads every loop, longer for one read once a second).
  */
-export function readDrops(match: MatchView, battery: Signal, drops: Episode[], lookBack = DROP_LOOK_BACK): DropReadings {
-  const offAt = drops.map((d) => alreadyOffAt(match, d))
-  const timed = drops.map((d, i) => ({ ...d, start: offAt[i] ?? d.start }))
-  // null for a drop already under way: it has no voltage to read.
-  const readings = timed.map((d, i) => (offAt[i] === null ? battery.lowest(match.before(d.start, lookBack)).value : null))
-  const voltages = readings.filter((v): v is number => v !== null)
+export function readDrops(match: MatchView, battery: Signal, drops: Episode[], lookBack = DROP_LOOK_BACK) {
   const pit = match.beforeEnable.length > 0
   const alreadyOffText = `already off when ${pit ? 'the check started' : 'enabled'}`
+  // The voltages of the drops that began while watched: the sag verdicts rest on these only.
+  const voltages: number[] = []
+  const readings = drops.map((d): DropReading => {
+    const offAt = alreadyOffAt(match, d)
+    if (offAt !== null) return { timed: { ...d, start: offAt }, alreadyOff: true, text: alreadyOffText }
+    const volts = battery.lowest(match.before(d.start, lookBack)).value
+    voltages.push(volts)
+    return { timed: d, alreadyOff: false, text: voltageList([volts]) }
+  })
+  // How the drops' voltage sentence says "every": all of them, or only those that began while watched.
   const everyDrop = voltages.length < drops.length ? `at every drop that began ${pit ? 'while the check ran' : 'while enabled'}` : 'at every drop'
-  return {
-    timed, alreadyOff: offAt.map((o) => o !== null), voltages, everyDrop,
-    text: readings.map((v) => (v === null ? alreadyOffText : voltageList([v]))),
-  }
+  return { readings, voltages, everyDrop }
 }
 
 /** The battery voltage from `before` s ahead of the first drop to time `to`, marking each drop, with the 7 V line. */

@@ -70,9 +70,9 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   // A drop already under way when the watched window began is timed from that start. It says nothing about sag.
   // A device only the companion watches is read once a second, so its drop began up to 1.5 s before the flag fell.
   const lookBack = device.watched ? DEVICE_LATE_SECONDS : DROP_LOOK_BACK
-  const { timed, alreadyOff, voltages, text: voltageText, everyDrop } = readDrops(match, battery, drops, lookBack)
-  const first = timed[0]
-  const firstWhen = alreadyOff[0]
+  const { readings, voltages, everyDrop } = readDrops(match, battery, drops, lookBack)
+  const first = readings[0].timed
+  const firstWhen = readings[0].alreadyOff
     ? `already off when ${windowStart(match)} ${match.whenAt(first.start)}`
     : match.whenAt(first.start)
   const secondsMissing = drops.reduce((sum, d) => sum + secondsWatched(match, d), 0)
@@ -81,7 +81,7 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
   const closeCall = voltages.some((v) => Math.abs(v - LOW_VOLTS) < 0.5)
   // No battery voltage logged just before a drop that began while enabled.
   const unknownVolts = voltages.some((v) => Number.isNaN(v))
-  const cameBack = timed[timed.length - 1].end >= match.logEnd ? 'no, still off at the end of the log' : 'yes'
+  const cameBack = drops[drops.length - 1].end >= match.logEnd ? 'no, still off at the end of the log' : 'yes'
   const others = otherDevices(match, device.name)
   const together = devicesDroppedWith(others, drops, !!device.watched)
 
@@ -109,13 +109,13 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
       drops: drops.length,
       'seconds missing while enabled': round(secondsMissing),
       'came back': cameBack,
-      [`lowest battery voltage in the ${lookBack} s before each drop (V)`]: voltageText.join(', '),
+      [`lowest battery voltage in the ${lookBack} s before each drop (V)`]: readings.map((r) => r.text).join(', '),
       'read by': device.watched ? 'the Hindsight companion (HindsightDevices.watch), once a second' : undefined,
       'other devices dropped at the same moment': othersDropped(together, others.length),
     },
     likely, ruledOut, nextStep: neverAnswered ? NEVER_ANSWERED : dropNextStep(allLow, everyDrop, together),
     measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
-    plot: plotDrops(battery, timed, 3, drops[drops.length - 1].end + 2),
+    plot: plotDrops(battery, readings.map((r) => r.timed), 3, drops[drops.length - 1].end + 2),
   }
 }
 
