@@ -8,6 +8,7 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
 
 - A commit someone using the app would notice gets a `Changelog:` trailer: one short line in plain words (`docs/release.md`).
   It becomes the release notes and the What's new card after an update.
+  A `Changelog:` line must sit directly above `Co-Authored-By`, with no blank line between them, or git doesn't read it as a trailer and the release says "Small fixes". Before landing: `git log --format='%(trailers:key=Changelog,valueonly)' <base>..HEAD` (2026-11-05: three lines missed by the tests, caught in review).
 - After CI passes on a branch tip, land it with `git merge --no-ff` so the tested commits are the ones on main. If
   you must rebase, re-run every suite on the rebased result before pushing (165e7dd and 9875905 did).
 - CI (`code-check-action`) runs only when `src/code/**`, `action.yml`, `scripts/code-check.ts` or `package*.json`
