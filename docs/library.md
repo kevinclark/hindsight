@@ -105,8 +105,9 @@ panel. Neither is committed.
   keyring (Linux) it is not kept. On a Mac, reading `safeStorage` makes the system ask for Keychain permission, so the app
   does that only at sign-in.
 - **Sync** (one named plan, then a click): downloads teammates' manifests, uploads this computer's logs the team folder
-  lacks (a log that came from Drive is copied *inside* Drive), then publishes this computer's records. A log's record is
-  written only after its file is there, so a failed upload leaves no record. Nothing is deleted or overwritten.
+  lacks, newest played first so the event going on now is shared before an old backlog (a log with no date goes by when
+  it was added; a log that came from Drive is copied *inside* Drive), then publishes this computer's records. A log's record is written only after its file is there,
+  so a failed upload leaves no record. Nothing is deleted or overwritten. Sync never downloads a log: **Download** does.
 - **The triage history** (known issues, and the issue board's lines) is `history/<machine id>.jsonl`, appended only by that
   computer, beside the manifests. The board is the fold of every file (`hub:history`; order by when, device, seq; lines
   this build can't read are kept as they came). Sync brings teammates' files down and puts this computer's up by the

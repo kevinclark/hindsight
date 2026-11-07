@@ -11,7 +11,7 @@ import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { driveFolderFiles } from '../src/hub/drive-source.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { ingest, localFolderFiles, planIngest } from '../src/hub/ingest.ts'
-import { FAILURES_IN_A_ROW, fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
+import { FAILURES_IN_A_ROW, fetchLogs, newestFirst, syncWithTeam } from '../src/hub/sync.ts'
 import { describeFile } from '../src/hub/describe-file.ts'
 import { SignInAgain, readText } from '../src/hub/adapter.ts'
 import { parseManifest } from '../src/hub/types.ts'
@@ -62,6 +62,25 @@ describe('sync through a team store', () => {
     expect(got.fetched).toEqual([want[0].path])
     expect((await b.store.stat(want[0].path))!.size).toBe(want[0].size)
     expect((await readdir(join(b.root, 'logs/2026-2027/2026-10-17'))).filter((n) => n.endsWith('.part'))).toEqual([])
+  })
+
+  it('uploads the newest played log first, even when it was added last', async () => {
+    const team = new MemoryAdapter()
+    const a = await machine('ma')
+    await putLog(join(work, 'old'), 'old.wpilog', 'old', CLOCK - 30 * 86400e3)
+    await ingest(a, await localFolderFiles(join(work, 'old')), options)
+    await putLog(join(work, 'new'), 'new.wpilog', 'new', CLOCK)
+    await putLog(join(work, 'new'), 'mid.wpilog', 'mid', CLOCK - 86400e3)
+    await ingest(a, await localFolderFiles(join(work, 'new')), options)
+    const names = new Map(a.catalog.all().map((r) => [r.path, r.names[0]]))
+    const report = await syncWithTeam(a, team)
+    expect(report.uploaded.map((u) => names.get(u.path))).toEqual(['new.wpilog', 'mid.wpilog', 'old.wpilog'])
+  })
+
+  it('ranks a log with no date by when it was added, and keeps the order they came in on a tie', () => {
+    const at = (name: string, playedAt: number | null, recordedAt: number) => ({ names: [name], playedAt, recordedAt }) as Parameters<typeof newestFirst>[0]
+    const sorted = [at('old', 1, 10), at('undated-added-now', null, 10), at('undated-added-early', null, 0), at('new', 3, 10), at('also-new', 3, 10)].sort(newestFirst)
+    expect(sorted.map((r) => r.names[0])).toEqual(['undated-added-now', 'new', 'also-new', 'old', 'undated-added-early'])
   })
 
   it('a second sync writes nothing', async () => {

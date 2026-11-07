@@ -1,7 +1,8 @@
 /**
  * Sharing the library through the team's store. Each machine writes only its own manifest; sync
  *  1. brings teammates' manifests down (they are append-only, so a copy is replaced only by a longer one),
- *  2. puts up the logs this machine brought in that the team store lacks (one at a time, each checked on arrival): copied
+ *  2. puts up the logs this machine brought in that the team store lacks (one at a time, newest played first so the event
+ *     going on now is shared before an old backlog, each checked on arrival): copied
  *     inside Drive when they came from there, else uploaded; it stops after FAILURES_IN_A_ROW failures in a row, since
  *     those mean something systemic (a rate limit run out, a lost sign-in) and each would cost a minute of back-off,
  *  3. publishes this machine's records for them: the remote manifest is read first, must hold nothing this copy lacks,
@@ -42,6 +43,11 @@ function isThere(remote: FileInfo | undefined, r: LogRecord): boolean {
   if (remote.sha256 && remote.sha256 !== r.sha256) return false
   if (remote.md5 && r.md5 && remote.md5 !== r.md5) return false
   return true
+}
+
+/** Newest played first; a log with no date goes by when it was added. Ties keep the order they came in (Array.sort is stable). */
+export function newestFirst(a: LogRecord, b: LogRecord): number {
+  return (b.playedAt ?? b.recordedAt) - (a.playedAt ?? a.recordedAt)
 }
 
 /**
@@ -92,7 +98,7 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   // 3. Uploads: this machine's logs the team store lacks.
   const remote = new Map((await team.list('logs')).map((f) => [f.path, f]))
   const mine = lib.catalog.all().filter((r) => r.machine === lib.machine)
-  const todo = mine.filter((r) => !isThere(remote.get(r.path), r))
+  const todo = mine.filter((r) => !isThere(remote.get(r.path), r)).sort(newestFirst)
   report.alreadyThere = mine.length - todo.length
   let done = 0
   let inARow = 0
