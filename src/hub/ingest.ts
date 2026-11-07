@@ -21,7 +21,7 @@ export interface SourceFile {
   from: LogRecord['from']
   /**
    * Names this file's content for the "seen" memory (a local file's path, size and modified time; a Drive file's id and checksum):
-   * a file seen unchanged is not read again. Absent where nothing stable names it (the robot), so it is read every time.
+   * a file seen unchanged is not read again (a robot file's path, size and modified time too). Absent, the file is read every time.
    */
   cacheKey?: string
   /** The file's id in the store it came from (Drive), if it has one. */

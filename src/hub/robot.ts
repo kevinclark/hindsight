@@ -7,9 +7,10 @@
  *  - Paths: /home/lvuser/logs, /U/logs and /media/sd* (a USB stick appears under both of the last two: the same bytes are
  *    one log, so ingest files it once).
  *  - A file still being written is skipped: modified in the last 30 s, or growing between two listings.
+ *  - A log pulled before (same path, size and modified time) is not downloaded again.
  */
 import { createWriteStream } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Nt4Client, isFieldLocked, nt4Url, type SocketLike } from '../foresight/nt4-client.ts'
@@ -67,7 +68,7 @@ export function checkRobotIdle(address: string, options: { waitMs?: number; make
   })
 }
 
-/** Every log on the robot that is finished being written, as ingest sources (a download happens only when ingest must read one). */
+/** Every log on the robot that is finished being written, as ingest sources (a download happens only when ingest must read one: never for a log seen before). */
 export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?: (ms: number) => Promise<void>; tempRoot?: string } = {}): Promise<{ files: SourceFile[]; stillWriting: string[] }> {
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
@@ -95,10 +96,17 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
     if (first.get(path)?.size !== e.size || Math.abs(now() - e.mtimeMs) < RECENT_MS) { stillWriting.push(path); continue }
     out.push({
       name: e.name, where: `robot:${path}`, size: e.size, modifiedTime: Math.round(e.mtimeMs), from: 'robot',
+      // A finished log seen before with the same path, size and modified time is not downloaded again (ingest's "seen" memory).
+      cacheKey: `robot:${path}|${e.size}|${Math.round(e.mtimeMs)}`,
       open: async () => {
         const dir = await mkdtemp(join(deps.tempRoot ?? tmpdir(), 'hindsight-robot-'))
         const local = join(dir, e.name)
-        try { await fs.download(path, local) } catch (err) { await rm(dir, { recursive: true, force: true }); throw err }
+        try {
+          await fs.download(path, local)
+          // A copy cut short (the link dropped) must not be filed, nor remembered under this file's key as its content.
+          const got = (await stat(local)).size
+          if (got !== e.size) throw new Error(`the download stopped at ${got} of ${e.size} bytes; pull again`)
+        } catch (err) { await rm(dir, { recursive: true, force: true }); throw err }
         return { path: local, done: () => rm(dir, { recursive: true, force: true }) }
       },
     })

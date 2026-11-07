@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { checkRobotIdle, robotFiles, type RobotEntry, type RobotFs } from '../src/hub/robot.ts'
+import { ingest } from '../src/hub/ingest.ts'
+import { LocalLibrary } from '../src/hub/library-store.ts'
+import { describeFile } from '../src/hub/describe-file.ts'
 import { resetFieldLockForTests } from '../src/foresight/nt4-client.ts'
 import { startReplayServer, type ReplayServer } from './helpers/nt4-replay-server.ts'
 import { robotLog } from './helpers/hub-logs.ts'
@@ -48,7 +51,8 @@ describe('is the robot idle?', () => {
 
 describe('what is on the robot', () => {
   const NOW = Date.UTC(2026, 9, 17, 20)
-  function fakeRobot(tree: Record<string, RobotEntry[]>, grow: Record<string, number> = {}): RobotFs & { listings: number; downloads: string[] } {
+  /** A robot whose files hold `contents[path]` (else `bytes of <path>`); `cut` sends a file short by that many bytes. */
+  function fakeRobot(tree: Record<string, RobotEntry[]>, grow: Record<string, number> = {}, contents: Record<string, Uint8Array> = {}, cut: Record<string, number> = {}): RobotFs & { listings: number; downloads: string[] } {
     let pass = 0
     const fs = {
       listings: 0, downloads: [] as string[],
@@ -57,7 +61,11 @@ describe('what is on the robot', () => {
         if (!(dir in tree)) throw new Error('no such folder')
         return tree[dir].map((e) => ({ ...e, size: e.size + (pass > 1 ? grow[e.name] ?? 0 : 0) }))
       },
-      async download(remote: string, local: string) { fs.downloads.push(remote); await writeFile(local, `bytes of ${remote}`) },
+      async download(remote: string, local: string) {
+        fs.downloads.push(remote)
+        const bytes = contents[remote] ?? Buffer.from(`bytes of ${remote}`)
+        await writeFile(local, bytes.subarray(0, bytes.length - (cut[remote] ?? 0)))
+      },
       close() {},
     }
     return fs
@@ -91,12 +99,58 @@ describe('what is on the robot', () => {
   })
 
   it('downloads a file to a temp folder only when opened, and removes it when done', async () => {
-    const fs = fakeRobot({ '/home/lvuser/logs': [file('a.wpilog')] })
+    const fs = fakeRobot({ '/home/lvuser/logs': [file('a.wpilog', 'bytes of /home/lvuser/logs/a.wpilog'.length)] })
     const { files: [f] } = await robotFiles(fs, { now: () => NOW, sleep: async () => {}, tempRoot: await mkdtemp(join(tmpdir(), 'hindsight-robot-test-')) })
     const opened = await f.open()
     expect(await readFile(opened.path, 'utf8')).toBe('bytes of /home/lvuser/logs/a.wpilog')
     await opened.done()
     await expect(readFile(opened.path)).rejects.toThrow()
     await rm(join(opened.path, '..', '..'), { recursive: true, force: true })
+  })
+
+  // The pull ran every log through ingest each time, downloading all of it to hash it (2026-11-07). A log pulled before is now known
+  // by its path, size and modified time, as a local folder's file is, and only new or changed logs are downloaded.
+  describe('pulling again', () => {
+    const tempRoot = () => mkdtemp(join(tmpdir(), 'hindsight-robot-test-'))
+    const bytesA = robotLog({ clockMs: Date.UTC(2026, 9, 17), enabled: [2, 4], seed: 'pull a' })
+    const bytesB = robotLog({ clockMs: Date.UTC(2026, 9, 17), enabled: [2, 4], seed: 'pull b' })
+    const A = '/home/lvuser/logs/a.wpilog', B = '/home/lvuser/logs/b.wpilog'
+
+    it('downloads only the logs it has not pulled before', async () => {
+      const lib = await LocalLibrary.open(await tempRoot(), 'machine-a')
+      const seen = new Map<string, string>()
+      const pull = async (fs: RobotFs) => ingest(lib, (await robotFiles(fs, { now: () => NOW, sleep: async () => {}, tempRoot: await tempRoot() })).files, { describe: describeFile, seen })
+
+      const one = fakeRobot({ '/home/lvuser/logs': [file('a.wpilog', bytesA.length)] }, {}, { [A]: bytesA })
+      expect((await pull(one)).added.map((e) => e.name)).toEqual(['a.wpilog'])
+      expect(one.downloads).toEqual([A])
+
+      // The next pull: a.wpilog unchanged, b.wpilog new. Only b is downloaded; a is reported as already in the library.
+      const two = fakeRobot({ '/home/lvuser/logs': [file('a.wpilog', bytesA.length), file('b.wpilog', bytesB.length)] }, {}, { [A]: bytesA, [B]: bytesB })
+      const report = await pull(two)
+      expect(two.downloads).toEqual([B])
+      expect(report.added.map((e) => e.name)).toEqual(['b.wpilog'])
+      expect(report.already.map((e) => e.name)).toEqual(['a.wpilog'])
+
+      // The same path with a different size or modified time is a different file: read again.
+      const three = fakeRobot({ '/home/lvuser/logs': [file('a.wpilog', bytesA.length, 7200e3)] }, {}, { [A]: bytesA })
+      await pull(three)
+      expect(three.downloads).toEqual([A])
+    })
+
+    it('files nothing and remembers nothing from a download cut short', async () => {
+      const lib = await LocalLibrary.open(await tempRoot(), 'machine-a')
+      const seen = new Map<string, string>()
+      const tree = { '/home/lvuser/logs': [file('a.wpilog', bytesA.length)] }
+      const short = fakeRobot(tree, {}, { [A]: bytesA }, { [A]: 100 })
+      const report = await ingest(lib, (await robotFiles(short, { now: () => NOW, sleep: async () => {}, tempRoot: await tempRoot() })).files, { describe: describeFile, seen })
+      expect(report.unreadable[0].reason).toMatch(/download stopped at \d+ of \d+ bytes/)
+      expect(report.added).toEqual([])
+      expect(seen.size).toBe(0)
+      // The next pull reads it in full.
+      const whole = fakeRobot(tree, {}, { [A]: bytesA })
+      const again = await ingest(lib, (await robotFiles(whole, { now: () => NOW, sleep: async () => {}, tempRoot: await tempRoot() })).files, { describe: describeFile, seen })
+      expect(again.added.map((e) => e.name)).toEqual(['a.wpilog'])
+    })
   })
 })
