@@ -8,21 +8,21 @@ import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 const enabledFrom20To60: FixtureEntry = { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [60, false]] }
 const battery: FixtureEntry = { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[10, 12.5], [70, 12.5]] }
 
-/** A signal logged every 20 ms from 20 s to 60 s, its value a function of time. */
-function every20ms(name: string, value: (t: number) => number): FixtureEntry {
+/** A signal logged every 20 ms from `from` s to 60 s, its value a function of time. */
+function every20ms(name: string, value: (t: number) => number, from = 20): FixtureEntry {
   const records: [number, number][] = []
-  for (let i = 0; i <= 2000; i++) records.push([20 + i * 0.02, value(20 + i * 0.02)])
+  for (let i = Math.round((from - 20) / 0.02); i <= 2000; i++) records.push([20 + i * 0.02, value(20 + i * 0.02)])
   return { name, type: 'double', records }
 }
 
 /** The leader's own loop swinging 30 to 55 rot/s every half second, so it never holds a steady speed. */
 const swinging = (t: number) => (Math.floor(t * 2) % 2 === 0 ? 30 : 55)
 
-function run(leader: (t: number) => number, follower: (t: number) => number, enabled = enabledFrom20To60) {
+function run(leader: (t: number) => number, follower: (t: number) => number, enabled = enabledFrom20To60, followerFrom = 20) {
   const entries = [
     enabled, battery,
     every20ms('/Drum/Flywheel/Leader/VelocityRotPerSec', leader),
-    every20ms('/Drum/Flywheel/Follower 0/VelocityRotPerSec', follower),
+    every20ms('/Drum/Flywheel/Follower 0/VelocityRotPerSec', follower, followerFrom),
     every20ms('/Drum/Flywheel/Follower 1/VelocityRotPerSec', leader),
     every20ms('/Drum/Flywheel/Follower 2/VelocityRotPerSec', leader),
   ]
@@ -56,5 +56,9 @@ describe('mech/follower-mismatch: a follower that is not turning', () => {
     const f = mismatch(run(swinging, (t) => (t >= 30 && t < 50 ? 0.03 * swinging(t) : swinging(t)), twice))
     expect(f?.evidence['Flywheel follower 16: seconds under 20 % of the leader']).toBe(2)
     expect(mismatch(run(swinging, (t) => (t >= 30.1 && t < 50 ? 0.03 * swinging(t) : swinging(t)), twice))).toBeUndefined()
+  })
+  it('does not count moments before the follower\'s first record as stopped', () => {
+    // The follower is logged from 25 s and keeps up; the leader runs from 20 s. 5 s with no follower value.
+    expect(mismatch(run(swinging, swinging, enabledFrom20To60, 25))).toBeUndefined()
   })
 })

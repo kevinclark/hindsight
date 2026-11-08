@@ -45,8 +45,8 @@ export default rule({
     { name: 'off the leader', value: 'more than 15 %', basis: 'judgment', how: 'Chosen. The one case seen ran 25 % slow (a slipping belt).' },
     { name: 'time off the leader', value: '1 s or more', basis: 'judgment', how: 'Chosen.' },
     { name: 'steady speed', value: 'leader above 20 rot/s and within 3 % of its speed 0.5 s earlier', basis: 'judgment', how: 'Chosen.' },
-    { name: 'follower stopped', value: 'under 20 % of the leader\'s speed, with the leader above 20 rot/s (steady or not)', basis: 'measured', how: 'Library backtest, 646 same-loop group-logs: a stopped follower read 4.2–9.9 s; the most any healthy follower spent under 20 % was 0.6 s.' },
-    { name: 'time stopped', value: '2 s or more', basis: 'measured', how: 'Library backtest, 646 same-loop group-logs: a stopped follower read 4.2–9.9 s; the most any healthy follower spent under 20 % was 0.6 s.' },
+    { name: 'follower stopped', value: 'under 20 % of the leader\'s speed, with the leader above 20 rot/s (steady or not)', basis: 'measured', how: 'Library backtest, 646 same-loop group-logs: a stopped follower read 2.7–9.9 s (three logs; one was a CAN dropout); the most any healthy follower spent under 20 % was 0.6 s.' },
+    { name: 'time stopped', value: '2 s or more', basis: 'measured', how: 'Library backtest, 646 same-loop group-logs: a stopped follower read 2.7–9.9 s (three logs; one was a CAN dropout); the most any healthy follower spent under 20 % was 0.6 s.' },
   ],
   forEach: 'motorGroup',
 
@@ -109,6 +109,7 @@ function stoppedFinding(group: GroupView, stopped: StoppedFollower): Problem {
     at: stopped.at,
     evidence: {
       'stopped follower': stopped.name,
+      'stopped until (s)': round(stopped.until, 1),
       [secondsLabel]: round(stopped.seconds, 1),
       [`${stopped.name}: median speed vs leader while stopped (%)`]: percent,
     },

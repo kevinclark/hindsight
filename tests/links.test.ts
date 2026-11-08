@@ -46,17 +46,23 @@ describe('links.ts', () => {
   })
 
   it('a follower off CAN explains its own stopped-follower mismatch, and no other device\'s dropout does', () => {
-    const mismatch = finding('mech/follower-mismatch', 31.2, { about: 'Flywheel', evidence: { 'stopped follower': 'Flywheel follower 17' } })
+    const stopped = { 'stopped follower': 'Flywheel follower 17', 'stopped until (s)': 31.5 }
+    const mismatch = finding('mech/follower-mismatch', 31.2, { about: 'Flywheel', evidence: stopped })
     const own = finding('can/device-dropout', 30.5, { about: 'Flywheel follower 17' })
     const other = finding('can/device-dropout', 30.5, { about: 'Flywheel follower 16' })
     const all = [own, other, mismatch]
     consolidate(all, { links: LINKS })
     expect(explainer(mismatch)).toBe('can/device-dropout · Flywheel follower 17')
-    // A drop that began more than 1 s after the follower stopped doesn't explain it.
+    // A drop that began more than 1 s after the follower's last stopped moment doesn't explain it.
     const later = finding('can/device-dropout', 33, { about: 'Flywheel follower 17' })
-    const early = finding('mech/follower-mismatch', 31.2, { about: 'Flywheel', evidence: { 'stopped follower': 'Flywheel follower 17' } })
-    consolidate([later, early], { links: LINKS })
-    expect(explainer(early)).toBeUndefined()
+    const afterIt = finding('mech/follower-mismatch', 31.2, { about: 'Flywheel', evidence: stopped })
+    consolidate([later, afterIt], { links: LINKS })
+    expect(explainer(afterIt)).toBeUndefined()
+    // Nor does an earlier drop the follower came back from: the stop began 21 s after it.
+    const earlier = finding('can/device-dropout', 10, { about: 'Flywheel follower 17' })
+    const beforeIt = finding('mech/follower-mismatch', 31.2, { about: 'Flywheel', evidence: stopped })
+    consolidate([earlier, beforeIt], { links: LINKS })
+    expect(explainer(beforeIt)).toBeUndefined()
   })
 
   it('a 2026 match: hood zero → tilt → early disable, and the comms loss → the DS log stopping', () => {

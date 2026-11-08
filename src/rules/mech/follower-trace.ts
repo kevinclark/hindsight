@@ -1,7 +1,8 @@
 /**
  * How long each motor of a leader-and-followers group ran more than 15 % off the leader, at steady speed. One
- * definition for mech/follower-mismatch (which fires on it) and for the Session view's Trends (which plots it), so
- * the chart can never disagree with the rule.
+ * definition for mech/follower-mismatch's steady-speed check (which fires on it) and for the Session view's Trends
+ * (which plots it), so that number can never disagree. The stopped-follower check below is the rule's alone: Trends
+ * does not plot it.
  *
  * Steady: the leader above 20 rot/s and within 3 % of its speed 0.5 s earlier, compared every 20 ms.
  * A motor logged slower than 30 times a second (throttled telemetry) is compared only at its own records, each
@@ -64,7 +65,7 @@ export function traceGroup(group: GroupView, match: MatchView): MotorTrace[] {
   for (let i = halfSecondAgo; i < grid.length; i++) {
     const now = Math.abs(leader[i])
     const before = Math.abs(leader[i - halfSecondAgo])
-    const steady = now > 20 && Math.abs(now - before) <= 0.03 * now
+    const steady = now > LEADER_RUNNING && Math.abs(now - before) <= 0.03 * now
     if (!steady) continue
     for (const m of motors) {
       if (!hasFreshRecord(m, grid[i])) continue
@@ -84,6 +85,8 @@ export interface StoppedFollower {
   medianRatio: number
   /** The first stopped moment (s). */
   at: number
+  /** The last stopped moment (s). */
+  until: number
 }
 
 /**
@@ -99,16 +102,19 @@ export function mostStoppedFollower(group: GroupView, match: MatchView): Stopped
   for (const m of followers) {
     const ratios: number[] = []
     let first = NaN
+    let last = NaN
     for (let i = 0; i < grid.length; i++) {
       const leaderSpeed = Math.abs(leader[i])
       if (!inside(match.enabled, grid[i]) || !(leaderSpeed > LEADER_RUNNING) || !hasFreshRecord(m, grid[i])) continue
       const ratio = Math.abs(m.speed[i]) / leaderSpeed
-      if (ratio >= STOPPED_FRACTION) continue
+      // No record yet (NaN) is not a stopped follower.
+      if (!(ratio < STOPPED_FRACTION)) continue
       if (ratios.length === 0) first = grid[i]
+      last = grid[i]
       ratios.push(ratio)
     }
     const seconds = ratios.length * m.weight
-    if (seconds > (worst?.seconds ?? 0)) worst = { name: m.name, seconds, medianRatio: median(ratios), at: first }
+    if (seconds > (worst?.seconds ?? 0)) worst = { name: m.name, seconds, medianRatio: median(ratios), at: first, until: last }
   }
   return worst
 }
