@@ -21,6 +21,8 @@
  * The page also keeps a copy in the browser so a reload doesn't lose it. Save the file to share it.
  */
 
+import { validPowerMap, type PowerMap } from '../power/power-map.ts'
+
 export type IssueStatus = 'known' | 'fixed' | 'wrong' | 'real' | 'unmark' | 'new'
 
 export interface IssueEvent {
@@ -131,6 +133,13 @@ export interface EventNote {
 }
 
 /**
+ * The robot's power map (src/power/power-map.ts): which breaker is in each slot of the power distribution board and
+ * what each slot feeds. One whole map per line; the line with the latest `from` at or before a match applies to it. A
+ * new line type: old builds keep it as an OpaqueEvent and write it back unchanged. No names go in a line.
+ */
+export type { PowerMap as PowerMapEvent } from '../power/power-map.ts'
+
+/**
  * A well-formed JSON line this build cannot type (a newer build's line, or a known type that fails its checks). It is
  * never folded; it is kept so that saving the file writes the line back exactly as it came.
  */
@@ -140,7 +149,7 @@ export interface OpaqueEvent {
   when: string
 }
 
-export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent | EventNote | OpaqueEvent
+export type HistoryEvent = IssueEvent | PitCheckEvent | BoardEvent | EventNote | PowerMap | OpaqueEvent
 
 const BOARD_OPS: readonly string[] = ['priority', 'status', 'defer', 'workaround', 'note', 'checked', 'unchecked', 'owner', 'cause']
 const NOTE_KINDS: readonly string[] = ['pit-change', 'missed', 'handoff-read', 'cut-off']
@@ -169,11 +178,11 @@ function validEventNote(e: any): boolean {
 
 /** Oldest first: by time, then device, then seq (old lines have device '' and seq 0). Ties otherwise keep file order. */
 export function compareEvents(x: HistoryEvent, y: HistoryEvent): number {
-  const stamped = (e: HistoryEvent) => (e.type === 'board' || e.type === 'event-note')
-  const dx = stamped(x) ? (x as BoardEvent | EventNote).by.device : ''
-  const dy = stamped(y) ? (y as BoardEvent | EventNote).by.device : ''
-  const sx = stamped(x) ? (x as BoardEvent | EventNote).seq : 0
-  const sy = stamped(y) ? (y as BoardEvent | EventNote).seq : 0
+  const stamped = (e: HistoryEvent) => (e.type === 'board' || e.type === 'event-note' || e.type === 'power-map')
+  const dx = stamped(x) ? (x as BoardEvent | EventNote | PowerMap).by.device : ''
+  const dy = stamped(y) ? (y as BoardEvent | EventNote | PowerMap).by.device : ''
+  const sx = stamped(x) ? (x as BoardEvent | EventNote | PowerMap).seq : 0
+  const sy = stamped(y) ? (y as BoardEvent | EventNote | PowerMap).seq : 0
   return x.when.localeCompare(y.when) || (dx < dy ? -1 : dx > dy ? 1 : 0) || sx - sy
 }
 
@@ -194,6 +203,7 @@ export function parseHistory(text: string): { events: HistoryEvent[]; skipped: n
       else if (isObject && e.type === 'pit-check' && typeof e.sha === 'string' && ['GO', 'GO WITH DEFERRALS', 'NO-GO', 'NOT CHECKED'].includes(e.verdict)) events.push({ dirty: false, robot: '', when: '', ...e })
       else if (isObject && e.type === 'board' && validBoard(e)) events.push(e)
       else if (isObject && e.type === 'event-note' && validEventNote(e)) events.push(e)
+      else if (isObject && e.type === 'power-map' && validPowerMap(e)) events.push(e)
       else if (isObject) events.push({ type: 'opaque', raw: line, when: typeof e.when === 'string' ? e.when : '' })
       else skipped++
     } catch {
@@ -367,7 +377,7 @@ export function boardStamp(history: HistoryEvent[], device: string, now: Date = 
   let seq = 0
   let when = now.toISOString()
   for (const e of history) {
-    if ((e.type === 'board' || e.type === 'event-note') && e.by.device === device && e.seq > seq) seq = e.seq
+    if ((e.type === 'board' || e.type === 'event-note' || e.type === 'power-map') && e.by.device === device && e.seq > seq) seq = e.seq
     if (e.when > when) when = e.when
   }
   return { seq: seq + 1, when }

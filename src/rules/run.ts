@@ -288,7 +288,7 @@ type ProfileMotor = ProfileGroup['motors'][0]
 /** A profile motor as a rule sees it: each signal is read when asked for, and throws MissingSignal if the profile doesn't name it. */
 function motorView(m: ProfileMotor, group: string, view: MatchView): MotorView {
   return {
-    name: m.name, group,
+    name: m.name, group, ...(m.canId !== undefined ? { canId: m.canId } : {}),
     supply: () => view.signal(need(m.supplyCurrent, `${m.name} supply current`), `${m.name} supply`),
     stator: () => view.signal(need(m.statorCurrent, `${m.name} stator current`), `${m.name} stator`),
     velocity: () => view.signal(need(m.velocity, `${m.name} velocity`), m.name),

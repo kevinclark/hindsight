@@ -8,11 +8,13 @@ import { openWpilog } from './readers/wpilog.ts'
 import { readDslog, type DslogFile } from './readers/dslog.ts'
 import { readDsevents, type DseventsFile } from './readers/dsevents.ts'
 import { parseHistory, type HistoryEvent } from './triage/history.ts'
+import { powerMapAt } from './power/power-map.ts'
 import { attachDsevents, attachDslog, buildMatch, dseventsOverlap, dslogOverlap, type Match } from './match/match.ts'
 import { CONSOLIDATORS, RULES, runRules, type Report } from './rules/index.ts'
-import { PROFILES } from './profiles/index.ts'
+import { PROFILES, profileId } from './profiles/index.ts'
 import { chooseProfile } from './profiles/choose.ts'
 import type { RobotProfile } from './profiles/types.ts'
+import type { PowerMap } from './power/power-map.ts'
 import { compareMatchLimits, type CodeFolder } from './code/limit-lines.ts'
 
 export interface InputFile { name: string; bytes: Uint8Array }
@@ -35,19 +37,22 @@ export interface AnalyzeResult {
  * `profile`: the profile to use as is (a test or script pins one), or, per file name, the one the student chose
  * (checked for fit). Logs without one get the profile that fits them (profiles/choose.ts) from `profiles`: the
  * built-in ones, plus any the page passes in (profiles kept in this browser, src/builder/store.ts).
+ * `history`: the team's history lines, read for the robot's power map (each match gets the map in effect when it was
+ * played, for the breaker rules); lines from dropped-in history files count too. `AnalyzeResult.history` stays only
+ * what the dropped files held.
  */
-export function analyzeFiles(files: InputFile[], profile?: ProfileChoice, profiles: RobotProfile[] = PROFILES): AnalyzeResult {
-  return runAll(openFiles(files, profile, profiles))
+export function analyzeFiles(files: InputFile[], profile?: ProfileChoice, profiles: RobotProfile[] = PROFILES, history: HistoryEvent[] = []): AnalyzeResult {
+  return runAll(openFiles(files, profile, profiles), history)
 }
 
 /**
  * The same, with the robot-code folder: before the rules run, each log that ran another commit than its profile's has
  * its current-limit lines compared with the profile's commit (src/code/limit-lines.ts). No folder: as analyzeFiles.
  */
-export async function analyzeFilesWithCode(files: InputFile[], code: CodeFolder | null, profile?: ProfileChoice, profiles: RobotProfile[] = PROFILES): Promise<AnalyzeResult> {
+export async function analyzeFilesWithCode(files: InputFile[], code: CodeFolder | null, profile?: ProfileChoice, profiles: RobotProfile[] = PROFILES, history: HistoryEvent[] = []): Promise<AnalyzeResult> {
   const opened = openFiles(files, profile, profiles)
   if (code) for (const a of opened.analyses) await compareMatchLimits(a.match, code)
-  return runAll(opened)
+  return runAll(opened, history)
 }
 
 type ProfileChoice = RobotProfile | ((fileName: string) => RobotProfile | undefined)
@@ -99,7 +104,9 @@ function openFiles(files: InputFile[], profile: ProfileChoice | undefined, profi
 }
 
 /** Run the rules on every opened match, oldest match first. */
-function runAll({ analyses, problems, history }: AnalyzeResult): AnalyzeResult {
+function runAll({ analyses, problems, history }: AnalyzeResult, given: HistoryEvent[] = []): AnalyzeResult {
+  const known = [...given, ...history]
+  for (const a of analyses) a.match.powerMap = powerMapFor(a.match, known)
   // Rules can look across the logs loaded together (a match recorded in pieces, earlier runs of an auto).
   for (const a of analyses) a.match.others = analyses.map((x) => x.match).filter((m) => m !== a.match)
   for (const a of analyses) {
@@ -111,6 +118,20 @@ function runAll({ analyses, problems, history }: AnalyzeResult): AnalyzeResult {
   const when = (a: Analysis) => (a.match.epochOffset ?? 0) + (a.match.matchStart ?? 0)
   analyses.sort((a, b) => when(a) - when(b) || a.match.fileName.localeCompare(b.match.fileName))
   return { analyses, problems, history }
+}
+
+/** Robot clocks before this are unset (as MatchView.wallClock reads them). */
+const EARLIEST_PLAUSIBLE_EPOCH = Date.UTC(2023, 0, 1) / 1000
+
+/**
+ * The power map in effect when the match was played: at its wall-clock start when the robot's clock was set, else (no
+ * clock to place it) the robot's latest map.
+ */
+function powerMapFor(match: Match, history: HistoryEvent[]): PowerMap | null {
+  const start = match.matchStart ?? match.runs[0]?.start ?? match.logStart
+  const epoch = match.epochOffset === null ? null : match.epochOffset + start
+  const at = epoch !== null && epoch >= EARLIEST_PLAUSIBLE_EPOCH ? new Date(epoch * 1000).toISOString() : '9999-12-31T23:59:59.999Z'
+  return powerMapAt(history, profileId(match.profile), at)
 }
 
 /** Shorthand for scripts and tests: the analyses only. */
