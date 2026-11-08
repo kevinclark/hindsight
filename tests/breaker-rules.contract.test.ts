@@ -218,7 +218,7 @@ describe('[BR-09] the title names the motor, breaker, slot and band position', (
   })
   test('a slot on an MPM reads MPM and its id (a PDP-family breaker there is the map\'s own business)', () => {
     const m = map({ usual: REV40, boards: [{ id: 'mpm-1', kind: 'rev-mpm', slots: slotsOf({ slot: 2, breaker: null, feeds: { kind: 'motor', name: FRONT_LEFT, canId: 0 } }) }] })
-    expect(pdp(oneMotor(100, 30), [m])[0].title).toMatch(/ · MPM mpm-1 slot 2 · REV 40 A: /)
+    expect(pdp(oneMotor(100, 30), [m])[0].title).toMatch(/ · MPM 1 slot 2 · REV 40 A: /)
   })
 })
 

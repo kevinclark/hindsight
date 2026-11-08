@@ -67,7 +67,7 @@ function validFeed(f: any): boolean {
 }
 
 function validBoard(b: any): boolean {
-  if (typeof b !== 'object' || b === null || typeof b.id !== 'string' || b.id === '' || !(b.kind in SLOTS) || !Array.isArray(b.slots)) return false
+  if (typeof b !== 'object' || b === null || typeof b.id !== 'string' || b.id === '' || !Object.hasOwn(SLOTS, b.kind) || !Array.isArray(b.slots)) return false
   if (b.fedFrom !== undefined && b.fedFrom !== null && !(typeof b.fedFrom === 'object' && typeof b.fedFrom.board === 'string' && isInt(b.fedFrom.slot, 0, 23))) return false
   const families = b.kind === 'rev-mpm' ? ['atm'] : PDP_FAMILIES
   for (const s of b.slots) {
@@ -104,8 +104,9 @@ export function powerMapAt(history: readonly HistoryEvent[], robotId: string, at
 function later(a: PowerMap, b: PowerMap): boolean {
   const from = Date.parse(a.from) - Date.parse(b.from)
   if (from !== 0) return from > 0
-  if (a.seq !== b.seq) return a.seq > b.seq
-  return a.when > b.when
+  // A seq counts per device, so the later write decides first and a seq only breaks a tie within one device.
+  if (a.when !== b.when) return a.when > b.when
+  return a.seq > b.seq
 }
 
 /** Where a breaker's setting came from: a mapped slot, the map's "usual", or nothing (the fastest legal breaker is assumed). */

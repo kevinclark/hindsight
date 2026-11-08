@@ -61,6 +61,8 @@ describe('[PM-02] a line that fails a check is kept, written back unchanged, nev
     ['usual of an unknown family', { ...m, usual: { family: 'acme', ratingA: 40 } }],
     ['usual rating 0', { ...m, usual: { family: 'rev-ato', ratingA: 0 } }],
     ['unknown board kind', { ...m, boards: [{ id: 'x', kind: 'pdh', slots: [] }] }],
+    ['board kind that is an object property name', { ...m, boards: [{ id: 'x', kind: 'toString', slots: [] }] }],
+    ['board kind constructor', { ...m, boards: [{ id: 'x', kind: 'constructor', slots: [] }] }],
     ['boards not a list', { ...m, boards: 'none' }],
     ['PDP slot 24', slot0({ slot: 24, breaker: null, feeds: null })],
     ['PDP slot -1', slot0({ slot: -1, breaker: null, feeds: null })],
@@ -120,13 +122,13 @@ describe('[PM-04] the map in effect at a time', () => {
     expect(powerMapAt(history, 'Nobody @ main', '2027-01-01T00:00:00.000Z')).toBeNull()
     expect(powerMapAt([], 'Test robot @ main', '2027-01-01T00:00:00.000Z')).toBeNull()
   })
-  test('equal from: higher seq, then later when', () => {
-    const x = map({ seq: 3, when: '2026-11-02T00:00:00.000Z', main: 'optifuse' })
-    const y = map({ seq: 4, when: '2026-11-01T00:00:00.000Z', main: 'bussmann' })
+  test('equal from: later when first (seq counts per device), then higher seq', () => {
+    const x = map({ seq: 9, when: '2026-11-01T00:00:00.000Z', main: 'optifuse' }) // a busy laptop's high seq, written earlier
+    const y = map({ seq: 2, when: '2026-11-02T00:00:00.000Z', main: 'bussmann', by: { device: 'laptop-b', role: 'pit' } })
     expect(powerMapAt([x, y], 'Test robot @ main', '2026-12-01T00:00:00.000Z')).toBe(y)
     expect(powerMapAt([y, x], 'Test robot @ main', '2026-12-01T00:00:00.000Z')).toBe(y)
     const p = map({ seq: 3, when: '2026-11-02T00:00:00.000Z' })
-    const q = map({ seq: 3, when: '2026-11-03T00:00:00.000Z' })
+    const q = map({ seq: 4, when: '2026-11-02T00:00:00.000Z' })
     expect(powerMapAt([q, p], 'Test robot @ main', '2026-12-01T00:00:00.000Z')).toBe(q)
     expect(powerMapAt([p, q], 'Test robot @ main', '2026-12-01T00:00:00.000Z')).toBe(q)
   })

@@ -125,7 +125,7 @@ const breakerName = (b: MotorBreaker) => `${FAMILY_NAMES[b.family] ?? b.family} 
 
 function slotName(map: PowerMap | null, b: MotorBreaker): string {
   const board = map?.boards.find((x) => x.id === b.board)
-  return `${board?.kind === 'rev-mpm' ? `MPM ${b.board}` : 'PDP'} slot ${b.slot}`
+  return `${board?.kind === 'rev-mpm' ? `MPM ${b.board?.replace(/^mpm-/, '')}` : 'PDP'} slot ${b.slot}`
 }
 
 /** "PDP slot 7 · REV 40 A", "slot not mapped · REV 40 A", or the not-set wording. */

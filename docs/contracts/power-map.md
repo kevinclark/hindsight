@@ -40,8 +40,8 @@ Suite: `npx vitest run tests/power-map.contract.test.ts --reporter=junit --outpu
   `seq` is one more than the device's largest, whatever line type) and `compareEvents` orders it by `when`, device,
   `seq`. Why: two tabs must not repeat a `seq`, and "the newest line wins" needs a total order. Kind: behaviour.
 - **PM-04** `powerMapAt` returns the line for that robot with the latest `from` at or before the time (a line from
-  later does not apply, and a line for another robot never does); equal `from`: the higher `seq`, then the later
-  `when`; null when none. Why: a breaker swap applies from that day on and old matches keep the breakers they ran
+  later does not apply, and a line for another robot never does); equal `from`: the later `when`, then the higher
+  `seq` (a `seq` counts per device, so it only breaks a tie between one device's lines); null when none. Why: a breaker swap applies from that day on and old matches keep the breakers they ran
   with. Kind: behaviour.
 - **PM-05** `breakerForMotor` finds a motor on a slot whose feed is a motor with the same CAN ID when both the motor
   and the feed have one (the names then do not matter, and a different ID is a different motor), else with the same

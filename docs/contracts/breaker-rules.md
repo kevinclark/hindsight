@@ -63,7 +63,7 @@ Suite: `npx vitest run tests/breaker-rules.contract.test.ts --reporter=junit --o
   slow <m> %` (no second clause in brackets after the time's own). A motor on no slot says `slot not mapped` in place of the slot; with no breaker set anywhere it says
   `breaker not set: judged against the first legal 40 A breaker to trip here (<REV|CTRE|Snap Action>)`: each legal 40 A
   family is tried (the fast edge's heat of each) and the one whose fast edge reaches 100 % first is named, its slow edge
-  quoted; the finding fires when any of them does. A slot on an MPM reads `MPM <id>
+  quoted; the finding fires when any of them does. A slot on an MPM reads `MPM <number>
   slot <n>`. Why: a warning must say which physical breaker to go look at. Kind: behaviour.
 - **BR-10** The breaker is the one `breakerForMotor` gives for the motor's name and CAN ID from the match's map: the
   same motor trips on a REV 40 A, a CTRE 40 A or a Snap Action 40 A at different currents, and a 30 A breaker sooner than a 40 A one.
