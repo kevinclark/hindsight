@@ -268,7 +268,7 @@ export function stripText(map: PowerMap | null, motors: ProfileMotor[], fallback
   const usual = usualB ? `every motor ${breakerText(usualB)}` : 'every motor not set'
   const note = (d: boolean) => (d ? ` ${DEFAULT_WORDS}` : '')
   const rows = motorRows(map, motors, fallback)
-  const exceptions = rows.filter((r) => r.exception).length
+  const exceptions = countExceptions(map, motors, fallback)
   const parts = [`${main}${note(mainDefault && !usualDefault)}`, `${usual}${note(usualDefault)}`]
   if (exceptions) parts.push(`${exceptions} exception${exceptions === 1 ? '' : 's'}`)
   const { placed, total } = placedCount(map, motors)
@@ -304,6 +304,9 @@ export function motorRows(map: PowerMap | null, motors: ProfileMotor[], fallback
   return rows.sort((a, b) => Number(b.exception) - Number(a.exception) || (a.canId ?? Infinity) - (b.canId ?? Infinity))
 }
 
+/** How many motors are on a breaker other than the usual one (an exception, or a slot that says otherwise): the one count the keeping line, the Motors summary and the strip all give. */
+export const countExceptions = (map: PowerMap | null, motors: ProfileMotor[], fallback?: BreakerDefault | null): number => motorRows(map, motors, fallback).filter((r) => r.exception).length
+
 /** "16 motors on REV ATO 40 A · 2 exceptions". */
 export function motorsSummary(rows: MotorRow[], usual: MapBreaker | null): string {
   const n = rows.filter((r) => !r.exception).length
@@ -322,7 +325,12 @@ const sameException = (x: MapException, m: ProfileMotor) => (x.canId !== undefin
 export function setMotorBreaker(map: PowerMap, motor: ProfileMotor, breaker: MapBreaker, usual: MapBreaker | null): PowerMap {
   for (const board of map.boards) {
     const entry = board.slots.find((s) => s.feeds?.kind === 'motor' && feedsMotor(s.feeds, motor.name, motor.canId))
-    if (entry) return { ...map, boards: map.boards.map((b) => (b === board ? { ...b, slots: b.slots.map((s) => (s === entry ? { ...s, breaker } : s)) } : b)) }
+    if (entry) {
+      // One truth per motor: the slot's breaker is now the answer, so any exception for this motor goes.
+      const { exceptions: old, ...bare } = map
+      const kept = (old ?? []).filter((x) => !sameException(x, motor))
+      return { ...bare, ...(kept.length ? { exceptions: kept } : {}), boards: map.boards.map((b) => (b === board ? { ...b, slots: b.slots.map((s) => (s === entry ? { ...s, breaker } : s)) } : b)) }
+    }
   }
   const rest = (map.exceptions ?? []).filter((x) => !sameException(x, motor))
   const isUsual = !!usual && usual.family === breaker.family && usual.ratingA === breaker.ratingA
@@ -331,7 +339,10 @@ export function setMotorBreaker(map: PowerMap, motor: ProfileMotor, breaker: Map
   return next.length ? { ...without, exceptions: next } : without
 }
 
-/** The motors of several profiles, one profile per robot: its main-branch one, else the first (the map belongs to the robot, not its branch). */
+/**
+ * One profile per robot: its main-branch one, else the first (the map belongs to the robot, not its branch). The Motors list shows
+ * that profile's motors: a motor only another branch's profile has isn't listed (no 8033 profile has one).
+ */
 export function oneProfilePerRobot(profiles: RobotProfile[]): RobotProfile[] {
   const byKey = new Map<string, RobotProfile>()
   for (const p of profiles) {
@@ -430,7 +441,9 @@ export function stampAll(history: HistoryEvent[], maps: PowerMap[], who: { devic
 export function judgedAgainst(evidence: { breaker?: unknown; slot?: unknown }, map: PowerMap | null): string {
   const breaker = String(evidence.breaker ?? '').split(' (')[0]
   const slot = String(evidence.slot ?? '')
-  const unset = /\(not set/.test(String(evidence.breaker ?? '')) || isMapBlank(map)
+  const text = String(evidence.breaker ?? '')
+  if (/\(this robot's default\)/.test(text)) return `${breaker}${slot === 'not mapped' ? ', slot not mapped' : ` in ${slot}`} (this robot's default)`
+  const unset = /\(not set/.test(text) || isMapBlank(map)
   const set = unset ? 'not set' : `set ${new Date(map!.when).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
   return `${breaker}${slot === 'not mapped' ? ', slot not mapped' : ` in ${slot}`} (${set})`
 }

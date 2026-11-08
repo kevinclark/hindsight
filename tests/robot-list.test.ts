@@ -24,6 +24,10 @@ describe('robot list with a team set', () => {
     expect(groups.map((g) => g.label)).toEqual([null, 'Team 9998'])
     expect(ids(groups[1])).toEqual(['kept:eight'])
   })
+  it("a robot named by its key, as the power map names it, is in use: another team's robot opens under its heading", () => {
+    const groups = robotChoices(builtIn, [], 9999, ['Built in eight'])
+    expect(groups.map((g) => g.label)).toEqual([null, 'Team 9998'])
+  })
   it('does not list a used robot twice when it is already the team\'s', () => {
     const groups = robotChoices(builtIn, [mine], 9999, ['kept:nine'])
     expect(groups).toHaveLength(1)

@@ -1,7 +1,7 @@
 // The power map screen's logic (src/power/power-map-view.ts): layout, editing, the popover's walk, problems, the strip's words.
 import { describe, expect, it } from 'vitest'
 import type { RobotProfile } from '../src/profiles/types.ts'
-import { motorRows, motorsSummary, oneProfilePerRobot, setMotorBreaker, applyToAll, emptyMap, feedLabel, feedParts, isMapBlank, judgedAgainst, readRotated, robotSeenLast, savedLine, writeRotated, mapLine, onlyFromNow, planFromFinding, stampAll, mapProblems, mpmAt, nextEmptySlot, PDP_ROWS, placedCount, shortName, slotEntries, slotRows, slotsKeeping, stripText, unplacedMotors, withExtraFeed, withSlot } from '../src/power/power-map-view.ts'
+import { countExceptions, motorRows, motorsSummary, oneProfilePerRobot, setMotorBreaker, applyToAll, emptyMap, feedLabel, feedParts, isMapBlank, judgedAgainst, readRotated, robotSeenLast, savedLine, writeRotated, mapLine, onlyFromNow, planFromFinding, stampAll, mapProblems, mpmAt, nextEmptySlot, PDP_ROWS, placedCount, shortName, slotEntries, slotRows, slotsKeeping, stripText, unplacedMotors, withExtraFeed, withSlot } from '../src/power/power-map-view.ts'
 import { breakerForMotor, powerMapAt, type Feed, type PowerMap } from '../src/power/power-map.ts'
 
 const REV40 = { family: 'rev-ato', ratingA: 40 } as const
@@ -502,5 +502,28 @@ describe('the rotation is read under the robot key, then the old id', () => {
     expect(readRotated(fake({ 'hindsight.powermap.rotated.A @ main': '1' }), ['A', 'A @ main'])).toBe(true)
     expect(readRotated(fake({ 'hindsight.powermap.rotated.A @ main': '1', 'hindsight.powermap.rotated.A': '0' }), ['A', 'A @ main'])).toBe(false)
     expect(readRotated(fake({}), ['A', 'A @ main'])).toBe(false)
+  })
+})
+
+describe('review fixes: default wording, exceptions dropped with a slot, one exception count', () => {
+  it('a finding judged by the robot\'s default says so, with no map line', () => {
+    expect(judgedAgainst({ breaker: 'REV 40 A (this robot\'s default)', slot: 'not mapped' }, null)).toBe('REV 40 A, slot not mapped (this robot\'s default)')
+    expect(judgedAgainst({ breaker: 'REV 40 A (this robot\'s default)', slot: 'not mapped' }, { ...base(), when: '2026-11-08T12:00:00.000Z' } as PowerMap)).toBe('REV 40 A, slot not mapped (this robot\'s default)')
+  })
+  it('putting a motor on a slot\'s breaker drops its exception (one truth per motor)', () => {
+    const ex: PowerMap = { ...base(), usual: REV40, exceptions: [{ name: 'Intake', canId: 13, breaker: { family: 'ctre-ato', ratingA: 30 } }, { name: 'Hood', canId: 14, breaker: { family: 'rev-ato', ratingA: 20 } }] }
+    const placed = withSlot(ex, 'pdp', 6, { breaker: REV40, feeds: motor('Intake', 13) })
+    const m = setMotorBreaker(placed, { name: 'Intake', canId: 13 }, { family: 'rev-ato', ratingA: 30 }, REV40)
+    expect(m.boards[0].slots[0].breaker).toEqual({ family: 'rev-ato', ratingA: 30 })
+    expect(m.exceptions).toEqual([{ name: 'Hood', canId: 14, breaker: { family: 'rev-ato', ratingA: 20 } }])
+  })
+  it('exceptions are counted one way: motors on a breaker other than the usual one, by exception or by slot', () => {
+    const motors = [{ name: 'Intake', canId: 13 }, { name: 'Hood', canId: 14 }, { name: 'Indexer', canId: 11 }]
+    let m: PowerMap = { ...base(), usual: REV40, exceptions: [{ name: 'Intake', canId: 13, breaker: { family: 'ctre-ato', ratingA: 30 } }] }
+    m = withSlot(m, 'pdp', 2, { breaker: { family: 'rev-ato', ratingA: 20 }, feeds: motor('Hood', 14) })
+    expect(countExceptions(m, motors, null)).toBe(2)
+    expect(motorsSummary(motorRows(m, motors, null), REV40)).toBe('1 motor on REV ATO 40 A · 2 exceptions')
+    expect(stripText(m, motors).text).toContain('2 exceptions')
+    expect(countExceptions(null, motors, { main: 'bussmann', usual: REV40 })).toBe(0)
   })
 })

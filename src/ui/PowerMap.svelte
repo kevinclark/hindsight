@@ -14,8 +14,8 @@
   import { teamNow } from './team-setting.svelte.ts'
   import { powerMapAt, type Feed, type MainFamily, type MapBreaker, type PdpFamily, type PowerMap } from '../power/power-map.ts'
   import {
-    applyToAll, breakerColourName, motorRows, motorsSummary, oneProfilePerRobot, setMotorBreaker, type MotorRow, breakerFill, breakerText, emptyMap, FAMILY_LABEL, feedLabel, feedParts, mapProblems, MAIN_LABEL, MPM_SLOTS, mpmAt, nextEmptySlot, onlyFromNow, planFromFinding, stampAll,
-    PDP_ID, ratingsFor, readRotated, savedLine, writeRotated, slotEntries, slotRows, slotsKeeping, unplacedMotors, withExtraFeed, withSlot, type MapProblem,
+    applyToAll, breakerColourName, countExceptions, motorRows, motorsSummary, oneProfilePerRobot, setMotorBreaker, type MotorRow, breakerFill, breakerText, emptyMap, FAMILY_LABEL, feedLabel, feedParts, mapProblems, MAIN_LABEL, MPM_SLOTS, mpmAt, nextEmptySlot, onlyFromNow, planFromFinding, stampAll,
+    PDP_ID, ratingsFor, readRotated, savedLine, writeRotated, slotEntries, slotRows, unplacedMotors, withExtraFeed, withSlot, type MapProblem,
   } from '../power/power-map-view.ts'
   import { clearMapFocus, lastMapRobot, mapFocus, mapHistory, setLastMapRobot, writeMapLine } from './power-map-bridge.svelte.ts'
 
@@ -107,13 +107,8 @@
   const mainIsDefault = $derived(!map.main && !!fallback)
   const usualIsDefault = $derived(!map.usual && !!fallback)
   const usualFamily = $derived<PdpFamily>(effUsual?.family ?? 'rev-ato')
-  const keeping = $derived(effUsual ? slotsKeeping(map, effUsual) : 0)
-  const exceptionCount = $derived(map.exceptions?.length ?? 0)
-  const keepingText = $derived.by(() => {
-    if (!effUsual || keeping === 0) return ''
-    const other = (map.boards.find((b) => b.id === PDP_ID)?.slots ?? []).find((s) => s.feeds?.kind === 'motor' && s.breaker && (s.breaker.family !== effUsual!.family || s.breaker.ratingA !== effUsual!.ratingA))
-    return `${keeping} placed slot${keeping === 1 ? ' keeps' : 's keep'} ${other?.breaker ? breakerText(other.breaker) : 'their own breaker'}`
-  })
+  // One count of exceptions everywhere (this line, the Motors summary, the strip): motors on a breaker other than the usual one.
+  const exceptionCount = $derived(countExceptions(map, motors, fallback))
 
   // ---- The popover ---------------------------------------------------------------------------------------------------
   let sel = $state<{ board: string; slot: number } | null>(null)
@@ -243,8 +238,8 @@
     </div>
   </div>
   {#if usualIsDefault || mainIsDefault}<p class="def-note" data-default-note>Chips marked default are Hindsight's default for this robot; choosing one writes it into the map.</p>{/if}
-  {#if keepingText || exceptionCount}
-    <p class="keeping" data-keeping>{[keepingText, exceptionCount ? `${exceptionCount} exception${exceptionCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')} · <button type="button" class="link" onclick={() => effUsual && commit(applyToAll(map, effUsual), `All motors → ${breakerText(effUsual)}`)}>Apply to all{exceptionCount ? ` (clears the ${exceptionCount === 1 ? 'exception' : 'exceptions'})` : ''}</button></p>
+  {#if exceptionCount}
+    <p class="keeping" data-keeping>{exceptionCount} exception{exceptionCount === 1 ? '' : 's'} · <button type="button" class="link" onclick={() => effUsual && commit(applyToAll(map, effUsual), `All motors → ${breakerText(effUsual)}`)}>Apply to all (clears {exceptionCount === 1 ? 'it' : 'them'})</button></p>
   {/if}
   {#if focus?.from}<p class="from">Opened from {focus.from.label}: a change here counts from that match.</p>{/if}
 
