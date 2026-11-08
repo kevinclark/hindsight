@@ -71,6 +71,14 @@ export class ChecksumMismatch extends Error {
 export class Stopped extends Error {
   constructor() { super('stopped') }
 }
+/**
+ * The source's link is gone and stayed gone through every try (the robot stopped sending, then would not reconnect).
+ * Ingest treats it like Stop (the pull ends, what is done is kept) but says why; the file it was on is not unreadable.
+ */
+export class LinkLost extends Error {
+  readonly reason: string
+  constructor(reason: string, cause?: unknown) { super(reason, { cause }); this.reason = reason }
+}
 /** Throws Stopped when the user has asked to stop. */
 export function stopIfAsked(cancelled?: () => boolean): void { if (cancelled?.()) throw new Stopped() }
 /** The store refused for a reason signing in again fixes (Drive `invalid_grant`). */

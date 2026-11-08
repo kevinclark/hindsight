@@ -6,7 +6,7 @@
  *  - a re-run of the same ingest finds everything already there and writes nothing.
  */
 import { stat } from 'node:fs/promises'
-import { Stopped, type WriteOptions } from './adapter.ts'
+import { LinkLost, Stopped, type WriteOptions } from './adapter.ts'
 import { fileMeter, type ProgressFn } from './jobs.ts'
 import { fileSource, hashFile } from './local-adapter.ts'
 import type { Described } from './describe-file.ts'
@@ -38,8 +38,11 @@ export interface SourceFile {
   open(watch?: Watch): Promise<{ path: string; done(): Promise<void> }>
 }
 
-/** Bytes so far, and whether the user asked to stop: what a long copy is told and asks. */
-export type Watch = Pick<WriteOptions, 'onProgress' | 'cancelled'>
+/**
+ * Bytes so far, and whether the user asked to stop: what a long copy is told and asks. `onStep` says in words what a
+ * transfer is doing that is not moving bytes (reconnecting); `log` adds a line to the job log.
+ */
+export type Watch = Pick<WriteOptions, 'onProgress' | 'cancelled'> & { onStep?: (words: string) => void; log?: (line: string) => void }
 
 const UNREADABLE = 'unreadable: '
 
@@ -56,6 +59,8 @@ export interface IngestReport {
   /** The user pressed Stop; `notTried` files were left for the next time. */
   stopped?: boolean
   notTried?: number
+  /** The source's link was lost and stayed lost through every try (the robot): why, in words, with the file it was on. `stopped` is set too. */
+  lostLink?: string
   /** Set by the app when code linking ran after the add (src/hub/ingest-link.ts): logs linked, GitHub API requests made, and whether the cap stopped it. */
   linked?: number
   linkRequests?: number
@@ -75,6 +80,10 @@ export interface IngestOptions {
   seen?: { get(key: string): string | undefined; set(key: string, sha256: string): void }
   /** Stop early (the user pressed cancel). */
   cancelled?: () => boolean
+  /** Awaited after each file, whatever became of it (also when the ingest stops there): the app saves its seen memory here, so a stall, Stop or crash at file 33 keeps files 1-32. */
+  afterEach?: () => Promise<void>
+  /** Lines for the job log: each file's start and end, and what a transfer reports. */
+  log?: (line: string) => void
 }
 
 export async function ingest(lib: LocalLibrary, files: SourceFile[], options: IngestOptions): Promise<IngestReport> {
@@ -84,16 +93,39 @@ export async function ingest(lib: LocalLibrary, files: SourceFile[], options: In
   const logs = files.filter((f) => kindOf(f.name) !== null)
   const meter = fileMeter(options.onProgress, logs.map((f) => f.size))
   report.ignored = files.length - logs.length
+  const log = options.log
   for (const [index, file] of logs.entries()) {
-    const { at, end } = meter.start(index, logs.length, file.name, file.size)
+    const { at, step, end } = meter.start(index, logs.length, file.name, file.size)
     if (options.cancelled?.()) { report.stopped = true; break }
+    const began = now()
+    let sent = 0
+    log?.(`file ${index + 1} of ${logs.length} start: ${file.name}, ${file.size} bytes`)
+    const finished = (outcome: string) => {
+      const secs = Math.max(0.001, (now() - began) / 1000)
+      log?.(`file ${index + 1} of ${logs.length} end: ${file.name}: ${outcome}, ${sent} bytes, ${secs.toFixed(1)} s, ${(sent / secs / 2 ** 20).toFixed(2)} MB/s average`)
+    }
+    const added = report.added.length
     try {
-      await ingestOne(lib, file, options, report, now, { onProgress: at, cancelled: options.cancelled })
+      await ingestOne(lib, file, options, report, now, { onProgress: (s) => { sent = s; at(s) }, cancelled: options.cancelled, onStep: step, log })
+      finished(report.added.length > added ? 'added' : 'already in the library')
     } catch (e) {
       // Stop part way through a file: what was copied of it is gone, and it is not unreadable.
-      if (e instanceof Stopped) { report.stopped = true; break }
-      report.unreadable.push({ name: file.name, where: file.where, reason: e instanceof Error ? e.message : String(e) })
-    } finally { end() }
+      if (e instanceof Stopped) { finished('stopped'); report.stopped = true; break }
+      // The link is gone: end the pull here (another file would meet the same wait), and say why. Not unreadable, nothing remembered.
+      if (e instanceof LinkLost) {
+        finished(`link lost: ${e.reason}`)
+        report.stopped = true
+        const inLibrary = lib.catalog.all().length
+        report.lostLink = `Stopped at file ${index + 1} of ${logs.length} (${file.name}): ${e.reason}. ${inLibrary} log${inLibrary === 1 ? ' is' : 's are'} now in the library. Pull again to continue from here.`
+        break
+      }
+      const reason = e instanceof Error ? e.message : String(e)
+      finished(`unreadable: ${reason}`)
+      report.unreadable.push({ name: file.name, where: file.where, reason })
+    } finally {
+      end()
+      await options.afterEach?.()
+    }
   }
   if (report.stopped) report.notTried = logs.length - report.added.length - report.already.length - report.unreadable.length
   report.durationMs = now() - started
@@ -111,7 +143,7 @@ async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOpt
 
   // The bar follows the slow part: the download when the source has one, else the copy into the library.
   let downloaded = false
-  const source = await file.open({ cancelled: watch.cancelled, onProgress: (sent, total) => { downloaded = true; watch.onProgress?.(sent, total) } })
+  const source = await file.open({ cancelled: watch.cancelled, onStep: watch.onStep, log: watch.log, onProgress: (sent, total) => { downloaded = true; watch.onProgress?.(sent, total) } })
   try {
     // 2. Read it: hash and what it says about itself. A file that will not read is reported, not filed.
     let d: Described

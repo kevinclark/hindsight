@@ -112,6 +112,9 @@
   }
 
   let note = $state('')
+  /** A pull has ended (any way): its job log is worth a look. */
+  let pulled = $state(false)
+  const showLog = () => { void api?.showJobLog().catch(() => {}) }
   let busy = $state<string | null>(null)
   let progress = $state<Progress | null>(null)
   /** Stop was pressed during this pull or add: a pull tries no further address. */
@@ -134,7 +137,7 @@
     if (r.already.length) bits.push(`${r.already.length} already in the library`)
     if (r.unreadable.length) bits.push(`${r.unreadable.length} could not be read`)
     if (r.stopped) bits.push(`${countText(r.notTried ?? 0)} not tried: run it again for the rest`)
-    return `${bits.join(' · ')}.`
+    return `${bits.join(' · ')}.${r.lostLink ? ` ${r.lostLink}` : ''}`
   }
 
   async function pull() {
@@ -142,6 +145,7 @@
     failure = null
     note = ''
     busy = 'pull'
+    pulled = false
     stopPressed = false
     const addresses = pullAddresses(tbaTeam())
     const tried: string[] = []
@@ -165,7 +169,7 @@
     } catch (e) {
       failure = { reason: e instanceof Error ? e.message : String(e), notFound: false, tried: tried.join(', ').replace(/ tether/g, '') }
       note = ''
-    } finally { busy = null }
+    } finally { busy = null; pulled = true }
   }
   async function addFolder() {
     if (!api || busy) return
@@ -206,6 +210,7 @@
     {:else}
       <p class="bad">{failure.reason}</p>
     {/if}
+    <p><button type="button" class="link" onclick={showLog}>Show log</button></p>
     <div class="row">
       <button type="button" class="primary" onclick={() => pull()}>Try again</button>
       <span>or</span>
@@ -246,7 +251,7 @@
       </li>
     {/each}
   </ol>
-  <p class="status" role="status" data-now-note>{busy === 'folder' && !note ? 'Adding logs…' : note}</p>
+  <p class="status" role="status" data-now-note>{busy === 'folder' && !note ? 'Adding logs…' : note}{#if pulled && note && !busy}{' '}<button type="button" class="link" onclick={showLog}>Show log</button>{/if}</p>
   <!-- Only once the app sends progress: before that the folder dialog is open, or nothing has started that Stop could stop. -->
   {#if busy && progress}<JobBar {progress} onStop={stop} />{/if}
 

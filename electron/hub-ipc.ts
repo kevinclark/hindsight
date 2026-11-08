@@ -1,9 +1,10 @@
 /** The page's way into the library. Each handler is thin: the work is in src/hub/. */
-import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
+import { app, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { isAbsolute, extname, join } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { filesToFetch } from '../src/hub/catalog.ts'
-import { LocalLibrary, readJson, writeJson } from '../src/hub/library-store.ts'
+import { LocalLibrary } from '../src/hub/library-store.ts'
+import { openSeen } from '../src/hub/seen.ts'
 import { ingest, localFolderFiles, planIngest, type IngestReport, type SourceFile } from '../src/hub/ingest.ts'
 import { checkPath } from '../src/hub/adapter.ts'
 import { DriveAdapter } from '../src/hub/drive-adapter.ts'
@@ -31,6 +32,7 @@ import { Describer } from './describer.ts'
 import { openInAdvantageScope } from './advantagescope.ts'
 import { driveToken, googleClient, keeping, signIn, signOut, signedIn } from './google-auth.ts'
 import { loadSettings, saveSettings } from './settings.ts'
+import { JobLog } from './job-log.ts'
 
 declare const __BUILD_ID__: string
 /** Names this build of the describer on the `meta` records it writes: "<app version>+<source hash>" (the version orders builds; the hash only tells them apart). */
@@ -39,7 +41,8 @@ const describerId = (version: string) => `${version}+${typeof __BUILD_ID__ === '
 export function registerHub(window: () => BrowserWindow | null): void {
   const describer = new Describer()
   let library: Promise<LocalLibrary> | null = null
-  const jobs = new JobRunner()
+  const jobLog = new JobLog(join(app.getPath('userData'), 'logs'))
+  const jobs = new JobRunner(Date.now, jobLog, app.getVersion())
   const open = () => (library ??= loadSettings().then((s) => LocalLibrary.open(s.libraryDir, s.machineId)))
   const seenFile = () => join(app.getPath('userData'), 'seen.json')
   const send = (channel: string, payload: unknown) => window()?.webContents.send(channel, payload)
@@ -100,9 +103,13 @@ export function registerHub(window: () => BrowserWindow | null): void {
   async function ingestWork(files: SourceFile[], j: JobHandle, progress: ProgressFn): Promise<IngestReport> {
     const lib = await open()
     const seenPath = seenFile()
-    const seen = new Map(Object.entries(await readJson<Record<string, string>>(seenPath, {})))
-    const report = await ingest(lib, files, { describe: describer.describe, seen, cancelled: () => j.cancelled, onProgress: progress })
-    await writeJson(seenPath, Object.fromEntries(seen))
+    const seen = await openSeen(seenPath)
+    const report = await ingest(lib, files, {
+      describe: describer.describe, seen, cancelled: () => j.cancelled, onProgress: progress, log: j.log,
+      // After each file, so a stall, Stop, crash or quit at file 33 keeps files 1-32 known (a failed write is logged, not fatal).
+      afterEach: () => seen.save().catch((e) => j.log(`could not save seen.json: ${e instanceof Error ? e.message : String(e)}`)),
+    })
+    await seen.save()
     // Logs just added that name only their code are linked to the saved GitHub sources, at most 20 API requests (a cancelled add links nothing).
     const sources = (await loadSettings()).codeSources ?? []
     if (sources.length > 0) {
@@ -331,13 +338,18 @@ export function registerHub(window: () => BrowserWindow | null): void {
       const idle = await checkRobotIdle(where)
       if (!idle.ok) return { refused: idle.reason }
       step(`Connecting to ${where}`)
-      const fs = await connectRobotFs(where)
+      const fs = await connectRobotFs(where, { log: j.log })
       try {
         step('Listing the logs on the robot (looks twice, 1.5 s apart, to skip one still being written)')
         const { files, stillWriting } = await robotFiles(fs, { tempRoot: app.getPath('temp') })
         return { report: await ingestWork(files, j, progress), stillWriting }
       } finally { fs.close() }
     })
+  })
+
+  /** Show the job log in Finder/Explorer (the page never learns the path). Creates it empty if no job has run yet. */
+  ipcMain.handle('hub:showJobLog', async () => {
+    shell.showItemInFolder(await jobLog.ensure())
   })
 
   ipcMain.handle('hub:updateInfo', () => update)
