@@ -1,4 +1,4 @@
-# Builds Hindsight for Mac, Windows and Linux from a commit that passed the tests, and on main publishes it as a GitHub release
+# Builds Hindsight for Mac, Windows and Linux and, on main, publishes it once the tests pass as a GitHub release
 # (v0.1.<commit count>) that electron-updater and the app's update banner read. Run it by hand (Actions > release > Run workflow) for the same artifacts from any branch; only main publishes.
 # Mac is signed and notarized when the MAC_CSC_LINK secret exists, ad hoc otherwise (docs/release.md).
 name: release
@@ -114,9 +114,9 @@ jobs:
             echo unsigned > signing-mac.txt
           fi
           npm run build:app
-          # Kept as a backstop to the step above: Apple's ticket server can drop the connection while stapling. Building again is safe.
           # concurrency.jobs=2 packs, signs and notarizes x64 and arm64 at once: the two notarization waits overlap instead of
           # adding up (112-346 s each, 2026-11-05..08). One run still writes the one latest-mac.yml listing both.
+          # Kept as a backstop to the step above: Apple's ticket server can drop the connection while stapling. Building again is safe.
           for attempt in 1 2 3; do
             npx electron-builder --mac dmg zip --arm64 --x64 --publish never -c.concurrency.jobs=2 "${sign[@]}" && break
             [ "$attempt" = 3 ] && exit 1
