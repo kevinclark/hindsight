@@ -32,7 +32,7 @@ export const TREND_METRICS: TrendMetric[] = [
   { key: 'secondsUnder7', label: 'Time under 7 V', unit: 's', digits: 1 },
   { key: 'chargeAh', label: 'Charge drawn', unit: 'Ah', digits: 2 },
   { key: 'resistanceMilliohms', label: 'Battery + wiring', unit: 'mΩ', digits: 1, line: 20, bad: 'above', rule: 'power/wiring-resistance' },
-  { key: 'followerSecondsOff', label: 'Follower more than 15 % off its leader', unit: 's', digits: 1, line: 1, bad: 'above', rule: 'mech/follower-mismatch', atLinePasses: true },
+  { key: 'followerSecondsOff', label: 'Follower more than 15 % off its leader', unit: 's', digits: 1, line: 1, bad: 'above', rule: 'mech/follower-mismatch', atLinePasses: true, sub: 'Steady-speed check only; a follower that isn\'t turning shows in the rule\'s row, not here.' },
   { key: 'loopOverrunPct', label: 'Auto loops over 20 ms', unit: '%', digits: 1, line: 10, bad: 'above', rule: 'loop/overrun', sub: 'Auto only here; the rule also counts teleop.' },
   { key: 'visionOutlierPct', label: 'Vision poses > 0.5 m off', unit: '%', digits: 1, line: 5, bad: 'above', rule: 'vision/outliers' },
 ]

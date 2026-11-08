@@ -65,6 +65,15 @@ export const LINKS: Link[] = [
     when: (dropout, alert) => alertNames(alert, dropout.about) && within(dropout, alert, 1),
     why: 'the robot code saw the same device drop off CAN',
   }),
+  // One 2026 match: the intake roller follower was off CAN for 102.6 of 160 s, so it did not turn with its leader.
+  // The mismatch names the stopped follower, and the drop began between 1 s before its first stopped moment and 1 s
+  // after its last, so an earlier drop the follower came back from doesn't explain a later stop.
+  link({
+    cause: 'can/device-dropout',
+    explains: 'mech/follower-mismatch',
+    when: (dropout, mismatch) => dropout.about === mismatch.evidence['stopped follower'] && dropBeganWhileStopped(dropout, mismatch),
+    why: 'the follower was off CAN, so it could not turn with its leader',
+  }),
   // One 2026 match: two Back_Right camera alerts came on at the moment the camera dropped out.
   link({
     cause: 'vision/stale',
@@ -100,6 +109,12 @@ export const LINKS: Link[] = [
     why: 'the robot code saw the same log folder off the USB stick',
   }),
 ]
+
+/** Did the drop begin while the follower was stopped (from 1 s before its first stopped moment to 1 s after its last)? */
+function dropBeganWhileStopped(dropout: Finding, mismatch: Finding): boolean {
+  const stoppedFor = Number(mismatch.evidence['stopped until (s)']) - (mismatch.time ?? NaN)
+  return isBetween(secondsAfter(mismatch, dropout), -1, stoppedFor + 1)
+}
 
 /** The companion library's alerts for a log off the USB stick (tests/foresight-rules.test.ts checks them against the Java). */
 export const COMPANION_NOT_USB = /^Robot log isn't going to (a|the) USB stick: /

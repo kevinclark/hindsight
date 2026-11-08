@@ -167,7 +167,9 @@ describe.skipIf(!have)('trendRows on the 8 logs of the team\'s 2026 event', () =
   it('plots the follower rule\'s own seconds: equal to its finding\'s number in every match where it fired', () => {
     let fired = 0
     matches.forEach((mt, i) => {
-      const findings = mt.rules['mech/follower-mismatch'].findings.filter((f) => f.severity !== 'info')
+      // A stopped-follower finding counts seconds under 20 % of the leader, not seconds off it at steady speed: Trends
+      // doesn't plot it.
+      const findings = mt.rules['mech/follower-mismatch'].findings.filter((f) => f.severity !== 'info' && !f.evidence['stopped follower'])
       if (!findings.length) return
       fired++
       const evidence = Math.max(...findings.map((f) => f.measured![0].value))
