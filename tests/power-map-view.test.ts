@@ -1,6 +1,7 @@
 // The power map screen's logic (src/power/power-map-view.ts): layout, editing, the popover's walk, problems, the strip's words.
 import { describe, expect, it } from 'vitest'
-import { applyToAll, emptyMap, feedLabel, feedParts, isMapBlank, judgedAgainst, readRotated, robotSeenLast, savedLine, writeRotated, mapLine, onlyFromNow, planFromFinding, stampAll, mapProblems, mpmAt, nextEmptySlot, PDP_ROWS, placedCount, shortName, slotEntries, slotRows, slotsKeeping, stripText, unplacedMotors, withExtraFeed, withSlot } from '../src/power/power-map-view.ts'
+import type { RobotProfile } from '../src/profiles/types.ts'
+import { countExceptions, motorRows, motorsSummary, oneProfilePerRobot, setMotorBreaker, applyToAll, emptyMap, feedLabel, feedParts, isMapBlank, judgedAgainst, readRotated, robotSeenLast, savedLine, writeRotated, mapLine, onlyFromNow, planFromFinding, stampAll, mapProblems, mpmAt, nextEmptySlot, PDP_ROWS, placedCount, shortName, slotEntries, slotRows, slotsKeeping, stripText, unplacedMotors, withExtraFeed, withSlot } from '../src/power/power-map-view.ts'
 import { breakerForMotor, powerMapAt, type Feed, type PowerMap } from '../src/power/power-map.ts'
 
 const REV40 = { family: 'rev-ato', ratingA: 40 } as const
@@ -380,5 +381,149 @@ describe('the line under the map: who saved it, and how many slots are set', () 
   it('says one slot, and no slots, in the singular and plain', () => {
     expect(savedLine(withSlot(m(), 'pdp', 2, null))).toContain('1 slot set')
     expect(savedLine({ ...base(), by: { device: 'd', role: 'drive' }, seq: 1, when: '2026-11-08T12:00:00.000Z' })).toContain('no slots set')
+  })
+})
+
+describe('one entry per robot, not per branch of its code', () => {
+  const p = (name: string, branch: string, motors = 1) => ({ name, code: { repo: 'r', branch, sha: 'abc1234' }, motorGroups: [{ name: 'g', motors: Array.from({ length: motors }, (_, i) => ({ name: `m${i}` })) }] }) as unknown as RobotProfile
+  it('keeps one profile per robot key, preferring the main branch, in the order the robots first appear', () => {
+    const list = [p('A robot', 'event', 3), p('B robot', 'main'), p('A robot', 'main', 2), p('A robot', 'other')]
+    const one = oneProfilePerRobot(list)
+    expect(one.map((x) => x.name)).toEqual(['A robot', 'B robot'])
+    expect(one[0].code.branch).toBe('main')
+  })
+  it('a kept profile is its own robot', () => {
+    const kept = { ...p('A robot', 'main'), keptAs: 'kept-1' } as unknown as RobotProfile
+    expect(oneProfilePerRobot([p('A robot', 'main'), kept]).length).toBe(2)
+  })
+})
+
+describe('the Motors list: a motor\'s breaker without a slot', () => {
+  const DEF = { main: 'bussmann', usual: REV40 } as const
+  const ALL = [{ name: 'Front Left drive', canId: 3 }, { name: 'Intake', canId: 13 }, { name: 'Hood', canId: 14 }, { name: 'Indexer', canId: 11 }]
+  const CTRE30 = { family: 'ctre-ato', ratingA: 30 } as const
+  it('with nothing set, every motor is on the robot\'s default, none an exception, sorted by CAN ID', () => {
+    const rows = motorRows(null, ALL, DEF)
+    expect(rows.map((r) => r.canId)).toEqual([3, 11, 13, 14])
+    expect(rows.every((r) => r.source === 'default' && !r.exception)).toBe(true)
+    expect(motorsSummary(rows, DEF.usual)).toBe('4 motors on REV ATO 40 A · no exceptions')
+  })
+  it('an exception makes one motor 30 A, lists it first, and counts it', () => {
+    const m = setMotorBreaker({ ...base(), usual: REV40 } as PowerMap, ALL[1], CTRE30, REV40)
+    expect(m.exceptions).toEqual([{ name: 'Intake', canId: 13, breaker: CTRE30 }])
+    const rows = motorRows(m, ALL, DEF)
+    expect(rows[0]).toMatchObject({ name: 'Intake', exception: true, source: 'exception', breaker: CTRE30 })
+    expect(rows.slice(1).map((r) => r.canId)).toEqual([3, 11, 14])
+    expect(motorsSummary(rows, REV40)).toBe('3 motors on REV ATO 40 A · 1 exception')
+  })
+  it('choosing the usual breaker again removes the exception', () => {
+    const m = setMotorBreaker({ ...base(), usual: REV40 } as PowerMap, ALL[1], CTRE30, REV40)
+    const back = setMotorBreaker(m, ALL[1], REV40, REV40)
+    expect(back.exceptions ?? []).toEqual([])
+  })
+  it('a change replaces the motor\'s exception, found by CAN ID, and leaves the others', () => {
+    let m = setMotorBreaker({ ...base(), usual: REV40 } as PowerMap, ALL[1], CTRE30, REV40)
+    m = setMotorBreaker(m, ALL[2], { family: 'rev-ato', ratingA: 20 }, REV40)
+    m = setMotorBreaker(m, { name: 'renamed', canId: 13 }, { family: 'snap-action', ratingA: 25 }, REV40)
+    expect(m.exceptions).toEqual([{ name: 'Hood', canId: 14, breaker: { family: 'rev-ato', ratingA: 20 } }, { name: 'renamed', canId: 13, breaker: { family: 'snap-action', ratingA: 25 } }])
+  })
+  it('a motor placed on a slot changes the slot (one truth per motor), not an exception', () => {
+    let m = withSlot({ ...base(), usual: REV40 } as PowerMap, 'pdp', 6, { breaker: REV40, feeds: motor('Intake', 13) })
+    m = setMotorBreaker(m, ALL[1], CTRE30, REV40)
+    expect(m.exceptions ?? []).toEqual([])
+    expect(m.boards[0].slots[0].breaker).toEqual(CTRE30)
+    const rows = motorRows(m, ALL, DEF)
+    expect(rows[0]).toMatchObject({ name: 'Intake', source: 'slot', slotText: 'PDP slot 6', exception: true })
+  })
+  it('a motor with no slot says so, and the row has the chip the popover opens on', () => {
+    expect(motorRows(null, ALL, DEF)[0].slotText).toBe('no slot')
+  })
+  it('with the map\'s usual changed, the rows follow it and the default no longer shows', () => {
+    const m = { ...base(), usual: { family: 'ctre-ato', ratingA: 30 } } as PowerMap
+    const rows = motorRows(m, ALL, DEF)
+    expect(rows.every((r) => r.source === 'usual' && !r.exception)).toBe(true)
+  })
+  it('Apply to all also clears the exceptions', () => {
+    let m = setMotorBreaker({ ...base(), usual: REV40 } as PowerMap, ALL[1], CTRE30, REV40)
+    m = applyToAll(m, { family: 'rev-ato', ratingA: 30 })
+    expect(m.exceptions ?? []).toEqual([])
+  })
+  it('problems: an exception over 40 A or one the maker does not make, and an exception beside a slot that differs (the slot wins)', () => {
+    let m: PowerMap = { ...base(), usual: REV40, exceptions: [
+      { name: 'A', canId: 1, breaker: { family: 'rev-ato', ratingA: 50 } },
+      { name: 'B', canId: 2, breaker: { family: 'rev-ato', ratingA: 35 } },
+      { name: 'Intake', canId: 13, breaker: CTRE30 },
+    ] }
+    m = withSlot(m, 'pdp', 6, { breaker: REV40, feeds: motor('Intake', 13) })
+    const texts = mapProblems(m, []).map((p) => p.text)
+    expect(texts.some((t) => /^A \(CAN 1\): a 50 A breaker isn't legal on a PDP channel/.test(t))).toBe(true)
+    expect(texts.some((t) => /^B \(CAN 2\): REV ATO 35 A isn't on the list/.test(t))).toBe(true)
+    expect(texts.some((t) => /^Intake \(CAN 13\) has a 30 A exception and sits on PDP slot 6 with REV ATO 40 A: the slot wins/.test(t))).toBe(true)
+  })
+  it('an exception equal to its slot is not a problem', () => {
+    const m = withSlot({ ...base(), exceptions: [{ name: 'Intake', canId: 13, breaker: REV40 }] } as PowerMap, 'pdp', 6, { breaker: REV40, feeds: motor('Intake', 13) })
+    expect(mapProblems(m, []).filter((p) => /exception/.test(p.text))).toEqual([])
+  })
+  it('a change from a finding reaches the exceptions of later lines', () => {
+    const ROBOT = 'Test robot @ main'
+    const stamp = (x: PowerMap, over: Partial<PowerMap> = {}): PowerMap => ({ ...x, by: { device: 'a', role: 'pit' }, seq: 1, when: '2026-11-01T00:00:00.000Z', ...over })
+    const early = stamp({ ...emptyMap(ROBOT, '2026-11-01T09:00:00.000Z'), usual: REV40 })
+    const later = stamp({ ...early, from: '2026-11-05T09:00:00.000Z', exceptions: [{ name: 'Hood', canId: 14, breaker: { family: 'rev-ato', ratingA: 20 } }] }, { seq: 2 })
+    const next = setMotorBreaker(early, ALL[1], CTRE30, REV40)
+    const plan = planFromFinding([early, later], ROBOT, '2026-11-03T00:00:00.000Z', early, next)
+    expect(plan.forward[1].exceptions).toEqual([{ name: 'Hood', canId: 14, breaker: { family: 'rev-ato', ratingA: 20 } }, { name: 'Intake', canId: 13, breaker: CTRE30 }])
+  })
+})
+
+describe('the strip with a robot default', () => {
+  const DEF = { main: 'bussmann', usual: REV40 } as const
+  it('names the default and says where to change it', () => {
+    expect(stripText(null, MOTORS, DEF)).toEqual({ text: 'Breakers: main Bussmann CB185/CB285-120 · every motor REV ATO 40 A (Hindsight\'s default for this robot; change it in the map)', unset: false })
+  })
+  it('a map that sets only the main: the usual is still the default, said so', () => {
+    const t = stripText({ ...base(), main: 'optifuse' } as PowerMap, MOTORS, DEF).text
+    expect(t).toBe('Breakers: main Optifuse 153120/253120 · every motor REV ATO 40 A (Hindsight\'s default for this robot; change it in the map) · 0 of 3 motors placed')
+  })
+  it('a map that sets both: no default words', () => {
+    expect(stripText({ ...base(), main: 'optifuse', usual: REV40 } as PowerMap, [], DEF).text).toBe('Breakers: main Optifuse 153120/253120 · every motor REV ATO 40 A')
+  })
+  it('with exceptions, the strip counts them', () => {
+    const m = { ...base(), usual: REV40, main: 'bussmann', exceptions: [{ name: 'Intake', canId: 13, breaker: { family: 'ctre-ato', ratingA: 30 } }] } as PowerMap
+    expect(stripText(m, [{ name: 'Intake', canId: 13 }, { name: 'Hood', canId: 14 }], DEF).text).toContain('1 exception')
+  })
+  it('no default and nothing set: the not-set words', () => {
+    expect(stripText(null, MOTORS).unset).toBe(true)
+  })
+})
+
+describe('the rotation is read under the robot key, then the old id', () => {
+  const fake = (init: Record<string, string>) => ({ getItem: (k: string) => init[k] ?? null, setItem: () => {} })
+  it('falls back to the old id, and a saved choice under the key wins', () => {
+    expect(readRotated(fake({ 'hindsight.powermap.rotated.A @ main': '1' }), ['A', 'A @ main'])).toBe(true)
+    expect(readRotated(fake({ 'hindsight.powermap.rotated.A @ main': '1', 'hindsight.powermap.rotated.A': '0' }), ['A', 'A @ main'])).toBe(false)
+    expect(readRotated(fake({}), ['A', 'A @ main'])).toBe(false)
+  })
+})
+
+describe('review fixes: default wording, exceptions dropped with a slot, one exception count', () => {
+  it('a finding judged by the robot\'s default says so, with no map line', () => {
+    expect(judgedAgainst({ breaker: 'REV 40 A (this robot\'s default)', slot: 'not mapped' }, null)).toBe('REV 40 A, slot not mapped (this robot\'s default)')
+    expect(judgedAgainst({ breaker: 'REV 40 A (this robot\'s default)', slot: 'not mapped' }, { ...base(), when: '2026-11-08T12:00:00.000Z' } as PowerMap)).toBe('REV 40 A, slot not mapped (this robot\'s default)')
+  })
+  it('putting a motor on a slot\'s breaker drops its exception (one truth per motor)', () => {
+    const ex: PowerMap = { ...base(), usual: REV40, exceptions: [{ name: 'Intake', canId: 13, breaker: { family: 'ctre-ato', ratingA: 30 } }, { name: 'Hood', canId: 14, breaker: { family: 'rev-ato', ratingA: 20 } }] }
+    const placed = withSlot(ex, 'pdp', 6, { breaker: REV40, feeds: motor('Intake', 13) })
+    const m = setMotorBreaker(placed, { name: 'Intake', canId: 13 }, { family: 'rev-ato', ratingA: 30 }, REV40)
+    expect(m.boards[0].slots[0].breaker).toEqual({ family: 'rev-ato', ratingA: 30 })
+    expect(m.exceptions).toEqual([{ name: 'Hood', canId: 14, breaker: { family: 'rev-ato', ratingA: 20 } }])
+  })
+  it('exceptions are counted one way: motors on a breaker other than the usual one, by exception or by slot', () => {
+    const motors = [{ name: 'Intake', canId: 13 }, { name: 'Hood', canId: 14 }, { name: 'Indexer', canId: 11 }]
+    let m: PowerMap = { ...base(), usual: REV40, exceptions: [{ name: 'Intake', canId: 13, breaker: { family: 'ctre-ato', ratingA: 30 } }] }
+    m = withSlot(m, 'pdp', 2, { breaker: { family: 'rev-ato', ratingA: 20 }, feeds: motor('Hood', 14) })
+    expect(countExceptions(m, motors, null)).toBe(2)
+    expect(motorsSummary(motorRows(m, motors, null), REV40)).toBe('1 motor on REV ATO 40 A · 2 exceptions')
+    expect(stripText(m, motors).text).toContain('2 exceptions')
+    expect(countExceptions(null, motors, { main: 'bussmann', usual: REV40 })).toBe(0)
   })
 })

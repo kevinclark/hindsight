@@ -3,7 +3,7 @@
   import { slotRows, slotEntries, breakerFill, readRotated } from '../power/power-map-view.ts'
   import type { PowerMap } from '../power/power-map.ts'
 
-  let { map, slot, robot, onclick }: { map: PowerMap | null; slot: number; /** The robot's profile id, for its remembered rotation. */ robot: string; onclick?: () => void } = $props()
+  let { map, slot, robot, onclick }: { map: PowerMap | null; slot: number; /** The robot's ids (key, then old id), for its remembered rotation. */ robot: string | readonly string[]; onclick?: () => void } = $props()
   const rows = $derived(slotRows(readRotated(localStorage, robot)))
 </script>
 

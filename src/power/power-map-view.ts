@@ -5,7 +5,9 @@
  * The record's shape and the lookups the rules use are in power-map.ts.
  */
 import { breakerFamily } from './breakers.ts'
-import { breakerForMotor, powerMapAt, PDP_FAMILIES, type Feed, type MapBoard, type MapBreaker, type MapSlot, type PdpFamily, type PowerMap } from './power-map.ts'
+import { robotKey } from '../profiles/index.ts'
+import type { RobotProfile } from '../profiles/types.ts'
+import { breakerForMotor, FASTEST_LEGAL, feedsMotor, powerMapAt, PDP_FAMILIES, type BreakerDefault, type BreakerSource, type Feed, type MapException, type MapBoard, type MapBreaker, type MapSlot, type PdpFamily, type PowerMap } from './power-map.ts'
 import { boardStamp, type BoardRole, type HistoryEvent } from '../triage/history.ts'
 
 // ---- The CTRE PDP 2.0, as drawn --------------------------------------------------------------------------------------
@@ -111,7 +113,7 @@ const motorSlots = (map: PowerMap) => map.boards.flatMap((b) => b.slots.filter((
 // ---- Problems ----------------------------------------------------------------------------------------------------------
 
 export interface MapProblem {
-  kind: 'two-motors' | 'motor-twice' | 'illegal-breaker' | 'unplaced'
+  kind: 'two-motors' | 'motor-twice' | 'illegal-breaker' | 'exception-shadowed' | 'unplaced'
   text: string
   /** The slots to light when the line is hovered (PDP slot numbers). */
   slots: number[]
@@ -154,6 +156,19 @@ export function mapProblems(map: PowerMap | null, motors: ProfileMotor[]): MapPr
       const listed = breakerFamily(b.family)?.ratingsA.includes(b.ratingA) ?? false
       if (b.ratingA > 40) out.push({ kind: 'illegal-breaker', slots: [s.slot], text: `Slot ${s.slot}: a ${b.ratingA} A breaker isn't legal on a PDP channel (40 A or lower). ${R619}.` })
       else if (!PDP_FAMILIES.includes(b.family as PdpFamily) || !listed) out.push({ kind: 'illegal-breaker', slots: [s.slot], text: `Slot ${s.slot}: ${breakerText(b)} isn't on the list of breakers a PDP may hold. ${R619}.` })
+    }
+  }
+  // Exceptions: a breaker over 40 A or one the maker doesn't make, and one beside a slot that says otherwise (the slot wins).
+  for (const x of map?.exceptions ?? []) {
+    const who = `${x.name}${x.canId !== undefined ? ` (CAN ${x.canId})` : ''}`
+    const listed = breakerFamily(x.breaker.family)?.ratingsA.includes(x.breaker.ratingA) ?? false
+    if (x.breaker.ratingA > 40) out.push({ kind: 'illegal-breaker', slots: [], text: `${who}: a ${x.breaker.ratingA} A breaker isn't legal on a PDP channel (40 A or lower). ${R619}.` })
+    else if (!listed) out.push({ kind: 'illegal-breaker', slots: [], text: `${who}: ${breakerText(x.breaker)} isn't on the list of breakers a PDP may hold. ${R619}.` })
+    const on = map ? motorSlots(map).find(({ slot }) => slot.feeds?.kind === 'motor' && feedsMotor(slot.feeds, x.name, x.canId)) : undefined
+    const sb = on?.slot.breaker
+    if (on && sb && (sb.family !== x.breaker.family || sb.ratingA !== x.breaker.ratingA)) {
+      const where = on.board.id === PDP_ID ? 'PDP' : `MPM ${on.board.id.replace(/^mpm-/, '')}`
+      out.push({ kind: 'exception-shadowed', slots: on.board.id === PDP_ID ? [on.slot.slot] : [], ...(on.board.id === PDP_ID ? {} : { board: on.board.id }), text: `${who} has a ${x.breaker.ratingA} A exception and sits on ${where} slot ${on.slot.slot} with ${breakerText(sb)}: the slot wins.` })
     }
   }
   // An MPM's slots: one motor per slot (R621 applies to any branch circuit), and an ATM breaker of 5 to 15 A.
@@ -220,9 +235,10 @@ export function slotsKeeping(map: PowerMap, usual: MapBreaker): number {
   return motorSlots(map).filter(({ board }) => board.id === PDP_ID).filter(({ slot }) => !slot.breaker || slot.breaker.family !== usual.family || slot.breaker.ratingA !== usual.ratingA).length
 }
 
-/** Every slot that feeds a motor takes `usual` as its breaker ("Apply to all"). Radio, roboRIO and other slots keep theirs. */
+/** Every slot that feeds a motor takes `usual` as its breaker, and the exceptions are cleared ("Apply to all"). Radio, roboRIO and other slots keep theirs. */
 export function applyToAll(map: PowerMap, usual: MapBreaker): PowerMap {
-  return { ...map, boards: map.boards.map((b) => ({ ...b, slots: b.slots.map((s) => (s.feeds?.kind === 'motor' ? { ...s, breaker: { family: b.kind === 'rev-mpm' ? s.breaker?.family ?? 'atm' : usual.family, ratingA: b.kind === 'rev-mpm' ? s.breaker?.ratingA ?? usual.ratingA : usual.ratingA } } : s)) })) }
+  const { exceptions: _cleared, ...rest } = map
+  return { ...rest, boards: map.boards.map((b) => ({ ...b, slots: b.slots.map((s) => (s.feeds?.kind === 'motor' ? { ...s, breaker: { family: b.kind === 'rev-mpm' ? s.breaker?.family ?? 'atm' : usual.family, ratingA: b.kind === 'rev-mpm' ? s.breaker?.ratingA ?? usual.ratingA : usual.ratingA } } : s)) })) }
 }
 
 /**
@@ -235,14 +251,106 @@ export function mapLine(history: HistoryEvent[], map: PowerMap, who: { device: s
 
 // ---- The strip ---------------------------------------------------------------------------------------------------------
 
-/** The Breakers strip's one line, and whether the two choices are unset (then the line says so and the button says Set). */
-export function stripText(map: PowerMap | null, motors: ProfileMotor[]): { text: string; unset: boolean } {
-  const unset = !map || (map.main === null && map.usual === null)
+/** The words the strip and the map put after a breaker that is the robot's default rather than a choice. */
+export const DEFAULT_WORDS = "(Hindsight's default for this robot; change it in the map)"
+
+/**
+ * The Breakers strip's one line, and whether nothing at all is set (no map choice and no robot default: then the line says so
+ * and the button reads Set). A robot's default is shown as such, so it is never a hidden setting.
+ */
+export function stripText(map: PowerMap | null, motors: ProfileMotor[], fallback?: BreakerDefault | null): { text: string; unset: boolean } {
+  const unset = !map?.main && !map?.usual && !fallback
   if (unset) return { text: 'Breakers: not set: judged against the first legal 40 A breaker to trip', unset }
-  const main = map!.main ? `main ${MAIN_LABEL[map!.main]}` : 'main not set (Bussmann assumed)'
-  const usual = map!.usual ? `every motor ${breakerText(map!.usual)}` : 'every motor not set'
+  const mainDefault = !map?.main && !!fallback
+  const usualDefault = !map?.usual && !!fallback
+  const main = map?.main ? `main ${MAIN_LABEL[map.main]}` : fallback ? `main ${MAIN_LABEL[fallback.main]}` : 'main not set (Bussmann assumed)'
+  const usualB = map?.usual ?? fallback?.usual ?? null
+  const usual = usualB ? `every motor ${breakerText(usualB)}` : 'every motor not set'
+  const note = (d: boolean) => (d ? ` ${DEFAULT_WORDS}` : '')
+  const rows = motorRows(map, motors, fallback)
+  const exceptions = countExceptions(map, motors, fallback)
+  const parts = [`${main}${note(mainDefault && !usualDefault)}`, `${usual}${note(usualDefault)}`]
+  if (exceptions) parts.push(`${exceptions} exception${exceptions === 1 ? '' : 's'}`)
   const { placed, total } = placedCount(map, motors)
-  return { text: `Breakers: ${main} · ${usual}${total ? ` · ${placed} of ${total} motors placed` : ''}`, unset }
+  if (map && total) parts.push(`${placed} of ${total} motors placed`)
+  return { text: `Breakers: ${parts.join(' · ')}`, unset }
+}
+
+// ---- The Motors list: a motor's breaker without a slot ----------------------------------------------------------------------
+
+export interface MotorRow {
+  name: string
+  canId?: number
+  breaker: { family: string; ratingA: number }
+  source: BreakerSource
+  /** "PDP slot 6", "MPM 1 slot 2" or "no slot". */
+  slotText: string
+  /** On a breaker other than the usual one (an exception, or a slot that says otherwise). */
+  exception: boolean
+}
+
+/** Every profile motor with the breaker it is judged by: exceptions first, then by CAN ID. */
+export function motorRows(map: PowerMap | null, motors: ProfileMotor[], fallback?: BreakerDefault | null): MotorRow[] {
+  const usual = map?.usual ?? fallback?.usual ?? null
+  const rows = motors.map((m): MotorRow => {
+    const b = breakerForMotor(map, m.name, m.canId, fallback)
+    const differs = !!usual && (b.family !== usual.family || b.ratingA !== usual.ratingA)
+    return {
+      name: m.name, ...(m.canId !== undefined ? { canId: m.canId } : {}), breaker: { family: b.family, ratingA: b.ratingA }, source: b.source,
+      slotText: b.slot !== undefined ? (b.board === PDP_ID ? `PDP slot ${b.slot}` : `MPM ${b.board?.replace(/^mpm-/, '')} slot ${b.slot}`) : 'no slot',
+      exception: b.source === 'exception' || (b.source === 'slot' && differs),
+    }
+  })
+  return rows.sort((a, b) => Number(b.exception) - Number(a.exception) || (a.canId ?? Infinity) - (b.canId ?? Infinity))
+}
+
+/** How many motors are on a breaker other than the usual one (an exception, or a slot that says otherwise): the one count the keeping line, the Motors summary and the strip all give. */
+export const countExceptions = (map: PowerMap | null, motors: ProfileMotor[], fallback?: BreakerDefault | null): number => motorRows(map, motors, fallback).filter((r) => r.exception).length
+
+/** "16 motors on REV ATO 40 A · 2 exceptions". */
+export function motorsSummary(rows: MotorRow[], usual: MapBreaker | null): string {
+  const n = rows.filter((r) => !r.exception).length
+  const k = rows.length - n
+  const on = usual ? `on ${breakerText(usual)}` : 'with no breaker set'
+  return `${n} motor${n === 1 ? '' : 's'} ${on} · ${k === 0 ? 'no exceptions' : `${k} exception${k === 1 ? '' : 's'}`}`
+}
+
+const exceptionKey = (x: { name: string; canId?: number }) => (x.canId !== undefined ? `can ${x.canId}` : x.name)
+const sameException = (x: MapException, m: ProfileMotor) => (x.canId !== undefined && m.canId !== undefined ? x.canId === m.canId : x.name === m.name)
+
+/**
+ * A motor's breaker changed from the Motors list. A motor on a slot changes the slot's breaker (one truth per motor); any other
+ * motor gets an exception, or loses it when the breaker chosen is the usual one. Returns a new map.
+ */
+export function setMotorBreaker(map: PowerMap, motor: ProfileMotor, breaker: MapBreaker, usual: MapBreaker | null): PowerMap {
+  for (const board of map.boards) {
+    const entry = board.slots.find((s) => s.feeds?.kind === 'motor' && feedsMotor(s.feeds, motor.name, motor.canId))
+    if (entry) {
+      // One truth per motor: the slot's breaker is now the answer, so any exception for this motor goes.
+      const { exceptions: old, ...bare } = map
+      const kept = (old ?? []).filter((x) => !sameException(x, motor))
+      return { ...bare, ...(kept.length ? { exceptions: kept } : {}), boards: map.boards.map((b) => (b === board ? { ...b, slots: b.slots.map((s) => (s === entry ? { ...s, breaker } : s)) } : b)) }
+    }
+  }
+  const rest = (map.exceptions ?? []).filter((x) => !sameException(x, motor))
+  const isUsual = !!usual && usual.family === breaker.family && usual.ratingA === breaker.ratingA
+  const next = isUsual ? rest : [...rest, { name: motor.name, ...(motor.canId !== undefined ? { canId: motor.canId } : {}), breaker: { family: breaker.family as PdpFamily, ratingA: breaker.ratingA } }]
+  const { exceptions: _old, ...without } = map
+  return next.length ? { ...without, exceptions: next } : without
+}
+
+/**
+ * One profile per robot: its main-branch one, else the first (the map belongs to the robot, not its branch). The Motors list shows
+ * that profile's motors: a motor only another branch's profile has isn't listed (no 8033 profile has one).
+ */
+export function oneProfilePerRobot(profiles: RobotProfile[]): RobotProfile[] {
+  const byKey = new Map<string, RobotProfile>()
+  for (const p of profiles) {
+    const k = robotKey(p)
+    const have = byKey.get(k)
+    if (!have || (have.code.branch !== 'main' && p.code.branch === 'main')) byKey.set(k, p)
+  }
+  return [...byKey.values()]
 }
 
 // ---- A change made from a finding ---------------------------------------------------------------------------------------
@@ -263,6 +371,16 @@ function applyChange(target: PowerMap, before: PowerMap, next: PowerMap): PowerM
   let out: PowerMap = { ...target, boards: target.boards.map((b) => ({ ...b, slots: [...b.slots] })) }
   if (!same(before.main, next.main)) out = { ...out, main: next.main }
   if (!same(before.usual, next.usual)) out = { ...out, usual: next.usual }
+  const key = exceptionKey
+  const was = new Map((before.exceptions ?? []).map((x) => [key(x), x]))
+  const now = new Map((next.exceptions ?? []).map((x) => [key(x), x]))
+  if (was.size || now.size) {
+    let ex = [...(out.exceptions ?? [])]
+    for (const [k, x] of was) if (!now.has(k)) ex = ex.filter((y) => key(y) !== k)
+    for (const [k, x] of now) if (!same(was.get(k), x)) ex = [...ex.filter((y) => key(y) !== k), x]
+    const { exceptions: _e, ...bare } = out
+    out = ex.length ? { ...bare, exceptions: ex } : bare
+  }
   for (const board of before.boards) if (!next.boards.some((b) => b.id === board.id)) out = { ...out, boards: out.boards.filter((b) => b.id !== board.id) }
   for (const board of next.boards) {
     const was = before.boards.find((b) => b.id === board.id)
@@ -290,14 +408,16 @@ export interface FindingPlan {
  * every later line of that robot (each distinct later `from`) is written again with the same change applied, so a later edit
  * in Tools doesn't hide it. `before` is the map in effect at the match (null: none), `next` the map after the edit.
  */
-export function planFromFinding(history: HistoryEvent[], robot: string, from: string, before: PowerMap | null, next: PowerMap): FindingPlan {
+export function planFromFinding(history: HistoryEvent[], robotIds: string | readonly string[], from: string, before: PowerMap | null, next: PowerMap): FindingPlan {
+  const ids = typeof robotIds === 'string' ? [robotIds] : robotIds
+  const robot = ids[0] // maps are written under the robot's key; lines under its old id are read too
   const was = before ?? emptyMap(robot, from)
-  const laterFroms = [...new Set(history.filter((e): e is PowerMap => e.type === 'power-map' && e.robot === robot && Date.parse(e.from) > Date.parse(from)).map((e) => e.from))]
+  const laterFroms = [...new Set(history.filter((e): e is PowerMap => e.type === 'power-map' && ids.includes(e.robot) && Date.parse(e.from) > Date.parse(from)).map((e) => e.from))]
     .sort((a, b) => Date.parse(a) - Date.parse(b))
-  const lines = laterFroms.map((f) => powerMapAt(history, robot, f)!)
+  const lines = laterFroms.map((f) => ({ ...powerMapAt(history, ids, f)!, robot }))
   return {
-    forward: [{ ...next, from }, ...lines.map((l) => ({ ...applyChange(l, was, next), from: l.from }))],
-    undo: [{ ...was, from }, ...lines],
+    forward: [{ ...next, robot, from }, ...lines.map((l) => ({ ...applyChange(l, was, next), from: l.from }))],
+    undo: [{ ...was, robot, from }, ...lines],
     laterDates: laterFroms,
   }
 }
@@ -321,7 +441,9 @@ export function stampAll(history: HistoryEvent[], maps: PowerMap[], who: { devic
 export function judgedAgainst(evidence: { breaker?: unknown; slot?: unknown }, map: PowerMap | null): string {
   const breaker = String(evidence.breaker ?? '').split(' (')[0]
   const slot = String(evidence.slot ?? '')
-  const unset = /\(not set/.test(String(evidence.breaker ?? '')) || isMapBlank(map)
+  const text = String(evidence.breaker ?? '')
+  if (/\(this robot's default\)/.test(text)) return `${breaker}${slot === 'not mapped' ? ', slot not mapped' : ` in ${slot}`} (this robot's default)`
+  const unset = /\(not set/.test(text) || isMapBlank(map)
   const set = unset ? 'not set' : `set ${new Date(map!.when).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
   return `${breaker}${slot === 'not mapped' ? ', slot not mapped' : ` in ${slot}`} (${set})`
 }
@@ -336,8 +458,12 @@ export function robotSeenLast(summaries: { robot: { profileId: string }; playedA
 // ---- The remembered rotation (the map and the finding's thumbnail read it the same way) -------------------------------------
 type Store = { getItem(k: string): string | null; setItem(k: string, v: string): void }
 const ROTATED = (robot: string) => `hindsight.powermap.rotated.${robot}`
-export function readRotated(store: Store, robot: string): boolean {
-  try { return store.getItem(ROTATED(robot)) === '1' } catch { return false }
+export function readRotated(store: Store, robot: string | readonly string[]): boolean {
+  // The first id that has a saved choice decides (the robot key, then the old id), so turning it off sticks.
+  try {
+    for (const id of typeof robot === 'string' ? [robot] : robot) { const v = store.getItem(ROTATED(id)); if (v !== null) return v === '1' }
+    return false
+  } catch { return false }
 }
 export function writeRotated(store: Store, robot: string, rotated: boolean): void {
   try { store.setItem(ROTATED(robot), rotated ? '1' : '0') } catch { /* not remembered */ }

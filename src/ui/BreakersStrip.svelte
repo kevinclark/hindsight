@@ -6,19 +6,19 @@
 <script lang="ts">
   import { powerMapAt, type PowerMap } from '../power/power-map.ts'
   import { stripText } from '../power/power-map-view.ts'
-  import { profileId } from '../profiles/index.ts'
+  import { mapRobotIds, robotKey } from '../profiles/index.ts'
   import type { RobotProfile } from '../profiles/types.ts'
   import { mapHistory, openPowerMap } from './power-map-bridge.svelte.ts'
 
   let { profile, map }: {
-    profile: Pick<RobotProfile, 'name' | 'code' | 'keptAs' | 'motorGroups'> | null
+    profile: Pick<RobotProfile, 'name' | 'code' | 'keptAs' | 'motorGroups' | 'breakerDefault'> | null
     /** The map to read (the Power tab passes the one this match was judged with); unset: the robot's map now. */
     map?: PowerMap | null
   } = $props()
-  const robot = $derived(profile ? profileId(profile as RobotProfile) : null)
-  const shown = $derived(map !== undefined ? map : robot ? powerMapAt(mapHistory(), robot, '9999-12-31T23:59:59.999Z') : null)
+  const robot = $derived(profile ? robotKey(profile as RobotProfile) : null)
+  const shown = $derived(map !== undefined ? map : profile ? powerMapAt(mapHistory(), mapRobotIds(profile as RobotProfile), '9999-12-31T23:59:59.999Z') : null)
   const motors = $derived(profile ? profile.motorGroups.flatMap((g) => g.motors.map((m) => ({ name: m.name, canId: m.canId }))) : [])
-  const line = $derived(stripText(shown, motors))
+  const line = $derived(stripText(shown, motors, profile?.breakerDefault))
 </script>
 
 <p class="strip screen-only" data-breakers-strip>

@@ -12,7 +12,7 @@ import { powerMapAt, powerMapStamp } from './power/power-map.ts'
 import { attachDsevents, attachDslog, buildMatch, dseventsOverlap, dslogOverlap, type Match } from './match/match.ts'
 import { CONSOLIDATORS, RULES, runRules, type Report } from './rules/index.ts'
 import { rerunRules } from './rules/run.ts'
-import { PROFILES, profileId } from './profiles/index.ts'
+import { PROFILES, mapRobotIds } from './profiles/index.ts'
 import { chooseProfile } from './profiles/choose.ts'
 import type { RobotProfile } from './profiles/types.ts'
 import type { PowerMap } from './power/power-map.ts'
@@ -137,7 +137,7 @@ const LATEST = '9999-12-31T23:59:59.999Z'
  * clock to place it) the robot's latest map.
  */
 function powerMapFor(match: Match, history: HistoryEvent[]): PowerMap | null {
-  return powerMapAt(history, profileId(match.profile), powerMapInstant(match))
+  return powerMapAt(history, mapRobotIds(match.profile), powerMapInstant(match))
 }
 
 /** The rules that read the power map, and nothing else does. */

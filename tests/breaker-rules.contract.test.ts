@@ -35,9 +35,11 @@ const pushing = (amps: number, seconds = 400, only = modules, tail = 10): Entrie
   { name: '/SystemStats/SystemTimeValid', type: 'boolean', records: [[0, true]] },
   ...only.map((m) => ({ name: `/Swerve/${m} Module/DriveSupplyCurrentAmps`, type: 'double', records: [[0, 0], [10, amps], [10 + seconds, 0], [20 + seconds + tail, 0]] })),
 ] as Entries
-const run = (entries: Entries, history: HistoryEvent[] = []) => analyzeFiles([{ name: 't.wpilog', bytes: writeWpilog(entries) }], offseason2026, undefined, history).analyses[0].report
-const main = (entries: Entries, history?: HistoryEvent[]) => run(entries, history).findings.find((f) => f.rule === MAIN)
-const pdp = (entries: Entries, history?: HistoryEvent[]) => run(entries, history).findings.filter((f) => f.rule === PDP)
+/** A profile with no breaker default: a robot nobody has said anything about. */
+const NO_DEFAULT = { ...offseason2026, breakerDefault: undefined }
+const run = (entries: Entries, history: HistoryEvent[] = [], profile = offseason2026) => analyzeFiles([{ name: 't.wpilog', bytes: writeWpilog(entries) }], profile, undefined, history).analyses[0].report
+const main = (entries: Entries, history?: HistoryEvent[], profile = offseason2026) => run(entries, history, profile).findings.find((f) => f.rule === MAIN)
+const pdp = (entries: Entries, history?: HistoryEvent[], profile = offseason2026) => run(entries, history, profile).findings.filter((f) => f.rule === PDP)
 
 describe('[BR-01] what is already live', () => {
   test('the main rule keeps its id, title, amber level and audience; the PDP rule is registered beside it', () => {
@@ -133,8 +135,13 @@ describe('[BR-04] the main rule\'s evidence', () => {
 })
 
 describe('[BR-05] the main breaker comes from the match\'s power map', () => {
-  test('no map: Bussmann, assumed', () => {
-    expect(main(pushing(75, 120))!.evidence!['judged against']).toBe('Bussmann CB185-120 or CB285-120 (assumed: no main breaker set in the power map)')
+  test('no map and no robot default: Bussmann, assumed', () => {
+    expect(main(pushing(75, 120), [], NO_DEFAULT)!.evidence!['judged against']).toBe('Bussmann CB185-120 or CB285-120 (assumed: no main breaker set in the power map)')
+  })
+  test('no map, a robot with a default (8033\'s): its main, said to be the robot\'s default', () => {
+    expect(main(pushing(75, 120))!.evidence!['judged against']).toBe('Bussmann CB185-120 or CB285-120 (this robot\'s default)')
+    const optifuse = { ...offseason2026, breakerDefault: { main: 'optifuse', usual: { family: 'rev-ato', ratingA: 40 } } } as const
+    expect(main(pushing(75, 120), [], optifuse)!.evidence!['judged against']).toBe('Optifuse 153120 or 253120 (this robot\'s default)')
   })
   test('a map naming Optifuse: its parts and its heat', () => {
     const bussmann = main(pushing(75, 120))!
@@ -145,7 +152,7 @@ describe('[BR-05] the main breaker comes from the match\'s power map', () => {
   })
   test('a map naming Bussmann: set, not assumed; a map with no main: assumed', () => {
     expect(main(pushing(75, 120), [map({ main: 'bussmann' })])!.evidence!['judged against']).toBe('Bussmann CB185-120 or CB285-120 (set in the power map)')
-    expect(main(pushing(75, 120), [map({ main: null })])!.evidence!['judged against']).toContain('assumed')
+    expect(main(pushing(75, 120), [map({ main: null })], NO_DEFAULT)!.evidence!['judged against']).toContain('assumed')
   })
 })
 
@@ -205,15 +212,15 @@ describe('[BR-09] the title names the motor, breaker, slot and band position', (
     expect(f.title).toMatch(/^Front Left drive \(CAN 0\) · slot not mapped · REV 40 A: a fast-end breaker would have tripped/)
   })
   test('no map at all: breaker not set', () => {
-    const f = pdp(oneMotor(100, 30))[0]
+    const f = pdp(oneMotor(100, 30), [], NO_DEFAULT)[0]
     expect(f.title).toMatch(/^Front Left drive \(CAN 0\) · slot not mapped · breaker not set: judged against the first legal 40 A breaker to trip here \((REV ATO|CTRE ATO|Snap Action)\): a fast-end breaker would have tripped/)
   })
   test('no breaker set: a mild overload that Snap Action never trips is caught, naming the family that trips first', () => {
     // 50 A on a 40 A breaker is 125 %: Snap Action's fast edge never trips there; CTRE's does in about 18 s, REV's in about 32 s.
-    const f = pdp(oneMotor(50, 60))[0]
+    const f = pdp(oneMotor(50, 60), [], NO_DEFAULT)[0]
     expect(f.title).toContain('judged against the first legal 40 A breaker to trip here (CTRE ATO)')
     expect(f.evidence!.breaker).toBe('CTRE 40 A (not set: the first legal 40 A breaker to trip here)')
-    expect(pdp(oneMotor(50, 12))).toHaveLength(0) // 12 s: CTRE crosses at about 18 s, REV and Snap later or never
+    expect(pdp(oneMotor(50, 12), [], NO_DEFAULT)).toHaveLength(0) // 12 s: CTRE crosses at about 18 s, REV and Snap later or never
     expect(pdp(oneMotor(50, 60), [map({ usual: { family: 'snap-action', ratingA: 40 } })])).toHaveLength(0) // a set Snap Action never trips here
   })
   test('a slot on an MPM reads MPM and its id (a PDP-family breaker there is the map\'s own business)', () => {
@@ -253,8 +260,8 @@ describe('[BR-11] the PDP evidence', () => {
   })
   test('unmapped and not set', () => {
     expect(pdp(oneMotor(100, 30), [map({ usual: REV40 })])[0].evidence).toMatchObject({ breaker: 'REV 40 A (the power map\'s usual breaker)', slot: 'not mapped' })
-    expect(pdp(oneMotor(100, 30))[0].evidence).toMatchObject({ slot: 'not mapped' })
-    expect(pdp(oneMotor(100, 30))[0].evidence!.breaker).toMatch(/^(REV|CTRE|Snap Action) 40 A \(not set: the first legal 40 A breaker to trip here\)$/)
+    expect(pdp(oneMotor(100, 30), [], NO_DEFAULT)[0].evidence).toMatchObject({ slot: 'not mapped' })
+    expect(pdp(oneMotor(100, 30), [], NO_DEFAULT)[0].evidence!.breaker).toMatch(/^(REV|CTRE|Snap Action) 40 A \(not set: the first legal 40 A breaker to trip here\)$/)
   })
   test('the heat figures follow the breaker curve', () => {
     const f = pdp(oneMotor(100, 30), [onSlot(REV40)])[0]
@@ -290,5 +297,21 @@ describe('[BR-13] only motors are judged', () => {
   })
   test('every family of the table is one the rules know', () => {
     expect(BREAKERS.map((f) => f.id).sort()).toEqual(['bussmann', 'ctre-ato', 'optifuse', 'rev-ato', 'snap-action'])
+  })
+})
+
+describe('[BR-14] a robot with a default is judged by it, and says so', () => {
+  test('no map: REV 40 A "(this robot\'s default)", slot not mapped, never "not set"', () => {
+    const f = pdp(oneMotor(100, 30))[0]
+    expect(f.title).toMatch(/^Front Left drive \(CAN 0\) · slot not mapped · REV 40 A: a fast-end breaker would have tripped/)
+    expect(f.evidence).toMatchObject({ breaker: 'REV 40 A (this robot\'s default)', slot: 'not mapped' })
+  })
+  test('the default is REV 40 A: a load that only CTRE\'s curve trips (125 % for 20 s) is quiet', () => {
+    expect(pdp(oneMotor(50, 20))).toHaveLength(0)
+    expect(pdp(oneMotor(50, 20), [], NO_DEFAULT)).toHaveLength(1)
+  })
+  test('an exception for the motor beats the default, and says so', () => {
+    const f = pdp(oneMotor(100, 30), [map({ usual: null, exceptions: [{ name: 'Front Left drive', canId: 0, breaker: { family: 'ctre-ato', ratingA: 30 } }] })])[0]
+    expect(f.evidence).toMatchObject({ breaker: 'CTRE 30 A (set for this motor in the power map)' })
   })
 })

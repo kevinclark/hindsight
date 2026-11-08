@@ -18,7 +18,7 @@
   import { judgedAgainst } from '../power/power-map-view.ts'
   import { openPowerMap } from './power-map-bridge.svelte.ts'
   import { powerMapInstant } from '../analyze.ts'
-  import { profileId } from '../profiles/index.ts'
+  import { mapRobotIds, robotKey } from '../profiles/index.ts'
 
   let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug }: {
     finding: Finding
@@ -91,7 +91,7 @@
   function changeBreaker() {
     const iso = powerMapInstant(analysis.match)
     const known = !iso.startsWith('9999')
-    openPowerMap({ robot: profileId(analysis.match.profile as never), ...(pdpSlot !== undefined ? { slot: Number(pdpSlot) } : {}), ...(known ? { from: { iso, label: analysis.match.matchLabel || analysis.match.fileName } } : {}) })
+    openPowerMap({ robot: robotKey(analysis.match.profile as never), ...(pdpSlot !== undefined ? { slot: Number(pdpSlot) } : {}), ...(known ? { from: { iso, label: analysis.match.matchLabel || analysis.match.fileName } } : {}) })
   }
 </script>
 
@@ -140,7 +140,7 @@
       {#if isPdp}
         <div class="judged" data-judged-against>
           <div><strong>judged against:</strong> {judged} · <button type="button" class="link" onclick={changeBreaker}>Change</button></div>
-          {#if pdpSlot !== undefined}<PdpThumb map={analysis.match.powerMap} slot={Number(pdpSlot)} robot={profileId(analysis.match.profile as never)} onclick={changeBreaker} />{/if}
+          {#if pdpSlot !== undefined}<PdpThumb map={analysis.match.powerMap} slot={Number(pdpSlot)} robot={mapRobotIds(analysis.match.profile as never)} onclick={changeBreaker} />{/if}
         </div>
       {/if}
       {#if finding.plot && open}

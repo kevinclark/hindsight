@@ -56,7 +56,7 @@ export default rule({
     const grid = match.currents()
     const logged = grid.motors.find((m) => m.name === motor.name && m.group === motor.group)
     if (!logged) return match.couldNotCheck(`${motor.name} supply current is not logged`)
-    const breaker = breakerForMotor(match.powerMap, motor.name, motor.canId)
+    const breaker = breakerForMotor(match.powerMap, motor.name, motor.canId, match.profile.breakerDefault)
     const family = breakerFamily(breaker.family)
     if (!family) return match.couldNotCheck(`${motor.name} is on an ${FAMILY_NAMES[breaker.family] ?? breaker.family} breaker, which has no trip curve here yet`)
 
@@ -102,7 +102,7 @@ const NOT_SET_FAMILIES = ['rev-ato', 'ctre-ato', 'snap-action']
 
 const NOT_SET_NAMES: Record<string, string> = { 'rev-ato': 'REV ATO', 'ctre-ato': 'CTRE ATO', 'snap-action': 'Snap Action' }
 
-const SOURCE_WORDS: Record<MotorBreaker['source'], string> = { slot: 'set on its slot in the power map', usual: 'the power map\'s usual breaker', 'not set': 'not set: the first legal 40 A breaker to trip here' }
+const SOURCE_WORDS: Record<MotorBreaker['source'], string> = { slot: 'set on its slot in the power map', exception: 'set for this motor in the power map', usual: 'the power map\'s usual breaker', default: 'this robot\'s default', 'not set': 'not set: the first legal 40 A breaker to trip here' }
 
 /** One family's two edges on this motor's current: the peaks inside the match and when the fast edge first reached 100 %. */
 function judge(id: string, ratingA: number, amps: Float64Array, times: Float64Array, match: MatchView) {

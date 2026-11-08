@@ -1,3 +1,5 @@
+import type { BreakerDefault } from '../power/power-map.ts'
+
 /** The shape of a robot profile. See 2026-offseason.ts for a filled-in example. */
 
 export interface Motor {
@@ -219,6 +221,11 @@ export interface RobotProfile<Signals = SignalSources, Battery = BatterySources>
    * kept profile never shares an id with a built-in one of the same name and branch.
    */
   keptAs?: string
+  /**
+   * What Hindsight assumes for this robot's breakers when its power map says nothing: the main breaker and the one every motor
+   * is on. Shown wherever the breakers are ("Hindsight's default for this robot"), changed by writing a map line.
+   */
+  breakerDefault?: BreakerDefault
   /**
    * The FRC team number this robot belongs to. Only the robot lists use it (src/ui/robot-list.ts); no rule and no profile
    * choice reads it. A profile kept before this field existed has none.

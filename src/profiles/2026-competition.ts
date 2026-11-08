@@ -48,6 +48,8 @@ const rollerMotor = (name: string, prefix: string, canId: number) => ({
 
 export const competition2026: RobotProfile = {
   name: '2026 competition robot',
+  // Kevin, 2026-11-08: the Bussmann CB285-120 main and REV 40 A on every motor; exceptions go in the power map.
+  breakerDefault: { main: 'bussmann', usual: { family: 'rev-ato', ratingA: 40 } },
   team: 8033,
   codebase: 'Rebuilt',
   // Robot.java records which robot it built with recordMetadata("Robot Edition", …).

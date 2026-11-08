@@ -3,7 +3,7 @@
  * other teams' out, so a student picks from their own; without one, every robot, grouped by team. Only the lists use this:
  * automatic choice (src/profiles/choose.ts) still sees every profile.
  */
-import { profileId } from '../profiles/index.ts'
+import { mapRobotIds } from '../profiles/index.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 
 /** `label` null: the list's own robots, with no heading. */
@@ -34,6 +34,6 @@ export function robotChoices(builtIn: RobotProfile[], kept: RobotProfile[], team
   }
   const mine = (p: RobotProfile, isKept: boolean) => (isKept ? p.team === undefined || p.team === team : p.team === team)
   const groups: RobotGroup[] = [{ label: null, profiles: [...builtIn.filter((p) => mine(p, false)), ...kept.filter((p) => mine(p, true))] }]
-  for (const p of all) if (!groups[0].profiles.includes(p) && inUse.includes(profileId(p))) addUnderTeam(groups, p)
+  for (const p of all) if (!groups[0].profiles.includes(p) && inUse.some((id) => mapRobotIds(p).includes(id))) addUnderTeam(groups, p)
   return groups
 }

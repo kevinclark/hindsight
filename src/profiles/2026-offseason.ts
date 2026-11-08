@@ -28,6 +28,8 @@ const swerveCanIds: Record<string, { drive: number; steer: number }> = {
 
 const robot: RobotProfile = {
   name: '2026 offseason robot',
+  // Kevin, 2026-11-08: the Bussmann CB285-120 main and REV 40 A on every motor; exceptions go in the power map.
+  breakerDefault: { main: 'bussmann', usual: { family: 'rev-ato', ratingA: 40 } },
   team: 8033,
   codebase: '2026 Offseason',
   code: { repo: 'HighlanderRobotics/2026-Offseason-Robot', branch: 'main', sha: 'cb68b20' },

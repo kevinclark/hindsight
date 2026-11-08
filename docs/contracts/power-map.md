@@ -78,3 +78,21 @@ Suite: `npx vitest run tests/power-map.contract.test.ts tests/power-map-view.tes
   line back as it was, a first map back to a map with nothing in it; "Only from now" leaves the match's start and the lines
   between as they were and starts the change at the given time. Why: lines are whole maps and the latest `from` wins, so without
   this a change made from an old match is hidden for every match after the next edit. Kind: behaviour.
+- **PM-13** The map belongs to the robot, not to a branch of its code: a line's `robot` is the robot key (`robotKey()` in
+  `src/profiles/index.ts`: the profile's name, a kept profile's id), and every reader looks a robot up by its key **or** its
+  old id `name @ branch` (`mapRobotIds`, `powerMapAt` taking either), so a line written by 0.1.609 still applies and the two
+  branch profiles of one robot share one map; a summary names the same ids (`summaryRobotIds`). A 0.1.609 build does not read a line keyed by name: on a laptop mix, its own later `name @ branch` line wins for both builds' readers once it is the latest. Why: the breakers in the
+  robot do not change with the branch the code runs from. Kind: compatibility.
+- **PM-14** A power-map line may carry `exceptions`: `{ name, canId?, breaker: { family, ratingA } }` for a motor on a breaker
+  other than the usual one without a slot (family one of the three PDP families, rating above 0, `canId` 0 to 62). A bad
+  `exceptions` field makes the whole line an `OpaqueEvent`, written back unchanged; a line without the field is as before.
+  The line stays version 1: a build from before this field (0.1.609) reads the line as valid, ignores the field and judges
+  those motors by the line's `usual`; nothing else about the line changes for it. An exception names a PDP family only (REV, CTRE, Snap Action); a motor on an MPM is placed on its slot. Kind: compatibility.
+- **PM-15** `breakerForMotor(map, name, canId, default?)` answers, in order: the breaker of the slot the motor is on; the
+  motor's exception (found by CAN ID when both have one, else by name, like a slot's feed); the map's `usual`; the robot's
+  `breakerDefault.usual` (`source: 'default'`); else the not-set placeholder. Its `source` says which: `slot`, `exception`,
+  `usual`, `default`, `not set`. A slot with no breaker set falls through. Why: a team that runs one breaker everywhere is done
+  with the default, and one exception should not need a slot. Kind: behaviour.
+- **PM-16** `mainBreakerFor(map, default?)` answers the map's `main` (`source: 'map'`), else the robot's `breakerDefault.main`
+  (`'default'`), else Bussmann (`'assumed'`). 8033's four built-in profiles (2026 offseason on both branches, 2026 competition,
+  2025 offseason) carry `breakerDefault`: the Bussmann main and REV ATO 40 A on every motor. Kind: behaviour.

@@ -325,6 +325,12 @@ function visionOutliers(match: Match): number | null {
  * (the pit changed the breakers since): the summary holds findings, not the log, so it has to be read again.
  */
 export function summaryMapStale(s: MatchSummary, history: readonly HistoryEvent[]): boolean {
-  const now = powerMapStamp(powerMapAt(history, s.robot.profileId, s.powerMap?.at ?? '9999-12-31T23:59:59.999Z'))
+  const now = powerMapStamp(powerMapAt(history, summaryRobotIds(s.robot), s.powerMap?.at ?? '9999-12-31T23:59:59.999Z'))
   return now !== (s.powerMap?.stamp ?? 'none')
+}
+
+/** The ids a power-map line for this summary's robot may carry: its key (name, or a kept profile's id) and the old "name @ branch" form. */
+export function summaryRobotIds(r: MatchSummary['robot']): string[] {
+  const builtIn = r.profileId === `${r.name} @ ${r.code.branch}`
+  return builtIn ? [r.name, r.profileId] : [r.profileId]
 }
