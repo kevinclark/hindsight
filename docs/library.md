@@ -104,10 +104,14 @@ panel. Neither is committed.
 - The refresh token is encrypted with Electron's `safeStorage` and kept in the app's data folder. Where there is no
   keyring (Linux) it is not kept. On a Mac, reading `safeStorage` makes the system ask for Keychain permission, so the app
   does that only at sign-in.
-- **Sync** (one named plan, then a click): downloads teammates' manifests, uploads this computer's logs the team folder
-  lacks, newest played first so the event going on now is shared before an old backlog (a log with no date goes by when
-  it was added; a log that came from Drive is copied *inside* Drive), then publishes this computer's records. A log's record is written only after its file is there,
-  so a failed upload leaves no record. Nothing is deleted or overwritten. Sync never downloads a log: **Download** does.
+- **Sync** (one named plan, then a click): downloads teammates' manifests (a file whose Drive checksum equals the local
+  copy's is not downloaded), uploads this computer's logs the team folder lacks in three bands, each newest first: match
+  logs (FMS or on the field), then other dated logs, then logs with no date, so the event going on now is shared before an
+  old backlog (a log that came from Drive is copied *inside* Drive), and publishes this computer's records **as logs land**
+  (at most every 120 s, and at the end or on a stop). Each publish only appends the newly eligible lines after what was
+  last published. A log's record is written only after its file is there, so a failed upload leaves no record. Nothing is
+  deleted or overwritten. Sync never downloads a log: **Download** does, match logs first and newest first, and stops
+  after 5 failures in a row.
 - **The triage history** (known issues, and the issue board's lines) is `history/<machine id>.jsonl`, appended only by that
   computer, beside the manifests. The board is the fold of every file (`hub:history`; order by when, device, seq; lines
   this build can't read are kept as they came). Sync brings teammates' files down and puts this computer's up by the

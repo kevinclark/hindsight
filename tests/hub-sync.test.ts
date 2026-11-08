@@ -11,7 +11,7 @@ import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { driveFolderFiles } from '../src/hub/drive-source.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { ingest, localFolderFiles, planIngest } from '../src/hub/ingest.ts'
-import { FAILURES_IN_A_ROW, fetchLogs, newestFirst, syncWithTeam } from '../src/hub/sync.ts'
+import { FAILURES_IN_A_ROW, fetchLogs, matchesFirst, syncWithTeam } from '../src/hub/sync.ts'
 import { describeFile } from '../src/hub/describe-file.ts'
 import { SignInAgain, readText } from '../src/hub/adapter.ts'
 import { parseManifest } from '../src/hub/types.ts'
@@ -77,10 +77,32 @@ describe('sync through a team store', () => {
     expect(report.uploaded.map((u) => names.get(u.path))).toEqual(['new.wpilog', 'mid.wpilog', 'old.wpilog'])
   })
 
-  it('ranks a log with no date by when it was added, and keeps the order they came in on a tie', () => {
-    const at = (name: string, playedAt: number | null, recordedAt: number) => ({ names: [name], playedAt, recordedAt }) as Parameters<typeof newestFirst>[0]
-    const sorted = [at('old', 1, 10), at('undated-added-now', null, 10), at('undated-added-early', null, 0), at('new', 3, 10), at('also-new', 3, 10)].sort(newestFirst)
-    expect(sorted.map((r) => r.names[0])).toEqual(['undated-added-now', 'new', 'also-new', 'old', 'undated-added-early'])
+  it('ranks match logs, then other dated logs, then undated ones, each newest first, and keeps the order they came in on a tie', () => {
+    const at = (name: string, playedAt: number | null, recordedAt: number, extra: object = {}) => ({ names: [name], playedAt, recordedAt, matchType: null, onField: false, ...extra }) as Parameters<typeof matchesFirst>[0]
+    const sorted = [
+      at('old', 1, 10), at('undated-added-now', null, 10), at('undated-added-early', null, 0), at('new', 3, 10), at('also-new', 3, 10),
+      at('old-quals', 0, 10, { matchType: 2 }), at('field-practice', -5, 10, { onField: true }), at('newer-quals', 2, 10, { matchType: 2 }),
+    ].sort(matchesFirst)
+    expect(sorted.map((r) => r.names[0])).toEqual(['newer-quals', 'old-quals', 'field-practice', 'new', 'also-new', 'old', 'undated-added-now', 'undated-added-early'])
+  })
+
+  // Item 2 of the low-bandwidth plan: an undated log added after a match, even one added later than the match was played, goes last.
+  it('uploads a match log before a dated practice log before an undated one, whatever the order they were added in', async () => {
+    const team = new MemoryAdapter()
+    const a = await machine('ma')
+    const dir = join(work, 'bands')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'match.wpilog'), robotLog({ clockMs: CLOCK - 10 * 86400e3, enabled: [20, 55], event: 'TEST', fms: true, matchType: 2, matchNumber: 1, seed: 'band-m' }))
+    await writeFile(join(dir, 'practice.wpilog'), robotLog({ clockMs: CLOCK, enabled: [20, 55], seed: 'band-p' }))
+    await ingest(a, await localFolderFiles(dir), options)
+    const dir2 = join(work, 'bands2')
+    await mkdir(dir2, { recursive: true })
+    await writeFile(join(dir2, 'undated.wpilog'), robotLog({ enabled: [20, 55], seed: 'band-u' }))
+    await ingest(a, await localFolderFiles(dir2), options)
+    const names = new Map(a.catalog.all().map((r) => [r.path, r.names[0]]))
+    expect([...names.values()].sort()).toEqual(['match.wpilog', 'practice.wpilog', 'undated.wpilog'])
+    const report = await syncWithTeam(a, team)
+    expect(report.uploaded.map((u) => names.get(u.path))).toEqual(['match.wpilog', 'practice.wpilog', 'undated.wpilog'])
   })
 
   it('a second sync writes nothing', async () => {
@@ -334,5 +356,154 @@ describe('Drive to Drive', () => {
     team.copyInto = async () => { tries++; throw new SignInAgain() }
     await expect(syncWithTeam(a, team)).rejects.toBeInstanceOf(SignInAgain)
     expect(tries).toBe(1)
+  })
+})
+
+// Items 1, 3 and 4 of the low-bandwidth plan.
+describe('publishing as logs land, skipping unchanged files, and downloading in order', () => {
+  /** A MemoryAdapter that lets a test look at the store while a write is in flight, and counts reads per path. */
+  class Spy extends MemoryAdapter {
+    beforeWrite: ((n: number, path: string) => Promise<void>) | null = null
+    reads: string[] = []
+    private n = 0
+    override async writeNew(...args: Parameters<MemoryAdapter['writeNew']>) {
+      if (args[0].startsWith('logs/')) await this.beforeWrite?.(++this.n, args[0])
+      return super.writeNew(...args)
+    }
+    override async read(path: string, start: number, end: number) { this.reads.push(path); return super.read(path, start, end) }
+  }
+
+  /** n dated match logs in one machine, played an hour apart (the last played is uploaded first). */
+  async function manyLogs(n: number, name = 'ma') {
+    const a = await machine(name)
+    const dir = join(work, `many-${name}`)
+    for (let i = 0; i < n; i++) await putLog(dir, `log${i}.wpilog`, `${name}-${i}`, CLOCK + i * 3600e3)
+    await ingest(a, await localFolderFiles(dir), options)
+    return a
+  }
+  const logsIn = async (team: MemoryAdapter, m: string) => parseManifest((await readText(team, `manifests/${m}.jsonl`)) ?? '').records.filter((r) => r.type === 'log').length
+  /** A clock that moves 200 s on every reading, so every upload is past the 120 s publish gap. */
+  const fastClock = () => { let t = 0; return () => (t += 200_000) }
+
+  it('shows a teammate record N while upload N+1 is still in flight', async () => {
+    const team = new Spy()
+    const a = await manyLogs(3)
+    const seen: number[] = []
+    team.beforeWrite = async (n) => { seen.push(await logsIn(team, 'ma')); void n }
+    const report = await syncWithTeam(a, team, { now: fastClock() })
+    expect(seen).toEqual([0, 1, 2])
+    expect(report.published).toBe(3)
+    expect(await logsIn(team, 'ma')).toBe(3)
+  })
+
+  it('does not publish more often than the gap, and still publishes everything at the end', async () => {
+    const team = new Spy()
+    const a = await manyLogs(3)
+    const seen: number[] = []
+    team.beforeWrite = async () => { seen.push(await logsIn(team, 'ma')) }
+    const report = await syncWithTeam(a, team, { now: () => 0 })
+    expect(seen).toEqual([0, 0, 0])
+    expect(report.published).toBe(3)
+    expect(await logsIn(team, 'ma')).toBe(3)
+  })
+
+  it('two periodic publishes whose eligibility is out of local order append without a conflict', async () => {
+    const team = new Spy()
+    const a = await manyLogs(3) // local order log0, log1, log2; uploaded log2, log1, log0
+    const report = await syncWithTeam(a, team, { now: fastClock() })
+    expect(report.problems).toEqual([])
+    expect(team.writes.filter((w) => w === 'manifests/ma.jsonl').length).toBe(3)
+    expect(report.published).toBe(3)
+    const names = new Map(a.catalog.all().map((r) => [r.sha256, r.names[0]]))
+    const order = parseManifest((await readText(team, 'manifests/ma.jsonl'))!).records.filter((r) => r.type === 'log').map((r) => names.get((r as { sha256: string }).sha256))
+    expect(order).toEqual(['log2.wpilog', 'log1.wpilog', 'log0.wpilog'])
+  })
+
+  it('a conflict in the middle stops later publishes, keeps uploading, and reports what was published', async () => {
+    const team = new Spy()
+    const a = await manyLogs(3)
+    team.beforeWrite = async (n) => { if (n === 3) team.put('manifests/ma.jsonl', `${await readText(team, 'manifests/ma.jsonl')}{"type":"alias","foreign":true}\n`) }
+    const report = await syncWithTeam(a, team, { now: fastClock() })
+    expect(report.uploaded.length).toBe(3)
+    expect(report.problems.length).toBe(1)
+    expect(report.problems[0]).toContain('changed on the team store while syncing')
+    expect(report.published).toBe(2)
+  })
+
+  it('does not download a teammate manifest or history that has not changed, and does when it has', async () => {
+    const drive = new FakeDrive()
+    const folder = drive.addFolder('root', 'team-folder')
+    const mk = () => new DriveAdapter({ rootId: folder, token: async () => 'good', fetch: drive.fetch, sleep: async () => {} })
+    const teamA = mk()
+    const teamB = mk()
+    const a = await manyLogs(1, 'ma')
+    await syncWithTeam(a, teamA)
+    const b = await machine('mb')
+    await syncWithTeam(b, teamB)
+    expect(b.catalog.size).toBe(1)
+    const before = teamB.calls.download
+    const again = await syncWithTeam(b, teamB)
+    expect(again.manifests).toEqual([])
+    expect(teamB.calls.download - before).toBe(0)
+    // the teammate adds a log: the manifest changed, so it is downloaded (once) and its record arrives
+    await putLog(join(work, 'more'), 'more.wpilog', 'more', CLOCK + 99 * 3600e3)
+    await ingest(a, await localFolderFiles(join(work, 'more')), options)
+    await syncWithTeam(a, teamA)
+    const mid = teamB.calls.download
+    const third = await syncWithTeam(b, teamB)
+    expect(third.manifests).toEqual([{ name: 'manifests/ma.jsonl', records: 1 }])
+    expect(teamB.calls.download - mid).toBe(1)
+  })
+
+  it('does not read back its own manifest when the listing md5 is that of what it last wrote', async () => {
+    const team = new Spy()
+    const a = await manyLogs(2)
+    await syncWithTeam(a, team)
+    team.reads = []
+    team.beforeWrite = null
+    await putLog(join(work, 'own-more'), 'own-more.wpilog', 'own-more', CLOCK + 50 * 3600e3)
+    await ingest(a, await localFolderFiles(join(work, 'own-more')), options)
+    await syncWithTeam(a, team)
+    expect(team.reads.filter((p) => p === 'manifests/ma.jsonl')).toEqual([])
+    // a changed remote is read: another process wrote it
+    team.put('manifests/ma.jsonl', (await readText(team, 'manifests/ma.jsonl'))!.replace(/\n$/, '\n')) // same bytes: md5 still agrees
+    const lines = (await readText(team, 'manifests/ma.jsonl'))!
+    team.put('manifests/ma.jsonl', `${lines}{"type":"alias","foreign":true}\n`)
+    team.reads = []
+    const report = await syncWithTeam(a, team)
+    expect(team.reads).toContain('manifests/ma.jsonl')
+    expect(report.problems.join()).toContain('holds records this copy lacks')
+  })
+
+  it('downloads match logs first and newest first, whatever order it is given', async () => {
+    const team = new Spy()
+    const a = await machine('ma')
+    const dir = join(work, 'dl')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'match.wpilog'), robotLog({ clockMs: CLOCK - 10 * 86400e3, enabled: [20, 55], event: 'TEST', fms: true, matchType: 2, matchNumber: 1, seed: 'dl-m' }))
+    await writeFile(join(dir, 'practice.wpilog'), robotLog({ clockMs: CLOCK, enabled: [20, 55], seed: 'dl-p' }))
+    await writeFile(join(dir, 'undated.wpilog'), robotLog({ enabled: [20, 55], seed: 'dl-u' }))
+    await ingest(a, await localFolderFiles(dir), options)
+    await syncWithTeam(a, team)
+    const b = await machine('mb')
+    await syncWithTeam(b, team)
+    const names = new Map(b.catalog.all().map((r) => [r.path, r.names[0]]))
+    const report = await fetchLogs(b, team, [...b.catalog.all()].reverse().sort((x, y) => (x.names[0] < y.names[0] ? 1 : -1)))
+    expect(report.fetched.map((p) => names.get(p))).toEqual(['match.wpilog', 'practice.wpilog', 'undated.wpilog'])
+    expect(report.problems).toEqual([])
+  })
+
+  it(`stops downloading after ${FAILURES_IN_A_ROW} failures in a row and says how many were not tried`, async () => {
+    const team = new Spy()
+    const a = await manyLogs(FAILURES_IN_A_ROW + 2)
+    await syncWithTeam(a, team)
+    const b = await machine('mb')
+    await syncWithTeam(b, team)
+    let tries = 0
+    team.read = async () => { tries++; throw new Error('429') }
+    const report = await fetchLogs(b, team, b.catalog.all())
+    expect(tries).toBe(FAILURES_IN_A_ROW)
+    expect(report.failed.length).toBe(FAILURES_IN_A_ROW)
+    expect(report.problems).toEqual([`Stopped after ${FAILURES_IN_A_ROW} failures in a row (the last: 429); 2 logs not tried: download again`])
   })
 })

@@ -21,6 +21,23 @@ adapterContract('Google Drive (fake API)', async () => {
   return { store, failNextUploadAfter: (n) => { drive.failNextUploadAfter = n } }
 })
 
+describe('Drive adapter manifests', () => {
+  it('does not read a manifest back when its md5 is that of what this adapter last wrote, and does for a new adapter or a changed file', async () => {
+    const { drive, store } = setup()
+    await store.appendManifest('manifests/m1.jsonl', 'a\n')
+    await store.appendManifest('manifests/m1.jsonl', 'a\nb\n')
+    await store.appendManifest('manifests/m1.jsonl', 'a\nb\nc\n')
+    expect(store.calls.download).toBe(0)
+    expect(await readText(store, 'manifests/m1.jsonl')).toBe('a\nb\nc\n')
+    const fresh = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: drive.fetch, sleep: noSleep })
+    await fresh.appendManifest('manifests/m1.jsonl', 'a\nb\nc\nd\n')
+    expect(fresh.calls.download).toBe(1)
+    // the first adapter's memory is now stale: Drive's md5 differs, so it reads, and a rewritten file is still a conflict
+    await expect(store.appendManifest('manifests/m1.jsonl', 'a\nb\nc\nx\n')).rejects.toThrow(/holds records this copy lacks/)
+    expect(store.calls.download).toBe(2)
+  })
+})
+
 describe('Drive adapter', () => {
   it('lists across pages and folders, and finds a file by name', async () => {
     const { drive, store } = setup()

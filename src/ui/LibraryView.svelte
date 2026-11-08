@@ -427,6 +427,7 @@
 {#if fetchReport}
   <section class="report" aria-label="What was downloaded">
     <h2>Downloaded {fetchReport.fetched.length} · failed {fetchReport.failed.length}</h2>
+    {#each fetchReport.problems as p (p)}<p class="problem">{p}</p>{/each}
     {#each fetchReport.failed as f (f.path)}<p class="problem"><code>{f.path}</code> {f.reason}</p>{/each}
     <button class="link" onclick={() => (fetchReport = null)}>Dismiss</button>
   </section>

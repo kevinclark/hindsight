@@ -47,6 +47,8 @@ export class DriveAdapter implements StorageAdapter {
   private sessions = new Set<string>()
   /** Counts of calls by kind, for the dry run's cost and the tests. */
   readonly calls = { list: 0, upload: 0, download: 0, copy: 0 }
+  /** The manifest content this adapter last wrote, by path (memory only: the first write after launch still reads). */
+  private readonly lastWrote = new Map<string, string>()
 
   constructor(opts: DriveOptions) {
     this.opts = opts
@@ -118,14 +120,23 @@ export class DriveAdapter implements StorageAdapter {
     const existing = await this.find(path)
     const body = new TextEncoder().encode(content)
     if (existing) {
-      const size = Number(existing.size ?? 0)
-      const have = size === 0 ? '' : new TextDecoder().decode(await this.read(path, 0, size))
+      // What Drive holds is what this adapter last wrote when its md5 says so: no need to download it again. A missing or
+      // different md5 reads the file, as before.
+      const wrote = this.lastWrote.get(path)
+      const known = wrote !== undefined && existing.md5Checksum !== undefined && existing.md5Checksum === createHash('md5').update(wrote).digest('hex')
+      let have = wrote ?? ''
+      if (!known) {
+        const size = Number(existing.size ?? 0)
+        have = size === 0 ? '' : new TextDecoder().decode(await this.read(path, 0, size))
+      }
       if (!extendsManifest(have, content)) throw new ManifestConflict(path)
       this.calls.upload++
       await this.request(`${UPLOAD}/files/${existing.id}?uploadType=media&supportsAllDrives=true`, { method: 'PATCH', headers: { 'Content-Type': 'text/plain' }, body })
+      this.lastWrote.set(path, content)
       return
     }
     await this.writeNew(path, { size: body.length, read: async (a, b) => body.subarray(a, b) })
+    this.lastWrote.set(path, content)
   }
 
   // ---- Drive-only helpers ------------------------------------------------------------------------------

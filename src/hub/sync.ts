@@ -1,16 +1,22 @@
 /**
  * Sharing the library through the team's store. Each machine writes only its own manifest; sync
  *  1. brings teammates' manifests down (they are append-only, so a copy is replaced only by a longer one),
- *  2. puts up the logs this machine brought in that the team store lacks (one at a time, newest played first so the event
- *     going on now is shared before an old backlog, each checked on arrival): copied
+ *  2. puts up the logs this machine brought in that the team store lacks (one at a time, in bands: match logs first
+ *     (FMS or on the field), then other dated logs, then logs with no date, each band newest first, so the event going on
+ *     now is shared before an old backlog and a batch of boot stubs, each checked on arrival): copied
  *     inside Drive when they came from there, else uploaded; it stops after FAILURES_IN_A_ROW failures in a row, since
  *     those mean something systemic (a rate limit run out, a lost sign-in) and each would cost a minute of back-off,
  *  3. publishes this machine's records for them: the remote manifest is read first, must hold nothing this copy lacks,
- *     and a log's record is written only after its file is there, so a failed upload leaves no record.
+ *     and a log's record is written only after its file is there, so a failed upload leaves no record. It publishes as
+ *     logs land (at most once per PUBLISH_EVERY_MS, and once at the end), each time appending only the newly eligible lines
+ *     after what was last published, so teammates see a long sync's logs while it runs.
+ * A manifest or history file whose listed md5 equals the local copy's is not downloaded, and this machine's own manifest is
+ * not read back when its md5 is that of what this process last wrote.
  * The triage history (`history/<machine id>.jsonl`) travels the same way, by the same rule, in step 1b: teammates' files
  * down, this machine's up; a copy is replaced only by a longer one that starts with it, anything else is a problem.
  * Nothing is deleted or overwritten on either side.
  */
+import { createHash } from 'node:crypto'
 import { ManifestConflict, SignInAgain, readText, type FileInfo, type StorageAdapter } from './adapter.ts'
 import type { LocalLibrary } from './library-store.ts'
 import { fileSource } from './local-adapter.ts'
@@ -45,10 +51,24 @@ function isThere(remote: FileInfo | undefined, r: LogRecord): boolean {
   return true
 }
 
-/** Newest played first; a log with no date goes by when it was added. Ties keep the order they came in (Array.sort is stable). */
-export function newestFirst(a: LogRecord, b: LogRecord): number {
-  return (b.playedAt ?? b.recordedAt) - (a.playedAt ?? a.recordedAt)
+/**
+ * Upload and download order, in three bands: (a) match logs (`matchType` >= 1 or on the field), newest played first;
+ * (b) other dated logs, newest played first; (c) logs with no date, newest added first. Ties keep the order they came in
+ * (Array.sort is stable).
+ */
+export function matchesFirst(a: LogRecord, b: LogRecord): number {
+  const band = (r: LogRecord) => ((r.matchType ?? 0) >= 1 || r.onField ? 0 : r.playedAt !== null ? 1 : 2)
+  const when = (r: LogRecord) => r.playedAt ?? r.recordedAt
+  return band(a) - band(b) || when(b) - when(a)
 }
+
+const md5Of = (text: string) => createHash('md5').update(text).digest('hex')
+
+/** What this process last published to each team store, by path: lets a later step skip reading it back when the listing's md5 agrees. */
+const lastWrote = new WeakMap<StorageAdapter, Map<string, string>>()
+
+/** Seconds between manifest publishes during step 3. */
+export const PUBLISH_EVERY_MS = 120_000
 
 /**
  * Failed puts in a row after which sync stops trying the remaining logs (the next sync tries them). A run-out rate limit
@@ -59,6 +79,10 @@ export const FAILURES_IN_A_ROW = 5
 export interface SyncOptions {
   onProgress?(done: number, total: number, current: string): void
   cancelled?(): boolean
+  /** The clock for the publish interval (ms); tests inject theirs. */
+  now?: () => number
+  /** Least gap between manifest publishes during uploads. */
+  publishEveryMs?: number
 }
 
 export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, options: SyncOptions = {}): Promise<SyncReport> {
@@ -66,10 +90,13 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   const own = lib.ownManifestPath
 
   // 1. Teammates' manifests down.
+  let ownListed: FileInfo | undefined
   for (const f of await team.list('manifests')) {
+    if (f.path === own) ownListed = f
     if (!f.path.endsWith('.jsonl') || f.path === own) continue
-    const text = (await readText(team, f.path)) ?? ''
     const mine = (await readText(lib.store, f.path)) ?? ''
+    if (f.md5 && f.md5 === md5Of(mine)) continue // unchanged since the last sync: nothing to download
+    const text = (await readText(team, f.path)) ?? ''
     if (text === mine) continue
     try {
       await lib.store.appendManifest(f.path, text)
@@ -85,7 +112,8 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   await syncHistory(lib, team, report)
 
   // 2. The remote manifest of this machine must hold nothing this copy lacks (another install with the same machine id).
-  const remoteOwn = (await readText(team, own)) ?? ''
+  const wrote = lastWrote.get(team)?.get(own)
+  const remoteOwn = wrote !== undefined && ownListed?.md5 && ownListed.md5 === md5Of(wrote) ? wrote : ((await readText(team, own)) ?? '')
   const localLines = lib.ownLines()
   const localSet = new Set(localLines)
   const remoteLines = remoteOwn.split('\n').filter((l) => l !== '')
@@ -98,8 +126,38 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   // 3. Uploads: this machine's logs the team store lacks.
   const remote = new Map((await team.list('logs')).map((f) => [f.path, f]))
   const mine = lib.catalog.all().filter((r) => r.machine === lib.machine)
-  const todo = mine.filter((r) => !isThere(remote.get(r.path), r)).sort(newestFirst)
+  const todo = mine.filter((r) => !isThere(remote.get(r.path), r)).sort(matchesFirst)
   report.alreadyThere = mine.length - todo.length
+  // Publishing: each publish appends the newly eligible lines to what was last published, never a recomputed order
+  // (an adapter checks the old content is the start of the new, so a line slipped in between would be a ManifestConflict).
+  const publishedLines = [...remoteLines]
+  const publishedSet = new Set(remoteLines)
+  let stopPublishing = false
+  const publish = async () => {
+    if (stopPublishing) return
+    const isPublished = new Set(mine.filter((r) => isThere(remote.get(r.path), r)).map((r) => r.sha256))
+    const add = localLines.filter((l) => {
+      if (publishedSet.has(l)) return false
+      const r = parseManifest(l).records[0]
+      return r !== undefined && (r.type !== 'log' || isPublished.has(r.sha256))
+    })
+    if (!add.length) return
+    const content = `${[...publishedLines, ...add].join('\n')}\n`
+    try { await team.appendManifest(own, content) } catch (e) {
+      if (!(e instanceof ManifestConflict)) throw e
+      stopPublishing = true
+      report.problems.push(`${own} changed on the team store while syncing: not published (run sync again)`)
+      return
+    }
+    for (const l of add) { publishedLines.push(l); publishedSet.add(l) }
+    const memo = lastWrote.get(team) ?? new Map<string, string>()
+    memo.set(own, content)
+    lastWrote.set(team, memo)
+  }
+  const now = options.now ?? Date.now
+  const every = options.publishEveryMs ?? PUBLISH_EVERY_MS
+  let lastPublish = now()
+
   let done = 0
   let inARow = 0
   for (const r of todo) {
@@ -113,6 +171,7 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
       report.uploaded.push({ path: r.path, size: info.size, how })
       remote.set(r.path, info)
       inARow = 0
+      if (now() - lastPublish >= every) { await publish(); lastPublish = now() }
     } catch (e) {
       // A lost sign-in ends the job with its own error, so the app asks to sign in; this run's report is given up on
       // purpose: what landed is found by the next sync's listing and published then.
@@ -128,24 +187,9 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   }
   options.onProgress?.(todo.length, todo.length, '')
 
-  // 4. Publish: a log's record only when its file is there; aliases and tags always.
-  const published = new Set(mine.filter((r) => isThere(remote.get(r.path), r)).map((r) => r.sha256))
-  const lineOk = (line: string) => {
-    const r = parseManifest(line).records[0]
-    return r !== undefined && (r.type !== 'log' || published.has(r.sha256))
-  }
-  let conflicted = false
-  const remoteSet = new Set(remoteLines)
-  const add = localLines.filter((l) => !remoteSet.has(l) && lineOk(l))
-  if (add.length) {
-    const content = `${[...remoteLines, ...add].join('\n')}\n`
-    try { await team.appendManifest(own, content) } catch (e) {
-      if (!(e instanceof ManifestConflict)) throw e
-      conflicted = true
-      report.problems.push(`${own} changed on the team store while syncing: not published (run sync again)`)
-    }
-  }
-  report.published = remoteLines.length + (conflicted ? 0 : add.length)
+  // 4. Publish what is left: a log's record only when its file is there; aliases and tags always.
+  await publish()
+  report.published = publishedLines.length
 
   await lib.reload()
   const known = new Set(lib.catalog.all().map((r) => r.path))
@@ -159,10 +203,13 @@ const linesOf = (text: string) => text.split('\n').filter((l) => l.trim() !== ''
 /** Teammates' history files down and this machine's up, each only when the older copy is the start of the newer one. */
 async function syncHistory(lib: LocalLibrary, team: StorageAdapter, report: SyncReport): Promise<void> {
   const own = lib.ownHistoryPath
+  let ownListed: FileInfo | undefined
   for (const f of await team.list('history')) {
+    if (f.path === own) ownListed = f
     if (!f.path.endsWith('.jsonl') || f.path === own) continue
-    const text = (await readText(team, f.path)) ?? ''
     const mine = (await readText(lib.store, f.path)) ?? ''
+    if (f.md5 && f.md5 === md5Of(mine)) continue // unchanged since the last sync
+    const text = (await readText(team, f.path)) ?? ''
     if (text === mine) continue
     try {
       await lib.store.appendManifest(f.path, text)
@@ -173,6 +220,7 @@ async function syncHistory(lib: LocalLibrary, team: StorageAdapter, report: Sync
     }
   }
   const local = (await readText(lib.store, own)) ?? ''
+  if (ownListed?.md5 && ownListed.md5 === md5Of(local)) return // the team's copy is this one
   const remote = (await readText(team, own)) ?? ''
   if (local === remote) return
   if (remote.startsWith(local)) {
@@ -215,21 +263,36 @@ async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord): Pr
   } finally { await from.close() }
 }
 
-export interface FetchReport { fetched: string[]; failed: { path: string; reason: string }[] }
+export interface FetchReport { fetched: string[]; failed: { path: string; reason: string }[]; /** Anything that stopped the download early. */ problems: string[] }
 
-/** Bring logs the team has and this machine lacks down, each under a temp name and renamed only when its sha-256 matches. */
+/**
+ * Bring logs the team has and this machine lacks down, match logs first and newest first (so a stopped download has the
+ * most useful ones), each under a temp name and renamed only when its sha-256 matches. Stops after FAILURES_IN_A_ROW
+ * failures in a row, as uploads do.
+ */
 export async function fetchLogs(lib: LocalLibrary, team: StorageAdapter, records: LogRecord[], options: SyncOptions = {}): Promise<FetchReport> {
-  const report: FetchReport = { fetched: [], failed: [] }
+  const report: FetchReport = { fetched: [], failed: [], problems: [] }
   let done = 0
-  for (const r of records) {
-    options.onProgress?.(done++, records.length, r.names[0])
+  let inARow = 0
+  for (const r of [...records].sort(matchesFirst)) {
+    options.onProgress?.(done, records.length, r.names[0])
+    done++ // not inside the call above: `?.` skips its arguments when there is no onProgress
     if (options.cancelled?.()) break
     if (await lib.store.stat(r.path)) continue
     try {
       const CHUNK = 8 << 20
       await lib.store.writeNew(r.path, { size: r.size, read: (a, b) => team.read(r.path, a, Math.min(b, a + CHUNK)).then((x) => x) }, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}) })
       report.fetched.push(r.path)
-    } catch (e) { report.failed.push({ path: r.path, reason: e instanceof Error ? e.message : String(e) }) }
+      inARow = 0
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e)
+      report.failed.push({ path: r.path, reason })
+      if (++inARow === FAILURES_IN_A_ROW) {
+        const left = records.length - done
+        report.problems.push(`Stopped after ${inARow} failures in a row (the last: ${reason})${left ? `; ${left} log${left === 1 ? '' : 's'} not tried: download again` : ''}`)
+        break
+      }
+    }
   }
   options.onProgress?.(records.length, records.length, '')
   return report
