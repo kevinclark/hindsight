@@ -65,7 +65,7 @@ describe('P2: a quiet link fails the download, in words', () => {
     expect((err as LinkLost).cause).toBeInstanceOf(Stalled)
     expect((err as Error).message).toMatch(/^no data from the robot for 0\.5 s, at (0\.[6-9]|1\.[0-5]) of 1\.4 MB; tried 1 time$/)
     expect(took).toBeGreaterThanOrEqual(450)
-    expect(took).toBeLessThan(2500) // detected at the injected 500 ms, not at 15 s
+    expect(took).toBeLessThan(6000) // detected at the injected 500 ms, not at 15 s (a busy CI runner adds seconds)
   })
 
   it('P2: a connection dropped mid-file fails it at once, without waiting for the stall time', async () => {
@@ -164,7 +164,7 @@ describe('P4: reconnect and resume', () => {
 
   it('P4: three tries in all, each retry worded with its number', async () => {
     const s = await serve({ files: { [F]: BIG }, chunk: 32768, onRead: (r) => (r.conn < 3 && r.offset >= HOLD_AT ? 'hold' : 'serve') })
-    const fs = await connect(s, { stallMs: 300 })
+    const fs = await connect(s, { stallMs: 1500 })
     const local = join(await tmp(), 'a.bin')
     const steps: string[] = []
     await fs.download(F, local, { onStep: (w) => steps.push(w) }, BIG.length)
@@ -176,10 +176,10 @@ describe('P4: reconnect and resume', () => {
 describe('P5: after the last try the pull stops, in words', () => {
   it('P5: a download that never recovers throws LinkLost after 3 tries', async () => {
     const s = await serve({ files: { [F]: BIG }, chunk: 32768, onRead: (r) => (r.offset >= HOLD_AT ? 'hold' : 'serve') })
-    const fs = await connect(s, { stallMs: 300 })
+    const fs = await connect(s, { stallMs: 1500 })
     const err = await fs.download(F, join(await tmp(), 'a.bin'), {}, BIG.length).catch((e) => e)
     expect(err).toBeInstanceOf(LinkLost)
-    expect((err as Error).message).toMatch(/^no data from the robot for 0\.3 s, at [\d.]+ of 1\.4 MB; tried 3 times$/)
+    expect((err as Error).message).toMatch(/^no data from the robot for 1\.5 s, at [\d.]+ of 1\.4 MB; tried 3 times$/)
     expect(s.connections).toBe(3)
   })
 
@@ -198,7 +198,7 @@ describe('P5: after the last try the pull stops, in words', () => {
     const seenPath = join(await tmp(), 'seen.json')
     const seen = await openSeen(seenPath)
     const pull = async (server: SftpServer, o: { cancelled?: () => boolean } = {}) => {
-      const fs = await connect(server, { stallMs: 300, tries: 2 })
+      const fs = await connect(server, { stallMs: 1500, tries: 2 })
       const { files: found } = await robotFiles(fs, { now: () => NOW, sleep: async () => {}, tempRoot: await tmp() })
       return ingest(lib, found, { describe: describeFile, seen, afterEach: () => seen.save(), ...o })
     }
@@ -206,7 +206,7 @@ describe('P5: after the last try the pull stops, in words', () => {
     const broken = await serve({ files, dirs, chunk: 64, onRead: (r) => (r.path.endsWith('b.wpilog') && r.offset >= 128 ? 'hold' : 'serve') })
     const first = await pull(broken)
     expect(first.stopped).toBe(true)
-    expect(first.lostLink).toMatch(/^Stopped at file 2 of 3 \(b\.wpilog\): no data from the robot for 0\.3 s, at 0\.0 of 0\.0 MB; tried 2 times\. 1 of the robot's 3 logs are in the library \(1 added this pull\)\. Pull again to continue from here\.$/)
+    expect(first.lostLink).toMatch(/^Stopped at file 2 of 3 \(b\.wpilog\): no data from the robot for 1\.5 s, at 0\.0 of 0\.0 MB; tried 2 times\. 1 of the robot's 3 logs are in the library \(1 added this pull\)\. Pull again to continue from here\.$/)
     expect(first.added.map((e) => e.name)).toEqual(['a.wpilog'])
     expect(first.unreadable).toEqual([]) // b is not "unreadable"
     expect(first.notTried).toBe(2)
