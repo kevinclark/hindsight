@@ -22,19 +22,35 @@ adapterContract('Google Drive (fake API)', async () => {
 })
 
 describe('Drive adapter manifests', () => {
-  it('does not read a manifest back when its md5 is that of what this adapter last wrote, and does for a new adapter or a changed file', async () => {
+  const adapter = (drive: FakeDrive, rootId: string) => new DriveAdapter({ rootId, token: async () => 'good', fetch: drive.fetch, sleep: noSleep })
+
+  it('answers a read of a manifest from memory when Drive\'s md5 is that of what was written, even for a new adapter on the same folder', async () => {
     const { drive, store } = setup()
     await store.appendManifest('manifests/m1.jsonl', 'a\n')
     await store.appendManifest('manifests/m1.jsonl', 'a\nb\n')
-    await store.appendManifest('manifests/m1.jsonl', 'a\nb\nc\n')
     expect(store.calls.download).toBe(0)
-    expect(await readText(store, 'manifests/m1.jsonl')).toBe('a\nb\nc\n')
-    const fresh = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: drive.fetch, sleep: noSleep })
-    await fresh.appendManifest('manifests/m1.jsonl', 'a\nb\nc\nd\n')
-    expect(fresh.calls.download).toBe(1)
-    // the first adapter's memory is now stale: Drive's md5 differs, so it reads, and a rewritten file is still a conflict
-    await expect(store.appendManifest('manifests/m1.jsonl', 'a\nb\nc\nx\n')).rejects.toThrow(/holds records this copy lacks/)
-    expect(store.calls.download).toBe(2)
+    const second = adapter(drive, 'root')
+    expect(await readText(second, 'manifests/m1.jsonl')).toBe('a\nb\n')
+    await second.appendManifest('manifests/m1.jsonl', 'a\nb\nc\n')
+    expect(second.calls.download).toBe(0)
+  })
+
+  it('downloads for another root folder, and for a file whose md5 differs, and remembers a whole-file read', async () => {
+    const { drive, store } = setup()
+    await store.appendManifest('manifests/m1.jsonl', 'a\n')
+    const other = drive.addFolder('root', 'other-team')
+    drive.addFile(drive.addFolder(other, 'manifests'), 'm1.jsonl', 'a\n')
+    const elsewhere = adapter(drive, other)
+    expect(await readText(elsewhere, 'manifests/m1.jsonl')).toBe('a\n')
+    expect(elsewhere.calls.download).toBe(1)
+    const node = drive.at('manifests/m1.jsonl')!
+    node.bytes = new TextEncoder().encode('a\nx\n')
+    const changed = adapter(drive, 'root')
+    expect(await readText(changed, 'manifests/m1.jsonl')).toBe('a\nx\n')
+    expect(changed.calls.download).toBe(1)
+    await expect(changed.appendManifest('manifests/m1.jsonl', 'a\ny\n')).rejects.toThrow(/holds records this copy lacks/)
+    expect(changed.calls.download).toBe(1) // that read of the changed file was remembered
+    expect(await readText(adapter(drive, 'root'), 'manifests/m1.jsonl')).toBe('a\nx\n') // and a later adapter reuses it
   })
 })
 

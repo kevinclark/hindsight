@@ -396,15 +396,46 @@ describe('publishing as logs land, skipping unchanged files, and downloading in 
     expect(await logsIn(team, 'ma')).toBe(3)
   })
 
-  it('does not publish more often than the gap, and still publishes everything at the end', async () => {
+  it('publishes not before the gap (119 s: no, 120 s: yes), and still publishes everything at the end', async () => {
     const team = new Spy()
-    const a = await manyLogs(3)
+    const a = await manyLogs(4)
     const seen: number[] = []
-    team.beforeWrite = async () => { seen.push(await logsIn(team, 'ma')) }
-    const report = await syncWithTeam(a, team, { now: () => 0 })
-    expect(seen).toEqual([0, 0, 0])
-    expect(report.published).toBe(3)
-    expect(await logsIn(team, 'ma')).toBe(3)
+    let t = 0
+    const at = [0, 119_000, 120_000, 120_000]
+    team.beforeWrite = async (n) => { t = at[n - 1]; seen.push(await logsIn(team, 'ma')) }
+    const report = await syncWithTeam(a, team, { now: () => t })
+    expect(seen).toEqual([0, 0, 0, 3])
+    expect(report.published).toBe(4)
+    expect(await logsIn(team, 'ma')).toBe(4)
+  })
+
+  it('a periodic publish that fails with a plain error is one problem, not a failed log, and the logs after it are published', async () => {
+    class Flaky extends Spy {
+      calls = 0
+      override async appendManifest(path: string, content: string) {
+        if (path.startsWith('manifests/') && ++this.calls === 1) throw new Error('503')
+        return super.appendManifest(path, content)
+      }
+    }
+    const team = new Flaky()
+    const a = await manyLogs(4)
+    const report = await syncWithTeam(a, team, { now: (() => { let t = 0; return () => (t += 200_000) })() })
+    expect(report.uploaded.length).toBe(4)
+    expect(report.failed).toEqual([])
+    expect(report.problems.length).toBe(1)
+    expect(report.problems[0]).toContain('publishing failed (503)')
+    expect(report.published).toBe(4)
+    expect(await logsIn(team, 'ma')).toBe(4)
+  })
+
+  it('a failing final publish is a problem in the report, not a thrown job', async () => {
+    class Down extends Spy { override async appendManifest(): Promise<void> { throw new Error('503') } }
+    const team = new Down()
+    const a = await manyLogs(2)
+    const report = await syncWithTeam(a, team)
+    expect(report.uploaded.length).toBe(2)
+    expect(report.problems).toEqual([expect.stringContaining('publishing failed (503)')])
+    expect(report.published).toBe(0)
   })
 
   it('two periodic publishes whose eligibility is out of local order append without a conflict', async () => {
@@ -430,49 +461,46 @@ describe('publishing as logs land, skipping unchanged files, and downloading in 
     expect(report.published).toBe(2)
   })
 
-  it('does not download a teammate manifest or history that has not changed, and does when it has', async () => {
-    const drive = new FakeDrive()
-    const folder = drive.addFolder('root', 'team-folder')
-    const mk = () => new DriveAdapter({ rootId: folder, token: async () => 'good', fetch: drive.fetch, sleep: async () => {} })
-    const teamA = mk()
-    const teamB = mk()
+  it('does not download a teammate manifest that has not changed, and does when it has', async () => {
+    const team = new Spy()
     const a = await manyLogs(1, 'ma')
-    await syncWithTeam(a, teamA)
+    await syncWithTeam(a, team)
     const b = await machine('mb')
-    await syncWithTeam(b, teamB)
+    await syncWithTeam(b, team)
     expect(b.catalog.size).toBe(1)
-    const before = teamB.calls.download
-    const again = await syncWithTeam(b, teamB)
+    team.reads = []
+    const again = await syncWithTeam(b, team)
     expect(again.manifests).toEqual([])
-    expect(teamB.calls.download - before).toBe(0)
+    expect(team.reads.filter((p) => p === 'manifests/ma.jsonl')).toEqual([])
     // the teammate adds a log: the manifest changed, so it is downloaded (once) and its record arrives
     await putLog(join(work, 'more'), 'more.wpilog', 'more', CLOCK + 99 * 3600e3)
     await ingest(a, await localFolderFiles(join(work, 'more')), options)
-    await syncWithTeam(a, teamA)
-    const mid = teamB.calls.download
-    const third = await syncWithTeam(b, teamB)
+    await syncWithTeam(a, team)
+    team.reads = []
+    const third = await syncWithTeam(b, team)
     expect(third.manifests).toEqual([{ name: 'manifests/ma.jsonl', records: 1 }])
-    expect(teamB.calls.download - mid).toBe(1)
+    expect(team.reads.filter((p) => p === 'manifests/ma.jsonl').length).toBe(1)
   })
 
-  it('does not read back its own manifest when the listing md5 is that of what it last wrote', async () => {
-    const team = new Spy()
+  it('a new Drive adapter on the same folder does not download this machine\'s own manifest that the last sync wrote, and does when it changed', async () => {
+    const drive = new FakeDrive()
+    const folder = drive.addFolder('root', 'own-team')
+    const mk = () => new DriveAdapter({ rootId: folder, token: async () => 'good', fetch: drive.fetch, sleep: async () => {} })
     const a = await manyLogs(2)
-    await syncWithTeam(a, team)
-    team.reads = []
-    team.beforeWrite = null
+    await syncWithTeam(a, mk())
     await putLog(join(work, 'own-more'), 'own-more.wpilog', 'own-more', CLOCK + 50 * 3600e3)
     await ingest(a, await localFolderFiles(join(work, 'own-more')), options)
-    await syncWithTeam(a, team)
-    expect(team.reads.filter((p) => p === 'manifests/ma.jsonl')).toEqual([])
-    // a changed remote is read: another process wrote it
-    team.put('manifests/ma.jsonl', (await readText(team, 'manifests/ma.jsonl'))!.replace(/\n$/, '\n')) // same bytes: md5 still agrees
-    const lines = (await readText(team, 'manifests/ma.jsonl'))!
-    team.put('manifests/ma.jsonl', `${lines}{"type":"alias","foreign":true}\n`)
-    team.reads = []
-    const report = await syncWithTeam(a, team)
-    expect(team.reads).toContain('manifests/ma.jsonl')
-    expect(report.problems.join()).toContain('holds records this copy lacks')
+    const second = mk()
+    const report = await syncWithTeam(a, second)
+    expect(report.problems).toEqual([])
+    expect(second.calls.download).toBe(0)
+    // another process appended a line: the md5 differs, so it is read and found to hold what this copy lacks
+    const node = drive.at('own-team/manifests/ma.jsonl')!
+    node.bytes = new TextEncoder().encode(`${new TextDecoder().decode(node.bytes!)}{"type":"alias","foreign":true}\n`)
+    const third = mk()
+    const again = await syncWithTeam(a, third)
+    expect(third.calls.download).toBeGreaterThan(0)
+    expect(again.problems.join()).toContain('holds records this copy lacks')
   })
 
   it('downloads match logs first and newest first, whatever order it is given', async () => {

@@ -64,10 +64,7 @@ export function matchesFirst(a: LogRecord, b: LogRecord): number {
 
 const md5Of = (text: string) => createHash('md5').update(text).digest('hex')
 
-/** What this process last published to each team store, by path: lets a later step skip reading it back when the listing's md5 agrees. */
-const lastWrote = new WeakMap<StorageAdapter, Map<string, string>>()
-
-/** Seconds between manifest publishes during step 3. */
+/** Least gap (ms) between manifest publishes during step 3. */
 export const PUBLISH_EVERY_MS = 120_000
 
 /**
@@ -90,9 +87,7 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   const own = lib.ownManifestPath
 
   // 1. Teammates' manifests down.
-  let ownListed: FileInfo | undefined
   for (const f of await team.list('manifests')) {
-    if (f.path === own) ownListed = f
     if (!f.path.endsWith('.jsonl') || f.path === own) continue
     const mine = (await readText(lib.store, f.path)) ?? ''
     if (f.md5 && f.md5 === md5Of(mine)) continue // unchanged since the last sync: nothing to download
@@ -112,8 +107,7 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   await syncHistory(lib, team, report)
 
   // 2. The remote manifest of this machine must hold nothing this copy lacks (another install with the same machine id).
-  const wrote = lastWrote.get(team)?.get(own)
-  const remoteOwn = wrote !== undefined && ownListed?.md5 && ownListed.md5 === md5Of(wrote) ? wrote : ((await readText(team, own)) ?? '')
+  const remoteOwn = (await readText(team, own)) ?? '' // the Drive adapter answers from memory when its md5 is unchanged
   const localLines = lib.ownLines()
   const localSet = new Set(localLines)
   const remoteLines = remoteOwn.split('\n').filter((l) => l !== '')
@@ -133,6 +127,7 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   const publishedLines = [...remoteLines]
   const publishedSet = new Set(remoteLines)
   let stopPublishing = false
+  let publishFailed = false // one problem note however many attempts fail
   const publish = async () => {
     if (stopPublishing) return
     const isPublished = new Set(mine.filter((r) => isThere(remote.get(r.path), r)).map((r) => r.sha256))
@@ -144,15 +139,18 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
     if (!add.length) return
     const content = `${[...publishedLines, ...add].join('\n')}\n`
     try { await team.appendManifest(own, content) } catch (e) {
-      if (!(e instanceof ManifestConflict)) throw e
-      stopPublishing = true
-      report.problems.push(`${own} changed on the team store while syncing: not published (run sync again)`)
+      // Never counted as a failed log: the uploads go on. A lost sign-in ends the job as it does in an upload.
+      if (e instanceof SignInAgain) throw e
+      if (e instanceof ManifestConflict) {
+        stopPublishing = true
+        report.problems.push(`${own} changed on the team store while syncing: not published (run sync again)`)
+        return
+      }
+      if (!publishFailed) report.problems.push(`${own}: publishing failed (${e instanceof Error ? e.message : String(e)}); it is tried again, and the next sync publishes what landed`)
+      publishFailed = true
       return
     }
     for (const l of add) { publishedLines.push(l); publishedSet.add(l) }
-    const memo = lastWrote.get(team) ?? new Map<string, string>()
-    memo.set(own, content)
-    lastWrote.set(team, memo)
   }
   const now = options.now ?? Date.now
   const every = options.publishEveryMs ?? PUBLISH_EVERY_MS
@@ -171,7 +169,7 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
       report.uploaded.push({ path: r.path, size: info.size, how })
       remote.set(r.path, info)
       inARow = 0
-      if (now() - lastPublish >= every) { await publish(); lastPublish = now() }
+      if (now() - lastPublish >= every) { await publish(); lastPublish = now() } // after an attempt either way: a failure waits the normal gap
     } catch (e) {
       // A lost sign-in ends the job with its own error, so the app asks to sign in; this run's report is given up on
       // purpose: what landed is found by the next sync's listing and published then.

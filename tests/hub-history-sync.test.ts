@@ -178,3 +178,40 @@ describe('boardStamp', () => {
     expect(boardStamp([], 'ma', new Date('2026-10-24T13:00:00.000Z'))).toEqual({ seq: 1, when: '2026-10-24T13:00:00.000Z' })
   })
 })
+
+describe('history is skipped by checksum', () => {
+  class Spy extends MemoryAdapter {
+    reads: string[] = []
+    override async read(path: string, start: number, end: number) { this.reads.push(path); return super.read(path, start, end) }
+  }
+  const line = (n: number) => board('ma', n, `2026-10-24T10:0${n}:00.000Z`, 'note', `test reason ${n}`)
+
+  it('does not download a teammate\'s history that has not changed, and does when it has', async () => {
+    const team = new Spy()
+    const a = await machine('ma')
+    const b = await machine('mb')
+    await a.appendHistory(`${line(1)}\n`)
+    await syncWithTeam(a, team)
+    await syncWithTeam(b, team)
+    expect(await readText(b.store, 'history/ma.jsonl')).toBe(`${line(1)}\n`)
+    team.reads = []
+    expect((await syncWithTeam(b, team)).history).toEqual([])
+    expect(team.reads.filter((p) => p === 'history/ma.jsonl')).toEqual([])
+    await a.appendHistory(`${line(2)}\n`)
+    await syncWithTeam(a, team)
+    team.reads = []
+    expect((await syncWithTeam(b, team)).history).toEqual([{ name: 'history/ma.jsonl', lines: 1 }])
+    expect(team.reads.filter((p) => p === 'history/ma.jsonl').length).toBe(1)
+  })
+
+  it('does not read this machine\'s own history from the team when the listed md5 is the local copy\'s', async () => {
+    const team = new Spy()
+    const a = await machine('ma')
+    await a.appendHistory(`${line(1)}\n`)
+    expect((await syncWithTeam(a, team)).historyPublished).toBe(1)
+    team.reads = []
+    const again = await syncWithTeam(a, team)
+    expect(again.historyPublished).toBe(0)
+    expect(team.reads.filter((p) => p === 'history/ma.jsonl')).toEqual([])
+  })
+})

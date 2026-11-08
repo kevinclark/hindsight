@@ -47,8 +47,6 @@ export class DriveAdapter implements StorageAdapter {
   private sessions = new Set<string>()
   /** Counts of calls by kind, for the dry run's cost and the tests. */
   readonly calls = { list: 0, upload: 0, download: 0, copy: 0 }
-  /** The manifest content this adapter last wrote, by path (memory only: the first write after launch still reads). */
-  private readonly lastWrote = new Map<string, string>()
 
   constructor(opts: DriveOptions) {
     this.opts = opts
@@ -84,9 +82,16 @@ export class DriveAdapter implements StorageAdapter {
   async read(path: string, start: number, end: number): Promise<Uint8Array> {
     const f = await this.find(path)
     if (!f) throw new Error(`${path} not found`)
+    // A manifest or history file this process wrote or read whole, unchanged on Drive (same md5): no download.
+    const key = `${this.opts.rootId}:${path}`
+    const kept = isOwnAppendPath(path) ? manifestMemo.get(key) : undefined
+    const whole = start === 0 && end >= Number(f.size ?? 0)
+    if (kept !== undefined && whole && f.md5Checksum !== undefined && f.md5Checksum === md5Text(kept)) return new TextEncoder().encode(kept)
     this.calls.download++
     const res = await this.request(`${API}/files/${f.id}?alt=media&supportsAllDrives=true`, { headers: { Range: `bytes=${start}-${end - 1}` } })
-    return new Uint8Array(await res.arrayBuffer())
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    if (whole && isOwnAppendPath(path) && f.md5Checksum !== undefined && createHash('md5').update(bytes).digest('hex') === f.md5Checksum) manifestMemo.set(key, new TextDecoder().decode(bytes))
+    return bytes
   }
 
   async writeNew(path: string, from: ByteSource, options: WriteOptions = {}): Promise<FileInfo> {
@@ -119,24 +124,19 @@ export class DriveAdapter implements StorageAdapter {
     if (!isOwnAppendPath(checkPath(path))) throw new Error(`${path} is not a file this machine appends to`)
     const existing = await this.find(path)
     const body = new TextEncoder().encode(content)
+    const key = `${this.opts.rootId}:${path}`
     if (existing) {
-      // What Drive holds is what this adapter last wrote when its md5 says so: no need to download it again. A missing or
-      // different md5 reads the file, as before.
-      const wrote = this.lastWrote.get(path)
-      const known = wrote !== undefined && existing.md5Checksum !== undefined && existing.md5Checksum === createHash('md5').update(wrote).digest('hex')
-      let have = wrote ?? ''
-      if (!known) {
-        const size = Number(existing.size ?? 0)
-        have = size === 0 ? '' : new TextDecoder().decode(await this.read(path, 0, size))
-      }
+      // read() answers from the memo when Drive's md5 says the file is what this process last wrote or read.
+      const size = Number(existing.size ?? 0)
+      const have = size === 0 ? '' : new TextDecoder().decode(await this.read(path, 0, size))
       if (!extendsManifest(have, content)) throw new ManifestConflict(path)
       this.calls.upload++
       await this.request(`${UPLOAD}/files/${existing.id}?uploadType=media&supportsAllDrives=true`, { method: 'PATCH', headers: { 'Content-Type': 'text/plain' }, body })
-      this.lastWrote.set(path, content)
+      manifestMemo.set(key, content)
       return
     }
     await this.writeNew(path, { size: body.length, read: async (a, b) => body.subarray(a, b) })
-    this.lastWrote.set(path, content)
+    manifestMemo.set(key, content)
   }
 
   // ---- Drive-only helpers ------------------------------------------------------------------------------
@@ -333,6 +333,14 @@ export function isAllowedRequest(method: string, url: string, sessions: Readonly
 async function isRateLimit(res: Response): Promise<boolean> {
   try { return /userRateLimitExceeded|rateLimitExceeded|sharingRateLimitExceeded/.test(await res.clone().text()) } catch { return false }
 }
+
+/**
+ * Manifest and history text this process last wrote or read whole, by `${root folder id}:${path}`; shared by every
+ * DriveAdapter (the app makes a new one per job). Used only when Drive's current md5 equals the memo's: a missing or
+ * different md5 always downloads. Memory only, so the first read after launch downloads.
+ */
+const manifestMemo = new Map<string, string>()
+const md5Text = (text: string) => createHash('md5').update(text).digest('hex')
 
 function splitPath(path: string): { parent: string; name: string } {
   const i = path.lastIndexOf('/')
