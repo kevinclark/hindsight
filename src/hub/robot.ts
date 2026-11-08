@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Nt4Client, isFieldLocked, nt4Url, type SocketLike } from '../foresight/nt4-client.ts'
 import { GUARD_CONTROL_DATA } from '../foresight/keys.ts'
-import { Stopped } from './adapter.ts'
+import { LinkLost, Stopped } from './adapter.ts'
 import type { SourceFile, Watch } from './ingest.ts'
 import { kindOf } from './types.ts'
 export { notReached } from './robot-reach.ts'
@@ -23,16 +23,33 @@ export { notReached } from './robot-reach.ts'
 export const ROBOT_LOG_ROOTS = ['/home/lvuser/logs', '/U/logs']
 export const USB_PARENT = '/media'
 export const RECENT_MS = 30_000
+/** No bytes from the robot for this long fails a download (and a listing that does not answer): a quiet link never errors by itself. */
+export const STALL_MS = 15_000
+/** A file is tried this many times in all (the first and two reconnect-and-resume) before the pull stops. */
+export const TRIES = 3
+/** The roboRIO answers ssh keepalives; three missed, 5 s apart, and a dead link is noticed in about 15 s. */
+export const KEEPALIVE = { keepaliveInterval: 5000, keepaliveCountMax: 3 } as const
+export const CONNECT_MS = 10_000
 const MAX_DEPTH = 4
 
 export interface RobotEntry { name: string; size: number; mtimeMs: number; isDir: boolean }
 
 /** The robot's file system as the pull sees it: list a folder, copy one file to this machine. */
 export interface RobotFs {
-  list(dir: string): Promise<RobotEntry[]>
-  /** Copy one file here, reporting bytes as they arrive; throws Stopped as soon as `watch.cancelled` says so. */
-  download(remote: string, local: string, watch?: Watch): Promise<void>
+  /** `cancelled` turning true rejects with Stopped promptly, even while the robot holds the answer. */
+  list(dir: string, cancelled?: () => boolean): Promise<RobotEntry[]>
+  /**
+   * Copy one file here, reporting bytes as they arrive; throws Stopped as soon as `watch.cancelled` says so. A link that goes
+   * quiet or drops is reconnected and the file resumed from the bytes already written, up to TRIES in all; then LinkLost.
+   * `size` (the listing's) is only for the words of a stall.
+   */
+  download(remote: string, local: string, watch?: Watch, size?: number): Promise<void>
   close(): void
+}
+
+/** The robot stopped answering: no data for the stall time, or the connection closed. */
+export class Stalled extends Error {
+  constructor(message: string) { super(message) }
 }
 
 export type Idle = { ok: true } | { ok: false; reason: string }
@@ -71,12 +88,12 @@ export function checkRobotIdle(address: string, options: { waitMs?: number; make
 }
 
 /** Every log on the robot that is finished being written, as ingest sources (a download happens only when ingest must read one: never for a log seen before). */
-export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?: (ms: number) => Promise<void>; tempRoot?: string } = {}): Promise<{ files: SourceFile[]; stillWriting: string[] }> {
+export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?: (ms: number) => Promise<void>; tempRoot?: string; cancelled?: () => boolean } = {}): Promise<{ files: SourceFile[]; stillWriting: string[] }> {
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   const walk = async (dir: string, depth: number, out: Map<string, RobotEntry>) => {
     let entries: RobotEntry[]
-    try { entries = await fs.list(dir) } catch { return } // a folder that isn't there (no USB stick) is not an error
+    try { entries = await fs.list(dir, deps.cancelled) } catch (e) { if (e instanceof Stalled || e instanceof Stopped) throw e; return } // a folder that isn't there (no USB stick) is not an error; a robot that stopped answering is
     for (const e of entries) {
       if (e.isDir) { if (depth < MAX_DEPTH) await walk(`${dir}/${e.name}`, depth + 1, out) } else if (kindOf(e.name)) out.set(`${dir}/${e.name}`, e)
     }
@@ -84,7 +101,7 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
   const scan = async () => {
     const found = new Map<string, RobotEntry>()
     for (const root of ROBOT_LOG_ROOTS) await walk(root, 0, found)
-    const usb = await fs.list(USB_PARENT).catch(() => [] as RobotEntry[])
+    const usb = await fs.list(USB_PARENT, deps.cancelled).catch((e) => { if (e instanceof Stalled || e instanceof Stopped) throw e; return [] as RobotEntry[] })
     for (const d of usb.filter((e) => e.isDir && /^sd/.test(e.name))) await walk(`${USB_PARENT}/${d.name}`, 0, found)
     return found
   }
@@ -104,7 +121,7 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
         const dir = await mkdtemp(join(deps.tempRoot ?? tmpdir(), 'hindsight-robot-'))
         const local = join(dir, e.name)
         try {
-          await fs.download(path, local, { cancelled: watch?.cancelled, onProgress: (sent) => watch?.onProgress?.(sent, e.size) })
+          await fs.download(path, local, { cancelled: watch?.cancelled, onProgress: (sent) => watch?.onProgress?.(sent, e.size), onStep: watch?.onStep, log: watch?.log }, e.size)
           // A copy cut short (the link dropped) must not be filed, nor remembered under this file's key as its content.
           const got = (await stat(local)).size
           if (got !== e.size) throw new Error(`the download stopped at ${got} of ${e.size} bytes; pull again`)
@@ -116,43 +133,157 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
   return { files: out.sort((a, b) => a.where.localeCompare(b.where)), stillWriting }
 }
 
+/** `host` or `host:port` (the port is for a test server; the robot's is 22). */
+export function parseAddress(address: string): { host: string; port: number } {
+  const m = /^(.+):(\d+)$/.exec(address)
+  return m ? { host: m[1], port: Number(m[2]) } : { host: address, port: 22 }
+}
+
+export interface RobotOptions {
+  /** No data for this long is a stall (default STALL_MS). */
+  stallMs?: number
+  connectMs?: number
+  tries?: number
+  /** Lines for the job log (stalls, reconnects, resumes); a download's own `watch.log` wins. */
+  log?: (line: string) => void
+}
+
+const mb = (n: number) => (n / 2 ** 20).toFixed(1)
+const secsWords = (ms: number) => `${+(ms / 1000).toFixed(1)} s`
+const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
 /**
  * The roboRIO's own ssh server over SFTP (the `ssh2` package, as AdvantageScope does). The roboRIO's `lvuser` has an empty
- * password; this is not yet checked against a real roboRIO (live step 4).
+ * password; this is not yet checked against a real roboRIO (live step 4). Never silent: ssh keepalives are on, a download or
+ * listing that gets nothing for `stallMs` fails with the words, and a file is reconnected and resumed rather than started over.
  */
-export async function connectRobotFs(address: string, timeoutMs = 10_000): Promise<RobotFs> {
+export async function connectRobotFs(address: string, options: RobotOptions = {}): Promise<RobotFs> {
   const { Client } = await import('ssh2')
-  const ssh = new Client()
-  await new Promise<void>((resolve, reject) => {
-    ssh.once('ready', resolve).once('error', reject)
-    ssh.connect({ host: address, username: 'lvuser', password: '', tryKeyboard: true, readyTimeout: timeoutMs })
+  const stallMs = options.stallMs ?? STALL_MS
+  const connectMs = options.connectMs ?? CONNECT_MS
+  const tries = options.tries ?? TRIES
+  const { host, port } = parseAddress(address)
+
+  interface Conn { ssh: InstanceType<typeof Client>; sftp: import('ssh2').SFTPWrapper | null; dead: string | null; watchers: Set<(why: string) => void> }
+  const open = (): Promise<Conn> => new Promise<Conn>((resolve, reject) => {
+    const ssh = new Client()
+    const conn: Conn = { ssh, sftp: null, dead: null, watchers: new Set() }
+    const die = (why: string) => { if (conn.dead) return; conn.dead = why; for (const w of [...conn.watchers]) w(why) }
+    let settled = false
+    const fail = (e: Error) => { if (settled) return; settled = true; clearTimeout(timer); ssh.destroy(); reject(e) }
+    const timer = setTimeout(() => fail(new Error(`could not connect to the robot within ${secsWords(connectMs)}`)), connectMs)
+    // An error after the connection was made (the robot rebooted, Wi-Fi dropped) must not crash the app: the pending read fails on its own.
+    ssh.on('error', (e) => { die(e.message); fail(e) })
+    ssh.on('close', () => { die('the connection to the robot closed'); fail(new Error('the connection to the robot closed')) })
     ssh.once('keyboard-interactive', (_n, _i, _l, _p, finish) => finish([]))
-  })
-  // An error after the connection was made (the robot rebooted, Wi-Fi dropped) must not crash the app: the pending read fails on its own.
-  ssh.on('error', () => {})
-  const sftp = await new Promise<import('ssh2').SFTPWrapper>((resolve, reject) => ssh.sftp((e, s) => (e ? reject(e) : resolve(s))))
-  return {
-    list: (dir) => new Promise((resolve, reject) => sftp.readdir(dir, (e, entries) => (e ? reject(e) : resolve(entries.map((x) => ({ name: x.filename, size: x.attrs.size, mtimeMs: x.attrs.mtime * 1000, isDir: x.attrs.isDirectory() })))))),
-    download: (remote, local, watch = {}) => new Promise((resolve, reject) => {
-      const read = sftp.createReadStream(remote)
-      const write = createWriteStream(local)
-      let got = 0
-      let stopped = false
-      // Stop is looked for on every piece and once a second, so a link that stalls mid-file still stops.
-      const stopIfAsked = () => { if (!stopped && watch.cancelled?.()) { stopped = true; read.destroy(); write.destroy() } }
-      const timer = setInterval(stopIfAsked, 1000)
-      read.on('data', (chunk: Buffer) => {
-        stopIfAsked()
-        if (stopped) return
-        got += chunk.length
-        watch.onProgress?.(got, 0) // the total is the listing's size, which the caller has
+    ssh.once('ready', () => {
+      ssh.sftp((e, sftp) => {
+        if (e) return fail(e)
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        conn.sftp = sftp
+        resolve(conn)
       })
-      read.on('error', (e: Error) => { if (!stopped) reject(e) })
-      write.on('error', (e) => { if (!stopped) reject(e) })
-      // Settled only once the file is closed, so the caller can remove it (Windows keeps a folder with an open file in it).
-      write.on('close', () => { clearInterval(timer); if (stopped) reject(new Stopped()); else resolve() })
-      read.pipe(write)
+    })
+    try { ssh.connect({ host, port, username: 'lvuser', password: '', tryKeyboard: true, readyTimeout: connectMs + 2000, ...KEEPALIVE }) } catch (e) { fail(e as Error) }
+  })
+
+  let conn = await open()
+  const note = (watch: Watch | undefined, line: string) => (watch?.log ?? options.log)?.(line)
+
+  /** A new connection, abandoned (and closed when it arrives) if Stop is pressed meanwhile. */
+  const reconnect = (watch: Watch): Promise<void> => new Promise<void>((resolve, reject) => {
+    conn.ssh.destroy()
+    let stopped = false
+    const poll = setInterval(() => { if (watch.cancelled?.()) { stopped = true; clearInterval(poll); reject(new Stopped()) } }, 100)
+    open().then((c) => { clearInterval(poll); if (stopped) c.ssh.destroy(); else { conn = c; resolve() } }, (e) => { clearInterval(poll); if (!stopped) reject(e) })
+  })
+
+  /** One go at the file from byte `start`: resolves when the stream ended and the local file is closed. */
+  const transfer = (remote: string, local: string, start: number, watch: Watch, size: number | undefined, high: { v: number }) => new Promise<void>((resolve, reject) => {
+    const c = conn
+    if (c.dead || !c.sftp) return reject(new Stalled(`the connection to the robot closed (${c.dead ?? 'not open'}), at ${mb(start)}${size ? ` of ${mb(size)}` : ''} MB`))
+    const read = c.sftp.createReadStream(remote, start > 0 ? { start } : undefined)
+    const write = createWriteStream(local, { flags: start > 0 ? 'a' : 'w' })
+    let got = start
+    // Bytes are reported only past what an earlier try already reported, so the bar never dips and the step words ("Reconnected; resuming") stay until new bytes arrive.
+    let lastData = Date.now()
+    let failure: Error | null = null
+    let stopped = false
+    const where = () => `at ${mb(got)}${size ? ` of ${mb(size)}` : ''} MB`
+    const teardown = () => { read.destroy(); write.destroy() }
+    const fail = (e: Error) => { if (failure || stopped) return; failure = e; teardown() }
+    // Stop is looked for on every piece and a few times a second, so a link that stalls mid-file still stops.
+    const stopIfAsked = () => { if (!stopped && !failure && watch.cancelled?.()) { stopped = true; teardown() } }
+    const onDead = (why: string) => fail(new Stalled(`the connection to the robot closed (${why}), ${where()}`))
+    c.watchers.add(onDead)
+    const timer = setInterval(() => {
+      stopIfAsked()
+      if (!failure && !stopped && Date.now() - lastData >= stallMs) fail(new Stalled(`no data from the robot for ${secsWords(stallMs)}, ${where()}`))
+    }, Math.max(10, Math.min(250, stallMs / 4)))
+    read.on('data', (chunk: Buffer) => {
+      stopIfAsked()
+      if (stopped || failure) return
+      lastData = Date.now()
+      got += chunk.length
+      if (got > high.v) { high.v = got; watch.onProgress?.(got, 0) } // the total is the listing's size, which the caller has
+    })
+    write.on('drain', () => { lastData = Date.now() })
+    // A refused or missing file is not a bad link (SFTP status 2, 3): it fails this file as it always did.
+    read.on('error', (e: Error & { code?: unknown }) => fail(e.code === 2 || e.code === 3 ? Object.assign(e, { permanent: true }) : new Stalled(`${msg(e)}, ${where()}`)))
+    write.on('error', (e) => fail(Object.assign(e, { permanent: true })))
+    // Settled only once the file is closed, so the caller can remove it (Windows keeps a folder with an open file in it).
+    write.on('close', () => {
+      clearInterval(timer)
+      c.watchers.delete(onDead)
+      if (stopped) reject(new Stopped()); else if (failure) reject(failure); else resolve()
+    })
+    read.pipe(write)
+  })
+
+  return {
+    list: (dir, cancelled) => new Promise((resolve, reject) => {
+      if (cancelled?.()) return reject(new Stopped())
+      const c = conn
+      if (c.dead || !c.sftp) return reject(new Stalled(`the connection to the robot closed (${c.dead ?? 'not open'}) before listing ${dir}`))
+      const cleanup = () => { clearTimeout(timer); clearInterval(poll); c.watchers.delete(onDead) }
+      const poll = setInterval(() => { if (cancelled?.()) { cleanup(); reject(new Stopped()) } }, 100)
+      const onDead = (why: string) => { cleanup(); reject(new Stalled(`the connection to the robot closed (${why}) while listing ${dir}`)) }
+      const timer = setTimeout(() => { cleanup(); reject(new Stalled(`no answer from the robot for ${secsWords(stallMs)} listing ${dir}`)) }, stallMs)
+      c.watchers.add(onDead)
+      c.sftp.readdir(dir, (e, entries) => { cleanup(); if (e) reject(e); else resolve(entries.map((x) => ({ name: x.filename, size: x.attrs.size, mtimeMs: x.attrs.mtime * 1000, isDir: x.attrs.isDirectory() }))) })
     }),
-    close: () => ssh.end(),
+    download: async (remote, local, watch = {}, size) => {
+      let last = ''
+      let lastCause: unknown
+      const high = { v: 0 }
+      for (let attempt = 1; attempt <= tries; attempt++) {
+        if (watch.cancelled?.()) throw new Stopped()
+        // What is already written is the start of the file on the robot: carry on from there, never from 0.
+        const have = attempt === 1 ? 0 : (await stat(local).catch(() => null))?.size ?? 0
+        if (attempt > 1 || conn.dead) {
+          const words = attempt > 1 ? `Robot stopped sending; reconnecting (try ${attempt} of ${tries})` : 'Reconnecting to the robot'
+          watch.onStep?.(words)
+          try { await reconnect(watch) } catch (e) {
+            if (e instanceof Stopped) throw e
+            last = `could not reconnect to the robot: ${msg(e)}`
+            lastCause = e
+            note(watch, `reconnect failed (try ${attempt} of ${tries}): ${msg(e)}`)
+            continue
+          }
+          note(watch, `reconnected; resume ${remote} at offset ${have}`)
+          watch.onStep?.(`Reconnected; resuming at ${mb(have)} MB (try ${attempt} of ${tries})`)
+        }
+        try { await transfer(remote, local, have, watch, size, high); return } catch (e) {
+          if (e instanceof Stopped || (e as { permanent?: boolean }).permanent) throw e
+          last = msg(e)
+          lastCause = e
+          note(watch, `${e instanceof Stalled && /^no data/.test(last) ? 'stall' : 'link lost'} (try ${attempt} of ${tries}): ${last}`)
+        }
+      }
+      throw new LinkLost(`${last}; tried ${tries} time${tries === 1 ? '' : 's'}`, lastCause)
+    },
+    close: () => { const c = conn; c.ssh.end(); setTimeout(() => c.ssh.destroy(), 1000).unref() },
   }
 }

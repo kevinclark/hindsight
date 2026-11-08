@@ -146,6 +146,8 @@ export interface HubApi {
   /** Download logs the team has and this computer lacks (library paths). */
   fetchLogs(paths: string[]): Promise<FetchReport>
   addFromRobot(address: string): Promise<RobotResult>
+  /** Reveal the job log (`jobs.log`: what each job did, with times) in Finder or Explorer. */
+  showJobLog(): Promise<void>
   updateInfo(): Promise<Update | null>
 }
 

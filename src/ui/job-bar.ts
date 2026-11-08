@@ -23,3 +23,58 @@ export function estimateLeft(samples: Sample[], total: number): string {
   const min = Math.round(ms / 60_000)
   return min < 90 ? `about ${min} min left` : `about ${Math.round(min / 6) / 10} h left`
 }
+
+/** The speed is the rate over the last RATE_WINDOW_MS; "no data" shows once nothing has moved for QUIET_MS. */
+export const RATE_WINDOW_MS = 5_000
+export const QUIET_MS = 3_000
+
+/** Bytes per second over the last RATE_WINDOW_MS of samples, or null with under half a second of them. */
+export function rateOver(samples: Sample[]): number | null {
+  if (samples.length < 2) return null
+  const last = samples[samples.length - 1]
+  const first = samples.find((s) => last.at - s.at <= RATE_WINDOW_MS) ?? last
+  const span = last.at - first.at
+  if (span < 500) return null
+  return Math.max(0, (last.bytes - first.bytes) / (span / 1000))
+}
+
+/** "1.4 MB/s", "320 kB/s". */
+export function formatRate(bytesPerSecond: number): string {
+  if (bytesPerSecond >= 2 ** 20) return `${(bytesPerSecond / 2 ** 20).toFixed(1)} MB/s`
+  const k = Math.round(bytesPerSecond / 1024)
+  return k < 1 ? '<1 kB/s' : `${k} kB/s`
+}
+
+/** Milliseconds since the bytes last grew, as of `now` (since the first sample if they never have). 0 with no samples. */
+export function quietFor(samples: Sample[], now: number): number {
+  if (samples.length === 0) return 0
+  for (let i = samples.length - 1; i > 0; i--) if (samples[i].bytes > samples[i - 1].bytes) return Math.max(0, now - samples[i].at)
+  return Math.max(0, now - samples[0].at)
+}
+
+/** "no data for 7 s" once nothing has moved for QUIET_MS, else ''. */
+export function noDataText(quietMs: number): string {
+  return quietMs >= QUIET_MS ? `no data for ${Math.floor(quietMs / 1000)} s` : ''
+}
+
+/**
+ * Whether "no data" can be said of the current file: one coming over a network (`transfer`: the robot, Drive) from its very
+ * first byte, any other only once bytes have started (a local file is read with no byte count first); never once it is all in
+ * (it is then being read here), never while stopping.
+ */
+export function isArriving(p: { file?: { done: number; total: number }; transfer?: boolean; current: string; stopping?: boolean }): boolean {
+  if (!p.file || !(p.file.total > 0) || !p.current || p.stopping) return false
+  if (p.file.done >= p.file.total) return false
+  return p.transfer ? true : p.file.done > 0
+}
+
+/** How long it has gone quiet: since the bytes last grew, but never longer than this file has been the current one. */
+export function quietSince(samples: Sample[], now: number, fileStartedAt: number): number {
+  return Math.min(quietFor(samples, now), Math.max(0, now - fileStartedAt))
+}
+
+/** A step held for STEP_WAIT_MS or more says how long: " · 7 s". */
+export const STEP_WAIT_MS = 3_000
+export function stepWaitText(heldMs: number): string {
+  return heldMs >= STEP_WAIT_MS ? ` · ${Math.floor(heldMs / 1000)} s` : ''
+}

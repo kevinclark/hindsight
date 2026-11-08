@@ -215,8 +215,10 @@
     // A robot pull's result wraps its ingest report, or says why the robot refused.
     if (typeof r.refused === 'string') return `not pulled: ${r.refused}`
     if (typeof r.report === 'object') return reportText(r.report)
-    return Object.entries(r).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
+    const counts = Object.entries(r).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
+    return typeof r.lostLink === 'string' ? `${counts}. ${r.lostLink}` : counts
   }
+  const showLog = () => { void api?.showJobLog().catch(() => {}) }
   async function readAgain() {
     const r = await work('Reading logs again', () => api!.redescribe())
     if (r) rereadReport = r
@@ -415,6 +417,7 @@
   <section class="report" aria-label="How the last job ended">
     <h2>{lastJob.job} finished at {new Date(lastJob.at).toLocaleTimeString()}{lastJob.error ? '' : `: ${reportText(lastJob.report)}`}</h2>
     {#if lastJob.error}<p class="problem">{lastJob.error}</p>{/if}
+    <button class="link" onclick={showLog}>Show log</button>{' '}
     <button class="link" onclick={() => (lastJob = null)}>Dismiss</button>
   </section>
 {/if}
@@ -456,7 +459,8 @@
 {#if report}
   <section class="report" aria-label="What was added">
     <h2>{report.stopped ? 'Stopped: added' : 'Added'} {report.added.length} · already in the library {report.already.length} · couldn't read {report.unreadable.length}{report.stopped ? ` · ${report.notTried ?? 0} not tried` : ''}</h2>
-    {#if report.stopped}<p class="meta">You stopped it. The logs added are kept; run it again for the rest (logs already in the library are not copied twice).</p>{/if}
+    {#if report.lostLink}<p class="problem" role="alert">{report.lostLink}</p>
+    {:else if report.stopped}<p class="meta">You stopped it. The logs added are kept; run it again for the rest (logs already in the library are not copied twice).</p>{/if}
     <p class="meta">
       {size(report.bytesAdded)} copied in {(report.durationMs / 1000).toFixed(1)} s. The originals were not moved, renamed or deleted.
       {#if report.ignored}{report.ignored} other file{report.ignored === 1 ? '' : 's'} ignored.{/if}
@@ -484,6 +488,7 @@
         </details>
       {/if}
     {/each}
+    <button class="link" onclick={showLog}>Show log</button>{' '}
     <button class="link" onclick={() => (report = null)}>Dismiss</button>
   </section>
 {/if}
