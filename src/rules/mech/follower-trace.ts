@@ -11,13 +11,19 @@
 import { indexAt } from '../../match/series.ts'
 import { median } from '../rule.ts'
 import { motorGroup } from '../run.ts'
-import { MissingSignal, SLOW_HZ, sampleRate, type GroupView, type MatchView, type MotorView } from '../view.ts'
+import { MissingSignal, SLOW_HZ, inside, sampleRate, type GroupView, type MatchView, type MotorView } from '../view.ts'
 
 export const FOLLOWER_DT = 0.02 // compare every 20 ms
 /** A motor this far (as a fraction of the leader's speed) from the leader is "off". */
 export const OFF_FRACTION = 0.15
 /** Seconds off the leader at which the rule fires. */
 export const FOLLOWER_LINE_SECONDS = 1
+/** A follower below this fraction of the leader's speed is "stopped". */
+export const STOPPED_FRACTION = 0.2
+/** Seconds stopped (in total) at which the stopped-follower check fires. */
+export const STOPPED_LINE_SECONDS = 2
+/** The leader must run above this speed (rot/s) for a moment to count, steady or not. */
+export const LEADER_RUNNING = 20
 /** Less steady running than this (unless the rule fires) is too little to call the group measured. */
 export const MIN_STEADY_SECONDS = 1
 
@@ -67,6 +73,44 @@ export function traceGroup(group: GroupView, match: MatchView): MotorTrace[] {
     }
   }
   return motors
+}
+
+/** A follower that sat still while its leader spun: how long, how fast it did turn, and when it began. */
+export interface StoppedFollower {
+  name: string
+  /** Seconds below STOPPED_FRACTION of the leader's speed. */
+  seconds: number
+  /** The follower's median speed as a fraction of the leader's over those moments. */
+  medianRatio: number
+  /** The first stopped moment (s). */
+  at: number
+}
+
+/**
+ * The follower that spent longest stopped while the robot was enabled and the leader ran above 20 rot/s. No test for a
+ * steady leader: a leader whose own loop oscillates still shows a follower that isn't turning. Null when no follower
+ * had a stopped moment.
+ */
+export function mostStoppedFollower(group: GroupView, match: MatchView): StoppedFollower | null {
+  const grid = match.grid(FOLLOWER_DT)
+  const leader = group.motors[0].velocity().onGrid(grid)
+  const followers = group.motors.slice(1).map((m) => motorTrace(m, match, grid))
+  let worst: StoppedFollower | null = null
+  for (const m of followers) {
+    const ratios: number[] = []
+    let first = NaN
+    for (let i = 0; i < grid.length; i++) {
+      const leaderSpeed = Math.abs(leader[i])
+      if (!inside(match.enabled, grid[i]) || !(leaderSpeed > LEADER_RUNNING) || !hasFreshRecord(m, grid[i])) continue
+      const ratio = Math.abs(m.speed[i]) / leaderSpeed
+      if (ratio >= STOPPED_FRACTION) continue
+      if (ratios.length === 0) first = grid[i]
+      ratios.push(ratio)
+    }
+    const seconds = ratios.length * m.weight
+    if (seconds > (worst?.seconds ?? 0)) worst = { name: m.name, seconds, medianRatio: median(ratios), at: first }
+  }
+  return worst
 }
 
 /** How long the motor ran more than 15 % off the leader (s). */

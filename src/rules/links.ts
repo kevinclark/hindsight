@@ -65,6 +65,14 @@ export const LINKS: Link[] = [
     when: (dropout, alert) => alertNames(alert, dropout.about) && within(dropout, alert, 1),
     why: 'the robot code saw the same device drop off CAN',
   }),
+  // One 2026 match: the intake roller follower was off CAN for 102.6 of 160 s, so it did not turn with its leader.
+  // The mismatch names the stopped follower; its first stopped moment is no earlier than 1 s before the drop began.
+  link({
+    cause: 'can/device-dropout',
+    explains: 'mech/follower-mismatch',
+    when: (dropout, mismatch) => dropout.about === mismatch.evidence['stopped follower'] && secondsAfter(dropout, mismatch) >= -1,
+    why: 'the follower was off CAN, so it could not turn with its leader',
+  }),
   // One 2026 match: two Back_Right camera alerts came on at the moment the camera dropped out.
   link({
     cause: 'vision/stale',
