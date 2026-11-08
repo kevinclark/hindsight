@@ -1,7 +1,7 @@
 // "Read again": what changed in the findings, and which saved summaries are current, older but showable, or hidden.
 import { describe, expect, it } from 'vitest'
 import { changeText, diffFindings, type FindingSnapshot } from '../src/session/changes.ts'
-import { splitSaved, staleNote, type SavedSummary } from '../src/session/stale.ts'
+import { breakerNote, splitSaved, staleNote, type SavedSummary } from '../src/session/stale.ts'
 import { buildSessionJson } from '../src/session/export.ts'
 import { SUMMARY_SHAPE, summarizeLog, type MatchSummary } from '../src/session/summary.ts'
 import { loadFixture } from './helpers/load.ts'
@@ -105,3 +105,19 @@ const EXPECTED_KEYS = [
   'batteryId', 'build', 'clockNote', 'event', 'fileName', 'fileSize', 'logging', 'matchLabel', 'matchType', 'metrics', 'onField',
   'playedAt', 'playedAtSource', 'powerMap', 'problems', 'robot', 'rules', 'runs', 'timing',
 ]
+
+describe('the notes on the phone, which cannot read a log again', () => {
+  it('an older reading: a laptop has to read it again, and no Read again is offered', () => {
+    const phone = staleNote([{ version: '0.1.0', savedAt: '2026-10-05T12:00:00.000Z' }], 0, true)!
+    expect(phone).toBe('1 log was read with an older Hindsight (version 0.1.0, saved 2026-10-05): a laptop has to read it again to update the conclusions.')
+    expect(phone).not.toMatch(/Read again/)
+    expect(staleNote([], 2, true)).toBe('2 more saved log summaries were made by a Hindsight too old to show here: a laptop has to read them again.')
+  })
+  it('changed breakers: the laptop is told to Read again, the phone that a laptop has to', () => {
+    expect(breakerNote(0, false)).toBeNull()
+    expect(breakerNote(1, false)).toBe('The breaker settings changed after 1 log was read: Read again to update its breaker warnings.')
+    expect(breakerNote(2, false)).toBe('The breaker settings changed after 2 logs were read: Read again to update their breaker warnings.')
+    expect(breakerNote(1, true)).toBe('The breaker settings changed after 1 log was read: its breaker warnings use the old settings until a laptop reads it again.')
+    expect(breakerNote(3, true)).toBe('The breaker settings changed after 3 logs were read: their breaker warnings use the old settings until a laptop reads them again.')
+  })
+})

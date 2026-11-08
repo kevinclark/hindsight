@@ -8,10 +8,12 @@
   import type { IssueEvent } from '../triage/history.ts'
   import { notChecked, reviewRows } from '../report/summary-review.ts'
 
-  let { summary, issues, wrong, real, laptop, olderRead, onBack }: {
+  let { summary, issues, wrong, real, laptop, olderRead, mapStale = false, onBack }: {
     summary: MatchSummary; issues: Map<string, IssueEvent>; wrong: Map<string, IssueEvent>; real: Map<string, IssueEvent>
     /** The laptop whose event file this summary came from, and the Hindsight version that read it when older than this one. */
     laptop: string | null; olderRead: string | null
+    /** The pit changed the breakers after this log was read: its breaker warnings use the old settings. */
+    mapStale?: boolean
     onBack?: () => void
   } = $props()
 
@@ -32,6 +34,7 @@
   <h2>{summary.event ? `${summary.event} ` : ''}{summary.matchLabel || summary.fileName}</h2>
   <p class="meta">{played} · {summary.robot.name}{#if counts.length}{' · '}{counts.map(([s, n]) => `${n} ${s === 'info' ? 'info' : `${s}${n === 1 ? '' : 's'}`}`).join(', ')}{:else}{' · '}no findings{/if}</p>
   <p class="meta">From {laptop ? `laptop ${laptop}'s` : 'a laptop\'s'} summary{olderRead ? `, read with Hindsight ${olderRead}` : ''}. Plots are on the laptop: open the log there to see them.</p>
+  {#if mapStale}<p class="meta" data-breaker-note>The breaker settings changed after this log was read: its breaker warnings use the old settings until a laptop reads it again.</p>{/if}
 
   {#if rows.length === 0}<p>No rule fired in this {summary.onField ? 'match' : 'log'}.</p>{/if}
   <ul class="findings">

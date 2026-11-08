@@ -20,7 +20,7 @@
   import { CONFIDENCE_WORDS, groupSessions, mergeFindings, rateText, ruleGrid, type Session } from '../session/session.ts'
   import { buildSessionJson } from '../session/export.ts'
   import { clearCached, fileKey, loadCached, saveCached } from '../session/cache.ts'
-  import { staleNote } from '../session/stale.ts'
+  import { breakerNote, staleNote } from '../session/stale.ts'
   import { changeText, diffFindings, snapshotFindings, type FindingChange, type FindingSnapshot } from '../session/changes.ts'
   import { VERSION } from '../version.ts'
   import { boardState, type HistoryEvent, type Triage } from '../triage/history.ts'
@@ -267,10 +267,11 @@
   const logsOf = (s: Session) => [...s.matches, ...(s.pitRuns ?? [])].flatMap((m) => m.pieces ?? [m.fileName])
   const staleShown = $derived(summaries.filter((m) => stale[m.fileName]).map((m) => stale[m.fileName]))
   const sessionIsStale = $derived(!!session && logsOf(session).some((n) => stale[n]))
-  const staleText = $derived(staleNote(staleShown, hiddenOld.size))
+  const staleText = $derived(staleNote(staleShown, hiddenOld.size, readOnly))
   // Logs whose breaker findings were judged with a power map that has changed since (the pit changed the breakers): read again to update them.
   const mapStaleLogs = $derived(new Set(summaries.filter((m) => summaryMapStale(m, history)).map((m) => m.fileName)))
   const mapStaleInSession = $derived(!!session && logsOf(session).some((n) => mapStaleLogs.has(n)))
+  const breakerText = $derived(breakerNote(mapStaleLogs.size, readOnly))
 
   function readStore(key: string): Record<string, string> {
     try { return JSON.parse(localStorage.getItem(key) ?? '{}') } catch { return {} }
@@ -507,6 +508,8 @@
   $effect(() => { hasSession = !!session })
   // Bound out to App, which finds the open match's session to fold the findings that fire in every match.
   $effect(() => { sessionsOut = sessions })
+  // A log whose breakers changed since it was read is shared only once read again: a teammate on the same release may already
+  // have shared the newer read, and this older one, written later, would take its place on the phone.
   $effect(() => { summariesOut = summaries.filter((m) => !stale[m.fileName] && !mapStaleLogs.has(m.fileName)) })
   // For scripts/report.ts --session: the same builders the buttons use.
   $effect(() => {
@@ -608,7 +611,7 @@
 {/if}
 
 {#if staleText}<p class="note warn" data-stale-note>{staleText}</p>{/if}
-{#if mapStaleLogs.size}<p class="note warn" data-breaker-note>The breaker settings changed after {mapStaleLogs.size} log{mapStaleLogs.size === 1 ? ' was' : 's were'} read: Read again to update their breaker warnings.</p>{/if}
+{#if breakerText}<p class="note warn" data-breaker-note>{breakerText}</p>{/if}
 
 {#if !hub()}<TbaFields />{/if}
 {#if lookupProblem}<p class="note warn">{lookupProblem}</p>{/if}

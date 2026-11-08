@@ -40,18 +40,34 @@ export function splitSaved(all: SavedSummary[], build: string, shape: number): S
 
 /**
  * The note for the page, or null when there is nothing to say. `shown` are the saved copies on the page that an older
- * Hindsight read; `hidden` is how many saved copies can't be shown at all.
+ * Hindsight read; `hidden` is how many saved copies can't be shown at all. `readOnly` (the phone) can't read a log again,
+ * so it says a laptop has to.
  */
-export function staleNote(shown: { version?: string; savedAt: string }[], hidden: number): string | null {
+export function staleNote(shown: { version?: string; savedAt: string }[], hidden: number, readOnly = false): string | null {
   const parts: string[] = []
   if (shown.length) {
     const versions = [...new Set(shown.map((s) => s.version).filter((v): v is string => !!v))]
     const oldest = shown.map((s) => s.savedAt).sort()[0]
     const which = versions.length ? `version ${versions.join(', ')}, ` : ''
-    parts.push(`${shown.length} log${shown.length === 1 ? ' was' : 's were'} read with an older Hindsight (${which}saved ${dateText(Date.parse(oldest))}). Read again to update the conclusions.`)
+    const one = shown.length === 1
+    const what = `${shown.length} log${one ? ' was' : 's were'} read with an older Hindsight (${which}saved ${dateText(Date.parse(oldest))})`
+    parts.push(readOnly ? `${what}: a laptop has to read ${one ? 'it' : 'them'} again to update the conclusions.` : `${what}. Read again to update the conclusions.`)
   }
   if (hidden) {
-    parts.push(`${hidden} more saved log summar${hidden === 1 ? 'y was' : 'ies were'} made by a Hindsight too old to show here: choose ${hidden === 1 ? 'that log' : 'those logs'} again to read ${hidden === 1 ? 'it' : 'them'}.`)
+    const one = hidden === 1
+    const what = `${hidden} more saved log summar${one ? 'y was' : 'ies were'} made by a Hindsight too old to show here`
+    parts.push(readOnly ? `${what}: a laptop has to read ${one ? 'it' : 'them'} again.` : `${what}: choose ${one ? 'that log' : 'those logs'} again to read ${one ? 'it' : 'them'}.`)
   }
   return parts.length ? parts.join(' ') : null
+}
+
+/**
+ * The note for logs whose breaker warnings were judged with a power map the pit has changed since, or null for none. The
+ * laptop reads them again; the phone (`readOnly`) can't, so it says the warnings stay old until a laptop does.
+ */
+export function breakerNote(count: number, readOnly: boolean): string | null {
+  if (!count) return null
+  const one = count === 1
+  const what = `The breaker settings changed after ${count} log${one ? ' was' : 's were'} read`
+  return readOnly ? `${what}: ${one ? 'its' : 'their'} breaker warnings use the old settings until a laptop reads ${one ? 'it' : 'them'} again.` : `${what}: Read again to update ${one ? 'its' : 'their'} breaker warnings.`
 }

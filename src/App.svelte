@@ -37,7 +37,7 @@
   import { analyzerHashOf, analyzerId, serializeEventLine } from './hub/event-file.ts'
   import { sessionEvent } from './board/event.ts'
   import { newerVersion } from './hub/catalog.ts'
-  import { SUMMARY_SHAPE, type MatchSummary } from './session/summary.ts'
+  import { SUMMARY_SHAPE, summaryMapStale, type MatchSummary } from './session/summary.ts'
   import { setPublishNote } from './ui/event-share.svelte.ts'
   import { loadTeam, teamNow } from './ui/team-setting.svelte.ts'
   import { loadTba } from './ui/tba-setting.svelte.ts'
@@ -642,7 +642,7 @@
   {:else}<p class="meta">No match summaries yet: a laptop publishes them when it adds a log.</p>{/if}
   {#if shownSummary}
     {@const ref = matchRef(shownSummary, shownSummary.playedAt)}
-    <SummaryReview summary={shownSummary} issues={marks.issues} wrong={wrongHere(ref, marks)} real={realHere(ref, marks)} laptop={phoneFrom.get(shownSummary.fileName)?.laptop ?? null} olderRead={phoneFrom.get(shownSummary.fileName)?.olderRead ?? null} />
+    <SummaryReview summary={shownSummary} issues={marks.issues} wrong={wrongHere(ref, marks)} real={realHere(ref, marks)} laptop={phoneFrom.get(shownSummary.fileName)?.laptop ?? null} olderRead={phoneFrom.get(shownSummary.fileName)?.olderRead ?? null} mapStale={summaryMapStale(shownSummary, history)} />
   {/if}
 {:else}
 {#if !current || dragging}

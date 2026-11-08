@@ -49,6 +49,15 @@ describe('read-only mode', () => {
     expect(html).toContain("laptop laptop-a's summary")
   })
 
+  it('Match review from a summary says when its breaker warnings use settings the pit has changed since', () => {
+    const summary = match(2, { fires })
+    const props = { summary, issues: new Map(), wrong: new Map(), real: new Map(), laptop: 'laptop-a', olderRead: null }
+    const stale = render(SummaryReview, { props: ({ ...props, mapStale: true }) as never }).body
+    expect(stale).toContain('The breaker settings changed after this log was read: its breaker warnings use the old settings until a laptop reads it again.')
+    expect(stale).not.toMatch(/Read again/)
+    expect(render(SummaryReview, { props: ({ ...props, mapStale: false }) as never }).body).not.toContain('data-breaker-note')
+  })
+
   it('Match review draws a match that holds the same finding key twice (two events of one check)', () => {
     const twice = match(4, { fires: [{ key: 'power/brownout' }, { key: 'power/brownout' }] })
     const html = render(SummaryReview, { props: ({ summary: twice, issues: new Map(), wrong: new Map(), real: new Map(), laptop: null, olderRead: null }) as never }).body
