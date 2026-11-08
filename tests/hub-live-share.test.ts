@@ -42,8 +42,9 @@ async function setup() {
   const lib = await LocalLibrary.open(join(work, 'a'), 'laptop-a')
   const team = new Spy()
   const changed = vi.fn()
-  const share = new LiveShare({ lib, team: async () => team as StorageAdapter, lock: new Lock(), md5, onHistoryChanged: changed })
-  return { lib, team, share, changed }
+  const folder: { store: Spy | null } = { store: team }
+  const share = new LiveShare({ lib, team: async () => folder.store as StorageAdapter | null, lock: new Lock(), md5, onHistoryChanged: changed })
+  return { lib, team, share, changed, folder }
 }
 /** Let the promises a timer started run to the end. */
 const settle = async () => { for (let i = 0; i < 30; i++) { await vi.advanceTimersByTimeAsync(0); await new Promise((r) => setImmediate(r)) } }
@@ -145,6 +146,34 @@ describe('pushing without a Sync', () => {
     expect(await readText(team, 'events/2099test--laptop-a.jsonl')).toBe('someone else\n')
     expect((await share.status()).problem).toMatch(/events\/2099test--laptop-a\.jsonl/)
     expect((await share.status()).notUp.eventLines).toBe(2)
+  })
+})
+
+describe('the team folder', () => {
+  it('with none chosen yet nothing is sent and nothing is said (the person may be choosing it)', async () => {
+    const { lib, team, share, folder } = await setup()
+    folder.store = null
+    await lib.appendHistory(issue(1))
+    share.signInUsed()
+    await settle()
+    await vi.advanceTimersByTimeAsync(SHARE_EVERY_MS)
+    await settle()
+    expect(team.appends).toEqual([])
+    expect(await share.status()).toMatchObject({ running: true, problem: null, notUp: { marks: 1 } })
+  })
+
+  it('another folder chosen: every own file goes up there too, even unchanged ones', async () => {
+    const { lib, team, share, folder } = await setup()
+    await lib.appendHistory(issue(1))
+    share.signInUsed()
+    await settle()
+    expect(team.appends).toEqual(['history/laptop-a.jsonl'])
+    const other = new Spy()
+    folder.store = other
+    share.teamChanged()
+    await settle()
+    expect(other.appends).toEqual(['history/laptop-a.jsonl'])
+    expect(await readText(other, 'history/laptop-a.jsonl')).toBe(issue(1))
   })
 })
 

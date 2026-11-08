@@ -119,6 +119,19 @@ panel. Neither is committed.
   overwritten. In the app, marking an issue appends there, not to the browser store; the first open moves what the
   browser store holds that the library lacks, once, and says so in one line. "Save hindsight-history.jsonl" stays as an
   export. The page opened from disk keeps the browser store and the file.
+- **Shared without a Sync** (src/hub/live-share.ts): this computer's history file goes up about 10 s after the last mark (a
+  burst is one upload), and its event files (below) about 2 s after a new line; every 2 min what is not up yet is tried
+  again and teammates' history files are brought down (only those whose md5 changed, read from the length already here
+  and checked against the md5; read whole on a mismatch), and the board is told. The same rule as Sync: only this
+  computer's own files go up, only when the team's copy is their start. It starts only once a Drive request of this run
+  got a token (never at launch: the Keychain is read only then), stops on "sign in again" or sign-out, and takes one lock
+  with Sync's history step. The Library says what is not up yet. Logs and manifests still wait for Sync.
+- **Event files for the phone** (src/hub/event-file.ts): `events/<TBA event key>--<machine id>.jsonl`, flat in one folder,
+  appended only by that computer. One line per log of the latest event (its matches and the pit runs on its days, as the
+  Session view groups them) per analyzer: `{sha256, analyzer, shape, at, summary}`, the summary without the team's marks.
+  The analyzer id is `<version>+<hash>`; only the hash (the analyzer's own source, the robot profile, whether a code folder
+  was used) makes a line new, so a release that changes nothing the analyzer reads appends nothing. Without a team number
+  and a The Blue Alliance key the event can't be named and nothing is published (the Library says so).
 - Each computer appends only to its own `manifests/<machine id>.jsonl`, so Drive never makes a conflict copy. The library
   is the union of every manifest. The team folder is chosen in the app and remembered on that computer: it is not in this
   repository.
@@ -142,6 +155,7 @@ On start the app asks the public repository's releases once. When a newer app re
 
 - Drive can hold two files of one name, and "does it exist, then create it" is not atomic: two computers uploading the same
   path at once can leave two files (the library reads one). Sync from one computer at a time.
+  The same holds for the `events/` folder the first time it is made: let one computer push first.
 - The robot's idle check runs once, before the pull; an enable during the pull is not noticed.
 - An upload is resumed within a run, not after Hindsight is closed (the upload session address is not kept).
 - Phoenix `.hoot` names are read as UTC (assumed, not compared with a hoot file's own clock).

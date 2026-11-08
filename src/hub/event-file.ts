@@ -69,16 +69,19 @@ export function parseEventLines(text: string): { lines: EventLine[]; skipped: nu
 /** The summary as it is published: every mark the team's history laid over a finding is taken off. */
 export function withoutMarks(summary: MatchSummary): MatchSummary {
   const rules: MatchSummary['rules'] = {}
-  for (const [id, r] of Object.entries(summary.rules)) rules[id] = { ...r, findings: r.findings.map(({ wrongMark: _w, ...f }) => f) }
+  for (const [id, r] of Object.entries(summary.rules)) rules[id] = { ...r, findings: r.findings.map(({ wrongMark: _w, demoted: _d, ...f }) => f) }
   return { ...summary, rules }
 }
 
 export const serializeEventLine = (line: EventLine): string => `${JSON.stringify(line)}\n`
 
-/** The (log, analyzer) pairs a file already holds: a log is written once per analyzer id. */
-const pairOf = (l: Pick<EventLine, 'sha256' | 'analyzer'>) => `${l.sha256} ${l.analyzer}`
+/** The analyzer's own hash, without the app version: CI stamps a new version on every release (0.1.<commit count>). */
+export const analyzerHashOf = (analyzer: string): string => analyzer.slice(analyzer.indexOf('+') + 1)
 
-/** Of `candidates`, the lines `existing` lacks, each pair once, in the order given. */
+/** The (log, analyzer hash) pairs a file already holds: a log is written once per analyzer, whatever release carried it. */
+const pairOf = (l: Pick<EventLine, 'sha256' | 'analyzer'>) => `${l.sha256} ${analyzerHashOf(l.analyzer)}`
+
+/** Of `candidates`, the lines whose (log, analyzer hash) `existing` lacks, each pair once, in the order given. */
 export function freshLines(existing: readonly EventLine[], candidates: readonly EventLine[]): EventLine[] {
   const have = new Set(existing.map(pairOf))
   const out: EventLine[] = []
@@ -100,7 +103,8 @@ export function shortHash(text: string): string {
 /**
  * "<app version>+<hash>", the hash over the analyzer's own source (what the rules and summary import: `__ANALYZER_HASH__`), the
  * robot profile the log was read with, and whether a code folder was used: two laptops with different kept profiles read a
- * log differently. A release that changes only the UI keeps the id, so nothing is appended again.
+ * log differently. The version orders lines on the phone; only the hash decides whether a line is new (freshLines), so a
+ * release that changes only the UI keeps the hash and appends nothing.
  */
 export function analyzerId(version: string, analyzerHash: string, profileId: string, codeFolder: boolean): string {
   return `${version}+${shortHash(`${analyzerHash}|${profileId}|${codeFolder ? 'code' : 'no code'}`)}`

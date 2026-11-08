@@ -46,6 +46,8 @@ describe('event files', () => {
     const first = (await readText(lib.store, lib.ownEventPath(KEY)))!
     // the same lines again: nothing; a line for a log already there with the same analyzer but another `at`: nothing
     expect(await lib.appendEvent(KEY, text(line(1, '0.1.5+aaaa', 99)))).toBe(0)
+    // a release that changed nothing the analyzer reads (CI stamps a new version on every release): nothing
+    expect(await lib.appendEvent(KEY, text(line(1, '0.1.7+aaaa'), line(2, '0.1.8+aaaa')))).toBe(0)
     // a rules change mid-event: a second line for the same log
     expect(await lib.appendEvent(KEY, text(line(1, '0.1.6+bbbb')))).toBe(1)
     const after = (await readText(lib.store, lib.ownEventPath(KEY)))!
@@ -91,6 +93,7 @@ describe('which logs an event file holds', () => {
     expect(lines[1].analyzer).toBe(analyzerId('0.1.9', 'hash', marked.robot.profileId, false))
     expect(lines[0].analyzer).not.toBe(lines[1].analyzer)
     expect(JSON.stringify(lines)).not.toContain('wrongMark')
+    expect(JSON.stringify(eventLines({ summaries: [{ ...q1, rules: { 'power/brownout': { status: 'fired', findings: [{ ...marked.rules['mech/test'].findings[0], demoted: { match: 'TEST Qualification 1', reason: 'test reason', when: '2099-03-05T00:00:00Z' } }] } } }], names: ['q1.wpilog'], shaOf: () => sha(1), version: '0.1.9', analyzerHash: 'hash', at: BASE }))).not.toContain('demoted')
     expect(JSON.stringify(lines)).not.toContain('test reason')
   })
 

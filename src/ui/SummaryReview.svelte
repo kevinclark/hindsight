@@ -17,7 +17,10 @@
 
   const ICON = { error: '●', warning: '▲', info: '○' } as const
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
-  const rows = $derived(reviewRows(summary))
+  // Worst first; within a severity, what the team marked known or not a real problem goes after what is still live (ISA-101: settled reads quiet).
+  const settled = (r: ReturnType<typeof reviewRows>[number]) => wrong.has(r.finding.key) || issues.get(r.finding.key)?.status === 'known'
+  const SEV = { error: 0, warning: 1, info: 2 } as const
+  const rows = $derived(reviewRows(summary).map((r, i) => ({ r, i })).sort((a, b) => SEV[a.r.finding.severity] - SEV[b.r.finding.severity] || Number(settled(a.r)) - Number(settled(b.r)) || a.i - b.i).map(({ r }) => r))
   const skipped = $derived(notChecked(summary))
   const counts = $derived((['error', 'warning', 'info'] as const).map((s) => [s, rows.filter((r) => r.finding.severity === s).length] as const).filter(([, n]) => n > 0))
   const date = (iso: string) => iso.slice(0, 10)
@@ -32,7 +35,8 @@
 
   {#if rows.length === 0}<p>No rule fired in this {summary.onField ? 'match' : 'log'}.</p>{/if}
   <ul class="findings">
-    {#each rows as r (r.finding.key)}
+    <!-- By position: one match can hold the same key at two times (MatchTab keys by key and time). -->
+    {#each rows as r, i (i)}
       {@const f = r.finding}
       {@const w = wrong.get(f.key)}
       {@const re = real.get(f.key)}
@@ -52,11 +56,12 @@
             {#if w}<p class="mark"><strong>Not a real problem</strong> on this match, marked {date(w.when)}: {w.note}</p>{/if}
             {#if re}<p class="mark"><strong>A real problem</strong> on this match, marked {date(re.when)}{re.note ? `: ${re.note}` : ''}</p>{/if}
             {#if !w && issue && (issue.status === 'known' || issue.status === 'fixed')}<p class="mark"><strong>{issue.status === 'known' ? 'Known issue' : 'Marked fixed'}</strong> on {date(issue.when)}{issue.match ? ` (${issue.match})` : ''}{issue.note ? `: ${issue.note}` : ''}</p>{/if}
+            <!-- What to do first, then why, then the numbers: the reader acts from the top of what opened. -->
+            {#if r.nextStep}<p><strong>Next step:</strong> {r.nextStep}{#if r.who}{' · '}<strong>Who acts:</strong> {r.who}{/if}</p>{/if}
+            {#if r.meaning}<p><strong>What this might mean:</strong> {r.meaning}</p>{/if}
             {#if Object.keys(f.evidence).length}
               <table class="evidence"><tbody>{#each Object.entries(f.evidence) as [k, v] (k)}<tr><th scope="row">{k}</th><td>{v}</td></tr>{/each}</tbody></table>
             {/if}
-            {#if r.meaning}<p><strong>What this might mean:</strong> {r.meaning}</p>{/if}
-            {#if r.nextStep}<p><strong>Next step:</strong> {r.nextStep}{#if r.who}{' · '}<strong>Who acts:</strong> {r.who}{/if}</p>{/if}
             {#if r.causes.length}
               <p class="causes-head"><strong>Possible causes</strong>{r.causes.some((c) => c.likely) ? ' (tagged: what this log points to)' : ', most likely first'}:</p>
               <ol class="causes">
@@ -81,6 +86,8 @@
 
 <style>
   h2 { margin: 0.2rem 0 0; font-size: 1.25rem; }
+  /* Rule ids stay readable at arm's length on a phone (the page's code is 0.85em, under 12 px in small text). */
+  code { font-size: max(12px, 0.85em); }
   .meta { margin: 0.15rem 0; color: var(--muted); font-size: 0.85rem; }
   .crumbs { margin: 0; }
   .link { border: none; background: none; color: var(--fg); text-decoration: underline; font: inherit; min-height: 44px; padding: 0 0.25rem; cursor: pointer; }
@@ -90,13 +97,14 @@
   .finding.warning { border-left-color: var(--warning); }
   /* Known or marked not a real problem: a grey edge, never faded text (opacity took the words under 4.5:1). */
   .finding.known { border-left-color: var(--muted); }
+  .finding.known .sev { color: var(--muted); }
   /* One flow, not columns: at 375 px a severity column would take a quarter of the width from the words. */
   summary { display: block; padding: 0.55rem 0.6rem; min-height: 44px; box-sizing: border-box; cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
   .sev { font-weight: 600; white-space: nowrap; margin-right: 0.4rem; }
   .error .sev { color: var(--error); }
   .warning .sev { color: var(--warning); }
-  .rule { display: block; color: var(--muted); font-family: var(--mono); font-size: 0.8rem; overflow-wrap: anywhere; }
+  .rule { display: block; color: var(--muted); font-family: var(--mono); font-size: max(12px, 0.8rem); overflow-wrap: anywhere; }
   .badge { display: inline-block; margin-right: 0.35rem; padding: 0 0.35rem; border: 1px solid var(--muted); border-radius: 4px; font-size: 0.75rem; color: var(--muted); }
   .badge.real { border-color: var(--error); color: var(--error); }
   .body { padding: 0 0.6rem 0.6rem; }

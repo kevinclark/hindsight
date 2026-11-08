@@ -18,7 +18,7 @@
 
 <p class="crumbs"><button type="button" class="link" onclick={onBack}>← Board</button></p>
 <h3 class="screen">Handoff after {board.tl.last?.label ?? 'the last match'}</h3>
-<p class="sub">{board.tl.next ? `Next match ${next}` : 'No next match named yet (no schedule)'}{board.strip.minutesWord ? `, ${board.strip.minutesWord}` : ''}. Read this whole screen, then say you have.{#if h.firstRead}{' '}No handoff has been read at this event yet, so nothing is marked new; reading this one starts the count.{/if}</p>
+<p class="sub">{board.tl.next ? `Next match ${next}` : 'No next match named yet (no schedule)'}{board.strip.minutesWord ? `, ${board.strip.minutesWord}` : ''}.{#if onRead}{' '}Read this whole screen, then say you have.{#if h.firstRead}{' '}No handoff has been read at this event yet, so nothing is marked new; reading this one starts the count.{/if}{/if}</p>
 
 {#snippet lines(i: BoardIssue)}
   {#each h.causeLines.get(i.key) ?? [] as c (c.kind + c.cause + c.by)}
@@ -53,7 +53,7 @@
 
 <div class="bigcard">
   {#if board.handoff}<p>Last read by <span class="chip">{board.handoff.role}</span> after {board.handoff.match || 'the first match'} ({clockText(board.handoff.when)}).</p>{/if}
-  <p><b>Before you take over:</b> you have read the reds due before the next match, the deferrals due and what was tried.</p>
+  {#if onRead}<p><b>Before you take over:</b> you have read the reds due before the next match, the deferrals due and what was tried.</p>{/if}
   {#if onRead}<button type="button" class="primary" disabled={!role} onclick={onRead}>I've read this{role ? ` (as ${role})` : ''}</button>
   {#if !role}<span class="small muted"> Choose your role on the board first.</span>{/if}{/if}
 </div>

@@ -343,6 +343,11 @@ describe('Now on the phone (read only: the laptops publish the matches)', () => 
     expect(task(st, 'pull')).toMatchObject({ title: "Q4's log: not in yet", button: null, action: null })
     expect(task(st, 'triage')).toMatchObject({ button: 'Open the board', action: { kind: 'board' } })
   })
+  it('no schedule: names the latest log in, never "not in yet" (it can not tell)', () => {
+    const s = session([match(2), match(3)])
+    const st = nowState({ build: 'phone', mode: 'event', hasLogs: true, libraryToday: null, event: boardOf(s, min(200), null), schedule: null, have: { team: true, key: false }, scheduleNote: null, still: null, now: min(200) })
+    expect(task(st, 'pull')).toMatchObject({ title: 'Latest log in: Q3', button: null, action: null })
+  })
   it('nothing published yet: says so, with nothing to press', () => {
     const st = nowState({ build: 'phone', mode: 'event', hasLogs: false, libraryToday: null, event: null, have: { team: true, key: false }, scheduleNote: null, still: null, now: min(0) })
     expect(st.big).toBe('No match summaries yet')

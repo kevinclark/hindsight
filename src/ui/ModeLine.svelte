@@ -7,6 +7,8 @@
   import type { Mode } from '../session/mode.ts'
 
   let { text, mode, byHand, onChange, hint }: { text: string; mode: Mode; byHand: boolean; onChange: (mode: Mode | null) => void; hint?: string } = $props()
+  // A tap shows the hint (a phone has no hover, so a title alone is never seen).
+  let showHint = $state(false)
 </script>
 
 <p class="mode-line" data-mode-line>
@@ -15,7 +17,8 @@
     <option value="event">Event</option>
     <option value="practice">Practice</option>
     {#if byHand}<option value="auto">Automatic (from the logs)</option>{/if}
-  </select></label>{#if hint}{' '}<button type="button" class="help" aria-label={hint} title={hint}>?</button>{/if}
+  </select></label>{#if hint}{' '}<button type="button" class="help" aria-label={hint} aria-expanded={showHint} title={hint} onclick={() => (showHint = !showHint)}>?</button>{/if}
+  {#if hint && showHint}<span class="hint" role="note">{hint}</span>{/if}
 </p>
 
 <style>
@@ -23,5 +26,6 @@
   .help { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; box-sizing: border-box; border: 1px solid var(--muted); border-radius: 50%; font-size: 0.8rem; font-weight: 700; cursor: help; color: var(--fg); background: var(--bg); }
   .help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   [data-mode-text] { color: var(--fg); font-weight: 600; }
+  .hint { display: block; margin-top: 0.25rem; }
   select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; min-height: 24px; box-sizing: border-box; }
 </style>

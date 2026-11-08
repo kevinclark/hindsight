@@ -177,6 +177,10 @@ function pullTask(input: NowInput, board: Pick<Board, 'tl'> | null, vague: strin
   if (done) return { id: 'pull', title: `${last.qual !== null && started.match.level === 'qm' && last.qual > started.match.number ? last.label : name}'s log is in`, detail: '', done: true, button: null, action: null, primary: false }
   const age = started ? Math.floor((input.now - started.at) / 60e3) : null
   const ago = name && age !== null && age >= 1 ? `${name} started ${age} min ago. ` : ''
+  if (input.build === 'phone' && !started && last) {
+    // No schedule on this phone: it can't tell whether a later match has been played, only which log is the latest in.
+    return { id: 'pull', title: `Latest log in: ${last.label}`, detail: "Without a schedule this phone can't tell whether a later match has been played.", done: false, button: null, action: null, primary: false }
+  }
   if (input.build === 'phone') {
     return { id: 'pull', title: name ? `${name}'s log: not in yet` : "The last match's log: not in yet", detail: `${ago}A laptop pulls it; it shows here about a minute later.`, done: false, button: null, action: null, primary: false }
   }

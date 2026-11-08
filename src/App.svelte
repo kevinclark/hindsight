@@ -31,7 +31,7 @@
   import TbaFields from './ui/TbaFields.svelte'
   import { tbaGetter, tbaTeam } from './ui/tba-setting.svelte.ts'
   import { ANALYZER_HASH, eventLines, eventLogNames, latestEventSession } from './hub/event-publish.ts'
-  import { serializeEventLine } from './hub/event-file.ts'
+  import { analyzerHashOf, analyzerId, serializeEventLine } from './hub/event-file.ts'
   import { sessionEvent } from './board/event.ts'
   import { newerVersion } from './hub/catalog.ts'
   import { SUMMARY_SHAPE, type MatchSummary } from './session/summary.ts'
@@ -113,7 +113,7 @@
   void hub()?.updateInfo().then((u) => { update = u })
   void loadTeam()
   void loadTba()
-  let sessionView = $state<{ addFiles(files: File[], opts?: { select?: boolean }): Promise<void>; showSummaries(list: MatchSummary[], olderRead?: Record<string, string>): void }>()
+  let sessionView = $state<{ addFiles(files: File[], opts?: { select?: boolean }): Promise<void>; showSummaries(list: MatchSummary[], olderRead?: Record<string, { version: string; at: number }>): void }>()
   // Session summaries restored without their file read the library's copy (desktop app only).
   const findInLibrary = hub() ? (names: string[]) => libraryLogs(hub()!, names) : undefined
   const linksInLibrary = hub() ? (names: string[]) => libraryLinks(hub()!, names) : undefined
@@ -151,8 +151,11 @@
     const files = await latestEventFiles()
     if (files.length) await sessionView?.addFiles(files)
   }
-  /** The newest event's logs on this laptop: on-field logs and what was played in the 4 days before them. */
-  async function latestEventFiles(): Promise<File[]> {
+  /**
+   * The newest event's logs on this laptop: on-field logs and what was played in the 4 days before them; `eventDays`: only
+   * what was played on a day the event had on-field logs (its matches and pit runs), not the practice days before it.
+   */
+  async function latestEventFiles(eventDays = false): Promise<File[]> {
     const app = hub()
     if (!app) return []
     const { entries } = await app.library()
@@ -162,7 +165,8 @@
     const newest = field.reduce((a, b) => (b.record.playedAt! > a.record.playedAt! ? b : a))
     const last = newest.record.playedAt!
     const same = mine.filter((e) => e.record.playedAt! <= last && e.record.playedAt! > last - 4 * 86400e3 && (!e.record.onField || !newest.record.event || e.record.event === newest.record.event))
-    return libraryNames(same).map((n) => asFile(n, app))
+    const days = new Set(same.filter((e) => e.record.onField).map((e) => dateText(e.record.playedAt!)))
+    return libraryNames(eventDays ? same.filter((e) => days.has(dateText(e.record.playedAt!))) : same).map((n) => asFile(n, app))
   }
   async function showBoard(which: 'today' | 'latest' = 'today') {
     if (which === 'latest') await loadLatestEvent(); else await loadToday(true)
@@ -320,7 +324,7 @@
     if (!library || !todaySig.libraryLoaded) return
     void todaySig.libraryLogs
     void (async () => {
-      const files = await latestEventFiles()
+      const files = await latestEventFiles(true)
       const handed = files.map((f) => `${f.name}|${f.size}`).sort().join('\n')
       if (!files.length || handed === eventHanded) return
       eventHanded = handed
@@ -329,10 +333,12 @@
   })
   $effect(() => {
     if (!library) return
-    void sessions; void summaries; void tbaTeam(); void tbaGetter()
-    const t = setTimeout(() => void publishEvent(), 3_000)
+    void sessions; void summaries; void tbaTeam(); void tbaGetter(); void todaySig.libraryLogs
+    const t = setTimeout(() => { publishing = publishing.then(publishEvent) }, 3_000)
     return () => clearTimeout(t)
   })
+  // One publish at a time: a run waiting on The Blue Alliance must not overlap the next (both would pass the same dedupe).
+  let publishing: Promise<void> = Promise.resolve()
   async function publishEvent() {
     const app = hub()
     const s = latestEventSession(sessions)
@@ -342,8 +348,8 @@
     try {
       const found = await sessionEvent(s, team, get)
       if (!found.event) { setPublishNote(`${s.label} is not published for the phone: ${found.why}.`); return }
-      const { entries } = await app.library()
-      const shas = new Map(entries.flatMap((e) => e.record.names.map((n) => [n, e.record.sha256] as const)))
+      // The library's records as last read (todaySig reads them again when a job ends), not a fresh snapshot that stats every file.
+      const shas = new Map(todaySig.libraryLogs.flatMap((r) => r.names.map((n) => [n, r.sha256] as const)))
       const lines = eventLines({ summaries, names: eventLogNames(s), shaOf: (n) => shas.get(n) ?? null, version: VERSION, analyzerHash: ANALYZER_HASH, at: Date.now() })
       if (lines.length) await app.appendEvent(found.event.key, lines.map(serializeEventLine).join(''))
       setPublishNote(null)
@@ -356,8 +362,11 @@
   let phoneFrom = $state.raw<Map<string, { laptop: string; olderRead: string | null }>>(new Map())
   let reviewing = $state.raw<MatchSummary | null>(null)
   let phoneLoading: Promise<void> | null = null
+  let phoneAgain = false
+  /** Read the event and the marks again; a change that lands mid-read gets one more read after it, not a minute's wait. */
   function loadPhone(): Promise<void> {
-    return (phoneLoading ??= (async () => {
+    if (phoneLoading) { phoneAgain = true; return phoneLoading }
+    return (phoneLoading = (async () => {
       if (!phoneHub) return
       try {
         history = parseHistory(await phoneHub.history()).events
@@ -366,13 +375,16 @@
         if (!key) { phoneNote = 'No laptop has published an event to the team Drive yet.'; return }
         const ev = await phoneHub.event(key)
         const drawable = ev.logs.filter((l) => l.line.shape === SUMMARY_SHAPE)
-        const older = (a: string) => (newerVersion(VERSION, a) ? /^\d+(\.\d+)*/.exec(a)?.[0] ?? null : null)
-        phoneFrom = new Map(drawable.map((l) => [l.line.summary.fileName, { laptop: l.machine, olderRead: older(l.line.analyzer) }]))
-        sessionView?.showSummaries(drawable.map((l) => l.line.summary), Object.fromEntries(drawable.flatMap((l) => { const o = older(l.line.analyzer); return o ? [[l.line.summary.fileName, o]] : [] })))
+        // Read by an older Hindsight whose analyzer differs from this page's (every release has a new version; only a changed
+        // analyzer reads a log differently): the version that read it.
+        const older = ({ analyzer, summary }: (typeof drawable)[number]['line']) => newerVersion(VERSION, analyzer) && analyzerHashOf(analyzer) !== analyzerHashOf(analyzerId(VERSION, ANALYZER_HASH, summary.robot.profileId, !!summary.codeFolder)) ? /^\d+(\.\d+)*/.exec(analyzer)?.[0] ?? null : null
+        phoneFrom = new Map(drawable.map((l) => [l.line.summary.fileName, { laptop: l.machine, olderRead: older(l.line) }]))
+        sessionView?.showSummaries(drawable.map((l) => l.line.summary), Object.fromEntries(drawable.flatMap((l) => { const v = older(l.line); return v ? [[l.line.summary.fileName, { version: v, at: l.line.at }]] : [] })))
         const hidden = ev.logs.length - drawable.length
-        phoneNote = hidden ? `${hidden} match${hidden === 1 ? ' was' : 'es were'} read by a Hindsight this phone can't draw: update the page.` : ''
+        phoneNote = ev.logs.length === 0 ? `No laptop has shared ${key}'s matches yet: they show here once a laptop signed in to the team Drive adds a log.`
+          : hidden ? `${hidden} match${hidden === 1 ? ' was' : 'es were'} read by a Hindsight this phone can't draw: update the page.` : ''
       } catch (e) { phoneNote = `Could not read the team Drive (${e instanceof Error ? e.message : String(e)}): showing the last copy.` }
-    })().finally(() => { phoneLoading = null }))
+    })().finally(() => { phoneLoading = null; if (phoneAgain) { phoneAgain = false; void loadPhone() } }))
   }
   $effect(() => {
     if (!phoneHub) return
@@ -383,10 +395,13 @@
     if (!phoneHub || !phoneKey) return
     const off = phoneHub.onChange(() => void loadPhone())
     const stop = phoneHub.watch(phoneKey)
-    return () => { off(); stop() }
+    // The "checked" time moves with each minute's check, changed or not.
+    const tick = setInterval(() => { freshTick++ }, 30_000)
+    return () => { off(); stop(); clearInterval(tick) }
   })
+  let freshTick = $state(0)
   const fresh = $derived.by(() => {
-    void history; void sessions
+    void history; void sessions; void freshTick
     const f = phoneHub?.freshness()
     const t = (ms: number | null) => (ms === null ? null : new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
     return f ? { read: t(f.readAt), pushed: t(f.newestFile) } : null
@@ -549,7 +564,7 @@
 <div class="top" class:compact={mode === 'review' && !!current}>
 <header class:screen-only={reportable}>
   <h1>Hindsight</h1>
-  {#if readOnly}<p class="tag">What the team's laptops found and marked at this event. Marks are made on a laptop.</p>{:else if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
+  {#if readOnly}<p class="tag">What the team's laptops found and marked at this event.</p>{:else if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
 </header>
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
@@ -558,7 +573,7 @@
   {#if !readOnly}<Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (mode = t.id) }))} />{/if}
 </nav>
 {#if readOnly}
-  <p class="phone-line screen-only" role="status" data-phone-fresh>Read only{phoneKey ? ` · ${phoneKey}` : ''}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
+  <p class="phone-line screen-only" role="status" data-phone-fresh>{phoneKey ?? 'No event yet'}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
   {#if phoneNote}<p class="phone-line warn" role="status">{phoneNote}</p>{/if}
 {/if}
 </div>
@@ -794,7 +809,8 @@
   .empty li { margin-bottom: 0.4rem; max-width: 75ch; }
   .phone-line { margin: -0.4rem 0 0.6rem; color: var(--muted); font-size: 0.85rem; }
   /* The phone: every control a finger can hit (Apple HIG 44 pt; WCAG 2.2 2.5.8 asks 24 px). */
-  :global(#app.phone :is(button, select, summary, input[type='text'], input[type='password'], input[type='number'])) { min-height: 44px; box-sizing: border-box; }
+  :global(#app.phone :is(button, select, summary, input:not([type]), input[type='text'], input[type='password'], input[type='number'])) { min-height: 44px; box-sizing: border-box; }
+  :global(#app.phone .help) { min-width: 44px; border-radius: 22px; }
   :global(#app.phone) { padding-top: max(1rem, env(safe-area-inset-top)); }
   @media (max-width: 600px) {
     .modes { flex-wrap: nowrap; overflow-x: auto; }
@@ -804,6 +820,6 @@
   .phone-setup { margin-top: 2rem; }
   .pick { display: flex; gap: 0.4rem; margin: 0.25rem 0 0.75rem; overflow-x: auto; padding-bottom: 0.2rem; }
   .pick button { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 52px; min-height: 44px; padding: 0.2rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
-  .pick small { color: var(--error); font-size: 0.7rem; }
+  .pick small { color: var(--error); font-size: 12px; }
   .pick button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
 </style>

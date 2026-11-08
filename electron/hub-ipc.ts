@@ -54,16 +54,20 @@ export function registerHub(window: () => BrowserWindow | null): void {
   // Sharing this laptop's history and event files as they change (src/hub/live-share.ts). It starts only once a Drive request of
   // this run got a token, never at launch (the Keychain is read only then), and stops when Drive asks for a new sign-in.
   const ownFilesLock = new Lock()
-  let share: LiveShare | null = null
+  // One token source per run (it keeps the access token for its hour; a new one per push would ask Google for a token each
+  // time), dropped on sign-in, sign-out and a new Google client.
+  let tokens: Promise<(refresh?: boolean) => Promise<string>> | null = null
+  const forgetTokens = () => { tokens = null }
   /** The token source every Drive adapter uses: a token handed out means a sign-in is in use; "sign in again" stops the sharing. */
   const watchedToken = async () => {
-    const token = await driveToken()
+    const source = (tokens ??= driveToken().catch((e) => { tokens = null; throw e }))
+    const token = await source
     return async (refresh?: boolean) => {
       try {
         const t = await token(refresh)
         void sharing().then((s) => s.signInUsed())
         return t
-      } catch (e) { if (e instanceof SignInAgain) share?.stop(true); throw e }
+      } catch (e) { if (e instanceof SignInAgain) { forgetTokens(); void sharing().then((s) => s.stop(true)) } throw e }
     }
   }
   async function teamStore(): Promise<DriveAdapter> {
@@ -72,10 +76,20 @@ export function registerHub(window: () => BrowserWindow | null): void {
     return new DriveAdapter({ rootId: folder.id, token: await watchedToken() })
   }
   const sourceStore = async () => new DriveAdapter({ rootId: (await loadSettings()).teamFolder?.id ?? 'root', token: await watchedToken() })
-  const sharing = async (): Promise<LiveShare> => (share ??= new LiveShare({
-    lib: await open(), team: teamStore, lock: ownFilesLock, md5: (text) => createHash('md5').update(text).digest('hex'),
+  // The sharing's own team store, kept per folder (its folder ids stay known); null while no team folder is chosen.
+  let shareStore: { id: string; store: DriveAdapter } | null = null
+  const shareTeam = async (): Promise<DriveAdapter | null> => {
+    const folder = (await loadSettings()).teamFolder
+    if (!folder) return null
+    if (shareStore?.id !== folder.id) shareStore = { id: folder.id, store: new DriveAdapter({ rootId: folder.id, token: await watchedToken() }) }
+    return shareStore.store
+  }
+  // One LiveShare per run: the promise is kept, so two callers at once can't each build one (an orphan's timer would outlive a stop).
+  let share: Promise<LiveShare> | null = null
+  const sharing = (): Promise<LiveShare> => (share ??= open().then((lib) => new LiveShare({
+    lib, team: shareTeam, lock: ownFilesLock, md5: (text) => createHash('md5').update(text).digest('hex'),
     onHistoryChanged: () => send('hub:historyChanged', null), onStatus: (s: ShareStatus) => send('hub:shareStatus', s),
-  }))
+  })))
 
   async function runIngest(name: string, files: SourceFile[]): Promise<IngestReport> {
     const lib = await open()
@@ -206,14 +220,17 @@ export function registerHub(window: () => BrowserWindow | null): void {
 
   ipcMain.handle('hub:history', async (): Promise<string> => (await open()).historyText())
   ipcMain.handle('hub:appendHistory', async (_e, text: string): Promise<number> => {
-    const n = await (await open()).appendHistory(String(text))
+    // Under the lock the push takes, so a push never reads this file half-written, nor brings it down over a new line.
+    const lib = await open()
+    const n = await ownFilesLock.run(() => lib.appendHistory(String(text)))
     if (n > 0) (await sharing()).noteMark()
     return n
   })
   /** The page's summaries of an event's logs, for the phone (src/hub/event-publish.ts): appended to this laptop's event file, then pushed. */
   ipcMain.handle('hub:appendEvent', async (_e, key: string, text: string): Promise<number> => {
     if (!isEventKey(key)) throw new Error('not an event key')
-    const n = await (await open()).appendEvent(key, String(text))
+    const lib = await open()
+    const n = await ownFilesLock.run(() => lib.appendEvent(key, String(text)))
     if (n > 0) (await sharing()).noteEvent(key)
     return n
   })
@@ -233,9 +250,9 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const k = keeping(signedIn())
     return { configured: (await googleClient()) !== null, signedIn: signedIn(), teamFolder: s.teamFolder ?? null, keepsSignIn: k.keeps, keepWarning: k.why, lastSync: s.lastSync?.at ?? null }
   })
-  ipcMain.handle('hub:driveSignIn', async () => { await signIn(); (await sharing()).signInUsed() })
-  ipcMain.handle('hub:driveSignOut', async () => { share?.stop(); await signOut() })
-  ipcMain.handle('hub:setGoogleClient', async (_e, id: string, secret: string) => { await saveSettings({ googleClient: id.trim() ? { id: id.trim(), secret: secret.trim() } : undefined }) })
+  ipcMain.handle('hub:driveSignIn', async () => { await signIn(); forgetTokens(); shareStore = null; (await sharing()).signInUsed() })
+  ipcMain.handle('hub:driveSignOut', async () => { (await sharing()).stop(); forgetTokens(); shareStore = null; await signOut() })
+  ipcMain.handle('hub:setGoogleClient', async (_e, id: string, secret: string) => { forgetTokens(); shareStore = null; await saveSettings({ googleClient: id.trim() ? { id: id.trim(), secret: secret.trim() } : undefined }) })
   ipcMain.handle('hub:driveFolders', async (_e, parentId: string) => (await sourceStore()).folderChoices(String(parentId)))
   ipcMain.handle('hub:setTeamFolder', async (_e, text: string) => {
     const id = folderIdFrom(String(text))
@@ -243,6 +260,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const folder = await (await sourceStore()).describeFolder(id)
     if (!folder) throw new Error('Drive cannot show that folder to this account (is it a folder you can open?).')
     await saveSettings({ teamFolder: folder, lastSync: undefined })
+    ;(await sharing()).teamChanged()
     return folder
   })
 

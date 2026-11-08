@@ -290,13 +290,13 @@
 
   /**
    * The phone: show these summaries (one event, from the laptops' event files) in place of what is on the page. `olderRead`: by
-   * file name, the Hindsight version that read a log, when older than this one (shown as read with an older Hindsight).
+   * file name, the Hindsight version that read a log and when (ms), when its analyzer is older than this one's.
    */
-  export function showSummaries(list: MatchSummary[], olderRead: Record<string, string> = {}): void {
+  export function showSummaries(list: MatchSummary[], olderRead: Record<string, { version: string; at: number }> = {}): void {
     collected.length = 0
     collected.push(...list)
     summaries = [...collected]
-    stale = Object.fromEntries(Object.entries(olderRead).map(([name, version]) => [name, { version, savedAt: '' }]))
+    stale = Object.fromEntries(Object.entries(olderRead).map(([name, o]) => [name, { version: o.version, savedAt: new Date(o.at).toISOString() }]))
   }
 
   /** From the Library: read these logs into the session, as if chosen with "Choose logs…", and show the session that holds them. */

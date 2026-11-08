@@ -210,7 +210,10 @@
   {:else if view.nexusProblem}<p class="credit" data-now-nexus-problem>No Nexus queue times: {view.nexusProblem}</p>{/if}
   {#if view.kind === 'event-no-schedule' && eventSession}
     <!-- The fix in place (ADR b): type the next match, or add the read key; the same fields the board shows. -->
-    <NextMatchFields session={eventSession} {scheduleNote} idPrefix="now-next" heading={false} />
+    {#if build === 'phone'}
+      <!-- The phone: the task list leads; the fields are one line that opens. -->
+      <details class="fix-fold"><summary>Type the next match, or add a read key</summary><NextMatchFields session={eventSession} {scheduleNote} idPrefix="now-next" heading={false} /></details>
+    {:else}<NextMatchFields session={eventSession} {scheduleNote} idPrefix="now-next" heading={false} />{/if}
   {:else if view.keyLine}
     <p class="keyline" data-now-key>{view.keyLine.lead}{#if view.keyLine.link}{' '}<button type="button" class="link" onclick={() => link(view.keyLine!.link!)}>{view.keyLine.link.text}</button>{/if}{view.keyLine.rest}</p>
   {:else if view.scheduleNote}
@@ -285,6 +288,8 @@
   .fail .bad { color: var(--error); font-weight: 700; }
   .fail .meta { margin: 0.3rem 0 0.7rem; }
   .fail .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .fix-fold { margin: 0 0 0.5rem; }
+  .fix-fold summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--muted); }
   /* A phone's width (375 px): the task's button goes under its words instead of squeezing them into a column. */
   @media (max-width: 600px) {
     .big { font-size: 1.35rem; }

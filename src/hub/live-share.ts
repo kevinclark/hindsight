@@ -55,8 +55,8 @@ export interface SharedLibrary {
 
 export interface LiveShareOptions {
   lib: SharedLibrary
-  /** The team folder's store; throws when there is none chosen. */
-  team(): Promise<StorageAdapter>
+  /** The team folder's store, or null when none is chosen yet (then nothing is shared, quietly: the person may be choosing it). */
+  team(): Promise<StorageAdapter | null>
   /** The lock Sync's history step takes too. */
   lock: Lock
   md5(text: string): string
@@ -124,6 +124,13 @@ export class LiveShare {
     }, EVENT_PUSH_DELAY_MS)
   }
 
+  /** Another team folder was chosen: what the old one holds says nothing about the new one, so every own file is checked again. */
+  teamChanged(): void {
+    this.pushed.clear()
+    this.problems.clear()
+    if (this.running) void this.everyTick()
+  }
+
   /** The window came to the front: bring teammates' marks down now (only while running). */
   async pullNow(): Promise<void> {
     if (this.running) await this.guard(() => this.pull())
@@ -174,6 +181,7 @@ export class LiveShare {
       const local = (await readText(store, path)) ?? ''
       if (local === '' || local === this.pushed.get(path)) return
       const team = await this.o.team()
+      if (!team) return
       const info = await team.stat(path)
       this.problems.delete('drive')
       if (info?.md5 && info.md5 === this.o.md5(local)) { this.pushed.set(path, local); return }
@@ -203,6 +211,7 @@ export class LiveShare {
     return this.o.lock.run(async () => {
       const store = this.o.lib.store as never as StorageAdapter
       const team = await this.o.team()
+      if (!team) return
       let changed = false
       for (const f of await team.list('history')) {
         if (!f.path.endsWith('.jsonl') || f.path === this.o.lib.ownHistoryPath) continue

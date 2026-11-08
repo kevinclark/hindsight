@@ -49,6 +49,12 @@ describe('read-only mode', () => {
     expect(html).toContain("laptop laptop-a's summary")
   })
 
+  it('Match review draws a match that holds the same finding key twice (two events of one check)', () => {
+    const twice = match(4, { fires: [{ key: 'power/brownout' }, { key: 'power/brownout' }] })
+    const html = render(SummaryReview, { props: ({ summary: twice, issues: new Map(), wrong: new Map(), real: new Map(), laptop: null, olderRead: null }) as never }).body
+    expect(html.match(/test finding power\/brownout/g)?.length).toBe(2)
+  })
+
   it('the write path refuses: no history line reaches the hub or the browser store', () => {
     const append = vi.fn(), store = vi.fn()
     const mark: HistoryEvent = { type: 'issue', key: 'power/brownout', status: 'wrong', note: 'test reason', when: '2099-03-05T19:00:00.000Z', match: 'TEST Qualification 3' }
