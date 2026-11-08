@@ -16,7 +16,8 @@
   import type { BoardRole } from '../triage/history.ts'
   import { CAUSE_TAGS, debugCauses, markText, readReverse } from '../board/debug.ts'
 
-  let { issue, board, rate, role, onBack, onChange, onDebug }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange: (changes: Change[], note?: string) => void; onDebug: () => void } = $props()
+  // `onChange` and `onDebug` absent: read only (the phone), so no note box, no actions and no Debug this.
+  let { issue, board, rate, role, onBack, onChange, onDebug }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange?: (changes: Change[], note?: string) => void; onDebug?: () => void } = $props()
 
   const maker = $derived(makerOf(issue.rule))
   const options = $derived(deferralOptions(board, issue))
@@ -65,12 +66,12 @@
       changes.push({ op: 'workaround', value: workaround.trim() })
     }
     if (!changes.length) { saved = 'Nothing changed.'; return }
-    onChange(changes)
+    onChange?.(changes)
     saved = `Saved as ${role}.`
   }
   function addNote() {
     if (!note.trim()) return
-    onChange([{ op: 'note', value: note.trim() }])
+    onChange?.([{ op: 'note', value: note.trim() }])
     note = ''
     saved = `Note added as ${role}.`
   }
@@ -87,7 +88,7 @@
   <span class="small hdr-rate">Not a real problem, for this rule: {rate?.text ?? 'no marks yet'}</span>
 </div>
 {#if issue.deferral?.expired}<p class="note"><b>Deferral ended.</b> The workaround while it held: {issue.deferral.workaround || '(none written)'}</p>{/if}
-<div class="titlerow"><h3 class="screen">{rowTitle(issue)}</h3>{#if causes.length}<button type="button" class="primary" data-debug-open onclick={onDebug}>Debug this</button>{/if}</div>
+<div class="titlerow"><h3 class="screen">{rowTitle(issue)}</h3>{#if causes.length && onDebug}<button type="button" class="primary" data-debug-open onclick={onDebug}>Debug this</button>{/if}</div>
 <p class="muted small"><code>{issue.rule}</code> · seen in {issue.firedIn.length} match{issue.firedIn.length === 1 ? '' : 'es'}{issue.sightings.some((s) => s.kind === 'pit') ? ` and ${issue.sightings.filter((s) => s.kind === 'pit').length} pit run${issue.sightings.filter((s) => s.kind === 'pit').length === 1 ? '' : 's'}` : ''} · on {issue.robot || 'an unknown robot'}</p>
 
 <div class="cols">
@@ -142,11 +143,11 @@
     <section class="panel">
       <h4>Notes</h4>
       {#if issue.notes.length}<ul class="notes">{#each issue.notes as n (n.when + n.text)}<li><b>{n.match ?? 'no match'}</b> · <span class="chip">{n.role}</span> {n.text}</li>{/each}</ul>{:else}<p class="muted">No notes yet.</p>{/if}
-      <div class="field"><label for="board-note">Add a note</label><textarea id="board-note" rows="2" bind:value={note} placeholder="What you tried, what you saw, what you ruled out."></textarea></div>
-      <button type="button" disabled={!role || !note.trim()} onclick={addNote}>Add note{role ? ` as ${role}` : ''}</button>
+      {#if onChange}<div class="field"><label for="board-note">Add a note</label><textarea id="board-note" rows="2" bind:value={note} placeholder="What you tried, what you saw, what you ruled out."></textarea></div>
+      <button type="button" disabled={!role || !note.trim()} onclick={addNote}>Add note{role ? ` as ${role}` : ''}</button>{/if}
     </section>
   </div>
-  <div>
+  {#if onChange}<div>
     <section class="panel noprint">
       <h4>Actions</h4>
       {#if !role}<p class="note">Choose your role on the board to make changes.</p>{:else}<p class="hint">You are acting as <b>{role}</b>.</p>{/if}
@@ -174,5 +175,5 @@
       {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
       <button type="button" class="primary" disabled={!role} onclick={save}>Save changes</button> <span class="small" role="status">{saved}</span>
     </section>
-  </div>
+  </div>{/if}
 </div>

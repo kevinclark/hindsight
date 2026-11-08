@@ -6,6 +6,7 @@
   a dense table grouped by day with the numbers right-aligned (Tufte, data-ink; NN/g, row actions only where used).
 -->
 <script lang="ts">
+  import ShareStatusLine from './ShareStatusLine.svelte'
   import { onMount } from 'svelte'
   import { notReached } from '../hub/robot-reach.ts'
   import { hub, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
@@ -330,6 +331,7 @@
   {/if}
   <span class="meta where">Library: <code>{snapshot?.libraryDir ?? '…'}</code></span>
 </section>
+<ShareStatusLine {api} />
 
   {#if picking && api}
     <DriveFolderPicker {api} label={picking === 'team' ? 'Use as team folder' : 'Read logs from'} onPick={(id) => (picking === 'team' ? chooseTeam(id) : planIngest(id))} onCancel={() => (picking = null)} />

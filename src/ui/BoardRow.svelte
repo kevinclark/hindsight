@@ -9,6 +9,7 @@
     onHolds?: (issue: BoardIssue, on: boolean) => void
   } = $props()
   const askHolds = $derived(!!onHolds && issue.status === 'deferred' && !!issue.deferral && !issue.deferral.expired)
+  // No onGrey: read only (the phone). The question is shown, its buttons are not.
   const fresh = $derived(issue.holds && !issue.holds.old ? issue.holds : null)
 </script>
 
@@ -30,9 +31,9 @@
     </p>
   {/if}
   {#if issue.greyAsk}
-    <p class="greyask">{issue.greyAsk}{' '}
+    <p class="greyask">{issue.greyAsk}{#if onGrey}{' '}
       <button type="button" disabled={!role || !onGrey} title={role ? '' : 'Choose your role first'} onclick={() => onGrey?.(issue, 'close')}>Close</button>{' '}
-      <button type="button" disabled={!role || !onGrey} title={role ? '' : 'Choose your role first'} onclick={() => onGrey?.(issue, 'take')}>Give it an owner</button></p>
+      <button type="button" disabled={!role || !onGrey} title={role ? '' : 'Choose your role first'} onclick={() => onGrey?.(issue, 'take')}>Give it an owner</button>{/if}</p>
   {/if}
 </li>
 

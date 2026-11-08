@@ -8,7 +8,7 @@
  * the day goes on (when a job ends), so a log pulled in that day flips Practice to Event without a reload. The single-file
  * page has neither, and keeps the old behaviour: no outside signal.
  */
-import { hub } from '../hub/bridge.ts'
+import { hub, phone } from '../hub/bridge.ts'
 import type { LogRecord } from '../hub/types.ts'
 import { eventFromLibrary, eventFromSchedule, type TodayEvent } from '../session/today-event.ts'
 import { teamEvents } from '../tba/api.ts'
@@ -30,13 +30,15 @@ export function todaySignal() {
     try { libraryLogs = (await app.library()).entries.map((e) => e.record) } catch { /* no library answer: the last one stands */ } finally { reading = false; libraryLoaded = true }
   }
   $effect(() => {
+    // The phone has no library, but reads The Blue Alliance's team events to open on the event going on now.
     const app = hub()
-    if (!app) return
+    if (!app && !phone()) return
     const get = tbaGetter(), team = tbaTeam()
     let cancelled = false
     void (async () => {
       try { if (get && team !== null) { const events = (await teamEvents(get, team, new Date().getFullYear())).data; if (!cancelled) tbaEvents = events } } catch { /* offline with no saved copy, or no key: the library is next */ }
     })()
+    if (!app) return () => { cancelled = true }
     void readLibrary()
     const stop = app.onProgress((p) => { if (p === null) void readLibrary() })
     return () => { cancelled = true; stop() }

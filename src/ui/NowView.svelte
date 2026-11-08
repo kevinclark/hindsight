@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { hub, type RobotResult } from '../hub/bridge.ts'
+  import { hub, phone, type RobotResult } from '../hub/bridge.ts'
   import { pullAddresses } from '../foresight/addresses.ts'
   import { buildBoard } from '../board/model.ts'
   import { sessionWithMarks } from '../triage/track-record.ts'
@@ -39,7 +39,7 @@
     onOpenLog: (files: File[]) => void; onOpenLogs: (files: File[]) => void; onAdded: () => void | Promise<void>
   } = $props()
   const api = hub()
-  const build = api ? 'hub' : 'page'
+  const build = api ? 'hub' : phone() ? 'phone' : 'page'
 
   const clock = $derived(signal.clock)
   const today = $derived(todayMode(sessions, clock, sessionNames(), signal.external))
@@ -248,7 +248,7 @@
     <ModeLine text={today.line} mode={today.mode} byHand={today.byHand} onChange={(m) => chooseMode(today.sessionId, m)} hint="Changes whether Hindsight treats today as an event day (matches, the queue check) or as practice (runs, the start-of-practice check). Each log is judged from its own field data." />
   {/if}
   <!-- Once, by a lead: hidden when every step that applies is done; after the tasks, so it never pushes the first task down. -->
-  <SetupCard onOpenLibrary={() => onGo('library')} />
+  {#if build !== 'phone'}<SetupCard onOpenLibrary={() => onGo('library')} />{/if}
 {/if}
 </section>
 
@@ -285,4 +285,11 @@
   .fail .bad { color: var(--error); font-weight: 700; }
   .fail .meta { margin: 0.3rem 0 0.7rem; }
   .fail .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  /* A phone's width (375 px): the task's button goes under its words instead of squeezing them into a column. */
+  @media (max-width: 600px) {
+    .big { font-size: 1.35rem; }
+    .tasks > li { grid-template-columns: 1.8rem minmax(0, 1fr); padding: 0.55rem 0.7rem; }
+    .tasks > li > button { grid-column: 2; justify-self: start; min-height: 44px; }
+    .job { min-width: 0; }
+  }
 </style>

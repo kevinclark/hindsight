@@ -25,7 +25,17 @@
   import type { Place } from './now/now.ts'
   import { dateText } from './session/day.ts'
   import LibraryView from './ui/LibraryView.svelte'
-  import { hub } from './hub/bridge.ts'
+  import { hub, phone } from './hub/bridge.ts'
+  import { keepHistory } from './triage/keeper.ts'
+  import SummaryReview from './ui/SummaryReview.svelte'
+  import TbaFields from './ui/TbaFields.svelte'
+  import { tbaGetter, tbaTeam } from './ui/tba-setting.svelte.ts'
+  import { ANALYZER_HASH, eventLines, eventLogNames, latestEventSession } from './hub/event-publish.ts'
+  import { serializeEventLine } from './hub/event-file.ts'
+  import { sessionEvent } from './board/event.ts'
+  import { newerVersion } from './hub/catalog.ts'
+  import { SUMMARY_SHAPE, type MatchSummary } from './session/summary.ts'
+  import { setPublishNote } from './ui/event-share.svelte.ts'
   import { loadTeam, teamNow } from './ui/team-setting.svelte.ts'
   import { loadTba } from './ui/tba-setting.svelte.ts'
   import { robotChoices } from './ui/robot-list.ts'
@@ -81,9 +91,13 @@
   }
   // The Library is part of the desktop app (src/hub/): the page opened from disk has no library, so no tab for it.
   // The daily places, in the order Now's "What Hindsight does" lines use. The three expert tools sit behind one labelled menu.
+  // The phone (read only, src/hub/browser-hub.ts) has no Robot check (it needs ws:// to the robot) and no tools.
+  const phoneHub = phone()
+  const readOnly = !!phoneHub
   const MODES = [
     { id: 'now', label: 'Now' } as const,
-    { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' }, { id: 'foresight', label: 'Robot check' },
+    { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' },
+    ...(readOnly ? [] : [{ id: 'foresight', label: 'Robot check' } as const]),
     ...(hub() ? [{ id: 'library', label: 'Library' } as const] : []),
   ] as const
   const TOOLS = [
@@ -93,12 +107,13 @@
   ] as const
   const activeTool = $derived(TOOLS.find((t) => t.id === mode))
   if (hub()) document.getElementById('app')?.classList.add('wide')
+  if (readOnly) document.getElementById('app')?.classList.add('phone')
   // The desktop app asks GitHub once on start whether a newer release is out.
   let update = $state<{ version: string; url: string } | null>(null)
   void hub()?.updateInfo().then((u) => { update = u })
   void loadTeam()
   void loadTba()
-  let sessionView = $state<{ addFiles(files: File[], opts?: { select?: boolean }): Promise<void> }>()
+  let sessionView = $state<{ addFiles(files: File[], opts?: { select?: boolean }): Promise<void>; showSummaries(list: MatchSummary[], olderRead?: Record<string, string>): void }>()
   // Session summaries restored without their file read the library's copy (desktop app only).
   const findInLibrary = hub() ? (names: string[]) => libraryLogs(hub()!, names) : undefined
   const linksInLibrary = hub() ? (names: string[]) => libraryLinks(hub()!, names) : undefined
@@ -133,16 +148,21 @@
   }
   /** A practice day's "Event board not opened yet": the newest event's logs (on-field logs and what was played in the 4 days before them), shown in the Session view. */
   async function loadLatestEvent(): Promise<void> {
+    const files = await latestEventFiles()
+    if (files.length) await sessionView?.addFiles(files)
+  }
+  /** The newest event's logs on this laptop: on-field logs and what was played in the 4 days before them. */
+  async function latestEventFiles(): Promise<File[]> {
     const app = hub()
-    if (!app) return
+    if (!app) return []
     const { entries } = await app.library()
     const mine = entries.filter((e) => e.local && !e.record.stub && e.record.playedAt !== null)
     const field = mine.filter((e) => e.record.onField)
-    if (!field.length) return
+    if (!field.length) return []
     const newest = field.reduce((a, b) => (b.record.playedAt! > a.record.playedAt! ? b : a))
     const last = newest.record.playedAt!
     const same = mine.filter((e) => e.record.playedAt! <= last && e.record.playedAt! > last - 4 * 86400e3 && (!e.record.onField || !newest.record.event || e.record.event === newest.record.event))
-    await sessionView?.addFiles(libraryNames(same).map((n) => asFile(n, app)))
+    return libraryNames(same).map((n) => asFile(n, app))
   }
   async function showBoard(which: 'today' | 'latest' = 'today') {
     if (which === 'latest') await loadLatestEvent(); else await loadToday(true)
@@ -183,7 +203,7 @@
   // In the desktop app the history is the library's: history/<machine id>.jsonl, merged with the teammates' files by sync.
   // The browser store is then read only once, to move what it holds into the library.
   const library = hub()
-  let history = $state<HistoryEvent[]>(library ? [] : readStoredHistory())
+  let history = $state<HistoryEvent[]>(library || readOnly ? [] : readStoredHistory())
   let unsaved = $state(false)
   let historyNote = $state('')
   const marks = $derived(triage(history))
@@ -258,17 +278,13 @@
     try { const read = parseHistory(await library!.history()).events; if (was === generation) history = mergeHistory(read, unwritten) } catch { /* the note from the last read stands */ }
   }
   function keep(events: HistoryEvent[], changed: boolean) {
-    if (library) {
-      generation++
-      const had = new Set(history.map((e) => serializeHistory([e])))
-      const fresh = events.filter((e) => !had.has(serializeHistory([e])))
-      history = events
-      if (fresh.length) appendToLibrary(serializeHistory(fresh))
-      return
-    }
-    history = events
-    if (changed) unsaved = true
-    try { localStorage.setItem(STORE, serializeHistory(events)) } catch { /* private window: the file is the only copy */ }
+    if (library) generation++
+    const kept = keepHistory(history, events, {
+      readOnly,
+      ...(library ? { append: appendToLibrary } : { store: (text: string) => { try { localStorage.setItem(STORE, text) } catch { /* private window: the file is the only copy */ } } }),
+    })
+    history = kept.history
+    if (kept.wrote && changed && !library) unsaved = true
   }
   function mark(finding: Finding, status: IssueStatus, note: string) {
     const at = here ? { match: here.id, ...(here.event ? { event: here.event } : {}), ...(here.played !== null ? { played: new Date(here.played).toISOString() } : {}) } : {}
@@ -283,6 +299,100 @@
     }
     keep([...history, ...build(device, history)], true)
   }
+  // Teammates' marks were brought down (the 2-min pull, or a Sync): read the history again, and pull now when the window comes back.
+  $effect(() => {
+    if (!library) return
+    const stop = library.onHistoryChanged(() => { appending = appending.then(refreshLibraryHistory) })
+    const onVisible = () => { if (document.visibilityState === 'visible') void library.shareNow().catch(() => {}) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisible) }
+  })
+
+  // ---- The laptop publishes the latest event's summaries for the phone (src/hub/event-publish.ts) ----
+  // The Session view's own summaries and grouping (so the phone's board is built from what this board is built from), a
+  // few seconds after they last changed: an add, a read again or a restore is one append. The main process pushes the file.
+  let summaries = $state.raw<MatchSummary[]>([])
+  // Every log of the latest event needs a summary read by this Hindsight: after an update the saved ones are too old to reuse,
+  // and a day-one log may never have been opened. So once the library is read, and whenever it grows, its latest event's logs go
+  // through the Session view (which reads only those it has no current summary for) without changing what it shows.
+  let eventHanded = ''
+  $effect(() => {
+    if (!library || !todaySig.libraryLoaded) return
+    void todaySig.libraryLogs
+    void (async () => {
+      const files = await latestEventFiles()
+      const handed = files.map((f) => `${f.name}|${f.size}`).sort().join('\n')
+      if (!files.length || handed === eventHanded) return
+      eventHanded = handed
+      await sessionView?.addFiles(files, { select: false })
+    })().catch(() => {})
+  })
+  $effect(() => {
+    if (!library) return
+    void sessions; void summaries; void tbaTeam(); void tbaGetter()
+    const t = setTimeout(() => void publishEvent(), 3_000)
+    return () => clearTimeout(t)
+  })
+  async function publishEvent() {
+    const app = hub()
+    const s = latestEventSession(sessions)
+    if (!app || !s) { setPublishNote(null); return }
+    const [get, team] = [tbaGetter(), tbaTeam()]
+    if (!get || team === null) { setPublishNote(`No event known for ${s.label}'s logs: add your team number and a The Blue Alliance read key under This laptop…, so the phone can show this event.`); return }
+    try {
+      const found = await sessionEvent(s, team, get)
+      if (!found.event) { setPublishNote(`${s.label} is not published for the phone: ${found.why}.`); return }
+      const { entries } = await app.library()
+      const shas = new Map(entries.flatMap((e) => e.record.names.map((n) => [n, e.record.sha256] as const)))
+      const lines = eventLines({ summaries, names: eventLogNames(s), shaOf: (n) => shas.get(n) ?? null, version: VERSION, analyzerHash: ANALYZER_HASH, at: Date.now() })
+      if (lines.length) await app.appendEvent(found.event.key, lines.map(serializeEventLine).join(''))
+      setPublishNote(null)
+    } catch (e) { setPublishNote(`The phone's copy of ${s.label} could not be written: ${e instanceof Error ? e.message : String(e)}`) }
+  }
+
+  // ---- The phone: one event's summaries and every laptop's marks, read from the team's Drive, never written ----
+  let phoneKey = $state<string | null>(null)
+  let phoneNote = $state('')
+  let phoneFrom = $state.raw<Map<string, { laptop: string; olderRead: string | null }>>(new Map())
+  let reviewing = $state.raw<MatchSummary | null>(null)
+  let phoneLoading: Promise<void> | null = null
+  function loadPhone(): Promise<void> {
+    return (phoneLoading ??= (async () => {
+      if (!phoneHub) return
+      try {
+        history = parseHistory(await phoneHub.history()).events
+        const key = todaySig.external?.key ?? (await phoneHub.eventKeys())[0]?.key ?? null
+        phoneKey = key
+        if (!key) { phoneNote = 'No laptop has published an event to the team Drive yet.'; return }
+        const ev = await phoneHub.event(key)
+        const drawable = ev.logs.filter((l) => l.line.shape === SUMMARY_SHAPE)
+        const older = (a: string) => (newerVersion(VERSION, a) ? /^\d+(\.\d+)*/.exec(a)?.[0] ?? null : null)
+        phoneFrom = new Map(drawable.map((l) => [l.line.summary.fileName, { laptop: l.machine, olderRead: older(l.line.analyzer) }]))
+        sessionView?.showSummaries(drawable.map((l) => l.line.summary), Object.fromEntries(drawable.flatMap((l) => { const o = older(l.line.analyzer); return o ? [[l.line.summary.fileName, o]] : [] })))
+        const hidden = ev.logs.length - drawable.length
+        phoneNote = hidden ? `${hidden} match${hidden === 1 ? ' was' : 'es were'} read by a Hindsight this phone can't draw: update the page.` : ''
+      } catch (e) { phoneNote = `Could not read the team Drive (${e instanceof Error ? e.message : String(e)}): showing the last copy.` }
+    })().finally(() => { phoneLoading = null }))
+  }
+  $effect(() => {
+    if (!phoneHub) return
+    void todaySig.external?.key
+    void loadPhone()
+  })
+  $effect(() => {
+    if (!phoneHub || !phoneKey) return
+    const off = phoneHub.onChange(() => void loadPhone())
+    const stop = phoneHub.watch(phoneKey)
+    return () => { off(); stop() }
+  })
+  const fresh = $derived.by(() => {
+    void history; void sessions
+    const f = phoneHub?.freshness()
+    const t = (ms: number | null) => (ms === null ? null : new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
+    return f ? { read: t(f.readAt), pushed: t(f.newestFile) } : null
+  })
+  function openSummary(m: MatchSummary) { reviewing = m; mode = 'review' }
+
   function saveHistory() {
     downloadText(HISTORY_FILE_NAME, serializeHistory(history), 'application/x-ndjson')
     unsaved = false
@@ -439,31 +549,53 @@
 <div class="top" class:compact={mode === 'review' && !!current}>
 <header class:screen-only={reportable}>
   <h1>Hindsight</h1>
-  {#if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
+  {#if readOnly}<p class="tag">What the team's laptops found and marked at this event. Marks are made on a laptop.</p>{:else if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
 </header>
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
   {#each MODES as m (m.id)}<button class:active={mode === m.id} data-label={m.label} aria-current={mode === m.id ? 'page' : undefined} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
-  <Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (mode = t.id) }))} />
+  {#if !readOnly}<Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (mode = t.id) }))} />{/if}
 </nav>
+{#if readOnly}
+  <p class="phone-line screen-only" role="status" data-phone-fresh>Read only{phoneKey ? ` · ${phoneKey}` : ''}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
+  {#if phoneNote}<p class="phone-line warn" role="status">{phoneNote}</p>{/if}
+{/if}
 </div>
 
 <!-- All the views stay mounted and only the active one shows, so switching never loses a loaded session,
      the matches in review, the wizard's progress, or a snapshot. -->
+{#if !readOnly}
 <div hidden={mode !== 'wizard'} class:screen-only={reportable}><Wizard matches={analyses} /></div>
 <div hidden={mode !== 'snapshot'} class:screen-only={reportable}><SnapshotView /></div>
 <div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder bind:this={profileBuilder} /></div>
+{/if}
 <div hidden={mode !== 'now'} class:screen-only={reportable}>
   <NowView {sessions} {history} {marks} signal={todaySig} openLogs={analyses.length} onGo={goPlace} onBoard={showBoard} onOpenLog={openFromSession} onOpenLogs={openInSession} onAdded={() => loadToday()} />
 </div>
-<div hidden={mode !== 'foresight'}>
+{#if !readOnly}<div hidden={mode !== 'foresight'}>
   <ForesightView signal={todaySig} {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
-</div>
+</div>{/if}
 {#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{/if}
-<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={writeBoard} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} /></div>
+<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={readOnly ? undefined : writeBoard} {readOnly} onOpenSummary={readOnly ? openSummary : undefined} bind:summariesOut={summaries} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} />{#if readOnly}<div class="screen-only phone-setup"><TbaFields /></div>{/if}</div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
+{#if readOnly}
+  {@const ev = latestEventSession(sessions)}
+  {@const shownSummary = reviewing ?? ev?.matches.at(-1) ?? null}
+  {#if ev}
+    <nav class="pick" aria-label="This event's matches">
+      {#each [...ev.matches].reverse() as m (m.fileName)}
+        {@const errors = Object.values(m.rules).reduce((n, r) => n + r.findings.filter((f) => f.severity === 'error').length, 0)}
+        <button type="button" class:active={shownSummary?.fileName === m.fileName} aria-current={shownSummary?.fileName === m.fileName ? 'true' : undefined} onclick={() => openSummary(m)}>{m.matchLabel ? m.matchLabel.replace(/^Qualification /, 'Q') : m.fileName}{#if errors}<small>{errors} error{errors === 1 ? '' : 's'}</small>{/if}</button>
+      {/each}
+    </nav>
+  {:else}<p class="meta">No match summaries yet: a laptop publishes them when it adds a log.</p>{/if}
+  {#if shownSummary}
+    {@const ref = matchRef(shownSummary, shownSummary.playedAt)}
+    <SummaryReview summary={shownSummary} issues={marks.issues} wrong={wrongHere(ref, marks)} real={realHere(ref, marks)} laptop={phoneFrom.get(shownSummary.fileName)?.laptop ?? null} olderRead={phoneFrom.get(shownSummary.fileName)?.olderRead ?? null} />
+  {/if}
+{:else}
 {#if !current || dragging}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
   <label class="button">
@@ -571,6 +703,7 @@
     <p class="meta">Matches opened here aren't kept when the page reloads (the Session view keeps each log's summary, not the log): drop the log again.</p>
   </section>
 {/if}
+{/if}
 </div>
 
 <AskText />
@@ -659,4 +792,18 @@
   .empty { margin-top: 1.5rem; }
   .empty h2 { font-size: 1.1rem; }
   .empty li { margin-bottom: 0.4rem; max-width: 75ch; }
+  .phone-line { margin: -0.4rem 0 0.6rem; color: var(--muted); font-size: 0.85rem; }
+  /* The phone: every control a finger can hit (Apple HIG 44 pt; WCAG 2.2 2.5.8 asks 24 px). */
+  :global(#app.phone :is(button, select, summary, input[type='text'], input[type='password'], input[type='number'])) { min-height: 44px; box-sizing: border-box; }
+  :global(#app.phone) { padding-top: max(1rem, env(safe-area-inset-top)); }
+  @media (max-width: 600px) {
+    .modes { flex-wrap: nowrap; overflow-x: auto; }
+    .modes button { flex: 1 0 auto; }
+  }
+  .phone-line.warn { color: var(--warning); }
+  .phone-setup { margin-top: 2rem; }
+  .pick { display: flex; gap: 0.4rem; margin: 0.25rem 0 0.75rem; overflow-x: auto; padding-bottom: 0.2rem; }
+  .pick button { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 52px; min-height: 44px; padding: 0.2rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
+  .pick small { color: var(--error); font-size: 0.7rem; }
+  .pick button.active { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
 </style>

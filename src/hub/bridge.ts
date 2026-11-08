@@ -10,6 +10,9 @@ import type { RedescribeReport } from './redescribe.ts'
 import type { TagField, TagTarget } from './types.ts'
 import type { Fetched, TbaGetOptions } from '../tba/source.ts'
 import type { NexusEvent } from '../nexus/source.ts'
+import type { ShareStatus } from './live-share.ts'
+import type { BrowserHub } from './browser-hub.ts'
+export type { ShareStatus } from './live-share.ts'
 
 export interface Progress { job: string; done: number; total: number; current: string }
 
@@ -112,6 +115,15 @@ export interface HubApi {
   readLog(path: string): Promise<Uint8Array>
   /** Progress of any job; `null` when the job ended. */
   onProgress(callback: (p: Progress | null) => void): () => void
+  /** Append the page's summaries of an event's logs (event-file lines) to this laptop's file for the phone; resolves with how many were new. */
+  appendEvent(key: string, text: string): Promise<number>
+  /** What of this laptop's marks and event lines is not on the team Drive yet, and when teammates' marks were last brought down. */
+  shareStatus(): Promise<ShareStatus>
+  /** Bring teammates' marks down now (the window came to the front); does nothing before a sign-in is in use. */
+  shareNow(): Promise<void>
+  /** Teammates' marks were brought down (or Sync brought history): read the history again. */
+  onHistoryChanged(callback: () => void): () => void
+  onShareStatus(callback: (s: ShareStatus) => void): () => void
 
   driveStatus(): Promise<DriveStatus>
   driveSignIn(): Promise<void>
@@ -130,6 +142,15 @@ export interface HubApi {
   fetchLogs(paths: string[]): Promise<FetchReport>
   addFromRobot(address: string): Promise<RobotResult>
   updateInfo(): Promise<Update | null>
+}
+
+/**
+ * The phone's hub (src/hub/browser-hub.ts): read only, straight from the team's Drive. Kept apart from `hub()`, which means
+ * "the desktop app" to every place that offers adding logs, the Library or a sync. Set by the phone's entry before the page
+ * mounts (src/phone.ts); absent on the desktop and on the page opened from disk.
+ */
+export function phone(): BrowserHub | undefined {
+  return (window as unknown as { hindsightPhone?: BrowserHub }).hindsightPhone
 }
 
 export function hub(): HubApi | undefined {

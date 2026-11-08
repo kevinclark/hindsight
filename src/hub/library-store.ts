@@ -10,6 +10,7 @@ import { LocalFolderAdapter } from './local-adapter.ts'
 import { readText } from './adapter.ts'
 import { mergeHistory, parseHistory, serializeHistory, type HistoryEvent } from '../triage/history.ts'
 import { serializeRecord, type ManifestRecord } from './types.ts'
+import { eventFilePath, freshLines, parseEventLines, serializeEventLine } from './event-file.ts'
 
 export class LocalLibrary {
   catalog: Catalog
@@ -88,6 +89,22 @@ export class LocalLibrary {
     // A crash can leave the last line without its newline: start a fresh line rather than join the next one to it.
     const own = texts[0]
     await this.store.appendOwn(this.ownHistoryPath, (own !== '' && !own.endsWith('\n') ? '\n' : '') + fresh.join('\n') + '\n')
+    return fresh.length
+  }
+
+  /** This machine's summaries of an event's logs, for the phone (src/hub/event-file.ts). */
+  ownEventPath(key: string): string { return eventFilePath(key, this.machine) }
+
+  /**
+   * Add event lines (a text of JSON lines, from the page) to this machine's file for that event, durably: only lines of the
+   * right shape, and only for a (log, analyzer) pair the file does not hold yet. Returns how many were written.
+   */
+  async appendEvent(key: string, text: string): Promise<number> {
+    const path = this.ownEventPath(key)
+    const own = (await readText(this.store, path)) ?? ''
+    const fresh = freshLines(parseEventLines(own).lines, parseEventLines(text).lines)
+    if (fresh.length === 0) return 0
+    await this.store.appendOwn(path, (own !== '' && !own.endsWith('\n') ? '\n' : '') + fresh.map(serializeEventLine).join(''))
     return fresh.length
   }
 

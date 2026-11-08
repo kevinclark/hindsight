@@ -30,7 +30,7 @@ export type NowAction =
   | { kind: 'board'; which?: 'today' | 'latest' }
 
 export interface NowTask {
-  id: 'pull' | 'triage' | 'queue' | 'practice-check' | 'runs' | 'still' | 'open-log' | 'add-folder' | 'pull-logs'
+  id: 'pull' | 'triage' | 'queue' | 'practice-check' | 'runs' | 'still' | 'open-log' | 'add-folder' | 'pull-logs' | 'wait'
   title: string
   /** One line under the title; empty for a task that is done. */
   detail: string
@@ -69,7 +69,8 @@ export interface NowState {
 }
 
 export interface NowInput {
-  build: 'hub' | 'page'
+  /** 'phone': the read-only phone, whose logs are the laptops' published summaries: no pull, no queue check, no file to open. */
+  build: 'hub' | 'page' | 'phone'
   /** Today's mode (`todayMode`). */
   mode: Mode
   /** The library holds a log (hub), or a log is open or a session loaded (page). */
@@ -176,6 +177,9 @@ function pullTask(input: NowInput, board: Pick<Board, 'tl'> | null, vague: strin
   if (done) return { id: 'pull', title: `${last.qual !== null && started.match.level === 'qm' && last.qual > started.match.number ? last.label : name}'s log is in`, detail: '', done: true, button: null, action: null, primary: false }
   const age = started ? Math.floor((input.now - started.at) / 60e3) : null
   const ago = name && age !== null && age >= 1 ? `${name} started ${age} min ago. ` : ''
+  if (input.build === 'phone') {
+    return { id: 'pull', title: name ? `${name}'s log: not in yet` : "The last match's log: not in yet", detail: `${ago}A laptop pulls it; it shows here about a minute later.`, done: false, button: null, action: null, primary: false }
+  }
   if (hub) {
     return { id: 'pull', title: name ? `Pull ${name}'s log` : vague, detail: `${ago}Plug in the cable, then Pull.`, done: false, button: 'Pull from the robot', action: { kind: 'pull' }, primary: true }
   }
@@ -197,6 +201,12 @@ const alsoMatch: NowLink = { text: 'check one match', action: go('review') }
 export function nowState(input: NowInput): NowState {
   const hub = input.build === 'hub'
   const empty: Pick<NowState, 'keyLine' | 'scheduleNote' | 'also' | 'jobs' | 'modeLine'> = { keyLine: null, scheduleNote: null, also: [], jobs: [], modeLine: true }
+  if (!input.hasLogs && input.build === 'phone') {
+    return {
+      ...empty, kind: 'no-logs', big: 'No match summaries yet', modeLine: false, keyLine: keyLine(input),
+      tasks: [{ id: 'wait', title: 'Waiting for a laptop to publish this event', detail: "A laptop signed in to the team Drive publishes each match's findings a few seconds after its log is added.", done: false, button: null, action: null, primary: false }],
+    }
+  }
   if (!input.hasLogs) {
     const tasks: NowTask[] = [
       { id: 'open-log', title: "Open one match's log", detail: 'a log file you already have, or drop it anywhere on this page', done: false, button: 'Open a log…', action: { kind: 'open-log' }, primary: true },
@@ -227,11 +237,11 @@ export function nowState(input: NowInput): NowState {
       : s ? { id: 'still', title: 'Nothing open', detail: `${s.event}'s board has no open issue · in Session › Board`, done: true, button: 'Open the board', action: { kind: 'board' }, primary: false }
       // No board was built: that is not an all-clear. The library may hold an earlier event's logs.
       : input.earlierEvent ? { id: 'still', title: 'Event board not opened yet', detail: "Loads the newest event's logs · in Session › Board", done: false, button: 'Open the board', action: { kind: 'board', which: 'latest' }, primary: false }
-      : hub ? { id: 'still', title: 'No event board yet', detail: 'Logs from an event make one.', done: false, button: null, action: null, primary: false }
+      : hub || input.build === 'phone' ? { id: 'still', title: 'No event board yet', detail: input.build === 'phone' ? "A laptop publishes an event's matches." : 'Logs from an event make one.', done: false, button: null, action: null, primary: false }
       : { id: 'still', title: 'Event board not opened yet', detail: "Choose an event's logs · in Session › Board", done: false, button: 'Open the Session view', action: go('session'), primary: false }
     return {
       ...empty, kind: 'practice', big: `Practice · ${dateText(input.now)}`,
-      tasks: [
+      tasks: input.build === 'phone' ? [still] : [
         { id: 'practice-check', title: 'Start-of-practice check', detail: 'in Robot check · about 5 min, robot on', done: false, button: 'Open Robot check', action: go('foresight'), primary: true },
         runs, still,
       ],
@@ -259,7 +269,8 @@ export function nowState(input: NowInput): NowState {
   if (!board) {
     const n = input.libraryToday
     const hubNone = hub && n === 0
-    triage = {
+    if (input.build === 'phone') triage = { id: 'triage', title: 'No match summaries for this event yet', detail: 'They show here once a laptop publishes them.', done: false, button: null, action: null, primary: false }
+    else triage = {
       id: 'triage', title: "Open today's logs on the board",
       detail: hub ? (n ? `${plural(n, 'log')} from today in the library · opens the board: reds due before the next match` : 'No logs from today in the library yet: pull one first.') : "Choose today's logs in the Session view · in Session › Board",
       done: false, button: hubNone ? null : hub ? 'Open the board' : 'Open the Session view', action: hubNone ? null : hub ? { kind: 'board' } : go('session'), primary: false,
@@ -277,7 +288,7 @@ export function nowState(input: NowInput): NowState {
     kind, big,
     keyLine: kind === 'event' ? null : keyLine(input),
     scheduleNote: kind !== 'event' && input.have.team && input.have.key ? input.scheduleNote : null,
-    tasks: [pullTask(input, board, "Pull the last match's log"), triage, queue],
+    tasks: [pullTask(input, board, "Pull the last match's log"), triage, ...(input.build === 'phone' ? [] : [queue])],
     also: [alsoMatch], jobs: [], modeLine: true,
     nexusCredit: next?.nexus && input.nexusEvent ? `https://frc.nexus/en/event/${input.nexusEvent}` : null,
     nexusProblem: kind === 'event' && next && input.nexusProblem ? input.nexusProblem : null,

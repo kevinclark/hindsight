@@ -8,7 +8,8 @@
   import type { BoardIssue } from '../board/model.ts'
   import type { BoardRole } from '../triage/history.ts'
 
-  let { board, role, onBack, onOpen, onRead }: { board: Board; role: BoardRole | null; onBack: () => void; onOpen: (key: string) => void; onRead: () => void } = $props()
+  // `onRead` absent: read only (the phone), so no "I've read this".
+  let { board, role, onBack, onOpen, onRead }: { board: Board; role: BoardRole | null; onBack: () => void; onOpen: (key: string) => void; onRead?: () => void } = $props()
   const h = $derived(handoff(board))
   // Sections with nothing in them fold into one line.
   const empty = $derived([h.deferralsDue.length ? '' : 'deferrals due', h.tried.length ? '' : 'what was tried', h.pitLines.length ? '' : 'pit changes', h.newSince.length ? '' : 'new since the last handoff'].filter(Boolean))
@@ -53,6 +54,6 @@
 <div class="bigcard">
   {#if board.handoff}<p>Last read by <span class="chip">{board.handoff.role}</span> after {board.handoff.match || 'the first match'} ({clockText(board.handoff.when)}).</p>{/if}
   <p><b>Before you take over:</b> you have read the reds due before the next match, the deferrals due and what was tried.</p>
-  <button type="button" class="primary" disabled={!role} onclick={onRead}>I've read this{role ? ` (as ${role})` : ''}</button>
-  {#if !role}<span class="small muted"> Choose your role on the board first.</span>{/if}
+  {#if onRead}<button type="button" class="primary" disabled={!role} onclick={onRead}>I've read this{role ? ` (as ${role})` : ''}</button>
+  {#if !role}<span class="small muted"> Choose your role on the board first.</span>{/if}{/if}
 </div>

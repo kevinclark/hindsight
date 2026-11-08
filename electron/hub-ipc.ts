@@ -9,6 +9,10 @@ import { checkPath } from '../src/hub/adapter.ts'
 import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { driveFolderFiles, folderIdFrom } from '../src/hub/drive-source.ts'
 import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
+import { LiveShare, Lock, type ShareStatus } from '../src/hub/live-share.ts'
+import { isEventKey } from '../src/hub/event-file.ts'
+import { createHash } from 'node:crypto'
+import { SignInAgain } from '../src/hub/adapter.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
 import { checkForUpdate, selfUpdates } from '../src/hub/update.ts'
 import { JobRunner, type Work } from '../src/hub/jobs.ts'
@@ -47,12 +51,31 @@ export function registerHub(window: () => BrowserWindow | null): void {
   const job = <T>(name: string, work: Work<T>): Promise<T> =>
     jobs.run(name, work, (p) => send('hub:progress', p))
 
+  // Sharing this laptop's history and event files as they change (src/hub/live-share.ts). It starts only once a Drive request of
+  // this run got a token, never at launch (the Keychain is read only then), and stops when Drive asks for a new sign-in.
+  const ownFilesLock = new Lock()
+  let share: LiveShare | null = null
+  /** The token source every Drive adapter uses: a token handed out means a sign-in is in use; "sign in again" stops the sharing. */
+  const watchedToken = async () => {
+    const token = await driveToken()
+    return async (refresh?: boolean) => {
+      try {
+        const t = await token(refresh)
+        void sharing().then((s) => s.signInUsed())
+        return t
+      } catch (e) { if (e instanceof SignInAgain) share?.stop(true); throw e }
+    }
+  }
   async function teamStore(): Promise<DriveAdapter> {
     const folder = (await loadSettings()).teamFolder
     if (!folder) throw new Error('Choose the team folder first.')
-    return new DriveAdapter({ rootId: folder.id, token: await driveToken() })
+    return new DriveAdapter({ rootId: folder.id, token: await watchedToken() })
   }
-  const sourceStore = async () => new DriveAdapter({ rootId: (await loadSettings()).teamFolder?.id ?? 'root', token: await driveToken() })
+  const sourceStore = async () => new DriveAdapter({ rootId: (await loadSettings()).teamFolder?.id ?? 'root', token: await watchedToken() })
+  const sharing = async (): Promise<LiveShare> => (share ??= new LiveShare({
+    lib: await open(), team: teamStore, lock: ownFilesLock, md5: (text) => createHash('md5').update(text).digest('hex'),
+    onHistoryChanged: () => send('hub:historyChanged', null), onStatus: (s: ShareStatus) => send('hub:shareStatus', s),
+  }))
 
   async function runIngest(name: string, files: SourceFile[]): Promise<IngestReport> {
     const lib = await open()
@@ -182,7 +205,20 @@ export function registerHub(window: () => BrowserWindow | null): void {
   })
 
   ipcMain.handle('hub:history', async (): Promise<string> => (await open()).historyText())
-  ipcMain.handle('hub:appendHistory', async (_e, text: string): Promise<number> => (await open()).appendHistory(String(text)))
+  ipcMain.handle('hub:appendHistory', async (_e, text: string): Promise<number> => {
+    const n = await (await open()).appendHistory(String(text))
+    if (n > 0) (await sharing()).noteMark()
+    return n
+  })
+  /** The page's summaries of an event's logs, for the phone (src/hub/event-publish.ts): appended to this laptop's event file, then pushed. */
+  ipcMain.handle('hub:appendEvent', async (_e, key: string, text: string): Promise<number> => {
+    if (!isEventKey(key)) throw new Error('not an event key')
+    const n = await (await open()).appendEvent(key, String(text))
+    if (n > 0) (await sharing()).noteEvent(key)
+    return n
+  })
+  ipcMain.handle('hub:shareStatus', async (): Promise<ShareStatus> => (await sharing()).status())
+  ipcMain.handle('hub:shareNow', async () => (await sharing()).pullNow())
   ipcMain.handle('hub:readLog', async (_e, path: string) => {
     const lib = await open()
     if (!checkPath(path).startsWith('logs/')) throw new Error('not a log path')
@@ -197,8 +233,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const k = keeping(signedIn())
     return { configured: (await googleClient()) !== null, signedIn: signedIn(), teamFolder: s.teamFolder ?? null, keepsSignIn: k.keeps, keepWarning: k.why, lastSync: s.lastSync?.at ?? null }
   })
-  ipcMain.handle('hub:driveSignIn', () => signIn())
-  ipcMain.handle('hub:driveSignOut', () => signOut())
+  ipcMain.handle('hub:driveSignIn', async () => { await signIn(); (await sharing()).signInUsed() })
+  ipcMain.handle('hub:driveSignOut', async () => { share?.stop(); await signOut() })
   ipcMain.handle('hub:setGoogleClient', async (_e, id: string, secret: string) => { await saveSettings({ googleClient: id.trim() ? { id: id.trim(), secret: secret.trim() } : undefined }) })
   ipcMain.handle('hub:driveFolders', async (_e, parentId: string) => (await sourceStore()).folderChoices(String(parentId)))
   ipcMain.handle('hub:setTeamFolder', async (_e, text: string) => {
@@ -230,7 +266,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const lib = await open()
     const team = await teamStore()
     return job('Syncing', async (j, progress) => {
-      const report = await syncWithTeam(lib, team, { cancelled: () => j.cancelled, onProgress: progress })
+      const report = await syncWithTeam(lib, team, { cancelled: () => j.cancelled, onProgress: progress, lock: ownFilesLock })
+      if (report.history.length) send('hub:historyChanged', null)
       await saveSettings({ lastSync: { at: Date.now(), paths: report.remotePaths } })
       return report
     })

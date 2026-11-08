@@ -4,7 +4,7 @@
  * the ingest or the library.
  *
  * The interface has no delete and no overwrite: nothing built on it can remove a log. Paths are relative to the
- * library root, with "/" between parts: `logs/<school year>/<date>/<name>` `manifests/<machine id>.jsonl` and `history/<machine id>.jsonl`.
+ * library root, with "/" between parts: `logs/<school year>/<date>/<name>` `manifests/<machine id>.jsonl`, `history/<machine id>.jsonl` and `events/<event key>--<machine id>.jsonl`.
  */
 
 export interface FileInfo {
@@ -77,9 +77,12 @@ export function checkPath(path: string): string {
   return path
 }
 
-/** A file one machine alone appends to: its manifest, or its triage history (`history/<machine id>.jsonl`). */
+/**
+ * A file one machine alone appends to: its manifest, its triage history (`history/<machine id>.jsonl`), or its summaries of
+ * an event's logs for the phone (`events/<TBA event key>--<machine id>.jsonl`, src/hub/event-file.ts).
+ */
 export function isOwnAppendPath(path: string): boolean {
-  return /^(manifests|history)\/[A-Za-z0-9_-]+\.jsonl$/.test(path)
+  return /^(manifests|history)\/[A-Za-z0-9_-]+\.jsonl$/.test(path) || /^events\/\d{4}[a-z0-9]{1,16}--[A-Za-z0-9_-]+\.jsonl$/.test(path)
 }
 
 /** Read a whole (small) file as text, in chunks. */

@@ -80,6 +80,8 @@ export interface SyncOptions {
   now?: () => number
   /** Least gap between manifest publishes during uploads. */
   publishEveryMs?: number
+  /** Taken around the history step: the same lock the push without a Sync takes (src/hub/live-share.ts), so they never interleave. */
+  lock?: { run<T>(work: () => Promise<T>): Promise<T> }
 }
 
 export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, options: SyncOptions = {}): Promise<SyncReport> {
@@ -104,7 +106,7 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   await lib.reload()
 
   // 1b. The triage history, both ways. It does not depend on the logs, so a problem with a manifest never holds it back.
-  await syncHistory(lib, team, report)
+  await (options.lock ? options.lock.run(() => syncHistory(lib, team, report)) : syncHistory(lib, team, report))
 
   // 2. The remote manifest of this machine must hold nothing this copy lacks (another install with the same machine id).
   const remoteOwn = (await readText(team, own)) ?? '' // the Drive adapter answers from memory when its md5 is unchanged

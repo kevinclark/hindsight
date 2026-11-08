@@ -53,7 +53,10 @@
   // `marks`: the team's history (known, fixed and "not a real problem" marks). `findLogs` (desktop app): the library's
   // copies of logs by name, for summaries restored without their file. `linksFor` (desktop app): the library's code links for
   // logs by name; `onDraft` opens the profile builder on one.
-  let { marks, history = [], onBoard, onOpen, findLogs, linksFor, onDraft, hasSession = $bindable(false), sessionsOut = $bindable([]) }: { marks: Triage; history?: HistoryEvent[]; onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; linksFor?: (names: string[]) => Promise<LibraryLink[]>; onDraft?: (link: LibraryLink) => void; hasSession?: boolean; sessionsOut?: Session[] } = $props()
+  // `readOnly` (the phone): summaries come from the laptops' event files (`showSummaries`), never from logs; no chooser, no
+  // re-read, no robot choice, and the board shows every mark but changes none. `onOpenSummary`: a match opens from its summary.
+  // `summariesOut`: the logs' own summaries read by this Hindsight (not an older one's), for what a laptop publishes.
+  let { marks, history = [], onBoard, onOpen, findLogs, linksFor, onDraft, readOnly = false, onOpenSummary, hasSession = $bindable(false), sessionsOut = $bindable([]), summariesOut = $bindable([]) }: { marks: Triage; history?: HistoryEvent[]; onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; linksFor?: (names: string[]) => Promise<LibraryLink[]>; onDraft?: (link: LibraryLink) => void; readOnly?: boolean; onOpenSummary?: (m: MatchSummary) => void; hasSession?: boolean; sessionsOut?: Session[]; summariesOut?: MatchSummary[] } = $props()
   const issues = $derived(marks.issues)
 
   let summaries = $state<MatchSummary[]>([])
@@ -82,7 +85,7 @@
   // Saved summaries too old to draw (another shape): only counted.
   let hiddenOld = $state<Set<string>>(new Set())
   // Restoring finishes before any load reads the cache, so a folder chosen right after a reload reuses it.
-  const ready = loadCached().then((saved) => {
+  const ready = untrack(() => readOnly) ? Promise.resolve() : loadCached().then((saved) => {
     // One per file name (the newest), and only those read with the robot picked for that log now.
     const newest = new Map<string, (typeof saved.current)[number]>()
     for (const c of [...saved.current, ...saved.stale]) {
@@ -156,7 +159,7 @@
 
   // In event mode the Session view opens on the issue board (ADR 4); the findings, grid and trends are one click away.
   let boardTab = $state<'board' | 'findings'>('board')
-  const eventMode = $derived(!!session && modeOf(session) === 'event' && !!onBoard)
+  const eventMode = $derived(!!session && modeOf(session) === 'event' && (!!onBoard || readOnly))
   const showBoard = $derived(eventMode && boardTab === 'board')
   // The board leads the first screen: with it showing, the chooser, saved-copies line, event names and session buttons fold to one line that opens them.
   let chromeOpen = $state(false)
@@ -283,6 +286,17 @@
     const gen = loadGen
     queue = queue.then(() => loadNow(picked, gen, opts)).catch((error) => { problems = [...problems, String(error)] })
     return queue
+  }
+
+  /**
+   * The phone: show these summaries (one event, from the laptops' event files) in place of what is on the page. `olderRead`: by
+   * file name, the Hindsight version that read a log, when older than this one (shown as read with an older Hindsight).
+   */
+  export function showSummaries(list: MatchSummary[], olderRead: Record<string, string> = {}): void {
+    collected.length = 0
+    collected.push(...list)
+    summaries = [...collected]
+    stale = Object.fromEntries(Object.entries(olderRead).map(([name, version]) => [name, { version, savedAt: '' }]))
   }
 
   /** From the Library: read these logs into the session, as if chosen with "Choose logs…", and show the session that holds them. */
@@ -451,6 +465,7 @@
 
   /** Open a match in Match review. A summary restored after a reload has no file: the library's copy, else ask for it again. */
   async function open(m: MatchSummary) {
+    if (onOpenSummary) { onOpenSummary(m); return }
     const fs = await filesFor(m.pieces ?? [m.fileName])
     if (fs.length) onOpen(fs)
     else problems = [`To open ${m.fileName} in Match review, choose it again ("Choose logs…"): between visits this page keeps each log's summary, not the log.`]
@@ -489,6 +504,7 @@
   $effect(() => { hasSession = !!session })
   // Bound out to App, which finds the open match's session to fold the findings that fire in every match.
   $effect(() => { sessionsOut = sessions })
+  $effect(() => { summariesOut = summaries.filter((m) => !stale[m.fileName]) })
   // For scripts/report.ts --session: the same builders the buttons use.
   $effect(() => {
     const api = (window as unknown as { hindsight?: Record<string, unknown> }).hindsight
@@ -550,7 +566,10 @@
 {/snippet}
 
 <div class:screen-only={!!session} data-session-view>
-{#if folded && session}
+{#if readOnly}
+  {#if staleText}<p class="note warn" data-stale-note>{staleText}</p>{/if}
+  {#if lookupProblem}<p class="note warn">{lookupProblem}</p>{/if}
+{:else if folded && session}
   <p class="oneline" data-folded>{session.matches.length + (session.pitRuns?.length ?? 0)} logs · event {session.label.replace(/^Event\s+/, '')} · <button class="link" onclick={() => (chromeOpen = true)}>Change logs…</button></p>
 {:else}
 {#if eventMode && chromeOpen}<p class="oneline"><button class="link" onclick={() => (chromeOpen = false)}>Fold the log chooser away</button></p>{/if}
@@ -601,12 +620,12 @@
 
 {#if session}
   {#if !folded || !showBoard}<section class="head">
-    <h2>{session.label} <button class="link" onclick={() => rename(session)}>rename</button></h2>
-    <span class="actions">
+    <h2>{session.label}{#if !readOnly}{' '}<button class="link" onclick={() => rename(session)}>rename</button>{/if}</h2>
+    {#if !readOnly}<span class="actions">
       <button class="button" disabled={loading} class:prominent={sessionIsStale} onclick={() => readAgain(session)} title={`Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, ${findLogs ? 'it reads the library\'s copies' : 'it asks for the folder'}.`}>Read again</button>
       <button class="button" onclick={download}>Download for Claude</button>
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
-    </span>
+    </span>{/if}
   </section>{/if}
   <ModeLine text={modeLine(session)} mode={modeOf(session)} byHand={!!session.modeByHand} onChange={(m) => chooseMode(session.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />
   {#if eventMode}
@@ -616,7 +635,7 @@
     </div>
   {/if}
   {#if showBoard}
-    <BoardView session={shown!} {history} {marks} {schedule} {scheduleNote} profiles={[...PROFILES, ...stored]} onWrite={onBoard!} bind:printOut={printQueue} />
+    <BoardView session={shown!} {history} {marks} {schedule} {scheduleNote} profiles={[...PROFILES, ...stored]} onWrite={readOnly ? undefined : onBoard} bind:printOut={printQueue} />
   {:else}
   {#if practice}<p class="note" data-runs-summary>{runsLine(runsSummary(session.matches))} A practice day is judged by run, not by match: each log counts once in the grid and the trends, however many runs it holds.</p>{/if}
   {#if session.event}<p class="note" data-event-note>The Blue Alliance says this was {session.event.name}{#if session.event.by === 'date'}{' '}<strong>(guess)</strong>{/if} ({session.event.key}), {session.event.start} to {session.event.end}: {session.event.matched} of the {session.event.of} qualification numbers in these logs are on the team's list there{session.event.by === 'date' ? ' (several events held as many; the robot clock chose, so this is a guess)' : ''}.{session.event.clockOffsetDays ? ` The robot clock is ${clockOffsetText(session.event.clockOffsetDays).replace('robot clock ', '')}.` : ''} {session.event.fromCache ? 'From a saved copy' : 'Fetched'} {new Date(session.event.fetchedAt).toLocaleString()}.</p>{/if}
@@ -642,10 +661,10 @@
   {#if onDraft}{#each offers as { link: l, logs, total, refs } (l.code.repo)}
     <p class="note">This robot's code is <code>{l.code.repo}</code> {l.code.linkedBy === 'sha' && l.code.sha ? `at ${l.code.sha.slice(0, 7)}` : `(named by the log; its commit isn't on GitHub, so the branch is used)`}{refs > 1 ? ` (${logs} of these ${total} logs ran it; ${refs} commits in all)` : ''}. <button class="button" onclick={() => onDraft(l)}>Draft a profile from it</button></p>
   {/each}{/if}
-  <p class="note"><label>Robot for this session: <select onchange={(e) => setRobot(session, (e.currentTarget as HTMLSelectElement).value)}>
+  {#if !readOnly}<p class="note"><label>Robot for this session: <select onchange={(e) => setRobot(session, (e.currentTarget as HTMLSelectElement).value)}>
     <option value="auto" selected={!chosenId}>automatic (from each log)</option>
     <RobotOptions groups={robotChoices(PROFILES, stored, teamNow(), namedRobots)} selectedId={chosenId} />
-  </select></label></p>
+  </select></label></p>{/if}
   {#each notes as n (n)}<p class="note warn">{n}</p>{/each}
   {#if crashedNote(session)}<p class="note warn">{crashedNote(session)}</p>{/if}
   {#each misfitNotes(session) as n (n.lead)}<p class="note warn"><strong>{n.lead}</strong>: {n.rest.replace(/\.$/, ', or choose one above.')}</p>{/each}

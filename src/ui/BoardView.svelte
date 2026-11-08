@@ -31,7 +31,8 @@
   type Build = (device: string, history: HistoryEvent[]) => HistoryEvent[]
   let { session, history, marks, schedule, scheduleNote, profiles, onWrite, printOut = $bindable(null) }: {
     session: Session; history: HistoryEvent[]; marks: Triage; schedule: ScheduledMatch[] | null; scheduleNote: string | null; profiles: RobotProfile[]
-    onWrite: (build: Build) => void
+    /** Absent: read only (the phone). No role picker, no row actions, no notes, no cut-off or pit-line controls: hidden, not disabled. */
+    onWrite?: (build: Build) => void
     /** The queue sheet while it is open (SessionView prints it in place of the session report). */
     printOut?: { sheet: QueueSheet; title: string } | null
   } = $props()
@@ -66,7 +67,7 @@
 
   function write(make: (who: Who, history: HistoryEvent[]) => HistoryEvent[]) {
     const r = role
-    if (!r) return
+    if (!r || !onWrite) return
     onWrite((device, h) => make({ device, role: r }, h))
   }
   const change = (i: BoardIssue, changes: Change[]) => write((who, h) => boardLines(h, who, new Date(), i, changes, atLatest(session)))
@@ -103,14 +104,14 @@
 </script>
 
 <div class="board" data-board>
-  <p class="whoami">
+  {#if onWrite}<p class="whoami">
     <label>You are on: <select aria-label="Your role" title="Your role: kept on this laptop; changes are recorded under it, never a name" value={role ?? ''} onchange={(e) => chooseRole((e.currentTarget as HTMLSelectElement).value)}>
       {#if !role}<option value="" disabled>choose…</option>{/if}
       {#each ROLES as r (r)}<option value={r}>{r}</option>{/each}
     </select></label>
     {#if !role}<span class="note">Choose it to make changes.</span>{/if}
     <button type="button" class="help" aria-label="Your role is kept on this laptop. Changes are recorded under the role, never a name." title="Your role is kept on this laptop. Changes are recorded under the role, never a name.">?</button>
-  </p>
+  </p>{:else}<p class="whoami" data-read-only>Read only: marks and changes are made on a laptop.</p>{/if}
 
   {#if view === 'board'}
     <p class="gate" data-gate><b>{board.strip.gate}</b> {unit(board.strip.gate, 'red', 'reds')} {board.strip.over ? 'open · the event is over' : `due before ${next}`}</p>
@@ -122,22 +123,22 @@
       <span><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all{redsNote}</span>
       {#if board.strip.nextGap}<span>Next gap: <strong>{board.strip.nextGap}</strong></span>{/if}
       <details class="cutoff" data-cutoff>
-      <summary>{#if board.cutOff.passed}<span class="freeze" data-freeze>{BOARD_BANNER}</span>{' '}<span class="muted">· cut-off {board.cutOff.words}, passed · change</span>{:else}Playoff cut-off: {board.cutOff.words} <span class="muted">· change</span>{/if}</summary>
+      <summary>{#if board.cutOff.passed}<span class="freeze" data-freeze>{BOARD_BANNER}</span>{' '}<span class="muted">· cut-off {board.cutOff.words}, passed{onWrite ? ' · change' : ''}</span>{:else}Playoff cut-off: {board.cutOff.words}{#if onWrite}{' '}<span class="muted">· change</span>{/if}{/if}</summary>
       <p class="small muted">From the cut-off, Hindsight analyses and flags code changes; fixes are offered for reds only. Nothing is blocked. {board.cutOff.passed ? 'Passed' : 'Not passed'}: {board.cutOff.why}.</p>
-      <label>Set it to
+      {#if onWrite}<label>Set it to
         <select aria-label="Playoff cut-off" disabled={!role} value={cutOffValue} onchange={(e) => note('cut-off', cutOffText(readCutOff((e.currentTarget as HTMLSelectElement).value)))}>
           <option value="alliance-selection">Alliance selection (default)</option>
           {#each cutOffChoices as q (q)}<option value={q}>After {q}</option>{/each}
           <option value="off">Off</option>
         </select></label>
-      {#if !role}<span class="small muted">Choose your role to change it.</span>{/if}
+      {#if !role}<span class="small muted">Choose your role to change it.</span>{/if}{/if}
     </details>
     </div>
-    {#if board.noSchedule}<NextMatchFields {session} {scheduleNote} />{/if}
+    {#if board.noSchedule && onWrite}<NextMatchFields {session} {scheduleNote} />{/if}
     <div class="toolbar">
-      <button type="button" class="primary" onclick={() => (view = 'queue')}>Queue sheet (print)</button>
+      {#if onWrite}<button type="button" class="primary" onclick={() => (view = 'queue')}>Queue sheet (print)</button>{/if}
       <button type="button" onclick={() => (view = 'handoff')}>Handoff{board.handoff ? '' : ' (not read yet)'}</button>
-      <button type="button" onclick={() => (view = 'missed')}>Missed by Hindsight</button>
+      {#if onWrite}<button type="button" onclick={() => (view = 'missed')}>Missed by Hindsight</button>{/if}
       <span class="grow"></span>
       <span class="small muted">View:</span>
       <span class="seg" role="group" aria-label="Group rows">
@@ -152,19 +153,19 @@
     {#if group === 'urgency'}
       {#each SECT as [k, label] (k)}
         {@const rs = board.visible.filter((i) => classOf(i) === k)}
-        {#if rs.length}<div class="section-head">{label} <span class="count">({rs.length})</span></div><ul class="rows">{#each rs as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} onHolds={board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
+        {#if rs.length}<div class="section-head">{label} <span class="count">({rs.length})</span></div><ul class="rows">{#each rs as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={onWrite ? grey : undefined} onHolds={onWrite && board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
       {/each}
     {:else}
-      {#if pinned.length}<div class="section-head">Due before {next} <span class="count">({pinned.length})</span></div><ul class="rows">{#each pinned as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} onHolds={board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
+      {#if pinned.length}<div class="section-head">Due before {next} <span class="count">({pinned.length})</span></div><ul class="rows">{#each pinned as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={onWrite ? grey : undefined} onHolds={onWrite && board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
       {#each mechs as g (g)}
         {@const rs = board.visible.filter((i) => i.mechanism === g && !pinned.includes(i))}
-        {#if rs.length}<div class="section-head">{g} <span class="count">({rs.length})</span></div><ul class="rows">{#each rs as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} onHolds={board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
+        {#if rs.length}<div class="section-head">{g} <span class="count">({rs.length})</span></div><ul class="rows">{#each rs as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={onWrite ? grey : undefined} onHolds={onWrite && board.cutOff.passed ? holds : undefined} />{/each}</ul>{/if}
       {/each}
     {/if}
     {#if board.below.length}
       <details class="below">
         <summary>{board.below.length} more below the line (cap of {RED_CAP} reds: {belowParts}) · show</summary>
-        <ul class="rows">{#each board.below as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={grey} onHolds={board.cutOff.passed ? holds : undefined} />{/each}</ul>
+        <ul class="rows">{#each board.below as i (i.key)}<BoardRow issue={i} onOpen={open} {role} onGrey={onWrite ? grey : undefined} onHolds={onWrite && board.cutOff.passed ? holds : undefined} />{/each}</ul>
       </details>
     {/if}
     {#if board.closed.length}
@@ -175,24 +176,25 @@
     {/if}
 
     <h4>What we changed in the pit since the last match{board.tl.last ? ` (after ${board.tl.last.label})` : ''}</h4>
+    {#if !onWrite}<p data-pit-line>{pitNow || 'Nothing written yet.'}</p>{:else}
     <div class="field">
       <label for="board-pit">One line, shown on the handoff</label>
       <input id="board-pit" type="text" bind:value={pitText} onkeydown={(e) => { if (e.key === 'Enter' && role && pitText.trim() !== pitNow) note('pit-change', pitText.trim()) }} />
     </div>
-    <button type="button" disabled={!role || !board.tl.last || pitText.trim() === pitNow} onclick={() => note('pit-change', pitText.trim())}>Save the pit line{role ? ` as ${role}` : ''}</button>
+    <button type="button" disabled={!role || !board.tl.last || pitText.trim() === pitNow} onclick={() => note('pit-change', pitText.trim())}>Save the pit line{role ? ` as ${role}` : ''}</button>{/if}
 
     {#if scheduleNote && !board.noSchedule}<p class="note">{scheduleNote}</p>{/if}
     <BoardRates {rates} />
   {:else if view === 'issue' && issue}
-    <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} onBack={back} onChange={(c) => change(issue, c)} onDebug={() => (view = 'debug')} />
-  {:else if view === 'debug' && issue}
+    <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} onBack={back} onChange={onWrite ? (c) => change(issue, c) : undefined} onDebug={onWrite ? () => (view = 'debug') : undefined} />
+  {:else if view === 'debug' && issue && onWrite}
     <DebugWorkspace title={rowTitle(issue)} rule={issue.rule} meaning={makerOf(issue.rule)?.meaning ?? issue.title} latest={issue.title} causes={makerOf(issue.rule)?.causes ?? []} likely={issue.latest?.likely} ruledOut={issue.latest?.ruledOut} evidence={issue.latest?.evidence}
       nextStep={issue.nextStep} marks={issue.causeMarks} {role} backLabel="Issue" onBack={() => (view = 'issue')} onChange={(c) => change(issue, c)} />
   {:else if view === 'handoff'}
-    <BoardHandoff {board} {role} onBack={back} onOpen={open} onRead={() => note('handoff-read', '')} />
-  {:else if view === 'missed'}
+    <BoardHandoff {board} {role} onBack={back} onOpen={open} onRead={onWrite ? () => note('handoff-read', '') : undefined} />
+  {:else if view === 'missed' && onWrite}
     <BoardMissed {board} {role} onBack={back} onFile={(t) => note('missed', t)} />
-  {:else if view === 'queue'}
+  {:else if view === 'queue' && onWrite}
     <BoardQueue {sheet} {role} onBack={back} onTick={(i, on) => change(i, [{ op: on ? 'checked' : 'unchecked', value: sheet.forMatch }])} />
   {:else}
     <p>No such issue. <button type="button" class="link" onclick={back}>Back to the board</button></p>
@@ -271,6 +273,17 @@
   .board :global(.hdr-rate) { flex-basis: 100%; }
   .board :global(.cols) { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 0 1.5rem; }
   @media (max-width: 860px) { .board :global(.cols) { grid-template-columns: 1fr; } .board :global(.row) { grid-template-columns: 4.6rem 1fr; } }
+  /* A phone (375 px): the priority and the status share the first line, the issue gets the full width under them, then the owner. */
+  @media (max-width: 600px) {
+    .board :global(.row) { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: 'sev status' 'main main' 'owner owner'; padding: 0.55rem 0.4rem; }
+    .board :global(.row .sev) { grid-area: sev; }
+    .board :global(.row .sev .small) { display: inline; margin-left: 0.35rem; }
+    .board :global(.row .status) { grid-area: status; justify-self: end; text-align: right; }
+    .board :global(.row .main) { grid-area: main; }
+    .board :global(.row .owner) { grid-area: owner; }
+    .gate { font-size: 1.3rem; }
+    .gate b { font-size: 1.6rem; }
+  }
   .board :global(.panel) { border: 1px solid var(--border); border-radius: 6px; padding: 0.1rem 0.9rem 0.8rem; margin: 0.8rem 0; }
   .board :global(table) { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
   .board :global(th), .board :global(td) { text-align: left; padding: 0.3rem 0.5rem 0.3rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }

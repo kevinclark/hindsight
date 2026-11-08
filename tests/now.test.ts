@@ -334,3 +334,19 @@ describe('Now with Nexus times (ADR 12)', () => {
     expect(nexusNow({ queue: null, start: null, status: null }, { schedule: SCHEDULE, nexusEvent: null }).nexusProblem).toBeNull()
   })
 })
+
+describe('Now on the phone (read only: the laptops publish the matches)', () => {
+  it('an event day: the same next match and triage, the pull task waits for a laptop with no button, and no queue check', () => {
+    const st = eventNow({ build: 'phone', libraryToday: null })
+    expect(st.big).toBe(`Next match: Q5 at ${at(min(255))} · in 55 min`)
+    expect(st.tasks.map((t) => t.id)).toEqual(['pull', 'triage'])
+    expect(task(st, 'pull')).toMatchObject({ title: "Q4's log: not in yet", button: null, action: null })
+    expect(task(st, 'triage')).toMatchObject({ button: 'Open the board', action: { kind: 'board' } })
+  })
+  it('nothing published yet: says so, with nothing to press', () => {
+    const st = nowState({ build: 'phone', mode: 'event', hasLogs: false, libraryToday: null, event: null, have: { team: true, key: false }, scheduleNote: null, still: null, now: min(0) })
+    expect(st.big).toBe('No match summaries yet')
+    expect(st.tasks.every((t) => t.button === null && t.action === null)).toBe(true)
+    expect(st.keyLine).toMatchObject({ lead: 'Add The Blue Alliance read key in', link: { text: 'the Session view' } })
+  })
+})
