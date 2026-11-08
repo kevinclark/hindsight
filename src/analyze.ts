@@ -8,9 +8,10 @@ import { openWpilog } from './readers/wpilog.ts'
 import { readDslog, type DslogFile } from './readers/dslog.ts'
 import { readDsevents, type DseventsFile } from './readers/dsevents.ts'
 import { parseHistory, type HistoryEvent } from './triage/history.ts'
-import { powerMapAt } from './power/power-map.ts'
+import { powerMapAt, powerMapStamp } from './power/power-map.ts'
 import { attachDsevents, attachDslog, buildMatch, dseventsOverlap, dslogOverlap, type Match } from './match/match.ts'
 import { CONSOLIDATORS, RULES, runRules, type Report } from './rules/index.ts'
+import { rerunRules } from './rules/run.ts'
 import { PROFILES, profileId } from './profiles/index.ts'
 import { chooseProfile } from './profiles/choose.ts'
 import type { RobotProfile } from './profiles/types.ts'
@@ -123,15 +124,42 @@ function runAll({ analyses, problems, history }: AnalyzeResult, given: HistoryEv
 /** Robot clocks before this are unset (as MatchView.wallClock reads them). */
 const EARLIEST_PLAUSIBLE_EPOCH = Date.UTC(2023, 0, 1) / 1000
 
+/** The instant a match's power map is looked up at: its wall-clock start when the robot's clock was set, else "latest" (a far-off instant). */
+export function powerMapInstant(match: Match): string {
+  const start = match.matchStart ?? match.runs[0]?.start ?? match.logStart
+  const epoch = match.epochOffset === null ? null : match.epochOffset + start
+  return epoch !== null && epoch >= EARLIEST_PLAUSIBLE_EPOCH ? new Date(epoch * 1000).toISOString() : LATEST
+}
+const LATEST = '9999-12-31T23:59:59.999Z'
+
 /**
  * The power map in effect when the match was played: at its wall-clock start when the robot's clock was set, else (no
  * clock to place it) the robot's latest map.
  */
 function powerMapFor(match: Match, history: HistoryEvent[]): PowerMap | null {
-  const start = match.matchStart ?? match.runs[0]?.start ?? match.logStart
-  const epoch = match.epochOffset === null ? null : match.epochOffset + start
-  const at = epoch !== null && epoch >= EARLIEST_PLAUSIBLE_EPOCH ? new Date(epoch * 1000).toISOString() : '9999-12-31T23:59:59.999Z'
-  return powerMapAt(history, profileId(match.profile), at)
+  return powerMapAt(history, profileId(match.profile), powerMapInstant(match))
+}
+
+/** The rules that read the power map, and nothing else does. */
+const BREAKER_RULES = RULES.filter((r) => r.id === 'power/main-breaker-margin' || r.id === 'power/pdp-breaker-margin')
+
+/**
+ * The open analyses after the team's history changed: each match whose effective power map is no longer the one it was
+ * judged with has the two breaker rules run again on the same match (no re-parse). Null when no map changed, so a
+ * caller keeps what it has; otherwise a new list in which unchanged analyses are the same objects.
+ */
+export function withPowerMaps(analyses: Analysis[], history: HistoryEvent[]): Analysis[] | null {
+  let changed = false
+  const next = analyses.map((a) => {
+    const map = powerMapFor(a.match, history)
+    if (powerMapStamp(map) === powerMapStamp(a.match.powerMap)) return a
+    changed = true
+    a.match.powerMap = map // in place: other matches name this one in `others`
+    const started = performance.now()
+    const report = rerunRules(a.match, a.report, BREAKER_RULES, RULES)
+    return { ...a, report, timing: { ...a.timing, rulesMs: a.timing.rulesMs + performance.now() - started } }
+  })
+  return changed ? next : null
 }
 
 /** Shorthand for scripts and tests: the analyses only. */

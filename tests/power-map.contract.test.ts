@@ -40,6 +40,15 @@ describe('[PM-01] a well-formed line round-trips', () => {
   })
 })
 
+test('[PM-10] a slot listed twice (two feeds on one slot: the screen flags it, R621) is kept as a map line', () => {
+  const twice = map({ boards: [{ id: 'pdp', kind: 'ctre-pdp-2', slots: [
+    { slot: 1, breaker: null, feeds: { kind: 'motor', name: 'A' } }, { slot: 1, breaker: null, feeds: { kind: 'motor', name: 'B' } },
+  ] }] })
+  const { events } = parseHistory(line(twice))
+  expect(events[0].type).toBe('power-map')
+  expect(serializeHistory(events)).toBe(line(twice) + '\n')
+})
+
 describe('[PM-02] a line that fails a check is kept, written back unchanged, never half-read', () => {
   const m = map()
   const slot0 = (s: object) => ({ ...m, boards: [{ id: 'pdp', kind: 'ctre-pdp-2', slots: [s] }] })
@@ -55,7 +64,6 @@ describe('[PM-02] a line that fails a check is kept, written back unchanged, nev
     ['boards not a list', { ...m, boards: 'none' }],
     ['PDP slot 24', slot0({ slot: 24, breaker: null, feeds: null })],
     ['PDP slot -1', slot0({ slot: -1, breaker: null, feeds: null })],
-    ['slot listed twice', { ...m, boards: [{ id: 'pdp', kind: 'ctre-pdp-2', slots: [{ slot: 1, breaker: null, feeds: null }, { slot: 1, breaker: null, feeds: null }] }] }],
     ['MPM slot 6', { ...m, boards: [{ id: 'm', kind: 'rev-mpm', slots: [{ slot: 6, breaker: null, feeds: null }] }] }],
     ['ATM breaker on the PDP', slot0({ slot: 1, breaker: { family: 'atm', ratingA: 10 }, feeds: null })],
     ['REV ATO breaker on an MPM', { ...m, boards: [{ id: 'm', kind: 'rev-mpm', slots: [{ slot: 1, breaker: { family: 'rev-ato', ratingA: 10 }, feeds: null }] }] }],

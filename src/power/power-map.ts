@@ -70,10 +70,8 @@ function validBoard(b: any): boolean {
   if (typeof b !== 'object' || b === null || typeof b.id !== 'string' || b.id === '' || !(b.kind in SLOTS) || !Array.isArray(b.slots)) return false
   if (b.fedFrom !== undefined && b.fedFrom !== null && !(typeof b.fedFrom === 'object' && typeof b.fedFrom.board === 'string' && isInt(b.fedFrom.slot, 0, 23))) return false
   const families = b.kind === 'rev-mpm' ? ['atm'] : PDP_FAMILIES
-  const seen = new Set<number>()
   for (const s of b.slots) {
-    if (typeof s !== 'object' || s === null || !isInt(s.slot, 0, SLOTS[b.kind as MapBoard['kind']] - 1) || seen.has(s.slot)) return false
-    seen.add(s.slot)
+    if (typeof s !== 'object' || s === null || !isInt(s.slot, 0, SLOTS[b.kind as MapBoard['kind']] - 1)) return false
     if (!validBreaker(s.breaker, families) || !validFeed(s.feeds)) return false
   }
   return true
@@ -149,4 +147,9 @@ function feedsMotor(feed: Extract<Feed, { kind: 'motor' }>, name: string, canId?
 /** The main breaker: the map's, or Bussmann (both Bussmann parts share one curve) with `source: 'assumed'`. */
 export function mainBreakerFor(map: PowerMap | null): { family: MainFamily; source: 'map' | 'assumed' } {
   return map?.main ? { family: map.main, source: 'map' } : { family: 'bussmann', source: 'assumed' }
+}
+
+/** A short identity for a map line, to tell whether the one in effect changed: where it took effect, who wrote it and when. 'none' for no map. */
+export function powerMapStamp(map: PowerMap | null): string {
+  return map ? `${map.from}|${map.by.device}|${map.seq}|${map.when}` : 'none'
 }

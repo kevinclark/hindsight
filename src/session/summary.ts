@@ -3,7 +3,9 @@
  * per match for trends. The raw log is dropped after this, so hundreds of logs fit in memory.
  */
 
-import { analyzeFiles, analyzeFilesWithCode, type AnalyzeResult, type InputFile } from '../analyze.ts'
+import { analyzeFiles, analyzeFilesWithCode, powerMapInstant, type AnalyzeResult, type InputFile } from '../analyze.ts'
+import { powerMapAt, powerMapStamp } from '../power/power-map.ts'
+import type { HistoryEvent } from '../triage/history.ts'
 import type { CodeFolder } from '../code/limit-lines.ts'
 import { has, num, values, type Match } from '../match/match.ts'
 import { heldAt } from '../match/series.ts'
@@ -63,6 +65,8 @@ export interface MatchSummary {
   codeFolder?: string | null
   fileSize: number
   /** Wall-clock start (ms since 1970) and where it came from. Null when neither the robot clock nor the file name says. */
+  /** The power map this log's breaker findings were judged with: the instant it was looked up at, and the map line's stamp ('none': no map). Absent in copies saved before it was kept (read as 'none'). */
+  powerMap?: { at: string; stamp: string }
   playedAt: number | null
   playedAtSource: 'robot clock' | 'file name' | 'unknown'
   /** Why the date came from somewhere other than the robot clock, for the student to see. */
@@ -112,9 +116,9 @@ export interface MatchMetrics {
 }
 
 /** Analyse one log and keep only the summary. `profile`: the robot the student chose for it, if any. */
-export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?: RobotProfile[]): MatchSummary | null {
+export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?: RobotProfile[], history?: HistoryEvent[]): MatchSummary | null {
   // As the student's choice (checked for fit), not as a pinned profile.
-  return summaryOf(analyzeFiles([file], profile ? () => profile : undefined, profiles), file)
+  return summaryOf(analyzeFiles([file], profile ? () => profile : undefined, profiles, history), file)
 }
 
 /**
@@ -122,8 +126,8 @@ export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?:
  * couldn't answer (offline, its hour used up) isn't stamped with the code's name, so it is read again next time rather
  * than reused.
  */
-export async function summarizeLogWithCode(file: InputFile, code: CodeFolder | null, codeName: string | null, profile?: RobotProfile, profiles?: RobotProfile[]): Promise<MatchSummary | null> {
-  const result = await analyzeFilesWithCode([file], code, profile ? () => profile : undefined, profiles)
+export async function summarizeLogWithCode(file: InputFile, code: CodeFolder | null, codeName: string | null, profile?: RobotProfile, profiles?: RobotProfile[], history?: HistoryEvent[]): Promise<MatchSummary | null> {
+  const result = await analyzeFilesWithCode([file], code, profile ? () => profile : undefined, profiles, history)
   const s = summaryOf(result, file)
   const askAgain = [...(result.analyses[0]?.match.limitLines?.values() ?? [])].some((a) => a.verdict === 'unknown' && a.tryAgain)
   if (s && code && !askAgain) s.codeFolder = codeName
@@ -161,6 +165,7 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
   const atStart = ids && match.matchStart !== null ? heldAt(ids, match.matchStart) : undefined
   return {
     fileName: match.fileName, fileSize, ...when,
+    powerMap: { at: powerMapInstant(match), stamp: powerMapStamp(match.powerMap) },
     event: match.event, matchLabel: match.matchLabel, matchType: matchTypeOf(match), onField: match.fms,
     batteryId: atStart || null,
     build: { sha: match.build.sha.slice(0, 7), branch: match.build.branch, uncommitted: isUncommitted(match.build.dirty) },
@@ -313,4 +318,13 @@ function visionOutliers(match: Match): number | null {
     if (n) worst = Math.max(worst ?? 0, (100 * far) / n)
   }
   return worst
+}
+
+/**
+ * Whether the power map in effect for this summary's match is no longer the one its breaker findings were judged with
+ * (the pit changed the breakers since): the summary holds findings, not the log, so it has to be read again.
+ */
+export function summaryMapStale(s: MatchSummary, history: readonly HistoryEvent[]): boolean {
+  const now = powerMapStamp(powerMapAt(history, s.robot.profileId, s.powerMap?.at ?? '9999-12-31T23:59:59.999Z'))
+  return now !== (s.powerMap?.stamp ?? 'none')
 }

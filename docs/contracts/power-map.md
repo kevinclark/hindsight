@@ -33,7 +33,7 @@ Suite: `npx vitest run tests/power-map.contract.test.ts --reporter=junit --outpu
 - **PM-02** A line that fails a check becomes an `OpaqueEvent` (kept, written back unchanged), never dropped and never
   half-read: a `v` other than 1, no robot, a `from` that is not a time, a main breaker other than `bussmann`,
   `optifuse` or `null`, a usual breaker of a family or rating that is not valid, a board of an unknown kind, a slot
-  out of its board's range or listed twice, a breaker family that does not fit its board (`atm` only on an MPM), a feed
+  out of its board's range, a breaker family that does not fit its board (`atm` only on an MPM), a feed
   of an unknown kind or a motor with no name, no `by` device or role, or no numeric `seq`. Why: a half-read map would
   judge breakers nobody chose. Kind: failure mode.
 - **PM-03** A power-map line is stamped like a board line: `boardStamp` counts it in the device's `seq` (the next
@@ -64,3 +64,6 @@ Suite: `npx vitest run tests/power-map.contract.test.ts --reporter=junit --outpu
   never set gets the robot's latest map; no history or no line for its robot: `null`. History lines from dropped-in
   files count too, and the result's `history` stays only what the files held. Why: re-running old matches must not
   rewrite what they ran with. Kind: behaviour.
+- **PM-10** A slot may be listed twice in a board: two feeds on one slot is a mistake the power map screen flags (R621),
+  not a malformed line, so the line is kept as a map and written back unchanged. Why: the screen must be able to show
+  the problem it warns about. Kind: behaviour.
