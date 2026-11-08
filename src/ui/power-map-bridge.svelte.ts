@@ -36,6 +36,11 @@ export function openPowerMap(f: MapFocus = {}) {
   opener?.()
 }
 
-/** The robot last used on the power map screen (kept per laptop), or null. */
+/** The robot last used on the power map screen (kept per laptop; reactive, so a strip that falls back to it follows), or null. */
 export const LAST_ROBOT_KEY = 'hindsight.powermap.robot'
-export const lastMapRobot = (): string | null => { try { return localStorage.getItem(LAST_ROBOT_KEY) } catch { return null } }
+let lastRobot = $state<string | null>((() => { try { return localStorage.getItem(LAST_ROBOT_KEY) } catch { return null } })())
+export const lastMapRobot = (): string | null => lastRobot
+export function setLastMapRobot(id: string): void {
+  lastRobot = id
+  try { localStorage.setItem(LAST_ROBOT_KEY, id) } catch { /* not remembered */ }
+}

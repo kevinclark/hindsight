@@ -17,7 +17,7 @@
     applyToAll, breakerColourName, motorRows, motorsSummary, oneProfilePerRobot, setMotorBreaker, type MotorRow, breakerFill, breakerText, emptyMap, FAMILY_LABEL, feedLabel, feedParts, mapProblems, MAIN_LABEL, MPM_SLOTS, mpmAt, nextEmptySlot, onlyFromNow, planFromFinding, stampAll,
     PDP_ID, ratingsFor, readRotated, savedLine, writeRotated, slotEntries, slotRows, slotsKeeping, unplacedMotors, withExtraFeed, withSlot, type MapProblem,
   } from '../power/power-map-view.ts'
-  import { clearMapFocus, LAST_ROBOT_KEY, lastMapRobot, mapFocus, mapHistory, writeMapLine } from './power-map-bridge.svelte.ts'
+  import { clearMapFocus, lastMapRobot, mapFocus, mapHistory, setLastMapRobot, writeMapLine } from './power-map-bridge.svelte.ts'
 
   const LATEST = '9999-12-31T23:59:59.999Z'
   const stored = $derived(profilesNow())
@@ -25,7 +25,6 @@
   const history = $derived(mapHistory())
 
   // Which robot: the one a finding or strip named, else the one last used here, else the team's newest.
-  const LAST = LAST_ROBOT_KEY
   const lastRobot = lastMapRobot
   let chosen = $state<string | null>(null)
   // One entry per robot, not per branch of its code: the map belongs to the robot.
@@ -225,7 +224,7 @@
 
   <div class="choices">
     <label class="robot">Robot
-      <select value={robotId} onchange={(e) => { chosen = (e.currentTarget as HTMLSelectElement).value; try { localStorage.setItem(LAST, chosen) } catch { /* not remembered */ } clearMapFocus(); sel = null }}>
+      <select value={robotId} onchange={(e) => { chosen = (e.currentTarget as HTMLSelectElement).value; setLastMapRobot(chosen); clearMapFocus(); sel = null }}>
         {#each groups as g (g.label ?? '')}
           {#if g.label}<optgroup label={g.label}>{#each g.profiles as p (robotKey(p))}<option value={robotKey(p)}>{robotKey(p)}</option>{/each}</optgroup>
           {:else}{#each g.profiles as p (robotKey(p))}<option value={robotKey(p)}>{robotKey(p)}</option>{/each}{/if}
