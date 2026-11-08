@@ -18,6 +18,8 @@ export interface JobProgress {
   file?: Amount
   /** The user pressed Stop: the job is finishing the piece it is on. */
   stopping?: boolean
+  /** The current file comes over a network (the robot, Drive): bytes not arriving is worth saying. A local folder's has no byte count while it is read. */
+  transfer?: boolean
 }
 export interface JobHandle {
   cancelled: boolean
@@ -27,7 +29,7 @@ export interface JobHandle {
 /** Where a job's lines go: the app's `jobs.log`. */
 export interface JobLogSink { line(text: string): void }
 /** What a job adds to its count: a step in words, the whole job's bytes, the current file's bytes. */
-export type ProgressMore = Pick<JobProgress, 'step' | 'bytes' | 'file'>
+export type ProgressMore = Pick<JobProgress, 'step' | 'bytes' | 'file' | 'transfer'>
 export type ProgressFn = (done: number, total: number, current: string, more?: ProgressMore) => void
 
 export type Work<T> = (job: JobHandle, progress: ProgressFn) => Promise<T>
@@ -41,13 +43,13 @@ export function fileMeter(onProgress: ProgressFn | undefined, sizes: number[]) {
   const bytes = { done: 0, total: sizes.reduce((n, s) => n + s, 0) }
   return {
     /** The file `index` of `count` starts: `at(sent)` reports its bytes; `end()` once it is through, whatever happened. */
-    start(index: number, count: number, name: string, size: number) {
+    start(index: number, count: number, name: string, size: number, transfer = false) {
       let moved = false
       let last = 0
       const report = (sent: number, step?: string) => {
         if (sent > 0) moved = true
         last = sent
-        onProgress?.(index, count, name, { bytes: { done: bytes.done + sent, total: bytes.total }, file: { done: sent, total: size }, ...(step ? { step } : {}) })
+        onProgress?.(index, count, name, { bytes: { done: bytes.done + sent, total: bytes.total }, file: { done: sent, total: size }, ...(transfer ? { transfer } : {}), ...(step ? { step } : {}) })
       }
       const at = (sent: number) => report(sent)
       at(0)

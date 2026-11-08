@@ -13,7 +13,7 @@ import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
 import { LiveShare, Lock, type ShareStatus } from '../src/hub/live-share.ts'
 import { isEventKey } from '../src/hub/event-file.ts'
 import { createHash } from 'node:crypto'
-import { SignInAgain } from '../src/hub/adapter.ts'
+import { SignInAgain, Stopped } from '../src/hub/adapter.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
 import { checkForUpdate, selfUpdates } from '../src/hub/update.ts'
 import { JobRunner, type JobHandle, type ProgressFn, type Work } from '../src/hub/jobs.ts'
@@ -107,7 +107,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const report = await ingest(lib, files, {
       describe: describer.describe, seen, cancelled: () => j.cancelled, onProgress: progress, log: j.log,
       // After each file, so a stall, Stop, crash or quit at file 33 keeps files 1-32 known (a failed write is logged, not fatal).
-      afterEach: () => seen.save().catch((e) => j.log(`could not save seen.json: ${e instanceof Error ? e.message : String(e)}`)),
+      afterEach: () => seen.save().catch((e) => j.log(`could not save seen.json: ${(e as { code?: string }).code ?? 'write failed'}`)),
     })
     await seen.save()
     // Logs just added that name only their code are linked to the saved GitHub sources, at most 20 API requests (a cancelled add links nothing).
@@ -341,8 +341,12 @@ export function registerHub(window: () => BrowserWindow | null): void {
       const fs = await connectRobotFs(where, { log: j.log })
       try {
         step('Listing the logs on the robot (looks twice, 1.5 s apart, to skip one still being written)')
-        const { files, stillWriting } = await robotFiles(fs, { tempRoot: app.getPath('temp') })
-        return { report: await ingestWork(files, j, progress), stillWriting }
+        let listed: Awaited<ReturnType<typeof robotFiles>>
+        try { listed = await robotFiles(fs, { tempRoot: app.getPath('temp'), cancelled: () => j.cancelled }) } catch (e) {
+          if (e instanceof Stopped) return { refused: 'Stopped: nothing was pulled off the robot.' }
+          throw e
+        }
+        return { report: await ingestWork(listed.files, j, progress), stillWriting: listed.stillWriting }
       } finally { fs.close() }
     })
   })

@@ -5,7 +5,7 @@
   // ~10 s, say what is happening, and acknowledge a press within 0.1 s.
   import type { Progress } from '../hub/bridge.ts'
   import { untrack } from 'svelte'
-  import { estimateLeft, formatRate, noDataText, quietFor, rateOver, size, type Sample } from './job-bar.ts'
+  import { estimateLeft, formatRate, isArriving, noDataText, quietSince, rateOver, size, stepWaitText, type Sample } from './job-bar.ts'
 
   /** `onStop` absent: the work can't be stopped (signing in, saving), so no Stop is offered. */
   let { progress, onStop }: { progress: Progress; onStop?: () => void } = $props()
@@ -37,15 +37,28 @@
       if (bytes !== undefined) moves = [...moves, { at: Date.now(), bytes }].slice(-100)
     })
   })
+  // When the current file and the current step began (their own clocks): "no data" and a step's "· 7 s" count from there at most.
+  let fileStart = $state(Date.now())
+  let stepStart = $state(Date.now())
+  let lastFile = ''
+  let lastStep = ''
+  $effect(() => {
+    const current = progress.current
+    const step = progress.step ?? ''
+    untrack(() => {
+      if (current !== lastFile) { lastFile = current; fileStart = Date.now() }
+      if (step !== lastStep) { lastStep = step; stepStart = Date.now() }
+    })
+  })
   let now = $state(Date.now())
   $effect(() => {
     const timer = setInterval(() => { now = Date.now() }, 1000)
     return () => clearInterval(timer)
   })
-  // Only while a file is arriving (some bytes in, not all): a local file is read with no byte count, and one fully
-  // downloaded is then read here, neither of which is the robot going quiet.
-  const arriving = $derived(!!progress.file && progress.file.total > 0 && progress.file.done > 0 && progress.file.done < progress.file.total && !!progress.current && !stopping)
-  const quiet = $derived(arriving ? noDataText(quietFor(moves, now)) : '')
+  // Only while a file is arriving (see isArriving): not a local file read with no byte count, nor one that is all in and being read here.
+  const arriving = $derived(isArriving({ file: progress.file, transfer: progress.transfer, current: progress.current, stopping }))
+  const quiet = $derived(arriving ? noDataText(quietSince(moves, now, fileStart)) : '')
+  const stepWait = $derived(progress.step ? stepWaitText(now - stepStart) : '')
   const speed = $derived.by(() => {
     if (!arriving || quiet) return ''
     const r = rateOver(moves)
@@ -67,7 +80,7 @@
 <!-- Only the head is a live region: the amounts below change several times a second. -->
 <div class="job-bar" class:stopping>
   <div class="head">
-    <span class="what" role="status"><strong>{progress.job}</strong>{#if what}{' '}· {what}{/if}{#if stopping}{' '}· stopping{/if}</span>
+    <span class="what" role="status"><strong>{progress.job}</strong>{#if what}{' '}· {what}{stepWait}{/if}{#if stopping}{' '}· stopping{/if}</span>
     {#if stopping}
       <span class="stopping-note">Stops once the current step finishes. What is done is kept.</span>
     {:else if onStop}

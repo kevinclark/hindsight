@@ -3,7 +3,7 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { KEEPALIVE, STALL_MS, TRIES, Stalled, connectRobotFs, parseAddress, robotFiles, type RobotFs } from '../src/hub/robot.ts'
 import { LinkLost, Stopped } from '../src/hub/adapter.ts'
 import { ingest } from '../src/hub/ingest.ts'
@@ -12,6 +12,9 @@ import { describeFile } from '../src/hub/describe-file.ts'
 import { openSeen } from '../src/hub/seen.ts'
 import { robotLog } from './helpers/hub-logs.ts'
 import { startSftpServer, type SftpServer, type SftpServerOptions } from './helpers/sftp-server.ts'
+
+// A broken detector must fail under its own P-id name, not hang the file: each of these waits at most ~10 s.
+vi.setConfig({ testTimeout: 10_000 })
 
 const cleanups: (() => unknown)[] = []
 afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c() })
@@ -87,6 +90,26 @@ describe('P3: a listing that does not answer fails the same way', () => {
     expect(Date.now() - t).toBeGreaterThanOrEqual(450)
     expect(Date.now() - t).toBeLessThan(2500)
   })
+  it('P6: Stop during a held listing answers promptly (stall time 5 s)', async () => {
+    const s = await serve({ files: {}, dirs: { '/home/lvuser/logs': [] }, onReaddir: () => 'hold' })
+    const fs = await connect(s, { stallMs: 5000 })
+    let stop = false
+    const run = fs.list('/home/lvuser/logs', () => stop).catch((e) => e)
+    await sleep(300)
+    const pressed = Date.now()
+    stop = true
+    expect(await run).toBeInstanceOf(Stopped)
+    expect(Date.now() - pressed).toBeLessThan(1500)
+  })
+  it('P6: robotFiles passes Stop to the listing', async () => {
+    const s = await serve({ files: {}, dirs: { '/home/lvuser/logs': [] }, onReaddir: () => 'hold' })
+    const fs = await connect(s, { stallMs: 5000 })
+    let stop = false
+    const run = robotFiles(fs, { now: () => 0, sleep: async () => {}, cancelled: () => stop }).catch((e) => e)
+    await sleep(300)
+    stop = true
+    expect(await run).toBeInstanceOf(Stopped)
+  })
   it('P3: robotFiles does not mistake a silent robot for a folder that is not there', async () => {
     const s = await serve({ files: {}, dirs: { '/home/lvuser/logs': [] }, onReaddir: () => 'hold' })
     const fs = await connect(s)
@@ -110,12 +133,20 @@ describe('P4: reconnect and resume', () => {
       const local = join(await tmp(), 'a.bin')
       const steps: string[] = []
       const progress: number[] = []
-      await fs.download(F, local, { onStep: (w) => steps.push(w), onProgress: (n) => progress.push(n) }, BIG.length)
+      const events: (number | string)[] = []
+      await fs.download(F, local, { onStep: (w) => { steps.push(w); events.push(`step:${w.split(';')[0]}`) }, onProgress: (n) => { progress.push(n); events.push(n) } }, BIG.length)
 
       expect((await readFile(local)).equals(BIG)).toBe(true)
       // The words of the retry, in the job step.
       expect(steps[0]).toBe('Robot stopped sending; reconnecting (try 2 of 3)')
       expect(steps.some((w) => /^Reconnected; resuming at [\d.]+ MB \(try 2 of 3\)$/.test(w))).toBe(true)
+      // P4/P11: after "Reconnected; resuming" no byte report comes until bytes pass what was already reported, so the words stay (a report at the resume offset would overwrite them and dip the bar).
+      const at = events.indexOf('step:Reconnected')
+      expect(at).toBeGreaterThan(0)
+      const before = Math.max(...events.slice(0, at).filter((e): e is number => typeof e === 'number'))
+      const after = events.slice(at + 1).filter((e): e is number => typeof e === 'number')
+      expect(after.length).toBeGreaterThan(0)
+      expect(Math.min(...after)).toBeGreaterThan(before)
       // The server saw a second connection whose first READ starts at the resume offset, not at 0.
       expect(s.connections).toBe(2)
       const second = s.reads.filter((r) => r.conn === 2)
@@ -175,7 +206,7 @@ describe('P5: after the last try the pull stops, in words', () => {
     const broken = await serve({ files, dirs, chunk: 64, onRead: (r) => (r.path.endsWith('b.wpilog') && r.offset >= 128 ? 'hold' : 'serve') })
     const first = await pull(broken)
     expect(first.stopped).toBe(true)
-    expect(first.lostLink).toMatch(/^Stopped at file 2 of 3 \(b\.wpilog\): no data from the robot for 0\.3 s, at 0\.0 of 0\.0 MB; tried 2 times\. 1 log is now in the library\. Pull again to continue from here\.$/)
+    expect(first.lostLink).toMatch(/^Stopped at file 2 of 3 \(b\.wpilog\): no data from the robot for 0\.3 s, at 0\.0 of 0\.0 MB; tried 2 times\. 1 of the robot's 3 logs are in the library \(1 added this pull\)\. Pull again to continue from here\.$/)
     expect(first.added.map((e) => e.name)).toEqual(['a.wpilog'])
     expect(first.unreadable).toEqual([]) // b is not "unreadable"
     expect(first.notTried).toBe(2)

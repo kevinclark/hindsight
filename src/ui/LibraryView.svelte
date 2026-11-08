@@ -215,8 +215,8 @@
     // A robot pull's result wraps its ingest report, or says why the robot refused.
     if (typeof r.refused === 'string') return `not pulled: ${r.refused}`
     if (typeof r.report === 'object') return reportText(r.report)
-    if (typeof r.lostLink === 'string') return r.lostLink
-    return Object.entries(r).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
+    const counts = Object.entries(r).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
+    return typeof r.lostLink === 'string' ? `${counts}. ${r.lostLink}` : counts
   }
   const showLog = () => { void api?.showJobLog().catch(() => {}) }
   async function readAgain() {

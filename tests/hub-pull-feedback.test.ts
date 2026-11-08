@@ -12,7 +12,7 @@ import { ingest, type SourceFile } from '../src/hub/ingest.ts'
 import { JobRunner, fileMeter, summarize, type JobProgress } from '../src/hub/jobs.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { openSeen } from '../src/hub/seen.ts'
-import { QUIET_MS, RATE_WINDOW_MS, formatRate, noDataText, quietFor, rateOver, type Sample } from '../src/ui/job-bar.ts'
+import { QUIET_MS, RATE_WINDOW_MS, STEP_WAIT_MS, formatRate, isArriving, noDataText, quietFor, quietSince, rateOver, stepWaitText, type Sample } from '../src/ui/job-bar.ts'
 import { robotLog } from './helpers/hub-logs.ts'
 
 let work: string
@@ -109,6 +109,52 @@ describe('P9, P10: speed and "no data" words', () => {
   })
 })
 
+describe('review fixes: who may say "no data", and how long a step has waited', () => {
+  const p = (file: { done: number; total: number } | undefined, o: { transfer?: boolean; current?: string; stopping?: boolean } = {}) => ({ file, current: 'a.wpilog', ...o })
+  it('a network file can be quiet from its first byte; a folder file only once bytes have started', () => {
+    expect(isArriving(p({ done: 0, total: 100 }, { transfer: true }))).toBe(true)
+    expect(isArriving(p({ done: 0, total: 100 }))).toBe(false) // a local file being read: no byte count yet
+    expect(isArriving(p({ done: 40, total: 100 }))).toBe(true)
+  })
+  it('never once the file is all in (it is being read here), with no file, no name, or while stopping', () => {
+    expect(isArriving(p({ done: 100, total: 100 }, { transfer: true }))).toBe(false)
+    expect(isArriving(p(undefined, { transfer: true }))).toBe(false)
+    expect(isArriving(p({ done: 0, total: 0 }, { transfer: true }))).toBe(false)
+    expect(isArriving(p({ done: 5, total: 100 }, { transfer: true, current: '' }))).toBe(false)
+    expect(isArriving(p({ done: 5, total: 100 }, { transfer: true, stopping: true }))).toBe(false)
+  })
+  it('quiet time never counts from before this file began (the last file\'s reading is not this one\'s silence)', () => {
+    const samples = [{ at: 0, bytes: 0 }, { at: 1000, bytes: 500 }]
+    expect(quietSince(samples, 30_000, 25_000)).toBe(5000)
+    expect(noDataText(quietSince(samples, 30_000, 25_000))).toBe('no data for 5 s')
+    expect(quietSince(samples, 30_000, 0)).toBe(29_000)
+  })
+  it('a step held 3 s or more gets " · N s"; under that, nothing', () => {
+    expect(STEP_WAIT_MS).toBe(3000)
+    expect(stepWaitText(2999)).toBe('')
+    expect(stepWaitText(3000)).toBe(' · 3 s')
+    expect(stepWaitText(7400)).toBe(' · 7 s')
+  })
+  it('after a download the bar says Reading, then Filing, with the file bar still full; a folder add says neither', async () => {
+    const lib = await LocalLibrary.open(join(work, 'lib'), 'machine-a')
+    const a = bytesOf('steps')
+    const seen: { step?: string; file?: number; transfer?: boolean }[] = []
+    const onProgress = (_d: number, _t: number, _c: string, more?: { step?: string; file?: { done: number }; transfer?: boolean }) => seen.push({ step: more?.step, file: more?.file?.done, transfer: more?.transfer })
+    await ingest(lib, [source('a.wpilog', a)], { describe: describeFile, onProgress })
+    const steps = seen.filter((e) => e.step)
+    expect(steps.map((e) => e.step)).toEqual(['Reading 1 of 1: a.wpilog', 'Filing 1 of 1: a.wpilog'])
+    expect(steps.every((e) => e.file === a.length)).toBe(true)
+    expect(seen.every((e) => e.transfer === true)).toBe(true) // robot source
+    const dir = join(work, 'folder'); await (await import('node:fs/promises')).mkdir(dir)
+    await writeFile(join(dir, 'f.wpilog'), bytesOf('folder'))
+    const { localFolderFiles } = await import('../src/hub/ingest.ts')
+    const local: typeof seen = []
+    await ingest(lib, await localFolderFiles(dir), { describe: describeFile, onProgress: (_d, _t, _c, more) => local.push({ step: more?.step, transfer: more?.transfer }) })
+    expect(local.some((e) => e.step)).toBe(false)
+    expect(local.some((e) => e.transfer)).toBe(false)
+  })
+})
+
 describe('P4 and P11: a step keeps the file\'s bytes', () => {
   it('the step words go out with the bytes so far, not 0', () => {
     const events: { done: number; step?: string; file?: number }[] = []
@@ -165,7 +211,9 @@ describe('P12: the job log', () => {
     expect(text.at(-1)).toMatch(/^job finish: Pulling logs off the robot: stopped; .*added 1/)
     // Byte progress (10 bytes, then all of them) is not a line of its own.
     expect(lines.filter((l) => /progress/i.test(l))).toEqual([])
-    expect(lines).toHaveLength(9)
+    expect(text).toContain('step: Reading 1 of 2: a.wpilog')
+    expect(text).toContain('step: Filing 1 of 2: a.wpilog')
+    expect(lines).toHaveLength(11)
   })
 
   it('P12: a lost link and an error are logged with their words, and a failed job says so', async () => {
