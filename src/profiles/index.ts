@@ -17,3 +17,9 @@ export const PROFILES: RobotProfile[] = [offseason2026, offseason2026Event, comp
 export function profileId(p: RobotProfile): string {
   return p.keptAs ?? `${p.name} @ ${p.code.branch}`
 }
+
+/** The robot itself, whatever branch its code ran: a kept profile's id, else the name. The power map is keyed by it. */
+export const robotKey = (p: RobotProfile): string => p.keptAs ?? p.name
+
+/** Every id a power-map line for this robot may carry: the key, and the old "name @ branch" form (written by 0.1.609). */
+export const mapRobotIds = (p: RobotProfile): string[] => [robotKey(p), profileId(p)]

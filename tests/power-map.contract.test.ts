@@ -4,8 +4,11 @@ import { describe, expect, test } from 'vitest'
 import { analyzeFiles, withPowerMaps } from '../src/analyze.ts'
 import { boardStamp, compareEvents, parseHistory, serializeHistory, type HistoryEvent } from '../src/triage/history.ts'
 import { breakerForMotor, mainBreakerFor, powerMapAt, type PowerMap } from '../src/power/power-map.ts'
-import { profileId } from '../src/profiles/index.ts'
-import { offseason2026 } from '../src/profiles/2026-offseason.ts'
+import { mapRobotIds, profileId, robotKey } from '../src/profiles/index.ts'
+import { competition2026 } from '../src/profiles/2026-competition.ts'
+import { offseason2025 } from '../src/profiles/2025-offseason.ts'
+import { summarizeLog, summaryRobotIds } from '../src/session/summary.ts'
+import { offseason2026, offseason2026Event } from '../src/profiles/2026-offseason.ts'
 import { writeWpilog } from './helpers/fixture-format.ts'
 
 type Entries = Parameters<typeof writeWpilog>[0]
@@ -267,5 +270,102 @@ describe('[PM-11] a changed map re-runs only the two breaker rules on the open a
     expect(withPowerMaps(next, [optifuse])).toBeNull()
     expect(withPowerMaps(next, [optifuse, map({ robot, from: '2025-11-02T00:00:00.000Z', main: 'bussmann', seq: 2 })])).not.toBeNull()
     expect(withPowerMaps(open().analyses, [])).toBeNull()
+  })
+})
+
+describe('[PM-13] one map per robot, whatever branch its code ran', () => {
+  const key = robotKey(offseason2026)
+  const keyed = map({ robot: key, from: '2025-11-01T00:00:00.000Z', main: 'optifuse' })
+  const old = map({ robot: profileId(offseason2026), from: '2025-11-01T00:00:00.000Z', main: 'optifuse' })
+  const WALL = 1762637000
+  const log: Entries = [
+    { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [20, false]] },
+    { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
+    { name: '/SystemStats/EpochTimeMicros', type: 'int64', records: [[1, (WALL + 1) * 1e6]] },
+    { name: '/SystemStats/SystemTimeValid', type: 'boolean', records: [[0, true]] },
+  ] as Entries
+  test('the robot key is the name (a kept profile: its id), not name @ branch', () => {
+    expect(key).toBe('2026 offseason robot')
+    expect(mapRobotIds(offseason2026)).toEqual(['2026 offseason robot', profileId(offseason2026)])
+    expect(robotKey({ ...offseason2026, keptAs: 'kept-1' })).toBe('kept-1')
+  })
+  test('a line keyed by the robot applies to both of its branch profiles', () => {
+    const main = analyzeFiles([{ name: 't.wpilog', bytes: writeWpilog(log) }], offseason2026, undefined, [keyed]).analyses[0].match.powerMap
+    const event = analyzeFiles([{ name: 't.wpilog', bytes: writeWpilog(log) }], offseason2026Event, undefined, [keyed]).analyses[0].match.powerMap
+    expect(main).toBe(keyed)
+    expect(event).toBe(keyed)
+  })
+  test('a line written by 0.1.609 (name @ branch) still applies to the robot it names, and a newer keyed line beats it', () => {
+    expect(powerMapAt([old], mapRobotIds(offseason2026), '2026-01-01T00:00:00.000Z')).toBe(old)
+    expect(powerMapAt([old], key, '2026-01-01T00:00:00.000Z')).toBeNull() // the key alone does not read the old form: readers pass both ids
+    const newer = map({ robot: key, from: '2026-01-01T00:00:00.000Z', main: 'bussmann' })
+    expect(powerMapAt([old, newer], mapRobotIds(offseason2026), '2026-06-01T00:00:00.000Z')).toBe(newer)
+  })
+  test('a summary names the same ids for its robot', () => {
+    const s = summarizeLog({ name: 't.wpilog', bytes: writeWpilog(log) }, offseason2026)!
+    expect(summaryRobotIds(s.robot)).toEqual(mapRobotIds(offseason2026))
+  })
+})
+
+describe('[PM-14] exceptions: a motor on its own breaker without a slot', () => {
+  const ex = (over: object = {}) => ({ name: 'Intake', canId: 13, breaker: { family: 'rev-ato', ratingA: 30 }, ...over })
+  test('a line with exceptions parses and writes back unchanged', () => {
+    const text = line({ ...map(), exceptions: [ex(), ex({ canId: undefined, name: 'Hood' })] })
+    const { events } = parseHistory(text)
+    expect(events[0].type).toBe('power-map')
+    expect(serializeHistory(events)).toBe(text + '\n')
+  })
+  for (const [name, bad] of [
+    ['not a list', 'x'], ['no name', [ex({ name: '' })]], ['unknown family', [ex({ breaker: { family: 'acme', ratingA: 30 } })]],
+    ['ATM on the PDP', [ex({ breaker: { family: 'atm', ratingA: 10 } })]], ['rating 0', [ex({ breaker: { family: 'rev-ato', ratingA: 0 } })]],
+    ['CAN id out of range', [ex({ canId: 99 })]], ['no breaker', [{ name: 'Intake' }]], ['an entry that is not an object', ['x']],
+  ] as const) {
+    test(`a malformed exceptions field (${name}) makes the whole line opaque`, () => {
+      const text = line({ ...map(), exceptions: bad })
+      const { events } = parseHistory(text)
+      expect(events[0].type).toBe('opaque')
+      expect(serializeHistory(events)).toBe(text + '\n')
+    })
+  }
+  test('a line without the field is as before', () => {
+    expect(parseHistory(line(map())).events[0].type).toBe('power-map')
+  })
+})
+
+describe('[PM-15] a motor\'s breaker: slot, then exception, then usual, then the robot\'s default, then not set', () => {
+  const def = { main: 'bussmann', usual: { family: 'rev-ato', ratingA: 40 } } as const
+  const m = map({ usual: { family: 'ctre-ato', ratingA: 30 }, exceptions: [{ name: 'Intake', canId: 13, breaker: { family: 'snap-action', ratingA: 20 } }, { name: 'Hood', breaker: { family: 'rev-ato', ratingA: 10 } }] })
+  test('the slot\'s breaker wins over an exception for the same motor', () => {
+    const placed = map({ ...m, boards: [{ id: 'pdp', kind: 'ctre-pdp-2', slots: [{ slot: 4, breaker: { family: 'rev-ato', ratingA: 40 }, feeds: { kind: 'motor', name: 'Intake', canId: 13 } }] }] })
+    expect(breakerForMotor(placed, 'Intake', 13, def)).toMatchObject({ family: 'rev-ato', ratingA: 40, slot: 4, source: 'slot' })
+  })
+  test('an exception beats the usual breaker, found by CAN ID when both have one, else by name', () => {
+    expect(breakerForMotor(m, 'whatever it is called', 13, def)).toMatchObject({ family: 'snap-action', ratingA: 20, source: 'exception', mapped: false })
+    expect(breakerForMotor(m, 'Intake', 15, def)).toMatchObject({ source: 'usual' }) // another CAN id: not the intake
+    expect(breakerForMotor(m, 'Hood', 20, def)).toMatchObject({ family: 'rev-ato', ratingA: 10, source: 'exception' }) // the exception has no CAN id: by name
+  })
+  test('a slot with no breaker set falls through to the exception', () => {
+    const noBreaker = map({ ...m, boards: [{ id: 'pdp', kind: 'ctre-pdp-2', slots: [{ slot: 4, breaker: null, feeds: { kind: 'motor', name: 'Intake', canId: 13 } }] }] })
+    expect(breakerForMotor(noBreaker, 'Intake', 13, def)).toMatchObject({ source: 'exception', slot: 4, mapped: true })
+  })
+  test('the usual breaker, then the robot\'s default, then not set', () => {
+    expect(breakerForMotor(map({ usual: { family: 'ctre-ato', ratingA: 30 } }), 'Other', 1, def)).toMatchObject({ family: 'ctre-ato', ratingA: 30, source: 'usual' })
+    expect(breakerForMotor(map({ usual: null }), 'Other', 1, def)).toMatchObject({ family: 'rev-ato', ratingA: 40, source: 'default' })
+    expect(breakerForMotor(null, 'Other', 1, def)).toMatchObject({ family: 'rev-ato', ratingA: 40, source: 'default' })
+    expect(breakerForMotor(null, 'Other', 1)).toMatchObject({ source: 'not set' })
+    expect(breakerForMotor(null, 'Other', 1, null)).toMatchObject({ source: 'not set' })
+  })
+})
+
+describe('[PM-16] the main breaker: the map\'s, then the robot\'s default, then Bussmann assumed', () => {
+  test('each step, with its source', () => {
+    const def = { main: 'optifuse', usual: { family: 'rev-ato', ratingA: 40 } } as const
+    expect(mainBreakerFor(map({ main: 'bussmann' }), def)).toEqual({ family: 'bussmann', source: 'map' })
+    expect(mainBreakerFor(map({ main: null }), def)).toEqual({ family: 'optifuse', source: 'default' })
+    expect(mainBreakerFor(null, def)).toEqual({ family: 'optifuse', source: 'default' })
+    expect(mainBreakerFor(null)).toEqual({ family: 'bussmann', source: 'assumed' })
+  })
+  test('8033\'s built-in robots default to the Bussmann main and REV 40 A on every motor', () => {
+    for (const p of [offseason2026, offseason2026Event, competition2026, offseason2025]) expect(p.breakerDefault).toEqual({ main: 'bussmann', usual: { family: 'rev-ato', ratingA: 40 } })
   })
 })

@@ -29,6 +29,8 @@ const swerveIds: Record<string, [number, number, number]> = {
 
 export const offseason2025: RobotProfile = {
   name: '2025 offseason robot',
+  // Kevin, 2026-11-08: the Bussmann CB285-120 main and REV 40 A on every motor; exceptions go in the power map.
+  breakerDefault: { main: 'bussmann', usual: { family: 'rev-ato', ratingA: 40 } },
   team: 8033,
   codebase: '2025 Offseason',
   code: { repo: 'HighlanderRobotics/2025-Offseason-Robot', branch: 'event-mttd', sha: '493666f' },

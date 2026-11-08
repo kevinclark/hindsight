@@ -75,3 +75,8 @@ Suite: `npx vitest run tests/breaker-rules.contract.test.ts --reporter=junit --o
   never quiet. Why: the curve is a known gap; silence would read as fine. Kind: failure mode.
 - **BR-13** Nothing else is judged: the radio's, roboRIO's and other slots in the map produce no finding, whatever the
   total current. Why: nothing logs those channels' current. Kind: behaviour.
+- **BR-14** A robot whose profile has a `breakerDefault` (8033's) is judged by it when its power map says nothing: the main
+  by the default main (`judged against` ends `(this robot's default)`), a motor by the default usual breaker (evidence
+  `breaker`: `REV 40 A (this robot's default)`, slot `not mapped`), never "not set"; a motor's exception beats it and the evidence
+  says `(set for this motor in the power map)`. A robot without a default keeps the not-set wording of BR-05 and BR-09. Why: a
+  team that runs one breaker everywhere should not have to say so before the warnings are right. Kind: behaviour.

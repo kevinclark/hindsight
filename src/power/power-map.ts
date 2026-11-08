@@ -17,6 +17,12 @@ export type MainFamily = (typeof MAIN_FAMILIES)[number]
 
 export interface MapBreaker { family: string; ratingA: number }
 
+/** A motor on a breaker of its own, without being placed on a slot ("the intake is on 30 A"). Found like a slot's feed: by CAN ID when both have one, else by name. */
+export interface MapException { name: string; canId?: number; breaker: { family: PdpFamily; ratingA: number } }
+
+/** What Hindsight assumes for a robot when its map says nothing: the profile's `breakerDefault`. */
+export interface BreakerDefault { main: MainFamily; usual: { family: PdpFamily; ratingA: number } }
+
 export type Feed =
   | { kind: 'motor'; name: string; canId?: number }
   | { kind: 'radio' | 'roborio' | 'mpm' | 'other'; label?: string }
@@ -35,7 +41,7 @@ export interface MapBoard {
 export interface PowerMap {
   type: 'power-map'
   v: 1
-  /** The robot's profile id (`profileId()`). */
+  /** The robot's key (`robotKey()`: its name, or a kept profile's id); lines written by 0.1.609 hold the profileId (name @ branch) and still apply. */
   robot: string
   /** ISO time the breakers took effect. */
   from: string
@@ -43,6 +49,8 @@ export interface PowerMap {
   /** "Every motor is on this", for a motor on no mapped slot. */
   usual: { family: PdpFamily; ratingA: number } | null
   boards: MapBoard[]
+  /** Motors on a breaker other than `usual` without a slot (a build before this field keeps the line valid, ignores it, and judges those motors by `usual`). */
+  exceptions?: MapException[]
   by: { device: string; role: BoardRole }
   seq: number
   when: string
@@ -77,12 +85,18 @@ function validBoard(b: any): boolean {
   return true
 }
 
+function validException(x: any): boolean {
+  return typeof x === 'object' && x !== null && typeof x.name === 'string' && x.name !== '' && (x.canId === undefined || isInt(x.canId, 0, 62))
+    && typeof x.breaker === 'object' && x.breaker !== null && PDP_FAMILIES.includes(x.breaker.family) && isRating(x.breaker.ratingA)
+}
+
 /** Whether a parsed JSON object is a well-formed power-map line; anything else is kept as an OpaqueEvent. */
 export function validPowerMap(e: any): boolean {
   if (e.v !== 1 || typeof e.robot !== 'string' || e.robot === '' || typeof e.from !== 'string' || !Number.isFinite(Date.parse(e.from))) return false
   if (e.main !== null && !MAIN_FAMILIES.includes(e.main)) return false
   if (e.usual !== null && !(typeof e.usual === 'object' && e.usual !== undefined && PDP_FAMILIES.includes(e.usual.family) && isRating(e.usual.ratingA))) return false
   if (!Array.isArray(e.boards) || !e.boards.every(validBoard)) return false
+  if (e.exceptions !== undefined && !(Array.isArray(e.exceptions) && e.exceptions.every(validException))) return false
   if (!e.by || typeof e.by.device !== 'string' || !ROLES.includes(e.by.role)) return false
   return Number.isFinite(e.seq) && typeof e.when === 'string'
 }
@@ -91,11 +105,12 @@ export function validPowerMap(e: any): boolean {
  * The map in effect for a robot at a time: the line with the latest `from` at or before `atIso`; ties go to the
  * higher `seq`, then the later `when`. Null when the robot has none yet by then.
  */
-export function powerMapAt(history: readonly HistoryEvent[], robotId: string, atIso: string): PowerMap | null {
+export function powerMapAt(history: readonly HistoryEvent[], robot: string | readonly string[], atIso: string): PowerMap | null {
+  const ids = typeof robot === 'string' ? [robot] : robot
   const at = Date.parse(atIso)
   let best: PowerMap | null = null
   for (const e of history) {
-    if (e.type !== 'power-map' || e.robot !== robotId || Date.parse(e.from) > at) continue
+    if (e.type !== 'power-map' || !ids.includes(e.robot) || Date.parse(e.from) > at) continue
     if (!best || later(e, best)) best = e
   }
   return best
@@ -110,7 +125,7 @@ function later(a: PowerMap, b: PowerMap): boolean {
 }
 
 /** Where a breaker's setting came from: a mapped slot, the map's "usual", or nothing (judged against the first legal 40 A breaker to trip). */
-export type BreakerSource = 'slot' | 'usual' | 'not set'
+export type BreakerSource = 'slot' | 'exception' | 'usual' | 'default' | 'not set'
 
 export interface MotorBreaker {
   family: string
@@ -129,25 +144,30 @@ export const FASTEST_LEGAL: { family: PdpFamily; ratingA: number } = { family: '
  * Which breaker a motor is on. A motor is on the slot whose feed is that motor: the same CAN ID when both have one,
  * else the same name. Not on a slot: the map's `usual`. No map or no usual: `FASTEST_LEGAL` with `source: 'not set'`.
  */
-export function breakerForMotor(map: PowerMap | null, motorName: string, canId?: number): MotorBreaker {
+export function breakerForMotor(map: PowerMap | null, motorName: string, canId?: number, fallback?: BreakerDefault | null): MotorBreaker {
   let found: { board: string; slot: MapSlot } | null = null
   for (const board of map?.boards ?? []) {
     const slot = board.slots.find((s) => s.feeds?.kind === 'motor' && feedsMotor(s.feeds, motorName, canId))
     if (slot) { found = { board: board.id, slot }; break }
   }
-  const usual = map?.usual ?? null
-  if (found?.slot.breaker) return { ...found.slot.breaker, board: found.board, slot: found.slot.slot, mapped: true, source: 'slot' }
-  const fallback = usual ? { ...usual, source: 'usual' as const } : { ...FASTEST_LEGAL, source: 'not set' as const }
-  return { ...fallback, ...(found ? { board: found.board, slot: found.slot.slot } : {}), mapped: found !== null }
+  const at = found ? { board: found.board, slot: found.slot.slot } : {}
+  if (found?.slot.breaker) return { ...found.slot.breaker, ...at, mapped: true, source: 'slot' }
+  const exception = map?.exceptions?.find((x) => (x.canId !== undefined && canId !== undefined ? x.canId === canId : x.name === motorName))
+  const chosen: { family: string; ratingA: number; source: BreakerSource } =
+    exception ? { ...exception.breaker, source: 'exception' }
+    : map?.usual ? { ...map.usual, source: 'usual' }
+    : fallback ? { ...fallback.usual, source: 'default' }
+    : { ...FASTEST_LEGAL, source: 'not set' }
+  return { ...chosen, ...at, mapped: found !== null }
 }
 
-function feedsMotor(feed: Extract<Feed, { kind: 'motor' }>, name: string, canId?: number): boolean {
+export function feedsMotor(feed: Extract<Feed, { kind: 'motor' }>, name: string, canId?: number): boolean {
   return feed.canId !== undefined && canId !== undefined ? feed.canId === canId : feed.name === name
 }
 
-/** The main breaker: the map's, or Bussmann (both Bussmann parts share one curve) with `source: 'assumed'`. */
-export function mainBreakerFor(map: PowerMap | null): { family: MainFamily; source: 'map' | 'assumed' } {
-  return map?.main ? { family: map.main, source: 'map' } : { family: 'bussmann', source: 'assumed' }
+/** The main breaker: the map's, else the profile's default (`source: 'default'`), else Bussmann (both Bussmann parts share one curve) with `source: 'assumed'`. */
+export function mainBreakerFor(map: PowerMap | null, fallback?: BreakerDefault | null): { family: MainFamily; source: 'map' | 'default' | 'assumed' } {
+  return map?.main ? { family: map.main, source: 'map' } : fallback ? { family: fallback.main, source: 'default' } : { family: 'bussmann', source: 'assumed' }
 }
 
 /** A short identity for a map line, to tell whether the one in effect changed: where it took effect, who wrote it and when. 'none' for no map. */

@@ -62,7 +62,7 @@ export default rule({
     if (match.wholeMatch.length === 0) return match.couldNotCheck('no match in this log')
     // Heating needs current only, so this runs on a log with motor currents and no battery voltage too.
     const grid = match.currents()
-    const main = mainBreakerFor(match.powerMap)
+    const main = mainBreakerFor(match.powerMap, match.profile.breakerDefault)
     const family = breakerFamily(main.family)!
     const fast = heat(grid.amps, DT, MAIN_BREAKER_A, family.edges.fast)
     const slow = heat(grid.amps, DT, MAIN_BREAKER_A, family.edges.slow)
@@ -96,7 +96,7 @@ export default rule({
       evidence: {
         'fast edge, peak heat (% of the trip)': fastPercent,
         'slow edge, peak heat (% of the trip)': slowPercent,
-        'judged against': `${PARTS[main.family]}${main.source === 'assumed' ? ' (assumed: no main breaker set in the power map)' : ' (set in the power map)'}`,
+        'judged against': `${PARTS[main.family]}${main.source === 'assumed' ? ' (assumed: no main breaker set in the power map)' : main.source === 'default' ? ' (this robot\'s default)' : ' (set in the power map)'}`,
         'datasheet curves': 'at 25 °C; a warm breaker or loose lugs trip sooner',
         'accuracy of the warn line': `about ±${heatError} % in heat (the fit's worst error at a datasheet point, ${round(100 * family.edges.fast.fitError.currentWorst, 0)} % in current, squared)`,
         'steady total current that stays under the fast edge for this match\'s length (A)': round(steadyAmps(lengthOf(match.wholeMatch), MAIN_BREAKER_A, family.edges.fast), 0),
