@@ -349,6 +349,7 @@ describe('the schedule read both views share', () => {
     expect(got.schedule?.find((m) => m.number === 5)?.nexus).toEqual({ queue: 111, start: 222, status: 'Queuing soon' })
     expect(got.schedule?.find((m) => m.number === 4)?.nexus).toBeNull()
     expect(got.nexusEvent).toBe('2099test')
+    expect(got.nexusProblem ?? null).toBeNull()
     expect(got.note).toMatch(/Queue and start times from Nexus as of /)
   })
   it("keeps The Blue Alliance's times when Nexus fails or has no matches, and says so", async () => {
@@ -357,6 +358,7 @@ describe('the schedule read both views share', () => {
     expect(failed.schedule?.every((m) => !m.nexus)).toBe(true)
     expect(failed.nexusEvent).toBeNull()
     expect(failed.note).toMatch(/No Nexus times: This event is not on Nexus\.$/)
+    expect(failed.nexusProblem).toBe('This event is not on Nexus.')
     const empty = await sessionSchedule(session([match(2), match(3)]), 9999, get(), nexusOf('empty'))
     expect(empty.nexusEvent).toBeNull()
     expect(empty.note).toMatch(/Nexus has no matches for this event yet\.$/)

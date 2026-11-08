@@ -52,6 +52,7 @@
   let schedule = $state.raw<ScheduledMatch[] | null>(null)
   let scheduleNote = $state<string | null>(null)
   let nexusEvent = $state<string | null>(null)
+  let nexusProblem = $state<string | null>(null)
   const scheduleSig = $derived(eventSession ? `${eventSession.id}|${eventSession.event?.key ?? ''}|${eventSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}|${nexusHasKey()}|${Math.floor(clock / (nexusHasKey() ? 60e3 : 600e3))}` : '')
   let scheduleOf = ''
   $effect(() => {
@@ -62,7 +63,7 @@
     const [get, team] = [tbaGetter(), tbaTeam()]
     if (!get || team === null) { schedule = null; scheduleNote = null; return }
     let stale = false
-    void sessionSchedule(s, team, get, nexusGetter()).then((got) => { if (!stale) { schedule = got.schedule; scheduleNote = got.note; nexusEvent = got.nexusEvent ?? null } })
+    void sessionSchedule(s, team, get, nexusGetter()).then((got) => { if (!stale) { schedule = got.schedule; scheduleNote = got.note; nexusEvent = got.nexusEvent ?? null; nexusProblem = got.nexusProblem ?? null } })
     return () => { stale = true }
   })
   const profiles = $derived([...PROFILES, ...stored])
@@ -81,7 +82,7 @@
   const hasLogs = $derived((api ? signal.libraryLogs.some((r) => !r.stub) : false) || sessions.length > 0 || openLogs > 0)
   const view = $derived(nowState({
     build, mode: today.mode, hasLogs, libraryToday, event: eventBoard, have: { team: tbaTeam() !== null, key: tbaHasKey() },
-    scheduleNote, still, now: clock, schedule, nexusEvent, earlierEvent: !!api && signal.libraryLogs.some((r) => !r.stub && r.onField),
+    scheduleNote, still, now: clock, schedule, nexusEvent, nexusProblem, earlierEvent: !!api && signal.libraryLogs.some((r) => !r.stub && r.onField),
   }))
   // Logs added to the library from anywhere (the Library tab, a sync) while the Session view already holds a session: it does not
   // watch the library, so Now hands it today's logs again (the same ones, the new log among them) and "Pull Q33's log" can read done.
@@ -205,7 +206,8 @@
 {:else}
   <WhatsNew {hasLogs} />
   <h2 class="big" data-now-big>{view.big}</h2>
-  {#if view.nexusCredit}<p class="credit" data-now-credit>Queue and start times from <a href={view.nexusCredit} target="_blank" rel="noreferrer">Nexus</a></p>{/if}
+  {#if view.nexusCredit}<p class="credit" data-now-credit>Queue and start times from <a href={view.nexusCredit} target="_blank" rel="noreferrer">Nexus</a></p>
+  {:else if view.nexusProblem}<p class="credit" data-now-nexus-problem>No Nexus queue times: {view.nexusProblem}</p>{/if}
   {#if view.kind === 'event-no-schedule' && eventSession}
     <!-- The fix in place (ADR b): type the next match, or add the read key; the same fields the board shows. -->
     <NextMatchFields session={eventSession} {scheduleNote} idPrefix="now-next" heading={false} />

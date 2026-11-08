@@ -37,11 +37,13 @@ export function nexusTimes(ev: Pick<NexusEvent, 'matches'>): Map<string, NexusTi
     const key = matchKeyOf(m.label)
     if (!key || m.replayOf) continue
     const t = m.times ?? {}
-    out.set(key, {
+    const times: NexusTimes = {
       queue: num(t.estimatedQueueTime) ?? num(t.actualQueueTime),
       start: num(t.actualStartTime) ?? num(t.estimatedStartTime),
       status: STATUSES.includes(m.status) ? (m.status as NexusStatus) : null,
-    })
+    }
+    // A row with no time and no call says nothing: leave The Blue Alliance's line (and no Nexus credit).
+    if (times.queue !== null || times.start !== null || times.status !== null) out.set(key, times)
   }
   return out
 }

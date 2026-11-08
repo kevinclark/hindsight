@@ -32,7 +32,8 @@ describe('the client', () => {
     expect(calls).toEqual(['https://frc.nexus/api/v1/event/2099test'])
     expect(store.map.get('/event/2099test')?.at).toBe(5)
   })
-  it('serves a copy under 60 seconds old without asking, then asks again', async () => {
+  it('keeps a copy for less than the minute Now waits between reads', () => expect(NEXUS_TTL_MS).toBeLessThan(60_000))
+  it('serves a copy younger than NEXUS_TTL_MS (under Now\'s one-minute read) without asking, then asks again', async () => {
     const calls: string[] = [], store = memoryStore()
     let t = 1_000
     const get = createNexus({ key: KEY, store, fetch: fakeFetch(calls), now: () => t })
@@ -107,7 +108,7 @@ describe('checkNexusKey', () => {
   })
   it('refuses anything else', () => {
     for (const bad of ['short', 'has space inside', 'x'.repeat(257), 'café-key-12345', 12345678]) {
-      expect(() => checkNexusKey(bad)).toThrow('That does not look like a Nexus API key: copy it from frc.nexus/api.')
+      expect(() => checkNexusKey(bad)).toThrow('That does not look like a Nexus API key: copy the Pull API key from frc.nexus/api.')
     }
   })
 })
@@ -140,7 +141,7 @@ describe('nexusTimes', () => {
     })
     expect(map.get('qm1')).toEqual({ queue: 100, start: 310, status: 'On field' })
     expect(map.get('qm2')).toEqual({ queue: 190, start: 400, status: 'Now queuing' })
-    expect(map.get('qm3')).toEqual({ queue: null, start: null, status: null })
+    expect(map.has('qm3')).toBe(false) // no time and no call: no Nexus answer, so The Blue Alliance's line stands
     expect(map.get('f1m2')).toEqual({ queue: null, start: null, status: 'Queuing soon' })
   })
   it('skips practice, replays and anything with replayOf', () => {

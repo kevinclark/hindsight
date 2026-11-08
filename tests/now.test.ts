@@ -327,4 +327,10 @@ describe('Now with Nexus times (ADR 12)', () => {
     expect(plain.big).toBe(`Next match: Q5 at ${at(min(255))} · in 55 min`)
     expect(plain.nexusCredit).toBeNull()
   })
+  it('says why there are no Nexus times when a key is set and Nexus failed, under the old line', () => {
+    const st = nexusNow({ queue: null, start: null, status: null }, { schedule: SCHEDULE, nexusEvent: null, nexusProblem: 'Nexus did not accept the API key.' })
+    expect(st.big).toBe(`Next match: Q5 at ${at(min(255))} · in 55 min`)
+    expect(st.nexusProblem).toBe('Nexus did not accept the API key.')
+    expect(nexusNow({ queue: null, start: null, status: null }, { schedule: SCHEDULE, nexusEvent: null }).nexusProblem).toBeNull()
+  })
 })

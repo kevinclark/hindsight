@@ -17,6 +17,8 @@ export interface SessionSchedule {
   note: string | null
   /** The event key Nexus answered for, when its times are on the schedule (for the credit link Nexus asks for). */
   nexusEvent?: string | null
+  /** Why Nexus's times are missing, when a Nexus reader was given and they are (a refused key, an event not on Nexus, no matches yet). */
+  nexusProblem?: string | null
 }
 
 const clockOf = (ms: number) => new Date(ms).toLocaleTimeString()
@@ -31,10 +33,11 @@ export async function sessionSchedule(session: Pick<Session, 'event' | 'matches'
     try {
       const live = await nexus(found.event.key)
       const times = nexusTimes(live.data)
-      if (times.size === 0) return { schedule: got.data, note: `${note} Nexus has no matches for this event yet.`, nexusEvent: null }
+      if (times.size === 0) return { schedule: got.data, note: `${note} Nexus has no matches for this event yet.`, nexusEvent: null, nexusProblem: 'Nexus has no matches for this event yet.' }
       return { schedule: withNexus(got.data, times), note: `${note} Queue and start times from Nexus${live.fromCache ? ', a saved copy' : ''} as of ${clockOf(live.fetchedAt)}.`, nexusEvent: found.event.key }
     } catch (e) {
-      return { schedule: got.data, note: `${note} No Nexus times: ${e instanceof Error ? e.message : String(e)}`, nexusEvent: null }
+      const why = e instanceof Error ? e.message : String(e)
+      return { schedule: got.data, note: `${note} No Nexus times: ${why}`, nexusEvent: null, nexusProblem: why }
     }
   } catch (e) {
     return { schedule: null, note: `No schedule: ${e instanceof Error ? e.message : String(e)}` }

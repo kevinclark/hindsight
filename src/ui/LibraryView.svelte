@@ -366,10 +366,10 @@
     <button class="primary" onclick={saveTeam} disabled={driveBusy}>Save</button>
     <button class="primary" onclick={linkCode} disabled={driveBusy || !codePlan?.sources.length || !codePlan.logs}>{linkLabel}</button></p>
   <p class="meta">The read key (from your account page on The Blue Alliance, Read API Keys) names events whose logs don't, and fetches your schedule. It stays on this computer, in this app's settings.{lookupNote ? ` ${lookupNote}` : ''}</p>
-  <p class="row"><label>Nexus API key <input type="password" bind:value={nexusBox} autocomplete="off" placeholder={nexusHasKey() ? 'saved: type to replace' : 'paste the key (optional)'} aria-label="Nexus API key" /></label>
+  <p class="row"><label>Nexus Pull API key <input type="password" bind:value={nexusBox} autocomplete="off" placeholder={nexusHasKey() ? 'saved: type to replace' : 'paste the key (optional)'} aria-label="Nexus Pull API key" /></label>
     <button class="primary" onclick={() => saveNexus(nexusBox)} disabled={driveBusy || !nexusBox.trim()}>Save</button>
     {#if nexusHasKey()}<button class="link" onclick={() => saveNexus('')} disabled={driveBusy}>Remove key</button>{/if}</p>
-  <p class="meta">Optional. At events that queue with <a href="https://frc.nexus" target="_blank" rel="noreferrer">Nexus</a>, Now shows when to queue and when the match starts, from Nexus's live times. Each person gets their own key: sign in with Google at <a href="https://frc.nexus/api" target="_blank" rel="noreferrer">frc.nexus/api</a> and copy it. It stays on this computer.{nexusNote ? ` ${nexusNote}` : ''}</p>
+  <p class="meta">Optional. At events that queue with <a href="https://frc.nexus" target="_blank" rel="noreferrer">Nexus</a>, Now shows when to queue and when the match starts, from Nexus's live times. Each person gets their own key: sign in with Google at <a href="https://frc.nexus/api" target="_blank" rel="noreferrer">frc.nexus/api</a> and copy the Pull API key (not a Push webhook token). It stays on this computer.{nexusNote ? ` ${nexusNote}` : ''}</p>
   {#if codePlan?.sources.length}<p class="meta">Logs whose code is in {codePlan.sources.length === 1 ? 'this repo' : 'these repos'} are linked when they are added (at most {ADD_LINK_REQUESTS} GitHub requests each time). Saving links the logs already here, which can take {codePlan.requests} or more requests.</p>{/if}
 </details>
 

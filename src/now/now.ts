@@ -64,6 +64,8 @@ export interface NowState {
   modeLine: boolean
   /** The Nexus page the big line's queue and start times came from (Nexus asks for a link back); null when they did not. */
   nexusCredit?: string | null
+  /** Why a laptop with a Nexus key shows no Nexus times ("Nexus did not accept the API key."); null otherwise. */
+  nexusProblem?: string | null
 }
 
 export interface NowInput {
@@ -84,6 +86,8 @@ export interface NowInput {
   schedule?: readonly ScheduledMatch[] | null
   /** The event key whose Nexus times are on the schedule (`sessionSchedule`'s `nexusEvent`), for the credit link. */
   nexusEvent?: string | null
+  /** `sessionSchedule`'s `nexusProblem`. */
+  nexusProblem?: string | null
   /** Hub: the library holds on-field logs, so an earlier event's board can be opened. */
   earlierEvent?: boolean
   /** Practice day: the latest event's board, as `deferralSession` picks it. */
@@ -276,6 +280,7 @@ export function nowState(input: NowInput): NowState {
     tasks: [pullTask(input, board, "Pull the last match's log"), triage, queue],
     also: [alsoMatch], jobs: [], modeLine: true,
     nexusCredit: next?.nexus && input.nexusEvent ? `https://frc.nexus/en/event/${input.nexusEvent}` : null,
+    nexusProblem: kind === 'event' && next && input.nexusProblem ? input.nexusProblem : null,
   }
 }
 

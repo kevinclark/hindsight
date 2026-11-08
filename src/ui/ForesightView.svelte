@@ -166,7 +166,7 @@
   // The team's schedule for the deferral session (the Session view's own read, src/tba/session-schedule.ts), so due points and the cut-off default
   // place the same here. An earlier event's carried board never reads one; no key, no team, offline with no saved copy or an error: none (by name only).
   let fsSchedule = $state.raw<ScheduledMatch[] | null>(null)
-  const scheduleSig = $derived(defSession && !carried ? `${defSession.id}|${defSession.event?.key ?? ''}|${defSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}|${nexusHasKey()}` : '')
+  const scheduleSig = $derived(defSession && !carried ? `${defSession.id}|${defSession.event?.key ?? ''}|${defSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}|${nexusHasKey()}|${nexusHasKey() ? Math.floor(clock / 60e3) : ''}` : '')
   // The schedule is dropped only when the session or its event changes (or there is nothing to read), or the team changes; not on every new log of the same session: until the fresh read lands, the last one stands.
   let fsScheduleOf = ''
   $effect(() => {

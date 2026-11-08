@@ -7,8 +7,8 @@ import type { Fetched, TbaStore } from '../tba/source.ts'
 
 const BASE = 'https://frc.nexus/api/v1'
 
-/** A copy is good for a minute: Nexus recomputes its times live. */
-export const NEXUS_TTL_MS = 60_000
+/** A copy is good for 50 s: Nexus recomputes its times live, and Now reads once a minute (a 60-s copy made every other read a cache hit). */
+export const NEXUS_TTL_MS = 50_000
 
 /** Every time is Unix milliseconds (TBA's are seconds), and may be null or absent. */
 export interface NexusMatchTimes {
@@ -88,6 +88,6 @@ export function createNexus(opts: { key: string; store: TbaStore; fetch?: typeof
 export function checkNexusKey(key: unknown): string | null | undefined {
   if (key === undefined) return undefined
   if (key === null || (typeof key === 'string' && key.trim() === '')) return null
-  if (typeof key !== 'string' || !/^[\x21-\x7e]{8,256}$/.test(key.trim())) throw new Error('That does not look like a Nexus API key: copy it from frc.nexus/api.')
+  if (typeof key !== 'string' || !/^[\x21-\x7e]{8,256}$/.test(key.trim())) throw new Error('That does not look like a Nexus API key: copy the Pull API key from frc.nexus/api.')
   return key.trim()
 }
