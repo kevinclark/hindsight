@@ -9,6 +9,7 @@
   import { onMount } from 'svelte'
   import { notReached } from '../hub/robot-reach.ts'
   import JobBar from './JobBar.svelte'
+  import { size } from './job-bar.ts'
   import { hub, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
   import DriveFolderPicker from './DriveFolderPicker.svelte'
   import type { IngestPlan } from '../hub/ingest.ts'
@@ -41,6 +42,8 @@
   let progress = $state<Progress | null>(null)
   let report = $state.raw<IngestReport | null>(null)
   let problem = $state<string | null>(null)
+  /** A job the user stopped before it had anything to report. */
+  let stoppedNote = $state<string | null>(null)
   let expanded = $state<Record<string, boolean>>({})
 
   let drive = $state<DriveStatus | null>(null)
@@ -67,18 +70,20 @@
     problem = null
     pullFailed = null // the last pull's failure is old news once anything else is tried
     progress = { job: label, done: 0, total: 0, current: '' }
+    stoppable = false
+    stoppedNote = null
     lastJob = null // a new job's own report replaces the old one
     ownWork = true
     try { return await body() } catch (e) { problem = e instanceof Error ? e.message : String(e); return undefined } finally { ownWork = false; progress = null; await refresh().catch(() => {}) }
   }
-  /** Shown as stopping at once; the app confirms with its own event. */
   /** Stop was pressed during this job: a pull tries no further address. */
   let stopPressed = false
   function stop() {
     stopPressed = true
-    if (progress) progress = { ...progress, stopping: true }
     void api?.cancel()
   }
+  /** The bar's job is one the app runs (it sent progress), so Stop can stop it; signing in or saving can't be. */
+  let stoppable = $state(false)
   const signIn = () => work('Signing in', () => api!.driveSignIn())
   const signOut = () => work('Signing out', () => api!.driveSignOut())
   const saveClient = () => work('Saving', () => api!.setGoogleClient(clientId, clientSecret))
@@ -112,7 +117,8 @@
     // Only a refusal can mean the robot never answered: anything thrown came after the idle check reached it (SFTP, reading), so it keeps its own words.
     const r = await work('Reading robot', () => api!.addFromRobot(address))
     if (!r) return
-    if ('refused' in r) { if (notReached(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
+    // A refusal after Stop is the stop, not a robot that wasn't found.
+    if ('refused' in r) { if (stopPressed) { stoppedNote = 'Stopped: nothing was pulled off the robot.'; return } if (notReached(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
     else {
       report = r.report
       if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Pull logs off the robot again later.`
@@ -137,9 +143,9 @@
     void api?.team().then((t) => { teamBox = t.team; savedTeam = t.team; setAppHasKey(!!t.tbaKey) }).catch(() => {})
     // How the job that finished last ended, for a page that reloaded and did not see it (kept for 30 minutes).
     void api?.lastJob().then((j) => { if (j && Date.now() - j.at < 30 * 60e3) lastJob = j }).catch(() => {})
-    void api?.runningJob().then((p) => { if (p && !progress) progress = p }).catch(() => {})
+    void api?.runningJob().then((p) => { if (p && !progress) { progress = p; stoppable = true } }).catch(() => {})
     return api?.onProgress((p) => {
-      if (p) progress = p
+      if (p) { progress = p; stoppable = true }
       else if (!ownWork && progress) { progress = null; void refresh().catch(() => {}) } // the job ended
     })
   })
@@ -147,7 +153,7 @@
   $effect(() => {
     if (!foreign || !api) return
     const timer = setInterval(() => {
-      void api.runningJob().then((p) => { if (!p) { progress = null; void refresh().catch(() => {}) } else if (!ownWork) progress = p }).catch(() => {})
+      void api.runningJob().then((p) => { if (!p) { progress = null; void refresh().catch(() => {}) } else if (!ownWork) { progress = p; stoppable = true } }).catch(() => {})
     }, 2000)
     return () => clearInterval(timer)
   })
@@ -202,9 +208,14 @@
     codePlan = await api!.codePlan().catch(() => codePlan)
   }
   /** A report's counts as words: each number, and the length of each list. */
-  const reportText = (report: unknown) => (typeof report === 'object' && report !== null
-    ? Object.entries(report).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
-    : '')
+  const reportText = (report: unknown): string => {
+    if (typeof report !== 'object' || report === null) return ''
+    const r = report as Record<string, unknown>
+    // A robot pull's result wraps its ingest report, or says why the robot refused.
+    if (typeof r.refused === 'string') return `not pulled: ${r.refused}`
+    if (typeof r.report === 'object') return reportText(r.report)
+    return Object.entries(r).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
+  }
   async function readAgain() {
     const r = await work('Reading logs again', () => api!.redescribe())
     if (r) rereadReport = r
@@ -293,7 +304,6 @@
     if (api) onOpenMatch([asFile({ entry: e, name: baseName(e.record.path) }, api)])
   }
 
-  const size = (n: number) => (n >= 2 ** 30 ? `${(n / 2 ** 30).toFixed(1)} GB` : `${(n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0)} MB`)
   const clock = (ms: number | null) => (ms === null ? '' : new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
   const matchText = (e: Entry) => {
     const r = e.record
@@ -333,7 +343,7 @@
   {#if all.length}<button class="primary" onclick={readAgain} disabled={driveBusy} title="Read every log on this computer again with this version of Hindsight and update what the list says about it (robot, event). Nothing in the logs changes.">Read logs again</button>{/if}
   {#if all.length}<span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={() => addRobot()} disabled={driveBusy || !robotAddress.trim()}>Pull logs off the robot</button></span>{/if}
   <span class="meta where">Library: <code>{snapshot?.libraryDir ?? '…'}</code></span>
-  {#if progress}<JobBar {progress} onStop={stop} />{/if}
+  {#if progress}<JobBar {progress} onStop={stoppable ? stop : undefined} />{/if}
 </section>
 
   {#if picking && api}
@@ -351,6 +361,7 @@
   {/if}
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
+{#if stoppedNote}<p class="meta" role="status">{stoppedNote}</p>{/if}
 {#if pullFailed}
   <section class="pullfail" role="alert" aria-label="Robot not found">
     <p class="lead">Robot not found. Is the cable in and the robot on?</p>

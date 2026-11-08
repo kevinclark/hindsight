@@ -18,7 +18,7 @@
  */
 import { createHash } from 'node:crypto'
 import { ManifestConflict, SignInAgain, Stopped, readText, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
-import type { ProgressFn } from './jobs.ts'
+import { fileMeter, type ProgressFn } from './jobs.ts'
 import type { LocalLibrary } from './library-store.ts'
 import { fileSource } from './local-adapter.ts'
 import type { LogRecord } from './types.ts'
@@ -168,19 +168,15 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
 
   let done = 0
   let inARow = 0
-  const bytes = { done: 0, total: todo.reduce((n, r) => n + r.size, 0) }
+  const meter = fileMeter(options.onProgress, todo.map((r) => r.size))
   for (const r of todo) {
-    const index = done
-    const base = bytes.done // fixed now: bytes.done moves past this log before it is sent
-    const at = (sent: number) => options.onProgress?.(index, todo.length, r.names[0], { bytes: { done: base + sent, total: bytes.total }, file: { done: sent, total: r.size } })
-    at(0)
-    done++ // not inside the call above: `?.` skips its arguments when there is no onProgress
+    const { at, end } = meter.start(done, todo.length, r.names[0], r.size)
+    done++
     if (options.cancelled?.()) { report.stopped = true; break }
     const there = remote.get(r.path)
-    bytes.done += r.size // counted as passed whatever happens to it: the bar measures the work gone through
-    if (there) { report.failed.push({ path: r.path, reason: `the team store has a different file at this path (${there.size} bytes, or other checksums); left alone and not published` }); continue }
+    if (there) { end(); report.failed.push({ path: r.path, reason: `the team store has a different file at this path (${there.size} bytes, or other checksums); left alone and not published` }); continue }
     try {
-      const { info, how } = await putLog(lib, team, r, { onProgress: at, cancelled: options.cancelled })
+      const { info, how } = await putLog(lib, team, r, { onProgress: at, cancelled: options.cancelled }).finally(end)
       report.uploaded.push({ path: r.path, size: info.size, how })
       remote.set(r.path, info)
       inARow = 0
@@ -299,19 +295,15 @@ export async function fetchLogs(lib: LocalLibrary, team: StorageAdapter, records
   let done = 0
   let inARow = 0
   let skipped = 0
-  const bytes = { done: 0, total: records.reduce((n, r) => n + r.size, 0) }
+  const meter = fileMeter(options.onProgress, records.map((r) => r.size))
   for (const r of [...records].sort(matchesFirst)) {
-    const index = done
-    const base = bytes.done // fixed now: bytes.done moves past this log before it is sent
-    const at = (sent: number) => options.onProgress?.(index, records.length, r.names[0], { bytes: { done: base + sent, total: bytes.total }, file: { done: sent, total: r.size } })
-    at(0)
-    done++ // not inside the call above: `?.` skips its arguments when there is no onProgress
+    const { at, end } = meter.start(done, records.length, r.names[0], r.size)
+    done++
     if (options.cancelled?.()) { report.stopped = true; break }
-    bytes.done += r.size
-    if (await lib.store.stat(r.path)) { skipped++; continue }
+    if (await lib.store.stat(r.path)) { end(); skipped++; continue }
     try {
       const CHUNK = 8 << 20
-      await lib.store.writeNew(r.path, { size: r.size, read: (a, b) => team.read(r.path, a, Math.min(b, a + CHUNK)).then((x) => x) }, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}), onProgress: at, cancelled: options.cancelled })
+      await lib.store.writeNew(r.path, { size: r.size, read: (a, b) => team.read(r.path, a, Math.min(b, a + CHUNK)).then((x) => x) }, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}), onProgress: at, cancelled: options.cancelled }).finally(end)
       report.fetched.push(r.path)
       inARow = 0
     } catch (e) {

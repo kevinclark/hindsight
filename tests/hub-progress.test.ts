@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { BYTES_EVERY_MS, JobRunner, type JobProgress, type ProgressMore } from '../src/hub/jobs.ts'
+import { BYTES_EVERY_MS, JobRunner, fileMeter, type JobProgress, type ProgressMore } from '../src/hub/jobs.ts'
+import { SETTLE_MS, estimateLeft } from '../src/ui/job-bar.ts'
+import type { LogRecord } from '../src/hub/types.ts'
 import { Stopped, bytesSource } from '../src/hub/adapter.ts'
 import { MemoryAdapter } from '../src/hub/memory-adapter.ts'
 import { LocalFolderAdapter } from '../src/hub/local-adapter.ts'
@@ -209,5 +211,65 @@ describe('pulling off the robot', () => {
     expect([report.stopped, report.added.length, report.unreadable.length, report.notTried]).toEqual([true, 0, 0, 2])
     expect(seen.size).toBe(0)
     expect((await readdir(work)).filter((n) => n.startsWith('hindsight-robot-'))).toEqual([]) // its temp folder is gone
+  })
+})
+
+describe('the byte count', () => {
+  it('drops a file skipped without a transfer from the total instead of jumping the count, so the rate is of real transfer', () => {
+    const { events, onProgress } = recorder()
+    const meter = fileMeter(onProgress, [100, 900, 50])
+    const a = meter.start(0, 3, 'a', 100); a.at(100); a.end()
+    const b = meter.start(1, 3, 'b', 900); b.end() // already there: no bytes moved
+    const c = meter.start(2, 3, 'c', 50); c.at(25)
+    expect(events.at(-1)!.more!.bytes).toEqual({ done: 125, total: 150 })
+    expect(events.map((e) => e.more!.bytes!.done)).toEqual([0, 100, 100, 100, 125])
+  })
+})
+
+describe('time left', () => {
+  const at = (s: number, bytes: number) => ({ at: s * 1000, bytes })
+  it('says nothing before the rate settles, or when nothing moves', () => {
+    expect(estimateLeft([at(0, 0), at(SETTLE_MS / 1000 - 1, 1e6)], 1e9)).toBe('')
+    expect(estimateLeft([at(0, 5e6), at(10, 5e6)], 1e9)).toBe('')
+  })
+  it('uses the last 30 s of rate: a link that slowed down is not judged by its fast start', () => {
+    // 1 MB/s for 60 s, then 0.1 MB/s for 30 s; 100 MB left at 0.1 MB/s is ~17 min, not ~2 min.
+    const samples = [at(0, 0), at(60, 60e6), at(90, 63e6)]
+    expect(estimateLeft(samples, 163e6)).toBe('about 17 min left')
+    expect(estimateLeft([at(0, 0), at(10, 10e6)], 50e6)).toBe('under a minute left')
+    expect(estimateLeft([at(0, 0), at(10, 1e6)], 1e9)).toBe('about 2.8 h left')
+  })
+})
+
+describe('Stop between pieces of a download from the team', () => {
+  it('a 9 MiB log stopped after its first 4 MiB piece leaves no file and no temp file', async () => {
+    const team = new MemoryAdapter()
+    const bytes = pattern(9 * MiB)
+    await team.writeNew('logs/2026-2027/2026-10-17/big.wpilog', bytesSource(bytes))
+    const lib = await LocalLibrary.open(join(work, 'mb'), 'mb')
+    const r = { type: 'log', path: 'logs/2026-2027/2026-10-17/big.wpilog', size: bytes.length, sha256: sha(bytes), names: ['big.wpilog'], playedAt: CLOCK, recordedAt: CLOCK, machine: 'ma' } as unknown as LogRecord
+    const pieces: number[] = []
+    let stop = false
+    const report = await fetchLogs(lib, team, [r], { cancelled: () => stop, onProgress: (_d, _t, _c, more) => { const n = more?.file?.done ?? 0; if (n > 0) { pieces.push(n); stop = true } } })
+    expect(pieces).toEqual([4 * MiB])
+    expect([report.stopped, report.fetched.length, report.failed.length]).toEqual([true, 0, 0])
+    expect(await readdir(join(lib.root, 'logs/2026-2027/2026-10-17'))).toEqual([])
+  })
+})
+
+describe('Stop during the copy into the library', () => {
+  it('is not remembered as seen, so the next pull reads the file again', async () => {
+    const lib = await LocalLibrary.open(join(work, 'lib'), 'ma')
+    const dir = join(work, 'src')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'a.wpilog'), robotLog({ clockMs: CLOCK, enabled: [20, 55], seed: 'copy-stop' }))
+    const seen = new Map<string, string>()
+    let asks = 0
+    const report = await ingest(lib, await localFolderFiles(dir), { describe: describeFile, seen, cancelled: () => ++asks > 1 }) // the file's own check passes; the copy's first piece stops
+    expect([report.stopped, report.added.length]).toEqual([true, 0])
+    expect(seen.size).toBe(0)
+    const again = await ingest(lib, await localFolderFiles(dir), { describe: describeFile, seen })
+    expect(again.added.length).toBe(1)
+    expect(seen.size).toBe(1)
   })
 })

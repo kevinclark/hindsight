@@ -1,3 +1,8 @@
+/** Sizes and time left for the job bar. */
+
+/** 812 kB → "0.8 MB", 41 MB, 1.2 GB. */
+export const size = (n: number) => (n >= 2 ** 30 ? `${(n / 2 ** 30).toFixed(1)} GB` : `${(n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0)} MB`)
+
 /** Time left for a job counted in bytes, from the bytes done over time. */
 export interface Sample { at: number; bytes: number }
 

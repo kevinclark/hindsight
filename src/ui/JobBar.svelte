@@ -4,11 +4,15 @@
   // the rate has settled, and a Stop that answers at once. NN/g progress indicators: a percent-done bar for anything over
   // ~10 s, say what is happening, and acknowledge a press within 0.1 s.
   import type { Progress } from '../hub/bridge.ts'
-  import { estimateLeft, type Sample } from './job-bar.ts'
+  import { estimateLeft, size, type Sample } from './job-bar.ts'
 
-  let { progress, onStop }: { progress: Progress; onStop: () => void } = $props()
+  /** `onStop` absent: the work can't be stopped (signing in, saving), so no Stop is offered. */
+  let { progress, onStop }: { progress: Progress; onStop?: () => void } = $props()
 
-  const size = (n: number) => (n >= 2 ** 30 ? `${(n / 2 ** 30).toFixed(1)} GB` : `${(n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0)} MB`)
+  // Shown as stopping the moment Stop is pressed; the app's own event follows.
+  let pressed = $state(false)
+  const stopping = $derived(!!progress.stopping || pressed)
+  function stop() { pressed = true; onStop?.() }
 
   // Bytes over time for the time left, for this job only.
   let samples: Sample[] = []
@@ -25,19 +29,20 @@
   const amounts = $derived([
     progress.bytes?.total ? `${size(progress.bytes.done)} of ${size(progress.bytes.total)}` : '',
     value !== null ? `${Math.floor(value * 100)}%` : '',
-    progress.stopping ? '' : left,
+    stopping ? '' : left,
   ].filter(Boolean).join(' · '))
   // Only once bytes move: a local file is read first (no bytes) and copied after, so an empty bar would look stuck.
   const file = $derived(progress.file && progress.file.total > 0 && progress.file.done > 0 && progress.current ? progress.file : null)
 </script>
 
-<div class="job-bar" class:stopping={progress.stopping} role="status" aria-live="polite">
+<!-- Only the head is a live region: the amounts below change several times a second. -->
+<div class="job-bar" class:stopping>
   <div class="head">
-    <span class="what"><strong>{progress.job}</strong>{#if what}{' '}· {what}{/if}</span>
-    {#if progress.stopping}
-      <span class="stopping-note">Stopping after the piece it is on (a few seconds). What is done is kept.</span>
-    {:else}
-      <button type="button" class="stop" onclick={onStop}>Stop</button>
+    <span class="what" role="status"><strong>{progress.job}</strong>{#if what}{' '}· {what}{/if}{#if stopping}{' '}· stopping{/if}</span>
+    {#if stopping}
+      <span class="stopping-note">Stops once the current step finishes. What is done is kept.</span>
+    {:else if onStop}
+      <button type="button" class="stop" onclick={stop}>Stop</button>
     {/if}
   </div>
   <progress max="1" value={value ?? undefined} aria-label="{progress.job}, all of it"></progress>

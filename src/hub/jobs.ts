@@ -26,6 +26,27 @@ export type ProgressFn = (done: number, total: number, current: string, more?: P
 
 export type Work<T> = (job: JobHandle, progress: ProgressFn) => Promise<T>
 
+/**
+ * Bytes over a job of files, for the bar and its time left. A file counts only once its bytes move: one skipped without
+ * a transfer (already there, copied inside Drive, known from the last pull) leaves the total instead of jumping the count,
+ * so the rate is of real transfer.
+ */
+export function fileMeter(onProgress: ProgressFn | undefined, sizes: number[]) {
+  const bytes = { done: 0, total: sizes.reduce((n, s) => n + s, 0) }
+  return {
+    /** The file `index` of `count` starts: `at(sent)` reports its bytes; `end()` once it is through, whatever happened. */
+    start(index: number, count: number, name: string, size: number) {
+      let moved = false
+      const at = (sent: number) => {
+        if (sent > 0) moved = true
+        onProgress?.(index, count, name, { bytes: { done: bytes.done + sent, total: bytes.total }, file: { done: sent, total: size } })
+      }
+      at(0)
+      return { at, end: () => { if (moved) bytes.done += size; else bytes.total -= size } }
+    },
+  }
+}
+
 /** Least gap (ms) between two progress events that differ only in bytes: a byte count can move many times a second. */
 export const BYTES_EVERY_MS = 150
 

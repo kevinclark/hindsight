@@ -137,12 +137,20 @@ export async function connectRobotFs(address: string, timeoutMs = 10_000): Promi
       const read = sftp.createReadStream(remote)
       const write = createWriteStream(local)
       let got = 0
+      let stopped = false
+      // Stop is looked for on every piece and once a second, so a link that stalls mid-file still stops.
+      const stopIfAsked = () => { if (!stopped && watch.cancelled?.()) { stopped = true; read.destroy(); write.destroy() } }
+      const timer = setInterval(stopIfAsked, 1000)
       read.on('data', (chunk: Buffer) => {
-        if (watch.cancelled?.()) { read.destroy(); write.destroy(); reject(new Stopped()); return }
+        stopIfAsked()
+        if (stopped) return
         got += chunk.length
         watch.onProgress?.(got, 0) // the total is the listing's size, which the caller has
       })
-      read.on('error', reject); write.on('error', reject); write.on('close', () => resolve())
+      read.on('error', (e: Error) => { if (!stopped) reject(e) })
+      write.on('error', (e) => { if (!stopped) reject(e) })
+      // Settled only once the file is closed, so the caller can remove it (Windows keeps a folder with an open file in it).
+      write.on('close', () => { clearInterval(timer); if (stopped) reject(new Stopped()); else resolve() })
       read.pipe(write)
     }),
     close: () => ssh.end(),

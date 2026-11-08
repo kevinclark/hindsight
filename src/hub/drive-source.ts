@@ -37,7 +37,12 @@ export async function driveFolderFiles(drive: DriveAdapter, folderId: string, te
               if (got < f.size) stopIfAsked(watch.cancelled) // the temp folder is removed below; a finished file is kept
             })
             await new Promise<void>((resolve, reject) => sink.end((e?: Error | null) => (e ? reject(e) : resolve())))
-          } catch (e) { sink.destroy(); await rm(dir, { recursive: true, force: true }); throw e }
+          } catch (e) {
+            // Closed before the folder is removed: Windows keeps a folder with an open file in it.
+            if (!sink.closed) await new Promise<void>((resolve) => { sink.once('close', () => resolve()); sink.destroy() })
+            await rm(dir, { recursive: true, force: true })
+            throw e
+          }
           return { path, done: () => rm(dir, { recursive: true, force: true }) }
         },
       })

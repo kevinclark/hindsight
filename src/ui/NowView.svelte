@@ -118,7 +118,6 @@
   let stopPressed = false
   function stop() {
     stopPressed = true
-    if (progress) progress = { ...progress, stopping: true }
     void api?.cancel()
   }
   // A pull that did not work: the words, and whether the robot did not answer (so the cable and power are the first thing to check).
@@ -159,6 +158,8 @@
         await onAdded()
         return
       }
+      // Stopped while looking for the robot: say so, not that it wasn't found.
+      if (stopPressed) { note = 'Stopped: nothing was pulled off the robot.'; return }
       failure = { reason, notFound: notReached(reason), tried: tried.join(', ').replace(/ tether/g, '') }
       note = ''
     } catch (e) {
@@ -171,7 +172,6 @@
     failure = null
     note = ''
     busy = 'folder'
-    stopPressed = false
     try {
       const r = await api.addFromFolder()
       if (r) { note = reportText(r, 'the folder'); await signal.readLibrary(); await onAdded() }
@@ -244,7 +244,8 @@
     {/each}
   </ol>
   <p class="status" role="status" data-now-note>{busy === 'folder' && !note ? 'Adding logs…' : note}</p>
-  {#if busy}<JobBar progress={progress ?? { job: busy === 'folder' ? 'Adding logs' : 'Working', done: 0, total: 0, current: '' }} onStop={stop} />{/if}
+  <!-- Only once the app sends progress: before that the folder dialog is open, or nothing has started that Stop could stop. -->
+  {#if busy && progress}<JobBar {progress} onStop={stop} />{/if}
 
   {#if view.jobs.length}
     <h3 class="jobs">What Hindsight does</h3>
