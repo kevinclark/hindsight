@@ -1,6 +1,6 @@
 /** The page's way into the library. Each handler is thin: the work is in src/hub/. */
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
-import { join } from 'node:path'
+import { isAbsolute, extname, join } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { filesToFetch } from '../src/hub/catalog.ts'
 import { LocalLibrary, readJson, writeJson } from '../src/hub/library-store.ts'
@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto'
 import { SignInAgain } from '../src/hub/adapter.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
 import { checkForUpdate, selfUpdates } from '../src/hub/update.ts'
-import { JobRunner, type Work } from '../src/hub/jobs.ts'
+import { JobRunner, type JobHandle, type ProgressFn, type Work } from '../src/hub/jobs.ts'
 import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
 import { estimateRequests, linkable, linkCode } from '../src/hub/codelink.ts'
@@ -26,7 +26,9 @@ import { checkNexusKey, createNexus, isNexusEventKey, type NexusGet } from '../s
 import { fileTbaStore } from './tba-store.ts'
 import type { CodePlan, DriveStatus, TeamSettingSaved, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
+import { opensInAdvantageScope } from '../src/hub/advantagescope.ts'
 import { Describer } from './describer.ts'
+import { openInAdvantageScope } from './advantagescope.ts'
 import { driveToken, googleClient, keeping, signIn, signOut, signedIn } from './google-auth.ts'
 import { loadSettings, saveSettings } from './settings.ts'
 
@@ -92,19 +94,21 @@ export function registerHub(window: () => BrowserWindow | null): void {
   })))
 
   async function runIngest(name: string, files: SourceFile[]): Promise<IngestReport> {
+    return job(name, (j, progress) => ingestWork(files, j, progress))
+  }
+  /** Ingest inside a job already running (an add, or the robot pull after its checks). */
+  async function ingestWork(files: SourceFile[], j: JobHandle, progress: ProgressFn): Promise<IngestReport> {
     const lib = await open()
     const seenPath = seenFile()
     const seen = new Map(Object.entries(await readJson<Record<string, string>>(seenPath, {})))
-    return job(name, async (j, progress) => {
-      const report = await ingest(lib, files, { describe: describer.describe, seen, cancelled: () => j.cancelled, onProgress: progress })
-      await writeJson(seenPath, Object.fromEntries(seen))
-      // Logs just added that name only their code are linked to the saved GitHub sources, at most 20 API requests (a cancelled add links nothing).
-      const sources = (await loadSettings()).codeSources ?? []
-      if (sources.length > 0) {
-        try { Object.assign(report, await linkAdded(lib, report, sources, `${app.getVersion()}+linked`, { cancelled: () => j.cancelled, onProgress: progress })) } catch (e) { report.linkProblem = e instanceof Error ? e.message : String(e) }
-      }
-      return report
-    })
+    const report = await ingest(lib, files, { describe: describer.describe, seen, cancelled: () => j.cancelled, onProgress: progress })
+    await writeJson(seenPath, Object.fromEntries(seen))
+    // Logs just added that name only their code are linked to the saved GitHub sources, at most 20 API requests (a cancelled add links nothing).
+    const sources = (await loadSettings()).codeSources ?? []
+    if (sources.length > 0) {
+      try { Object.assign(report, await linkAdded(lib, report, sources, `${app.getVersion()}+linked`, { cancelled: () => j.cancelled, onProgress: progress })) } catch (e) { report.linkProblem = e instanceof Error ? e.message : String(e) }
+    }
+    return report
   }
 
   ipcMain.handle('hub:info', async () => {
@@ -218,6 +222,19 @@ export function registerHub(window: () => BrowserWindow | null): void {
     await lib.append({ type: 'tag', target, field, value: String(value).trim(), recordedAt: Date.now(), machine: lib.machine })
   })
 
+  /** The path on disk for a log the page names: a library path (only if downloaded here) or a file it was given. */
+  async function advantageScopePath(target: { library: string } | { file: string }): Promise<string> {
+    if ('library' in target) {
+      const lib = await open()
+      if (!checkPath(target.library).startsWith('logs/')) throw new Error('not a log path')
+      const name = target.library.split('/').pop()
+      if (!(await lib.store.stat(target.library))) throw new Error(`${name} is not on this computer: download it from the Library first.`)
+      return join(lib.root, target.library)
+    }
+    if (!isAbsolute(target.file) || !(await stat(target.file).then((s) => s.isFile(), () => false))) throw new Error('That file is not on this computer.')
+    return target.file
+  }
+
   ipcMain.handle('hub:history', async (): Promise<string> => (await open()).historyText())
   ipcMain.handle('hub:appendHistory', async (_e, text: string): Promise<number> => {
     // Under the lock the push takes, so a push never reads this file half-written, nor brings it down over a new line.
@@ -242,6 +259,12 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const info = await lib.store.stat(path)
     if (!info) throw new Error(`${path} is not on this computer`)
     return lib.store.read(path, 0, info.size)
+  })
+
+  ipcMain.handle('hub:openInAdvantageScope', async (_e, target: { library: string } | { file: string }): Promise<void> => {
+    const path = await advantageScopePath(target)
+    if (!opensInAdvantageScope(path)) throw new Error(`AdvantageScope doesn't open ${extname(path) || 'these'} files.`)
+    await openInAdvantageScope(path)
   })
 
   // ---- Google Drive ----
@@ -301,13 +324,20 @@ export function registerHub(window: () => BrowserWindow | null): void {
   ipcMain.handle('hub:addFromRobot', async (_e, address: string): Promise<RobotResult> => {
     const where = String(address).trim()
     if (!/^[\w.-]+$/.test(where)) throw new Error('That is not a robot address (use 10.TE.AM.2 or roboRIO-TEAM-FRC.local).')
-    const idle = await checkRobotIdle(where)
-    if (!idle.ok) return { refused: idle.reason }
-    const fs = await connectRobotFs(where)
-    try {
-      const { files, stillWriting } = await robotFiles(fs, { tempRoot: app.getPath('temp') })
-      return { report: await runIngest('Reading robot', files), stillWriting }
-    } finally { fs.close() }
+    // One job from the first knock on the robot, so the bar and Stop show while it checks, connects and lists.
+    return job('Pulling logs off the robot', async (j, progress) => {
+      const step = (words: string) => progress(0, 0, '', { step: words })
+      step(`Checking the robot at ${where} is disabled`)
+      const idle = await checkRobotIdle(where)
+      if (!idle.ok) return { refused: idle.reason }
+      step(`Connecting to ${where}`)
+      const fs = await connectRobotFs(where)
+      try {
+        step('Listing the logs on the robot (looks twice, 1.5 s apart, to skip one still being written)')
+        const { files, stillWriting } = await robotFiles(fs, { tempRoot: app.getPath('temp') })
+        return { report: await ingestWork(files, j, progress), stillWriting }
+      } finally { fs.close() }
+    })
   })
 
   ipcMain.handle('hub:updateInfo', () => update)

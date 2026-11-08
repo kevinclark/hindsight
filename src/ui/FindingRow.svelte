@@ -14,6 +14,11 @@
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
   import { shortTitle } from '../report/titles.ts'
   import { keyNumber } from '../report/review-model.ts'
+  import PdpThumb from './PdpThumb.svelte'
+  import { judgedAgainst } from '../power/power-map-view.ts'
+  import { openPowerMap } from './power-map-bridge.svelte.ts'
+  import { powerMapInstant } from '../analyze.ts'
+  import { profileId } from '../profiles/index.ts'
 
   let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug }: {
     finding: Finding
@@ -77,6 +82,17 @@
     onMark(finding, status, note.trim())
   }
   const date = (iso: string) => iso.slice(0, 10)
+
+  // A motor's breaker finding says which breaker it was judged against and where it sits (the power map), with a thumbnail of the PDP
+  // and a way to change it. Only inside the opened finding; nothing on the main-breaker finding beyond its evidence row.
+  const isPdp = $derived(finding.rule === 'power/pdp-breaker-margin')
+  const pdpSlot = $derived(isPdp ? /^PDP slot (\d+)$/.exec(String(finding.evidence.slot ?? ''))?.[1] : undefined)
+  const judged = $derived(isPdp ? judgedAgainst(finding.evidence, analysis.match.powerMap) : '')
+  function changeBreaker() {
+    const iso = powerMapInstant(analysis.match)
+    const known = !iso.startsWith('9999')
+    openPowerMap({ robot: profileId(analysis.match.profile as never), ...(pdpSlot !== undefined ? { slot: Number(pdpSlot) } : {}), ...(known ? { from: { iso, label: analysis.match.matchLabel || analysis.match.fileName } } : {}) })
+  }
 </script>
 
 <li class={`finding ${finding.severity}`} class:known={issue?.status === 'known' || fixedLater || !!wrongMark}>
@@ -121,6 +137,12 @@
           {/each}
         </tbody>
       </table>
+      {#if isPdp}
+        <div class="judged" data-judged-against>
+          <div><strong>judged against:</strong> {judged} · <button type="button" class="link" onclick={changeBreaker}>Change</button></div>
+          {#if pdpSlot !== undefined}<PdpThumb map={analysis.match.powerMap} slot={Number(pdpSlot)} robot={profileId(analysis.match.profile as never)} onclick={changeBreaker} />{/if}
+        </div>
+      {/if}
       {#if finding.plot && open}
         <Plot model={plotModel(analysis.match, finding.plot)} />
       {/if}
@@ -175,6 +197,8 @@
 </li>
 
 <style>
+  .judged { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin: 0.5rem 0; font-size: 0.9rem; }
+  .judged .link { background: none; border: none; padding: 0; color: var(--link, var(--fg)); text-decoration: underline; cursor: pointer; font: inherit; min-height: 24px; }
   .finding { border-bottom: 1px solid var(--border); list-style: none; }
   summary { display: grid; grid-template-columns: 6.5rem 1fr auto; gap: 0.75rem; align-items: baseline; padding: 0.4rem 0.25rem; cursor: pointer; }
   summary::-webkit-details-marker { display: none; }

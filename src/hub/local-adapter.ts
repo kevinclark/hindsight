@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs'
 import { appendFile, mkdir, open, readdir, rename, rm, stat as fsStat, readFile, utimes, writeFile } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isOwnAppendPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
+import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isOwnAppendPath, stopIfAsked, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
 
 const CHUNK = 4 << 20
 /** Marks a file still being written; never listed, never read as a library file. */
@@ -63,6 +63,7 @@ export class LocalFolderAdapter implements StorageAdapter {
     try {
       const hash = createHash('sha256')
       for (let at = 0; at < from.size; at += CHUNK) {
+        stopIfAsked(options.cancelled) // the temp file is removed below
         const chunk = await from.read(at, Math.min(from.size, at + CHUNK))
         hash.update(chunk)
         await handle.write(chunk)

@@ -8,6 +8,7 @@
   import Plot from './Plot.svelte'
   import type { PlotModel } from './plot-data.ts'
   import { matchWhen } from '../match/match.ts'
+  import BreakersStrip from './BreakersStrip.svelte'
 
   let { analysis }: { analysis: Analysis } = $props()
   const m = $derived(analysis.match)
@@ -46,6 +47,8 @@
   } : null)
   const f2 = (x: number | null | undefined) => (x === null || x === undefined || !Number.isFinite(x) ? '—' : x.toFixed(2))
 </script>
+
+<BreakersStrip profile={m.profile} map={m.powerMap} />
 
 {#if !p || !g}
   <p>This log has no battery voltage or no motor supply currents, so the power view can't be drawn.</p>

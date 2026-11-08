@@ -6,6 +6,8 @@
  *  - a re-run of the same ingest finds everything already there and writes nothing.
  */
 import { stat } from 'node:fs/promises'
+import { Stopped, type WriteOptions } from './adapter.ts'
+import { fileMeter, type ProgressFn } from './jobs.ts'
 import { fileSource, hashFile } from './local-adapter.ts'
 import type { Described } from './describe-file.ts'
 import { libraryPath, withShaSuffix } from './layout.ts'
@@ -29,9 +31,15 @@ export interface SourceFile {
   /** Checksums the source already knows (a Drive listing's); with one of them matching the library the file is not downloaded. */
   sha256?: string
   md5?: string
-  /** Make the bytes available as a file on this machine. A local source returns the original path; the original is only read. */
-  open(): Promise<{ path: string; done(): Promise<void> }>
+  /**
+   * Make the bytes available as a file on this machine. A local source returns the original path; the original is only read.
+   * A source that downloads reports its bytes to `watch.onProgress` and throws Stopped, leaving nothing, when `watch.cancelled` says so.
+   */
+  open(watch?: Watch): Promise<{ path: string; done(): Promise<void> }>
 }
+
+/** Bytes so far, and whether the user asked to stop: what a long copy is told and asks. */
+export type Watch = Pick<WriteOptions, 'onProgress' | 'cancelled'>
 
 const UNREADABLE = 'unreadable: '
 
@@ -45,6 +53,9 @@ export interface IngestReport {
   ignored: number
   bytesAdded: number
   durationMs: number
+  /** The user pressed Stop; `notTried` files were left for the next time. */
+  stopped?: boolean
+  notTried?: number
   /** Set by the app when code linking ran after the add (src/hub/ingest-link.ts): logs linked, GitHub API requests made, and whether the cap stopped it. */
   linked?: number
   linkRequests?: number
@@ -58,7 +69,8 @@ export interface IngestReport {
 export interface IngestOptions {
   describe(path: string, name: string): Promise<Described>
   now?: () => number
-  onProgress?(done: number, total: number, current: string): void
+  /** Files done of files to do, the file now; with bytes over the job and the file. */
+  onProgress?: ProgressFn
   /** Files already read, by their `cacheKey`: a sha-256, or `unreadable: <why>` for a file that would not read. A hit skips reading the file. */
   seen?: { get(key: string): string | undefined; set(key: string, sha256: string): void }
   /** Stop early (the user pressed cancel). */
@@ -69,23 +81,26 @@ export async function ingest(lib: LocalLibrary, files: SourceFile[], options: In
   const now = options.now ?? Date.now
   const started = now()
   const report: IngestReport = { added: [], already: [], unreadable: [], ignored: 0, bytesAdded: 0, durationMs: 0 }
-  let done = 0
-  for (const file of files) {
-    options.onProgress?.(done++, files.length, file.name)
-    if (options.cancelled?.()) break
-    if (kindOf(file.name) === null) { report.ignored++; continue }
+  const logs = files.filter((f) => kindOf(f.name) !== null)
+  const meter = fileMeter(options.onProgress, logs.map((f) => f.size))
+  report.ignored = files.length - logs.length
+  for (const [index, file] of logs.entries()) {
+    const { at, end } = meter.start(index, logs.length, file.name, file.size)
+    if (options.cancelled?.()) { report.stopped = true; break }
     try {
-      await ingestOne(lib, file, options, report, now)
+      await ingestOne(lib, file, options, report, now, { onProgress: at, cancelled: options.cancelled })
     } catch (e) {
+      // Stop part way through a file: what was copied of it is gone, and it is not unreadable.
+      if (e instanceof Stopped) { report.stopped = true; break }
       report.unreadable.push({ name: file.name, where: file.where, reason: e instanceof Error ? e.message : String(e) })
-    }
+    } finally { end() }
   }
-  options.onProgress?.(files.length, files.length, '')
+  if (report.stopped) report.notTried = logs.length - report.added.length - report.already.length - report.unreadable.length
   report.durationMs = now() - started
   return report
 }
 
-async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOptions, report: IngestReport, now: () => number): Promise<void> {
+async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOptions, report: IngestReport, now: () => number, watch: Watch): Promise<void> {
   const remembered = file.cacheKey ? options.seen?.get(file.cacheKey) : undefined
   // A file that would not read last time, unchanged, is reported again without being read (a Drive file would be downloaded again).
   if (remembered?.startsWith(UNREADABLE)) throw new Error(remembered.slice(UNREADABLE.length))
@@ -94,7 +109,9 @@ async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOpt
   const known = (knownSha ? lib.catalog.bySha(knownSha) : undefined) ?? (file.md5 ? lib.catalog.byMd5(file.md5) : undefined)
   if (known) return noteAlready(lib, file, known, report, now)
 
-  const source = await file.open()
+  // The bar follows the slow part: the download when the source has one, else the copy into the library.
+  let downloaded = false
+  const source = await file.open({ cancelled: watch.cancelled, onProgress: (sent, total) => { downloaded = true; watch.onProgress?.(sent, total) } })
   try {
     // 2. Read it: hash and what it says about itself. A file that will not read is reported, not filed.
     let d: Described
@@ -102,9 +119,10 @@ async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOpt
       if (file.cacheKey) options.seen?.set(file.cacheKey, `${UNREADABLE}${e instanceof Error ? e.message : String(e)}`)
       throw e
     }
-    if (file.cacheKey) options.seen?.set(file.cacheKey, d.sha256)
+    // Remembered only once the library holds this content (found here, or filed below): a Stop during the copy leaves nothing remembered.
+    const remember = () => { if (file.cacheKey) options.seen?.set(file.cacheKey, d.sha256) }
     const again = lib.catalog.bySha(d.sha256)
-    if (again) return noteAlready(lib, file, again, report, now)
+    if (again) { remember(); return noteAlready(lib, file, again, report, now) }
     // A hoot file with no time in its name, pulled from the robot: the roboRIO's modified time, recorded at the pull, is its date.
     if (d.meta.kind === 'hoot' && d.meta.playedAt === null && file.from === 'robot' && file.modifiedTime) d.meta = { ...d.meta, playedAt: file.modifiedTime, dateSource: 'file time' }
 
@@ -112,13 +130,14 @@ async function ingestOne(lib: LocalLibrary, file: SourceFile, options: IngestOpt
     const path = await freePath(lib, libraryPath(d.meta, file.name), d.sha256)
     if (!(await lib.store.stat(path))) {
       const from = await fileSource(source.path)
-      try { await lib.store.writeNew(path, from, { sha256: d.sha256 }) } finally { await from.close() }
+      try { await lib.store.writeNew(path, from, { sha256: d.sha256, cancelled: watch.cancelled, ...(downloaded ? {} : { onProgress: watch.onProgress }) }) } finally { await from.close() }
     }
     const record: LogRecord = {
       type: 'log', ...d.meta, sha256: d.sha256, md5: d.md5, size: d.size, path, names: [file.name],
       modifiedTime: file.modifiedTime, from: file.from, ...(file.sourceId ? { sourceId: file.sourceId } : {}), recordedAt: now(), machine: lib.machine,
     }
     await lib.append(record)
+    remember()
     report.added.push({ name: file.name, where: file.where, path, size: d.size, undated: d.meta.playedAt === null, stub: d.meta.stub })
     report.bytesAdded += d.size
   } finally {

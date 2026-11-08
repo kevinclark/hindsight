@@ -41,6 +41,7 @@ import gaugeCapacity from './battery/gauge-capacity.ts'
 import passthrough from './alerts/passthrough.ts'
 import pdNotReporting from './power/pd-not-reporting.ts'
 import mainBreakerMargin from './power/main-breaker-margin.ts'
+import pdpBreakerMargin from './power/pdp-breaker-margin.ts'
 import controllers from './foresight/controllers.ts'
 import gyroStillDrift from './foresight/gyro-still-drift.ts'
 import zeroSanity from './foresight/zero-sanity.ts'
@@ -52,7 +53,7 @@ import logUsbStick from './foresight/log-usb-stick.ts'
 
 export const RULES: Rule[] = [
   brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, noneAtEnable, stuckState, tilt, zeroNotCompleted, deviceDropout, inputDisconnected, busDropout, deviceRebooted, dsLogTruncated,
-  limitNotApplied, mainBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, slip, stall, impact, overrun,
+  limitNotApplied, mainBreakerMargin, pdpBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, slip, stall, impact, overrun,
   visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough, usbDropout,
 ]
 

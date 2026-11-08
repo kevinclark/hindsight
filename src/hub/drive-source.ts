@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { DriveAdapter } from './drive-adapter.ts'
+import { stopIfAsked } from './adapter.ts'
 import type { SourceFile } from './ingest.ts'
 import { kindOf } from './types.ts'
 
@@ -24,14 +25,24 @@ export async function driveFolderFiles(drive: DriveAdapter, folderId: string, te
       out.push({
         name: f.name, where: `${where}${f.name}`, size: f.size, modifiedTime: f.modifiedTime, from: 'drive', sourceId: f.id, sha256: f.sha256, md5: f.md5,
         cacheKey: `drive:${f.id}|${f.size}|${f.md5 ?? f.modifiedTime}`,
-        open: async () => {
+        open: async (watch = {}) => {
           const dir = await mkdtemp(join(tempRoot, 'hindsight-drive-'))
           const path = join(dir, f.name.replace(/[\\/]/g, '_'))
           const sink = createWriteStream(path)
+          let got = 0
           try {
-            await drive.download(f.id, f.size, (chunk) => new Promise((resolve, reject) => sink.write(chunk, (e) => (e ? reject(e) : resolve()))))
+            await drive.download(f.id, f.size, async (chunk) => {
+              await new Promise<void>((resolve, reject) => sink.write(chunk, (e) => (e ? reject(e) : resolve())))
+              watch.onProgress?.((got += chunk.length), f.size)
+              if (got < f.size) stopIfAsked(watch.cancelled) // the temp folder is removed below; a finished file is kept
+            })
             await new Promise<void>((resolve, reject) => sink.end((e?: Error | null) => (e ? reject(e) : resolve())))
-          } catch (e) { sink.destroy(); await rm(dir, { recursive: true, force: true }); throw e }
+          } catch (e) {
+            // Closed before the folder is removed: Windows keeps a folder with an open file in it.
+            if (!sink.closed) await new Promise<void>((resolve) => { sink.once('close', () => resolve()); sink.destroy() })
+            await rm(dir, { recursive: true, force: true })
+            throw e
+          }
           return { path, done: () => rm(dir, { recursive: true, force: true }) }
         },
       })

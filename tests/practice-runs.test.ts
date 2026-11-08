@@ -117,8 +117,8 @@ describe('a run under 10 s is checked for faults only', () => {
 
 describe('every rule says what it judges', () => {
   const all = [...new Map([...RULES, ...FORESIGHT_RULES].map((r) => [r.id, r])).values()]
-  it('all 44 rules choose, 24 faults and 20 performance', () => {
-    expect(all.length).toBe(44)
+  it('all 45 rules choose, 24 faults and 21 performance', () => {
+    expect(all.length).toBe(45)
     expect(all.every((r) => r.judges === 'fault' || r.judges === 'performance')).toBe(true)
     expect(all.filter((r) => r.judges === 'fault').length).toBe(24)
   })

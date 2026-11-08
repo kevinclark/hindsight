@@ -22,6 +22,7 @@ import { otherLogSeries } from './other-logs.ts'
 import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } from './series.ts'
 import { playedAt } from './played-at.ts'
 import { gameFor } from '../profiles/games.ts'
+import type { PowerMap } from '../power/power-map.ts'
 
 /**
  * One run (ADR 8): a maximal stretch of enabled time whose disabled gaps are shorter than RUN_JOIN_SECONDS. `auto` is
@@ -100,6 +101,11 @@ export interface Match {
    * whether its current-limit lines match the profile's commit (src/code/limit-lines.ts).
    */
   limitLines?: Map<string, LimitLines>
+  /**
+   * The robot's power map in effect when this match was played (src/power/power-map.ts), set by analyzeFiles from the
+   * history before the rules run. Null: none entered, and the breaker rules judge against the first legal 40 A breaker to trip.
+   */
+  powerMap: PowerMap | null
 }
 
 /** The disabled stretch Foresight checks: from start-up settling (or the last disable) to now, in robot time. */
@@ -157,7 +163,7 @@ export function buildMatch(fileName: string, log: WpilogFile, givenProfile: Robo
     fileName, log, profile, sources: givenProfile, profileChoice, logStart, logEnd,
     enabled: [], auto: [], teleop: [], matchStart: null, teleopStart: null, matchEnd: null, runs: [],
     fms: false, event: '', matchLabel: '', build: { sha: '', branch: '', date: '', dirty: '' },
-    epochOffset: null, ds: [], dsEvents: [], others: [], cache: new Map(),
+    epochOffset: null, ds: [], dsEvents: [], others: [], cache: new Map(), powerMap: null,
   }
 
   // Phases: walk the change points of Enabled and Autonomous together.

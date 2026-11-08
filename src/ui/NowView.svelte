@@ -6,6 +6,8 @@
   only time it talks to one, and only when the button is pressed.
 -->
 <script lang="ts">
+  import JobBar from './JobBar.svelte'
+  import type { Progress } from '../hub/bridge.ts'
   import { untrack } from 'svelte'
   import { hub, phone, type RobotResult } from '../hub/bridge.ts'
   import { pullAddresses } from '../foresight/addresses.ts'
@@ -111,20 +113,27 @@
 
   let note = $state('')
   let busy = $state<string | null>(null)
-  let progress = $state('')
+  let progress = $state<Progress | null>(null)
+  /** Stop was pressed during this pull or add: a pull tries no further address. */
+  let stopPressed = false
+  function stop() {
+    stopPressed = true
+    void api?.cancel()
+  }
   // A pull that did not work: the words, and whether the robot did not answer (so the cable and power are the first thing to check).
   let failure = $state<{ reason: string; notFound: boolean; tried: string } | null>(null)
   $effect(() => {
     if (!api) return
-    return api.onProgress((p) => { progress = p ? `${p.job}${p.total ? ` ${p.done} of ${p.total}` : '…'}` : '' })
+    return api.onProgress((p) => { progress = p })
   })
 
   const countText = (n: number) => `${n} log${n === 1 ? '' : 's'}`
   function reportText(r: Extract<RobotResult, { report: unknown }>['report'] | null, from: string): string {
     if (!r) return ''
-    const bits = [`Added ${countText(r.added.length)} from ${from}`]
+    const bits = [`${r.stopped ? 'Stopped: added' : 'Added'} ${countText(r.added.length)} from ${from}`]
     if (r.already.length) bits.push(`${r.already.length} already in the library`)
     if (r.unreadable.length) bits.push(`${r.unreadable.length} could not be read`)
+    if (r.stopped) bits.push(`${countText(r.notTried ?? 0)} not tried: run it again for the rest`)
     return `${bits.join(' · ')}.`
   }
 
@@ -133,6 +142,7 @@
     failure = null
     note = ''
     busy = 'pull'
+    stopPressed = false
     const addresses = pullAddresses(tbaTeam())
     const tried: string[] = []
     let reason = ''
@@ -142,12 +152,14 @@
         note = `Connecting to the robot over ${a.label} (${a.value})…`
         tried.push(a.label)
         const r = await api.addFromRobot(a.value)
-        if ('refused' in r) { reason = r.refused; if (notReached(r.refused)) continue; break }
+        if ('refused' in r) { reason = r.refused; if (notReached(r.refused) && !stopPressed) continue; break }
         note = `${reportText(r.report, 'the robot')}${r.stillWriting.length ? ` ${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written: pull again later.` : ''}`
         await signal.readLibrary()
         await onAdded()
         return
       }
+      // Stopped while looking for the robot: say so, not that it wasn't found.
+      if (stopPressed) { note = 'Stopped: nothing was pulled off the robot.'; return }
       failure = { reason, notFound: notReached(reason), tried: tried.join(', ').replace(/ tether/g, '') }
       note = ''
     } catch (e) {
@@ -234,7 +246,9 @@
       </li>
     {/each}
   </ol>
-  <p class="status" role="status" data-now-note>{busy === 'folder' && !note ? 'Adding logs…' : note}{#if busy && progress}{' '}· {progress}{/if}{#if busy}{' '}<button type="button" class="link" onclick={() => api?.cancel()}>Stop</button>{/if}</p>
+  <p class="status" role="status" data-now-note>{busy === 'folder' && !note ? 'Adding logs…' : note}</p>
+  <!-- Only once the app sends progress: before that the folder dialog is open, or nothing has started that Stop could stop. -->
+  {#if busy && progress}<JobBar {progress} onStop={stop} />{/if}
 
   {#if view.jobs.length}
     <h3 class="jobs">What Hindsight does</h3>

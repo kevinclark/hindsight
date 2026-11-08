@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MemoryAdapter } from '../src/hub/memory-adapter.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { isOwnAppendPath, readText } from '../src/hub/adapter.ts'
-import { analyzerId, eventFilePath, foldEvent, parseEventLines, parseEventPath, type EventLine } from '../src/hub/event-file.ts'
+import { analyzerId, eventFilePath, foldEvent, freshLines, parseEventLines, parseEventPath, serializeEventLine, type EventLine } from '../src/hub/event-file.ts'
 import { eventLines, eventLogNames, latestEventSession } from '../src/hub/event-publish.ts'
 import { groupSessions } from '../src/session/session.ts'
 import { match, BASE } from './helpers/board-scene.ts'
@@ -102,6 +102,24 @@ describe('which logs an event file holds', () => {
     expect(analyzerId('0.1.9', 'h1', 'Test robot @ main', false)).toBe(base)
     expect(base).toMatch(/^0\.1\.9\+[0-9a-f]{8}$/)
     for (const other of [analyzerId('0.1.9', 'h2', 'Test robot @ main', false), analyzerId('0.1.9', 'h1', 'Other robot', false), analyzerId('0.1.9', 'h1', 'Test robot @ main', true)]) expect(other).not.toBe(base)
+  })
+})
+
+describe('a changed power map', () => {
+  it('a log read again after the pit changed its breakers gets a new line, and the phone shows the later one', () => {
+    const q = { ...match(1), metrics: {} as never }
+    const before = { ...q, powerMap: { at: '2099-03-05T10:00:00.000Z', stamp: 'map-a' } }
+    const after = { ...q, powerMap: { at: '2099-03-05T10:00:00.000Z', stamp: 'map-b' } }
+    const read = (s: typeof q, at: number) => eventLines({ summaries: [s], names: ['q1.wpilog'], shaOf: () => sha(1), version: '0.1.9', analyzerHash: 'hash', at })
+    const first = read(before, BASE)
+    const again = read(after, BASE + 1000)
+    expect(freshLines(first, again)).toHaveLength(1)
+    // the same map read again by a later release appends nothing
+    expect(freshLines(first, eventLines({ summaries: [before], names: ['q1.wpilog'], shaOf: () => sha(1), version: '0.1.10', analyzerHash: 'hash', at: BASE + 2000 }))).toHaveLength(0)
+    const folded = foldEvent([{ machine: 'laptop-a', text: [...first, ...again].map(serializeEventLine).join('') }])
+    expect(folded.logs.get(sha(1))!.line.summary.powerMap?.stamp).toBe('map-b')
+    // no map (copies saved before maps were kept) keeps the id it had
+    expect(analyzerId('0.1.9', 'h1', 'Test robot @ main', false, 'none')).toBe(analyzerId('0.1.9', 'h1', 'Test robot @ main', false))
   })
 })
 

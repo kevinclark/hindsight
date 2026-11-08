@@ -102,12 +102,14 @@ export function shortHash(text: string): string {
 
 /**
  * "<app version>+<hash>", the hash over the analyzer's own source (what the rules and summary import: `__ANALYZER_HASH__`), the
- * robot profile the log was read with, and whether a code folder was used: two laptops with different kept profiles read a
- * log differently. The version orders lines on the phone; only the hash decides whether a line is new (freshLines), so a
- * release that changes only the UI keeps the hash and appends nothing.
+ * robot profile the log was read with, whether a code folder was used, and the power map its breaker findings were judged
+ * with (summary.powerMap.stamp): two laptops with different kept profiles read a log differently, and a log read again after
+ * the pit changed its breakers says something new. The version orders lines on the phone; only the hash decides whether a
+ * line is new (freshLines), so a release that changes only the UI keeps the hash and appends nothing.
  */
-export function analyzerId(version: string, analyzerHash: string, profileId: string, codeFolder: boolean): string {
-  return `${version}+${shortHash(`${analyzerHash}|${profileId}|${codeFolder ? 'code' : 'no code'}`)}`
+export function analyzerId(version: string, analyzerHash: string, profileId: string, codeFolder: boolean, mapStamp = 'none'): string {
+  const map = mapStamp === 'none' ? '' : `|map ${mapStamp}`
+  return `${version}+${shortHash(`${analyzerHash}|${profileId}|${codeFolder ? 'code' : 'no code'}${map}`)}`
 }
 
 export interface FoldedLine { line: EventLine; machine: string }

@@ -81,22 +81,48 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
       crashed.push({ rule: rule.id, reason: String(error) })
     }
   }
-  if (skipped.length) {
-    findings.push({
-      rule: 'meta/not-checked', severity: 'info', time: null, matchTime: null, when: null, about: null, key: 'meta/not-checked',
-      title: `${skipped.length} rule${skipped.length === 1 ? '' : 's'} not checked or partly checked${skipped.every((x) => x.reason.includes('missing')) ? ': signals missing' : ''}`,
-      meaning: 'These rules could not look at this log, so their silence says nothing about this match.',
-      causes: [
-        { id: 'not-logged', cause: 'The robot code does not log the signal', look: 'the evidence below names each missing key; search the robot code for it' },
-        { id: 'profile', cause: 'The robot profile names a key this robot logs under another name', look: 'open the log in AdvantageScope and compare key names with the profile file in src/profiles/' },
-      ],
-      nextStep: 'For each rule you care about, log the missing signal or fix its key in the robot profile.',
-      evidence: Object.fromEntries(skipped.map((s) => [s.rule, s.reason])),
-    })
-  }
+  if (skipped.length) findings.push(notCheckedFinding(skipped))
   findings.sort(worstFirst(rules))
   const parents = consolidate(findings, consolidators, crashed)
   return { findings, skipped, crashed, ...(droppedInShortRuns.length ? { droppedInShortRuns } : {}), ...(parents.length ? { parents } : {}) }
+}
+
+/** The grey finding that lists every rule that could not look at the log, or only partly. */
+function notCheckedFinding(skipped: SkippedRule[]): Finding {
+  return {
+    rule: 'meta/not-checked', severity: 'info', time: null, matchTime: null, when: null, about: null, key: 'meta/not-checked',
+    title: `${skipped.length} rule${skipped.length === 1 ? '' : 's'} not checked or partly checked${skipped.every((x) => x.reason.includes('missing')) ? ': signals missing' : ''}`,
+    meaning: 'These rules could not look at this log, so their silence says nothing about this match.',
+    causes: [
+      { id: 'not-logged', cause: 'The robot code does not log the signal', look: 'the evidence below names each missing key; search the robot code for it' },
+      { id: 'profile', cause: 'The robot profile names a key this robot logs under another name', look: 'open the log in AdvantageScope and compare key names with the profile file in src/profiles/' },
+    ],
+    nextStep: 'For each rule you care about, log the missing signal or fix its key in the robot profile.',
+    evidence: Object.fromEntries(skipped.map((s) => [s.rule, s.reason])),
+  }
+}
+
+/**
+ * A report with only `rules` run again, on the same match (no re-parse): their old findings, "not checked" lines and
+ * crashes are replaced, everything else is the same objects as before, and the grey "not checked" finding is rebuilt from
+ * the combined list. `all` is the whole rule list (for the worst-first order). Used when an input only these rules read
+ * changes (the robot's power map). Links and parents are not run again: none of them names these rules.
+ */
+export function rerunRules(match: Match, report: Report, rules: Rule[], all: Rule[]): Report {
+  const ids = new Set(rules.map((r) => r.id))
+  const part = runRules(match, rules)
+  // In rule order, as a whole run lists them.
+  const order = (x: SkippedRule) => all.findIndex((r) => r.id === x.rule)
+  const skipped = [...report.skipped.filter((s) => !ids.has(s.rule)), ...part.skipped].sort((a, b) => order(a) - order(b))
+  const crashed = [...report.crashed.filter((s) => !ids.has(s.rule)), ...part.crashed].sort((a, b) => order(a) - order(b))
+  const findings = [
+    ...report.findings.filter((f) => !ids.has(f.rule) && f.rule !== 'meta/not-checked'),
+    ...part.findings.filter((f) => f.rule !== 'meta/not-checked'),
+  ]
+  if (skipped.length) findings.push(notCheckedFinding(skipped))
+  findings.sort(worstFirst(all))
+  const dropped = [...(report.droppedInShortRuns ?? []).filter((r) => !ids.has(r)), ...(part.droppedInShortRuns ?? [])]
+  return { findings, skipped, crashed, ...(dropped.length ? { droppedInShortRuns: dropped } : {}), ...(report.parents ? { parents: report.parents } : {}) }
 }
 
 /**
@@ -288,7 +314,7 @@ type ProfileMotor = ProfileGroup['motors'][0]
 /** A profile motor as a rule sees it: each signal is read when asked for, and throws MissingSignal if the profile doesn't name it. */
 function motorView(m: ProfileMotor, group: string, view: MatchView): MotorView {
   return {
-    name: m.name, group,
+    name: m.name, group, ...(m.canId !== undefined ? { canId: m.canId } : {}),
     supply: () => view.signal(need(m.supplyCurrent, `${m.name} supply current`), `${m.name} supply`),
     stator: () => view.signal(need(m.statorCurrent, `${m.name} stator current`), `${m.name} stator`),
     velocity: () => view.signal(need(m.velocity, `${m.name} velocity`), m.name),

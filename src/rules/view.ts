@@ -21,6 +21,7 @@ import { otherLogOf } from '../profiles/sources.ts'
 import { deviceFlagKeys } from '../profiles/formats.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
+import type { PowerMap } from '../power/power-map.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
 import { photonTargetCount } from '../readers/photon.ts'
 import { profileDevices, twinsOf, watchedIn, watchedName, type DeviceField, type ProfileDevice, type WatchedEntry } from '../match/companion.ts'
@@ -265,6 +266,8 @@ export class PoseSignal {
 /** One motor controller from the robot profile. */
 export interface MotorView {
   name: string
+  /** The controller's CAN ID, when the profile has it. */
+  canId?: number
   group: string
   supply(): Signal
   stator(): Signal
@@ -737,6 +740,11 @@ export class MatchView {
 
   get build() {
     return this.raw.build
+  }
+
+  /** The robot's power map in effect for this match (which breaker is in which slot), or null when none was entered. */
+  get powerMap(): PowerMap | null {
+    return this.raw.powerMap
   }
 
   /** False when the robot profile doesn't fit this log (another robot): its robot-specific facts can't be trusted. */

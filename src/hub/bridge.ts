@@ -14,7 +14,8 @@ import type { ShareStatus } from './live-share.ts'
 import type { BrowserHub } from './browser-hub.ts'
 export type { ShareStatus } from './live-share.ts'
 
-export interface Progress { job: string; done: number; total: number; current: string }
+import type { JobProgress } from './jobs.ts'
+export type Progress = JobProgress
 
 /** The job that finished last (kept by the app, so a page that reloaded can still show how it ended). */
 export interface LastJob { job: string; report?: unknown; error?: string; at: number }
@@ -113,6 +114,10 @@ export interface HubApi {
   setTag(target: TagTarget, field: TagField, value: string): Promise<void>
   /** The bytes of a log in the library (path as in the manifest). */
   readLog(path: string): Promise<Uint8Array>
+  /** Open a log in AdvantageScope: a library path (must be on this computer) or a file's absolute path. Throws with a sentence for the user. */
+  openInAdvantageScope(target: { library: string } | { file: string }): Promise<void>
+  /** Where a file the user picked or dropped lives on disk ('' when it isn't a file on disk). */
+  pathForFile(file: File): string
   /** Progress of any job; `null` when the job ended. */
   onProgress(callback: (p: Progress | null) => void): () => void
   /** Append the page's summaries of an event's logs (event-file lines) to this laptop's file for the phone; resolves with how many were new. */
@@ -166,13 +171,14 @@ export class LibraryFile {
   readonly name: string
   readonly size: number
   readonly lastModified: number
-  private readonly path: string
+  /** The path as in the manifest. */
+  readonly libraryPath: string
   private readonly api: HubApi
   constructor(name: string, size: number, lastModified: number, path: string, api: HubApi) {
-    this.name = name; this.size = size; this.lastModified = lastModified; this.path = path; this.api = api
+    this.name = name; this.size = size; this.lastModified = lastModified; this.libraryPath = path; this.api = api
   }
   async arrayBuffer(): Promise<ArrayBuffer> {
-    const bytes = await this.api.readLog(this.path)
+    const bytes = await this.api.readLog(this.libraryPath)
     // The bytes usually fill their buffer: hand it over rather than copy a log that can be hundreds of MB.
     return (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)) as ArrayBuffer
   }

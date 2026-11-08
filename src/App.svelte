@@ -3,7 +3,8 @@
   Everything runs in this page. Files never leave the computer.
 -->
 <script lang="ts">
-  import { analyzeFilesWithCode, type Analysis, type InputFile } from './analyze.ts'
+  import { untrack } from 'svelte'
+  import { analyzeFilesWithCode, withPowerMaps, type Analysis, type InputFile } from './analyze.ts'
   import { isUncommitted } from './match/git-dirty.ts'
   import { hasPin } from './profiles/pin.ts'
   import { buildFindingsJson, findingsFileName } from './report/findings-json.ts'
@@ -13,6 +14,8 @@
   import ExportPreview from './ui/ExportPreview.svelte'
   import { saveForClaude } from './ui/export-preview.svelte.ts'
   import PowerTab from './ui/PowerTab.svelte'
+  import PowerMap from './ui/PowerMap.svelte'
+  import { openPowerMap, setMapHistory, setMapWriter } from './ui/power-map-bridge.svelte.ts'
   import LimitsTab from './ui/LimitsTab.svelte'
   import LoggingTab from './ui/LoggingTab.svelte'
   import Wizard from './ui/Wizard.svelte'
@@ -25,7 +28,7 @@
   import type { Place } from './now/now.ts'
   import { dateText } from './session/day.ts'
   import LibraryView from './ui/LibraryView.svelte'
-  import { hub, phone } from './hub/bridge.ts'
+  import { hub, phone, LibraryFile } from './hub/bridge.ts'
   import { keepHistory } from './triage/keeper.ts'
   import SummaryReview from './ui/SummaryReview.svelte'
   import TbaFields from './ui/TbaFields.svelte'
@@ -77,7 +80,7 @@
   let tab = $state<'match' | 'power' | 'limits' | 'logging'>('match')
   // Now (what to do at this moment: the screen the app opens on, ADR 10); review match logs, a whole session of them, the
   // limits wizard, or a robot snapshot (device settings and faults).
-  let mode = $state<'now' | 'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight' | 'library'>('now')
+  let mode = $state<'now' | 'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight' | 'library' | 'powermap'>('now')
   // Whether today is an event day by the outside signals (The Blue Alliance, the library), and the clock: read once, shared by Now and Foresight.
   const todaySig = todaySignal()
   // Robot profiles kept in this browser (built in the Robot profile mode), offered beside the built-in ones.
@@ -104,6 +107,7 @@
     { id: 'wizard', label: 'Limits wizard', hint: 'measure a supply current limit with the robot' },
     { id: 'snapshot', label: 'Robot snapshot', hint: 'read a snapshot.json from the robot' },
     { id: 'profile', label: 'Robot profile', hint: 'draft a robot profile from logs' },
+    { id: 'powermap', label: 'Power map', hint: 'which breaker is in each PDP slot, and what it feeds' },
   ] as const
   const activeTool = $derived(TOOLS.find((t) => t.id === mode))
   if (hub()) document.getElementById('app')?.classList.add('wide')
@@ -303,6 +307,15 @@
     }
     keep([...history, ...build(device, history)], true)
   }
+  // The power map (src/power/power-map.ts): the screen, the strips and the finding thumbnails share the history and the writer.
+  // When the team's history changes the robot's map for an open log, only the two breaker rules run again on it (no re-parse).
+  $effect(() => { setMapHistory(history) })
+  setMapWriter(writeBoard, () => role, () => { mode = 'powermap' })
+  $effect(() => {
+    const next = withPowerMaps(untrack(() => analyses), history)
+    if (next) analyses = next
+  })
+
   // Teammates' marks were brought down (the 2-min pull, or a Sync): read the history again, and pull now when the window comes back.
   $effect(() => {
     if (!library) return
@@ -377,7 +390,7 @@
         const drawable = ev.logs.filter((l) => l.line.shape === SUMMARY_SHAPE)
         // Read by an older Hindsight whose analyzer differs from this page's (every release has a new version; only a changed
         // analyzer reads a log differently): the version that read it.
-        const older = ({ analyzer, summary }: (typeof drawable)[number]['line']) => newerVersion(VERSION, analyzer) && analyzerHashOf(analyzer) !== analyzerHashOf(analyzerId(VERSION, ANALYZER_HASH, summary.robot.profileId, !!summary.codeFolder)) ? /^\d+(\.\d+)*/.exec(analyzer)?.[0] ?? null : null
+        const older = ({ analyzer, summary }: (typeof drawable)[number]['line']) => newerVersion(VERSION, analyzer) && analyzerHashOf(analyzer) !== analyzerHashOf(analyzerId(VERSION, ANALYZER_HASH, summary.robot.profileId, !!summary.codeFolder, summary.powerMap?.stamp)) ? /^\d+(\.\d+)*/.exec(analyzer)?.[0] ?? null : null
         phoneFrom = new Map(drawable.map((l) => [l.line.summary.fileName, { laptop: l.machine, olderRead: older(l.line) }]))
         sessionView?.showSummaries(drawable.map((l) => l.line.summary), Object.fromEntries(drawable.flatMap((l) => { const v = older(l.line); return v ? [[l.line.summary.fileName, { version: v, at: l.line.at }]] : [] })))
         const hidden = ev.logs.length - drawable.length
@@ -413,9 +426,28 @@
     unsaved = false
   }
 
+  // Where each loaded log lives, by file name, so the match head can hand it to AdvantageScope. Not reactive: it is read only when `current` is.
+  const fileLocations = new Map<string, { library: string } | { file: string }>()
+  function rememberLocation(f: File) {
+    if (f instanceof LibraryFile) { fileLocations.set(f.name, { library: f.libraryPath }); return }
+    const path = hub()?.pathForFile(f)
+    if (path) fileLocations.set(f.name, { file: path })
+  }
+  const ascopeTarget = $derived(current ? fileLocations.get(current.match.fileName) : undefined)
+  let ascopeBusy = $state(false)
+  let ascopeError = $state('')
+  $effect(() => { current?.match.fileName; ascopeError = '' })
+  async function openInAdvantageScope() {
+    if (!ascopeTarget) return
+    ascopeBusy = true
+    ascopeError = ''
+    try { await hub()!.openInAdvantageScope(ascopeTarget) } catch (e) { ascopeError = e instanceof Error ? e.message : String(e) } finally { ascopeBusy = false }
+  }
+
   async function load(fileList: FileList | File[]) {
     const files = Array.from(fileList)
     if (files.length === 0) return
+    files.forEach(rememberLocation)
     busy = true
     const pass = ++passes
     await new Promise((r) => setTimeout(r, 30)) // let "Reading…" paint
@@ -426,7 +458,7 @@
       const sameFile = (a: InputFile, b: InputFile) => a.name === b.name && a.bytes.length === b.bytes.length
       inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
       const read = performance.now()
-      const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored])
+      const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored], history)
       if (result.history.length) keep(mergeHistory(history, result.history), false)
       if (pass !== passes) return // a later pass (another code folder, another robot) has the newer answer
       const done = performance.now()
@@ -456,7 +488,7 @@
     const pass = ++passes
     busy = true
     try {
-      const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored])
+      const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored], history)
       if (pass !== passes) return
       analyses = result.analyses
       selected = Math.max(0, analyses.findIndex((a) => a.match.fileName === file))
@@ -477,6 +509,7 @@
   })
 
   function clearAll() {
+    fileLocations.clear()
     inputs = []
     analyses = []
     problems = []
@@ -570,7 +603,7 @@
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
   {#each MODES as m (m.id)}<button class:active={mode === m.id} data-label={m.label} aria-current={mode === m.id ? 'page' : undefined} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
-  {#if !readOnly}<Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (mode = t.id) }))} />{/if}
+  {#if !readOnly}<Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (t.id === 'powermap' ? openPowerMap() : (mode = t.id)) }))} />{/if}
 </nav>
 {#if readOnly}
   <p class="phone-line screen-only" role="status" data-phone-fresh>{phoneKey ?? 'No event yet'}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
@@ -584,6 +617,7 @@
 <div hidden={mode !== 'wizard'} class:screen-only={reportable}><Wizard matches={analyses} /></div>
 <div hidden={mode !== 'snapshot'} class:screen-only={reportable}><SnapshotView /></div>
 <div hidden={mode !== 'profile'} class:screen-only={reportable}><ProfileBuilder bind:this={profileBuilder} /></div>
+<div hidden={mode !== 'powermap'} class:screen-only={reportable}><PowerMap /></div>
 {/if}
 <div hidden={mode !== 'now'} class:screen-only={reportable}>
   <NowView {sessions} {history} {marks} signal={todaySig} openLogs={analyses.length} onGo={goPlace} onBoard={showBoard} onOpenLog={openFromSession} onOpenLogs={openInSession} onAdded={() => loadToday()} />
@@ -655,6 +689,9 @@
     <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
     <span class="actions">
       {#if busy}<span class="busy">Reading…</span>{/if}
+      {#if ascopeTarget}
+        <button class="button choose" title="Open this log in AdvantageScope" disabled={ascopeBusy} onclick={openInAdvantageScope}>Open in AdvantageScope</button>
+      {/if}
       <label class="button choose">
         <input type="file" multiple accept=".wpilog,.dslog,.dsevents,.jsonl" onchange={chosen} />
         Choose logs…
@@ -687,6 +724,7 @@
       {#if current.match.profileChoice.note}<p class="meta dirty">{current.match.profileChoice.note}</p>{/if}
     </div>
     {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
+    {#if ascopeError}<p class="problem" role="status">{ascopeError}</p>{/if}
   </section>
 
   <div class="tabs" role="tablist">
@@ -774,6 +812,7 @@
   .button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .button:focus-within, .button:focus-visible { outline: 2px solid var(--focus); }
   .busy { color: var(--muted); }
+  button.button:disabled { opacity: 0.6; cursor: default; }
   .history { font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
   .history strong { color: var(--warning); }
   .link { margin-left: auto; min-height: 24px; padding: 0.2rem 0.4rem; border: none; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }

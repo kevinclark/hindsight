@@ -9,6 +9,8 @@
   import ShareStatusLine from './ShareStatusLine.svelte'
   import { onMount } from 'svelte'
   import { notReached } from '../hub/robot-reach.ts'
+  import JobBar from './JobBar.svelte'
+  import { size } from './job-bar.ts'
   import { hub, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
   import DriveFolderPicker from './DriveFolderPicker.svelte'
   import type { IngestPlan } from '../hub/ingest.ts'
@@ -41,6 +43,8 @@
   let progress = $state<Progress | null>(null)
   let report = $state.raw<IngestReport | null>(null)
   let problem = $state<string | null>(null)
+  /** A job the user stopped before it had anything to report. */
+  let stoppedNote = $state<string | null>(null)
   let expanded = $state<Record<string, boolean>>({})
 
   let drive = $state<DriveStatus | null>(null)
@@ -67,10 +71,20 @@
     problem = null
     pullFailed = null // the last pull's failure is old news once anything else is tried
     progress = { job: label, done: 0, total: 0, current: '' }
+    stoppable = false
+    stoppedNote = null
     lastJob = null // a new job's own report replaces the old one
     ownWork = true
     try { return await body() } catch (e) { problem = e instanceof Error ? e.message : String(e); return undefined } finally { ownWork = false; progress = null; await refresh().catch(() => {}) }
   }
+  /** Stop was pressed during this job: a pull tries no further address. */
+  let stopPressed = false
+  function stop() {
+    stopPressed = true
+    void api?.cancel()
+  }
+  /** The bar's job is one the app runs (it sent progress), so Stop can stop it; signing in or saving can't be. */
+  let stoppable = $state(false)
   const signIn = () => work('Signing in', () => api!.driveSignIn())
   const signOut = () => work('Signing out', () => api!.driveSignOut())
   const saveClient = () => work('Saving', () => api!.setGoogleClient(clientId, clientSecret))
@@ -104,7 +118,8 @@
     // Only a refusal can mean the robot never answered: anything thrown came after the idle check reached it (SFTP, reading), so it keeps its own words.
     const r = await work('Reading robot', () => api!.addFromRobot(address))
     if (!r) return
-    if ('refused' in r) { if (notReached(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
+    // A refusal after Stop is the stop, not a robot that wasn't found.
+    if ('refused' in r) { if (stopPressed) { stoppedNote = 'Stopped: nothing was pulled off the robot.'; return } if (notReached(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
     else {
       report = r.report
       if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Pull logs off the robot again later.`
@@ -113,9 +128,10 @@
   /** The empty library's pull: the typed address, else Ethernet, then USB, then by name, moving on only when the robot did not answer. */
   async function pullFirstThatAnswers() {
     const typed = robotAddress.trim()
+    stopPressed = false
     for (const address of typed ? [typed] : pullAddresses(savedTeam).map((a) => a.value)) {
       await addRobot(address)
-      if (!pullFailed) return
+      if (!pullFailed || stopPressed) return
     }
   }
   let update = $state<{ version: string; url: string } | null>(null)
@@ -128,9 +144,9 @@
     void api?.team().then((t) => { teamBox = t.team; savedTeam = t.team; setAppHasKey(!!t.tbaKey) }).catch(() => {})
     // How the job that finished last ended, for a page that reloaded and did not see it (kept for 30 minutes).
     void api?.lastJob().then((j) => { if (j && Date.now() - j.at < 30 * 60e3) lastJob = j }).catch(() => {})
-    void api?.runningJob().then((p) => { if (p && !progress) progress = p }).catch(() => {})
+    void api?.runningJob().then((p) => { if (p && !progress) { progress = p; stoppable = true } }).catch(() => {})
     return api?.onProgress((p) => {
-      if (p) progress = p
+      if (p) { progress = p; stoppable = true }
       else if (!ownWork && progress) { progress = null; void refresh().catch(() => {}) } // the job ended
     })
   })
@@ -138,7 +154,7 @@
   $effect(() => {
     if (!foreign || !api) return
     const timer = setInterval(() => {
-      void api.runningJob().then((p) => { if (!p) { progress = null; void refresh().catch(() => {}) } else if (!ownWork) progress = p }).catch(() => {})
+      void api.runningJob().then((p) => { if (!p) { progress = null; void refresh().catch(() => {}) } else if (!ownWork) { progress = p; stoppable = true } }).catch(() => {})
     }, 2000)
     return () => clearInterval(timer)
   })
@@ -193,9 +209,14 @@
     codePlan = await api!.codePlan().catch(() => codePlan)
   }
   /** A report's counts as words: each number, and the length of each list. */
-  const reportText = (report: unknown) => (typeof report === 'object' && report !== null
-    ? Object.entries(report).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
-    : '')
+  const reportText = (report: unknown): string => {
+    if (typeof report !== 'object' || report === null) return ''
+    const r = report as Record<string, unknown>
+    // A robot pull's result wraps its ingest report, or says why the robot refused.
+    if (typeof r.refused === 'string') return `not pulled: ${r.refused}`
+    if (typeof r.report === 'object') return reportText(r.report)
+    return Object.entries(r).flatMap(([k, v]) => (typeof v === 'number' ? [`${k} ${v}`] : Array.isArray(v) ? [`${k} ${v.length}`] : [])).join(' · ')
+  }
   async function readAgain() {
     const r = await work('Reading logs again', () => api!.redescribe())
     if (r) rereadReport = r
@@ -284,7 +305,6 @@
     if (api) onOpenMatch([asFile({ entry: e, name: baseName(e.record.path) }, api)])
   }
 
-  const size = (n: number) => (n >= 2 ** 30 ? `${(n / 2 ** 30).toFixed(1)} GB` : `${(n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0)} MB`)
   const clock = (ms: number | null) => (ms === null ? '' : new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
   const matchText = (e: Entry) => {
     const r = e.record
@@ -323,13 +343,8 @@
   {#if drive?.signedIn && drive.teamFolder}<button class="primary" onclick={planSync} disabled={driveBusy}>Sync with the team…</button>{/if}
   {#if all.length}<button class="primary" onclick={readAgain} disabled={driveBusy} title="Read every log on this computer again with this version of Hindsight and update what the list says about it (robot, event). Nothing in the logs changes.">Read logs again</button>{/if}
   {#if all.length}<span class="robot"><input bind:value={robotAddress} placeholder="robot address, 10.TE.AM.2" aria-label="Robot address" /><button class="primary" onclick={() => addRobot()} disabled={driveBusy || !robotAddress.trim()}>Pull logs off the robot</button></span>{/if}
-  {#if progress}
-    <span class="progress" role="status">
-      {progress.job}{progress.total ? ` ${progress.done} of ${progress.total}` : '…'}{progress.current ? ` · ${progress.current}` : ''}
-      <button class="link" onclick={() => api.cancel()}>Stop</button>
-    </span>
-  {/if}
   <span class="meta where">Library: <code>{snapshot?.libraryDir ?? '…'}</code></span>
+  {#if progress}<JobBar {progress} onStop={stoppable ? stop : undefined} />{/if}
 </section>
 <ShareStatusLine {api} />
 
@@ -348,6 +363,7 @@
   {/if}
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
+{#if stoppedNote}<p class="meta" role="status">{stoppedNote}</p>{/if}
 {#if pullFailed}
   <section class="pullfail" role="alert" aria-label="Robot not found">
     <p class="lead">Robot not found. Is the cable in and the robot on?</p>
@@ -419,7 +435,8 @@
 {/if}
 {#if syncReport}
   <section class="report" aria-label="What was synced">
-    <h2>Synced: {syncReport.uploaded.length} uploaded · {syncReport.alreadyThere} already there · {syncReport.failed.length} failed</h2>
+    <h2>{syncReport.stopped ? 'Stopped' : 'Synced'}: {syncReport.uploaded.length} uploaded · {syncReport.alreadyThere} already there · {syncReport.failed.length} failed{syncReport.stopped ? ` · ${syncReport.notTried} not tried` : ''}</h2>
+    {#if syncReport.stopped}<p class="meta">You stopped the sync. What went up is shared; sync again to send the {syncReport.notTried} log{syncReport.notTried === 1 ? '' : 's'} left.</p>{/if}
     <p class="meta">{syncReport.manifests.length} teammate list{syncReport.manifests.length === 1 ? '' : 's'} brought in{syncReport.unrecorded.length ? ` · ${syncReport.unrecorded.length} file${syncReport.unrecorded.length === 1 ? '' : 's'} in the team folder that no list mentions` : ''}.</p>
     {#each syncReport.problems as p (p)}<p class="problem">{p}</p>{/each}
     {#if syncReport.failed.length}<details open><summary>Failed ({syncReport.failed.length})</summary><ul class="rows">{#each syncReport.failed as f (f.path)}<li><code>{f.path}</code> <span class="problem">{f.reason}</span></li>{/each}</ul></details>{/if}
@@ -428,7 +445,8 @@
 {/if}
 {#if fetchReport}
   <section class="report" aria-label="What was downloaded">
-    <h2>Downloaded {fetchReport.fetched.length} · failed {fetchReport.failed.length}</h2>
+    <h2>{fetchReport.stopped ? 'Stopped: downloaded' : 'Downloaded'} {fetchReport.fetched.length} · failed {fetchReport.failed.length}{fetchReport.stopped ? ` · ${fetchReport.notTried} not tried` : ''}</h2>
+    {#if fetchReport.stopped}<p class="meta">You stopped the download. The logs that came down are kept; download again for the rest.</p>{/if}
     {#each fetchReport.problems as p (p)}<p class="problem">{p}</p>{/each}
     {#each fetchReport.failed as f (f.path)}<p class="problem"><code>{f.path}</code> {f.reason}</p>{/each}
     <button class="link" onclick={() => (fetchReport = null)}>Dismiss</button>
@@ -437,7 +455,8 @@
 
 {#if report}
   <section class="report" aria-label="What was added">
-    <h2>Added {report.added.length} · already in the library {report.already.length} · couldn't read {report.unreadable.length}</h2>
+    <h2>{report.stopped ? 'Stopped: added' : 'Added'} {report.added.length} · already in the library {report.already.length} · couldn't read {report.unreadable.length}{report.stopped ? ` · ${report.notTried ?? 0} not tried` : ''}</h2>
+    {#if report.stopped}<p class="meta">You stopped it. The logs added are kept; run it again for the rest (logs already in the library are not copied twice).</p>{/if}
     <p class="meta">
       {size(report.bytesAdded)} copied in {(report.durationMs / 1000).toFixed(1)} s. The originals were not moved, renamed or deleted.
       {#if report.ignored}{report.ignored} other file{report.ignored === 1 ? '' : 's'} ignored.{/if}

@@ -6,7 +6,7 @@
 <script lang="ts">
   import type { PracticeChecklist } from '../foresight/checklists.ts'
 
-  let { checklist }: { checklist: PracticeChecklist } = $props()
+  let { checklist, breakersUnset = false, onSetBreakers }: { checklist: PracticeChecklist; breakersUnset?: boolean; onSetBreakers?: () => void } = $props()
   // The lines waiting on the robot snapshot say so once in full; the others only that they wait.
   const WAITING = /^no robot snapshot/
   const firstWaiting = $derived(checklist.items.findIndex((i) => WAITING.test(i.line.detail)))
@@ -20,6 +20,11 @@
       {#if n === 0 || checklist.items[n - 1].group !== i.group}<li class="group" aria-hidden="true">{i.group}</li>{/if}
       <li class={`oc ${i.line.state.replace(' ', '-')}`}><span class="mark">{i.done ? '✓ ' : '○ '}{MARK[i.line.state]}</span><span class="line">{i.line.line}</span><span class="detail-text">{WAITING.test(i.line.detail) && n !== firstWaiting ? 'waiting on the snapshot' : i.line.detail}</span></li>
     {/each}
+    {#if breakersUnset}
+      <!-- Not a counted line: the robot drives fine without it, and the breaker findings say what they were judged against. It never holds "Ready to drive". -->
+      <li class="group" aria-hidden="true">Optional</li>
+      <li class="oc to-do" data-breakers-line><span class="mark">○ Not counted</span><span class="line">Pick the robot's breakers</span><span class="detail-text">The breaker warnings are judged against the first legal 40 A breaker to trip until you do. <button class="link" type="button" onclick={onSetBreakers}>Set</button></span></li>
+    {/if}
   </ul>
   <p class="small">The team's 2026 pit checklist, battery, CAN, cameras and zeros first. A line reads Done only from the check on screen now; "By eye" lines are for a person and are never counted.</p>
   {#if checklist.byEye.length}
@@ -47,6 +52,7 @@
   .oc .detail-text { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
   @media (max-width: 600px) { .oc { grid-template-columns: 8rem 1fr; } .oc .detail-text { grid-column: 2; } }
   .muted { color: var(--muted); font-weight: 400; }
+  .link { background: none; border: none; padding: 0; color: var(--link, var(--fg)); text-decoration: underline; cursor: pointer; font: inherit; min-height: 24px; }
   .small { font-size: 0.8rem; color: var(--muted); }
   .inert { margin-top: 0.4rem; }
   .inert summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; padding: 0.25rem 0; min-height: 24px; box-sizing: border-box; }

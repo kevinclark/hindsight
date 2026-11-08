@@ -7,7 +7,7 @@
   import { untrack } from 'svelte'
   import { askText } from './ask-text.svelte.ts'
   import { hasPin } from '../profiles/pin.ts'
-  import { summarizeLogWithCode, summaryRobot, type MatchSummary } from '../session/summary.ts'
+  import { summarizeLogWithCode, summaryMapStale, summaryRobot, type MatchSummary } from '../session/summary.ts'
   import CodeFolderControl from './CodeFolderControl.svelte'
   import { codeFolder } from './code-folder.svelte.ts'
   import { PROFILES, profileId } from '../profiles/index.ts'
@@ -121,7 +121,7 @@
    * for the folder it names, and the remembered folder may not be readable yet.)
    */
   function reusable(s: MatchSummary | undefined, fileName: string): s is MatchSummary {
-    return sameRobot(s, fileName) && (s.codeFolder ?? null) === (codeFolder.chosen?.name ?? null)
+    return sameRobot(s, fileName) && (s.codeFolder ?? null) === (codeFolder.chosen?.name ?? null) && !summaryMapStale(s, history)
   }
   function sameRobot(s: MatchSummary | undefined, fileName: string): s is MatchSummary {
     if (!s) return false
@@ -268,6 +268,9 @@
   const staleShown = $derived(summaries.filter((m) => stale[m.fileName]).map((m) => stale[m.fileName]))
   const sessionIsStale = $derived(!!session && logsOf(session).some((n) => stale[n]))
   const staleText = $derived(staleNote(staleShown, hiddenOld.size))
+  // Logs whose breaker findings were judged with a power map that has changed since (the pit changed the breakers): read again to update them.
+  const mapStaleLogs = $derived(new Set(summaries.filter((m) => summaryMapStale(m, history)).map((m) => m.fileName)))
+  const mapStaleInSession = $derived(!!session && logsOf(session).some((n) => mapStaleLogs.has(n)))
 
   function readStore(key: string): Record<string, string> {
     try { return JSON.parse(localStorage.getItem(key) ?? '{}') } catch { return {} }
@@ -340,7 +343,7 @@
         const reuse = !fresh && reusable(saved, file.name)
         const bytes = reuse ? null : new Uint8Array(await file.arrayBuffer())
         if (gen !== loadGen) return
-        const summary = reuse ? saved : await summarizeLogWithCode({ name: file.name, bytes: bytes! }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored])
+        const summary = reuse ? saved : await summarizeLogWithCode({ name: file.name, bytes: bytes! }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored], history)
         if (gen !== loadGen) return
         if (summary && summary !== saved) {
           cache.set(key, summary)
@@ -504,7 +507,7 @@
   $effect(() => { hasSession = !!session })
   // Bound out to App, which finds the open match's session to fold the findings that fire in every match.
   $effect(() => { sessionsOut = sessions })
-  $effect(() => { summariesOut = summaries.filter((m) => !stale[m.fileName]) })
+  $effect(() => { summariesOut = summaries.filter((m) => !stale[m.fileName] && !mapStaleLogs.has(m.fileName)) })
   // For scripts/report.ts --session: the same builders the buttons use.
   $effect(() => {
     const api = (window as unknown as { hindsight?: Record<string, unknown> }).hindsight
@@ -605,6 +608,7 @@
 {/if}
 
 {#if staleText}<p class="note warn" data-stale-note>{staleText}</p>{/if}
+{#if mapStaleLogs.size}<p class="note warn" data-breaker-note>The breaker settings changed after {mapStaleLogs.size} log{mapStaleLogs.size === 1 ? ' was' : 's were'} read: Read again to update their breaker warnings.</p>{/if}
 
 {#if !hub()}<TbaFields />{/if}
 {#if lookupProblem}<p class="note warn">{lookupProblem}</p>{/if}
@@ -622,7 +626,7 @@
   {#if !folded || !showBoard}<section class="head">
     <h2>{session.label}{#if !readOnly}{' '}<button class="link" onclick={() => rename(session)}>rename</button>{/if}</h2>
     {#if !readOnly}<span class="actions">
-      <button class="button" disabled={loading} class:prominent={sessionIsStale} onclick={() => readAgain(session)} title={`Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, ${findLogs ? 'it reads the library\'s copies' : 'it asks for the folder'}.`}>Read again</button>
+      <button class="button" disabled={loading} class:prominent={sessionIsStale || mapStaleInSession} onclick={() => readAgain(session)} title={`Reads this session's logs again with this Hindsight, with the robot chosen for each now, and shows what changed. If the page no longer has the logs, ${findLogs ? 'it reads the library\'s copies' : 'it asks for the folder'}.`}>Read again</button>
       <button class="button" onclick={download}>Download for Claude</button>
       <button class="button" onclick={saveForSlackSession} title="Opens the print dialog: choose Save as PDF. Also saves a phone-sized card (PNG) to post in Slack with it.">Save for Slack</button>
     </span>{/if}

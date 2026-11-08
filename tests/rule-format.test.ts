@@ -138,7 +138,7 @@ describe('what the runner does with an answer', () => {
       expect(runRules(match, [avg]).findings.find((f) => f.rule === 'example/averages')?.evidence[NOTE]).toMatch(/logged about 2 times a second/)
     })
     it('the two shipped rules that average over time are flagged, and no other', () => {
-      expect(RULES.filter((r) => r.averagesOverTime).map((r) => r.id).sort()).toEqual(['power/main-breaker-margin', 'power/rest-voltage'])
+      expect(RULES.filter((r) => r.averagesOverTime).map((r) => r.id).sort()).toEqual(['power/main-breaker-margin', 'power/pdp-breaker-margin', 'power/rest-voltage'])
     })
   })
   describe('needsEnabled', () => {

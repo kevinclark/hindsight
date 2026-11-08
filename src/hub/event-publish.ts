@@ -45,7 +45,7 @@ export function eventLines(input: EventLinesInput): EventLine[] {
     if (!wanted.has(s.fileName)) continue
     const sha256 = input.shaOf(s.fileName)
     if (!sha256) continue
-    out.push({ sha256, analyzer: analyzerId(input.version, input.analyzerHash, s.robot.profileId, !!s.codeFolder), shape: SUMMARY_SHAPE, at: input.at, summary: withoutMarks(s) })
+    out.push({ sha256, analyzer: analyzerId(input.version, input.analyzerHash, s.robot.profileId, !!s.codeFolder, s.powerMap?.stamp), shape: SUMMARY_SHAPE, at: input.at, summary: withoutMarks(s) })
   }
   return out
 }
