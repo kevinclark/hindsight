@@ -91,7 +91,7 @@ export default rule({
     const heatError = Math.round(100 * ((1 + family.edges.fast.fitError.currentWorst) ** 2 - 1))
 
     return {
-      message: `Main breaker: a breaker at the fast end of its datasheet band would have tripped ${match.whenAt(t)} (fast edge ${fastPercent} %); ${slowTripped ? `even the slowest would have (${slowPercent} %)` : `the slowest would not (${slowPercent} %)`}`,
+      message: `Main breaker: a breaker at the fast end of its datasheet band would have tripped ${match.whenAt(t)}, ${slowTripped ? 'and so would the slowest' : 'though the slowest would not'}: fast edge ${fastPercent} %, slow edge ${slowPercent} %`,
       at: t,
       evidence: {
         'fast edge, peak heat (% of the trip)': fastPercent,

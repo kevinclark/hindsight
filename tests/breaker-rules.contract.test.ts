@@ -83,14 +83,15 @@ describe('[BR-02] the main rule fires when the fast edge reaches 100 % inside th
 describe('[BR-03] the title leads with the band position', () => {
   test('the slowest would not have tripped', () => {
     const f = main(pushing(34, 400))!
-    const m = /^Main breaker: a breaker at the fast end of its datasheet band would have tripped (.+) \(fast edge (\d+) %\); the slowest would not \((\d+) %\)$/.exec(f.title)
+    const m = /^Main breaker: a breaker at the fast end of its datasheet band would have tripped (.+), though the slowest would not: fast edge (\d+) %, slow edge (\d+) %$/.exec(f.title)
     expect(m).not.toBeNull()
     expect(Number(m![2])).toBe(f.evidence!['fast edge, peak heat (% of the trip)'])
     expect(Number(m![3])).toBe(f.evidence!['slow edge, peak heat (% of the trip)'])
   })
   test('even the slowest would have', () => {
     const f = main(pushing(75, 120))!
-    expect(f.title).toMatch(/; even the slowest would have \(\d+ %\)$/)
+    expect(f.title).toMatch(/, and so would the slowest: fast edge \d+ %, slow edge \d+ %$/)
+    expect(f.title.match(/\)/g)!.length).toBe(1) // one closing parenthesis: the time's own, no second clause in brackets
     expect(f.evidence!['slow edge, peak heat (% of the trip)']).toBeGreaterThanOrEqual(100)
   })
   test('the time is where the fast edge first reached 100 %, inside the match', () => {
@@ -197,7 +198,7 @@ describe('[BR-08] one finding per motor past the line, about that motor', () => 
 describe('[BR-09] the title names the motor, breaker, slot and band position', () => {
   test('mapped slot', () => {
     const f = pdp(oneMotor(100, 30), [onSlot(REV40)])[0]
-    expect(f.title).toMatch(/^Front Left drive \(CAN 0\) · PDP slot 7 · REV 40 A: a fast-end breaker would have tripped .+ \(fast \d+ %, slow \d+ %\)$/)
+    expect(f.title).toMatch(/^Front Left drive \(CAN 0\) · PDP slot 7 · REV 40 A: a fast-end breaker would have tripped .+, fast \d+ %, slow \d+ %$/)
   })
   test('on no slot, with a usual breaker: slot not mapped', () => {
     const f = pdp(oneMotor(100, 30), [map({ usual: REV40 })])[0]
@@ -205,7 +206,15 @@ describe('[BR-09] the title names the motor, breaker, slot and band position', (
   })
   test('no map at all: breaker not set', () => {
     const f = pdp(oneMotor(100, 30))[0]
-    expect(f.title).toMatch(/^Front Left drive \(CAN 0\) · slot not mapped · breaker not set: judged against the fastest legal 40 A breaker \(Snap Action\): a fast-end breaker would have tripped/)
+    expect(f.title).toMatch(/^Front Left drive \(CAN 0\) · slot not mapped · breaker not set: judged against the first legal 40 A breaker to trip here \((REV ATO|CTRE ATO|Snap Action)\): a fast-end breaker would have tripped/)
+  })
+  test('no breaker set: a mild overload that Snap Action never trips is caught, naming the family that trips first', () => {
+    // 50 A on a 40 A breaker is 125 %: Snap Action's fast edge never trips there; CTRE's does in about 18 s, REV's in about 32 s.
+    const f = pdp(oneMotor(50, 60))[0]
+    expect(f.title).toContain('judged against the first legal 40 A breaker to trip here (CTRE ATO)')
+    expect(f.evidence!.breaker).toBe('CTRE 40 A (not set: the first legal 40 A breaker to trip here)')
+    expect(pdp(oneMotor(50, 12))).toHaveLength(0) // 12 s: CTRE crosses at about 18 s, REV and Snap later or never
+    expect(pdp(oneMotor(50, 60), [map({ usual: { family: 'snap-action', ratingA: 40 } })])).toHaveLength(0) // a set Snap Action never trips here
   })
   test('a slot on an MPM reads MPM and its id (a PDP-family breaker there is the map\'s own business)', () => {
     const m = map({ usual: REV40, boards: [{ id: 'mpm-1', kind: 'rev-mpm', slots: slotsOf({ slot: 2, breaker: null, feeds: { kind: 'motor', name: FRONT_LEFT, canId: 0 } }) }] })
@@ -244,7 +253,8 @@ describe('[BR-11] the PDP evidence', () => {
   })
   test('unmapped and not set', () => {
     expect(pdp(oneMotor(100, 30), [map({ usual: REV40 })])[0].evidence).toMatchObject({ breaker: 'REV 40 A (the power map\'s usual breaker)', slot: 'not mapped' })
-    expect(pdp(oneMotor(100, 30))[0].evidence).toMatchObject({ breaker: 'Snap Action 40 A (not set: the fastest legal breaker is assumed)', slot: 'not mapped' })
+    expect(pdp(oneMotor(100, 30))[0].evidence).toMatchObject({ slot: 'not mapped' })
+    expect(pdp(oneMotor(100, 30))[0].evidence!.breaker).toMatch(/^(REV|CTRE|Snap Action) 40 A \(not set: the first legal 40 A breaker to trip here\)$/)
   })
   test('the heat figures follow the breaker curve', () => {
     const f = pdp(oneMotor(100, 30), [onSlot(REV40)])[0]
