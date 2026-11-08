@@ -13,7 +13,7 @@
   import { sessionWithMarks } from '../triage/track-record.ts'
   import { PROFILES } from '../profiles/index.ts'
   import { profilesNow } from './kept-profiles.svelte.ts'
-  import { tbaGetter, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
+  import { nexusGetter, nexusHasKey, tbaGetter, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
   import { sessionSchedule } from '../tba/session-schedule.ts'
   import type { ScheduledMatch } from '../tba/schedule.ts'
   import { todayMode } from '../session/mode.ts'
@@ -51,7 +51,8 @@
   const eventSession = $derived(today.mode === 'event' ? eventSessionFor(sessions, today.sessionId, signal.external, clock) : null)
   let schedule = $state.raw<ScheduledMatch[] | null>(null)
   let scheduleNote = $state<string | null>(null)
-  const scheduleSig = $derived(eventSession ? `${eventSession.id}|${eventSession.event?.key ?? ''}|${eventSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}|${Math.floor(clock / 600e3)}` : '')
+  let nexusEvent = $state<string | null>(null)
+  const scheduleSig = $derived(eventSession ? `${eventSession.id}|${eventSession.event?.key ?? ''}|${eventSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}|${nexusHasKey()}|${Math.floor(clock / (nexusHasKey() ? 60e3 : 600e3))}` : '')
   let scheduleOf = ''
   $effect(() => {
     if (!scheduleSig) { schedule = null; scheduleNote = null; scheduleOf = ''; return }
@@ -61,7 +62,7 @@
     const [get, team] = [tbaGetter(), tbaTeam()]
     if (!get || team === null) { schedule = null; scheduleNote = null; return }
     let stale = false
-    void sessionSchedule(s, team, get).then((got) => { if (!stale) { schedule = got.schedule; scheduleNote = got.note } })
+    void sessionSchedule(s, team, get, nexusGetter()).then((got) => { if (!stale) { schedule = got.schedule; scheduleNote = got.note; nexusEvent = got.nexusEvent ?? null } })
     return () => { stale = true }
   })
   const profiles = $derived([...PROFILES, ...stored])
@@ -80,7 +81,7 @@
   const hasLogs = $derived((api ? signal.libraryLogs.some((r) => !r.stub) : false) || sessions.length > 0 || openLogs > 0)
   const view = $derived(nowState({
     build, mode: today.mode, hasLogs, libraryToday, event: eventBoard, have: { team: tbaTeam() !== null, key: tbaHasKey() },
-    scheduleNote, still, now: clock, schedule, earlierEvent: !!api && signal.libraryLogs.some((r) => !r.stub && r.onField),
+    scheduleNote, still, now: clock, schedule, nexusEvent, earlierEvent: !!api && signal.libraryLogs.some((r) => !r.stub && r.onField),
   }))
   // Logs added to the library from anywhere (the Library tab, a sync) while the Session view already holds a session: it does not
   // watch the library, so Now hands it today's logs again (the same ones, the new log among them) and "Pull Q33's log" can read done.
@@ -204,6 +205,7 @@
 {:else}
   <WhatsNew {hasLogs} />
   <h2 class="big" data-now-big>{view.big}</h2>
+  {#if view.nexusCredit}<p class="credit" data-now-credit>Queue and start times from <a href={view.nexusCredit} target="_blank" rel="noreferrer">Nexus</a></p>{/if}
   {#if view.kind === 'event-no-schedule' && eventSession}
     <!-- The fix in place (ADR b): type the next match, or add the read key; the same fields the board shows. -->
     <NextMatchFields session={eventSession} {scheduleNote} idPrefix="now-next" heading={false} />
@@ -253,6 +255,7 @@
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .big { font-size: 1.6rem; font-weight: 800; margin: 0.5rem 0 0.4rem; }
   .keyline { margin: 0 0 0.8rem; color: var(--fg); }
+  .credit { margin: -0.4rem 0 0.8rem; font-size: 0.85rem; color: var(--muted); }
   .keyline .link { padding: 0; }
   .meta { margin: 0.3rem 0; color: var(--muted); font-size: 0.9rem; }
   button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--muted); border-radius: 4px; padding: 0.25rem 0.8rem; min-height: 32px; cursor: pointer; }

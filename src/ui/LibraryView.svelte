@@ -17,7 +17,7 @@
   import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Places, type Selection } from '../hub/facets.ts'
   import { eventPlaces } from '../hub/event-places.ts'
   import { REFUSED_WORDS, identifyEvents } from '../tba/identify.ts'
-  import { setAppHasKey, setupSaves, tbaGetter, tbaHasKey, tbaMissing } from './tba-setting.svelte.ts'
+  import { nexusHasKey, saveNexusKey, setAppHasKey, setAppHasNexusKey, setupSaves, tbaGetter, tbaHasKey, tbaMissing } from './tba-setting.svelte.ts'
   import { baseName, dayText } from '../hub/layout.ts'
   import type { TagField, TagTarget } from '../hub/types.ts'
   import { ADD_LINK_REQUESTS, describeCodeLink } from '../hub/codelink.ts'
@@ -146,6 +146,8 @@
   let teamBox = $state<number | null>(null) // a number input binds a number, or null when empty
   let savedTeam = $state<number | null>(null)
   let keyBox = $state('') // empty: leave the saved key as it is
+  let nexusBox = $state('') // the same for the Nexus key
+  let nexusNote = $state('')
   let lookupNote = $state('')
   /** The setup boxes ("Your team", "Team Drive") sit behind the "This laptop…" link, so the log actions and the list come first. */
   let setupOpen = $state(false)
@@ -155,7 +157,7 @@
     const n = setupSaves()
     if (n === seenSaves || !api) return
     seenSaves = n
-    void api.team().then((t) => { teamBox = t.team; savedTeam = t.team; codeText = t.sources.join(', '); setAppHasKey(!!t.tbaKey) }).catch(() => {})
+    void api.team().then((t) => { teamBox = t.team; savedTeam = t.team; codeText = t.sources.join(', '); setAppHasKey(!!t.tbaKey); setAppHasNexusKey(!!t.nexusKey) }).catch(() => {})
     void api.codePlan().then((p) => { codePlan = p }).catch(() => {})
   })
   const driveWords = $derived(!drive ? '' : !drive.configured ? 'Drive: not set up' : !drive.signedIn ? 'Drive: not signed in' : !drive.teamFolder ? 'Drive: no team folder' : drive.lastSync ? `Drive: synced ${new Date(drive.lastSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Drive: not synced yet')
@@ -175,6 +177,10 @@
       if (saved.linkNeeded) { const r = await work('Linking code', () => api!.linkCode()); if (r) linkReport = r }
     }
     codePlan = await api!.codePlan().catch(() => codePlan)
+  }
+  async function saveNexus(text: string) {
+    nexusNote = (await saveNexusKey(text)) ?? ''
+    if (!nexusNote) nexusBox = ''
   }
   async function removeKey() {
     const saved = await work('Saving', () => api!.setTeam(savedTeam, codePlan?.sources ?? [], null))
@@ -360,6 +366,10 @@
     <button class="primary" onclick={saveTeam} disabled={driveBusy}>Save</button>
     <button class="primary" onclick={linkCode} disabled={driveBusy || !codePlan?.sources.length || !codePlan.logs}>{linkLabel}</button></p>
   <p class="meta">The read key (from your account page on The Blue Alliance, Read API Keys) names events whose logs don't, and fetches your schedule. It stays on this computer, in this app's settings.{lookupNote ? ` ${lookupNote}` : ''}</p>
+  <p class="row"><label>Nexus API key <input type="password" bind:value={nexusBox} autocomplete="off" placeholder={nexusHasKey() ? 'saved: type to replace' : 'paste the key (optional)'} aria-label="Nexus API key" /></label>
+    <button class="primary" onclick={() => saveNexus(nexusBox)} disabled={driveBusy || !nexusBox.trim()}>Save</button>
+    {#if nexusHasKey()}<button class="link" onclick={() => saveNexus('')} disabled={driveBusy}>Remove key</button>{/if}</p>
+  <p class="meta">Optional. At events that queue with <a href="https://frc.nexus" target="_blank" rel="noreferrer">Nexus</a>, Now shows when to queue and when the match starts, from Nexus's live times. Each person gets their own key: sign in with Google at <a href="https://frc.nexus/api" target="_blank" rel="noreferrer">frc.nexus/api</a> and copy it. It stays on this computer.{nexusNote ? ` ${nexusNote}` : ''}</p>
   {#if codePlan?.sources.length}<p class="meta">Logs whose code is in {codePlan.sources.length === 1 ? 'this repo' : 'these repos'} are linked when they are added (at most {ADD_LINK_REQUESTS} GitHub requests each time). Saving links the logs already here, which can take {codePlan.requests} or more requests.</p>{/if}
 </details>
 

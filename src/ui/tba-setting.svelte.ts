@@ -5,23 +5,53 @@
  */
 import { hub } from '../hub/bridge.ts'
 import { createTba, localStorageStore, type TbaGet } from '../tba/source.ts'
+import { checkNexusKey, createNexus, type NexusGet } from '../nexus/source.ts'
 import { setTeamNow, teamNow } from './team-setting.svelte.ts'
 
 const TEAM = 'hindsight.tba.team'
 const KEY = 'hindsight.tba.key'
+const NEXUS = 'hindsight.nexus.key'
 const read = (k: string): string | null => { try { return localStorage.getItem(k) } catch { return null } }
 
 let pageTeam = $state<number | null>(Number(read(TEAM)) || null)
 let pageKey = $state<string | null>(read(KEY))
 let appKey = $state(false)
+let pageNexus = $state<string | null>(read(NEXUS))
+let appNexus = $state(false)
 
 export const tbaTeam = (): number | null => (hub() ? teamNow() : pageTeam)
 export const tbaHasKey = (): boolean => (hub() ? appKey : !!pageKey)
 export const setAppHasKey = (has: boolean) => { appKey = has }
+/** A Nexus API key is saved (optional: it adds live queue and start times where an event queues with Nexus). */
+export const nexusHasKey = (): boolean => (hub() ? appNexus : !!pageNexus)
+export const setAppHasNexusKey = (has: boolean) => { appNexus = has }
 
 /** The desktop app: whether a key is saved. */
 export async function loadTba(): Promise<void> {
-  try { appKey = !!(await hub()?.team())?.tbaKey } catch { appKey = false }
+  try { const t = await hub()?.team(); appKey = !!t?.tbaKey; appNexus = !!t?.nexusKey } catch { appKey = false; appNexus = false }
+}
+
+/** A reader of Nexus, or null without a key. */
+export function nexusGetter(): NexusGet | null {
+  if (!nexusHasKey()) return null
+  const app = hub()
+  if (app) return (eventKey) => app.nexus(eventKey)
+  return createNexus({ key: pageNexus!, store: localStorageStore('hindsight.nexus:') })
+}
+
+/** Save (or, with an empty box, clear) the Nexus API key, in the app's settings or this browser. Returns words for a refusal, or null. The key is never echoed. */
+export async function saveNexusKey(text: string): Promise<string | null> {
+  try {
+    const key = checkNexusKey(text) ?? null
+    const app = hub()
+    if (app) appNexus = (await app.setNexusKey(key)).nexusKey
+    else {
+      pageNexus = key
+      try { if (key) localStorage.setItem(NEXUS, key); else localStorage.removeItem(NEXUS) } catch { /* private window: lasts until the page closes */ }
+    }
+    savedVersion++
+    return null
+  } catch (e) { return e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') : 'Could not save.' }
 }
 
 /** The page's own two fields. An empty key clears it. */

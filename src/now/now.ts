@@ -10,6 +10,7 @@
 import { isGate, robotOf, type Board } from '../board/model.ts'
 import { minutesFromNow, posOf, scheduleLabel } from '../board/points.ts'
 import { startOf, type ScheduledMatch } from '../tba/schedule.ts'
+import type { NexusTimes } from '../nexus/times.ts'
 import { deferralSession, isCarried, sessionEventName } from '../foresight/checklists.ts'
 import { dateText } from '../session/day.ts'
 import type { Mode } from '../session/mode.ts'
@@ -61,6 +62,8 @@ export interface NowState {
   jobs: { job: string; place: string; action: NowAction }[]
   /** Whether the mode line is shown (the states that have a day). */
   modeLine: boolean
+  /** The Nexus page the big line's queue and start times came from (Nexus asks for a link back); null when they did not. */
+  nexusCredit?: string | null
 }
 
 export interface NowInput {
@@ -79,6 +82,8 @@ export interface NowInput {
   scheduleNote: string | null
   /** The team's schedule the board was built with (null: none was read). */
   schedule?: readonly ScheduledMatch[] | null
+  /** The event key whose Nexus times are on the schedule (`sessionSchedule`'s `nexusEvent`), for the credit link. */
+  nexusEvent?: string | null
   /** Hub: the library holds on-field logs, so an earlier event's board can be opened. */
   earlierEvent?: boolean
   /** Practice day: the latest event's board, as `deferralSession` picks it. */
@@ -128,11 +133,31 @@ export function latestStarted(schedule: readonly ScheduledMatch[], now: number):
  * board's next position, as a floor: once a match's log is in, that match is not next even when the schedule copy has no actual
  * time for it yet (The Blue Alliance posts actuals late, and a copy can be minutes old).
  */
-export function upcoming(schedule: readonly ScheduledMatch[], now: number, from = 0): { label: string; startsAt: number | null; leftMinutes: number | null; pos: number } | null {
+export function upcoming(schedule: readonly ScheduledMatch[], now: number, from = 0): { label: string; startsAt: number | null; leftMinutes: number | null; pos: number; nexus: NexusTimes | null } | null {
   const m = schedule.find((x) => posOf(x, schedule) >= from && startedAt(x, schedule, now) === null)
   if (!m) return null
   const startsAt = startOf(m)
-  return { label: scheduleLabel(m), startsAt, leftMinutes: minutesFromNow(startsAt, now, 2 * 1440), pos: posOf(m, schedule) }
+  return { label: scheduleLabel(m), startsAt, leftMinutes: minutesFromNow(startsAt, now, 2 * 1440), pos: posOf(m, schedule), nexus: m.nexus ?? null }
+}
+
+const LIVE_WORDS: Record<string, string> = { 'Now queuing': 'queuing now', 'On deck': 'on deck', 'On field': 'on the field' }
+
+/**
+ * The big line from Nexus's times (ADR 12): when to queue and when it starts ("Next match: Q47 · queue 4:21 PM (in 6 min) ·
+ * start ≈ 4:43 PM"). Once Nexus has called the match, its status replaces the queue time ("Q47 · on deck · start ≈ 4:43 PM").
+ * A queue time already passed while Nexus still says "Queuing soon" reads "(now)": the queuers are late, not the team.
+ */
+export function nexusLine(next: { label: string; startsAt: number | null; nexus: NexusTimes }, now: number, clock: (ms: number) => string): string {
+  const parts = [`Next match: ${next.label}`]
+  const live = next.nexus.status ? LIVE_WORDS[next.nexus.status] : undefined
+  const q = next.nexus.queue
+  if (live) parts.push(live)
+  else if (q !== null) {
+    const left = Math.round((q - now) / 60e3)
+    parts.push(`queue ${clock(q)}${left <= 0 ? ' (now)' : left <= 2 * 1440 ? ` (in ${left} min)` : ''}`)
+  }
+  if (next.startsAt !== null) parts.push(`start ≈ ${clock(next.startsAt)}`)
+  return parts.join(' · ')
 }
 
 function pullTask(input: NowInput, board: Pick<Board, 'tl'> | null, vague: string): NowTask {
@@ -221,7 +246,8 @@ export function nowState(input: NowInput): NowState {
   const clock = input.clockText ?? defaultClock
   let big = typed ? `Next match: ${typed.label}` : 'Next match: not known yet'
   if (kind === 'event') {
-    if (next) big = `Next match: ${next.label}${next.startsAt !== null ? ` at ${clock(next.startsAt)}` : ''}${next.leftMinutes !== null ? ` · in ${next.leftMinutes} min` : ''}`
+    if (next?.nexus) big = nexusLine({ ...next, nexus: next.nexus }, input.now, clock)
+    else if (next) big = `Next match: ${next.label}${next.startsAt !== null ? ` at ${clock(next.startsAt)}` : ''}${next.leftMinutes !== null ? ` · in ${next.leftMinutes} min` : ''}`
     else if (input.schedule?.length) big = 'Next match: none left on the team\'s schedule'
   }
   const queue: NowTask = { id: 'queue', title: `Queue check for ${matchName}`, detail: 'Robot tethered, Driver Station connected, then Connect · in Robot check', done: false, button: 'Start the queue check', action: go('foresight'), primary: false }
@@ -249,6 +275,7 @@ export function nowState(input: NowInput): NowState {
     scheduleNote: kind !== 'event' && input.have.team && input.have.key ? input.scheduleNote : null,
     tasks: [pullTask(input, board, "Pull the last match's log"), triage, queue],
     also: [alsoMatch], jobs: [], modeLine: true,
+    nexusCredit: next?.nexus && input.nexusEvent ? `https://frc.nexus/en/event/${input.nexusEvent}` : null,
   }
 }
 

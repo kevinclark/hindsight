@@ -38,7 +38,7 @@
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
   import { hub } from '../hub/bridge.ts'
   import { REFUSED_WORDS, blankEventClusters, clockOffsetText, identifyEvents, type ResolvedEvent } from '../tba/identify.ts'
-  import { tbaGetter, tbaHasKey, tbaMissing, tbaTeam } from './tba-setting.svelte.ts'
+  import { nexusGetter, nexusHasKey, tbaGetter, tbaHasKey, tbaMissing, tbaTeam } from './tba-setting.svelte.ts'
   import BoardView from './BoardView.svelte'
   import BoardQueuePrint from './BoardQueuePrint.svelte'
   import { sessionSchedule } from '../tba/session-schedule.ts'
@@ -165,7 +165,7 @@
   // session's on-field matches, event or Blue Alliance settings change, not on every summary that lands.
   let schedule = $state.raw<ScheduledMatch[] | null>(null)
   let scheduleNote = $state<string | null>(null)
-  const scheduleSig = $derived(eventMode && session ? `${session.id}|${session.event?.key ?? ''}|${session.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}` : '')
+  const scheduleSig = $derived(eventMode && session ? `${session.id}|${session.event?.key ?? ''}|${session.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}|${nexusHasKey()}` : '')
   // Dropped only when the session or its event changes (or there is nothing to read), or the team changes; not on every new log of the same session: until the fresh read lands, the last one stands.
   let scheduleOf = ''
   $effect(() => {
@@ -178,7 +178,7 @@
     let stale = false
     void (async () => {
       try {
-        const got = await sessionSchedule(s, team, get)
+        const got = await sessionSchedule(s, team, get, nexusGetter())
         if (stale) return
         schedule = got.schedule
         scheduleNote = got.note
