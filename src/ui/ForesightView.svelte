@@ -14,7 +14,7 @@
   import { lastPassingSha, triage, type HistoryEvent, type PitCheckEvent } from '../triage/history.ts'
   import { howSure, trackRecord } from '../triage/track-record.ts'
   import { FORESIGHT_RULES } from '../rules/index.ts'
-  import { profileId } from '../profiles/index.ts'
+  import { mapRobotIds, profileId, robotKey } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { isUncommitted } from '../match/git-dirty.ts'
   import { downloadText } from './download.ts'
@@ -98,8 +98,8 @@
   // The robot's breakers (src/power/power-map.ts): the profile the robot reported, else the typed team's newest. The strip sits under the verdict.
   // Not connected: the robot most recently seen in the loaded logs, else the one last used on the power map screen; never a guess from profile order.
   const seenId = $derived(robotSeenLast([...sessions.flatMap((s) => [...s.matches, ...(s.pitRuns ?? [])])]) ?? lastMapRobot())
-  const breakerRobot = $derived(status?.profile ?? [...PROFILES, ...profilesNow()].find((p) => profileId(p) === seenId) ?? null)
-  const breakersUnset = $derived(stripText(breakerRobot ? powerMapAt(mapHistory(), profileId(breakerRobot), '9999-12-31T23:59:59.999Z') : null, []).unset)
+  const breakerRobot = $derived(status?.profile ?? [...PROFILES, ...profilesNow()].find((p) => !!seenId && mapRobotIds(p).includes(seenId)) ?? null)
+  const breakersUnset = $derived(stripText(breakerRobot ? powerMapAt(mapHistory(), mapRobotIds(breakerRobot), '9999-12-31T23:59:59.999Z') : null, [], breakerRobot?.breakerDefault).unset)
   let recorded = false
   let open = $state<Record<string, boolean>>({})
   // A robot snapshot (tools/robot-snapshot.py) dropped here: Foresight never reads the diagnostic server itself.
@@ -360,7 +360,7 @@
   <BreakersStrip profile={breakerRobot} />
 
   {#if !queue && status}
-    <ForesightPractice checklist={practice} {breakersUnset} onSetBreakers={() => openPowerMap(breakerRobot ? { robot: profileId(breakerRobot) } : {})} />
+    <ForesightPractice checklist={practice} {breakersUnset} onSetBreakers={() => openPowerMap(breakerRobot ? { robot: robotKey(breakerRobot) } : {})} />
   {/if}
 
   {#if queue && status}

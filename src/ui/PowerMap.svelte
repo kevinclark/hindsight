@@ -7,14 +7,14 @@
 -->
 <script lang="ts">
   import { tick } from 'svelte'
-  import { PROFILES, profileId } from '../profiles/index.ts'
+  import { PROFILES, mapRobotIds, robotKey } from '../profiles/index.ts'
   import type { RobotProfile } from '../profiles/types.ts'
   import { robotChoices } from './robot-list.ts'
   import { profilesNow } from './kept-profiles.svelte.ts'
   import { teamNow } from './team-setting.svelte.ts'
   import { powerMapAt, type Feed, type MainFamily, type MapBreaker, type PdpFamily, type PowerMap } from '../power/power-map.ts'
   import {
-    applyToAll, breakerColourName, breakerFill, breakerText, emptyMap, FAMILY_LABEL, feedLabel, feedParts, mapProblems, MAIN_LABEL, MPM_SLOTS, mpmAt, nextEmptySlot, onlyFromNow, planFromFinding, stampAll,
+    applyToAll, breakerColourName, motorRows, motorsSummary, oneProfilePerRobot, setMotorBreaker, type MotorRow, breakerFill, breakerText, emptyMap, FAMILY_LABEL, feedLabel, feedParts, mapProblems, MAIN_LABEL, MPM_SLOTS, mpmAt, nextEmptySlot, onlyFromNow, planFromFinding, stampAll,
     PDP_ID, ratingsFor, readRotated, savedLine, writeRotated, slotEntries, slotRows, slotsKeeping, unplacedMotors, withExtraFeed, withSlot, type MapProblem,
   } from '../power/power-map-view.ts'
   import { clearMapFocus, LAST_ROBOT_KEY, lastMapRobot, mapFocus, mapHistory, writeMapLine } from './power-map-bridge.svelte.ts'
@@ -28,27 +28,34 @@
   const LAST = LAST_ROBOT_KEY
   const lastRobot = lastMapRobot
   let chosen = $state<string | null>(null)
-  const groups = $derived(robotChoices(PROFILES, stored, teamNow(), focus?.robot ? [focus.robot] : []))
+  // One entry per robot, not per branch of its code: the map belongs to the robot.
+  const groups = $derived.by(() => {
+    const raw = robotChoices(PROFILES, stored, teamNow(), focus?.robot ? [focus.robot] : [])
+    const one = new Set(oneProfilePerRobot(raw.flatMap((g) => g.profiles)))
+    return raw.map((g) => ({ ...g, profiles: g.profiles.filter((p) => one.has(p)) })).filter((g) => g.profiles.length)
+  })
   const all = $derived(groups.flatMap((g) => g.profiles))
   const robot = $derived.by(() => {
-    const ids = all.map(profileId)
-    const want = [focus?.robot, chosen, lastRobot()].find((id) => id && ids.includes(id))
-    return all.find((p) => profileId(p) === want) ?? all.at(-1) ?? PROFILES[0]
+    // A robot is named by its key or, from a build before maps were per robot, by "name @ branch": both find it.
+    const want = [focus?.robot, chosen, lastRobot()].find((id) => id && all.some((p) => mapRobotIds(p).includes(id)))
+    return all.find((p) => !!want && mapRobotIds(p).includes(want)) ?? all.at(-1) ?? PROFILES[0]
   })
   // A named robot from a finding or strip wins once, then the select takes over.
   $effect(() => { if (focus?.robot) chosen = focus.robot })
-  const robotId = $derived(profileId(robot as RobotProfile))
+  const robotId = $derived(robotKey(robot as RobotProfile))
+  const ids = $derived(mapRobotIds(robot as RobotProfile))
+  const fallback = $derived(robot.breakerDefault ?? null)
   const motors = $derived(robot.motorGroups.flatMap((g) => g.motors.map((m) => ({ name: m.name, canId: m.canId }))))
 
   // The map being edited: the one in effect (at the match's start when opened from a finding).
   const at = $derived(focus?.from?.iso ?? LATEST)
-  const map = $derived(powerMapAt(history, robotId, at) ?? emptyMap(robotId, new Date().toISOString()))
+  const map = $derived(powerMapAt(history, ids, at) ?? emptyMap(robotId, new Date().toISOString()))
   const problems = $derived(mapProblems(map, motors))
   const unplaced = $derived(unplacedMotors(map, motors))
 
   // The numbering of the slots as drawn, turned 180° for a board mounted the other way (remembered per robot).
   let rotations = $state<Record<string, boolean>>({})
-  const rotated = $derived(rotations[robotId] ?? readRotated(localStorage, robotId))
+  const rotated = $derived(rotations[robotId] ?? readRotated(localStorage, ids))
   function rotate() {
     rotations[robotId] = !rotated
     writeRotated(localStorage, robotId, rotations[robotId])
@@ -72,10 +79,10 @@
     const fromFinding = !!focus?.from
     const nowIso = new Date().toISOString()
     const from = focus?.from?.iso ?? nowIso
-    const before = powerMapAt(history, robotId, at)
+    const before = powerMapAt(history, ids, at)
     const plan = fromFinding
-      ? planFromFinding(history, robotId, from, before, next)
-      : { forward: [{ ...next, from }], undo: [{ ...(before ?? emptyMap(robotId, from)), from }], laterDates: [] as string[] }
+      ? planFromFinding(history, ids, from, before, next)
+      : { forward: [{ ...next, robot: robotId, from }], undo: [{ ...(before ?? emptyMap(robotId, from)), robot: robotId, from }], laterDates: [] as string[] }
     const write = (maps: PowerMap[]) => writeMapLine((device, h, role) => stampAll(h, maps, { device, role }, new Date()))
     write(plan.forward)
     const days = [...new Set(plan.laterDates.map(today))]
@@ -95,11 +102,17 @@
     const rating = ratingsFor(family).includes(ratingA) ? ratingA : 40
     commit({ ...map, usual: { family, ratingA: rating } }, `Every motor → ${breakerText({ family, ratingA: rating })}`)
   }
-  const usualFamily = $derived<PdpFamily>(map.usual?.family ?? 'rev-ato')
-  const keeping = $derived(map.usual ? slotsKeeping(map, map.usual) : 0)
+  // What is in effect: the map's choice, else the robot's default (shown as such, a chip marked "default").
+  const effMain = $derived(map.main ?? fallback?.main ?? null)
+  const effUsual = $derived(map.usual ?? fallback?.usual ?? null)
+  const mainIsDefault = $derived(!map.main && !!fallback)
+  const usualIsDefault = $derived(!map.usual && !!fallback)
+  const usualFamily = $derived<PdpFamily>(effUsual?.family ?? 'rev-ato')
+  const keeping = $derived(effUsual ? slotsKeeping(map, effUsual) : 0)
+  const exceptionCount = $derived(map.exceptions?.length ?? 0)
   const keepingText = $derived.by(() => {
-    if (!map.usual || keeping === 0) return ''
-    const other = (map.boards.find((b) => b.id === PDP_ID)?.slots ?? []).find((s) => s.feeds?.kind === 'motor' && s.breaker && (s.breaker.family !== map.usual!.family || s.breaker.ratingA !== map.usual!.ratingA))
+    if (!effUsual || keeping === 0) return ''
+    const other = (map.boards.find((b) => b.id === PDP_ID)?.slots ?? []).find((s) => s.feeds?.kind === 'motor' && s.breaker && (s.breaker.family !== effUsual!.family || s.breaker.ratingA !== effUsual!.ratingA))
     return `${keeping} placed slot${keeping === 1 ? ' keeps' : 's keep'} ${other?.breaker ? breakerText(other.breaker) : 'their own breaker'}`
   })
 
@@ -135,7 +148,7 @@
   const defaultBreaker = (kind: Feed['kind'], board: string): MapBreaker => {
     if (board !== PDP_ID) return { family: 'atm', ratingA: 10 }
     const family = usualFamily
-    return kind === 'motor' ? map.usual ?? { family, ratingA: 40 } : kind === 'mpm' ? { family, ratingA: 40 } : { family, ratingA: 20 }
+    return kind === 'motor' ? effUsual ?? { family, ratingA: 40 } : kind === 'mpm' ? { family, ratingA: 40 } : { family, ratingA: 20 }
   }
   const slotNow = $derived(sel ? slotEntries(map, sel.board, sel.slot) : [])
   const draft = $derived<MapBreaker>(override ?? slotNow[0]?.breaker ?? defaultBreaker('motor', sel?.board ?? PDP_ID))
@@ -178,6 +191,17 @@
     if (e.key === 'Escape' && sel) { e.stopPropagation(); close() }
   }
 
+  // ---- The Motors list: a motor's breaker without placing it on a slot -----------------------------------------------------
+  const motorList = $derived(motorRows(map, motors, fallback))
+  let exOpen = $state<string | null>(null)
+  function setMotor(row: MotorRow, family: string, ratingA: number) {
+    const rating = ratingsFor(family).includes(ratingA) ? ratingA : ratingsFor(family).at(-1)!
+    const b = { family, ratingA: rating }
+    const next = setMotorBreaker(map, { name: row.name, canId: row.canId }, b, effUsual)
+    const isUsual = !!effUsual && effUsual.family === family && effUsual.ratingA === rating
+    commit(next, row.slotText !== 'no slot' ? `${row.name} (${row.slotText}) → ${breakerText(b)}` : isUsual ? `${row.name} → ${breakerText(b)} (no exception)` : `${row.name} → ${breakerText(b)} (exception)`)
+  }
+
   // ---- Lit slots (hovering a problem) ------------------------------------------------------------------------------------
   let lit = $state<number[]>([])
   const badSlots = $derived(new Set(problems.filter((p) => p.kind !== 'unplaced' && !p.board).flatMap((p) => p.slots)))
@@ -203,24 +227,25 @@
     <label class="robot">Robot
       <select value={robotId} onchange={(e) => { chosen = (e.currentTarget as HTMLSelectElement).value; try { localStorage.setItem(LAST, chosen) } catch { /* not remembered */ } clearMapFocus(); sel = null }}>
         {#each groups as g (g.label ?? '')}
-          {#if g.label}<optgroup label={g.label}>{#each g.profiles as p (profileId(p))}<option value={profileId(p)}>{profileId(p)}</option>{/each}</optgroup>
-          {:else}{#each g.profiles as p (profileId(p))}<option value={profileId(p)}>{profileId(p)}</option>{/each}{/if}
+          {#if g.label}<optgroup label={g.label}>{#each g.profiles as p (robotKey(p))}<option value={robotKey(p)}>{robotKey(p)}</option>{/each}</optgroup>
+          {:else}{#each g.profiles as p (robotKey(p))}<option value={robotKey(p)}>{robotKey(p)}</option>{/each}{/if}
         {/each}
       </select>
     </label>
     <div class="group" role="group" aria-label="Main breaker">
       <span class="lbl">Main breaker</span>
-      {#each MAINS as m (m)}<button type="button" class="chip" class:on={map.main === m} aria-pressed={map.main === m} onclick={() => setMain(m)}>{MAIN_LABEL[m]}</button>{/each}
+      {#each MAINS as m (m)}<button type="button" class="chip" class:on={effMain === m} aria-pressed={effMain === m} onclick={() => setMain(m)}>{MAIN_LABEL[m]}{#if effMain === m && mainIsDefault}{' '}<small class="def" data-default>default</small>{/if}</button>{/each}
     </div>
     <div class="group" role="group" aria-label="Every motor is on">
       <span class="lbl">Every motor is on</span>
-      {#each PDP_CHOICES as f (f)}<button type="button" class="chip" class:on={map.usual?.family === f} aria-pressed={map.usual?.family === f} onclick={() => setUsual(f, map.usual?.ratingA ?? 40)}>{FAMILY_LABEL[f]}</button>{/each}
+      {#each PDP_CHOICES as f (f)}<button type="button" class="chip" class:on={effUsual?.family === f} aria-pressed={effUsual?.family === f} onclick={() => setUsual(f, effUsual?.ratingA ?? 40)}>{FAMILY_LABEL[f]}{#if effUsual?.family === f && usualIsDefault}{' '}<small class="def" data-default>default</small>{/if}</button>{/each}
       <span class="sep" aria-hidden="true">·</span>
-      {#each ratingsFor(usualFamily) as a (a)}<button type="button" class="chip rate" class:on={map.usual?.ratingA === a} aria-pressed={map.usual?.ratingA === a} aria-label={`${a} amps`} onclick={() => setUsual(usualFamily, a)}>{a} A</button>{/each}
+      {#each ratingsFor(usualFamily) as a (a)}<button type="button" class="chip rate" class:on={effUsual?.ratingA === a} aria-pressed={effUsual?.ratingA === a} aria-label={`${a} amps`} onclick={() => setUsual(usualFamily, a)}>{a} A</button>{/each}
     </div>
   </div>
-  {#if keepingText}
-    <p class="keeping" data-keeping>{keepingText} · <button type="button" class="link" onclick={() => map.usual && commit(applyToAll(map, map.usual), `All motor slots → ${breakerText(map.usual)}`)}>Apply to all</button></p>
+  {#if usualIsDefault || mainIsDefault}<p class="def-note" data-default-note>Chips marked default are Hindsight's default for this robot; choosing one writes it into the map.</p>{/if}
+  {#if keepingText || exceptionCount}
+    <p class="keeping" data-keeping>{[keepingText, exceptionCount ? `${exceptionCount} exception${exceptionCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')} · <button type="button" class="link" onclick={() => effUsual && commit(applyToAll(map, effUsual), `All motors → ${breakerText(effUsual)}`)}>Apply to all{exceptionCount ? ` (clears the ${exceptionCount === 1 ? 'exception' : 'exceptions'})` : ''}</button></p>
   {/if}
   {#if focus?.from}<p class="from">Opened from {focus.from.label}: a change here counts from that match.</p>{/if}
 
@@ -319,6 +344,28 @@
       </li>
     {/each}
   </ul>
+  <section class="motors" aria-label="Motors" data-motors>
+    <h3>Motors</h3>
+    <p class="msum" data-motors-summary>{motorsSummary(motorList, effUsual)}</p>
+    <ul>
+      {#each motorList as row (row.name + row.canId)}
+        {@const k = row.name + row.canId}
+        <li class:exc={row.exception}>
+          <span class="mname">{row.name}</span>
+          <span class="mcan">{row.canId !== undefined ? `CAN ${row.canId}` : ''}</span>
+          <button type="button" class="chip mchip" class:grey={!row.exception} aria-expanded={exOpen === k} aria-label={`${row.name}: ${breakerText(row.breaker)}${row.exception ? ' (an exception)' : ''}. Change`} onclick={() => (exOpen = exOpen === k ? null : k)}>{breakerText(row.breaker)}</button>
+          <span class="mslot">{row.slotText}{row.source === 'exception' ? ' · exception' : row.source === 'slot' && row.exception ? ' · slot differs' : ''}</span>
+          {#if exOpen === k}
+            <div class="brk" role="group" aria-label={`Breaker for ${row.name}`}>
+              {#each PDP_CHOICES as f (f)}<button type="button" class="chip" class:on={row.breaker.family === f} aria-pressed={row.breaker.family === f} onclick={() => setMotor(row, f, row.breaker.ratingA)}>{FAMILY_LABEL[f]}</button>{/each}
+              <span class="sep" aria-hidden="true">·</span>
+              {#each ratingsFor(row.breaker.family) as a (a)}<button type="button" class="chip rate" class:on={row.breaker.ratingA === a} aria-pressed={row.breaker.ratingA === a} aria-label={`${a} amps`} style={`border-left:0.6rem solid ${breakerFill(a)}`} onclick={() => setMotor(row, row.breaker.family, a)}>{a}</button>{/each}
+            </div>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  </section>
   {#if map.seq > 0}<p class="saved" data-saved>{savedLine(map)}</p>{/if}
 
   {#if toast}
@@ -338,6 +385,17 @@
   .chip.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
   .chip.rate { padding-left: 0.5rem; }
   .link { background: none; border: none; padding: 0; color: var(--link, var(--fg)); text-decoration: underline; cursor: pointer; font: inherit; min-height: 24px; }
+  .def { font-size: 0.7rem; opacity: 0.8; }
+  .def-note { font-size: 0.8rem; color: var(--muted); margin: 0.25rem 0; }
+  .motors { margin: 0.75rem 0; }
+  .motors h3 { font-size: 1rem; margin: 0 0 0.25rem; }
+  .msum { font-size: 0.85rem; margin: 0 0 0.4rem; }
+  .motors ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+  .motors li { display: grid; grid-template-columns: minmax(10rem, 1fr) 5rem auto minmax(8rem, 1fr); gap: 0.15rem 0.6rem; align-items: center; padding: 0.15rem 0.4rem; border-left: 3px solid transparent; font-size: 0.88rem; }
+  .motors li.exc { border-left-color: var(--warning); font-weight: 600; }
+  .motors li .brk { grid-column: 1 / -1; margin: 0.2rem 0 0.35rem; }
+  .mchip.grey { color: var(--muted); }
+  .mcan, .mslot { color: var(--muted); font-weight: 400; }
   .keeping, .from, .note, .saved { font-size: 0.85rem; color: var(--muted); margin: 0.25rem 0; }
   .keeping { color: var(--fg); }
   .board { position: relative; margin: 0.75rem 0; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: flex-start; }
