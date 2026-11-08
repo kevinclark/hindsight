@@ -1,4 +1,4 @@
-# Builds Hindsight for Mac, Windows and Linux from a commit that passed the tests, and on main publishes it as a GitHub release
+# Builds Hindsight for Mac, Windows and Linux and, on main, publishes it once the tests pass as a GitHub release
 # (v0.1.<commit count>) that electron-updater and the app's update banner read. Run it by hand (Actions > release > Run workflow) for the same artifacts from any branch; only main publishes.
 # Mac is signed and notarized when the MAC_CSC_LINK secret exists, ad hoc otherwise (docs/release.md).
 name: release
@@ -41,8 +41,8 @@ jobs:
       - run: npx vitest run
       - run: npm run check
 
+  # Builds run beside the tests (they don't wait ~50 s for them); the release job needs both, so nothing untested publishes.
   build:
-    needs: test
     strategy:
       fail-fast: true
       matrix:
@@ -114,9 +114,11 @@ jobs:
             echo unsigned > signing-mac.txt
           fi
           npm run build:app
+          # concurrency.jobs=2 packs, signs and notarizes x64 and arm64 at once: the two notarization waits overlap instead of
+          # adding up (112-346 s each, 2026-11-05..08). One run still writes the one latest-mac.yml listing both.
           # Kept as a backstop to the step above: Apple's ticket server can drop the connection while stapling. Building again is safe.
           for attempt in 1 2 3; do
-            npx electron-builder --mac dmg zip --arm64 --x64 --publish never "${sign[@]}" && break
+            npx electron-builder --mac dmg zip --arm64 --x64 --publish never -c.concurrency.jobs=2 "${sign[@]}" && break
             [ "$attempt" = 3 ] && exit 1
             echo "Mac build attempt $attempt failed; trying again in 60 s"
             rm -rf release
@@ -124,7 +126,12 @@ jobs:
           done
           rm -f "$RUNNER_TEMP/AuthKey.p8"
           test -e release/latest-mac.yml
-          if [ -n "$MAC_CSC_LINK" ]; then codesign -dv --verbose=2 release/mac-arm64/Hindsight.app 2>&1 | grep -E 'Authority=Developer ID Application|TeamIdentifier'; fi
+          if [ -n "$MAC_CSC_LINK" ]; then
+            for app in release/mac-arm64/Hindsight.app release/mac/Hindsight.app; do
+              codesign -dv --verbose=2 "$app" 2>&1 | grep -E 'Authority=Developer ID Application|TeamIdentifier'
+              xcrun stapler validate "$app"
+            done
+          fi
           mv signing-mac.txt release/
       - name: Build and package (Windows)
         if: matrix.name == 'windows'
@@ -158,7 +165,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: build
+    needs: [test, build]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
