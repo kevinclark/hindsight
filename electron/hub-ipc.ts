@@ -67,7 +67,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
         const t = await token(refresh)
         void sharing().then((s) => s.signInUsed())
         return t
-      } catch (e) { if (e instanceof SignInAgain) { forgetTokens(); void sharing().then((s) => s.stop(true)) } throw e }
+      } catch (e) { if (e instanceof SignInAgain) { forgetTokens(); shareStore = null; void sharing().then((s) => s.stop(true)) } throw e }
     }
   }
   async function teamStore(): Promise<DriveAdapter> {
