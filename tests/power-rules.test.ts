@@ -1,4 +1,4 @@
-// power/main-breaker-margin and power/pd-not-reporting on synthetic logs.
+// power/main-breaker-margin and power/pd-not-reporting on synthetic logs (the breaker rules' contract tests: tests/breaker-rules.contract.test.ts).
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
@@ -18,9 +18,10 @@ const run = (entries: Entries) => analyzeFiles([{ name: 't.wpilog', bytes: write
 describe('power/main-breaker-margin', () => {
   it('fires when four drive motors are held at 40 A for minutes (160 A, a long push)', () => {
     const f = run(pushing(40)).findings.find((x) => x.rule === 'power/main-breaker-margin')
-    // 4 × 40 A + 3 A other = 163 A, 136 % of 120 A once the breaker has heated: above the band, so red.
-    expect(f?.severity).toBe('error')
-    expect(f?.measured?.[0].value).toBeGreaterThan(130)
+    // 4 × 40 A + 3 A other = 163 A, 136 % of 120 A: past the Bussmann band's fast edge (and its slow one), amber only, never red.
+    expect(f?.severity).toBe('warning')
+    expect(f?.measured?.[0].value).toBeGreaterThan(100)
+    expect(f?.title).toMatch(/fast end of its datasheet band would have tripped/)
   })
   it('stays quiet at 25 A per motor (103 A total)', () => {
     expect(run(pushing(25)).findings.some((x) => x.rule === 'power/main-breaker-margin')).toBe(false)

@@ -1,122 +1,116 @@
 /**
- * How close did the robot's total current come to tripping the 120 A main breaker?
+ * Would the main breaker have tripped, by its maker's own trip curve?
  *
- * Checks: the breaker heats with current squared and cools over time, so its load is the root of an exponential
- * average of total current² (time constant τ). Fires when that load reaches 100 % of 120 A, the bottom of the band
- * (100–130 % at room temperature) where the main breaker's long-run trip lies; red at 130 %, above the band.
- * Thresholds: from the CB185-120 datasheet's curve read by eye (±15–30 %), so the band is wide on purpose. τ = 90 s
- * is the lowest time constant under which three real matches that did NOT trip stay under the band's slow edge
- * (one reached 128 % at 90 s and 150 % at 30 s); each finding also says the lowest τ its own match allows. A
- * one-τ model is only an approximation: at 90 s it predicts a 300 % overload trips in ~19 s where the datasheet says
- * 5–13 s, so short hard pushes are better judged by the 30 s figure in the evidence.
- * Why: the main breaker cuts power to the whole robot and has to be reset by hand. Teams trip it most when pushed
- * for a long time, or with supply limits off; a warm breaker, or loose lugs, trip it sooner.
+ * Checks: the datasheet gives a band, the earliest an in-spec 120 A main breaker may trip (the fast edge) and the
+ * latest (the slow edge). The robot's total current heats each edge the way that edge's curve says (src/power/breakers.ts:
+ * heating with current squared, cooling when it drops). Fires when the fast edge reaches 100 %: a breaker at the fast
+ * end of its band would have tripped. Amber only, never red: three matches that did not trip went past the slow edge
+ * too (103 to 108 %), and the chart's time axis past 20 s is hand-drawn (about ±30 % in time), so past the slow edge
+ * cannot be called certain.
+ * Thresholds: the makers' datasheets (Bussmann 18X/28X, Optifuse 153/253), fitted per edge; the fit is off by up to ±14 %
+ * in current at a datasheet point for the Bussmann fast edge, which is about ±30 % in heat (heat goes with current squared).
+ * Why: the main breaker cuts power to the whole robot and has to be reset by hand. Teams trip it most when pushed for a
+ * long time, or with supply limits off; a warm breaker, or loose lugs, trip it sooner (the curves are at 25 °C).
  */
 import { rule, round, type PlotRequest } from '../rule.ts'
-import { BUSSMANN_SERIES_18X, CD_MAIN_BREAKER_CAUSES, CD_MAIN_BREAKER_TRIPS, CTRE_CURRENT_LIMITS, GAME_MANUAL_2026, REV_ATO_BREAKERS } from '../sources.ts'
+import { BUSSMANN_SERIES_18X, BUSSMANN_SERIES_28X, CD_MAIN_BREAKER_CAUSES, CD_MAIN_BREAKER_TRIPS, CTRE_CURRENT_LIMITS, GAME_MANUAL_2026, OPTIFUSE_153, OPTIFUSE_253, REV_ATO_BREAKERS } from '../sources.ts'
 import { DT, type PowerGrid } from '../../power/battery-model.ts'
-import { inside, type MatchView } from '../view.ts'
+import { breakerFamily, heat, steadyAmps } from '../../power/breakers.ts'
+import { mainBreakerFor, type MainFamily } from '../../power/power-map.ts'
+import { inside, lengthOf, type MatchView } from '../view.ts'
 
 const MAIN_BREAKER_A = 120 // FRC rule R609: one 120 A main breaker
-const TRIP_BAND = [1.0, 1.3] // long-run trip, as a share of 120 A, at 25 °C (CB185-120 datasheet, read by eye)
-const TAU_SECONDS = 90 // see "Thresholds" above
 
+/** The parts each main family stands for, as a student reads them on the breaker. */
+const PARTS: Record<MainFamily, string> = {
+  bussmann: 'Bussmann CB185-120 or CB285-120',
+  optifuse: 'Optifuse 153120 or 253120',
+}
 export default rule({
   id: 'power/main-breaker-margin',
   title: 'Close to tripping the main breaker',
   severity: 'warning',
   judges: 'performance',
-  averagesOverTime: true, // a 90 s heating average
+  averagesOverTime: true, // a heating average over tens of seconds
   who: ['software', 'drive'],
-  meaning: 'The total current was high for long enough to heat the 120 A main breaker into the range where it can trip. If it trips, the whole robot goes dead until someone resets it by hand.',
+  meaning: 'The total current heated a 120 A main breaker as fast as the quickest in-spec breaker trips, by its datasheet. Whether yours would have tripped depends on where in its band it sits. If it trips, the whole robot goes dead until someone resets it by hand.',
   causes: [
     { id: 'pushing', cause: 'Long pushing matches: drive motors held at high current while pinned or wheel-spinning', look: 'the match video at the peak; Power tab: the drive group\'s current in the minute before it' },
     { id: 'no-sustained-limit', cause: 'No sustained current limit, so motors can sit at their burst limit indefinitely', look: 'the Limits tab: supply limits switched off, or no lower limit and lower time (Phoenix 6: SupplyCurrentLowerLimit / SupplyCurrentLowerTime)' },
     { id: 'busy-mechanism', cause: 'A big mechanism running hard for long stretches (a flywheel spun up all match, an intake stalled)', look: 'Power tab: which group carries the most current in the minute before the peak (this finding names it)' },
     { id: 'warm-breaker', cause: 'A breaker that is already warm, worn, or has loose lugs trips sooner than its curve', look: 'the main breaker\'s lugs (tight? discoloured?); whether it has tripped before (replace one that has)' },
   ],
-  nextStep: 'Set a sustained supply limit on the drive and the biggest mechanisms (a lower limit after about 1 s), and make sure the sum of those sustained limits stays at or under about 120 A.',
+  nextStep: 'Set a sustained supply limit on the drive and the biggest mechanisms (a lower limit after about 1 s), and keep the total they can draw for a whole match under the steady current in the evidence.',
   incident: 'Main-breaker trips while being pushed are a known FRC failure (Chief Delphi threads on main-breaker trips, 2024 and 2026).',
   sources: [
     { ...GAME_MANUAL_2026, says: 'Rule R609: the robot has a single main 120 A surface-mount circuit breaker (Cooper Bussmann CB185-120 or the listed equivalents); R612 allows only one 120 A breaker.' },
-    { ...BUSSMANN_SERIES_18X, says: 'The Series 18X data sheet describes a thermal-type breaker and gives a time versus percent-of-rated-current curve and a temperature derating curve.' },
+    { ...BUSSMANN_SERIES_18X, says: 'The Series 18X data sheet gives the band of trip time against percent of rated current (fastest and slowest in-spec breaker) and a temperature derating curve; its curves are at 25 °C.' },
+    { ...BUSSMANN_SERIES_28X, says: 'The Series 28X (CB285-120) page gives the same band, identical to the 18X after a page offset.' },
+    { ...OPTIFUSE_153, says: 'The 153 data sheet gives the Optifuse band of trip time against percent of rated current, with a three-row table.' },
+    { ...OPTIFUSE_253, says: 'The 253 data sheet gives the same band for the other legal Optifuse part.' },
     { ...CTRE_CURRENT_LIMITS, says: 'FRC breakers mostly trip from heat and can carry well above their rating for a limited time; check the breaker data sheet for trip times.' },
     { ...REV_ATO_BREAKERS, says: 'A breaker is designed to trip at a temperature after a set time, not at an exact current; its rating is the most it is guaranteed to carry without tripping (the page is about a 40 A ATO breaker).' },
     { ...CD_MAIN_BREAKER_TRIPS, says: 'A poster reports more main-breaker trips in 2024 as teams moved to swerve without current limits; one team\'s PDH log showed about 120 A from the battery for most of a match until the breaker tripped.' },
     { ...CD_MAIN_BREAKER_CAUSES, says: 'One team traced main-breaker trips to a damaged drive motor drawing excess current, a loose power wire, a breaker that popped on a tap, and battery leads shorting to the frame.' },
   ],
   thresholds: [
-    { name: 'trip band', value: '100 % to 130 % of 120 A at 25 °C', basis: 'judgment', how: 'Read by eye from the data sheet curve (±15 to 30 %), so the band is wide on purpose.' },
-    { name: 'heating time constant', value: '90 s', basis: 'measured', how: 'The lowest time constant under which three real matches that did not trip stay under the slow edge of the band (one reached 128 % at 90 s and 150 % at 30 s).' },
+    { name: 'warn line', value: 'the fast edge of the datasheet band reaches 100 %', basis: 'judgment', how: 'Taken from the makers\' datasheets (Bussmann 18X and 28X, Optifuse 153 and 253), fitted per edge by heating stages; the line is good to about ±30 % in heat for the Bussmann fast edge (fit error in current, squared). No red level: three matches that did not trip passed the slow edge by 3 to 8 %.' },
+    { name: 'datasheet temperature', value: '25 °C', basis: 'judgment', how: 'The curves are at 25 °C; a warm breaker or loose lugs trip sooner (Bussmann publishes 50 to 85 % of the band at 93 °C).' },
   ],
 
   check(match) {
     if (match.wholeMatch.length === 0) return match.couldNotCheck('no match in this log')
     // Heating needs current only, so this runs on a log with motor currents and no battery voltage too.
     const grid = match.currents()
-    const load = heating(grid.amps, TAU_SECONDS)
+    const main = mainBreakerFor(match.powerMap)
+    const family = breakerFamily(main.family)!
+    const fast = heat(grid.amps, DT, MAIN_BREAKER_A, family.edges.fast)
+    const slow = heat(grid.amps, DT, MAIN_BREAKER_A, family.edges.slow)
     // The peak is looked for inside the match only: heat builds up over the whole log, but a reading held after the
     // match ended is not the match. (No match, no finding: the guard above also leaves out Foresight's pit stretch.)
-    const peakAt = indexOfHighest(load, grid.t, match.wholeMatch)
-    if (peakAt < 0) return match.couldNotCheck('no motor current logged during the match')
-    const share = load[peakAt] / MAIN_BREAKER_A
-    if (share < TRIP_BAND[0]) return
+    const fastAt = indexOfHighest(fast, grid.t, match.wholeMatch)
+    const slowAt = indexOfHighest(slow, grid.t, match.wholeMatch)
+    if (fastAt < 0 || slowAt < 0) return match.couldNotCheck('no motor current logged during the match')
+    const fastPeak = fast[fastAt]
+    const slowPeak = slow[slowAt]
+    if (fastPeak < 1) return
 
-    const t = grid.t[peakAt]
-    const tauMin = lowestSafeTau(grid.amps)
-    const fasterPercent = loadPercent(grid.amps, 30)
-    const slowerPercent = loadPercent(grid.amps, 180)
-    // The minute before the peak: which group carried the most current, and the total's RMS.
-    const from = Math.max(0, peakAt - Math.round(60 / DT))
-    const top = busiestGroup(grid, from, peakAt)
-    const total = sumBetween(grid.amps, from, peakAt)
-    const rms60 = rmsBetween(grid.amps, from, peakAt)
+    // When the fast edge first reached 100 % inside the match: the time a fast-end breaker would have tripped.
+    const crossAt = fast.findIndex((h, i) => h >= 1 && inside(match.wholeMatch, grid.t[i]))
+    const t = grid.t[crossAt]
+    const fastPercent = Math.round(100 * fastPeak)
+    const slowPercent = Math.round(100 * slowPeak)
+    const slowTripped = slowPeak >= 1
+    // The minute before it: which group carried the most current, and the total's RMS.
+    const from = Math.max(0, crossAt - Math.round(60 / DT))
+    const top = busiestGroup(grid, from, crossAt)
+    const total = sumBetween(grid.amps, from, crossAt)
+    const rms60 = rmsBetween(grid.amps, from, crossAt)
     const topPercent = top && total > 0 ? Math.round((100 * top.charge) / total) : undefined
-
-    const plot = peakPlot(match, t, top?.name)
+    // The fit's worst error in current, as an error in heat (heat goes with current squared).
+    const heatError = Math.round(100 * ((1 + family.edges.fast.fitError.currentWorst) ** 2 - 1))
 
     return {
-      message: `Main breaker load reached ${Math.round(100 * share)} % of its ${MAIN_BREAKER_A} A rating ${match.whenAt(t)}, ${share >= TRIP_BAND[1] ? 'above' : 'inside'} the ${100 * TRIP_BAND[0]}–${100 * TRIP_BAND[1]} % band where it can trip`,
+      message: `Main breaker: a breaker at the fast end of its datasheet band would have tripped ${match.whenAt(t)} (fast edge ${fastPercent} %); ${slowTripped ? `even the slowest would have (${slowPercent} %)` : `the slowest would not (${slowPercent} %)`}`,
       at: t,
-      severity: share >= TRIP_BAND[1] ? 'error' : undefined,
       evidence: {
-        [`breaker load, heating averaged over ~${TAU_SECONDS} s (% of ${MAIN_BREAKER_A} A)`]: Math.round(100 * share),
-        'same, if the breaker heats faster (30 s; closer for short hard pushes) (%)': fasterPercent,
-        'same, if it heats slower (180 s) (%)': slowerPercent,
+        'fast edge, peak heat (% of the trip)': fastPercent,
+        'slow edge, peak heat (% of the trip)': slowPercent,
+        'judged against': `${PARTS[main.family]}${main.source === 'assumed' ? ' (assumed: no main breaker set in the power map)' : ' (set in the power map)'}`,
+        'datasheet curves': 'at 25 °C; a warm breaker or loose lugs trip sooner',
+        'accuracy of the warn line': `about ±${heatError} % in heat (the fit's worst error at a datasheet point, ${round(100 * family.edges.fast.fitError.currentWorst, 0)} % in current, squared)`,
+        'steady total current that stays under the fast edge for this match\'s length (A)': round(steadyAmps(lengthOf(match.wholeMatch), MAIN_BREAKER_A, family.edges.fast), 0),
         'total current, RMS over the minute before (A)': round(rms60, 0),
         'carried most of it': top && topPercent !== undefined ? `${top.name} (${topPercent} % of the current)` : 'unknown',
-        'if it did not trip, under this model its time constant is at least (s)': tauMin ?? 'over 300',
       },
-      measured: [{ label: `main breaker load (~${TAU_SECONDS} s)`, value: Math.round(100 * share), unit: '%', threshold: 100 * TRIP_BAND[0] }],
+      measured: [{ label: 'main breaker heat, fast edge', value: fastPercent, unit: '%', threshold: 100 }],
       nextStep: top && topPercent !== undefined
-        ? `${top.name} carried ${topPercent} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the sum of the sustained limits at or under about 120 A.`
+        ? `${top.name} carried ${topPercent} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the total the robot can draw for a whole match under the steady current in the evidence.`
         : undefined,
-      plot,
+      plot: peakPlot(match, t, top?.name),
     }
   },
 })
-
-/** The breaker's load over time: the root of the exponential average of current², with time constant tau (s). */
-function heating(amps: Float64Array, tau: number): Float64Array {
-  const out = new Float64Array(amps.length)
-  let h = 0
-  for (let i = 0; i < amps.length; i++) {
-    h += (amps[i] * amps[i] - h) * (DT / tau)
-    out[i] = Math.sqrt(h)
-  }
-  return out
-}
-
-/** Only the highest load, without keeping the series (for trying many time constants). */
-function peakHeating(amps: Float64Array, tau: number): number {
-  let h = 0
-  let peak = 0
-  for (let i = 0; i < amps.length; i++) {
-    h += (amps[i] * amps[i] - h) * (DT / tau)
-    if (h > peak) peak = h
-  }
-  return Math.sqrt(peak)
-}
 
 /** The index of the highest value whose time falls inside the window (the first, if several tie). */
 function indexOfHighest(values: Float64Array, times: Float64Array, window: MatchView['wholeMatch']): number {
@@ -126,14 +120,6 @@ function indexOfHighest(values: Float64Array, times: Float64Array, window: Match
     if (highest < 0 || values[i] > values[highest]) highest = i
   }
   return highest
-}
-
-/** The lowest time constant under which this match stays below the band's slow edge (null: none up to 300 s). */
-function lowestSafeTau(amps: Float64Array): number | null {
-  for (let tau = 10; tau <= 300; tau += 5) {
-    if (peakHeating(amps, tau) / MAIN_BREAKER_A <= TRIP_BAND[1]) return tau
-  }
-  return null
 }
 
 /** The sum of a series from index `from` to `to`, both included. */
@@ -150,11 +136,6 @@ function rmsBetween(values: Float64Array, from: number, to: number): number {
   return Math.sqrt(squares / (to - from + 1))
 }
 
-/** The peak load of the main breaker at time constant tau, in whole percent of its rating. */
-function loadPercent(amps: Float64Array, tau: number): number {
-  return Math.round(100 * peakHeating(amps, tau) / MAIN_BREAKER_A)
-}
-
 /** The group that carried the most current from index `from` to `to` (current adds up by group; heating doesn't). */
 function busiestGroup(grid: PowerGrid, from: number, to: number) {
   const groups = grid.groups.map((g) => ({ name: g.name, charge: sumBetween(g.amps, from, to) }))
@@ -162,7 +143,7 @@ function busiestGroup(grid: PowerGrid, from: number, to: number) {
   return groups[0]
 }
 
-/** The plot around the peak: battery voltage if logged; otherwise the supply current of the group that carried most. */
+/** The plot around the finding: battery voltage if logged; otherwise the supply current of the group that carried most. */
 function peakPlot(match: MatchView, t: number, topGroup: string | undefined): PlotRequest {
   const battery = match.signalIfLogged('batteryVoltage')
   if (battery) return { signals: [battery], unit: 'V', from: t - 60, to: t + 10, marks: [t] }

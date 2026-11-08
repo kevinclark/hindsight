@@ -64,6 +64,12 @@ export const REV_ATO_BREAKERS = vendor('REV Robotics: ATO auto-resetting breaker
 export const WCP_KRAKEN_PERFORMANCE = vendor('WCP: Kraken X60 motor performance', 'https://docs.wcproducts.com/welcome/electronics/kraken-x60/kraken-x60-motor/overview-and-features/motor-performance')
 export const MK_ES17_12 = vendor('MK Battery: ES17-12 specifications', 'https://revrobotics.com/content/docs/ES17-12_User_Guide.pdf')
 export const BUSSMANN_SERIES_18X = vendor('Cooper Bussmann: Series 18X Hi-Amp circuit breaker data sheet', 'https://s3.amazonaws.com/docusync-files/baba5c15ada1218997f9c616c919a604de5ef6211d61b85852209a2503b05a7b/am-0282%20data_sheet.pdf')
+export const BUSSMANN_SERIES_28X = vendor('Cooper Bussmann: Series 28X Hi-Amp heavy duty circuit breaker (Transportation Products catalog, p. 32)', 'https://static6.arrow.com/aropdfconversion/25769e5c18494f4ab6f3657e30a436ab4bd478da/46940_a.pdf')
+export const OPTIFUSE_153 = vendor('Optifuse: High Amperage Heavy Duty Circuit Breaker 153 data sheet', 'https://www.optifuse.com/optifuse_ecommerce_tools/datasheets/153.pdf')
+export const OPTIFUSE_253 = vendor('Optifuse: High Amperage Heavy Duty Circuit Breaker 253 data sheet', 'https://www.optifuse.com/optifuse_ecommerce_tools/datasheets/253.pdf')
+export const REV_ATO_DATASHEET = vendor('REV Robotics: ATO Auto-Resetting Breaker data sheet (REV-11-1860 to 1863)', 'https://www.revrobotics.com/content/docs/REV-11-1860-1863-DS.pdf')
+export const CTRE_BREAKER_DATASHEET = vendor('CTRE: Power Distribution Breaker data sheet', 'https://ctre.download/files/datasheet/CTRE%20Breaker%20Datasheet.pdf')
+export const SNAP_ACTION_MX5 = vendor('Snap Action: MAXI circuit breakers, model MX5 spec sheet (the MINI AT2 and VB3 sheets give the same table)', 'https://www.snapaction.net/assets/img/MX5-Spec-Sheet-Revision-2023.pdf')
 export const PWF_BATTERY_FUEL_GAUGE: Page = { title: 'Playing With Fusion: Battery Fuel Gauge user manual', url: 'https://www.playingwithfusion.com/files/rob70001_frc_usermanual_r02.pdf', kind: 'manual' }
 
 // FIRST
