@@ -47,7 +47,8 @@ async function setup() {
   return { lib, team, share, changed, folder }
 }
 /** Let the promises a timer started run to the end. */
-const settle = async () => { for (let i = 0; i < 30; i++) { await vi.advanceTimersByTimeAsync(0); await new Promise((r) => setImmediate(r)) } }
+// Real disk writes finish on their own clock: 30 turns of the event loop, and at least 50 ms of real time (slow CI runners).
+const settle = async () => { const until = performance.now() + 50; for (let i = 0; i < 30 || performance.now() < until; i++) { await vi.advanceTimersByTimeAsync(0); await new Promise((r) => setImmediate(r)) } }
 
 describe('pushing without a Sync', () => {
   it('a burst of marks is one push, about 10 s after the last mark', async () => {

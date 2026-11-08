@@ -50,7 +50,8 @@ vi.mock('../src/hub/drive-adapter.ts', () => ({
 }))
 
 const issue = (n: number) => `${JSON.stringify({ type: 'issue', key: `mech/test · Arm ${n}`, status: 'known', note: 'test reason', when: `2099-03-05T10:0${n}:00.000Z` })}\n`
-const settle = async () => { for (let i = 0; i < 30; i++) { await vi.advanceTimersByTimeAsync(0); await new Promise((r) => setImmediate(r)) } }
+// Real disk writes finish on their own clock: 30 turns of the event loop, and at least 50 ms of real time (slow CI runners).
+const settle = async () => { const until = performance.now() + 50; for (let i = 0; i < 30 || performance.now() < until; i++) { await vi.advanceTimersByTimeAsync(0); await new Promise((r) => setImmediate(r)) } }
 const call = (channel: string, ...args: unknown[]) => h.handlers.get(channel)!({}, ...args) as Promise<unknown>
 
 beforeEach(async () => {
