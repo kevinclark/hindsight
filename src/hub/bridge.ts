@@ -11,7 +11,8 @@ import type { TagField, TagTarget } from './types.ts'
 import type { Fetched, TbaGetOptions } from '../tba/source.ts'
 import type { NexusEvent } from '../nexus/source.ts'
 
-export interface Progress { job: string; done: number; total: number; current: string }
+import type { JobProgress } from './jobs.ts'
+export type Progress = JobProgress
 
 /** The job that finished last (kept by the app, so a page that reloaded can still show how it ended). */
 export interface LastJob { job: string; report?: unknown; error?: string; at: number }

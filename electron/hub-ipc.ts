@@ -11,7 +11,7 @@ import { driveFolderFiles, folderIdFrom } from '../src/hub/drive-source.ts'
 import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
 import { checkForUpdate, selfUpdates } from '../src/hub/update.ts'
-import { JobRunner, type Work } from '../src/hub/jobs.ts'
+import { JobRunner, type JobHandle, type ProgressFn, type Work } from '../src/hub/jobs.ts'
 import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
 import { estimateRequests, linkable, linkCode } from '../src/hub/codelink.ts'
@@ -57,19 +57,21 @@ export function registerHub(window: () => BrowserWindow | null): void {
   const sourceStore = async () => new DriveAdapter({ rootId: (await loadSettings()).teamFolder?.id ?? 'root', token: await driveToken() })
 
   async function runIngest(name: string, files: SourceFile[]): Promise<IngestReport> {
+    return job(name, (j, progress) => ingestWork(files, j, progress))
+  }
+  /** Ingest inside a job already running (an add, or the robot pull after its checks). */
+  async function ingestWork(files: SourceFile[], j: JobHandle, progress: ProgressFn): Promise<IngestReport> {
     const lib = await open()
     const seenPath = seenFile()
     const seen = new Map(Object.entries(await readJson<Record<string, string>>(seenPath, {})))
-    return job(name, async (j, progress) => {
-      const report = await ingest(lib, files, { describe: describer.describe, seen, cancelled: () => j.cancelled, onProgress: progress })
-      await writeJson(seenPath, Object.fromEntries(seen))
-      // Logs just added that name only their code are linked to the saved GitHub sources, at most 20 API requests (a cancelled add links nothing).
-      const sources = (await loadSettings()).codeSources ?? []
-      if (sources.length > 0) {
-        try { Object.assign(report, await linkAdded(lib, report, sources, `${app.getVersion()}+linked`, { cancelled: () => j.cancelled, onProgress: progress })) } catch (e) { report.linkProblem = e instanceof Error ? e.message : String(e) }
-      }
-      return report
-    })
+    const report = await ingest(lib, files, { describe: describer.describe, seen, cancelled: () => j.cancelled, onProgress: progress })
+    await writeJson(seenPath, Object.fromEntries(seen))
+    // Logs just added that name only their code are linked to the saved GitHub sources, at most 20 API requests (a cancelled add links nothing).
+    const sources = (await loadSettings()).codeSources ?? []
+    if (sources.length > 0) {
+      try { Object.assign(report, await linkAdded(lib, report, sources, `${app.getVersion()}+linked`, { cancelled: () => j.cancelled, onProgress: progress })) } catch (e) { report.linkProblem = e instanceof Error ? e.message : String(e) }
+    }
+    return report
   }
 
   ipcMain.handle('hub:info', async () => {
@@ -267,13 +269,20 @@ export function registerHub(window: () => BrowserWindow | null): void {
   ipcMain.handle('hub:addFromRobot', async (_e, address: string): Promise<RobotResult> => {
     const where = String(address).trim()
     if (!/^[\w.-]+$/.test(where)) throw new Error('That is not a robot address (use 10.TE.AM.2 or roboRIO-TEAM-FRC.local).')
-    const idle = await checkRobotIdle(where)
-    if (!idle.ok) return { refused: idle.reason }
-    const fs = await connectRobotFs(where)
-    try {
-      const { files, stillWriting } = await robotFiles(fs, { tempRoot: app.getPath('temp') })
-      return { report: await runIngest('Reading robot', files), stillWriting }
-    } finally { fs.close() }
+    // One job from the first knock on the robot, so the bar and Stop show while it checks, connects and lists.
+    return job('Pulling logs off the robot', async (j, progress) => {
+      const step = (words: string) => progress(0, 0, '', { step: words })
+      step(`Checking the robot at ${where} is disabled`)
+      const idle = await checkRobotIdle(where)
+      if (!idle.ok) return { refused: idle.reason }
+      step(`Connecting to ${where}`)
+      const fs = await connectRobotFs(where)
+      try {
+        step('Listing the logs on the robot (looks twice, 1.5 s apart, to skip one still being written)')
+        const { files, stillWriting } = await robotFiles(fs, { tempRoot: app.getPath('temp') })
+        return { report: await ingestWork(files, j, progress), stillWriting }
+      } finally { fs.close() }
+    })
   })
 
   ipcMain.handle('hub:updateInfo', () => update)

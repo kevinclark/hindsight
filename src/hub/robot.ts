@@ -15,7 +15,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Nt4Client, isFieldLocked, nt4Url, type SocketLike } from '../foresight/nt4-client.ts'
 import { GUARD_CONTROL_DATA } from '../foresight/keys.ts'
-import type { SourceFile } from './ingest.ts'
+import { Stopped } from './adapter.ts'
+import type { SourceFile, Watch } from './ingest.ts'
 import { kindOf } from './types.ts'
 export { notReached } from './robot-reach.ts'
 
@@ -29,7 +30,8 @@ export interface RobotEntry { name: string; size: number; mtimeMs: number; isDir
 /** The robot's file system as the pull sees it: list a folder, copy one file to this machine. */
 export interface RobotFs {
   list(dir: string): Promise<RobotEntry[]>
-  download(remote: string, local: string): Promise<void>
+  /** Copy one file here, reporting bytes as they arrive; throws Stopped as soon as `watch.cancelled` says so. */
+  download(remote: string, local: string, watch?: Watch): Promise<void>
   close(): void
 }
 
@@ -98,11 +100,11 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
       name: e.name, where: `robot:${path}`, size: e.size, modifiedTime: Math.round(e.mtimeMs), from: 'robot',
       // A finished log seen before with the same path, size and modified time is not downloaded again (ingest's "seen" memory).
       cacheKey: `robot:${path}|${e.size}|${Math.round(e.mtimeMs)}`,
-      open: async () => {
+      open: async (watch) => {
         const dir = await mkdtemp(join(deps.tempRoot ?? tmpdir(), 'hindsight-robot-'))
         const local = join(dir, e.name)
         try {
-          await fs.download(path, local)
+          await fs.download(path, local, { cancelled: watch?.cancelled, onProgress: (sent) => watch?.onProgress?.(sent, e.size) })
           // A copy cut short (the link dropped) must not be filed, nor remembered under this file's key as its content.
           const got = (await stat(local)).size
           if (got !== e.size) throw new Error(`the download stopped at ${got} of ${e.size} bytes; pull again`)
@@ -131,9 +133,15 @@ export async function connectRobotFs(address: string, timeoutMs = 10_000): Promi
   const sftp = await new Promise<import('ssh2').SFTPWrapper>((resolve, reject) => ssh.sftp((e, s) => (e ? reject(e) : resolve(s))))
   return {
     list: (dir) => new Promise((resolve, reject) => sftp.readdir(dir, (e, entries) => (e ? reject(e) : resolve(entries.map((x) => ({ name: x.filename, size: x.attrs.size, mtimeMs: x.attrs.mtime * 1000, isDir: x.attrs.isDirectory() })))))),
-    download: (remote, local) => new Promise((resolve, reject) => {
+    download: (remote, local, watch = {}) => new Promise((resolve, reject) => {
       const read = sftp.createReadStream(remote)
       const write = createWriteStream(local)
+      let got = 0
+      read.on('data', (chunk: Buffer) => {
+        if (watch.cancelled?.()) { read.destroy(); write.destroy(); reject(new Stopped()); return }
+        got += chunk.length
+        watch.onProgress?.(got, 0) // the total is the listing's size, which the caller has
+      })
       read.on('error', reject); write.on('error', reject); write.on('close', () => resolve())
       read.pipe(write)
     }),

@@ -17,7 +17,8 @@
  * Nothing is deleted or overwritten on either side.
  */
 import { createHash } from 'node:crypto'
-import { ManifestConflict, SignInAgain, readText, type FileInfo, type StorageAdapter } from './adapter.ts'
+import { ManifestConflict, SignInAgain, Stopped, readText, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
+import type { ProgressFn } from './jobs.ts'
 import type { LocalLibrary } from './library-store.ts'
 import { fileSource } from './local-adapter.ts'
 import type { LogRecord } from './types.ts'
@@ -41,6 +42,9 @@ export interface SyncReport {
   problems: string[]
   /** Paths in the team's logs/ after the sync: what "shared" means in the Library view. */
   remotePaths: string[]
+  /** The user pressed Stop; `notTried` logs were left for the next sync. */
+  stopped: boolean
+  notTried: number
 }
 
 /** The store holds this log: same size, and every checksum it reports agrees (a corrupted upload keeps its size). */
@@ -74,7 +78,8 @@ export const PUBLISH_EVERY_MS = 120_000
 export const FAILURES_IN_A_ROW = 5
 
 export interface SyncOptions {
-  onProgress?(done: number, total: number, current: string): void
+  /** Logs done of logs to do, the log now; with a step in words before the logs, and bytes during them. */
+  onProgress?: ProgressFn
   cancelled?(): boolean
   /** The clock for the publish interval (ms); tests inject theirs. */
   now?: () => number
@@ -83,12 +88,15 @@ export interface SyncOptions {
 }
 
 export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, options: SyncOptions = {}): Promise<SyncReport> {
-  const report: SyncReport = { manifests: [], history: [], historyPublished: 0, uploaded: [], failed: [], alreadyThere: 0, published: 0, unrecorded: [], problems: [], remotePaths: [] }
+  const report: SyncReport = { manifests: [], history: [], historyPublished: 0, uploaded: [], failed: [], alreadyThere: 0, published: 0, unrecorded: [], problems: [], remotePaths: [], stopped: false, notTried: 0 }
   const own = lib.ownManifestPath
+  const step = (words: string) => options.onProgress?.(0, 0, '', { step: words })
 
   // 1. Teammates' manifests down.
-  for (const f of await team.list('manifests')) {
-    if (!f.path.endsWith('.jsonl') || f.path === own) continue
+  step("Looking for teammates' lists of logs")
+  const teammates = (await team.list('manifests')).filter((f) => f.path.endsWith('.jsonl') && f.path !== own)
+  for (const [i, f] of teammates.entries()) {
+    step(`Reading teammates' lists of logs (${i + 1} of ${teammates.length})`)
     const mine = (await readText(lib.store, f.path)) ?? ''
     if (f.md5 && f.md5 === md5Of(mine)) continue // unchanged since the last sync: nothing to download
     const text = (await readText(team, f.path)) ?? ''
@@ -104,7 +112,9 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   await lib.reload()
 
   // 1b. The triage history, both ways. It does not depend on the logs, so a problem with a manifest never holds it back.
+  step('Sharing triage notes')
   await syncHistory(lib, team, report)
+  step("Checking which logs the team folder has")
 
   // 2. The remote manifest of this machine must hold nothing this copy lacks (another install with the same machine id).
   const remoteOwn = (await readText(team, own)) ?? '' // the Drive adapter answers from memory when its md5 is unchanged
@@ -158,14 +168,19 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
 
   let done = 0
   let inARow = 0
+  const bytes = { done: 0, total: todo.reduce((n, r) => n + r.size, 0) }
   for (const r of todo) {
-    options.onProgress?.(done, todo.length, r.names[0])
+    const index = done
+    const base = bytes.done // fixed now: bytes.done moves past this log before it is sent
+    const at = (sent: number) => options.onProgress?.(index, todo.length, r.names[0], { bytes: { done: base + sent, total: bytes.total }, file: { done: sent, total: r.size } })
+    at(0)
     done++ // not inside the call above: `?.` skips its arguments when there is no onProgress
-    if (options.cancelled?.()) break
+    if (options.cancelled?.()) { report.stopped = true; break }
     const there = remote.get(r.path)
+    bytes.done += r.size // counted as passed whatever happens to it: the bar measures the work gone through
     if (there) { report.failed.push({ path: r.path, reason: `the team store has a different file at this path (${there.size} bytes, or other checksums); left alone and not published` }); continue }
     try {
-      const { info, how } = await putLog(lib, team, r)
+      const { info, how } = await putLog(lib, team, r, { onProgress: at, cancelled: options.cancelled })
       report.uploaded.push({ path: r.path, size: info.size, how })
       remote.set(r.path, info)
       inARow = 0
@@ -174,6 +189,8 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
       // A lost sign-in ends the job with its own error, so the app asks to sign in; this run's report is given up on
       // purpose: what landed is found by the next sync's listing and published then.
       if (e instanceof SignInAgain) throw e
+      // Stop part way through a file: nothing of it was left on the team store, and it is not a failure.
+      if (e instanceof Stopped) { report.stopped = true; break }
       const reason = e instanceof Error ? e.message : String(e)
       report.failed.push({ path: r.path, reason })
       if (++inARow === FAILURES_IN_A_ROW) {
@@ -183,9 +200,10 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
       }
     }
   }
-  options.onProgress?.(todo.length, todo.length, '')
+  report.notTried = todo.length - report.uploaded.length - report.failed.length
 
   // 4. Publish what is left: a log's record only when its file is there; aliases and tags always.
+  step('Telling the team which logs are up')
   await publish()
   report.published = publishedLines.length
 
@@ -247,7 +265,7 @@ async function syncHistory(lib: LocalLibrary, team: StorageAdapter, report: Sync
  * record's numbers: writeNew proved the sent bytes against the record's sha-256, and the shape of Drive's
  * upload-completion answer has not been read live (a missing size would read as 0 and un-publish a good upload).
  */
-async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord): Promise<{ info: FileInfo; how: SyncReport['uploaded'][number]['how'] }> {
+async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord, watch: Pick<WriteOptions, 'onProgress' | 'cancelled'>): Promise<{ info: FileInfo; how: SyncReport['uploaded'][number]['how'] }> {
   if (r.sourceId && team.copyInto) {
     const copy = await team.copyInto(r.sourceId, r.path)
     if (!isThere(copy, r)) throw new Error(`the copy inside Drive is not the library's file (${copy.size} bytes, or other checksums); left there and not published`)
@@ -256,12 +274,20 @@ async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord): Pr
   }
   const from = await fileSource(lib.store.at(r.path))
   try {
-    await team.writeNew(r.path, from, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}) })
+    await team.writeNew(r.path, from, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}), ...watch })
     return { info: { path: r.path, size: r.size, modifiedTime: r.modifiedTime, sha256: r.sha256 }, how: 'upload' }
   } finally { await from.close() }
 }
 
-export interface FetchReport { fetched: string[]; failed: { path: string; reason: string }[]; /** Anything that stopped the download early. */ problems: string[] }
+export interface FetchReport {
+  fetched: string[]
+  failed: { path: string; reason: string }[]
+  /** Anything that stopped the download early. */
+  problems: string[]
+  /** The user pressed Stop; `notTried` logs were left for the next download. */
+  stopped: boolean
+  notTried: number
+}
 
 /**
  * Bring logs the team has and this machine lacks down, match logs first and newest first (so a stopped download has the
@@ -269,20 +295,28 @@ export interface FetchReport { fetched: string[]; failed: { path: string; reason
  * failures in a row, as uploads do.
  */
 export async function fetchLogs(lib: LocalLibrary, team: StorageAdapter, records: LogRecord[], options: SyncOptions = {}): Promise<FetchReport> {
-  const report: FetchReport = { fetched: [], failed: [], problems: [] }
+  const report: FetchReport = { fetched: [], failed: [], problems: [], stopped: false, notTried: 0 }
   let done = 0
   let inARow = 0
+  let skipped = 0
+  const bytes = { done: 0, total: records.reduce((n, r) => n + r.size, 0) }
   for (const r of [...records].sort(matchesFirst)) {
-    options.onProgress?.(done, records.length, r.names[0])
+    const index = done
+    const base = bytes.done // fixed now: bytes.done moves past this log before it is sent
+    const at = (sent: number) => options.onProgress?.(index, records.length, r.names[0], { bytes: { done: base + sent, total: bytes.total }, file: { done: sent, total: r.size } })
+    at(0)
     done++ // not inside the call above: `?.` skips its arguments when there is no onProgress
-    if (options.cancelled?.()) break
-    if (await lib.store.stat(r.path)) continue
+    if (options.cancelled?.()) { report.stopped = true; break }
+    bytes.done += r.size
+    if (await lib.store.stat(r.path)) { skipped++; continue }
     try {
       const CHUNK = 8 << 20
-      await lib.store.writeNew(r.path, { size: r.size, read: (a, b) => team.read(r.path, a, Math.min(b, a + CHUNK)).then((x) => x) }, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}) })
+      await lib.store.writeNew(r.path, { size: r.size, read: (a, b) => team.read(r.path, a, Math.min(b, a + CHUNK)).then((x) => x) }, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}), onProgress: at, cancelled: options.cancelled })
       report.fetched.push(r.path)
       inARow = 0
     } catch (e) {
+      // Stop part way through a file: its temp file is gone, and it is not a failure.
+      if (e instanceof Stopped) { report.stopped = true; break }
       const reason = e instanceof Error ? e.message : String(e)
       report.failed.push({ path: r.path, reason })
       if (++inARow === FAILURES_IN_A_ROW) {
@@ -292,6 +326,6 @@ export async function fetchLogs(lib: LocalLibrary, team: StorageAdapter, records
       }
     }
   }
-  options.onProgress?.(records.length, records.length, '')
+  report.notTried = records.length - report.fetched.length - report.failed.length - skipped
   return report
 }

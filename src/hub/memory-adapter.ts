@@ -2,7 +2,7 @@
  * A StorageAdapter that keeps everything in memory: the fake the tests use, and the reference for what any store must
  * do. `failUploadAfter` makes the next writeNew fail after that many bytes, as a dropped connection does mid-file.
  */
-import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isOwnAppendPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
+import { AlreadyExists, ChecksumMismatch, ManifestConflict, checkPath, extendsManifest, isOwnAppendPath, stopIfAsked, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
 import { createHash } from 'node:crypto'
 
 const CHUNK = 1 << 20
@@ -38,6 +38,7 @@ export class MemoryAdapter implements StorageAdapter {
     this.failUploadAfter = null
     for (let at = 0; at < from.size; at += CHUNK) {
       if (fail !== null && at >= fail) throw new Error('connection dropped')
+      stopIfAsked(options.cancelled)
       out.set(await from.read(at, Math.min(from.size, at + CHUNK)), at)
       options.onProgress?.(Math.min(from.size, at + CHUNK), from.size)
     }
