@@ -15,6 +15,7 @@
   import { shortTitle } from '../report/titles.ts'
   import { keyNumber } from '../report/review-model.ts'
   import PdpThumb from './PdpThumb.svelte'
+  import { judgedAgainst } from '../power/power-map-view.ts'
   import { openPowerMap } from './power-map-bridge.svelte.ts'
   import { powerMapInstant } from '../analyze.ts'
   import { profileId } from '../profiles/index.ts'
@@ -86,13 +87,7 @@
   // and a way to change it. Only inside the opened finding; nothing on the main-breaker finding beyond its evidence row.
   const isPdp = $derived(finding.rule === 'power/pdp-breaker-margin')
   const pdpSlot = $derived(isPdp ? /^PDP slot (\d+)$/.exec(String(finding.evidence.slot ?? ''))?.[1] : undefined)
-  const judged = $derived.by(() => {
-    if (!isPdp) return ''
-    const breaker = String(finding.evidence.breaker ?? '').split(' (')[0]
-    const slot = String(finding.evidence.slot ?? '')
-    const set = analysis.match.powerMap ? `set ${new Date(analysis.match.powerMap.when).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : 'not set'
-    return `${breaker}${slot === 'not mapped' ? ', slot not mapped' : ` in ${slot}`} (${set})`
-  })
+  const judged = $derived(isPdp ? judgedAgainst(finding.evidence, analysis.match.powerMap) : '')
   function changeBreaker() {
     const iso = powerMapInstant(analysis.match)
     const known = !iso.startsWith('9999')
@@ -145,7 +140,7 @@
       {#if isPdp}
         <div class="judged" data-judged-against>
           <div><strong>judged against:</strong> {judged} · <button type="button" class="link" onclick={changeBreaker}>Change</button></div>
-          {#if pdpSlot !== undefined}<PdpThumb map={analysis.match.powerMap} slot={Number(pdpSlot)} onclick={changeBreaker} />{/if}
+          {#if pdpSlot !== undefined}<PdpThumb map={analysis.match.powerMap} slot={Number(pdpSlot)} robot={profileId(analysis.match.profile as never)} onclick={changeBreaker} />{/if}
         </div>
       {/if}
       {#if finding.plot && open}

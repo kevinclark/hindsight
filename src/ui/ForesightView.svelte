@@ -38,9 +38,10 @@
   import ForesightQueue from './ForesightQueue.svelte'
   import ForesightPractice from './ForesightPractice.svelte'
   import BreakersStrip from './BreakersStrip.svelte'
-  import { mapHistory, openPowerMap } from './power-map-bridge.svelte.ts'
+  import { lastMapRobot, mapHistory, openPowerMap } from './power-map-bridge.svelte.ts'
   import { powerMapAt } from '../power/power-map.ts'
-  import { stripText } from '../power/power-map-view.ts'
+  import { robotSeenLast, stripText } from '../power/power-map-view.ts'
+  import { profilesNow } from './kept-profiles.svelte.ts'
   import { PROFILES } from '../profiles/index.ts'
   import CodeCheck from './CodeCheck.svelte'
   import { typedNextFor } from './typed-next.svelte.ts'
@@ -95,7 +96,9 @@
   }
   let status = $state.raw<LiveStatus | null>(null)
   // The robot's breakers (src/power/power-map.ts): the profile the robot reported, else the typed team's newest. The strip sits under the verdict.
-  const breakerRobot = $derived(status?.profile ?? PROFILES.filter((p) => p.team === tbaTeam()).at(-1) ?? null)
+  // Not connected: the robot most recently seen in the loaded logs, else the one last used on the power map screen; never a guess from profile order.
+  const seenId = $derived(robotSeenLast([...sessions.flatMap((s) => [...s.matches, ...(s.pitRuns ?? [])])]) ?? lastMapRobot())
+  const breakerRobot = $derived(status?.profile ?? [...PROFILES, ...profilesNow()].find((p) => profileId(p) === seenId) ?? null)
   const breakersUnset = $derived(stripText(breakerRobot ? powerMapAt(mapHistory(), profileId(breakerRobot), '9999-12-31T23:59:59.999Z') : null, []).unset)
   let recorded = false
   let open = $state<Record<string, boolean>>({})

@@ -23,7 +23,7 @@
     {#if breakersUnset}
       <!-- Not a counted line: the robot drives fine without it, and the breaker findings say what they were judged against. It never holds "Ready to drive". -->
       <li class="group" aria-hidden="true">Optional</li>
-      <li class="oc to-do" data-breakers-line><span class="mark">○ Not counted</span><span class="line">Pick the robot's breakers</span><span class="detail-text">The breaker warnings are judged against the fastest legal 40 A breaker until you do. <button class="link" type="button" onclick={onSetBreakers}>Set</button></span></li>
+      <li class="oc to-do" data-breakers-line><span class="mark">○ Not counted</span><span class="line">Pick the robot's breakers</span><span class="detail-text">The breaker warnings are judged against the first legal 40 A breaker to trip until you do. <button class="link" type="button" onclick={onSetBreakers}>Set</button></span></li>
     {/if}
   </ul>
   <p class="small">The team's 2026 pit checklist, battery, CAN, cameras and zeros first. A line reads Done only from the check on screen now; "By eye" lines are for a person and are never counted.</p>

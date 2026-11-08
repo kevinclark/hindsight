@@ -1,10 +1,10 @@
 <!-- The PDP 2.0 in miniature with one slot lit: a finding's "which breaker is this". A click opens the map at that slot. -->
 <script lang="ts">
-  import { slotRows, slotEntries, breakerFill } from '../power/power-map-view.ts'
+  import { slotRows, slotEntries, breakerFill, readRotated } from '../power/power-map-view.ts'
   import type { PowerMap } from '../power/power-map.ts'
 
-  let { map, slot, onclick }: { map: PowerMap | null; slot: number; onclick?: () => void } = $props()
-  const rows = slotRows(false)
+  let { map, slot, robot, onclick }: { map: PowerMap | null; slot: number; /** The robot's profile id, for its remembered rotation. */ robot: string; onclick?: () => void } = $props()
+  const rows = $derived(slotRows(readRotated(localStorage, robot)))
 </script>
 
 <button class="thumb" type="button" {onclick} aria-label={`Open the power map at PDP slot ${slot}`} title={`PDP slot ${slot}: open the power map`}>

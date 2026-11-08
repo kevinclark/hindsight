@@ -5,7 +5,7 @@
  * The record's shape and the lookups the rules use are in power-map.ts.
  */
 import { breakerFamily } from './breakers.ts'
-import { breakerForMotor, PDP_FAMILIES, type Feed, type MapBoard, type MapBreaker, type MapSlot, type PdpFamily, type PowerMap } from './power-map.ts'
+import { breakerForMotor, powerMapAt, PDP_FAMILIES, type Feed, type MapBoard, type MapBreaker, type MapSlot, type PdpFamily, type PowerMap } from './power-map.ts'
 import { boardStamp, type BoardRole, type HistoryEvent } from '../triage/history.ts'
 
 // ---- The CTRE PDP 2.0, as drawn --------------------------------------------------------------------------------------
@@ -66,6 +66,12 @@ export function feedLabel(feed: Feed | null, short = false, mpmId?: string): str
   return feed.label || 'Other'
 }
 
+/** A slot's label in two parts for a tile: the name (a tile may cut it short) and, for a motor with a CAN ID, "CAN n" (never cut). */
+export function feedParts(feed: Feed | null, short = false, mpmId?: string): { name: string; can?: string } {
+  if (feed?.kind === 'motor') return { name: short ? shortName(feed.name) : feed.name, ...(feed.canId !== undefined ? { can: `CAN ${feed.canId}` } : {}) }
+  return { name: feedLabel(feed, short, mpmId) }
+}
+
 export interface ProfileMotor { name: string; canId?: number }
 
 // ---- Reading a map -----------------------------------------------------------------------------------------------------
@@ -109,6 +115,8 @@ export interface MapProblem {
   text: string
   /** The slots to light when the line is hovered (PDP slot numbers). */
   slots: number[]
+  /** An MPM's id when the problem is on an MPM slot (then `slots` are that MPM's slots). */
+  board?: string
 }
 
 /** The 2026 manual's words, with the rule number and the season. */
@@ -146,6 +154,18 @@ export function mapProblems(map: PowerMap | null, motors: ProfileMotor[]): MapPr
       const listed = breakerFamily(b.family)?.ratingsA.includes(b.ratingA) ?? false
       if (b.ratingA > 40) out.push({ kind: 'illegal-breaker', slots: [s.slot], text: `Slot ${s.slot}: a ${b.ratingA} A breaker isn't legal on a PDP channel (40 A or lower). ${R619}.` })
       else if (!PDP_FAMILIES.includes(b.family as PdpFamily) || !listed) out.push({ kind: 'illegal-breaker', slots: [s.slot], text: `Slot ${s.slot}: ${breakerText(b)} isn't on the list of breakers a PDP may hold. ${R619}.` })
+    }
+  }
+  // An MPM's slots: one motor per slot (R621 applies to any branch circuit), and an ATM breaker of 5 to 15 A.
+  for (const mpm of map?.boards.filter((b) => b.kind === 'rev-mpm') ?? []) {
+    const name = `MPM ${mpm.id.replace(/^mpm-/, '')}`
+    const onMpm = new Map<number, string[]>()
+    for (const s of mpm.slots) if (s.feeds?.kind === 'motor') onMpm.set(s.slot, [...(onMpm.get(s.slot) ?? []), s.feeds.name])
+    for (const [slot, names] of onMpm) {
+      if (names.length > 1) out.push({ kind: 'two-motors', board: mpm.id, slots: [slot], text: `${name} slot ${slot} feeds ${names.length} motors (${names.join(', ')}). ${R621}.` })
+    }
+    for (const s of mpm.slots) {
+      if (s.breaker && (s.breaker.ratingA < 5 || s.breaker.ratingA > 15)) out.push({ kind: 'illegal-breaker', board: mpm.id, slots: [s.slot], text: `${name} slot ${s.slot}: a ${s.breaker.ratingA} A breaker is outside the 5 to 15 A an MPM channel takes.` })
     }
   }
   const missing = unplacedMotors(map, motors)
@@ -218,9 +238,115 @@ export function mapLine(history: HistoryEvent[], map: PowerMap, who: { device: s
 /** The Breakers strip's one line, and whether the two choices are unset (then the line says so and the button says Set). */
 export function stripText(map: PowerMap | null, motors: ProfileMotor[]): { text: string; unset: boolean } {
   const unset = !map || (map.main === null && map.usual === null)
-  if (unset) return { text: 'Breakers: not set: judged against the fastest legal 40 A breaker', unset }
+  if (unset) return { text: 'Breakers: not set: judged against the first legal 40 A breaker to trip', unset }
   const main = map!.main ? `main ${MAIN_LABEL[map!.main]}` : 'main not set (Bussmann assumed)'
   const usual = map!.usual ? `every motor ${breakerText(map!.usual)}` : 'every motor not set'
   const { placed, total } = placedCount(map, motors)
   return { text: `Breakers: ${main} · ${usual}${total ? ` · ${placed} of ${total} motors placed` : ''}`, unset }
+}
+
+// ---- A change made from a finding ---------------------------------------------------------------------------------------
+
+/** True for a map with nothing in it: no main, no usual, no slot with a breaker or a feed (a first map that was undone). */
+export const isMapBlank = (map: PowerMap | null): boolean =>
+  !map || (map.main === null && map.usual === null && map.boards.every((b) => b.slots.every((s) => s.breaker === null && s.feeds === null)))
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+const entriesOf = (b: MapBoard | undefined, slot: number) => (b?.slots ?? []).filter((s) => s.slot === slot)
+
+/**
+ * `target` with the change from `before` to `next` applied: the main and usual breaker if they changed, every slot whose
+ * entries differ (on a board `target` lacks, the board comes with it), and a board `next` no longer has taken away.
+ * Everything else on `target` is left as it is.
+ */
+function applyChange(target: PowerMap, before: PowerMap, next: PowerMap): PowerMap {
+  let out: PowerMap = { ...target, boards: target.boards.map((b) => ({ ...b, slots: [...b.slots] })) }
+  if (!same(before.main, next.main)) out = { ...out, main: next.main }
+  if (!same(before.usual, next.usual)) out = { ...out, usual: next.usual }
+  for (const board of before.boards) if (!next.boards.some((b) => b.id === board.id)) out = { ...out, boards: out.boards.filter((b) => b.id !== board.id) }
+  for (const board of next.boards) {
+    const was = before.boards.find((b) => b.id === board.id)
+    if (!out.boards.some((b) => b.id === board.id)) out = { ...out, boards: [...out.boards, { ...board, slots: [] }] }
+    const numbers = new Set([...board.slots.map((s) => s.slot), ...(was?.slots ?? []).map((s) => s.slot)])
+    for (const n of numbers) {
+      if (same(entriesOf(was, n), entriesOf(board, n))) continue
+      out = { ...out, boards: out.boards.map((b) => (b.id === board.id ? { ...b, slots: sorted([...b.slots.filter((s) => s.slot !== n), ...entriesOf(board, n)]) } : b)) }
+    }
+  }
+  return out
+}
+
+export interface FindingPlan {
+  /** The maps to write, each with its own `from`: the match start first, then every later line of the robot with the change applied. */
+  forward: PowerMap[]
+  /** The maps that put everything back as it was (the same `from` times). A first map goes back to a map with nothing in it. */
+  undo: PowerMap[]
+  /** The `from` of each later line the change was also applied to. */
+  laterDates: string[]
+}
+
+/**
+ * A change made from a finding applies from that match onward: the changed map is written from the match's start, and
+ * every later line of that robot (each distinct later `from`) is written again with the same change applied, so a later edit
+ * in Tools doesn't hide it. `before` is the map in effect at the match (null: none), `next` the map after the edit.
+ */
+export function planFromFinding(history: HistoryEvent[], robot: string, from: string, before: PowerMap | null, next: PowerMap): FindingPlan {
+  const was = before ?? emptyMap(robot, from)
+  const laterFroms = [...new Set(history.filter((e): e is PowerMap => e.type === 'power-map' && e.robot === robot && Date.parse(e.from) > Date.parse(from)).map((e) => e.from))]
+    .sort((a, b) => Date.parse(a) - Date.parse(b))
+  const lines = laterFroms.map((f) => powerMapAt(history, robot, f)!)
+  return {
+    forward: [{ ...next, from }, ...lines.map((l) => ({ ...applyChange(l, was, next), from: l.from }))],
+    undo: [{ ...was, from }, ...lines],
+    laterDates: laterFroms,
+  }
+}
+
+/** "Only from now": the change as it was before the finding's own match start and the lines between, then the changed map from `nowIso` (built on the latest line). */
+export function onlyFromNow(plan: FindingPlan, latest: PowerMap, nowIso: string): PowerMap[] {
+  return [...plan.undo, { ...latest, from: nowIso }]
+}
+
+/** The plan's maps as history lines: each keeps its own `from`; stamped one after another so each beats the one before at a tie. */
+export function stampAll(history: HistoryEvent[], maps: PowerMap[], who: { device: string; role: BoardRole }, now: Date): PowerMap[] {
+  const made: PowerMap[] = []
+  for (const m of maps) made.push(mapLine([...history, ...made], m, who, now))
+  return made
+}
+
+/**
+ * A breaker finding's "judged against" line: its breaker and slot (from the finding's evidence) and when the map was set. "Not set"
+ * when the finding says its breaker was not set, and for a map with nothing in it, never "set <date>" for those.
+ */
+export function judgedAgainst(evidence: { breaker?: unknown; slot?: unknown }, map: PowerMap | null): string {
+  const breaker = String(evidence.breaker ?? '').split(' (')[0]
+  const slot = String(evidence.slot ?? '')
+  const unset = /\(not set/.test(String(evidence.breaker ?? '')) || isMapBlank(map)
+  const set = unset ? 'not set' : `set ${new Date(map!.when).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+  return `${breaker}${slot === 'not mapped' ? ', slot not mapped' : ` in ${slot}`} (${set})`
+}
+
+/** The profile id of the newest dated log among these summaries (the robot most recently seen in the library), or null. */
+export function robotSeenLast(summaries: { robot: { profileId: string }; playedAt: number | null }[]): string | null {
+  let best: { profileId: string; playedAt: number } | null = null
+  for (const s of summaries) if (s.playedAt !== null && (!best || s.playedAt > best.playedAt)) best = { profileId: s.robot.profileId, playedAt: s.playedAt }
+  return best?.profileId ?? null
+}
+
+// ---- The remembered rotation (the map and the finding's thumbnail read it the same way) -------------------------------------
+type Store = { getItem(k: string): string | null; setItem(k: string, v: string): void }
+const ROTATED = (robot: string) => `hindsight.powermap.rotated.${robot}`
+export function readRotated(store: Store, robot: string): boolean {
+  try { return store.getItem(ROTATED(robot)) === '1' } catch { return false }
+}
+export function writeRotated(store: Store, robot: string, rotated: boolean): void {
+  try { store.setItem(ROTATED(robot), rotated ? '1' : '0') } catch { /* not remembered */ }
+}
+
+/** The line under the map: when it was saved, by which role on which laptop, how many slots are set, and from when it is in effect. A slot that vanished after two laptops edited has a visible cause here. */
+export function savedLine(map: PowerMap): string {
+  const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const slots = new Set(map.boards.flatMap((b) => b.slots.filter((s) => s.feeds !== null || s.breaker !== null).map((s) => `${b.id}:${s.slot}`))).size
+  const count = slots === 0 ? 'no slots set' : `${slots} slot${slots === 1 ? '' : 's'} set`
+  return `Saved ${day(map.when)} by ${map.by.role} on laptop ${map.by.device.slice(0, 8)} · ${count} · in effect from ${day(map.from)}`
 }

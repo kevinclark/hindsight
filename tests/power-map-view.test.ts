@@ -1,7 +1,7 @@
 // The power map screen's logic (src/power/power-map-view.ts): layout, editing, the popover's walk, problems, the strip's words.
 import { describe, expect, it } from 'vitest'
-import { applyToAll, emptyMap, feedLabel, mapLine, mapProblems, mpmAt, nextEmptySlot, PDP_ROWS, placedCount, shortName, slotEntries, slotRows, slotsKeeping, stripText, unplacedMotors, withExtraFeed, withSlot } from '../src/power/power-map-view.ts'
-import { breakerForMotor, type Feed, type PowerMap } from '../src/power/power-map.ts'
+import { applyToAll, emptyMap, feedLabel, feedParts, isMapBlank, judgedAgainst, readRotated, robotSeenLast, savedLine, writeRotated, mapLine, onlyFromNow, planFromFinding, stampAll, mapProblems, mpmAt, nextEmptySlot, PDP_ROWS, placedCount, shortName, slotEntries, slotRows, slotsKeeping, stripText, unplacedMotors, withExtraFeed, withSlot } from '../src/power/power-map-view.ts'
+import { breakerForMotor, powerMapAt, type Feed, type PowerMap } from '../src/power/power-map.ts'
 
 const REV40 = { family: 'rev-ato', ratingA: 40 } as const
 const motor = (name: string, canId?: number): Feed => ({ kind: 'motor', name, ...(canId !== undefined ? { canId } : {}) })
@@ -129,10 +129,29 @@ describe('what doesn\'t add up', () => {
     expect(bad[0].text).toContain("a 50 A breaker isn't legal on a PDP channel")
     expect(bad[0].text).toContain('R619')
   })
-  it('no check on an MPM\'s breakers or input', () => {
+  it('an MPM\'s ATM breaker of 5 to 15 A is fine, and there is no check of its input', () => {
     let m = withSlot(base(), 'pdp', 0, { breaker: REV40, feeds: { kind: 'mpm' } })
-    m = withSlot(m, 'mpm-1', 0, { breaker: { family: 'atm', ratingA: 15 }, feeds: motor('Climber', 30) })
-    expect(mapProblems(m, [{ name: 'Climber', canId: 30 }])).toEqual([])
+    for (const a of [5, 10, 15]) m = withSlot(m, 'mpm-1', a / 5, { breaker: { family: 'atm', ratingA: a }, feeds: motor(`Climber ${a}`, 30 + a) })
+    expect(mapProblems(m, [{ name: 'Climber 5', canId: 35 }, { name: 'Climber 10', canId: 40 }, { name: 'Climber 15', canId: 45 }])).toEqual([])
+  })
+  it('two motors on one MPM slot are flagged like the PDP\'s, naming the MPM', () => {
+    let m = withSlot(base(), 'pdp', 0, { breaker: REV40, feeds: { kind: 'mpm' } })
+    m = withSlot(m, 'mpm-1', 2, { breaker: { family: 'atm', ratingA: 10 }, feeds: motor('Climber', 30) })
+    m = withExtraFeed(m, 'mpm-1', 2, { breaker: { family: 'atm', ratingA: 10 }, feeds: motor('Winch', 31) })
+    const two = mapProblems(m, [{ name: 'Climber', canId: 30 }, { name: 'Winch', canId: 31 }]).find((x) => x.kind === 'two-motors')!
+    expect(two.text).toContain('MPM 1 slot 2 feeds 2 motors (Climber, Winch)')
+    expect(two.text).toContain('R621')
+    expect(two.board).toBe('mpm-1')
+  })
+  it('an ATM breaker outside 5 to 15 A on an MPM is flagged', () => {
+    let m = withSlot(base(), 'pdp', 0, { breaker: REV40, feeds: { kind: 'mpm' } })
+    m = withSlot(m, 'mpm-1', 1, { breaker: { family: 'atm', ratingA: 20 }, feeds: motor('Climber', 30) })
+    m = withSlot(m, 'mpm-1', 2, { breaker: { family: 'atm', ratingA: 3 }, feeds: { kind: 'other' } })
+    const bad = mapProblems(m, [{ name: 'Climber', canId: 30 }]).filter((x) => x.kind === 'illegal-breaker')
+    expect(bad).toHaveLength(2)
+    expect(bad[0].text).toMatch(/^MPM 1 slot 1: a 20 A breaker is outside/)
+    expect(bad[1].text).toMatch(/^MPM 1 slot 2: a 3 A breaker is outside/)
+    expect(bad[0].text).toContain('5 to 15 A')
   })
   it('counts the motors placed, by CAN ID else name', () => {
     const m = withSlot(base(), 'pdp', 0, { breaker: REV40, feeds: motor('old name', 5) })
@@ -171,7 +190,7 @@ describe('"every motor is on" changed after slots are placed', () => {
 
 describe('the strip', () => {
   it('unset: says so', () => {
-    expect(stripText(null, MOTORS)).toEqual({ text: 'Breakers: not set: judged against the fastest legal 40 A breaker', unset: true })
+    expect(stripText(null, MOTORS)).toEqual({ text: 'Breakers: not set: judged against the first legal 40 A breaker to trip', unset: true })
     expect(stripText(base(), MOTORS).unset).toBe(true)
   })
   it('set: main, every motor, how many placed', () => {
@@ -191,5 +210,175 @@ describe('the line a change writes', () => {
     expect(first).toMatchObject({ seq: 1, from: '2026-11-08T10:00:00.000Z', by: { device: 'laptop-a', role: 'pit' }, when: '2026-11-08T12:00:00.000Z' })
     const second = mapLine([first], m, { device: 'laptop-a', role: 'pit' }, new Date('2026-11-08T12:01:00Z'), '2026-11-08T11:00:00.000Z')
     expect(second).toMatchObject({ seq: 2, from: '2026-11-08T11:00:00.000Z' })
+  })
+})
+
+describe('[PM-12] a change made from a finding reaches every later map of the robot', () => {
+  const ROBOT = 'Test robot @ main'
+  const stamp = (m: PowerMap, over: Partial<PowerMap> = {}): PowerMap => ({ ...m, by: { device: 'laptop-a', role: 'pit' }, seq: 1, when: '2026-11-01T00:00:00.000Z', ...over })
+  const early = stamp(withSlot({ ...emptyMap(ROBOT, '2026-11-01T09:00:00.000Z'), usual: REV40 } as PowerMap, 'pdp', 1, { breaker: REV40, feeds: motor('Intake', 13) }))
+  const later = stamp(withSlot({ ...early, from: '2026-11-05T16:00:00.000Z', main: 'optifuse' }, 'pdp', 2, { breaker: REV40, feeds: motor('Hood', 14) }), { seq: 2 })
+  const later2 = stamp({ ...later, from: '2026-11-07T10:00:00.000Z' }, { seq: 3 })
+  const at = (h: PowerMap[], iso: string) => powerMapAt(h, ROBOT, iso)
+  const slotBreaker = (m: PowerMap | null, slot: number) => m?.boards[0].slots.find((s) => s.slot === slot)?.breaker
+  const who = { device: 'laptop-a', role: 'pit' as const }
+  const NOW = new Date('2026-11-08T12:00:00Z')
+  const write = (history: PowerMap[], maps: PowerMap[]) => [...history, ...stampAll(history, maps, who, NOW)]
+  // The match the finding came from was played 2026-11-03: the early map is in effect, a Tools edit followed on the 5th and 7th.
+  const FROM = '2026-11-03T12:00:00.000Z'
+  const edit = (m: PowerMap) => withSlot(m, 'pdp', 1, { breaker: { family: 'rev-ato', ratingA: 20 }, feeds: motor('Intake', 13) })
+
+  it('writes the change from the match start and again on every later line, from that line\'s own time', () => {
+    const history = [early, later, later2]
+    const plan = planFromFinding(history, ROBOT, FROM, early, edit(early))
+    expect(plan.forward.map((m) => m.from)).toEqual([FROM, later.from, later2.from])
+    expect(plan.laterDates).toEqual([later.from, later2.from])
+    const after = write(history, plan.forward)
+    expect(slotBreaker(at(after, FROM), 1)).toEqual({ family: 'rev-ato', ratingA: 20 })
+    expect(slotBreaker(at(after, '2026-11-06T00:00:00.000Z'), 1)).toEqual({ family: 'rev-ato', ratingA: 20 })
+    expect(slotBreaker(at(after, '2026-11-08T00:00:00.000Z'), 1)).toEqual({ family: 'rev-ato', ratingA: 20 })
+  })
+  it('keeps everything else on the later lines (their main breaker, their other slots)', () => {
+    const history = [early, later, later2]
+    const after = write(history, planFromFinding(history, ROBOT, FROM, early, edit(early)).forward)
+    const now = at(after, '2026-11-06T00:00:00.000Z')!
+    expect(now.main).toBe('optifuse')
+    expect(slotBreaker(now, 2)).toEqual(REV40)
+    expect(at(after, FROM)!.main).toBeNull()
+    expect(slotBreaker(at(after, FROM), 2)).toBeUndefined()
+  })
+  it('with no later line it is one line and says nothing about later dates', () => {
+    const plan = planFromFinding([early], ROBOT, FROM, early, edit(early))
+    expect(plan.forward).toHaveLength(1)
+    expect(plan.laterDates).toEqual([])
+  })
+  it('a change to the main or the usual breaker, and a new MPM, reach later lines too', () => {
+    const history = [early, later]
+    const next = withSlot({ ...early, main: 'bussmann', usual: { family: 'ctre-ato', ratingA: 30 } } as PowerMap, 'pdp', 5, { breaker: REV40, feeds: { kind: 'mpm' } })
+    const after = write(history, planFromFinding(history, ROBOT, FROM, early, next).forward)
+    const l = at(after, '2026-11-06T00:00:00.000Z')!
+    expect(l.main).toBe('bussmann')
+    expect(l.usual).toEqual({ family: 'ctre-ato', ratingA: 30 })
+    expect(l.boards.map((b) => b.id)).toEqual(['pdp', 'mpm-1'])
+    expect(l.boards[1].fedFrom).toEqual({ board: 'pdp', slot: 5 })
+    expect(slotBreaker(l, 2)).toEqual(REV40) // its own slot 2 stays
+  })
+  it('a robot with no map before the match: the later lines still get the change', () => {
+    const history = [later]
+    const plan = planFromFinding(history, ROBOT, FROM, null, withSlot(emptyMap(ROBOT, FROM), 'pdp', 7, { breaker: REV40, feeds: motor('Roller', 9) }))
+    const after = write(history, plan.forward)
+    expect(slotBreaker(at(after, FROM), 7)).toEqual(REV40)
+    expect(slotBreaker(at(after, '2026-11-06T00:00:00.000Z'), 7)).toEqual(REV40)
+    expect(slotBreaker(at(after, '2026-11-06T00:00:00.000Z'), 2)).toEqual(REV40)
+  })
+  it('Undo puts every line back as it was, from the same times', () => {
+    const history = [early, later, later2]
+    const plan = planFromFinding(history, ROBOT, FROM, early, edit(early))
+    const done = write(history, plan.forward)
+    const undone = write(done, plan.undo)
+    for (const iso of [FROM, '2026-11-06T00:00:00.000Z', '2026-11-08T00:00:00.000Z']) {
+      expect(JSON.stringify(at(undone, iso)!.boards)).toBe(JSON.stringify(at(history, iso)!.boards))
+      expect(at(undone, iso)!.main).toBe(at(history, iso)!.main)
+    }
+  })
+  it('Undo of a first map goes back to a map with nothing in it', () => {
+    const next = withSlot(emptyMap(ROBOT, FROM), 'pdp', 7, { breaker: REV40, feeds: motor('Roller', 9) })
+    const plan = planFromFinding([], ROBOT, FROM, null, next)
+    const undone = write(write([], plan.forward), plan.undo)
+    expect(isMapBlank(at(undone, FROM))).toBe(true)
+  })
+  it('"Only from now" leaves the match start and the lines between as they were, and the change starts now', () => {
+    const history = [early, later, later2]
+    const plan = planFromFinding(history, ROBOT, FROM, early, edit(early))
+    const nowIso = NOW.toISOString()
+    const after = write(write(history, plan.forward), onlyFromNow(plan, edit(later2), nowIso))
+    expect(slotBreaker(at(after, FROM), 1)).toEqual(REV40)
+    expect(slotBreaker(at(after, '2026-11-06T00:00:00.000Z'), 1)).toEqual(REV40)
+    expect(slotBreaker(at(after, '2026-11-08T00:00:00.000Z'), 1)).toEqual(REV40) // before now
+    expect(slotBreaker(at(after, '2026-11-08T13:00:00.000Z'), 1)).toEqual({ family: 'rev-ato', ratingA: 20 })
+  })
+})
+
+describe('the finding\'s "judged against" line', () => {
+  const when = (m: PowerMap) => ({ ...m, when: '2026-11-08T12:00:00.000Z' })
+  const placed = when(withSlot({ ...base(), usual: REV40 } as PowerMap, 'pdp', 7, { breaker: REV40, feeds: motor('Intake right', 16) }))
+  it('names the breaker, the slot and when it was set', () => {
+    const t = judgedAgainst({ breaker: 'REV 40 A (set on its slot in the power map)', slot: 'PDP slot 7' }, placed)
+    expect(t).toMatch(/^REV 40 A in PDP slot 7 \(set Nov \d+\)$/)
+  })
+  it('says not set when the finding\'s breaker was not set, whatever map is in effect', () => {
+    expect(judgedAgainst({ breaker: 'CTRE 40 A (not set: the first legal 40 A breaker to trip here)', slot: 'not mapped' }, placed)).toBe('CTRE 40 A, slot not mapped (not set)')
+  })
+  it('never says set for a map with nothing in it (a first map that was undone), or no map', () => {
+    expect(isMapBlank(when(base()))).toBe(true)
+    expect(judgedAgainst({ breaker: 'REV 40 A (the power map\'s usual breaker)', slot: 'not mapped' }, when(base()))).toBe('REV 40 A, slot not mapped (not set)')
+    expect(judgedAgainst({ breaker: 'REV 40 A (the power map\'s usual breaker)', slot: 'not mapped' }, null)).toBe('REV 40 A, slot not mapped (not set)')
+  })
+  it('a usual breaker with no slot is set (the map has something in it)', () => {
+    expect(judgedAgainst({ breaker: 'REV 40 A (the power map\'s usual breaker)', slot: 'not mapped' }, placed)).toMatch(/^REV 40 A, slot not mapped \(set Nov \d+\)$/)
+  })
+})
+
+describe('the robot a strip names when Foresight is not connected', () => {
+  const m = (profileId: string, playedAt: number | null, how = 'signals') => ({ robot: { profileId, how }, playedAt })
+  it('is the robot of the newest log, ignoring undated ones', () => {
+    expect(robotSeenLast([m('A', 100), m('B', 300), m('C', 200), m('D', null)])).toBe('B')
+  })
+  it('is null with no log', () => {
+    expect(robotSeenLast([])).toBeNull()
+    expect(robotSeenLast([m('D', null)])).toBeNull()
+  })
+})
+
+describe('the remembered 180° rotation, per robot', () => {
+  const fake = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) } } }
+  it('is off until set, remembered per robot, and read the same by the map and the thumbnail', () => {
+    const s = fake()
+    expect(readRotated(s, 'A')).toBe(false)
+    writeRotated(s, 'A', true)
+    expect(readRotated(s, 'A')).toBe(true)
+    expect(readRotated(s, 'B')).toBe(false)
+    writeRotated(s, 'A', false)
+    expect(readRotated(s, 'A')).toBe(false)
+  })
+  it('a storage that throws reads as not rotated', () => {
+    const bad = { getItem: () => { throw new Error('no') }, setItem: () => { throw new Error('no') } }
+    expect(readRotated(bad, 'A')).toBe(false)
+    expect(() => writeRotated(bad, 'A', true)).not.toThrow()
+  })
+})
+
+describe('a tile\'s label: the name may be cut, the CAN ID is always its own line', () => {
+  it('splits a motor into its short name and its CAN ID', () => {
+    expect(feedParts(motor('Front Left drive', 3), true)).toEqual({ name: 'FL drive', can: 'CAN 3' })
+    expect(feedParts(motor('Hood'), true)).toEqual({ name: 'Hood' })
+    expect(feedParts(motor('Back Right steer', 0), true)).toEqual({ name: 'BR steer', can: 'CAN 0' })
+  })
+  it('radio, roboRIO, MPM and other have no CAN line', () => {
+    expect(feedParts({ kind: 'radio' }, true)).toEqual({ name: 'Radio' })
+    expect(feedParts({ kind: 'mpm' }, true, 'mpm-1')).toEqual({ name: 'MPM 1' })
+    expect(feedParts(null, true)).toEqual({ name: '' })
+  })
+  it('a long name keeps its CAN ID whole (the name is the only part a tile may clip)', () => {
+    const p = feedParts(motor('Flywheel follower 16 with a very long name', 16), true)
+    expect(p.can).toBe('CAN 16')
+  })
+})
+
+describe('the line under the map: who saved it, and how many slots are set', () => {
+  const m = (): PowerMap => ({ ...withSlot(withSlot(base(), 'pdp', 1, { breaker: REV40, feeds: motor('A', 1) }), 'pdp', 2, { breaker: null, feeds: { kind: 'radio' } }), by: { device: 'f3a9c2d41b7e0055', role: 'pit' }, seq: 4, when: '2026-11-08T12:00:00.000Z' })
+  it('names the role, the laptop (shortened), the slots set and when it took effect', () => {
+    const t = savedLine(m())
+    expect(t).toMatch(/^Saved Nov \d+ by pit on laptop f3a9c2d4 · 2 slots set · in effect from Nov \d+$/)
+  })
+  it('counts slots, once each, counting a breaker alone or a feed alone', () => {
+    let x = m()
+    x = withExtraFeed(x, 'pdp', 1, { breaker: REV40, feeds: motor('B', 2) })
+    expect(savedLine(x)).toContain('2 slots set')
+    expect(savedLine(withSlot(x, 'pdp', 9, { breaker: REV40, feeds: null }))).toContain('3 slots set')
+  })
+  it('says one slot, and no slots, in the singular and plain', () => {
+    expect(savedLine(withSlot(m(), 'pdp', 2, null))).toContain('1 slot set')
+    expect(savedLine({ ...base(), by: { device: 'd', role: 'drive' }, seq: 1, when: '2026-11-08T12:00:00.000Z' })).toContain('no slots set')
   })
 })

@@ -175,7 +175,7 @@ describe('[PM-06] a motor on no slot gets the usual breaker; a slot with no brea
   })
 })
 
-describe('[PM-07] nothing set: the fastest legal 40 A breaker', () => {
+describe('[PM-07] nothing set: a not-set placeholder for the rules to judge against every legal 40 A family', () => {
   test('no map', () => {
     expect(breakerForMotor(null, 'Any', 1)).toEqual({ family: 'snap-action', ratingA: 40, mapped: false, source: 'not set' })
   })

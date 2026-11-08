@@ -103,7 +103,7 @@ export interface Match {
   limitLines?: Map<string, LimitLines>
   /**
    * The robot's power map in effect when this match was played (src/power/power-map.ts), set by analyzeFiles from the
-   * history before the rules run. Null: none entered, and the breaker rules judge by the fastest legal breaker.
+   * history before the rules run. Null: none entered, and the breaker rules judge against the first legal 40 A breaker to trip.
    */
   powerMap: PowerMap | null
 }

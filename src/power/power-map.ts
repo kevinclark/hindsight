@@ -109,7 +109,7 @@ function later(a: PowerMap, b: PowerMap): boolean {
   return a.seq > b.seq
 }
 
-/** Where a breaker's setting came from: a mapped slot, the map's "usual", or nothing (the fastest legal breaker is assumed). */
+/** Where a breaker's setting came from: a mapped slot, the map's "usual", or nothing (judged against the first legal 40 A breaker to trip). */
 export type BreakerSource = 'slot' | 'usual' | 'not set'
 
 export interface MotorBreaker {
@@ -122,12 +122,12 @@ export interface MotorBreaker {
   source: BreakerSource
 }
 
-/** The fastest legal PDP breaker: the one assumed when nothing says (R619, 40 A). */
+/** What `breakerForMotor` returns when nothing says: a placeholder (`source: 'not set'`); the rules try every legal 40 A family and name the first to trip (R619). */
 export const FASTEST_LEGAL: { family: PdpFamily; ratingA: number } = { family: 'snap-action', ratingA: 40 }
 
 /**
  * Which breaker a motor is on. A motor is on the slot whose feed is that motor: the same CAN ID when both have one,
- * else the same name. Not on a slot: the map's `usual`. No map or no usual: the fastest legal 40 A breaker.
+ * else the same name. Not on a slot: the map's `usual`. No map or no usual: `FASTEST_LEGAL` with `source: 'not set'`.
  */
 export function breakerForMotor(map: PowerMap | null, motorName: string, canId?: number): MotorBreaker {
   let found: { board: string; slot: MapSlot } | null = null

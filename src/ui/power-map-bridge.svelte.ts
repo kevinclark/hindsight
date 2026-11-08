@@ -35,3 +35,7 @@ export function openPowerMap(f: MapFocus = {}) {
   focus = f
   opener?.()
 }
+
+/** The robot last used on the power map screen (kept per laptop), or null. */
+export const LAST_ROBOT_KEY = 'hindsight.powermap.robot'
+export const lastMapRobot = (): string | null => { try { return localStorage.getItem(LAST_ROBOT_KEY) } catch { return null } }

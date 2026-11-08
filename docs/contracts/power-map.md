@@ -8,7 +8,7 @@ It does **not** draw the map or edit it (the app's), check the map for mistakes 
 40 A: the app's), or know trip curves (`src/power/breakers.ts`). Readers: the rules `power/main-breaker-margin` and
 `power/pdp-breaker-margin`, and the app that writes the line.
 
-Suite: `npx vitest run tests/power-map.contract.test.ts --reporter=junit --outputFile={junit}`
+Suite: `npx vitest run tests/power-map.contract.test.ts tests/power-map-view.test.ts --reporter=junit --outputFile={junit}`
 
 ## Interface
 - A history line `{ type: 'power-map', v: 1, robot, from, main, usual, boards, by, seq, when }` (`PowerMap`):
@@ -52,10 +52,10 @@ Suite: `npx vitest run tests/power-map.contract.test.ts --reporter=junit --outpu
   with no breaker set is still `mapped: true`, with the board and slot, and its breaker is the usual one, or the
   assumed one (PM-07). Why: "every motor is on 40 A" is the common case, and a drawn slot with no breaker is not a
   reason to skip the motor. Kind: behaviour.
-- **PM-07** With no map, or a map with no `usual` and no slot for the motor: the fastest legal PDP breaker,
-  `snap-action` 40 A, `source: 'not set'`, `mapped: false`. Why: the fastest legal breaker trips 3 to 15 times sooner than
-  REV at 200 %, so a heavy overload is never missed for want of a map (a mild one, below about 133 % of the rating, is:
-  Snap Action's fast edge never trips there). Kind: behaviour.
+- **PM-07** With no map, or a map with no `usual` and no slot for the motor: `snap-action` 40 A as a
+  placeholder with `source: 'not set'`, `mapped: false`; the rules then judge a not-set motor against the first legal 40 A
+  breaker to trip (REV, CTRE or Snap Action: breaker-rules BR-09), so no family is assumed. Why: Snap Action trips soonest
+  from about 140 % of its rating up but never below about 133 %, where REV and CTRE do, so no one family is the fastest. Kind: behaviour.
 - **PM-08** `mainBreakerFor` gives the map's main breaker (`source: 'map'`), else `bussmann` with `source:
   'assumed'` (no map, or a map with `main: null`). Why: both Bussmann parts share one curve and Optifuse is the only
   other legal one. Kind: behaviour.
@@ -71,3 +71,10 @@ Suite: `npx vitest run tests/power-map.contract.test.ts --reporter=junit --outpu
   `power/pdp-breaker-margin` are run again on the same match (no re-parse), and the report is what a fresh read with that history
   gives (findings, evidence, "not checked" lines); every other finding is the same object as before. Nothing changed: null. Why: the
   pit changes a breaker while a log is open and the finding must follow at once. Kind: behaviour.
+- **PM-12** A change made from a finding applies from that match onward (`planFromFinding`, `src/power/power-map-view.ts`): the
+  changed map is written from the match's start, and every later line of that robot (each distinct later `from`) is written
+  again with the same change applied (the main or usual breaker if changed, each slot that differs, an MPM board with it),
+  keeping that line's own `from` and everything else on it, so a later edit in Tools no longer hides the change. Undo puts every
+  line back as it was, a first map back to a map with nothing in it; "Only from now" leaves the match's start and the lines
+  between as they were and starts the change at the given time. Why: lines are whole maps and the latest `from` wins, so without
+  this a change made from an old match is hidden for every match after the next edit. Kind: behaviour.

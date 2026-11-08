@@ -14,10 +14,10 @@
   import { teamNow } from './team-setting.svelte.ts'
   import { powerMapAt, type Feed, type MainFamily, type MapBreaker, type PdpFamily, type PowerMap } from '../power/power-map.ts'
   import {
-    applyToAll, breakerColourName, breakerFill, breakerText, emptyMap, FAMILY_LABEL, feedLabel, mapLine, mapProblems, MAIN_LABEL, MPM_SLOTS, mpmAt, nextEmptySlot,
-    PDP_ID, ratingsFor, slotEntries, slotRows, slotsKeeping, unplacedMotors, withExtraFeed, withSlot, type MapProblem,
+    applyToAll, breakerColourName, breakerFill, breakerText, emptyMap, FAMILY_LABEL, feedLabel, feedParts, mapProblems, MAIN_LABEL, MPM_SLOTS, mpmAt, nextEmptySlot, onlyFromNow, planFromFinding, stampAll,
+    PDP_ID, ratingsFor, readRotated, savedLine, writeRotated, slotEntries, slotRows, slotsKeeping, unplacedMotors, withExtraFeed, withSlot, type MapProblem,
   } from '../power/power-map-view.ts'
-  import { clearMapFocus, mapFocus, mapHistory, writeMapLine } from './power-map-bridge.svelte.ts'
+  import { clearMapFocus, LAST_ROBOT_KEY, lastMapRobot, mapFocus, mapHistory, writeMapLine } from './power-map-bridge.svelte.ts'
 
   const LATEST = '9999-12-31T23:59:59.999Z'
   const stored = $derived(profilesNow())
@@ -25,8 +25,8 @@
   const history = $derived(mapHistory())
 
   // Which robot: the one a finding or strip named, else the one last used here, else the team's newest.
-  const LAST = 'hindsight.powermap.robot'
-  const lastRobot = (): string | null => { try { return localStorage.getItem(LAST) } catch { return null } }
+  const LAST = LAST_ROBOT_KEY
+  const lastRobot = lastMapRobot
   let chosen = $state<string | null>(null)
   const groups = $derived(robotChoices(PROFILES, stored, teamNow(), focus?.robot ? [focus.robot] : []))
   const all = $derived(groups.flatMap((g) => g.profiles))
@@ -47,13 +47,11 @@
   const unplaced = $derived(unplacedMotors(map, motors))
 
   // The numbering of the slots as drawn, turned 180° for a board mounted the other way (remembered per robot).
-  const ROT = (id: string) => `hindsight.powermap.rotated.${id}`
-  const readRot = (id: string) => { try { return localStorage.getItem(ROT(id)) === '1' } catch { return false } }
   let rotations = $state<Record<string, boolean>>({})
-  const rotated = $derived(rotations[robotId] ?? readRot(robotId))
+  const rotated = $derived(rotations[robotId] ?? readRotated(localStorage, robotId))
   function rotate() {
     rotations[robotId] = !rotated
-    try { localStorage.setItem(ROT(robotId), rotated ? '1' : '0') } catch { /* not remembered */ }
+    writeRotated(localStorage, robotId, rotations[robotId])
   }
   const rows = $derived(slotRows(rotated))
 
@@ -65,29 +63,27 @@
     clearTimeout(toastTimer)
     toastTimer = setTimeout(() => { toast = null }, 10_000)
   }
-  /** Write `next` as the robot's map, in effect from `from` (ISO), and offer to take it back. */
-  function commit(next: PowerMap, act: string, from = focus?.from?.iso ?? new Date().toISOString()) {
-    const before = map
-    const was = powerMapAt(history, robotId, at)
-    writeMapLine((device, h, role) => [mapLine(h, next, { device, role }, new Date(), from)])
+  /**
+   * Write `next` as the robot's map and offer to take it back. From the strip or Tools it is one line, in effect from now. From a
+   * finding it applies from that match onward (planFromFinding): written from the match's start and again on every later line of the
+   * robot, so a later edit doesn't hide it; the toast says when it did.
+   */
+  function commit(next: PowerMap, act: string) {
+    const fromFinding = !!focus?.from
+    const nowIso = new Date().toISOString()
+    const from = focus?.from?.iso ?? nowIso
+    const before = powerMapAt(history, robotId, at)
+    const plan = fromFinding
+      ? planFromFinding(history, robotId, from, before, next)
+      : { forward: [{ ...next, from }], undo: [{ ...(before ?? emptyMap(robotId, from)), from }], laterDates: [] as string[] }
+    const write = (maps: PowerMap[]) => writeMapLine((device, h, role) => stampAll(h, maps, { device, role }, new Date()))
+    write(plan.forward)
+    const days = [...new Set(plan.laterDates.map(today))]
+    const also = days.length ? ` · also applied to the map${plan.laterDates.length > 1 ? 's' : ''} from ${days.join(', ')}${plan.laterDates.length > 1 ? ` (${plan.laterDates.length} lines)` : ''}` : ''
     say({
-      text: act,
-      undo: () => {
-        // The map as it was, written again from the same moment: the newer line wins the tie, and a robot with no map goes back to none.
-        writeMapLine((device, h, role) => [mapLine(h, was ? before : emptyMap(robotId, from), { device, role }, new Date(), from)])
-        toast = null
-      },
-      ...(focus?.from ? {
-        onlyFromNow: () => {
-          // Only from now: the match's own start keeps the map it had, and the change starts now.
-          writeMapLine((device, h, role) => {
-            const keep = mapLine(h, was ? before : emptyMap(robotId, from), { device, role }, new Date(), from)
-            const now = mapLine([...h, keep], next, { device, role }, new Date(), new Date().toISOString())
-            return [keep, now]
-          })
-          toast = null
-        },
-      } : {}),
+      text: `${act}${also}`,
+      undo: () => { write(plan.undo); toast = null },
+      ...(fromFinding ? { onlyFromNow: () => { write(onlyFromNow(plan, plan.forward.at(-1)!, new Date().toISOString())); toast = null } } : {}),
     })
   }
 
@@ -184,7 +180,8 @@
 
   // ---- Lit slots (hovering a problem) ------------------------------------------------------------------------------------
   let lit = $state<number[]>([])
-  const badSlots = $derived(new Set(problems.filter((p) => p.kind !== 'unplaced').flatMap((p) => p.slots)))
+  const badSlots = $derived(new Set(problems.filter((p) => p.kind !== 'unplaced' && !p.board).flatMap((p) => p.slots)))
+  const badMpm = (id: string, n: number) => problems.some((p) => p.board === id && p.slots.includes(n))
   const mpms = $derived(map.boards.filter((b) => b.kind === 'rev-mpm'))
   const label = (p: MapProblem) => p.text
 
@@ -235,12 +232,14 @@
             {#each row as n (n)}
               {@const es = slotEntries(map, PDP_ID, n)}
               {@const b = es[0]?.breaker}
+              {@const parts = es.map((e) => feedParts(e.feeds, true, e.feeds?.kind === 'mpm' ? mpmAt(map, n)?.id : undefined))}
               <button type="button" class="tile" class:filled={!!b} class:empty={es.length === 0} class:bad={badSlots.has(n)} class:lit={lit.includes(n)} class:sel={sel?.board === PDP_ID && sel.slot === n}
                 style={b ? `background:${breakerFill(b.ratingA)}` : ''} bind:this={tiles[tileKey(PDP_ID, n)]}
                 aria-label={title(PDP_ID, n)} aria-haspopup="dialog" aria-expanded={sel?.board === PDP_ID && sel.slot === n} title={title(PDP_ID, n)} onclick={() => open(PDP_ID, n)}>
                 <span class="num">{n}</span>
                 <span class="rating">{b ? b.ratingA : ''}</span>
-                <span class="feed">{es.map((e) => feedLabel(e.feeds, true, e.feeds?.kind === 'mpm' ? mpmAt(map, n)?.id : undefined)).filter(Boolean).join(' + ')}</span>
+                <span class="feed">{parts.map((x) => x.name).filter(Boolean).join(' + ')}</span>
+                <span class="can">{parts.map((x) => x.can).filter(Boolean).join(' ')}</span>
                 {#if badSlots.has(n)}<span class="bang" aria-hidden="true">!</span>{/if}
               </button>
             {/each}
@@ -257,12 +256,15 @@
           {#each Array.from({ length: MPM_SLOTS }, (_, i) => i) as n (n)}
             {@const es = slotEntries(map, m.id, n)}
             {@const b = es[0]?.breaker}
-            <button type="button" class="tile" class:filled={!!b} class:empty={es.length === 0} class:sel={sel?.board === m.id && sel.slot === n}
+            {@const parts = es.map((e) => feedParts(e.feeds, true))}
+            <button type="button" class="tile" class:filled={!!b} class:empty={es.length === 0} class:bad={badMpm(m.id, n)} class:sel={sel?.board === m.id && sel.slot === n}
               style={b ? `background:${breakerFill(b.ratingA)}` : ''} bind:this={tiles[tileKey(m.id, n)]}
               aria-label={title(m.id, n)} aria-haspopup="dialog" aria-expanded={sel?.board === m.id && sel.slot === n} title={title(m.id, n)} onclick={() => open(m.id, n)}>
               <span class="num">{n}</span>
               <span class="rating">{b ? b.ratingA : ''}</span>
-              <span class="feed">{es.map((e) => feedLabel(e.feeds, true)).filter(Boolean).join(' + ')}</span>
+              <span class="feed">{parts.map((x) => x.name).filter(Boolean).join(' + ')}</span>
+              <span class="can">{parts.map((x) => x.can).filter(Boolean).join(' ')}</span>
+              {#if badMpm(m.id, n)}<span class="bang" aria-hidden="true">!</span>{/if}
             </button>
           {/each}
         </div>
@@ -317,7 +319,7 @@
       </li>
     {/each}
   </ul>
-  {#if map.seq > 0}<p class="saved">Set {today(map.when)} · in effect from {today(map.from)}</p>{/if}
+  {#if map.seq > 0}<p class="saved" data-saved>{savedLine(map)}</p>{/if}
 
   {#if toast}
     <div class="toast" role="status">{toast.text} · <button type="button" class="link" onclick={toast.undo}>Undo</button>{#if toast.onlyFromNow} · <button type="button" class="link" onclick={toast.onlyFromNow}>Only from now</button>{/if}</div>
@@ -347,11 +349,12 @@
   .stud { display: grid; place-items: center; width: 1.6rem; height: 2.4rem; border-radius: 4px; font-weight: 700; border: 1px solid var(--border); }
   .stud.plus { background: #e8736c; color: #1a1a1a; }
   .stud.minus { background: #444; color: #fff; }
-  .tile { position: relative; width: 100%; height: 4.4rem; padding: 0.15rem; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; border: 2px solid var(--border); border-radius: 6px; background: none; color: #1a1a1a; font: inherit; cursor: pointer; overflow: hidden; }
+  .tile { position: relative; width: 100%; height: 4.9rem; padding: 0.15rem; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; border: 2px solid var(--border); border-radius: 6px; background: none; color: #1a1a1a; font: inherit; cursor: pointer; overflow: hidden; }
   .tile.empty { color: var(--fg); border-style: solid; }
   .tile .num { position: absolute; top: 1px; left: 4px; font-size: 0.65rem; opacity: 0.75; }
   .tile .rating { font-size: 1.25rem; font-weight: 800; line-height: 1.5rem; margin-top: 0.35rem; min-height: 1.5rem; }
-  .tile .feed { font-size: 0.68rem; line-height: 0.85rem; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+  .tile .feed { font-size: 0.68rem; line-height: 0.85rem; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .can { font-size: 0.68rem; line-height: 0.85rem; font-weight: 700; white-space: nowrap; }
   .tile.sel { outline: 3px solid var(--fg); outline-offset: 1px; }
   .tile.lit { outline: 3px solid var(--warning); outline-offset: 1px; }
   .tile.bad { outline: 3px dashed var(--error); outline-offset: 1px; background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(160, 0, 0, 0.28) 6px 8px); }

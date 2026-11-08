@@ -40,12 +40,12 @@ export default rule({
     { ...GAME_MANUAL_2026, says: 'R619 lists the breakers allowed on the power distribution board; R621 allows one motor controller per breaker.' },
     { ...REV_ATO_DATASHEET, says: 'The REV ATO breaker data sheet gives the band of trip time against percent of rating for 10 to 40 A.' },
     { ...CTRE_BREAKER_DATASHEET, says: 'The CTRE breaker data sheet gives its band and bench trip times for 10 to 40 A.' },
-    { ...SNAP_ACTION_MX5, says: 'The Snap Action sheet (one table for MX5, AT2 and VB3, up to 40 A) gives the fastest legal PDP breaker\'s trip times.' },
+    { ...SNAP_ACTION_MX5, says: 'The Snap Action sheet (one table for MX5, AT2 and VB3, up to 40 A) gives the 40 A breaker\'s trip times (a not-set motor is judged against it, REV and CTRE).' },
     { ...CTRE_CURRENT_LIMITS, says: 'FRC breakers mostly trip from heat and can carry well above their rating for a limited time; check the breaker data sheet for trip times.' },
   ],
   thresholds: [
     { name: 'warn line', value: 'the fast edge of the datasheet band reaches 100 %', basis: 'judgment', how: 'Taken from the makers\' datasheets (REV, CTRE, Snap Action), fitted per edge by heating stages; good to about ±20 to 30 % in heat. 1 of 7,488 motor-matches in 463 matches reached it, an intake roller at 100 A; no trip is known, so the line rests on the datasheet alone.' },
-    { name: 'breaker when none is set', value: 'the first legal 40 A breaker to trip', basis: 'judgment', how: 'Each of REV, CTRE and Snap Action 40 A is tried and the first to reach its fast edge is named: Snap Action trips soonest from about 140 % of its rating up, but below about 133 % its fast edge never trips, where REV and CTRE do (at 125 % they trip in 32 and 18 s).' },
+    { name: 'breaker when none is set', value: 'the first legal 40 A breaker to trip', basis: 'judgment', how: 'In 778 logs (8033\'s library and public logs, no breaker set anywhere) it fired on 2 motor-matches. Each of REV, CTRE and Snap Action 40 A is tried and the first to reach its fast edge is named: Snap Action trips soonest from about 140 % of its rating up, but below about 133 % its fast edge never trips, where REV and CTRE do (at 125 % they trip in 32 and 18 s).' },
   ],
 
   // Only motors whose supply current the profile names: the breaker sees that current.
