@@ -22,7 +22,7 @@
   import { boardFor, deferralSession, openDeferrals, isCarried, practiceChecklist, queueChecklist, sessionEventName, tickAt, ticksFor, tickKey, uncoveredItems, type System, type Tick } from '../foresight/checklists.ts'
   import { robotAddresses, USB_ADDRESS } from '../foresight/addresses.ts'
   import { hub } from '../hub/bridge.ts'
-  import { tbaGetter, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
+  import { nexusGetter, nexusHasKey, tbaGetter, tbaHasKey, tbaTeam } from './tba-setting.svelte.ts'
   import { sessionSchedule } from '../tba/session-schedule.ts'
   import type { ScheduledMatch } from '../tba/schedule.ts'
   import type { TodaySignal } from './today-signal.svelte.ts'
@@ -166,7 +166,7 @@
   // The team's schedule for the deferral session (the Session view's own read, src/tba/session-schedule.ts), so due points and the cut-off default
   // place the same here. An earlier event's carried board never reads one; no key, no team, offline with no saved copy or an error: none (by name only).
   let fsSchedule = $state.raw<ScheduledMatch[] | null>(null)
-  const scheduleSig = $derived(defSession && !carried ? `${defSession.id}|${defSession.event?.key ?? ''}|${defSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}` : '')
+  const scheduleSig = $derived(defSession && !carried ? `${defSession.id}|${defSession.event?.key ?? ''}|${defSession.matches.filter((m) => m.onField).map((m) => m.matchLabel).join(',')}|${tbaTeam()}|${tbaHasKey()}|${nexusHasKey()}|${nexusHasKey() ? Math.floor(clock / 60e3) : ''}` : '')
   // The schedule is dropped only when the session or its event changes (or there is nothing to read), or the team changes; not on every new log of the same session: until the fresh read lands, the last one stands.
   let fsScheduleOf = ''
   $effect(() => {
@@ -177,7 +177,7 @@
     const [get, team] = [tbaGetter(), tbaTeam()]
     if (!get || team === null) { fsSchedule = null; return }
     let stale = false
-    void sessionSchedule(s, team, get).then((got) => { if (!stale) fsSchedule = got.schedule })
+    void sessionSchedule(s, team, get, nexusGetter()).then((got) => { if (!stale) fsSchedule = got.schedule })
     return () => { stale = true }
   })
   const board = $derived(defSession && profile ? boardFor(defSession, history, profile, new Date(), carried ? null : fsSchedule, carried ? null : typedNextFor(defSession)) : null)

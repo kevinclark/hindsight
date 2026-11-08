@@ -5,6 +5,7 @@
  */
 import { teamMatches, type TbaMatchSimple } from './api.ts'
 import type { Fetched, TbaGet } from './source.ts'
+import type { NexusTimes } from '../nexus/times.ts'
 
 export type CompLevel = 'qm' | 'ef' | 'qf' | 'sf' | 'f'
 const LEVELS = new Set<string>(['qm', 'ef', 'qf', 'sf', 'f'])
@@ -20,6 +21,8 @@ export interface ScheduledMatch {
   scheduled: number | null
   predicted: number | null
   actual: number | null
+  /** Nexus's live queue estimate for this match (src/nexus/), at events that queue with Nexus and when a key is set; absent otherwise. */
+  nexus?: NexusTimes | null
 }
 
 const ms = (s: number | null | undefined): number | null => (typeof s === 'number' && Number.isFinite(s) ? s * 1000 : null)
@@ -42,8 +45,8 @@ export async function teamSchedule(get: TbaGet, team: number, eventKey: string, 
   return { ...got, data: parseSchedule(got.data) }
 }
 
-/** When a match starts, as well as is known: it happened, else TBA's prediction, else the printed schedule. */
-export const startOf = (m: ScheduledMatch): number | null => m.actual ?? m.predicted ?? m.scheduled
+/** When a match starts, as well as is known: it happened, else Nexus's live estimate, else TBA's prediction, else the printed schedule. */
+export const startOf = (m: ScheduledMatch): number | null => m.actual ?? m.nexus?.start ?? m.predicted ?? m.scheduled
 
 export type GapName = 'lunch' | 'overnight' | 'before playoffs'
 

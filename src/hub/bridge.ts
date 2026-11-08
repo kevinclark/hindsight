@@ -9,6 +9,7 @@ import type { Update } from './update.ts'
 import type { RedescribeReport } from './redescribe.ts'
 import type { TagField, TagTarget } from './types.ts'
 import type { Fetched, TbaGetOptions } from '../tba/source.ts'
+import type { NexusEvent } from '../nexus/source.ts'
 
 export interface Progress { job: string; done: number; total: number; current: string }
 
@@ -32,6 +33,8 @@ export interface TeamSettingSaved {
   sources: string[]
   /** Whether a The Blue Alliance read key is saved on this laptop. The key itself never reaches the page. */
   tbaKey?: boolean
+  /** Whether a Nexus API key is saved on this laptop (never the key). */
+  nexusKey?: boolean
   /** Only from `setTeam`: the sources differ from those of the last full link pass that finished. */
   linkNeeded?: boolean
 }
@@ -92,6 +95,10 @@ export interface HubApi {
   setTeam(team: number | null, sources: string[], tbaKey?: string | null): Promise<TeamSettingSaved>
   /** One of the three The Blue Alliance reads (src/tba/source.ts) with the saved key, answered from the saved copy when offline. Throws without a key. */
   tba<T>(path: string, opts?: TbaGetOptions): Promise<Fetched<T>>
+  /** Save (a string) or clear (null or '') the Nexus API key. Throws if it does not look like one. */
+  setNexusKey(key: string | null): Promise<{ nexusKey: boolean }>
+  /** Nexus's live status of one event (src/nexus/source.ts) with the saved key, answered from the saved copy when offline. Throws without a key. */
+  nexus(eventKey: string): Promise<Fetched<NexusEvent>>
   /** Find, for logs that name only a code name, the repo that holds that code; makes GitHub requests (see codePlan). */
   linkCode(): Promise<LinkReport>
   /** Read this library's robot logs again with the current describer; resolves with what changed. */

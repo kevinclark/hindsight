@@ -338,6 +338,31 @@ describe('the schedule read both views share', () => {
     expect(b.cutOff.passed).toBe(true)
     expect(buildBoard(input(session([match(5), match(6)]), [], null)).cutOff.passed).toBe(false)
   })
+  // ADR 12: Nexus's times ride on the schedule; a Nexus failure only adds a clause and keeps The Blue Alliance's.
+  const nexusOf = (answer: 'ok' | 'empty' | 'fail') => async (eventKey: string) => {
+    if (answer === 'fail') throw new Error('This event is not on Nexus.')
+    const matches = answer === 'empty' ? [] : [{ label: 'Qualification 5', status: 'Queuing soon', redTeams: [], blueTeams: [], replayOf: null, breakAfter: null, times: { estimatedQueueTime: 111, estimatedStartTime: 222 } }]
+    return { data: { eventKey, dataAsOfTime: 5, nowQueuing: null, matches, announcements: [], partsRequests: [] }, fetchedAt: 9, fromCache: false }
+  }
+  it('with a Nexus reader, carries its queue and start times and names the event for the credit', async () => {
+    const got = await sessionSchedule(session([match(2), match(3)]), 9999, get(), nexusOf('ok'))
+    expect(got.schedule?.find((m) => m.number === 5)?.nexus).toEqual({ queue: 111, start: 222, status: 'Queuing soon' })
+    expect(got.schedule?.find((m) => m.number === 4)?.nexus).toBeNull()
+    expect(got.nexusEvent).toBe('2099test')
+    expect(got.nexusProblem ?? null).toBeNull()
+    expect(got.note).toMatch(/Queue and start times from Nexus as of /)
+  })
+  it("keeps The Blue Alliance's times when Nexus fails or has no matches, and says so", async () => {
+    const failed = await sessionSchedule(session([match(2), match(3)]), 9999, get(), nexusOf('fail'))
+    expect(failed.schedule?.map((m) => m.number)).toEqual([2, 3, 4, 5, 6])
+    expect(failed.schedule?.every((m) => !m.nexus)).toBe(true)
+    expect(failed.nexusEvent).toBeNull()
+    expect(failed.note).toMatch(/No Nexus times: This event is not on Nexus\.$/)
+    expect(failed.nexusProblem).toBe('This event is not on Nexus.')
+    const empty = await sessionSchedule(session([match(2), match(3)]), 9999, get(), nexusOf('empty'))
+    expect(empty.nexusEvent).toBeNull()
+    expect(empty.note).toMatch(/Nexus has no matches for this event yet\.$/)
+  })
 })
 
 describe('one headline per event: the flag does not repeat what the Code row says', () => {

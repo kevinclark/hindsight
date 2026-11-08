@@ -1,11 +1,11 @@
-/** The Blue Alliance answers, kept in one JSON file in the app's data folder (never in the library, so it is never shared or synced). */
+/** The Blue Alliance answers (or Nexus's, in a file of its own), kept in one JSON file in the app's data folder (never in the library, so it is never shared or synced). */
 import { app } from 'electron'
 import { join } from 'node:path'
 import { readJson, writeJson } from '../src/hub/library-store.ts'
 import type { TbaStore } from '../src/tba/source.ts'
 
-export function fileTbaStore(): TbaStore {
-  const file = () => join(app.getPath('userData'), 'tba-cache.json')
+export function fileTbaStore(name = 'tba-cache.json'): TbaStore {
+  const file = () => join(app.getPath('userData'), name)
   type Cache = Record<string, { at: number; data: unknown }>
   let loaded: Promise<Cache> | null = null
   let writing: Promise<void> = Promise.resolve()

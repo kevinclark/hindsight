@@ -18,6 +18,7 @@ import { estimateRequests, linkable, linkCode } from '../src/hub/codelink.ts'
 import { linkAdded } from '../src/hub/ingest-link.ts'
 import { checkTbaKey, checkTeamSetting, needsLinkPass, validTeam } from '../src/hub/team-setting.ts'
 import { createTba, isTbaPath, type TbaGet } from '../src/tba/source.ts'
+import { checkNexusKey, createNexus, isNexusEventKey, type NexusGet } from '../src/nexus/source.ts'
 import { fileTbaStore } from './tba-store.ts'
 import type { CodePlan, DriveStatus, TeamSettingSaved, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
@@ -128,7 +129,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
 
   ipcMain.handle('hub:team', async (): Promise<TeamSettingSaved> => {
     const s = await loadSettings()
-    return { team: validTeam(s.team) ? s.team : null, sources: s.codeSources ?? [], tbaKey: !!s.tbaKey }
+    return { team: validTeam(s.team) ? s.team : null, sources: s.codeSources ?? [], tbaKey: !!s.tbaKey, nexusKey: !!s.nexusKey }
   })
   /** Save the team number and GitHub sources together (both checked first). `linkNeeded`: the sources differ from those of the last full pass that finished, so the page runs Link code (its own job). */
   ipcMain.handle('hub:setTeam', async (_e, team: number | null, sources: string[], tbaKey?: string | null): Promise<TeamSettingSaved> => {
@@ -136,7 +137,14 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const key = checkTbaKey(tbaKey)
     const before = await loadSettings()
     const saved = await saveSettings({ team: checked.team ?? undefined, codeSources: checked.sources, ...(key === undefined ? {} : { tbaKey: key ?? undefined }) })
-    return { ...checked, tbaKey: !!saved.tbaKey, linkNeeded: needsLinkPass(before.linkedSources ?? [], checked.sources) }
+    return { ...checked, tbaKey: !!saved.tbaKey, nexusKey: !!saved.nexusKey, linkNeeded: needsLinkPass(before.linkedSources ?? [], checked.sources) }
+  })
+  /** Save (a string) or clear (null or '') this laptop's Nexus API key. Answers only whether one is saved. */
+  ipcMain.handle('hub:setNexusKey', async (_e, key: string | null): Promise<{ nexusKey: boolean }> => {
+    const checked = checkNexusKey(key)
+    if (checked === undefined) return { nexusKey: !!(await loadSettings()).nexusKey }
+    const saved = await saveSettings({ nexusKey: checked ?? undefined })
+    return { nexusKey: !!saved.nexusKey }
   })
   /** The Blue Alliance, asked from here so the key never reaches the page. Only the three reads in src/tba/source.ts. */
   const tbaStore = fileTbaStore()
@@ -147,6 +155,17 @@ export function registerHub(window: () => BrowserWindow | null): void {
     if (!isTbaPath(path)) throw new Error('Hindsight does not ask The Blue Alliance for that.')
     if (tba?.key !== tbaKey) tba = { key: tbaKey, get: createTba({ key: tbaKey, store: tbaStore }) }
     return tba.get(path, typeof opts?.eventEnd === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(opts.eventEnd) ? { eventEnd: opts.eventEnd } : undefined)
+  })
+
+  /** Nexus's live event status, asked from here so the key never reaches the page. Only the one read in src/nexus/source.ts. */
+  const nexusStore = fileTbaStore('nexus-cache.json')
+  let nexus: { key: string; get: NexusGet } | null = null
+  ipcMain.handle('hub:nexus', async (_e, eventKey: string) => {
+    const { nexusKey } = await loadSettings()
+    if (!nexusKey) throw new Error('Add a Nexus API key under Your team first.')
+    if (!isNexusEventKey(eventKey)) throw new Error('Hindsight does not ask Nexus for that.')
+    if (nexus?.key !== nexusKey) nexus = { key: nexusKey, get: createNexus({ key: nexusKey, store: nexusStore }) }
+    return nexus.get(eventKey)
   })
 
   /** Read every robot log in this library again with the current describer; appends a `meta` record for each that reads differently. */

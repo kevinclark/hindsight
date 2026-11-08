@@ -298,3 +298,39 @@ describe('a next match typed on this laptop (slice 2)', () => {
     expect(st.tasks.find((t) => t.id === 'queue')?.title).toBe('Queue check for Q41')
   })
 })
+
+describe('Now with Nexus times (ADR 12)', () => {
+  // Q5 is next (scheduled 55 min after `now`); Nexus says queue in 30 min and start in 62 min.
+  const withQ5 = (nexus: { queue: number | null; start: number | null; status: 'Queuing soon' | 'Now queuing' | 'On deck' | 'On field' | null }) =>
+    SCHEDULE.map((m) => (m.level === 'qm' && m.number === 5 ? { ...m, nexus } : { ...m, nexus: null }))
+  const nexusNow = (nexus: Parameters<typeof withQ5>[0], over: Partial<NowInput> = {}) => {
+    const schedule = withQ5(nexus)
+    const s = session([match(2), match(3)])
+    return nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 4, event: boardOf(s, min(200), schedule), have: { team: true, key: true }, scheduleNote: null, still: null, now: min(200), clockText: at, schedule, nexusEvent: '2099test', ...over })
+  }
+  it('says when to queue, the minutes to that, and when Nexus expects the start; credits Nexus', () => {
+    const st = nexusNow({ queue: min(230), start: min(262), status: 'Queuing soon' })
+    expect(st.big).toBe(`Next match: Q5 · queue ${at(min(230))} (in 30 min) · start ≈ ${at(min(262))}`)
+    expect(st.nexusCredit).toBe('https://frc.nexus/en/event/2099test')
+  })
+  it("puts Nexus's call in place of the queue time once the match is called", () => {
+    expect(nexusNow({ queue: min(190), start: min(222), status: 'Now queuing' }).big).toBe(`Next match: Q5 · queuing now · start ≈ ${at(min(222))}`)
+    expect(nexusNow({ queue: min(190), start: min(212), status: 'On deck' }).big).toBe(`Next match: Q5 · on deck · start ≈ ${at(min(212))}`)
+    expect(nexusNow({ queue: min(190), start: min(203), status: 'On field' }).big).toBe(`Next match: Q5 · on the field · start ≈ ${at(min(203))}`)
+  })
+  it('reads "(now)" for a queue time already passed that Nexus has not called yet', () => {
+    expect(nexusNow({ queue: min(195), start: min(240), status: 'Queuing soon' }).big).toBe(`Next match: Q5 · queue ${at(min(195))} (now) · start ≈ ${at(min(240))}`)
+  })
+  it("falls back to The Blue Alliance's start when Nexus has none, and keeps the old line without Nexus", () => {
+    expect(nexusNow({ queue: min(230), start: null, status: null }).big).toBe(`Next match: Q5 · queue ${at(min(230))} (in 30 min) · start ≈ ${at(min(255))}`)
+    const plain = nexusNow({ queue: null, start: null, status: null }, { schedule: SCHEDULE, nexusEvent: null })
+    expect(plain.big).toBe(`Next match: Q5 at ${at(min(255))} · in 55 min`)
+    expect(plain.nexusCredit).toBeNull()
+  })
+  it('says why there are no Nexus times when a key is set and Nexus failed, under the old line', () => {
+    const st = nexusNow({ queue: null, start: null, status: null }, { schedule: SCHEDULE, nexusEvent: null, nexusProblem: 'Nexus did not accept the API key.' })
+    expect(st.big).toBe(`Next match: Q5 at ${at(min(255))} · in 55 min`)
+    expect(st.nexusProblem).toBe('Nexus did not accept the API key.')
+    expect(nexusNow({ queue: null, start: null, status: null }, { schedule: SCHEDULE, nexusEvent: null }).nexusProblem).toBeNull()
+  })
+})

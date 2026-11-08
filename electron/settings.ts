@@ -16,6 +16,8 @@ export interface Settings {
   team?: number
   /** This laptop's The Blue Alliance read key: names events whose logs don't, and fetches the schedule (src/tba/). Stays in this file; the page is only told whether one is set. */
   tbaKey?: string
+  /** This laptop's Nexus API key (frc.nexus/api): live queue and start times at events that queue with Nexus (src/nexus/). Stays in this file, like the read key. */
+  nexusKey?: string
   /** GitHub orgs ("name") or repos ("owner/name") whose code logs are linked to (src/hub/codelink.ts). Chosen at run time, never in the repo. */
   codeSources?: string[]
   /** The sources of the last full link pass that finished without a rate limit or problem: saving the same sources again links nothing. */

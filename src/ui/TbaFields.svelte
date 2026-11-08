@@ -3,9 +3,11 @@
   desktop app has them in the Library page's "Your team" box. The key stays in this browser (localStorage).
 -->
 <script lang="ts">
-  import { savePageTba, tbaHasKey, tbaMissing, tbaTeam } from './tba-setting.svelte.ts'
+  import { nexusHasKey, saveNexusKey, savePageTba, tbaHasKey, tbaMissing, tbaTeam } from './tba-setting.svelte.ts'
   let team = $state<number | null>(tbaTeam())
   let key = $state('')
+  let nexus = $state('')
+  let nexusNote = $state('')
   const missing = $derived(tbaMissing())
 </script>
 
@@ -15,6 +17,10 @@
   <p class="row"><label>Team number <input type="number" min="1" max="99999" step="1" bind:value={team} aria-label="Team number" /></label>
     <label>Read key <input type="password" bind:value={key} autocomplete="off" placeholder={tbaHasKey() ? 'saved: type to replace' : 'paste the key'} aria-label="The Blue Alliance read key" /></label>
     <button class="button" onclick={() => { savePageTba(team ?? null, key); key = '' }}>Save</button></p>
+  <p class="row"><label>Nexus Pull API key <input type="password" bind:value={nexus} autocomplete="off" placeholder={nexusHasKey() ? 'saved: type to replace' : 'optional'} aria-label="Nexus Pull API key" /></label>
+    <button class="button" disabled={!nexus.trim()} onclick={async () => { nexusNote = (await saveNexusKey(nexus)) ?? ''; if (!nexusNote) nexus = '' }}>Save</button>
+    {#if nexusHasKey()}<button class="button" onclick={async () => { nexusNote = (await saveNexusKey('')) ?? '' }}>Remove key</button>{/if}</p>
+  <p class="meta">Optional: live queue and start times at events that queue with <a href="https://frc.nexus" target="_blank" rel="noreferrer">Nexus</a>. Sign in at <a href="https://frc.nexus/api" target="_blank" rel="noreferrer">frc.nexus/api</a> and copy the Pull API key (not a Push webhook token).{nexusNote ? ` ${nexusNote}` : ''}</p>
   <p class="meta">Any page opened from disk in this browser can read this key; the desktop app keeps it private.</p>
   {#if missing}<p class="meta">{missing}</p>{/if}
 </details>
