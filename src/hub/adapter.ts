@@ -30,6 +30,8 @@ export interface WriteOptions {
   modifiedTime?: number
   /** Called with the bytes sent so far. */
   onProgress?: (sent: number, total: number) => void
+  /** Asked before each piece: true stops the write with Stopped, leaving nothing at the path (as any failure does). */
+  cancelled?: () => boolean
 }
 
 export interface StorageAdapter {
@@ -65,6 +67,12 @@ export class ChecksumMismatch extends Error {
   readonly got: string
   constructor(path: string, want: string, got: string) { super(`${path}: sha-256 is ${got}, expected ${want}`); this.path = path; this.want = want; this.got = got }
 }
+/** The user pressed Stop part way through a file: not a failure, and nothing was left behind. */
+export class Stopped extends Error {
+  constructor() { super('stopped') }
+}
+/** Throws Stopped when the user has asked to stop. */
+export function stopIfAsked(cancelled?: () => boolean): void { if (cancelled?.()) throw new Stopped() }
 /** The store refused for a reason signing in again fixes (Drive `invalid_grant`). */
 export class SignInAgain extends Error {
   constructor(message = 'Sign in to Google again') { super(message) }

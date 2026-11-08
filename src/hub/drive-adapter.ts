@@ -7,7 +7,7 @@
  * every request. A token the provider can no longer renew throws SignInAgain.
  */
 import { createHash } from 'node:crypto'
-import { AlreadyExists, ChecksumMismatch, ManifestConflict, SignInAgain, checkPath, extendsManifest, isOwnAppendPath, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
+import { AlreadyExists, ChecksumMismatch, ManifestConflict, SignInAgain, checkPath, extendsManifest, isOwnAppendPath, stopIfAsked, type ByteSource, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
 
 const API = 'https://www.googleapis.com/drive/v3'
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
@@ -112,6 +112,7 @@ export class DriveAdapter implements StorageAdapter {
     if (from.size === 0) created = await this.put(uri, new Uint8Array(0), `bytes */0`)
     for (let at = 0; created === null; at += CHUNK) {
       if (at >= from.size && from.size > 0) throw new DriveError(0, 'Drive did not finish the file after its last byte')
+      stopIfAsked(options.cancelled) // the session is left unfinished, so Drive keeps no file
       const chunk = await from.read(at, Math.min(from.size, at + CHUNK))
       md5.update(chunk); sha.update(chunk)
       created = await this.putChunk(uri, chunk, at, from.size)

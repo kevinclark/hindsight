@@ -192,7 +192,7 @@ describe('the job runner', () => {
     release()
     expect(await first).toBe('ok')
     expect(runner.current()).toBeNull()
-    expect(events).toEqual([{ job: 'First', done: 1, total: 4, current: 'a.wpilog' }, null])
+    expect(events).toEqual([{ job: 'First', done: 1, total: 4, current: 'a.wpilog' }, { job: 'First', done: 1, total: 4, current: 'a.wpilog', stopping: true }, null])
     expect(await runner.run('Third', async () => 3)).toBe(3)
   })
   it('keeps how the last job ended: its report, or its error', async () => {
