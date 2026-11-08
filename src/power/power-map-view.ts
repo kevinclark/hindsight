@@ -195,9 +195,9 @@ export function withExtraFeed(map: PowerMap, boardId: string, slot: number, cont
   return { ...map, boards: map.boards.map((b) => (b.id === boardId ? { ...b, slots: sorted([...b.slots, { slot, ...content }]) } : b)) }
 }
 
-/** The motor slots whose breaker is not `usual`: what "N placed slots keep <old>" counts. */
+/** The PDP's motor slots whose breaker is not `usual`: what "N placed slots keep <old>" counts (an MPM's ATM breakers are its own). */
 export function slotsKeeping(map: PowerMap, usual: MapBreaker): number {
-  return motorSlots(map).filter(({ slot }) => !slot.breaker || slot.breaker.family !== usual.family || slot.breaker.ratingA !== usual.ratingA).length
+  return motorSlots(map).filter(({ board }) => board.id === PDP_ID).filter(({ slot }) => !slot.breaker || slot.breaker.family !== usual.family || slot.breaker.ratingA !== usual.ratingA).length
 }
 
 /** Every slot that feeds a motor takes `usual` as its breaker ("Apply to all"). Radio, roboRIO and other slots keep theirs. */

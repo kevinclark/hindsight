@@ -67,3 +67,7 @@ Suite: `npx vitest run tests/power-map.contract.test.ts --reporter=junit --outpu
 - **PM-10** A slot may be listed twice in a board: two feeds on one slot is a mistake the power map screen flags (R621),
   not a malformed line, so the line is kept as a map and written back unchanged. Why: the screen must be able to show
   the problem it warns about. Kind: behaviour.
+- **PM-11** When the history changes the map in effect for an open analysis (`withPowerMaps`), `power/main-breaker-margin` and
+  `power/pdp-breaker-margin` are run again on the same match (no re-parse), and the report is what a fresh read with that history
+  gives (findings, evidence, "not checked" lines); every other finding is the same object as before. Nothing changed: null. Why: the
+  pit changes a breaker while a log is open and the finding must follow at once. Kind: behaviour.

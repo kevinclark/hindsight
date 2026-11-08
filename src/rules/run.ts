@@ -111,8 +111,10 @@ function notCheckedFinding(skipped: SkippedRule[]): Finding {
 export function rerunRules(match: Match, report: Report, rules: Rule[], all: Rule[]): Report {
   const ids = new Set(rules.map((r) => r.id))
   const part = runRules(match, rules)
-  const skipped = [...report.skipped.filter((s) => !ids.has(s.rule)), ...part.skipped]
-  const crashed = [...report.crashed.filter((s) => !ids.has(s.rule)), ...part.crashed]
+  // In rule order, as a whole run lists them.
+  const order = (x: SkippedRule) => all.findIndex((r) => r.id === x.rule)
+  const skipped = [...report.skipped.filter((s) => !ids.has(s.rule)), ...part.skipped].sort((a, b) => order(a) - order(b))
+  const crashed = [...report.crashed.filter((s) => !ids.has(s.rule)), ...part.crashed].sort((a, b) => order(a) - order(b))
   const findings = [
     ...report.findings.filter((f) => !ids.has(f.rule) && f.rule !== 'meta/not-checked'),
     ...part.findings.filter((f) => f.rule !== 'meta/not-checked'),

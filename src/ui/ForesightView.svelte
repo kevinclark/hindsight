@@ -37,6 +37,11 @@
   import ForesightReport from './ForesightReport.svelte'
   import ForesightQueue from './ForesightQueue.svelte'
   import ForesightPractice from './ForesightPractice.svelte'
+  import BreakersStrip from './BreakersStrip.svelte'
+  import { mapHistory, openPowerMap } from './power-map-bridge.svelte.ts'
+  import { powerMapAt } from '../power/power-map.ts'
+  import { stripText } from '../power/power-map-view.ts'
+  import { PROFILES } from '../profiles/index.ts'
   import CodeCheck from './CodeCheck.svelte'
   import { typedNextFor } from './typed-next.svelte.ts'
   import { codeFolder } from './code-folder.svelte.ts'
@@ -89,6 +94,9 @@
     live?.setCodeSettings(codeSettings)
   }
   let status = $state.raw<LiveStatus | null>(null)
+  // The robot's breakers (src/power/power-map.ts): the profile the robot reported, else the typed team's newest. The strip sits under the verdict.
+  const breakerRobot = $derived(status?.profile ?? PROFILES.filter((p) => p.team === tbaTeam()).at(-1) ?? null)
+  const breakersUnset = $derived(stripText(breakerRobot ? powerMapAt(mapHistory(), profileId(breakerRobot), '9999-12-31T23:59:59.999Z') : null, []).unset)
   let recorded = false
   let open = $state<Record<string, boolean>>({})
   // A robot snapshot (tools/robot-snapshot.py) dropped here: Foresight never reads the diagnostic server itself.
@@ -346,8 +354,10 @@
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
   </section>
 
+  <BreakersStrip profile={breakerRobot} />
+
   {#if !queue && status}
-    <ForesightPractice checklist={practice} />
+    <ForesightPractice checklist={practice} {breakersUnset} onSetBreakers={() => openPowerMap(breakerRobot ? { robot: profileId(breakerRobot) } : {})} />
   {/if}
 
   {#if queue && status}

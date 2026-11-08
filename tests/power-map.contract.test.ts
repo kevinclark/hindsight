@@ -1,7 +1,7 @@
 // Contract tests for src/power/power-map.ts and its history line: each test proves the obligations its name starts
 // with, in docs/contracts/power-map.md. Made-up robots and maps only.
 import { describe, expect, test } from 'vitest'
-import { analyzeFiles } from '../src/analyze.ts'
+import { analyzeFiles, withPowerMaps } from '../src/analyze.ts'
 import { boardStamp, compareEvents, parseHistory, serializeHistory, type HistoryEvent } from '../src/triage/history.ts'
 import { breakerForMotor, mainBreakerFor, powerMapAt, type PowerMap } from '../src/power/power-map.ts'
 import { profileId } from '../src/profiles/index.ts'
@@ -227,5 +227,43 @@ describe('[PM-09] analyzeFiles gives each match the map in effect when it was pl
     expect(r.history).toHaveLength(1)
     const r2 = run(WALL, [late], [file])
     expect(r2.history).toHaveLength(1)
+  })
+})
+
+describe('[PM-11] a changed map re-runs only the two breaker rules on the open analyses', () => {
+  const robot = profileId(offseason2026)
+  const WALL = 1762637000
+  const entries: Entries = [
+    { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [130, false]] },
+    { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
+    { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 12.5], [10, 11], [130, 12.3], [150, 12.3]] },
+    { name: '/SystemStats/EpochTimeMicros', type: 'int64', records: [[1, (WALL + 1) * 1e6]] },
+    { name: '/SystemStats/SystemTimeValid', type: 'boolean', records: [[0, true]] },
+    ...['Front Left', 'Front Right', 'Back Left', 'Back Right'].map((m) => ({ name: `/Swerve/${m} Module/DriveSupplyCurrentAmps`, type: 'double', records: [[0, 0], [10, 75], [130, 0], [150, 0]] })),
+  ] as Entries
+  const open = () => analyzeFiles([{ name: 't.wpilog', bytes: writeWpilog(entries) }], offseason2026)
+  const words = (a: { report: { findings: { rule: string; key: string; severity: string; title: string; evidence: object }[]; skipped: object[] } }) =>
+    JSON.stringify([a.report.findings.map((f) => [f.rule, f.key, f.severity, f.title, f.evidence]), a.report.skipped])
+  const optifuse = map({ robot, from: '2025-11-01T00:00:00.000Z', main: 'optifuse' })
+
+  test('the new report is what a fresh read with that history gives, and other findings are the same objects', () => {
+    const first = open().analyses
+    const before = first[0].report.findings.filter((f) => !f.rule.startsWith('power/') || !f.rule.endsWith('-breaker-margin')).filter((f) => f.rule !== 'meta/not-checked')
+    const next = withPowerMaps(first, [optifuse])!
+    expect(next).not.toBeNull()
+    expect(next[0].match.powerMap).toBe(optifuse)
+    expect(next[0].report.findings.find((f) => f.rule === 'power/main-breaker-margin')!.evidence['judged against']).toContain('Optifuse')
+    const after = next[0].report.findings.filter((f) => !f.rule.startsWith('power/') || !f.rule.endsWith('-breaker-margin')).filter((f) => f.rule !== 'meta/not-checked')
+    expect(after).toHaveLength(before.length)
+    expect(after.every((f) => before.includes(f))).toBe(true)
+    const fresh = analyzeFiles([{ name: 't.wpilog', bytes: writeWpilog(entries) }], offseason2026, undefined, [optifuse]).analyses[0]
+    expect(words(next[0])).toBe(words(fresh))
+  })
+  test('nothing changed: null, so a caller keeps what it has; a second map line in effect changes it again', () => {
+    const first = open().analyses
+    const next = withPowerMaps(first, [optifuse])!
+    expect(withPowerMaps(next, [optifuse])).toBeNull()
+    expect(withPowerMaps(next, [optifuse, map({ robot, from: '2025-11-02T00:00:00.000Z', main: 'bussmann', seq: 2 })])).not.toBeNull()
+    expect(withPowerMaps(open().analyses, [])).toBeNull()
   })
 })

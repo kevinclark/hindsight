@@ -160,11 +160,12 @@ describe('"every motor is on" changed after slots are placed', () => {
     expect(m.boards[0].slots.map((s) => s.breaker)).toEqual([next, next, { family: 'rev-ato', ratingA: 20 }])
     expect(slotsKeeping(m, next)).toBe(0)
   })
-  it('an MPM\'s motor keeps its ATM breaker', () => {
+  it('an MPM\'s motor keeps its ATM breaker and is not counted as keeping', () => {
     let m = withSlot({ ...base(), usual: REV40 } as PowerMap, 'pdp', 0, { breaker: REV40, feeds: { kind: 'mpm' } })
     m = withSlot(m, 'mpm-1', 0, { breaker: { family: 'atm', ratingA: 10 }, feeds: motor('Climber', 30) })
     const next = applyToAll(m, { family: 'ctre-ato', ratingA: 30 })
     expect(next.boards[1].slots[0].breaker).toEqual({ family: 'atm', ratingA: 10 })
+    expect(slotsKeeping(m, { family: 'rev-ato', ratingA: 40 })).toBe(0)
   })
 })
 
