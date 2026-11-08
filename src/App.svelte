@@ -25,7 +25,7 @@
   import type { Place } from './now/now.ts'
   import { dateText } from './session/day.ts'
   import LibraryView from './ui/LibraryView.svelte'
-  import { hub } from './hub/bridge.ts'
+  import { hub, LibraryFile } from './hub/bridge.ts'
   import { loadTeam, teamNow } from './ui/team-setting.svelte.ts'
   import { loadTba } from './ui/tba-setting.svelte.ts'
   import { robotChoices } from './ui/robot-list.ts'
@@ -288,9 +288,28 @@
     unsaved = false
   }
 
+  // Where each loaded log lives, by file name, so the match head can hand it to AdvantageScope. Not reactive: it is read only when `current` is.
+  const fileLocations = new Map<string, { library: string } | { file: string }>()
+  function rememberLocation(f: File) {
+    if (f instanceof LibraryFile) { fileLocations.set(f.name, { library: f.libraryPath }); return }
+    const path = hub()?.pathForFile(f)
+    if (path) fileLocations.set(f.name, { file: path })
+  }
+  const ascopeTarget = $derived(current ? fileLocations.get(current.match.fileName) : undefined)
+  let ascopeBusy = $state(false)
+  let ascopeError = $state('')
+  $effect(() => { current?.match.fileName; ascopeError = '' })
+  async function openInAdvantageScope() {
+    if (!ascopeTarget) return
+    ascopeBusy = true
+    ascopeError = ''
+    try { await hub()!.openInAdvantageScope(ascopeTarget) } catch (e) { ascopeError = e instanceof Error ? e.message : String(e) } finally { ascopeBusy = false }
+  }
+
   async function load(fileList: FileList | File[]) {
     const files = Array.from(fileList)
     if (files.length === 0) return
+    files.forEach(rememberLocation)
     busy = true
     const pass = ++passes
     await new Promise((r) => setTimeout(r, 30)) // let "Reading…" paint
@@ -352,6 +371,7 @@
   })
 
   function clearAll() {
+    fileLocations.clear()
     inputs = []
     analyses = []
     problems = []
@@ -508,6 +528,9 @@
     <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
     <span class="actions">
       {#if busy}<span class="busy">Reading…</span>{/if}
+      {#if ascopeTarget}
+        <button class="button choose" title="Open this log in AdvantageScope" disabled={ascopeBusy} onclick={openInAdvantageScope}>Open in AdvantageScope</button>
+      {/if}
       <label class="button choose">
         <input type="file" multiple accept=".wpilog,.dslog,.dsevents,.jsonl" onchange={chosen} />
         Choose logs…
@@ -540,6 +563,7 @@
       {#if current.match.profileChoice.note}<p class="meta dirty">{current.match.profileChoice.note}</p>{/if}
     </div>
     {#if saveProblem}<p class="problem" role="alert">{saveProblem}</p>{/if}
+    {#if ascopeError}<p class="problem" role="status">{ascopeError}</p>{/if}
   </section>
 
   <div class="tabs" role="tablist">
@@ -626,6 +650,7 @@
   .button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .button:focus-within, .button:focus-visible { outline: 2px solid var(--focus); }
   .busy { color: var(--muted); }
+  button.button:disabled { opacity: 0.6; cursor: default; }
   .history { font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
   .history strong { color: var(--warning); }
   .link { margin-left: auto; min-height: 24px; padding: 0.2rem 0.4rem; border: none; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }

@@ -1,6 +1,6 @@
 /** The page's way into the library. Each handler is thin: the work is in src/hub/. */
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
-import { join } from 'node:path'
+import { isAbsolute, extname, join } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { filesToFetch } from '../src/hub/catalog.ts'
 import { LocalLibrary, readJson, writeJson } from '../src/hub/library-store.ts'
@@ -22,7 +22,9 @@ import { checkNexusKey, createNexus, isNexusEventKey, type NexusGet } from '../s
 import { fileTbaStore } from './tba-store.ts'
 import type { CodePlan, DriveStatus, TeamSettingSaved, LastJob, LibrarySnapshot, LinkReport, Progress, RobotResult, SyncPlan } from '../src/hub/bridge.ts'
 import type { TagField, TagTarget } from '../src/hub/types.ts'
+import { opensInAdvantageScope } from '../src/hub/advantagescope.ts'
 import { Describer } from './describer.ts'
+import { openInAdvantageScope } from './advantagescope.ts'
 import { driveToken, googleClient, keeping, signIn, signOut, signedIn } from './google-auth.ts'
 import { loadSettings, saveSettings } from './settings.ts'
 
@@ -181,6 +183,19 @@ export function registerHub(window: () => BrowserWindow | null): void {
     await lib.append({ type: 'tag', target, field, value: String(value).trim(), recordedAt: Date.now(), machine: lib.machine })
   })
 
+  /** The path on disk for a log the page names: a library path (only if downloaded here) or a file it was given. */
+  async function advantageScopePath(target: { library: string } | { file: string }): Promise<string> {
+    if ('library' in target) {
+      const lib = await open()
+      if (!checkPath(target.library).startsWith('logs/')) throw new Error('not a log path')
+      const name = target.library.split('/').pop()
+      if (!(await lib.store.stat(target.library))) throw new Error(`${name} is not on this computer: download it from the Library first.`)
+      return join(lib.root, target.library)
+    }
+    if (!isAbsolute(target.file) || !(await stat(target.file).then((s) => s.isFile(), () => false))) throw new Error('That file is not on this computer.')
+    return target.file
+  }
+
   ipcMain.handle('hub:history', async (): Promise<string> => (await open()).historyText())
   ipcMain.handle('hub:appendHistory', async (_e, text: string): Promise<number> => (await open()).appendHistory(String(text)))
   ipcMain.handle('hub:readLog', async (_e, path: string) => {
@@ -189,6 +204,12 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const info = await lib.store.stat(path)
     if (!info) throw new Error(`${path} is not on this computer`)
     return lib.store.read(path, 0, info.size)
+  })
+
+  ipcMain.handle('hub:openInAdvantageScope', async (_e, target: { library: string } | { file: string }): Promise<void> => {
+    const path = await advantageScopePath(target)
+    if (!opensInAdvantageScope(path)) throw new Error(`AdvantageScope doesn't open ${extname(path) || 'these'} files.`)
+    await openInAdvantageScope(path)
   })
 
   // ---- Google Drive ----
