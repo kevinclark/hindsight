@@ -46,6 +46,7 @@ describe('rowHeadline keeps what made the finding fire', () => {
   })
   it('an alert seen only before or after the match says so in the time slot', () => {
     expect(rowHeadline(base({ evidence: { 'times during the match': 0, 'times before or after the match': 1 } })).time).toBe('before/after the match')
+    expect(rowHeadline(base({ evidence: { 'times across the 3 runs': 0, 'times before or after the match': 2 } })).time).toBe('before/after the match')
     expect(rowHeadline(base({ when: '1:21 into the match (teleop; robot time 399.4 s)', evidence: { 'times during the match': 1, 'times before or after the match': 0 } })).time).toBe('1:21 teleop')
   })
 })

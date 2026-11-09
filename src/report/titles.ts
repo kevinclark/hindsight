@@ -57,7 +57,9 @@ function rowKey(f: Finding): string {
 export function rowHeadline(f: Finding): { lead: string; about: string; key: string; time: string } {
   const lead = makerOf(f.rule)?.title ?? cardTitle(f.title)
   const about = f.about && !lead.toLowerCase().includes(f.about.toLowerCase()) ? f.about : ''
-  // An alert seen only outside the match has no time; say so where the time would be.
-  const outside = !f.when && f.evidence['times during the match'] === 0 && Number(f.evidence['times before or after the match']) > 0
+  // An alert seen only outside the match has no time; say so where the time would be. Its in-window count is "times during the
+  // match" on the field and "times across the N runs" off it (src/rules/alerts/passthrough.ts, view.ts).
+  const inWindow = Object.keys(f.evidence).find((k) => k.startsWith('times ') && k !== 'times before or after the match')
+  const outside = !f.when && inWindow !== undefined && f.evidence[inWindow] === 0 && Number(f.evidence['times before or after the match']) > 0
   return { lead, about, key: rowKey(f), time: outside ? 'before/after the match' : compactWhen(f.when) }
 }
