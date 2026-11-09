@@ -16,8 +16,9 @@ if (__PHONE_BUILD__ === 'fixture') {
 } else {
   const { native, viaNative } = await import('./phone/runtime.ts')
   const { routedFetch } = await import('./phone/native-fetch.ts')
-  globalThis.fetch = routedFetch(globalThis.fetch.bind(globalThis), viaNative)
-  if (__PHONE_BUILD__ === 'selftest') await (await import('./phone/selftest.ts')).runSelftest(native, viaNative, target)
+  const webFetch = globalThis.fetch.bind(globalThis)
+  globalThis.fetch = routedFetch(webFetch, viaNative)
+  if (__PHONE_BUILD__ === 'selftest') await (await import('./phone/selftest.ts')).runSelftest(native, viaNative, webFetch, target)
   else {
     const { default: PhoneShell } = await import('./phone/PhoneShell.svelte')
     mount(PhoneShell, { target })

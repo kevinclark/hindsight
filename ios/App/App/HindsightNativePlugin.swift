@@ -64,7 +64,8 @@ public class HindsightNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentica
             call.reject("signIn needs a Google https url and a callback scheme", "BAD_ARGS")
             return
         }
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { call.reject("the app is closing", "FAILED"); return }
             let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { [weak self] callback, error in
                 self?.signInSession = nil
                 if let callback = callback { call.resolve(["url": callback.absoluteString]); return }

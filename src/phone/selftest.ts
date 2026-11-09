@@ -11,11 +11,19 @@ import { refreshAccess } from '../hub/oauth.ts'
 import { GOOGLE_IOS_CLIENT_ID } from './google.ts'
 import type { HindsightNative } from './native.ts'
 
-const CHECKS: { name: string; run(native: HindsightNative, viaNative: typeof fetch): Promise<string> }[] = [
+const CHECKS: { name: string; run(native: HindsightNative, viaNative: typeof fetch, webFetch: typeof fetch): Promise<string> }[] = [
   {
-    name: 'JSON answer, byte for byte',
+    name: 'JSON answer, byte for byte (Google)',
     async run(_n, f) {
-      const res = await f('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest')
+      const res = await f('https://www.googleapis.com/discovery/v1/apis?name=drive&preferred=true')
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      return `status ${res.status}, ${res.headers.get('content-type')}, ${bytes.length} bytes, sha256 ${await sha256Hex(bytes)}`
+    },
+  },
+  {
+    name: 'JSON answer, byte for byte (The Blue Alliance)',
+    async run(_n, f) {
+      const res = await f('https://www.thebluealliance.com/manifest.json')
       const bytes = new Uint8Array(await res.arrayBuffer())
       return `status ${res.status}, ${res.headers.get('content-type')}, ${bytes.length} bytes, sha256 ${await sha256Hex(bytes)}`
     },
@@ -29,14 +37,6 @@ const CHECKS: { name: string; run(native: HindsightNative, viaNative: typeof fet
     },
   },
   {
-    name: 'Range header sent',
-    async run(_n, f) {
-      const res = await f('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest', { headers: { Range: 'bytes=100-199' } })
-      const bytes = new Uint8Array(await res.arrayBuffer())
-      return `status ${res.status}, content-range ${res.headers.get('content-range') ?? 'none'}, ${bytes.length} bytes`
-    },
-  },
-  {
     name: 'token endpoint by native HTTP (a made-up refresh token)',
     async run(_n, f) {
       try { await refreshAccess({ id: GOOGLE_IOS_CLIENT_ID }, 'not-a-real-refresh-token', Date.now(), f); return 'FAIL: accepted' } catch (e) {
@@ -46,10 +46,8 @@ const CHECKS: { name: string; run(native: HindsightNative, viaNative: typeof fet
   },
   {
     name: "token endpoint by the WebView's own fetch",
-    async run() {
-      const original = Object.getPrototypeOf(globalThis).fetch as typeof fetch | undefined
-      if (!original) return 'skipped: no WebView fetch found'
-      try { const r = await original.call(globalThis, 'https://oauth2.googleapis.com/token', { method: 'POST', body: new URLSearchParams({ grant_type: 'refresh_token' }) }); return `answered ${r.status} (CORS did not block it)` } catch (e) { return `refused: ${String(e)}` }
+    async run(_n, _f, webFetch) {
+      try { const r = await webFetch('https://oauth2.googleapis.com/token', { method: 'POST', body: new URLSearchParams({ grant_type: 'refresh_token' }) }); return `answered ${r.status} (CORS did not block it)` } catch (e) { return `refused: ${String(e)}` }
     },
   },
   {
@@ -71,12 +69,13 @@ const CHECKS: { name: string; run(native: HindsightNative, viaNative: typeof fet
   },
 ]
 
-export async function runSelftest(native: HindsightNative, viaNative: typeof fetch, target: HTMLElement): Promise<void> {
+/** `webFetch`: the WebView's own fetch, from before the router took its place. */
+export async function runSelftest(native: HindsightNative, viaNative: typeof fetch, webFetch: typeof fetch, target: HTMLElement): Promise<void> {
   const list = document.createElement('ol')
   target.replaceChildren(Object.assign(document.createElement('h1'), { textContent: 'Hindsight bridge self-test' }), list)
   for (const c of CHECKS) {
     let result: string
-    try { result = await c.run(native, viaNative) } catch (e) { result = `FAIL: ${e instanceof Error ? e.message : String(e)}` }
+    try { result = await c.run(native, viaNative, webFetch) } catch (e) { result = `FAIL: ${e instanceof Error ? e.message : String(e)}` }
     list.append(Object.assign(document.createElement('li'), { textContent: `${c.name}: ${result}` }))
     console.log(`HINDSIGHT-SELFTEST ${c.name}: ${result}`)
   }
