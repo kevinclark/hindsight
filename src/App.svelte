@@ -28,7 +28,7 @@
   import type { Place } from './now/now.ts'
   import { dateText } from './session/day.ts'
   import LibraryView from './ui/LibraryView.svelte'
-  import { hub, phone, LibraryFile } from './hub/bridge.ts'
+  import { hub, phone, LibraryFile, withBeside } from './hub/bridge.ts'
   import { keepHistory } from './triage/keeper.ts'
   import SummaryReview from './ui/SummaryReview.svelte'
   import TbaFields from './ui/TbaFields.svelte'
@@ -445,7 +445,8 @@
   }
 
   async function load(fileList: FileList | File[]) {
-    const files = Array.from(fileList)
+    // A library log brings its Driver Station files with it.
+    const files = withBeside(Array.from(fileList))
     if (files.length === 0) return
     files.forEach(rememberLocation)
     busy = true

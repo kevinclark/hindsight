@@ -115,10 +115,13 @@ export interface MatchMetrics {
   visionOutlierPct: number | null
 }
 
-/** Analyse one log and keep only the summary. `profile`: the robot the student chose for it, if any. */
-export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?: RobotProfile[], history?: HistoryEvent[]): MatchSummary | null {
+/**
+ * Analyse one log and keep only the summary. `profile`: the robot the student chose for it, if any. `beside`: its Driver
+ * Station files (.dslog, .dsevents), read with it.
+ */
+export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?: RobotProfile[], history?: HistoryEvent[], beside: InputFile[] = []): MatchSummary | null {
   // As the student's choice (checked for fit), not as a pinned profile.
-  return summaryOf(analyzeFiles([file], profile ? () => profile : undefined, profiles, history), file)
+  return summaryOf(analyzeFiles([file, ...beside], profile ? () => profile : undefined, profiles, history), file)
 }
 
 /**
@@ -126,8 +129,8 @@ export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?:
  * couldn't answer (offline, its hour used up) isn't stamped with the code's name, so it is read again next time rather
  * than reused.
  */
-export async function summarizeLogWithCode(file: InputFile, code: CodeFolder | null, codeName: string | null, profile?: RobotProfile, profiles?: RobotProfile[], history?: HistoryEvent[]): Promise<MatchSummary | null> {
-  const result = await analyzeFilesWithCode([file], code, profile ? () => profile : undefined, profiles, history)
+export async function summarizeLogWithCode(file: InputFile, code: CodeFolder | null, codeName: string | null, profile?: RobotProfile, profiles?: RobotProfile[], history?: HistoryEvent[], beside: InputFile[] = []): Promise<MatchSummary | null> {
+  const result = await analyzeFilesWithCode([file, ...beside], code, profile ? () => profile : undefined, profiles, history)
   const s = summaryOf(result, file)
   const askAgain = [...(result.analyses[0]?.match.limitLines?.values() ?? [])].some((a) => a.verdict === 'unknown' && a.tryAgain)
   if (s && code && !askAgain) s.codeFolder = codeName

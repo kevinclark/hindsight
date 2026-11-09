@@ -36,7 +36,7 @@
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
   import { allMarked, crashedNote, gridCells, marksText, misfitNotes, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
-  import { hub } from '../hub/bridge.ts'
+  import { besideOf, hub } from '../hub/bridge.ts'
   import { REFUSED_WORDS, blankEventClusters, clockOffsetText, identifyEvents, type ResolvedEvent } from '../tba/identify.ts'
   import { nexusGetter, nexusHasKey, tbaGetter, tbaHasKey, tbaMissing, tbaTeam } from './tba-setting.svelte.ts'
   import BoardView from './BoardView.svelte'
@@ -339,12 +339,15 @@
       await new Promise((r) => setTimeout(r, 0)) // let the page paint between logs
       if (gen !== loadGen) return
       try {
-        const key = fileKey(file)
+        // A library log's Driver Station files are read with it, and are part of what its summary was read from.
+        const beside = besideOf(file)
+        const key = fileKey(file, beside)
         const saved = cache.get(key)
         const reuse = !fresh && reusable(saved, file.name)
         const bytes = reuse ? null : new Uint8Array(await file.arrayBuffer())
+        const besideInputs = reuse ? [] : await Promise.all(beside.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
         if (gen !== loadGen) return
-        const summary = reuse ? saved : await summarizeLogWithCode({ name: file.name, bytes: bytes! }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored], history)
+        const summary = reuse ? saved : await summarizeLogWithCode({ name: file.name, bytes: bytes! }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored], history, besideInputs)
         if (gen !== loadGen) return
         if (summary && summary !== saved) {
           cache.set(key, summary)

@@ -133,6 +133,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
         if ((await stat(lib.store.at(r.path)).catch(() => null)) !== null) held.add(r.path)
       }))
       e.local = held.has(e.record.path)
+      e.held = [...held]
       e.shared = shared.has(e.record.path)
       e.toFetch = filesToFetch(e, held, shared)
     }))

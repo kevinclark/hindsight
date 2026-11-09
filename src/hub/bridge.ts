@@ -166,7 +166,8 @@ export function hub(): HubApi | undefined {
 
 /**
  * A log in the library as the Session view takes it: it only asks for name, size, modified time and the bytes, so the
- * bytes are fetched when asked, one log at a time, not all held at once.
+ * bytes are fetched when asked, one log at a time, not all held at once. `beside`: the Driver Station files the library
+ * attached to this robot log, read with it (`withBeside`).
  */
 export class LibraryFile {
   readonly webkitRelativePath = ''
@@ -175,9 +176,10 @@ export class LibraryFile {
   readonly lastModified: number
   /** The path as in the manifest. */
   readonly libraryPath: string
+  readonly beside: File[]
   private readonly api: HubApi
-  constructor(name: string, size: number, lastModified: number, path: string, api: HubApi) {
-    this.name = name; this.size = size; this.lastModified = lastModified; this.libraryPath = path; this.api = api
+  constructor(name: string, size: number, lastModified: number, path: string, api: HubApi, beside: File[] = []) {
+    this.name = name; this.size = size; this.lastModified = lastModified; this.libraryPath = path; this.api = api; this.beside = beside
   }
   async arrayBuffer(): Promise<ArrayBuffer> {
     const bytes = await this.api.readLog(this.libraryPath)
@@ -185,3 +187,9 @@ export class LibraryFile {
     return (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)) as ArrayBuffer
   }
 }
+
+/** The files read beside this one: a library log's attached Driver Station files; none for a file chosen from disk. */
+export const besideOf = (f: File): File[] => (f instanceof LibraryFile ? f.beside : [])
+
+/** Each file followed by the files read beside it, so the rules that read the Driver Station's files get them. */
+export const withBeside = (files: File[]): File[] => files.flatMap((f) => [f, ...besideOf(f)])
