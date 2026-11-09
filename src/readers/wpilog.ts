@@ -198,8 +198,14 @@ function readControlRecord(
     return
   }
   nameById.set(id, name)
-  if (!entries.has(name)) entries.set(name, { id, name, type, metadata })
+  if (!entries.has(name)) entries.set(name, { id, name, type: OLD_TYPE_NAMES[type] ?? type, metadata })
 }
+
+/**
+ * Type names NetworkTables used in WPILib 2023 logs, read as today's: a 2023 DataLogManager log types its NT: entries
+ * 'int' and 'String' (seen in a team's public 2023 logs; WPILib's own entries there are already 'int64' and 'string').
+ */
+const OLD_TYPE_NAMES: Record<string, string> = { int: 'int64', String: 'string' }
 
 /** True when the log has this key (an entry, a struct field or a bit of one) with at least one record. */
 export function hasEntry(log: WpilogFile, name: string): boolean {
