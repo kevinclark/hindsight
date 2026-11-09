@@ -1,6 +1,7 @@
 # Hindsight
 
-Lints FRC team 8033's robot match logs in the browser. A student drops a match's `.wpilog` (and the Driver Station
+Lints FRC robot match logs. Built by team 8033 on its own robots; another team starts at
+[Use it on your team's robot](#use-it-on-your-teams-robot). A student drops a match's `.wpilog` (and the Driver Station
 `.dslog`, if they have it) onto one HTML page and gets a lint report, worst first, and a power view for brownouts.
 Nothing is installed and no file leaves the computer. Named after `#in-hindsight`: every problem we learn the hard way
 becomes a rule that checks every later match for it.
@@ -14,6 +15,47 @@ Download the app for your system from [Releases](https://github.com/kevinclark/h
 
 - Windows and Linux: the app checks for a newer release when it starts and installs it when you quit.
 - Mac: a signed and notarized build updates itself the same way. An unsigned one shows a banner linking to the newest release instead, and the first open of each new download needs System Settings > Privacy & Security > Open Anyway; download the first signed release once by hand, and later ones install themselves.
+
+## Use it on your team's robot
+
+Nothing in Hindsight is 8033-only, but it was built on 8033's robots, so a new team does five things first.
+
+1. **Install the app** (above) on a laptop you review logs on in the pit, not the Driver Station laptop.
+2. **Make sure the robot writes a `.wpilog`.** Hindsight reads AdvantageKit, DogLog and WPILib's own DataLogManager
+   logs. If your robot writes only Phoenix `.hoot` files, or no log at all, add two lines to your `Robot`
+   constructor:
+
+   ```java
+   DataLogManager.start();                               // edu.wpi.first.wpilibj.DataLogManager
+   DriverStation.startDataLog(DataLogManager.getLog());  // edu.wpi.first.wpilibj.DriverStation
+   ```
+
+   That alone gives the match (event, type, number, from the field) and these checks: disabled early in auto,
+   emergency stop, comms loss, brownouts and the CANivore's USB dropping (with the DS logs from step 3), loop overruns
+   named by WPILib's tracer, and your WPILib/Elastic Alerts. DataLogManager also records every NetworkTables value the
+   code publishes, so check the roboRIO's free disk after a practice day.
+3. **Bring the Driver Station logs.** Copy each match's `.dslog` and `.dsevents` from the DS laptop
+   (`C:\Users\Public\Documents\FRC\Log Files`). Hindsight attaches them to the robot log they overlap.
+4. **Set your team** in the Library's "Your team" box: the team number (events are named from The Blue Alliance by
+   your match numbers) and your GitHub org (logs are linked to the commit they ran).
+5. **Draft a robot profile** (Tools › Robot profile) from one of your logs, a robot snapshot and your code folder.
+   The profile says where your log keeps battery voltage, motor currents, devices and mechanisms; the battery, motor,
+   mechanism and CAN-device checks need it. Built-in profiles cover only 8033's robots and a few public logs, so
+   yours starts as a draft. The **Logging** tab then lists each signal a check still needs and the key to log it under.
+
+**With no log at all:** the code check (any WPILib Java and Phoenix 6 project, in the app or
+[in your CI](#code-check-in-your-teams-ci)), the [robot snapshot](#robot-snapshot) of every Phoenix 6 device, and
+[sim-run](#sim-run-robot-code-in-the-desktop-simulator)'s crash, hung-loop and printed-error checks. sim-run's
+auto-moved, red-vs-blue and drive-forward checks read AdvantageKit's NetworkTables output and are skipped without it.
+
+**Needs AdvantageKit:** [Foresight](#foresight-the-pre-match-gono-go-live-phase-1), the live pre-match check (it reads
+the robot's `/AdvantageKit` NetworkTables; on another robot it never shows a verdict), and the
+[companion library](companion/README.md).
+
+**Phoenix `.hoot` files:** the robot pull copies them and the Library keeps each beside the robot log it overlaps,
+but Hindsight does not read them yet. A `.hoot` converted to `.wpilog` (AdvantageScope's export) is not a log
+Hindsight understands either: on one of our 2026 files it found no enabled time and checked nothing (2026-11-09). A
+robot that logs only `.hoot` needs step 2 for now.
 
 ## Use it
 
