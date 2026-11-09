@@ -5,7 +5,6 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerHub } from './hub-ipc.ts'
-import { selfUpdates } from '../src/hub/update.ts'
 
 // A test or demo run keeps its settings, library and caches in a folder of its own (before the lock, which is per data folder).
 if (process.env.HINDSIGHT_USER_DATA) app.setPath('userData', process.env.HINDSIGHT_USER_DATA)
@@ -35,13 +34,5 @@ app.on('second-instance', () => { if (window) { if (window.isMinimized()) window
 if (first) void app.whenReady().then(() => {
   registerHub(() => window)
   createWindow()
-  // An installed Windows or Linux build (and a signed Mac one) fetches a newer release in the background and installs it on quit.
-  // Anywhere else the page's banner points to the release. A failed check is logged and ignored.
-  if (selfUpdates({ isPackaged: app.isPackaged, platform: process.platform, macSigned: __MAC_SIGNED__ })) {
-    void import('electron-updater')
-      // electron-updater's autoUpdater is a lazy getter Node can't see as a named export of the CommonJS module: read it off the default.
-      .then((m) => (m.default ?? m).autoUpdater.checkForUpdatesAndNotify())
-      .catch((e) => console.log(`update check failed: ${e instanceof Error ? e.message : String(e)}`))
-  }
 })
 app.on('window-all-closed', () => app.quit())

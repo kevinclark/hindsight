@@ -27,7 +27,6 @@
   import ModeLine from './ModeLine.svelte'
   import NextMatchFields from './NextMatchFields.svelte'
   import SetupCard from './SetupCard.svelte'
-  import WhatsNew from './WhatsNew.svelte'
   import { typedNextFor } from './typed-next.svelte.ts'
   import { chooseMode, sessionNames } from './session-names.svelte.ts'
   import type { TodaySignal } from './today-signal.svelte.ts'
@@ -221,7 +220,6 @@
     <p><button type="button" class="link" onclick={() => { failure = null }}>← Back to Now</button></p>
   </div>
 {:else}
-  <WhatsNew {hasLogs} />
   <h2 class="big" data-now-big>{view.big}</h2>
   {#if view.nexusCredit}<p class="credit" data-now-credit>Queue and start times from <a href={view.nexusCredit} target="_blank" rel="noreferrer">Nexus</a></p>
   {:else if view.nexusProblem}<p class="credit" data-now-nexus-problem>No Nexus queue times: {view.nexusProblem}</p>{/if}

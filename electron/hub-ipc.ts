@@ -15,7 +15,7 @@ import { isEventKey } from '../src/hub/event-file.ts'
 import { createHash } from 'node:crypto'
 import { SignInAgain, Stopped } from '../src/hub/adapter.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
-import { checkForUpdate, selfUpdates } from '../src/hub/update.ts'
+import { Updater } from './updater.ts'
 import { JobRunner, type JobHandle, type ProgressFn, type Work } from '../src/hub/jobs.ts'
 import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
@@ -47,11 +47,6 @@ export function registerHub(window: () => BrowserWindow | null): void {
   const open = () => (library ??= loadSettings().then((s) => LocalLibrary.open(s.libraryDir, s.machineId)))
   const seenFile = () => join(app.getPath('userData'), 'seen.json')
   const send = (channel: string, payload: unknown) => window()?.webContents.send(channel, payload)
-
-  // The one request to the public repo's releases, made once on start: only where the app can't update itself (an unsigned Mac
-  // build), never from a dev run, which is not an installed version.
-  const banner = app.isPackaged && !selfUpdates({ isPackaged: true, platform: process.platform, macSigned: __MAC_SIGNED__ })
-  const update = banner ? checkForUpdate(app.getVersion()) : Promise.resolve(null)
 
   /** One job at a time (an import, a sync, a download): they share the library's manifest and the user's attention. */
   const job = <T>(name: string, work: Work<T>): Promise<T> =>
@@ -353,7 +348,14 @@ export function registerHub(window: () => BrowserWindow | null): void {
     shell.showItemInFolder(await jobLog.ensure())
   })
 
-  ipcMain.handle('hub:updateInfo', () => update)
+  // The update chip's state (electron/updater.ts): the page asks once on mount and then hears each change.
+  const updater = new Updater({
+    log: (line) => jobLog.line(line), send: (state) => send('hub:updateState', state), runningJob: () => jobs.current()?.job ?? null,
+  })
+  ipcMain.handle('hub:updateState', () => updater.current())
+  ipcMain.handle('hub:updateCheck', () => { void updater.check() })
+  ipcMain.handle('hub:updateRestart', (_e, force: unknown) => updater.restart(force === true))
+  updater.start()
 
   registerHoot({ open, jobLog, send })
 

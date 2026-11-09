@@ -16,7 +16,7 @@ const listen = (channel: string) => (callback: (p: unknown) => void) => {
 const CHANNELS = [
   'info', 'library', 'addFromFolder', 'cancel', 'runningJob', 'redescribe', 'lastJob', 'codePlan', 'team', 'setTeam', 'tba', 'setNexusKey', 'nexus', 'linkCode', 'setTag', 'history', 'appendHistory', 'readLog', 'openInAdvantageScope',
   'driveStatus', 'driveSignIn', 'driveSignOut', 'setGoogleClient', 'driveFolders', 'setTeamFolder', 'driveIngestPlan', 'addFromDrive',
-  'syncPlan', 'sync', 'fetchLogs', 'addFromRobot', 'showJobLog', 'updateInfo', 'appendEvent', 'publishedLogs', 'shareStatus', 'shareNow',
+  'syncPlan', 'sync', 'fetchLogs', 'addFromRobot', 'showJobLog', 'updateState', 'updateCheck', 'updateRestart', 'appendEvent', 'publishedLogs', 'shareStatus', 'shareNow',
   'hootFor', 'getOwlet', 'readHoots', 'hootLog', 'hootCancel', 'hootRunning',
 ] as const
 
@@ -27,5 +27,6 @@ contextBridge.exposeInMainWorld('hub', {
   onProgress: listen('hub:progress'),
   onHistoryChanged: listen('hub:historyChanged'),
   onShareStatus: listen('hub:shareStatus'),
+  onUpdateState: listen('hub:updateState'),
   onHootProgress: listen('hub:hootProgress'),
 })

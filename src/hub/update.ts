@@ -1,6 +1,6 @@
 /**
- * "Hindsight x.y is out: download". The Mac build is unsigned, so it cannot update itself silently; on start the app asks
- * the public repo's releases once and, when a newer app release exists, the page shows a banner with its link. The repo
+ * "Hindsight x.y is out: download". The Mac build is unsigned, so it cannot update itself silently; the app asks the public
+ * repo's releases (on start and every few hours, electron/updater.ts) and, when a newer app release exists, the update chip offers its link. The repo
  * also publishes robot-snapshot releases, so only tags that are plain app versions (v1.2.3) count.
  */
 export const RELEASES_URL = 'https://api.github.com/repos/kevinclark/hindsight/releases?per_page=30'
@@ -18,11 +18,17 @@ export function isNewer(latest: string, current: string): boolean {
   return false
 }
 
-/** The newest published app release that is newer than `current`, or null (also when GitHub can't be reached: no banner is no news). */
+/**
+ * The newest published app release that is newer than `current`, or null when there is none. A request that fails (GitHub
+ * refused, or couldn't be reached) throws an Error saying so: "no newer release" and "couldn't ask" are different answers.
+ */
 export async function checkForUpdate(current: string, doFetch: typeof fetch = fetch): Promise<Update | null> {
+  let res: Response
+  try { res = await doFetch(RELEASES_URL, { headers: { Accept: 'application/vnd.github+json' } }) } catch (e) {
+    throw new Error(`GitHub could not be reached (${e instanceof Error ? e.message : String(e)})`)
+  }
+  if (!res.ok) throw new Error(`GitHub answered ${res.status}`)
   try {
-    const res = await doFetch(RELEASES_URL, { headers: { Accept: 'application/vnd.github+json' } })
-    if (!res.ok) return null
     const releases = (await res.json()) as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean }[]
     const apps = releases
       .filter((r) => !r.draft && !r.prerelease && typeof r.tag_name === 'string' && APP_TAG.test(r.tag_name) && typeof r.html_url === 'string')
@@ -30,7 +36,7 @@ export async function checkForUpdate(current: string, doFetch: typeof fetch = fe
       .sort((x, y) => (isNewer(x.version, y.version) ? -1 : isNewer(y.version, x.version) ? 1 : 0))
     const newest = apps[0]
     return newest && isNewer(newest.version, current) ? newest : null
-  } catch { return null }
+  } catch { throw new Error('GitHub sent an answer Hindsight could not read') }
 }
 
 /**
