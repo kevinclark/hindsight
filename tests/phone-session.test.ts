@@ -108,3 +108,15 @@ describe('PhoneSession', () => {
     expect(log.at(-1)).toBe('reload')
   })
 })
+
+describe('which event the phone shows', () => {
+  it("today's event when there is one, else the one picked (if a laptop published it), else the latest", async () => {
+    const { phoneEvent } = await import('../src/phone/event-choice.ts')
+    const published = ['2099late', '2099early']
+    expect(phoneEvent('2099today', '2099early', published)).toBe('2099today')
+    expect(phoneEvent(null, '2099early', published)).toBe('2099early')
+    expect(phoneEvent(null, '2099gone', published)).toBe('2099late')
+    expect(phoneEvent(null, null, published)).toBe('2099late')
+    expect(phoneEvent(null, null, [])).toBeNull()
+  })
+})

@@ -10,7 +10,8 @@ import { LocalFolderAdapter } from './local-adapter.ts'
 import { readText } from './adapter.ts'
 import { mergeHistory, parseHistory, serializeHistory, type HistoryEvent } from '../triage/history.ts'
 import { serializeRecord, type ManifestRecord } from './types.ts'
-import { eventFilePath, freshLines, parseEventLines, serializeEventLine } from './event-file.ts'
+import { eventFilePath, freshLines, parseEventLines, parseEventPath, serializeEventLine } from './event-file.ts'
+import { SUMMARY_SHAPE } from '../session/summary.ts'
 
 export class LocalLibrary {
   catalog: Catalog
@@ -106,6 +107,16 @@ export class LocalLibrary {
     if (fresh.length === 0) return 0
     await this.store.appendOwn(path, (own !== '' && !own.endsWith('\n') ? '\n' : '') + fresh.map(serializeEventLine).join(''))
     return fresh.length
+  }
+
+  /** sha-256 of every log in this machine's own event files at the summary shape the phone draws: what it has published. */
+  async publishedShas(): Promise<string[]> {
+    const out: string[] = []
+    for (const f of await this.store.list('events')) {
+      if (parseEventPath(f.path)?.machine !== this.machine) continue
+      for (const l of parseEventLines((await readText(this.store, f.path)) ?? '').lines) if (l.shape === SUMMARY_SHAPE) out.push(l.sha256)
+    }
+    return [...new Set(out)]
   }
 
   /** This machine's own records, as lines (what sync publishes). */

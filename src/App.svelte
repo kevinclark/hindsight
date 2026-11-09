@@ -29,6 +29,9 @@
   import { dateText } from './session/day.ts'
   import LibraryView from './ui/LibraryView.svelte'
   import PhoneLibrary from './ui/PhoneLibrary.svelte'
+  import { backfillEvents } from './hub/event-backfill.ts'
+  import { phoneEvent, pickEvent, pickedEvent } from './phone/event-choice.ts'
+  import { summarizeLogWithCode } from './session/summary.ts'
   import type { OpenedFile } from './hub/browser-hub.ts'
   import { hub, phone, LibraryFile, readBeside } from './hub/bridge.ts'
   import { keepHistory } from './triage/keeper.ts'
@@ -353,6 +356,42 @@
     const t = setTimeout(() => { publishing = publishing.then(publishEvent) }, 3_000)
     return () => clearTimeout(t)
   })
+  // Every other event in the library, published once (src/hub/event-backfill.ts): a minute after the library is first read,
+  // so start-up isn't slowed; events this laptop has already published are skipped without reading a byte.
+  let backfillStarted = false
+  $effect(() => {
+    if (!library || !todaySig.libraryLoaded || backfillStarted) return
+    backfillStarted = true
+    const t = setTimeout(() => { publishing = publishing.then(backfillPublish) }, 60_000)
+    return () => clearTimeout(t)
+  })
+  const SKIPPED = `hindsight.backfill.skipped.${SUMMARY_SHAPE}`
+  const readSkipped = (): string[] => { try { return JSON.parse(localStorage.getItem(SKIPPED) ?? '[]') as string[] } catch { return [] } }
+  const writeSkipped = (shas: string[]) => { try { localStorage.setItem(SKIPPED, JSON.stringify([...new Set(shas)])) } catch { /* looked at again next run */ } }
+  async function backfillPublish() {
+    const app = hub()
+    const [get, team] = [tbaGetter(), tbaTeam()]
+    if (!app || !get || team === null) return
+    try {
+      const { entries } = await app.library()
+      const named = new Map(libraryNames(entries).map((n) => [n.entry, n]))
+      const done = await backfillEvents({
+        entries, published: new Set(await app.publishedLogs()),
+        // Logs looked at and found to belong to no event, by summary shape (a new shape looks again): this laptop's own note.
+        skipped: new Set(readSkipped()), markSkipped: async (shas) => { writeSkipped([...readSkipped(), ...shas]) },
+        read: async (e) => {
+          const f = asFile(named.get(e)!, app)
+          const [bytes, beside] = await Promise.all([f.arrayBuffer().then((b) => new Uint8Array(b)), readBeside(f, [])])
+          await new Promise((r) => setTimeout(r, 0)) // let the page paint between logs
+          return summarizeLogWithCode({ name: f.name, bytes }, null, null, chosenRobot(f.name), [...PROFILES, ...stored], history, beside)
+        },
+        place: async (s) => (await sessionEvent(s, team, get)).event?.key ?? null,
+        append: async (key, lines) => { await app.appendEvent(key, lines.map(serializeEventLine).join('')) },
+        version: VERSION, analyzerHash: ANALYZER_HASH, now: Date.now,
+      })
+      if (done.read) console.log(`Hindsight: published ${done.events} earlier event${done.events === 1 ? '' : 's'} for the phone (${done.read} logs read)`)
+    } catch (e) { console.warn('Hindsight: publishing earlier events for the phone stopped:', e) }
+  }
   // One publish at a time: a run waiting on The Blue Alliance must not overlap the next (both would pass the same dedupe).
   let publishing: Promise<void> = Promise.resolve()
   async function publishEvent() {
@@ -374,6 +413,10 @@
 
   // ---- The phone: one event's summaries and every laptop's marks, read from the team's Drive, never written ----
   let phoneKey = $state<string | null>(null)
+  /** The events laptops have published, newest push first, and the one picked on this phone (src/phone/event-choice.ts). */
+  let phoneEvents = $state.raw<string[]>([])
+  let picked = $state<string | null>(readOnly ? pickedEvent(localStorage) : null)
+  function choosePhoneEvent(key: string) { picked = key; pickEvent(localStorage, key) }
   let phoneNote = $state('')
   let phoneFrom = $state.raw<Map<string, { laptop: string; olderRead: string | null }>>(new Map())
   let reviewing = $state.raw<MatchSummary | null>(null)
@@ -386,7 +429,8 @@
       if (!phoneHub) return
       try {
         history = parseHistory(await phoneHub.history()).events
-        const key = todaySig.external?.key ?? (await phoneHub.eventKeys())[0]?.key ?? null
+        phoneEvents = (await phoneHub.eventKeys()).map((e) => e.key)
+        const key = phoneEvent(todaySig.external?.key ?? null, picked, phoneEvents)
         phoneKey = key
         if (!key) { phoneNote = 'No laptop has published an event to the team Drive yet.'; return }
         const ev = await phoneHub.event(key)
@@ -405,6 +449,7 @@
   $effect(() => {
     if (!phoneHub) return
     void todaySig.external?.key
+    void picked
     void loadPhone()
   })
   $effect(() => {
@@ -635,7 +680,7 @@
   {#if !readOnly}<Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (t.id === 'powermap' ? openPowerMap() : (mode = t.id)) }))} />{/if}
 </nav>
 {#if readOnly}
-  <p class="phone-line screen-only" role="status" data-phone-fresh>{phoneKey ?? 'No event yet'}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
+  <p class="phone-line screen-only" role="status" data-phone-fresh>{#if !todaySig.external?.key && phoneEvents.length > 1}<label>Event <select value={phoneKey} onchange={(e) => choosePhoneEvent((e.currentTarget as HTMLSelectElement).value)}>{#each phoneEvents as k (k)}<option value={k}>{k}</option>{/each}</select></label>{:else}{phoneKey ?? 'No event yet'}{/if}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
   {#if phoneNote}<p class="phone-line warn" role="status">{phoneNote}</p>{/if}
 {/if}
 </div>

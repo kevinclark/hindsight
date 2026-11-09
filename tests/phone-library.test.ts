@@ -213,3 +213,12 @@ describe('downloadWhole in slices', () => {
     expect(seen.at(-1)).toBe(content.length)
   })
 })
+
+describe('On this phone', () => {
+  it('keeps only logs whose file and DS logs are all kept', async () => {
+    const { onThisPhone } = await import('../src/ui/phone-library.ts')
+    const e = (sha: string, ds: string[] = []) => ({ record: { sha256: sha }, attached: { dslog: ds.map((s) => ({ sha256: s })), dsevents: [], hoot: [] } }) as unknown as import('../src/hub/catalog.ts').Entry
+    const list = [e('a'), e('b', ['bd']), e('c', ['cd'])]
+    expect(onThisPhone(list, new Set(['a', 'b', 'bd', 'c'])).map((x) => x.record.sha256)).toEqual(['a', 'b'])
+  })
+})

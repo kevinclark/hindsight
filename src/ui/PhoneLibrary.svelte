@@ -4,7 +4,7 @@
   import type { BrowserHub, OpenedFile } from '../hub/browser-hub.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { LogRecord } from '../hub/types.ts'
-  import { NO_EVENT, byDay, filterByEvent, isLarge, logLabel } from './phone-library.ts'
+  import { NO_EVENT, byDay, filterByEvent, isLarge, logLabel, onThisPhone } from './phone-library.ts'
   import { KEEP_CHOICES, keepCap, setKeepCap } from '../phone/keep-setting.ts'
 
   /** `onOpening`: before a download starts, so the log held now can be let go first (one log in memory at a time). */
@@ -40,7 +40,8 @@
   void list()
 
   const events = $derived([...new Set((entries ?? []).map((e) => e.record.event).filter(Boolean))].sort())
-  const days = $derived(byDay(filterByEvent(entries ?? [], event)))
+  let onlyHere = $state(false)
+  const days = $derived(byDay(filterByEvent(onlyHere ? onThisPhone(entries ?? [], kept) : (entries ?? []), event)))
 
   const mb = (n: number) => (n >= 10 * 2 ** 20 ? (n / 2 ** 20).toFixed(0) : (n / 2 ** 20).toFixed(1))
   const sizeOf = (e: Entry) => [e.record, ...e.attached.dslog, ...e.attached.dsevents].reduce((n, r) => n + r.size, 0)
@@ -90,6 +91,7 @@
       {#each events as ev (ev)}<option value={ev}>{ev}</option>{/each}
       <option value={NO_EVENT}>No event</option>
     </select></label>
+    <label class="filter"><input type="checkbox" bind:checked={onlyHere} /> Only on this phone</label>
     {#each days as d (d.day)}
       <h3>{d.day}</h3>
       <ul>
@@ -100,7 +102,7 @@
               <span class="meta">{time(e.record)}{#if e.record.robot}{' · '}{e.record.robot.name}{/if}{#if e.attached.dslog.length + e.attached.dsevents.length}{' · '}with DS log{/if}</span>
               {#if isLarge(size)}<span class="meta large">Large: may not open on older phones.</span>{/if}
             </span>
-            <button disabled={!!opening} onclick={() => open(e)}>{[e.record, ...e.attached.dslog, ...e.attached.dsevents].every((r) => kept.has(r.sha256)) ? 'Open · on this phone' : `Open · ${mb(size)} MB`}</button>
+            <button disabled={!!opening} onclick={() => open(e)}>{onThisPhone([e], kept).length ? 'Open · on this phone' : `Open · ${mb(size)} MB`}</button>
           </li>
         {/each}
       </ul>
