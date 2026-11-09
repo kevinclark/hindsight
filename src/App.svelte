@@ -675,7 +675,7 @@
   {/if}
 {:else}
 {#if readOnly && (current || busy || problems.length)}
-  <p class="phone-line">Opened from the Library{#if busy}: reading…{/if} · <button class="link" onclick={clearAll}>Back to this event's matches</button></p>
+  <p class="phone-line">Opened from the Library{#if busy}: reading…{/if} · <button class="link" onclick={() => { clearAll(); mode = 'library' }}>Back to the Library</button></p>
 {/if}
 {#if !readOnly && (!current || dragging)}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>

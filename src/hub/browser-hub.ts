@@ -20,7 +20,7 @@ export interface BrowserHubOptions {
   /** The app version, shown on the phone. */
   version: string
   /** Where log bytes come from (the iPhone app: Drive through the WebView's own fetch, never the base64 bridge). Without it no log opens. */
-  media?: { downloadWhole(path: string, opts?: { onProgress?(got: number, total: number): void; signal?: AbortSignal }): Promise<Uint8Array> }
+  media?: { downloadWhole(path: string, opts?: { onProgress?(got: number, total: number): void; signal?: AbortSignal; log?(line: string): void }): Promise<Uint8Array> }
   now?: () => number
 }
 
@@ -138,14 +138,16 @@ export class BrowserHub {
   }
 
   /** A log and its DS logs, downloaded whole and each checked against the sha-256 the manifest gives. Nothing is kept. */
-  async openLog(entry: Pick<Entry, 'record' | 'attached'>, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal } = {}): Promise<OpenedFile[]> {
+  async openLog(entry: Pick<Entry, 'record' | 'attached'>, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal; log?(line: string): void } = {}): Promise<OpenedFile[]> {
     if (!this.media) throw new Error('This phone cannot open logs.')
     const records = [entry.record, ...entry.attached.dslog, ...entry.attached.dsevents]
     const total = records.reduce((n, r) => n + r.size, 0)
     const out: OpenedFile[] = []
     let before = 0
     for (const r of records) {
-      const bytes = await this.media.downloadWhole(r.path, { signal: opts.signal, onProgress: (got) => opts.onProgress?.(before + got, total) })
+      opts.log?.(`${baseName(r.path)}: downloading ${r.size} bytes`)
+      const bytes = await this.media.downloadWhole(r.path, { signal: opts.signal, onProgress: (got) => opts.onProgress?.(before + got, total), log: opts.log })
+      opts.log?.(`${baseName(r.path)}: checking sha-256`)
       if ((await sha256Hex(bytes)) !== r.sha256) throw new Error(`${baseName(r.path)} on the team Drive is not the log the team's list names (its checksum differs).`)
       out.push({ name: baseName(r.path), bytes })
       before += r.size

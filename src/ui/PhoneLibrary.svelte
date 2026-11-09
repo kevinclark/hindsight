@@ -14,7 +14,10 @@
   let entries = $state.raw<Entry[] | null>(null)
   let problem = $state<string | null>(null)
   let event = $state<string>(ALL)
-  let opening = $state<{ entry: Entry; got: number; total: number; stop: AbortController } | null>(null)
+  // Raw, and told apart by a number: a $state object would wrap `entry` in a proxy, so `opening.entry === entry` never
+  // held, progress never showed, and the line never cleared (seen on the phone, 2026-11-09).
+  let opening = $state.raw<{ id: number; entry: Entry; got: number; total: number; stop: AbortController } | null>(null)
+  let opens = 0
 
   async function list() {
     problem = null
@@ -29,17 +32,23 @@
   const sizeOf = (e: Entry) => [e.record, ...e.attached.dslog, ...e.attached.dsevents].reduce((n, r) => n + r.size, 0)
   const time = (r: LogRecord) => (r.playedAt === null ? '' : new Date(r.playedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
 
+  /** Each step to the app's console (Xcode, `devicectl … launch --console`): a download that hangs shows where. */
+  const say = (line: string) => console.log(`Hindsight Library: ${line}`)
+
   async function open(entry: Entry) {
     const stop = new AbortController()
     onOpening()
-    opening = { entry, got: 0, total: sizeOf(entry), stop }
+    const id = ++opens
+    opening = { id, entry, got: 0, total: sizeOf(entry), stop }
     problem = null
     try {
-      const files = await hub.openLog(entry, { signal: stop.signal, onProgress: (got, total) => { if (opening?.entry === entry) opening = { ...opening, got, total } } })
+      const files = await hub.openLog(entry, { signal: stop.signal, log: say, onProgress: (got, total) => { if (opening?.id === id) opening = { ...opening, got, total } } })
+      say('downloaded; opening in Match review')
       onOpen(files)
     } catch (e) {
+      say(`ended: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`)
       if (!stop.signal.aborted) problem = `Could not open ${entry.record.names[0]} (${e instanceof Error ? e.message : String(e)}).`
-    } finally { if (opening?.entry === entry) opening = null }
+    } finally { if (opening?.id === id) opening = null }
   }
 </script>
 
@@ -50,7 +59,7 @@
     <div class="opening" role="status">
       <p>Downloading {opening.entry.record.names[0]}: {mb(opening.got)} of {mb(opening.total)} MB</p>
       <progress max={opening.total} value={opening.got}></progress>
-      <button onclick={() => opening?.stop.abort()}>Stop</button>
+      <button onclick={() => { say('Stop pressed'); opening?.stop.abort() }}>Stop</button>
     </div>
   {/if}
   {#if entries === null}
