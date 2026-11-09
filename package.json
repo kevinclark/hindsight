@@ -39,6 +39,7 @@
     "@types/ws": "8.18.1",
     "electron": "45.0.0",
     "electron-builder": "26.15.3",
+    "fake-indexeddb": "6.2.6",
     "svelte": "5.57.1",
     "svelte-check": "4.7.6",
     "typescript": "6.0.3",

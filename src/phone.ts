@@ -6,11 +6,17 @@
 import { BrowserHub } from './hub/browser-hub.ts'
 import { DriveReader } from './hub/drive-read.ts'
 import { indexedDbCache, type ReadStore } from './hub/phone-cache.ts'
-import { LogKeep, indexedDbKeepStore } from './hub/log-keep.ts'
-import { LARGE_BYTES } from './ui/phone-library.ts'
+import { KEEP_CAP_BYTES, KEEP_MAX_LOG_BYTES, LogKeep, indexedDbKeepStore } from './hub/log-keep.ts'
+import { clearIndexedDbCache } from './hub/phone-cache.ts'
 
-/** Logs kept on the phone after opening: up to 1 GB, none over the large-log size (chosen 2026-11-09). */
-export const keptLogs = () => new LogKeep(indexedDbKeepStore(), { capBytes: 2 ** 30, maxLogBytes: LARGE_BYTES })
+/** Logs kept on the phone after opening (src/hub/log-keep.ts). */
+export const keptLogs = () => new LogKeep(indexedDbKeepStore(), { capBytes: KEEP_CAP_BYTES, maxLogBytes: KEEP_MAX_LOG_BYTES })
+
+/** Sign out: forget the copies of the team's files and the kept logs on this phone. */
+export async function forgetPhoneData(): Promise<void> {
+  await clearIndexedDbCache()
+  await keptLogs().clear()
+}
 import { VERSION } from './version.ts'
 
 export interface PhoneSetup {

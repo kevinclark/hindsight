@@ -2,7 +2,7 @@
  * The hub as the phone has it: read-only, straight from the team's Drive folder. For the event it reads each laptop's
  * `history/<machine>.jsonl` (triage marks) and `events/<key>--<machine>.jsonl` (match summaries) through a cache that
  * fetches only what grew. Its Library reads the laptops' `manifests/` (about 2 MB each, the same cache) only when asked,
- * and opens a log by downloading it whole through `media`, kept in memory only. It has no method that writes.
+ * and opens a log by downloading it whole through `media` (or reading it from `keep`, the logs kept on this phone). It has no method that writes.
  *
  * No `node:` imports.
  */
@@ -142,7 +142,7 @@ export class BrowserHub {
     return Catalog.from(texts).entries().sort((a, b) => (b.record.playedAt ?? -Infinity) - (a.record.playedAt ?? -Infinity))
   }
 
-  /** A log and its DS logs, downloaded whole and each checked against the sha-256 the manifest gives. Nothing is kept. */
+  /** A log and its DS logs, each read from the keep or downloaded whole, and checked against the sha-256 the manifest gives; a download within the keep's limits is kept for the next open. */
   async openLog(entry: Pick<Entry, 'record' | 'attached'>, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal; log?(line: string): void } = {}): Promise<OpenedFile[]> {
     if (!this.media) throw new Error('This phone cannot open logs.')
     const records = [entry.record, ...entry.attached.dslog, ...entry.attached.dsevents]
@@ -158,7 +158,8 @@ export class BrowserHub {
         bytes = await this.media.downloadWhole(r.path, { signal: opts.signal, onProgress: (got) => opts.onProgress?.(before + got, total), log: opts.log })
         opts.log?.(`${baseName(r.path)}: checking sha-256`)
         if ((await sha256Hex(bytes)) !== r.sha256) throw new Error(`${baseName(r.path)} on the team Drive is not the log the team's list names (its checksum differs).`)
-        await this.keep?.put(r.sha256, bytes)
+        // Not awaited: Match review need not wait for the storage write (put swallows its own failures).
+        void this.keep?.put(r.sha256, bytes)
       }
       opts.onProgress?.(before + r.size, total)
       out.push({ name: baseName(r.path), bytes })

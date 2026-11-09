@@ -58,7 +58,7 @@
 </script>
 
 <section class="phone-library">
-  <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review. The last ones you opened (up to 1 GB, none over 275 MB) stay on this phone until Sign out.</p>
+  <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review. The last ones you opened (up to 1 GB, none over 137 MB) stay on this phone until Sign out.</p>
   {#if problem}<p class="problem" role="alert">{problem} <button class="link" onclick={list}>Try again</button></p>{/if}
   {#if opening}
     <div class="opening" role="status">
@@ -87,7 +87,7 @@
               <span class="meta">{time(e.record)}{#if e.record.robot}{' · '}{e.record.robot.name}{/if}{#if e.attached.dslog.length + e.attached.dsevents.length}{' · '}with DS log{/if}</span>
               {#if isLarge(size)}<span class="meta large">Large: may not open on older phones.</span>{/if}
             </span>
-            <button disabled={!!opening} onclick={() => open(e)}>{kept.has(e.record.sha256) ? 'Open · on this phone' : `Open · ${mb(size)} MB`}</button>
+            <button disabled={!!opening} onclick={() => open(e)}>{[e.record, ...e.attached.dslog, ...e.attached.dsevents].every((r) => kept.has(r.sha256)) ? 'Open · on this phone' : `Open · ${mb(size)} MB`}</button>
           </li>
         {/each}
       </ul>

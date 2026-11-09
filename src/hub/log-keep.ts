@@ -9,6 +9,14 @@
 
 export interface KeptMeta { sha256: string; size: number; usedAt: number }
 
+/** The phone keeps up to this much in all. */
+export const KEEP_CAP_BYTES = 2 ** 30
+/**
+ * The biggest log the phone keeps: half the size measured to open on an iPhone 17 Pro (275 MB), because storing a log
+ * makes a second full copy of it in memory for a moment (a Blob), on top of the one just opened.
+ */
+export const KEEP_MAX_LOG_BYTES = Math.floor((275 * 2 ** 20) / 2)
+
 /** Where kept logs live: IndexedDB on the phone, memory in tests. */
 export interface KeepStore {
   meta(): Promise<KeptMeta[]>
@@ -41,16 +49,22 @@ export class LogKeep {
     } catch { return null }
   }
 
-  /** Keep a log just opened, unless it is too big; then drop the least recently opened until the rest fit. */
+  /**
+   * Keep a log just opened, unless it is too big: first drop the least recently opened until it fits under the cap, then
+   * write it; a refused write (a full quota) drops the oldest once more and tries again.
+   */
   async put(sha256: string, bytes: Uint8Array): Promise<void> {
     if (bytes.length > this.maxLogBytes || bytes.length > this.capBytes) return
+    const meta = { sha256, size: bytes.length, usedAt: this.now() }
     try {
-      await this.store.write({ sha256, size: bytes.length, usedAt: this.now() }, bytes)
-      const all = (await this.store.meta()).sort((a, b) => b.usedAt - a.usedAt)
-      let total = 0
-      for (const m of all) {
-        total += m.size
-        if (total > this.capBytes && m.sha256 !== sha256) { await this.store.remove(m.sha256); total -= m.size }
+      const others = (await this.store.meta()).filter((m) => m.sha256 !== sha256).sort((a, b) => a.usedAt - b.usedAt)
+      let total = others.reduce((n, m) => n + m.size, 0)
+      while (others.length && total + bytes.length > this.capBytes) { const old = others.shift()!; await this.store.remove(old.sha256); total -= old.size }
+      try { await this.store.write(meta, bytes) } catch {
+        const old = others.shift()
+        if (!old) return
+        await this.store.remove(old.sha256)
+        await this.store.write(meta, bytes)
       }
     } catch { /* not kept: the next open downloads it */ }
   }
@@ -82,13 +96,14 @@ const BYTES = 'bytes'
 /** The phone's keep: two IndexedDB stores, the metadata (small, listed) and the bytes (Blobs, read one at a time). */
 export function indexedDbKeepStore(dbName = 'hindsight-logs'): KeepStore {
   let opened: Promise<IDBDatabase> | null = null
+  // A failed open is not remembered: the next call tries again (a blocked open can clear).
   const open = () => (opened ??= new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(dbName, 1)
     req.onupgradeneeded = () => { req.result.createObjectStore(META, { keyPath: 'sha256' }); req.result.createObjectStore(BYTES) }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
     req.onblocked = () => reject(new Error('the kept-logs database is blocked'))
-  }))
+  }).catch((e) => { opened = null; throw e }))
   const tx = async <T>(stores: string[], mode: IDBTransactionMode, act: (t: IDBTransaction) => IDBRequest<T> | void): Promise<T | undefined> => {
     const db = await open()
     return new Promise<T | undefined>((resolve, reject) => {

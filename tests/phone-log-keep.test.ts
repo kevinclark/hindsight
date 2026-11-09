@@ -71,3 +71,49 @@ describe('openLog with a keep', () => {
     expect(downloads).toEqual([e.record.path])
   })
 })
+
+describe('the phone keep on IndexedDB', () => {
+  it('round-trips a log through Blobs, lists it, touches it, and Sign out empties both phone stores', async () => {
+    const { IDBFactory } = await import('fake-indexeddb')
+    ;(globalThis as { indexedDB?: unknown }).indexedDB = new IDBFactory()
+    const { indexedDbKeepStore } = await import('../src/hub/log-keep.ts')
+    const { forgetPhoneData, keptLogs } = await import('../src/phone.ts')
+    const { indexedDbCache } = await import('../src/hub/phone-cache.ts')
+    const store = indexedDbKeepStore()
+    const a = bytes(3000, 9)
+    await store.write({ sha256: sha(a), size: a.length, usedAt: 1 }, a)
+    expect(await store.read(sha(a))).toEqual(a)
+    await store.touch(sha(a), 5)
+    expect(await store.meta()).toEqual([{ sha256: sha(a), size: a.length, usedAt: 5 }])
+    const text = indexedDbCache()
+    await text.put({ path: 'history/x.jsonl', size: 1, sha256: 'x', text: 'x' })
+    await forgetPhoneData()
+    expect(await keptLogs().kept()).toEqual([])
+    expect(await indexedDbCache().get('history/x.jsonl')).toBeNull()
+  })
+})
+
+describe('LogKeep when storage refuses', () => {
+  it('drops the oldest and tries once more when a write is refused (a full quota)', async () => {
+    const inner = memoryKeepStore()
+    let refuse = true
+    const store = { ...inner, write: async (m: Parameters<typeof inner.write>[0], b: Uint8Array) => { if (refuse && (await inner.meta()).length >= 2) { refuse = false; throw new DOMException('full', 'QuotaExceededError') } return inner.write(m, b) } }
+    let now = 0
+    const keep = new LogKeep(store, { capBytes: 1000, maxLogBytes: 1000, now: () => now++ })
+    const a = bytes(100, 1), b = bytes(100, 2), c = bytes(100, 3)
+    await keep.put(sha(a), a)
+    await keep.put(sha(b), b)
+    await keep.put(sha(c), c)
+    expect((await keep.kept()).sort()).toEqual([sha(b), sha(c)].sort())
+  })
+
+  it('makes room before writing, so the keep never goes over its cap even for a moment', async () => {
+    const inner = memoryKeepStore()
+    let most = 0
+    const store = { ...inner, write: async (m: Parameters<typeof inner.write>[0], b: Uint8Array) => { await inner.write(m, b); most = Math.max(most, (await inner.meta()).reduce((n, x) => n + x.size, 0)) } }
+    let now = 0
+    const keep = new LogKeep(store, { capBytes: 250, maxLogBytes: 250, now: () => now++ })
+    for (let i = 0; i < 5; i++) await keep.put(sha(bytes(100, 10 + i)), bytes(100, 10 + i))
+    expect(most).toBeLessThanOrEqual(250)
+  })
+})
