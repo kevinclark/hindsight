@@ -40,6 +40,9 @@
 
 <style>
   .setup { max-width: 32rem; }
+  /* The desktop picker's list is two columns in a 12rem box; on a phone that clips, so: one column, all of it, scrolled with the page. */
+  .setup :global(.picker ul) { columns: 1; max-height: none; overflow: visible; font-size: 1rem; }
+  .setup :global(.picker li .link) { min-height: 44px; text-align: left; }
   h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
   .setup p { line-height: 1.45; }
   .primary { font: inherit; color: var(--fg); padding: 0.5rem 1rem; border: 1px solid var(--focus); border-radius: 8px; background: none; cursor: pointer; }

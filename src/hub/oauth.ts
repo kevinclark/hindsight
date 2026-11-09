@@ -18,7 +18,8 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 /** A Desktop client has a secret; an iOS client has none, and none is sent. */
 export interface Client { id: string; secret?: string }
 
-export interface Tokens { access: string; refresh: string | null; expiresAt: number }
+/** `scope`: what Google granted (space-separated), when it says. */
+export interface Tokens { access: string; refresh: string | null; expiresAt: number; scope?: string }
 
 const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
@@ -41,11 +42,11 @@ export function authUrl(client: Client, redirectUri: string, challenge: string, 
 
 async function tokenRequest(body: Record<string, string>, client: Client, now: number, doFetch: typeof fetch): Promise<Tokens> {
   const res = await doFetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: client.id, ...(client.secret ? { client_secret: client.secret } : {}), ...body }) })
-  const json = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string }
+  const json = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string; error?: string; error_description?: string }
   // A refresh token Google no longer honours (revoked, expired in Testing, password change): sign in again, don't retry.
   if (json.error === 'invalid_grant') throw new SignInAgain('Google no longer accepts this sign-in. Sign in again.')
   if (!res.ok || !json.access_token) throw new Error(`Google sign-in failed: ${json.error_description ?? json.error ?? res.status}`)
-  return { access: json.access_token, refresh: json.refresh_token ?? null, expiresAt: now + (json.expires_in ?? 3600) * 1000 }
+  return { access: json.access_token, refresh: json.refresh_token ?? null, expiresAt: now + (json.expires_in ?? 3600) * 1000, ...(json.scope ? { scope: json.scope } : {}) }
 }
 
 export function exchangeCode(client: Client, code: string, verifier: string, redirectUri: string, now = Date.now(), doFetch: typeof fetch = fetch): Promise<Tokens> {
@@ -58,7 +59,7 @@ export async function refreshAccess(client: Client, refresh: string, now = Date.
 }
 
 /** An access token that renews itself: what DriveAdapter's `token` needs. `store` keeps the refresh token between runs. */
-export function tokenSource(client: Client, store: { load(): Promise<string | null>; save(refresh: string): Promise<void>; clear(): Promise<void> }, doFetch: typeof fetch = fetch, now: () => number = Date.now) {
+export function tokenSource(client: Client, store: { load(): Promise<string | null>; save(refresh: string): Promise<void>; clear(): Promise<void> }, doFetch: typeof fetch = fetch, now: () => number = Date.now, onGrant?: (scope: string) => void) {
   let current: Tokens | null = null
   return async (forceRefresh = false): Promise<string> => {
     if (current && !forceRefresh && current.expiresAt - now() > 60_000) return current.access
@@ -66,6 +67,7 @@ export function tokenSource(client: Client, store: { load(): Promise<string | nu
     if (!refresh) throw new SignInAgain('Sign in to Google first.')
     try {
       current = await refreshAccess(client, refresh, now(), doFetch)
+      if (current.scope) onGrant?.(current.scope)
     } catch (e) {
       if (e instanceof SignInAgain) { current = null; await store.clear() }
       throw e

@@ -267,6 +267,14 @@ describe('Google sign-in', () => {
     expect(await token().catch((e) => e)).toBeInstanceOf(SignInAgain)
   })
 
+  it('tells the caller which scope Google granted on a renewal (the phone logs it)', async () => {
+    const granted: string[] = []
+    const store = { load: async () => 'r1', save: async () => {}, clear: async () => {} }
+    const token = tokenSource(client, store, tokenFetch([{ access_token: 'a1', expires_in: 3600, scope: READ_SCOPE }]), () => 0, (s) => granted.push(s))
+    expect(await token()).toBe('a1')
+    expect(granted).toEqual([READ_SCOPE])
+  })
+
   it('refreshAccess keeps the old refresh token when Google sends no new one', async () => {
     expect((await refreshAccess(client, 'r1', 0, tokenFetch([{ access_token: 'a', expires_in: 10 }]))).refresh).toBe('r1')
   })

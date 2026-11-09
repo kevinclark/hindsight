@@ -56,7 +56,8 @@ export async function signIn(native: HindsightNative, doFetch: typeof fetch): Pr
 
 /** An access token for the Drive reader, renewed from the Keychain's refresh token; throws SignInAgain when there is none or Google refuses it. */
 export function phoneToken(native: Keychain, doFetch: typeof fetch): (refresh?: boolean) => Promise<string> {
-  return tokenSource(CLIENT, keychainStore(native), doFetch)
+  // What Google granted, in the app's console (Xcode, `devicectl … launch --console`): drive.readonly is not declared on the consent screen.
+  return tokenSource(CLIENT, keychainStore(native), doFetch, Date.now, (scope) => console.log(`Hindsight: Google granted ${scope}`))
 }
 
 export { SignInAgain }
