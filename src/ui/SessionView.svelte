@@ -36,7 +36,7 @@
   import { cardToPngDataUrl, saveForSlack } from '../report/card-png.ts'
   import { allMarked, crashedNote, gridCells, marksText, misfitNotes, sessionBase, sessionCard, sessionModel } from '../report/session-model.ts'
   import { sinks, stoppedFiring, stoppedText } from '../session/stopped.ts'
-  import { hub } from '../hub/bridge.ts'
+  import { besideOf, hub, readBeside } from '../hub/bridge.ts'
   import { REFUSED_WORDS, blankEventClusters, clockOffsetText, identifyEvents, type ResolvedEvent } from '../tba/identify.ts'
   import { nexusGetter, nexusHasKey, tbaGetter, tbaHasKey, tbaMissing, tbaTeam } from './tba-setting.svelte.ts'
   import BoardView from './BoardView.svelte'
@@ -56,7 +56,7 @@
   // `readOnly` (the phone): summaries come from the laptops' event files (`showSummaries`), never from logs; no chooser, no
   // re-read, no robot choice, and the board shows every mark but changes none. `onOpenSummary`: a match opens from its summary.
   // `summariesOut`: the logs' own summaries read by this Hindsight (not an older one's), for what a laptop publishes.
-  let { marks, history = [], onBoard, onOpen, findLogs, linksFor, onDraft, readOnly = false, onOpenSummary, hasSession = $bindable(false), sessionsOut = $bindable([]), summariesOut = $bindable([]) }: { marks: Triage; history?: HistoryEvent[]; onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; linksFor?: (names: string[]) => Promise<LibraryLink[]>; onDraft?: (link: LibraryLink) => void; readOnly?: boolean; onOpenSummary?: (m: MatchSummary) => void; hasSession?: boolean; sessionsOut?: Session[]; summariesOut?: MatchSummary[] } = $props()
+  let { marks, history = [], onBoard, onOpen, findLogs, freshen, linksFor, onDraft, readOnly = false, onOpenSummary, hasSession = $bindable(false), sessionsOut = $bindable([]), summariesOut = $bindable([]) }: { marks: Triage; history?: HistoryEvent[]; onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void; onOpen: (files: File[]) => void; findLogs?: (names: string[]) => Promise<File[]>; freshen?: (files: File[]) => Promise<File[]>; linksFor?: (names: string[]) => Promise<LibraryLink[]>; onDraft?: (link: LibraryLink) => void; readOnly?: boolean; onOpenSummary?: (m: MatchSummary) => void; hasSession?: boolean; sessionsOut?: Session[]; summariesOut?: MatchSummary[] } = $props()
   const issues = $derived(marks.issues)
 
   let summaries = $state<MatchSummary[]>([])
@@ -315,9 +315,10 @@
     const holds = (x: Session) => logsOf(x).filter((n) => names.includes(n)).length
     return sessions.reduce<Session | undefined>((best, x) => (holds(x) > (best ? holds(best) : 0) ? x : best), undefined)
   }
-  /** These logs' files: those chosen on this visit, then (desktop app) the library's copies. */
+  /** These logs' files: those chosen on this visit (a library log as the library holds it now, with any DS files attached since), then (desktop app) the library's copies. */
   async function filesFor(names: string[]): Promise<File[]> {
-    const have = names.map((n) => files.get(n)).filter((f): f is File => !!f)
+    const kept = names.map((n) => files.get(n)).filter((f): f is File => !!f)
+    const have = freshen ? await freshen(kept) : kept
     const missing = names.filter((n) => !files.has(n))
     return missing.length && findLogs ? [...have, ...(await findLogs(missing))] : have
   }
@@ -339,14 +340,19 @@
       await new Promise((r) => setTimeout(r, 0)) // let the page paint between logs
       if (gen !== loadGen) return
       try {
-        const key = fileKey(file)
+        // A library log's Driver Station files are read with it, and are part of what its summary was read from.
+        const beside = besideOf(file)
+        const key = fileKey(file, beside)
         const saved = cache.get(key)
         const reuse = !fresh && reusable(saved, file.name)
-        const bytes = reuse ? null : new Uint8Array(await file.arrayBuffer())
+        const unread: string[] = []
+        const [bytes, besideInputs] = reuse ? [null, []] : await Promise.all([file.arrayBuffer().then((b) => new Uint8Array(b)), readBeside(file, unread)])
+        if (unread.length) problems = [...problems, ...unread]
         if (gen !== loadGen) return
-        const summary = reuse ? saved : await summarizeLogWithCode({ name: file.name, bytes: bytes! }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored], history)
+        const summary = reuse ? saved : await summarizeLogWithCode({ name: file.name, bytes: bytes! }, codeFolder.current, codeFolder.chosen?.name ?? null, chosenRobot(file.name), [...PROFILES, ...stored], history, besideInputs)
         if (gen !== loadGen) return
-        if (summary && summary !== saved) {
+        // A summary read without a DS file it should have had is not saved under the key that names that file.
+        if (summary && summary !== saved && !unread.length) {
           cache.set(key, summary)
           saving.push(saveCached(key, $state.snapshot(summary) as MatchSummary).then((ok) => { if (!ok) saveFailed = true }))
         }

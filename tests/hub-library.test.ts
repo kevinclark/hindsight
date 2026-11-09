@@ -163,6 +163,17 @@ describe('tags and facets', () => {
     expect(paths([], [robot.path])).toEqual(['r1']) // not in the team store: nothing to fetch for it
   })
 
+  it('leaves out an attached file of a kind this version does not know (a newer teammate\'s manifest), not a crash', () => {
+    const wall = { start: at(2026, 10, 17, 11), end: at(2026, 10, 17, 13) }
+    const robot = log({ sha256: 'r1', wall, matchWindow: wall })
+    const ds = log({ sha256: 'd2', kind: 'dslog', playedAt: at(2026, 10, 17, 12), wall })
+    const newer = ['kernlog', 'toString', '__proto__', 'constructor'].map((kind, i) => ({ ...log({ sha256: `n${i}`, playedAt: at(2026, 10, 17, 12), wall }), kind }) as unknown as LogRecord)
+    const c = Catalog.from([[robot, ds, ...newer].map(serializeRecord).join('')])
+    expect(() => c.entries()).not.toThrow()
+    const [entry] = c.entries()
+    expect(entry.attached).toEqual({ dslog: [ds], dsevents: [], hoot: [] })
+  })
+
   it('ORs picks within a facet and ANDs across facets', () => {
     const entries = catalog().entries()
     const names = (sel: Parameters<typeof filterEntries>[1]) => filterEntries(entries, sel, robotLabels(entries)).map((e) => e.record.sha256).sort()

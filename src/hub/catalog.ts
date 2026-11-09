@@ -19,6 +19,8 @@ export interface Entry {
   attached: { dslog: LogRecord[]; dsevents: LogRecord[]; hoot: LogRecord[] }
   /** Whether this machine holds the file. Set by the app, which can look. */
   local: boolean
+  /** The paths of the log and its attached files that this machine holds. Set by the app; none known when absent. */
+  held?: string[]
   /** Whether the team store holds it. Set by the app after a listing. */
   shared: boolean
   /** The files the team store holds and this machine lacks: the log and the DS and hoot files attached to it. Set by the app. */
@@ -145,7 +147,9 @@ export class Catalog {
       if (r.kind === 'wpilog' || !r.wall && r.playedAt === null) continue
       const span = r.wall ?? { start: r.playedAt!, end: r.playedAt! }
       const best = robots.map((robot) => ({ robot, seconds: overlapMs(span, robot, r.kind === 'hoot') })).filter((x) => x.seconds > 0).sort((a, b) => b.seconds - a.seconds)[0]
-      if (best) out.get(best.robot.sha256)!.attached[r.kind].push(r)
+      // A kind this version doesn't attach (from a newer teammate's manifest) is left out, not a crash.
+      const list = best ? (out.get(best.robot.sha256)!.attached as Record<string, LogRecord[]>)[r.kind] : undefined
+      if (Array.isArray(list)) list.push(r)
     }
     return [...out.values()].sort((a, b) => (a.record.playedAt ?? Infinity) - (b.record.playedAt ?? Infinity) || a.record.path.localeCompare(b.record.path))
   }

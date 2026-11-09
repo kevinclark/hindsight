@@ -18,9 +18,9 @@ const STORE = 'summaries'
 
 export type CachedSummary = SavedSummary
 
-/** The key for one log file: its name, size and modified time. */
-export function fileKey(file: { name: string; size: number; lastModified: number }): string {
-  return `${file.name}|${file.size}|${file.lastModified}`
+/** The key for one log file: its name, size and modified time, and those of the Driver Station files read beside it (`beside`), if any. */
+export function fileKey(file: { name: string; size: number; lastModified: number }, beside: { name: string; size: number; lastModified: number }[] = []): string {
+  return [file, ...beside].map((f) => `${f.name}|${f.size}|${f.lastModified}`).join(' + ')
 }
 
 function open(): Promise<IDBDatabase | null> {
