@@ -68,6 +68,15 @@ describe('D6: a lost link to Drive ends the job in words, keeping what is done',
     expect(team.writes.filter((w) => w.includes(a.ownManifestPath))).toEqual([]) // no publish after the link was lost
   })
 
+  it('D6: a link lost before any upload ends the sync in words, as an error (the last record of what is shared stays)', async () => {
+    const a = await libraryWith(1, 'ma')
+    const team = new MemoryAdapter()
+    const dead: StorageAdapter = Object.assign(Object.create(team), { list: async () => { throw lost() } })
+    const e = await syncWithTeam(a, dead).catch((x) => x)
+    expect(e).toBeInstanceOf(LinkLost)
+    expect(e.message).toBe('no data from Google Drive for 15 s, at 1.0 of 3.0 MB; tried 3 times. No log went up; sync again to continue.')
+  })
+
   it('D6: an add from a Drive folder says the folder, and to add it again', async () => {
     const lib = await LocalLibrary.open(join(work, 'mc'), 'mc')
     const files: SourceFile[] = ['x.wpilog', 'y.wpilog'].map((name) => ({ name, where: name, size: 10, modifiedTime: null, from: 'drive', open: async () => { throw lost() } }))

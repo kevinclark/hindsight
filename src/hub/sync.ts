@@ -100,6 +100,15 @@ export async function planSync(lib: LocalLibrary, team: StorageAdapter): Promise
 }
 
 export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, options: SyncOptions = {}): Promise<SyncReport> {
+  // A link lost during the uploads ends the sync with a report (below); one lost before them (reading teammates' lists, the
+  // history, the listing) ends it as an error, which leaves the last sync's record of what is shared as it was. Either way, words.
+  try { return await syncSteps(lib, team, options) } catch (e) {
+    if (e instanceof LinkLost) throw new LinkLost(`${e.reason}. No log went up; sync again to continue.`, e)
+    throw e
+  }
+}
+
+async function syncSteps(lib: LocalLibrary, team: StorageAdapter, options: SyncOptions): Promise<SyncReport> {
   const report: SyncReport = { manifests: [], history: [], historyPublished: 0, uploaded: [], failed: [], alreadyThere: 0, published: 0, unrecorded: [], problems: [], remotePaths: [], stopped: false, notTried: 0 }
   const own = lib.ownManifestPath
   const step = (words: string) => options.onProgress?.(0, 0, '', { step: words })

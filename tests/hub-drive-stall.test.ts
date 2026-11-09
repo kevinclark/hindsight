@@ -192,3 +192,88 @@ describe('D5: an upload that goes quiet resumes from the byte Drive kept', () =>
     expect(e.message).toBe('no answer from Google Drive for 0.3 s')
   })
 })
+
+describe('D7: waits between tries are short, bounded and answer Stop', () => {
+  it('D7: a link that stalls again and again but moves bytes waits 0.5 s each time, never longer', async () => {
+    const s = await serve({ onRead: (r) => (r.n < 6 ? { do: 'hold', after: MiB / 4 } : { do: 'serve' }) })
+    const slept: number[] = []
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: s.fetch, sleep: async (ms) => { slept.push(ms) }, stallMs: STALL })
+    expect(sha(await store.read('logs/a.wpilog', 0, FILE.length))).toBe(sha(FILE))
+    expect(slept).toEqual([500, 500, 500, 500, 500, 500])
+  })
+  it('D7: dropped connections back off 0.5, 1, 2, 4 s, then stop in words', async () => {
+    const s = await serve({ onRead: () => ({ do: 'drop', after: 0 }) })
+    const slept: number[] = []
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: s.fetch, sleep: async (ms) => { slept.push(ms) }, stallMs: STALL })
+    const e = await store.read('logs/a.wpilog', 0, FILE.length).catch((x) => x)
+    expect(e).toBeInstanceOf(LinkLost)
+    expect(e.reason).toMatch(/^lost the connection to Google Drive \(.+\), at 0\.0 of 3\.0 MB; tried 5 times$/)
+    expect(slept).toEqual([500, 1000, 2000, 4000])
+  })
+  it('D7: Stop during the wait before a retry answers at once', async () => {
+    const s = await serve({ onRead: () => ({ do: 'drop', after: 0 }) })
+    let stop = false
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: s.fetch, sleep: () => new Promise(() => {}), stallMs: STALL })
+    const p = store.read('logs/a.wpilog', 0, FILE.length, { cancelled: () => stop })
+    await sleep(300)
+    const t = Date.now()
+    stop = true
+    await expect(p).rejects.toBeInstanceOf(Stopped)
+    expect(Date.now() - t).toBeLessThan(500)
+  })
+  it('D7: a 5xx after several resumes is still waited out and tried again', async () => {
+    const s = await serve({ onRead: (r) => (r.n < 4 ? { do: 'hold', after: MiB / 4 } : r.n === 4 ? { do: 'status', code: 503 } : { do: 'serve' }) })
+    expect(sha(await adapter(s).read('logs/a.wpilog', 0, FILE.length))).toBe(sha(FILE))
+  })
+})
+
+describe('D8: the sign-in a request waits on is watched too', () => {
+  it('D8: a token refresh that never answers is a stall, said in words, then LinkLost', async () => {
+    const s = await serve()
+    const store = new DriveAdapter({ rootId: 'root', token: () => new Promise(() => {}), fetch: s.fetch, sleep: async () => {}, stallMs: STALL })
+    const e = await store.read('logs/a.wpilog', 0, 10).catch((x) => x)
+    expect(e).toBeInstanceOf(LinkLost)
+    expect(e.reason).toBe('no answer from Google sign-in for 0.3 s; tried 3 times')
+    expect(s.log).toEqual([]) // nothing was sent without a token
+  })
+})
+
+describe('D9: a ranged answer must be the bytes asked for', () => {
+  it('D9: an answer that ends cleanly but short is asked again for the rest', async () => {
+    const s = await serve({ onRead: (r) => (r.n === 0 ? { do: 'short', after: MiB } : { do: 'serve' }) })
+    expect(sha(await adapter(s).read('logs/a.wpilog', 0, FILE.length))).toBe(sha(FILE))
+    expect(s.log.filter((l) => l.startsWith('GET'))[1]).toBe(`GET bytes=${MiB}-${FILE.length - 1}`)
+  })
+  it('D9: bytes labelled with another range are refused, not spliced in', async () => {
+    const s = await serve({ onRead: (r) => (r.n === 0 ? { do: 'hold', after: MiB } : { do: 'wrongRange' }) })
+    await expect(adapter(s).read('logs/a.wpilog', 0, FILE.length)).rejects.toThrow(/answered 206 bytes 0-/)
+  })
+})
+
+describe('D10: an upload follows what Drive says it has', () => {
+  it('D10: a chunk Drive answers by keeping only part of goes on from the byte Drive wants', async () => {
+    const s = await serve({ onPut: (r) => (r.n === 0 ? { do: 'partial', after: MiB } : { do: 'serve' }) })
+    await adapter(s).writeNew('logs/up.wpilog', bytesSource(FILE), { sha256: sha(FILE) })
+    expect(sha(s.uploaded!)).toBe(sha(FILE))
+    expect(s.log.filter((l) => l.startsWith('PUT'))).toEqual([`PUT bytes 0-${FILE.length - 1}/${FILE.length}`, `PUT bytes ${MiB}-${FILE.length - 1}/${FILE.length}`])
+  })
+  it('D10: when asking Drive what it kept fails too, it asks again, never re-sending from a stale byte', async () => {
+    const s = await serve({ onPut: (r) => (r.n === 0 ? { do: 'hold', after: MiB } : { do: 'serve' }), onStatus: (r) => (r.n === 0 ? { do: 'drop', after: 0 } : { do: 'serve' }) })
+    await adapter(s).writeNew('logs/up.wpilog', bytesSource(FILE), { sha256: sha(FILE) })
+    expect(sha(s.uploaded!)).toBe(sha(FILE))
+    expect(s.log.filter((l) => l.startsWith('PUT'))).toEqual([`PUT bytes 0-${FILE.length - 1}/${FILE.length}`, `PUT bytes */${FILE.length}`, `PUT bytes */${FILE.length}`, `PUT bytes ${MiB}-${FILE.length - 1}/${FILE.length}`])
+  })
+  it("D10: a slow but steady uplink finishes exact: a quiet tail it is taken for resumes from Drive's byte and never ends the upload", async () => {
+    // Read at 1 MiB/s: a 256 KiB piece is taken every ~0.25 s, inside the 0.8 s stall time; after the last piece ~1.5 MB can
+    // sit in loopback's socket buffers with nothing to see. The grace (as long again as the hand-over took) covers most of
+    // that; a short body handed over at once gets none, so the tail may be taken for a stall: it must cost a resume, no more.
+    const s = await serve({ onPut: () => ({ do: 'slow', rate: MiB }) })
+    const lines: string[] = []
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: s.fetch, sleep: async () => {}, stallMs: 800 })
+    await store.writeNew('logs/up.wpilog', bytesSource(FILE), { sha256: sha(FILE), log: (l) => lines.push(l) })
+    expect(sha(s.uploaded!)).toBe(sha(FILE))
+    // Every stall was followed by Drive having more: the count never passed try 1.
+    expect(lines.filter((l) => l.startsWith('upload stall')).every((l) => l.startsWith('upload stall (try 1 of 3)'))).toBe(true)
+    expect(lines.filter((l) => l.startsWith('upload stall')).length).toBe(lines.filter((l) => l.startsWith('upload resumes')).length)
+  })
+})

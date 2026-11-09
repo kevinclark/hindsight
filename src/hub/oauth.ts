@@ -30,8 +30,12 @@ export function authUrl(client: Client, redirectUri: string, challenge: string, 
   return `${AUTH_URL}?${q}`
 }
 
+/** A token request that gets no answer in this long fails (the Drive client's stall time is 15 s; this leaves it the words). */
+const TOKEN_MS = 30_000
+
 async function tokenRequest(body: Record<string, string>, client: Client, now: number, doFetch: typeof fetch): Promise<Tokens> {
-  const res = await doFetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: client.id, client_secret: client.secret, ...body }) })
+  // Bounded: a token asked for over a dead link must not hold the request that needs it (the Drive client also gives up waiting at its stall time).
+  const res = await doFetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: client.id, client_secret: client.secret, ...body }), signal: AbortSignal.timeout(TOKEN_MS) })
   const json = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string }
   // A refresh token Google no longer honours (revoked, expired in Testing, password change): sign in again, don't retry.
   if (json.error === 'invalid_grant') throw new SignInAgain('Google no longer accepts this sign-in. Sign in again.')

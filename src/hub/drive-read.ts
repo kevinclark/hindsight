@@ -8,7 +8,7 @@
  * (never from the start); after TRIES stalls (or RETRIES dropped connections) with no byte moving, LinkLost says why.
  */
 import { LinkLost, SignInAgain, Stopped, checkPath, stopIfAsked, type FileInfo, type TransferWatch } from './adapter.ts'
-import { STALL_MS, Stalled, TRIES, atWords, secsWords, watchdog, type Watchdog } from './transfer-watch.ts'
+import { STALL_MS, Stalled, TRIES, atWords, backoff, secsWords, tripwire, within, type Watchdog } from './transfer-watch.ts'
 
 export const API = 'https://www.googleapis.com/drive/v3'
 export const FOLDER = 'application/vnd.google-apps.folder'
@@ -52,27 +52,33 @@ export class Tries {
   count(stalled: boolean): { n: number; of: number } { return stalled ? { n: ++this.stalls, of: TRIES } : { n: ++this.others, of: RETRIES } }
 }
 
-/** One fetch with its answer read whole, under a watchdog: nothing moving for the stall time throws Stalled, Stop throws Stopped. */
+/**
+ * One fetch with its answer read whole, under a watchdog: nothing moving for the stall time throws Stalled, Stop throws
+ * Stopped. The fetch is aborted and every wait is also raced against the watchdog, so a fetch that ignored the abort
+ * could not hold it either.
+ */
 async function send(doFetch: typeof fetch, url: string, init: RequestInit, more: RequestWatch, stallMs: number, got: { status: number; headers: Headers; parts: Uint8Array[]; n: number }): Promise<void> {
   const ctl = new AbortController()
-  let why: Error | null = null
-  const dog = watchdog({ stallMs, cancelled: more.cancelled, onStop: () => { why = new Stopped(); ctl.abort(why) }, onStall: () => { why = new Stalled('stalled'); ctl.abort(why) } })
+  const t = tripwire({ stallMs, cancelled: more.cancelled, abort: (why) => ctl.abort(why) })
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   try {
-    const upload = more.upload?.length ? { body: pieces(more.upload, dog, more.onBytes), duplex: 'half' } : {}
-    const res = await doFetch(url, { ...init, ...upload, signal: ctl.signal } as RequestInit)
+    const upload = more.upload?.length ? { body: pieces(more.upload, t, more.onBytes), duplex: 'half' } : {}
+    const res = await Promise.race([doFetch(url, { ...init, ...upload, signal: ctl.signal } as RequestInit), t.fired])
     got.status = res.status
     got.headers = res.headers
-    dog.alive()
-    const reader = res.body?.getReader()
-    for (let r = await reader?.read(); r && !r.done; r = await reader!.read()) {
-      dog.alive()
+    t.alive()
+    reader = res.body?.getReader()
+    for (let r = await (reader && Promise.race([reader.read(), t.fired])); r && !r.done; r = await Promise.race([reader!.read(), t.fired])) {
+      t.alive()
       got.parts.push(r.value)
       got.n += r.value.length
-      if (res.ok && !more.upload) more.onBytes?.(got.n)
+      if (!more.upload) more.onBytes?.(got.n)
     }
-  } catch (e) {
-    throw why ?? e // our own abort, whatever fetch made of it
-  } finally { dog.done() }
+    reader = undefined
+  } finally {
+    t.done()
+    reader?.cancel().catch(() => {})
+  }
 }
 
 /**
@@ -242,53 +248,80 @@ export class DriveReader {
     // Creating a folder or a copy is not repeated after a lost answer (the first may have worked): the caller looks first next time.
     const retryNetwork = !more.once && (method !== 'POST' || url.includes('uploadType=resumable'))
     const range = more.range
-    // A ranged read's bytes so far, across tries: a retry asks only for the rest.
+    // A ranged read ends at its end or the file's, whichever is first; its bytes so far are kept across tries, and a retry asks only for the rest.
+    const last = range ? (range.size > 0 ? Math.min(range.end, range.size) : range.end) : 0
     const kept: Uint8Array[] = []
     let have = 0
+    const whole = () => new Response(concat(kept) as unknown as BodyInit, { status: 206 })
+    const at = () => (range ? `, ${atWords(range.start + have, range.size)}` : '')
     const tries = new Tries()
+    let rateLimited = 0
+    let serverErrors = 0
     let refreshed = false
-    for (let attempt = 0; ; attempt++) {
+    /** After a stall or a lost connection: count it, say so, and wait; or, out of tries, LinkLost in words. */
+    const again = async (e: unknown, words: string, stalled: boolean) => {
+      if (!retryNetwork) throw stalled ? new Stalled(words) : e
+      const { n, of } = tries.count(stalled)
+      more.log?.(`${stalled ? 'stall' : 'link lost'} (try ${n} of ${of}): ${words}`)
+      if (n >= of) throw new LinkLost(`${words}; tried ${n} time${n === 1 ? '' : 's'}`, e)
+      more.onStep?.(`${stalled ? 'Google Drive stopped sending' : 'Lost the connection to Google Drive'}; trying again (try ${n + 1} of ${of})`)
+      await this.wait(backoff(n), more.cancelled)
+    }
+    for (;;) {
       stopIfAsked(more.cancelled)
-      if (range && range.start + have >= range.end) return new Response(concat(kept) as unknown as BodyInit, { status: 206 })
-      const token = await this.opts.token(refreshed)
-      const headers = { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}`, ...(range ? { Range: `bytes=${range.start + have}-${range.end - 1}` } : {}) }
-      const got = { status: 0, headers: new Headers(), parts: [] as Uint8Array[], n: 0 }
-      const keep = () => {
-        if (!range || (got.status !== 206 && !(got.status === 200 && range.start + have === 0))) return false
-        kept.push(...got.parts); have += got.n
-        return true
+      if (range && range.start + have >= last) return whole()
+      let token: string
+      try { token = await within(this.opts.token(refreshed), this.stallMs, more.cancelled) } catch (e) {
+        if (!(e instanceof Stalled)) throw e
+        await again(e, `no answer from Google sign-in for ${secsWords(this.stallMs)}`, true)
+        continue
       }
+      const headers = { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}`, ...(range ? { Range: `bytes=${range.start + have}-${last - 1}` } : {}) }
+      const got = { status: 0, headers: new Headers(), parts: [] as Uint8Array[], n: 0 }
+      // A ranged answer counts only when it is the rest asked for: a 206 from the next byte (or a 200 of the whole file from byte 0).
+      const fits = () => {
+        if (got.status === 200) return range!.start + have === 0
+        if (got.status !== 206) return false
+        const from = /^bytes (\d+)-/.exec(got.headers.get('content-range') ?? '')
+        return !from || Number(from[1]) === range!.start + have
+      }
+      const keep = () => { if (!fits()) return false; kept.push(...got.parts); have += got.n; if (got.n > 0) tries.moved(); return true }
       const onBytes = more.onBytes
       try {
-        await send(this.fetch, url, { ...init, headers }, { ...more, onBytes: range ? (n) => onBytes?.(have + n) : onBytes }, this.stallMs, got)
+        await send(this.fetch, url, { ...init, headers }, { ...more, onBytes: range ? (n) => { if (fits()) onBytes?.(Math.min(have + n, last - range.start)) } : onBytes }, this.stallMs, got)
       } catch (e) {
         if (e instanceof Stopped) throw e
-        if (keep() && got.n > 0) tries.moved()
+        if (range) keep()
         const stalled = e instanceof Stalled
-        const at = range ? `, ${atWords(range.start + have, range.size)}` : ''
-        const words = stalled ? `${got.status ? 'no data' : 'no answer'} from Google Drive for ${secsWords(this.stallMs)}${at}` : `lost the connection to Google Drive (${msg(e)})${at}`
-        if (!retryNetwork) throw stalled ? new Stalled(words) : e
-        const { n, of } = tries.count(stalled)
-        more.log?.(`${stalled ? 'stall' : 'link lost'} (try ${n} of ${of}): ${words}`)
-        if (n >= of) throw new LinkLost(`${words}; tried ${n} time${n === 1 ? '' : 's'}`, e)
-        more.onStep?.(`${stalled ? 'Google Drive stopped sending' : 'Lost the connection to Google Drive'}; trying again (try ${n + 1} of ${of})`)
-        await this.sleep(2 ** attempt * 500)
+        await again(e, stalled ? `${got.status ? 'no data' : 'no answer'} from Google Drive for ${secsWords(this.stallMs)}${at()}` : `lost the connection to Google Drive (${msg(e)})${at()}`, stalled)
         continue
       }
       const res = new Response((got.n || !NULL_BODY.has(got.status) ? concat(got.parts) : null) as unknown as BodyInit, { status: got.status, headers: got.headers })
       if (res.ok || okStatuses.includes(res.status)) {
         if (!range) return res
-        if (!keep()) throw new DriveError(got.status, `Google Drive answered ${got.status} to a request for bytes ${range.start + have}-${range.end - 1}`)
-        return new Response(concat(kept).subarray(0, range.end - range.start) as unknown as BodyInit, { status: 206 })
+        if (!keep()) throw new DriveError(got.status, `Google Drive answered ${got.status} ${got.headers.get('content-range') ?? ''} to a request for bytes ${range.start + have}-${last - 1}`)
+        // An answer that ended cleanly but short is a dropped connection: ask for the rest.
+        if (range.start + have < last) { await again(new Error('ended early'), `Google Drive ended its answer early${at()}`, false); continue }
+        return new Response(concat(kept).subarray(0, last - range.start) as unknown as BodyInit, { status: 206 })
       }
       if (res.status === 401 && !refreshed) { refreshed = true; continue }
       const limited = res.status === 429 || (res.status === 403 && (await isRateLimit(res)))
-      if (limited && attempt < RATE_RETRIES - 1) { await this.sleep(Math.min(2 ** attempt, 30) * 1000 + Math.random() * 250); continue }
+      if (limited && rateLimited < RATE_RETRIES - 1) { await this.wait(Math.min(2 ** rateLimited++, 30) * 1000 + Math.random() * 250, more.cancelled); continue }
       // A 5xx can come after Drive made the folder or copy, so those POSTs are not repeated either.
-      if (res.status >= 500 && retryNetwork && attempt < RETRIES - 1) { await this.sleep(2 ** attempt * 500); continue }
+      if (res.status >= 500 && retryNetwork && serverErrors < RETRIES - 1) { await this.wait(2 ** serverErrors++ * 500, more.cancelled); continue }
       if (res.status === 401) throw new SignInAgain()
       throw new DriveError(res.status, `Google Drive said ${res.status} to ${method} ${url.split('?')[0]}: ${(await res.text()).slice(0, 300)}`)
     }
+  }
+
+  /** `sleep`, ended early with Stopped when Stop is pressed. */
+  protected async wait(ms: number, cancelled?: () => boolean): Promise<void> {
+    if (!cancelled) return this.sleep(ms)
+    let poll: ReturnType<typeof setInterval> | undefined
+    try {
+      await Promise.race([this.sleep(ms), new Promise<never>((_resolve, reject) => { poll = setInterval(() => { if (cancelled()) reject(new Stopped()) }, 100) })])
+    } finally { clearInterval(poll) }
+    stopIfAsked(cancelled)
   }
 }
 

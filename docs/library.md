@@ -137,14 +137,22 @@ panel. Neither is committed.
   repository.
 - Logs the team has and this computer lacks are listed with a size; **Download** fetches them under a temp name and
   renames each only after its sha-256 matches.
-- **Never silent** (src/hub/transfer-watch.ts, the robot pull's rule): every Drive request, its answer and its body are
-  watched, so nothing moving for 15 s fails it in words, and Stop aborts it at once. A read that goes quiet or drops is
-  asked again from its next byte (`Range`), never from the start; an upload chunk asks Drive how much it kept and sends the
-  rest from there. An upload is handed to the connection in 256 KiB pieces, so its bytes count as they go and a stalled
-  upload shows (after the last piece, Drive's answer is allowed as long again as the hand-over took: the connection's
-  buffers drain unseen). After 3 stalls (or 5 dropped connections) with no byte moving, Download, Sync and an add from a
-  Drive folder stop at the log they were on, keep what is done, fail no log for it, and say where and what to do; Sync then
-  skips its last publish (the next sync publishes what landed). The bar shows "trying again (try 2 of 3)" meanwhile.
+- **Never silent** (src/hub/transfer-watch.ts, the robot pull's rule): every Drive request, its answer, its body and the
+  sign-in token it waits on are watched, so nothing moving for 15 s fails it in words, and Stop aborts it at once (also
+  during the wait before a retry). A read that goes quiet, drops or ends short is asked again from its next byte (`Range`,
+  checked against Drive's `Content-Range`), never from the start; an upload chunk follows Drive's own count of what it has
+  (its 308 `Range`, or, after a failure, a status query) and sends the rest from there. An upload is handed to the
+  connection in 256 KiB pieces, so its bytes count as they go and a stalled upload shows. After 3 stalls (or 5 dropped
+  connections) with no byte moving, Download, Sync and an add from a Drive folder stop at the log they were on, keep what
+  is done, fail no log for it, and say where and what to do; Sync then skips its last publish (the next sync publishes
+  what landed). Waits between tries are 0.5, 1, 2 then 4 s; any try that moved bytes starts the count again. The bar
+  shows "trying again (try 2 of 3)" meanwhile.
+- **Limits of that watch.** After an upload's last piece, the bytes still in the connection's buffers drain unseen: Drive's
+  answer is allowed as long again as the hand-over took, which covers an 8 MiB chunk, but a short body handed over at once
+  gets no extra time. On a slow uplink such a tail can be taken for a stall: it costs one status query and a resume from
+  Drive's byte, never the upload. Measured on loopback, the gap before the first piece after the initial burst is ~0.3 s at
+  1 MB/s, so below ~20 kB/s even a moving upload would read as stalled at 15 s. A listing or manifest read sees Stop only
+  between requests, so Stop can wait out one stall (15 s) there.
 
 ## The robot
 

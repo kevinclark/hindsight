@@ -3,6 +3,7 @@
  * itself, so a transfer that sees nothing move for STALL_MS fails with words, and Stop is looked for a few times a second
  * even while nothing arrives. No `node:` import here, so the phone build can bundle it with the Drive reader.
  */
+import { Stopped } from './adapter.ts'
 
 /** Nothing moved for this long fails a transfer (and a request that does not answer). */
 export const STALL_MS = 15_000
@@ -39,6 +40,27 @@ export function watchdog(o: { stallMs: number; cancelled?: () => boolean; onStal
     done: () => { over = true; clearInterval(timer) },
   }
 }
+
+/**
+ * A watchdog whose firing is also a promise that rejects (Stalled, or Stopped), for racing a wait that might not honour
+ * an abort; `abort` is told first, so a fetch is cancelled too.
+ */
+export function tripwire(o: { stallMs: number; cancelled?: () => boolean; abort?: (why: Error) => void }): Watchdog & { fired: Promise<never> } {
+  let reject!: (e: Error) => void
+  const fired = new Promise<never>((_resolve, r) => { reject = r })
+  fired.catch(() => {}) // a race that already settled leaves nobody listening
+  const fire = (why: Error) => { o.abort?.(why); reject(why) }
+  return { ...watchdog({ stallMs: o.stallMs, cancelled: o.cancelled, onStop: () => fire(new Stopped()), onStall: () => fire(new Stalled('stalled')) }), fired }
+}
+
+/** `p`, or Stalled when it takes the stall time, or Stopped on Stop: a wait with no bytes to count (a token refresh). */
+export async function within<T>(p: Promise<T>, stallMs: number, cancelled?: () => boolean): Promise<T> {
+  const t = tripwire({ stallMs, cancelled })
+  try { return await Promise.race([p, t.fired]) } finally { t.done() }
+}
+
+/** The wait before try n + 1 after a stall or a dropped connection: 0.5, 1, 2, then 4 s at most. */
+export const backoff = (n: number) => Math.min(2 ** (n - 1), 8) * 500
 
 export const mbWords = (n: number) => (n / 2 ** 20).toFixed(1)
 export const secsWords = (ms: number) => `${+(ms / 1000).toFixed(1)} s`

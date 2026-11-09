@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto'
 import { AlreadyExists, ChecksumMismatch, LinkLost, ManifestConflict, SignInAgain, Stopped, checkPath, extendsManifest, isOwnAppendPath, stopIfAsked, type ByteSource, type FileInfo, type StorageAdapter, type TransferWatch, type WriteOptions } from './adapter.ts'
 import { API, FIELDS, FOLDER, DriveError, DriveReader, Tries, isReadOnlyRequest, infoOf, splitPath, type DriveFile, type DriveOptions } from './drive-read.ts'
-import { Stalled, atWords, secsWords } from './transfer-watch.ts'
+import { Stalled, atWords, backoff, secsWords } from './transfer-watch.ts'
 
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
 /** A multiple of 256 KiB, as Drive requires for all but the last chunk. */
@@ -52,7 +52,7 @@ export class DriveAdapter extends DriveReader implements StorageAdapter {
     this.sessions.add(uri)
     this.calls.upload++
     let created: DriveFile | null = null
-    if (from.size === 0) created = await this.put(uri, new Uint8Array(0), `bytes */0`)
+    if (from.size === 0) created = (await this.put(uri, new Uint8Array(0), `bytes */0`)).file ?? null
     // Bytes are reported as the connection takes them, never below the most reported (a resume can start lower).
     let high = 0
     const sent = (n: number) => { if (n > high) { high = n; options.onProgress?.(n, from.size) } }
@@ -149,15 +149,19 @@ export class DriveAdapter extends DriveReader implements StorageAdapter {
   }
 
   /**
-   * One chunk of a resumable upload. After a failure (a stall, a dropped connection, a 5xx) it asks Drive how much it has
-   * and sends the rest of the chunk from there; Drive taking more since the last try counts as the link moving.
+   * One chunk of a resumable upload, sent until Drive has all of it. Drive's answer says how much it has: after a
+   * success (308) and, after a failure (a stall, a dropped connection, a 5xx), by asking it; the rest of the chunk is sent
+   * from there. Drive taking more since the last try counts as the link moving; taking nothing counts as a failure.
    */
   private async putChunk(uri: string, chunk: Uint8Array, at: number, total: number, watch: TransferWatch): Promise<DriveFile | null> {
+    const end = at + chunk.length
     let from = at // Drive has every byte before this one
+    let ask = false // after a failure: ask Drive what it kept before sending again
     const tries = new Tries()
-    for (let attempt = 0; ; attempt++) {
+    for (;;) {
+      let answer: { file?: DriveFile; next: number }
       try {
-        return await this.put(uri, chunk.subarray(from - at), `bytes ${from}-${at + chunk.length - 1}/${total}`, { ...watch, onBytes: (n) => watch.onBytes?.(from - at + n) })
+        answer = ask ? await this.sessionStatus(uri, total, watch) : await this.put(uri, chunk.subarray(from - at), `bytes ${from}-${end - 1}/${total}`, { ...watch, onBytes: (n) => watch.onBytes?.(from - at + n) })
       } catch (e) {
         if (e instanceof SignInAgain || e instanceof Stopped || (e instanceof DriveError && e.status >= 400 && e.status < 500 && e.status !== 429 && e.status !== 408)) throw e
         const stalled = e instanceof Stalled
@@ -166,31 +170,37 @@ export class DriveAdapter extends DriveReader implements StorageAdapter {
         watch.log?.(`upload ${stalled ? 'stall' : 'failure'} (try ${n} of ${of}): ${words}`)
         if (n >= of) throw e instanceof DriveError ? e : new LinkLost(`${words}; tried ${n} time${n === 1 ? '' : 's'}`, e)
         watch.onStep?.(`${stalled ? 'Google Drive stopped taking data' : 'Lost the connection to Google Drive'}; trying again (try ${n + 1} of ${of})`)
-        await this.sleep(2 ** attempt * 500)
-        stopIfAsked(watch.cancelled)
-        // Ask Drive how much it kept: the whole chunk (go on), or part of it (send the rest from there).
-        const got = await this.sessionStatus(uri, total, watch).catch((statusError) => { if (statusError instanceof SignInAgain || statusError instanceof Stopped) throw statusError; return null })
-        if (got === null) continue // the question failed too: wait, then ask again with the next attempt
-        if (got.file) return got.file
-        if (got.next === at + chunk.length) return null
-        if (got.next < at || got.next > at + chunk.length) throw new DriveError(0, `the upload stopped at byte ${got.next}, outside the chunk ${at}-${at + chunk.length - 1}; start the file again`)
-        if (got.next > from) { tries.moved(); watch.log?.(`upload resumes at byte ${got.next} (Drive kept ${got.next - from} more)`) }
-        from = got.next
+        await this.wait(backoff(n), watch.cancelled)
+        ask = true
+        continue
       }
+      const wasAsked = ask
+      ask = false
+      if (answer.file) return answer.file
+      const { next } = answer
+      if (next === end) return null
+      if (next < at || next > end) throw new DriveError(0, `the upload stopped at byte ${next}, outside the chunk ${at}-${end - 1}; start the file again`)
+      if (next > from) {
+        tries.moved()
+        if (wasAsked || next < end) watch.log?.(`upload resumes at byte ${next} (Drive kept ${next - from} more)`)
+      } else if (!wasAsked) {
+        // Drive answered a whole send by keeping nothing more: a failure, or this would send the same bytes for ever.
+        const { n, of } = tries.count(false)
+        if (n >= of) throw new LinkLost(`Google Drive kept none of the bytes sent, ${atWords(from, total)}; tried ${n} times`)
+        await this.wait(backoff(n), watch.cancelled)
+      }
+      from = next
     }
   }
 
-  /** PUT bytes to an upload session: the finished file on 200/201, null on 308 (more wanted). Not retried here: putChunk asks Drive what it kept. */
-  private async put(uri: string, body: Uint8Array, contentRange: string, watch: TransferWatch = {}): Promise<DriveFile | null> {
+  /** PUT bytes to an upload session: the finished file on 200/201, or (308) the next byte Drive wants. Not retried here: putChunk asks Drive what it kept. */
+  private async put(uri: string, body: Uint8Array, contentRange: string, watch: TransferWatch = {}): Promise<{ file?: DriveFile; next: number }> {
     const res = await this.request(uri, { method: 'PUT', headers: { 'Content-Range': contentRange, 'Content-Length': String(body.length) } }, [308], { ...watch, upload: body, once: true })
-    return res.status === 308 ? null : ((await res.json()) as DriveFile)
+    return answerOf(res)
   }
 
-  private async sessionStatus(uri: string, total: number, watch: TransferWatch = {}): Promise<{ next: number; file?: DriveFile }> {
-    const res = await this.request(uri, { method: 'PUT', headers: { 'Content-Range': `bytes */${total}` } }, [308], { cancelled: watch.cancelled, once: true })
-    if (res.status !== 308) return { next: total, file: (await res.json()) as DriveFile }
-    const m = /bytes=0-(\d+)/.exec(res.headers.get('range') ?? '')
-    return { next: m ? Number(m[1]) + 1 : 0 }
+  private async sessionStatus(uri: string, total: number, watch: TransferWatch = {}): Promise<{ file?: DriveFile; next: number }> {
+    return answerOf(await this.request(uri, { method: 'PUT', headers: { 'Content-Range': `bytes */${total}` } }, [308], { cancelled: watch.cancelled, once: true }))
   }
 
   /** The file Drive made must be the file we sent: its checksums are compared with what we computed while sending. */
@@ -201,6 +211,13 @@ export class DriveAdapter extends DriveReader implements StorageAdapter {
     return infoOf(path, file)
   }
 
+}
+
+/** An upload session's answer: the file once Drive has every byte (200/201), else (308) the next byte it wants, from its `Range`. */
+async function answerOf(res: Response): Promise<{ file?: DriveFile; next: number }> {
+  if (res.status !== 308) { const file = (await res.json()) as DriveFile; return { file, next: Number(file.size ?? 0) } }
+  const m = /bytes=0-(\d+)/.exec(res.headers.get('range') ?? '')
+  return { next: m ? Number(m[1]) + 1 : 0 }
 }
 
 /**
