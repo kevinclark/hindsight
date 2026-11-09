@@ -9,7 +9,7 @@ import { ingest, localFolderFiles, planIngest, type IngestReport, type SourceFil
 import { checkPath } from '../src/hub/adapter.ts'
 import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { driveFolderFiles, folderIdFrom } from '../src/hub/drive-source.ts'
-import { fetchLogs, syncWithTeam } from '../src/hub/sync.ts'
+import { fetchLogs, planSync, syncWithTeam } from '../src/hub/sync.ts'
 import { LiveShare, Lock, type ShareStatus } from '../src/hub/live-share.ts'
 import { isEventKey } from '../src/hub/event-file.ts'
 import { createHash } from 'node:crypto'
@@ -302,14 +302,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
   ipcMain.handle('hub:driveIngestPlan', async (_e, text: string) => planIngest(await open(), await driveSource(text)))
   ipcMain.handle('hub:addFromDrive', async (_e, text: string) => runIngest('Reading Drive folder', await driveSource(text)))
 
-  const missingFromTeam = async (lib: LocalLibrary, team: DriveAdapter) => {
-    const there = new Map((await team.list('logs')).map((f) => [f.path, f.size]))
-    return lib.catalog.all().filter((r) => r.machine === lib.machine && there.get(r.path) !== r.size)
-  }
-  ipcMain.handle('hub:syncPlan', async (): Promise<SyncPlan> => {
-    const lost = await missingFromTeam(await open(), await teamStore())
-    return { uploads: lost.length, uploadBytes: lost.reduce((n, r) => n + r.size, 0) }
-  })
+  ipcMain.handle('hub:syncPlan', async (): Promise<SyncPlan> => planSync(await open(), await teamStore()))
   ipcMain.handle('hub:sync', async () => {
     const lib = await open()
     const team = await teamStore()

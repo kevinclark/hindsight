@@ -11,7 +11,7 @@ import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { driveFolderFiles } from '../src/hub/drive-source.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { ingest, localFolderFiles, planIngest } from '../src/hub/ingest.ts'
-import { FAILURES_IN_A_ROW, fetchLogs, matchesFirst, syncWithTeam } from '../src/hub/sync.ts'
+import { FAILURES_IN_A_ROW, fetchLogs, matchesFirst, planSync, syncWithTeam } from '../src/hub/sync.ts'
 import { describeFile } from '../src/hub/describe-file.ts'
 import { SignInAgain, readText } from '../src/hub/adapter.ts'
 import { parseManifest } from '../src/hub/types.ts'
@@ -44,8 +44,11 @@ describe('sync through a team store', () => {
     await putLog(join(work, 'srcA'), 'one.wpilog', 'one')
     await putLog(join(work, 'srcA'), 'two.wpilog', 'two', CLOCK + 3600e3)
     await ingest(a, await localFolderFiles(join(work, 'srcA')), options)
+    const bytes = a.catalog.all().reduce((n, r) => n + r.size, 0)
+    expect(await planSync(a, team)).toEqual({ uploads: 2, uploadBytes: bytes, copies: 0 })
     const report = await syncWithTeam(a, team)
     expect(report.uploaded.map((u) => u.how)).toEqual(['upload', 'upload'])
+    expect(await planSync(a, team)).toEqual({ uploads: 0, uploadBytes: 0, copies: 0 }) // the next sync asks nothing
     expect(report.failed).toEqual([])
     expect((await team.list('logs')).length).toBe(2)
     expect(parseManifest((await readText(team, 'manifests/ma.jsonl'))!).records.filter((r) => r.type === 'log').length).toBe(2)
@@ -225,6 +228,7 @@ describe('Drive to Drive', () => {
     expect(source.calls.download).toBe(downloads)
     expect(planIngest(a, await driveFolderFiles(source, old, work))).toMatchObject({ alreadyKnown: 3, toRead: 0, bytesToRead: 0 })
 
+    expect(await planSync(a, team)).toEqual({ uploads: 0, uploadBytes: 0, copies: 2 }) // no bytes leave this computer
     const synced = await syncWithTeam(a, team)
     expect(synced.uploaded.map((u) => u.how)).toEqual(['copy inside Drive', 'copy inside Drive'])
     expect(team.calls.copy).toBe(2)

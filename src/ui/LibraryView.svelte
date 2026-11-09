@@ -96,7 +96,10 @@
   }
   async function planSync() {
     const p = await work('Looking at the team folder', () => api!.syncPlan())
-    if (p) plan = { kind: 'sync', plan: p }
+    if (!p) return
+    // Nothing leaves this computer: lists only, small and append-only, so there is nothing to approve.
+    if (p.uploads === 0) { const r = await work('Syncing', () => api!.sync()); if (r) syncReport = r; return }
+    plan = { kind: 'sync', plan: p }
   }
   async function confirm() {
     const p = plan
@@ -358,7 +361,7 @@
       {#if plan.kind === 'ingest'}
         {plan.plan.logs} log file{plan.plan.logs === 1 ? '' : 's'} there; {plan.plan.alreadyKnown} already in the library (not downloaded). <strong>Downloads {plan.plan.toRead} file{plan.plan.toRead === 1 ? '' : 's'}, {size(plan.plan.bytesToRead)}, in full, once.</strong> Nothing on Drive is changed; the copies go in this computer's library.
       {:else}
-        <strong>Uploads {plan.plan.uploads} log{plan.plan.uploads === 1 ? '' : 's'}, {size(plan.plan.uploadBytes)}</strong> to the team folder (a log that came from Drive is copied inside Drive instead), brings in teammates' lists, and publishes this computer's. Nothing is deleted or overwritten.
+        <strong>Uploads {plan.plan.uploads} log{plan.plan.uploads === 1 ? '' : 's'} ({size(plan.plan.uploadBytes)}) from this computer to the team folder.</strong>{#if plan.plan.copies}{' '}{plan.plan.copies} more already on Drive {plan.plan.copies === 1 ? 'is' : 'are'} copied there, not uploaded.{/if} Nothing is deleted or overwritten.
       {/if}
       <button class="primary" onclick={confirm}>Go ahead</button> <button class="link" onclick={() => (plan = null)}>Cancel</button>
     </p>

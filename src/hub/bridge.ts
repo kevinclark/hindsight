@@ -4,7 +4,7 @@
  */
 import type { Entry } from './catalog.ts'
 import type { IngestPlan, IngestReport } from './ingest.ts'
-import type { FetchReport, SyncReport } from './sync.ts'
+import type { FetchReport, SyncPlan, SyncReport } from './sync.ts'
 import type { Update } from './update.ts'
 import type { RedescribeReport } from './redescribe.ts'
 import type { TagField, TagTarget } from './types.ts'
@@ -78,7 +78,7 @@ export interface DriveStatus {
   lastSync: number | null
 }
 
-export interface SyncPlan { uploads: number; uploadBytes: number }
+export type { SyncPlan }
 
 export type RobotResult = { refused: string } | { report: IngestReport; stillWriting: string[] }
 

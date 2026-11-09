@@ -89,6 +89,16 @@ export interface SyncOptions {
   lock?: { run<T>(work: () => Promise<T>): Promise<T> }
 }
 
+/** What a sync would send: this machine's logs the team folder lacks, the same test as the sync's own. A log that came from
+ * Drive is copied inside Drive (no bytes leave this computer), so it is counted apart from the uploads. */
+export interface SyncPlan { uploads: number; uploadBytes: number; copies: number }
+export async function planSync(lib: LocalLibrary, team: StorageAdapter): Promise<SyncPlan> {
+  const remote = new Map((await team.list('logs')).map((f) => [f.path, f]))
+  const todo = lib.catalog.all().filter((r) => r.machine === lib.machine && !isThere(remote.get(r.path), r))
+  const sent = todo.filter((r) => !(r.sourceId && team.copyInto))
+  return { uploads: sent.length, uploadBytes: sent.reduce((n, r) => n + r.size, 0), copies: todo.length - sent.length }
+}
+
 export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, options: SyncOptions = {}): Promise<SyncReport> {
   const report: SyncReport = { manifests: [], history: [], historyPublished: 0, uploaded: [], failed: [], alreadyThere: 0, published: 0, unrecorded: [], problems: [], remotePaths: [], stopped: false, notTried: 0 }
   const own = lib.ownManifestPath
