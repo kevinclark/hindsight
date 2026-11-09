@@ -193,3 +193,23 @@ describe('Library list helpers', () => {
     expect([isLarge(275 * 2 ** 20), isLarge(275 * 2 ** 20 + 1)]).toEqual([false, true])
   })
 })
+
+describe('downloadWhole in slices', () => {
+  it('reads a file larger than one slice in ranged slices into one buffer, progress rising to the total', async () => {
+    const { PIECE_READ } = await import('../src/hub/drive-read.ts')
+    const drive = new FakeDrive()
+    const folder = drive.addFolder('root', 'logs')
+    const content = bytes(PIECE_READ * 2 + 12345, 7)
+    drive.addFile(folder, 'big.wpilog', content)
+    const ranges: string[] = []
+    const f: typeof fetch = (url, init) => { const r = new Headers(init?.headers as Record<string, string>).get('range'); if (r) ranges.push(r); return drive.fetch(url, init) }
+    const reader = new DriveReader({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async () => {} })
+    const seen: number[] = []
+    const got = await reader.downloadWhole('logs/big.wpilog', { onProgress: (n) => seen.push(n) })
+    expect(got.length).toBe(content.length)
+    expect(sha(got)).toBe(sha(content))
+    expect(ranges).toEqual([`bytes=0-${PIECE_READ - 1}`, `bytes=${PIECE_READ}-${2 * PIECE_READ - 1}`, `bytes=${2 * PIECE_READ}-${content.length - 1}`])
+    expect(seen.every((n, i) => i === 0 || n >= seen[i - 1])).toBe(true)
+    expect(seen.at(-1)).toBe(content.length)
+  })
+})

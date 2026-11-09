@@ -38,6 +38,8 @@ export interface RequestWatch extends TransferWatch {
   once?: boolean
 }
 
+/** A whole-file download (the phone) is read in slices of this size, the size the Drive sync moves a log in. */
+export const PIECE_READ = 8 << 20
 /** Pieces an upload body is handed over in: each one taken is data moving. */
 const PIECE = 256 << 10
 const NULL_BODY = new Set([101, 103, 204, 205, 304])
@@ -174,16 +176,25 @@ export class DriveReader {
   }
 
   /**
-   * A whole file (the phone opening a log), by the same watched, resumable ranged read as `read`: a stall or a dropped
-   * connection asks for the rest from the next byte; `signal` stops it (Stopped); progress counts the bytes in.
+   * A whole file (the phone opening a log), into one buffer of its size, in slices of PIECE_READ bytes, each by the same
+   * watched, resumable ranged read as `read`: a stall or a dropped connection asks for the rest of that slice from the next
+   * byte; `signal` stops it (Stopped); progress counts the bytes in. Slices keep the peak near one copy of the file (one
+   * ranged read of the whole file is buffered several times over on its way through `request`).
    */
   async downloadWhole(path: string, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal } = {}): Promise<Uint8Array> {
+    opts.signal?.throwIfAborted()
     const f = await this.find(path)
     if (!f) throw new Error(`${path} not found`)
     const total = Number(f.size ?? 0)
-    const bytes = total === 0 ? new Uint8Array(0) : await this.fetchRange(f, 0, total, { cancelled: () => opts.signal?.aborted ?? false, onBytes: (n) => opts.onProgress?.(n, total) })
-    if (bytes.length !== total) throw new Error(`${path}: got ${bytes.length} of ${total} bytes`)
-    return bytes
+    const out = new Uint8Array(total)
+    const cancelled = () => opts.signal?.aborted ?? false
+    for (let at = 0; at < total; at += PIECE_READ) {
+      const end = Math.min(at + PIECE_READ, total)
+      const part = await this.fetchRange(f, at, end, { cancelled, onBytes: (n) => opts.onProgress?.(at + n, total) })
+      if (part.length !== end - at) throw new Error(`${path}: got ${at + part.length} of ${total} bytes`)
+      out.set(part, at)
+    }
+    return out
   }
 
   /** Name and kind of a folder by id (to show what was chosen); null if it can't be seen. */
