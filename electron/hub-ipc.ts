@@ -33,6 +33,7 @@ import { openInAdvantageScope } from './advantagescope.ts'
 import { driveToken, googleClient, keeping, signIn, signOut, signedIn } from './google-auth.ts'
 import { loadSettings, saveSettings } from './settings.ts'
 import { JobLog } from './job-log.ts'
+import { registerHoot } from './hoot-ipc.ts'
 
 declare const __BUILD_ID__: string
 /** Names this build of the describer on the `meta` records it writes: "<app version>+<source hash>" (the version orders builds; the hash only tells them apart). */
@@ -351,6 +352,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
   })
 
   ipcMain.handle('hub:updateInfo', () => update)
+
+  registerHoot({ open, jobLog, send })
 
   app.on('before-quit', () => describer.stop())
 }

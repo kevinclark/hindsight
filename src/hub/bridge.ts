@@ -12,6 +12,7 @@ import type { Fetched, TbaGetOptions } from '../tba/source.ts'
 import type { NexusEvent } from '../nexus/source.ts'
 import type { ShareStatus } from './live-share.ts'
 import type { BrowserHub } from './browser-hub.ts'
+import type { HootReadReport, HootStatus } from '../hoot/types.ts'
 export type { ShareStatus } from './live-share.ts'
 
 import type { JobProgress } from './jobs.ts'
@@ -149,6 +150,19 @@ export interface HubApi {
   /** Reveal the job log (`jobs.log`: what each job did, with times) in Finder or Explorer. */
   showJobLog(): Promise<void>
   updateInfo(): Promise<Update | null>
+
+  // ---- .hoot files (ADR 13): their own job runner, so a sync running doesn't block the Devices tab ----
+  /** The .hoot files attached to a library robot log, what this computer holds and can read them with, and the licence. */
+  hootFor(logPath: string): Promise<HootStatus>
+  /** Record that this laptop's user accepted CTRE's licence (this laptop only). */
+  acceptCtreLicence(): Promise<void>
+  /** Download the owlet for this .hoot format from CTRE's server (refused before the licence is accepted). */
+  getOwlet(compliancy: number): Promise<{ version: string; compliancy: number }>
+  /** Read the log's held .hoot files through owlet (cached after the first read). */
+  readHoots(logPath: string): Promise<HootReadReport>
+  hootCancel(): Promise<void>
+  hootRunning(): Promise<Progress | null>
+  onHootProgress(callback: (p: Progress | null) => void): () => void
 }
 
 /**

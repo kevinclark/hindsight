@@ -163,6 +163,35 @@ describe('tags and facets', () => {
     expect(paths([], [robot.path])).toEqual(['r1']) // not in the team store: nothing to fetch for it
   })
 
+  describe('which robot log a .hoot belongs to', () => {
+    const named = (sha256: string, name: string, wall: { start: number; end: number } | null) => log({ sha256, path: `logs/x/${name}`, names: [name], wall, matchWindow: null })
+    const hoot = (sha256: string, name: string, playedAt: number) => log({ sha256, kind: 'hoot', path: `logs/x/${name}`, names: [name], playedAt, wall: null, dateSource: 'file name' })
+    const owner = (records: LogRecord[], hootSha: string) => Catalog.from([records.map(serializeRecord).join('')]).entries().find((e) => e.attached.hoot.some((h) => h.sha256 === hootSha))?.record.sha256
+    const utc = (h: number, m: number, s: number) => Date.UTC(2026, 2, 14, h, m, s)
+
+    it('goes to the log whose name time is nearest, not an earlier log whose span reaches it', () => {
+      // The earlier log's clock span ends minutes before the .hoot starts; the .hoot's own log was named 12 s after it.
+      const earlier = named('r1', 'akit_26-03-14_20-08-51.wpilog', { start: utc(20, 9, 0), end: utc(20, 11, 48) })
+      const own = named('r2', 'akit_26-03-14_20-14-32.wpilog', { start: utc(20, 14, 24), end: utc(20, 23, 44) })
+      expect(owner([earlier, own, hoot('h1', 'ABC123_2026-03-14_20-14-20.hoot', utc(20, 14, 20))], 'h1')).toBe('r2')
+    })
+
+    it('reads both names as written, so names in local time still pair while the log\'s own clock is UTC', () => {
+      const q7 = named('r3', 'akit_25-03-01_14-38-28_q7.wpilog', { start: Date.UTC(2025, 2, 1, 22, 38, 20), end: Date.UTC(2025, 2, 1, 22, 43, 29) })
+      expect(owner([q7, hoot('h2', '_Q7_ABC123_2025-03-01_14-38-23.hoot', Date.UTC(2025, 2, 1, 14, 38, 23))], 'h2')).toBe('r3')
+    })
+
+    it('falls back to the nearest wall-clock start for a log whose name has no time', () => {
+      const unnamed = named('r4', 'akit_0123456789abcdef.wpilog', { start: utc(1, 37, 8), end: utc(1, 45, 0) })
+      expect(owner([unnamed, hoot('h3', 'rio_2026-03-14_01-41-25.hoot', utc(1, 41, 25))], 'h3')).toBe('r4')
+    })
+
+    it('stays unattached when no log was named within minutes of it', () => {
+      const far = named('r5', 'akit_26-03-14_15-20-33.wpilog', { start: utc(15, 20, 33), end: utc(16, 30, 0) })
+      expect(owner([far, hoot('h4', 'ABC123_2026-03-14_15-58-52.hoot', utc(15, 58, 52))], 'h4')).toBeUndefined()
+    })
+  })
+
   it('leaves out an attached file of a kind this version does not know (a newer teammate\'s manifest), not a crash', () => {
     const wall = { start: at(2026, 10, 17, 11), end: at(2026, 10, 17, 13) }
     const robot = log({ sha256: 'r1', wall, matchWindow: wall })

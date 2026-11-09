@@ -17,6 +17,7 @@ const CHANNELS = [
   'info', 'library', 'addFromFolder', 'cancel', 'runningJob', 'redescribe', 'lastJob', 'codePlan', 'team', 'setTeam', 'tba', 'setNexusKey', 'nexus', 'linkCode', 'setTag', 'history', 'appendHistory', 'readLog', 'openInAdvantageScope',
   'driveStatus', 'driveSignIn', 'driveSignOut', 'setGoogleClient', 'driveFolders', 'setTeamFolder', 'driveIngestPlan', 'addFromDrive',
   'syncPlan', 'sync', 'fetchLogs', 'addFromRobot', 'showJobLog', 'updateInfo', 'appendEvent', 'shareStatus', 'shareNow',
+  'hootFor', 'acceptCtreLicence', 'getOwlet', 'readHoots', 'hootCancel', 'hootRunning',
 ] as const
 
 contextBridge.exposeInMainWorld('hub', {
@@ -26,4 +27,5 @@ contextBridge.exposeInMainWorld('hub', {
   onProgress: listen('hub:progress'),
   onHistoryChanged: listen('hub:historyChanged'),
   onShareStatus: listen('hub:shareStatus'),
+  onHootProgress: listen('hub:hootProgress'),
 })

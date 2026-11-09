@@ -90,8 +90,9 @@ This repository is public (since 2026-10-19). Nothing private goes into code, do
   only when frozen, with no arguments, on a terminal; `python3 tools/robot-snapshot.py` and tests behave as before.
   To cut a release: get Kevin's go, then push a tag `robot-snapshot-vX.Y.Z` on a tested commit; the workflow
   publishes both zips with their sha256.
-- **owlet (CTRE's hoot converter) must never be downloaded, bundled, copied or committed** (CTRE EULA). The
-  collector runs it in place from AdvantageScope's cache, picked by the hoot file's compliancy byte (offset 70).
+- **owlet (CTRE's hoot converter) is found or fetched, never shipped** (CTRE's licence; ADR 13). Never bundle, copy,
+  host or commit it, never download it in CI, never write a `.hoot` parser. The collector runs it in place from
+  AdvantageScope's cache, picked by the hoot file's compliancy byte (offset 70), and never downloads it.
 - **Signal ids change between Phoenix versions.** Resolve sticky faults by name from `getsignals`, and configs by
   `SignalName`. Never hard-code an id.
 - **Fixtures are synthetic.** The scenario is written by hand in `tests/robot_snapshot_fixtures.py`, from the
@@ -136,6 +137,24 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
 - Check the built app with `npm run build:app && node --experimental-strip-types scripts/electron-check.ts <log folder>
   <shots folder>` (a throwaway library; `HINDSIGHT_APP=<packaged executable>` runs an installed build). Measure ingest with
   `scripts/ingest-bench.ts`.
+
+## .hoot files and owlet (`src/hoot/`, `electron/hoot-ipc.ts`, ADR 13)
+
+- **owlet is CTRE's software: found or fetched, never shipped.** The Devices tab asks for CTRE's licence on each laptop
+  (even when AdvantageScope has a copy), then uses Hindsight's own owlet folder, then AdvantageScope's cache, or downloads
+  from CTRE's index after the user accepts (`src/hoot/download.ts`: CTRE's address only, no redirect, sha-1 checked before
+  writing). No owlet binary, CTRE index or real `.hoot` in the repo: the tests run `tests/helpers/fake-owlet.ts`.
+- **Resolve signals by name from `--scan`** (`wantedIds`); ids change between Phoenix versions. A scan lists ~130 KB for
+  26 devices: keep all of owlet's output (a 64 KB tail once dropped `RobotEnable`, and every file read 0 enables).
+- **Exit 1 with "Could not read to end of input file" and an output is a read file cut short**, not a failure.
+- **Line a `.hoot` up by enable edges, never file names** (`src/hoot/align.ts`): at least 2 edges and 75 % of the file
+  with fewer. Measure a change with `scripts/hoot-align-survey.ts <library> <cache>` (true pairs matched 92-100 %, wrong
+  logs 17-33 %). Which robot log a `.hoot` belongs to is `hootOwner` in `src/hub/catalog.ts`: nearest name time, both
+  read as written (2025 names were Pacific while the robot clock was UTC).
+- The reduced reading is cached in `<userData>/hoot-cache`, never under `cache/` (on a case-insensitive disk that is
+  Chromium's `Cache` folder) and never in the library (Sync uploads it). Change what `reduceExport` keeps: bump
+  `READING_VERSION`.
+- Nothing from a `.hoot` enters `summary.ts`, rules or event lines yet; if it does, it joins `analyzerId`.
 
 ## Gradle plugin (`companion/gradle-plugin/`)
 

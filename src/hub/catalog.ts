@@ -3,7 +3,7 @@
  * typed for it, and which DS logs and hoot files belong to which robot log. Pure: the app builds one from the manifest
  * files it holds and from a listing of `logs/`.
  */
-import { dayText } from './layout.ts'
+import { baseName, dayText } from './layout.ts'
 import { parseManifest, usableReading, type LogRecord, type ManifestRecord, type MetaRecord, type TagField, type TagRecord } from './types.ts'
 
 export type Tags = Partial<Record<TagField, string>>
@@ -137,7 +137,8 @@ export class Catalog {
 
   /**
    * The robot logs, each with its tags and the DS logs and hoot files that belong to it. A DS log or hoot file goes to the
-   * robot log whose match (else whole log) it overlaps most on the wall clock; a hoot file is placed by the time in its name.
+   * robot log whose match (else whole log) it overlaps most on the wall clock; a hoot file goes to the robot log whose name
+   * time is nearest its own (`hootOwner`).
    */
   entries(): Entry[] {
     const all = this.all()
@@ -146,9 +147,10 @@ export class Catalog {
     for (const r of all) {
       if (r.kind === 'wpilog' || !r.wall && r.playedAt === null) continue
       const span = r.wall ?? { start: r.playedAt!, end: r.playedAt! }
-      const best = robots.map((robot) => ({ robot, seconds: overlapMs(span, robot, r.kind === 'hoot') })).filter((x) => x.seconds > 0).sort((a, b) => b.seconds - a.seconds)[0]
+      const best = r.kind === 'hoot' ? hootOwner(r, robots, span.start)
+        : robots.map((robot) => ({ robot, seconds: overlapMs(span, robot) })).filter((x) => x.seconds > 0).sort((a, b) => b.seconds - a.seconds)[0]?.robot
       // A kind this version doesn't attach (from a newer teammate's manifest) is left out, not a crash.
-      const list = best ? (out.get(best.robot.sha256)!.attached as Record<string, LogRecord[]>)[r.kind] : undefined
+      const list = best ? (out.get(best.sha256)!.attached as Record<string, LogRecord[]>)[r.kind] : undefined
       if (Array.isArray(list)) list.push(r)
     }
     return [...out.values()].sort((a, b) => (a.record.playedAt ?? Infinity) - (b.record.playedAt ?? Infinity) || a.record.path.localeCompare(b.record.path))
@@ -157,11 +159,49 @@ export class Catalog {
 
 const SLACK_MS = 5 * 60e3
 
-/** How much of the robot log's match (else its whole span) the span covers; a hoot file's single instant (its start) counts when it falls inside the robot log's span, with a few minutes' slack. */
-function overlapMs(span: { start: number; end: number }, robot: LogRecord, instant: boolean): number {
-  // A hoot file starts when the robot code did, long before the match: compare it with the whole log.
-  const against = instant ? robot.wall ?? robot.matchWindow : robot.matchWindow ?? robot.wall
+/** How much of the robot log's match (else its whole span) the span covers. */
+function overlapMs(span: { start: number; end: number }, robot: LogRecord): number {
+  const against = robot.matchWindow ?? robot.wall
   if (!against) return 0
-  if (instant) return span.start >= against.start - SLACK_MS && span.start <= against.end + SLACK_MS ? 1 : 0
   return Math.max(0, Math.min(span.end, against.end) - Math.max(span.start, against.start))
+}
+
+/**
+ * The robot log a .hoot belongs to. A .hoot starts with the robot program, and its name and the robot log's are written
+ * by the same roboRIO clock a few seconds apart (0-28 s on 38 of our files, each confirmed by the enable edges where both
+ * had some), so the nearest name time within a few minutes wins. Both names are read as written, never through a time zone:
+ * in 2025 both were Pacific while the robot log's own clock was UTC. A robot log with no time in its name (clock never
+ * set) falls back to its wall clock: the one whose start is nearest, among those whose span the .hoot's start falls in.
+ */
+function hootOwner(hoot: LogRecord, robots: LogRecord[], start: number): LogRecord | undefined {
+  const named = namedTime(baseName(hoot.path))
+  const nearest = (scored: { robot: LogRecord; miss: number }[]) => scored.sort((a, b) => a.miss - b.miss)[0]?.robot
+  const byName = named === null ? undefined : nearest(robots.flatMap((robot) => {
+    const t = robotNameTime(robot)
+    return t === null || Math.abs(t - named) > SLACK_MS ? [] : [{ robot, miss: Math.abs(t - named) }]
+  }))
+  if (byName) return byName
+  return nearest(robots.flatMap((robot) => {
+    // Only robot logs whose name gives no time: one that does and is far off belongs to another moment.
+    if (robotNameTime(robot) !== null || !robot.wall || start < robot.wall.start - SLACK_MS || start > robot.wall.end + SLACK_MS) return []
+    return [{ robot, miss: Math.abs(robot.wall.start - start) }]
+  }))
+}
+
+/** The wall time written in a robot log's file name (AdvantageKit's `akit_YY-MM-DD_HH-MM-SS`, WPILib's `FRC_YYYYMMDD_HHMMSS`), as written, in ms; null without one. */
+function robotNameTime(robot: LogRecord): number | null {
+  for (const name of [baseName(robot.path), ...robot.names]) {
+    const t = namedTime(name)
+    if (t !== null) return t
+  }
+  return null
+}
+
+/** `YYYY-MM-DD_HH-MM-SS` (a .hoot), `YY-MM-DD_HH-MM-SS` (AdvantageKit) or `YYYYMMDD_HHMMSS` (WPILib) in a name, read as written (UTC), in ms. */
+export function namedTime(name: string): number | null {
+  const m = /(?:^|[^\d])(\d{4}|\d{2})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/.exec(name) ?? /(?:^|[^\d])(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(?:[^\d]|$)/.exec(name)
+  if (!m) return null
+  const [y, mo, d, h, mi, s] = m.slice(1).map(Number)
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return null
+  return Date.UTC(y < 100 ? 2000 + y : y, mo - 1, d, h, mi, s)
 }

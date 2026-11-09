@@ -42,7 +42,8 @@ export function asFile({ entry, name }: Named, api: HubApi): File {
 
 /**
  * The .dslog and .dsevents files the library attached to a robot log, those this computer holds, as Files: `comms/*` and
- * `can/usb-dropout` read them. Hoot files are left out (no rule reads them).
+ * `can/usb-dropout` read them. Hoot files are left out: no rule reads them; the Devices tab asks for them
+ * itself (electron/hoot-ipc.ts).
  */
 export function dsFiles(entry: Entry, api: HubApi): File[] {
   const held = new Set(entry.held ?? [])

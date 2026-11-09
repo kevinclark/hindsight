@@ -18,6 +18,7 @@
   import { openPowerMap, setMapHistory, setMapWriter } from './ui/power-map-bridge.svelte.ts'
   import LimitsTab from './ui/LimitsTab.svelte'
   import LoggingTab from './ui/LoggingTab.svelte'
+  import DevicesTab from './ui/DevicesTab.svelte'
   import Wizard from './ui/Wizard.svelte'
   import SessionView from './ui/SessionView.svelte'
   import { standingKeys, type Session } from './session/session.ts'
@@ -79,7 +80,7 @@
   let analyses = $state<Analysis[]>([])
   let problems = $state<string[]>([])
   let selected = $state(0)
-  let tab = $state<'match' | 'power' | 'limits' | 'logging'>('match')
+  let tab = $state<'match' | 'power' | 'devices' | 'limits' | 'logging'>('match')
   // Now (what to do at this moment: the screen the app opens on, ADR 10); review match logs, a whole session of them, the
   // limits wizard, or a robot snapshot (device settings and faults).
   let mode = $state<'now' | 'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight' | 'library' | 'powermap'>('now')
@@ -441,6 +442,9 @@
     if (path) fileLocations.set(f.name, { file: path })
   }
   const ascopeTarget = $derived(current ? fileLocations.get(current.match.fileName) : undefined)
+  // The Devices tab reads a log's .hoot files through the desktop app, so it shows for library logs there (ADR 13).
+  const devicesPath = $derived(!readOnly && hub() && ascopeTarget && 'library' in ascopeTarget ? ascopeTarget.library : null)
+  $effect(() => { if (tab === 'devices' && !devicesPath) tab = 'match' })
   let ascopeBusy = $state(false)
   let ascopeError = $state('')
   $effect(() => { current?.match.fileName; ascopeError = '' })
@@ -762,12 +766,13 @@
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected={tab === 'match'} class:active={tab === 'match'} onclick={() => (tab = 'match')}>Match</button>
     <button role="tab" aria-selected={tab === 'power'} class:active={tab === 'power'} onclick={() => (tab = 'power')}>Power</button>
+    {#if devicesPath}<button role="tab" aria-selected={tab === 'devices'} class:active={tab === 'devices'} onclick={() => (tab = 'devices')}>Devices</button>{/if}
     <button role="tab" aria-selected={tab === 'limits'} class:active={tab === 'limits'} onclick={() => (tab = 'limits')}>Limits</button>
     <button role="tab" aria-selected={tab === 'logging'} class:active={tab === 'logging'} onclick={() => (tab = 'logging')}>Logging</button>
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>
