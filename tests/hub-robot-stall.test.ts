@@ -13,8 +13,8 @@ import { openSeen } from '../src/hub/seen.ts'
 import { robotLog } from './helpers/hub-logs.ts'
 import { startSftpServer, type SftpServer, type SftpServerOptions } from './helpers/sftp-server.ts'
 
-// A broken detector must fail under its own P-id name, not hang the file: each of these waits at most ~10 s.
-vi.setConfig({ testTimeout: 10_000 })
+// A broken detector must fail under its own P-id name: GitHub's runner takes 7-9 s on several of these (2026-11-08), so 45 s, under the 60 s default.
+vi.setConfig({ testTimeout: 45_000 })
 
 const cleanups: (() => unknown)[] = []
 afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c() })
