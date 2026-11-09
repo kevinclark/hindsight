@@ -35,7 +35,7 @@
 </script>
 
 {#snippet headline(f: Finding)}
-  {@const h = rowHeadline(f)}<b>{h.lead}</b>{#each [h.about, h.key].filter(Boolean) as part, i (i)}{' · '}<span class="part">{part}</span>{/each}{#if h.time}<span class="when"> · {h.time}</span>{/if}
+  {@const h = rowHeadline(f)}<b>{h.lead}</b>{#each [h.about, h.key].filter(Boolean) as part, i (i)}{' · '}<span class="part">{part}</span>{/each}{#if h.time}{' · '}<span class="when">{h.time}</span>{/if}
 {/snippet}
 
 {#snippet explained(node: FindingNode)}

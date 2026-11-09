@@ -297,6 +297,16 @@ describe('printed report component', () => {
     const clean = render(ReviewReport, { props: { analysis: { ...a, report: { ...a.report, skipped: [], crashed: [] } }, issues: new Map() } }).body
     expect(clean).toContain('every rule ran')
   })
+  it('keeps the spaces around every " · " of the headline (Svelte drops a space at the start of an element)', async () => {
+    const { render } = await import('svelte/server')
+    const { default: ReviewReport } = await import('../src/ui/ReviewReport.svelte')
+    const a = analyzeFixture('brownout').analyses[0]
+    const f = { ...a.report.findings.find((x) => x.rule === 'power/brownout')!, about: 'test part' }
+    const withAbout = { ...a, report: { ...a.report, findings: a.report.findings.map((x) => (x.key === f.key && x.time === f.time ? f : x)) } }
+    const text = render(ReviewReport, { props: { analysis: withAbout, issues: new Map() } }).body.replace(/<!--.*?-->/g, '').replace(/<[^>]+>/g, '')
+    const h = rowHeadline(f)
+    expect(text).toContain(`${h.lead} · ${h.about} · ${h.key} · ${h.time}`)
+  })
 })
 
 describe('Foresight printed report component', () => {
