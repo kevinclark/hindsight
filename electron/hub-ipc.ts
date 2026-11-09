@@ -1,5 +1,5 @@
 /** The page's way into the library. Each handler is thin: the work is in src/hub/. */
-import { app, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
+import { app, autoUpdater, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { isAbsolute, extname, join } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { filesToFetch } from '../src/hub/catalog.ts'
@@ -350,17 +350,14 @@ export function registerHub(window: () => BrowserWindow | null): void {
 
   // The update chip's state (electron/updater.ts): the page asks once on mount and then hears each change.
   const hootJob = registerHoot({ open, jobLog, send })
-  const updater = electronEnv().then((env) => {
-    const u = new Updater(env, {
-      log: (line) => jobLog.line(line), send: (state) => send('hub:updateState', state),
-      runningJob: () => jobs.current()?.job ?? hootJob(),
-    })
-    u.start()
-    return u
+  const updater = new Updater(electronEnv(app, autoUpdater), {
+    log: (line) => jobLog.line(line), send: (state) => send('hub:updateState', state),
+    runningJob: () => jobs.current()?.job ?? hootJob(),
   })
-  ipcMain.handle('hub:updateState', async () => (await updater).current())
-  ipcMain.handle('hub:updateCheck', async () => (await updater).check())
-  ipcMain.handle('hub:updateRestart', async (_e, force: unknown) => (await updater).restart(force === true))
+  ipcMain.handle('hub:updateState', () => updater.current())
+  ipcMain.handle('hub:updateCheck', () => updater.check())
+  ipcMain.handle('hub:updateRestart', (_e, force: unknown) => updater.restart(force === true))
+  updater.start()
 
   app.on('before-quit', () => describer.stop())
 }

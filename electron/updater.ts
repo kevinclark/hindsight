@@ -5,6 +5,7 @@
  * repo's releases and the chip offers the download link. Never restarts by itself: only `restart()`, which the user asks for.
  * Everything Electron is reached through `UpdaterEnv`, so tests drive it with fakes (tests/updater.test.ts).
  */
+import type { App, AutoUpdater as NativeUpdater } from 'electron'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { selfUpdates, checkForUpdate } from '../src/hub/update.ts'
@@ -57,9 +58,8 @@ export interface RestartAnswer { busy?: string; preparing?: boolean; started?: b
 
 const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : String(e)).split('\n')[0].slice(0, 200) || 'unknown error'
 
-/** The real environment (Electron imported lazily, so tests never load it). */
-export async function electronEnv(): Promise<UpdaterEnv> {
-  const { app, autoUpdater: native } = await import('electron')
+/** The real environment, from the Electron modules hub-ipc already imports (so nothing here can fail to load). */
+export function electronEnv(app: App, native: NativeUpdater): UpdaterEnv {
   return {
     version: app.getVersion(), packaged: app.isPackaged, platform: process.platform,
     macSigned: typeof __MAC_SIGNED__ === 'boolean' && __MAC_SIGNED__, userData: app.getPath('userData'),
@@ -135,7 +135,8 @@ export class Updater {
     void Promise.race([work.then(() => 'done' as const), timeout]).then((r) => {
       clearTimeout(timer)
       this.checking = false
-      if (r === 'timeout' && this.state.kind === 'checking') this.dispatch({ type: 'error', reason: `the update server didn't answer in ${CHECK_TIMEOUT_MS / 1000} s` })
+      // From 'failed' a retry never left 'failed' (US-04), so the timeout must answer there too, or the chip waits on it.
+      if (r === 'timeout' && (this.state.kind === 'checking' || this.state.kind === 'failed')) this.dispatch({ type: 'error', reason: `the update server didn't answer in ${CHECK_TIMEOUT_MS / 1000} s` })
     })
     return true
   }

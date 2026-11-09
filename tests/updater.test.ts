@@ -109,6 +109,18 @@ describe('[US-15] a check that never answers', () => {
     expect(s.u.current()).toMatchObject({ kind: 'failed', reason: expect.stringContaining("didn't answer") })
     expect(s.u.check()).toBe(true)
   })
+  test('[US-15] a retry from failed that never answers also ends in failed (the chip stops waiting)', async () => {
+    const s = setup()
+    s.auto.answer = 'null'
+    s.u.check(); await flush()
+    expect(s.u.current().kind).toBe('failed')
+    const before = s.sent.length
+    s.auto.answer = 'hang'
+    expect(s.u.check()).toBe(true)
+    await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS)
+    expect(s.sent.length).toBeGreaterThan(before)
+    expect(s.u.current()).toMatchObject({ kind: 'failed', reason: expect.stringContaining("didn't answer") })
+  })
   test('[US-15] a check that resolves with nothing (updater not active) is failed', async () => {
     const s = setup()
     s.auto.answer = 'null'
