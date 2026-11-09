@@ -5,6 +5,7 @@
   import type { Entry } from '../hub/catalog.ts'
   import type { LogRecord } from '../hub/types.ts'
   import { NO_EVENT, byDay, filterByEvent, isLarge, logLabel } from './phone-library.ts'
+  import { KEEP_CHOICES, keepCap, setKeepCap } from '../phone/keep-setting.ts'
 
   /** `onOpening`: before a download starts, so the log held now can be let go first (one log in memory at a time). */
   let { hub, onOpening, onOpen }: { hub: BrowserHub; onOpening: () => void; onOpen: (files: OpenedFile[]) => void } = $props()
@@ -14,7 +15,16 @@
   let entries = $state.raw<Entry[] | null>(null)
   /** sha-256 of the logs kept on this phone (opening one reads no Drive bytes). */
   let kept = $state.raw<Set<string>>(new Set())
-  const refreshKept = async () => { try { kept = await hub.keptLogs() } catch { /* shown as not kept */ } }
+  let keptBytes = $state(0)
+  let cap = $state(keepCap(localStorage))
+  const refreshKept = async () => { try { kept = await hub.keptLogs(); keptBytes = await hub.keptBytes() } catch { /* shown as not kept */ } }
+  async function chooseCap(bytes: number) {
+    cap = bytes
+    setKeepCap(localStorage, bytes)
+    await hub.setKeepCap(bytes)
+    await refreshKept()
+  }
+  async function clearKept() { await hub.clearKept(); await refreshKept() }
   let problem = $state<string | null>(null)
   let event = $state<string>(ALL)
   // Raw, and told apart by a number: a $state object would wrap `entry` in a proxy, so `opening.entry === entry` never
@@ -58,7 +68,10 @@
 </script>
 
 <section class="phone-library">
-  <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review. The last ones you opened (up to 1 GB, none over 137 MB) stay on this phone until Sign out.</p>
+  <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review. The ones you opened last stay on this phone (reopening needs no download) until Sign out.</p>
+  <p class="keep"><label>Keep up to <select value={cap} onchange={(e) => chooseCap(Number((e.currentTarget as HTMLSelectElement).value))}>
+    {#each KEEP_CHOICES as c (c.bytes)}<option value={c.bytes}>{c.label}</option>{/each}
+  </select></label> <span class="meta">{mb(keptBytes)} MB kept</span>{#if keptBytes > 0}{' '}<button class="link" onclick={clearKept}>Clear</button>{/if}</p>
   {#if problem}<p class="problem" role="alert">{problem} <button class="link" onclick={list}>Try again</button></p>{/if}
   {#if opening}
     <div class="opening" role="status">
@@ -99,6 +112,7 @@
   .phone-library { max-width: 46rem; }
   .meta { color: var(--muted); font-size: 0.85rem; }
   .problem { color: var(--error); }
+  .keep { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.25rem 0 0.75rem; }
   .filter { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0 1rem; }
   select { font: inherit; }
   h3 { font-size: 0.95rem; margin: 1.25rem 0 0.25rem; }

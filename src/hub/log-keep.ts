@@ -1,21 +1,14 @@
 /**
- * Logs the phone keeps after opening them, so opening one again reads no Drive bytes. Keyed by the log's sha-256; up to
- * `capBytes` in all, the least recently opened dropped first; a log over `maxLogBytes` is never kept (storing it means a
- * second full copy in memory for a moment). Kept in IndexedDB as Blobs, apart from the text cache (src/hub/phone-cache.ts).
- * Every failure (private storage, quota, a blocked database) behaves as an empty keep: the phone downloads again.
+ * Logs the phone keeps after opening them, so opening one again reads no Drive bytes; big logs most of all. Keyed by the
+ * log's sha-256; up to a cap the person sets (src/phone/keep-setting.ts, 1 GB to start), the least recently opened dropped
+ * first. Stored in IndexedDB in pieces of a few MB, each written and let go in turn, so keeping a 641 MB log never holds a
+ * second whole copy in memory (a single Blob would). Apart from the text cache (src/hub/phone-cache.ts). Every failure
+ * (private storage, quota, a blocked database) behaves as an empty keep: the phone downloads again.
  *
  * No `node:` imports.
  */
 
 export interface KeptMeta { sha256: string; size: number; usedAt: number }
-
-/** The phone keeps up to this much in all. */
-export const KEEP_CAP_BYTES = 2 ** 30
-/**
- * The biggest log the phone keeps: half the size measured to open on an iPhone 17 Pro (275 MB), because storing a log
- * makes a second full copy of it in memory for a moment (a Blob), on top of the one just opened.
- */
-export const KEEP_MAX_LOG_BYTES = Math.floor((275 * 2 ** 20) / 2)
 
 /** Where kept logs live: IndexedDB on the phone, memory in tests. */
 export interface KeepStore {
@@ -29,16 +22,27 @@ export interface KeepStore {
 
 export class LogKeep {
   private readonly store: KeepStore
-  private readonly capBytes: number
-  private readonly maxLogBytes: number
+  private capBytes: number
   private readonly now: () => number
 
-  constructor(store: KeepStore, opts: { capBytes: number; maxLogBytes: number; now?: () => number }) {
+  constructor(store: KeepStore, opts: { capBytes: number; now?: () => number }) {
     this.store = store
     this.capBytes = opts.capBytes
-    this.maxLogBytes = opts.maxLogBytes
     this.now = opts.now ?? Date.now
   }
+
+  /** A new cap: the least recently opened go at once until the rest fit (0 keeps nothing). */
+  async setCap(capBytes: number): Promise<void> {
+    this.capBytes = capBytes
+    try {
+      const all = (await this.store.meta()).sort((a, b) => a.usedAt - b.usedAt)
+      let total = all.reduce((n, m) => n + m.size, 0)
+      while (all.length && total > capBytes) { const old = all.shift()!; await this.store.remove(old.sha256); total -= old.size }
+    } catch { /* what could not be dropped stays until the next put */ }
+  }
+
+  /** Bytes kept now. */
+  async used(): Promise<number> { try { return (await this.store.meta()).reduce((n, m) => n + m.size, 0) } catch { return 0 } }
 
   /** A kept log's bytes (and it becomes the most recently opened), or null. */
   async get(sha256: string): Promise<Uint8Array | null> {
@@ -50,11 +54,11 @@ export class LogKeep {
   }
 
   /**
-   * Keep a log just opened, unless it is too big: first drop the least recently opened until it fits under the cap, then
+   * Keep a log just opened, unless it is bigger than the cap: first drop the least recently opened until it fits under the cap, then
    * write it; a refused write (a full quota) drops the oldest once more and tries again.
    */
   async put(sha256: string, bytes: Uint8Array): Promise<void> {
-    if (bytes.length > this.maxLogBytes || bytes.length > this.capBytes) return
+    if (bytes.length === 0 || bytes.length > this.capBytes) return
     const meta = { sha256, size: bytes.length, usedAt: this.now() }
     try {
       const others = (await this.store.meta()).filter((m) => m.sha256 !== sha256).sort((a, b) => a.usedAt - b.usedAt)
@@ -91,15 +95,25 @@ export function memoryKeepStore(): KeepStore {
 }
 
 const META = 'meta'
-const BYTES = 'bytes'
+const PIECES = 'pieces'
+/** A kept log is stored in pieces of this size. */
+export const KEEP_PIECE_BYTES = 8 << 20
+const pieceKey = (sha256: string, i: number) => `${sha256}#${String(i).padStart(6, '0')}`
+const piecesOf = (sha256: string) => IDBKeyRange.bound(`${sha256}#`, `${sha256}#\uffff`)
 
-/** The phone's keep: two IndexedDB stores, the metadata (small, listed) and the bytes (Blobs, read one at a time). */
-export function indexedDbKeepStore(dbName = 'hindsight-logs'): KeepStore {
+/** The phone's keep: the metadata (small, listed) and each log's pieces (Blobs, written and read one at a time). */
+export function indexedDbKeepStore(dbName = 'hindsight-logs', pieceBytes = KEEP_PIECE_BYTES): KeepStore {
   let opened: Promise<IDBDatabase> | null = null
   // A failed open is not remembered: the next call tries again (a blocked open can clear).
   const open = () => (opened ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(dbName, 1)
-    req.onupgradeneeded = () => { req.result.createObjectStore(META, { keyPath: 'sha256' }); req.result.createObjectStore(BYTES) }
+    const req = indexedDB.open(dbName, 2)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      // Version 1 kept each log as one Blob: those go (the phone downloads them again).
+      for (const name of [...db.objectStoreNames]) db.deleteObjectStore(name)
+      db.createObjectStore(META, { keyPath: 'sha256' })
+      db.createObjectStore(PIECES)
+    }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
     req.onblocked = () => reject(new Error('the kept-logs database is blocked'))
@@ -113,13 +127,30 @@ export function indexedDbKeepStore(dbName = 'hindsight-logs'): KeepStore {
       t.onerror = t.onabort = () => reject(t.error)
     })
   }
+  const removeAll = (sha: string) => tx([META, PIECES], 'readwrite', (t) => { t.objectStore(META).delete(sha); t.objectStore(PIECES).delete(piecesOf(sha)) })
   return {
     meta: async () => (await tx<KeptMeta[]>([META], 'readonly', (t) => t.objectStore(META).getAll())) ?? [],
     read: async (sha) => {
-      const blob = await tx<Blob | undefined>([BYTES], 'readonly', (t) => t.objectStore(BYTES).get(sha))
-      return blob ? new Uint8Array(await blob.arrayBuffer()) : null
+      const m = await tx<KeptMeta | undefined>([META], 'readonly', (t) => t.objectStore(META).get(sha))
+      if (!m) return null
+      const out = new Uint8Array(m.size)
+      for (let i = 0, at = 0; at < m.size; i++, at += pieceBytes) {
+        const blob = await tx<Blob | undefined>([PIECES], 'readonly', (t) => t.objectStore(PIECES).get(pieceKey(sha, i)))
+        if (!blob || blob.size !== Math.min(pieceBytes, m.size - at)) return null
+        out.set(new Uint8Array(await blob.arrayBuffer()), at)
+      }
+      return out
     },
-    write: async (m, b) => { await tx([META, BYTES], 'readwrite', (t) => { t.objectStore(BYTES).put(new Blob([b as BlobPart]), m.sha256); t.objectStore(META).put(m) }) },
+    // Piece by piece, then the metadata last: a log only half written is never listed (and is cleared on failure).
+    write: async (m, b) => {
+      try {
+        for (let i = 0, at = 0; at < b.length; i++, at += pieceBytes) {
+          const piece = new Blob([b.subarray(at, Math.min(at + pieceBytes, b.length)) as BlobPart])
+          await tx([PIECES], 'readwrite', (t) => { t.objectStore(PIECES).put(piece, pieceKey(m.sha256, i)) })
+        }
+        await tx([META], 'readwrite', (t) => { t.objectStore(META).put(m) })
+      } catch (e) { await removeAll(m.sha256).catch(() => {}); throw e }
+    },
     touch: async (sha, usedAt) => {
       await tx([META], 'readwrite', (t) => {
         const s = t.objectStore(META)
@@ -127,7 +158,7 @@ export function indexedDbKeepStore(dbName = 'hindsight-logs'): KeepStore {
         r.onsuccess = () => { if (r.result) s.put({ ...(r.result as KeptMeta), usedAt }) }
       })
     },
-    remove: async (sha) => { await tx([META, BYTES], 'readwrite', (t) => { t.objectStore(META).delete(sha); t.objectStore(BYTES).delete(sha) }) },
-    clear: async () => { await tx([META, BYTES], 'readwrite', (t) => { t.objectStore(META).clear(); t.objectStore(BYTES).clear() }) },
+    remove: async (sha) => { await removeAll(sha) },
+    clear: async () => { await tx([META, PIECES], 'readwrite', (t) => { t.objectStore(META).clear(); t.objectStore(PIECES).clear() }) },
   }
 }

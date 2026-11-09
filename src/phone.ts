@@ -6,11 +6,12 @@
 import { BrowserHub } from './hub/browser-hub.ts'
 import { DriveReader } from './hub/drive-read.ts'
 import { indexedDbCache, type ReadStore } from './hub/phone-cache.ts'
-import { KEEP_CAP_BYTES, KEEP_MAX_LOG_BYTES, LogKeep, indexedDbKeepStore } from './hub/log-keep.ts'
+import { LogKeep, indexedDbKeepStore } from './hub/log-keep.ts'
+import { keepCap } from './phone/keep-setting.ts'
 import { clearIndexedDbCache } from './hub/phone-cache.ts'
 
 /** Logs kept on the phone after opening (src/hub/log-keep.ts). */
-export const keptLogs = () => new LogKeep(indexedDbKeepStore(), { capBytes: KEEP_CAP_BYTES, maxLogBytes: KEEP_MAX_LOG_BYTES })
+export const keptLogs = () => new LogKeep(indexedDbKeepStore(), { capBytes: keepCap(globalThis.localStorage) })
 
 /** Sign out: forget the copies of the team's files and the kept logs on this phone. */
 export async function forgetPhoneData(): Promise<void> {

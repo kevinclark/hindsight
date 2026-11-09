@@ -168,6 +168,13 @@ export class BrowserHub {
     return out
   }
 
+  /** How many bytes of logs are kept on this phone. */
+  async keptBytes(): Promise<number> { return (await this.keep?.used()) ?? 0 }
+  /** A new size for the kept logs: the least recently opened go at once until the rest fit. */
+  async setKeepCap(bytes: number): Promise<void> { await this.keep?.setCap(bytes) }
+  /** Forget every kept log. */
+  async clearKept(): Promise<void> { await this.keep?.clear() }
+
   /** The sha-256 of every log kept on this phone (the Library marks them). */
   async keptLogs(): Promise<Set<string>> { return new Set((await this.keep?.kept()) ?? []) }
 
