@@ -24,6 +24,8 @@ export type UpdateEvent =
 export const CHECK_EVERY_MS = 4 * 60 * 60 * 1000
 /** A download with no new bytes for this long is said to have stalled (the same 15 s the robot pull uses). */
 export const STALL_MS = 15_000
+/** A download with no new bytes for this long is given up (the updater cancels it and the chip offers Retry). */
+export const STALL_ABORT_MS = 120_000
 
 /** Not packaged and not self-updating is a development run, which never checks; anything else starts by checking. */
 export function initial(version: string, selfUpdating: boolean, packaged: boolean): UpdateState {
@@ -90,7 +92,7 @@ export function chip(s: UpdateState, now: number, whatsNewVersion: string | null
     case 'ready':
       return { text: `${s.next} ready · Restart to update`, action: 'restart', accent: true, title: `Hindsight ${s.next} is downloaded. Restart now, or it installs the next time you quit.` }
     case 'failed':
-      return { text: `${X} · couldn't check since ${clock(s.since)} · Retry`, action: 'retry', accent: false, title: `Hindsight ${X} could not reach GitHub to check for updates since ${clock(s.since)}; select this to try again.` }
+      return { text: `${X} · couldn't update since ${clock(s.since)} · Retry`, action: 'retry', accent: false, title: `Hindsight ${X} could not check for or download an update since ${clock(s.since)}; select this to try again.` }
     case 'manual':
       return { text: `${s.next} is out · Download`, action: 'download', accent: false, title: `Hindsight ${s.next} is out; this copy is ${X} and cannot update itself, so download the new one.` }
   }

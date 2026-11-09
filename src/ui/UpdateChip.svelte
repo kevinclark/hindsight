@@ -24,6 +24,11 @@
   let viewing = $state(false)
   /** The name of the job that a restart would stop, while the popover asks. */
   let busy = $state<string | null>(null)
+  /** A Retry or Check now was asked and no answer has come yet (a retry from `failed` has no checking state of its own). */
+  let asking = $state(false)
+  /** When Restart now was pressed (the app should be gone within seconds; if it isn't, say so). */
+  let restartAt = $state<number | null>(null)
+  const RESTART_GRACE_MS = 20_000
   let root: HTMLDivElement | undefined = $state()
   let button: HTMLButtonElement | undefined = $state()
   const id = $props.id()
@@ -39,7 +44,7 @@
     if (lines.length) unseen = true
     else remember(version)
   }
-  const take = (s: UpdateState) => { st = s; learnVersion(s.version) }
+  const take = (s: UpdateState) => { st = s; asking = false; learnVersion(s.version) }
 
   onMount(() => {
     const api = hub()
@@ -52,7 +57,7 @@
     return () => { off(); clearInterval(tick); window.removeEventListener('online', online) }
   })
 
-  const view = $derived(st ? chip(st, now, unseen ? st.version : null) : null)
+  const view = $derived(!st ? null : asking && (st.kind === 'failed' || st.kind === 'current') ? { ...chip(st, now, null), text: `${st.version} · checking…`, accent: false } : chip(st, now, unseen ? st.version : null))
 
   function show() {
     open = true
@@ -69,9 +74,10 @@
     try {
       const r = await hub()!.updateRestart(force)
       busy = r.busy ?? null
+      if (!busy) restartAt = Date.now()
     } catch { busy = null }
   }
-  const retry = () => { void hub()?.updateCheck().catch(() => {}) }
+  const retry = () => { asking = true; void hub()?.updateCheck().catch(() => { asking = false }) }
   const mb = (n: number) => (n / 1e6).toFixed(0)
 
   /** A download that has had no new bytes for STALL_MS. */
@@ -90,7 +96,12 @@
     {#if open}
       <div class="pop" id="{id}-pop" role="dialog" aria-label="Updates" data-update-popover>
         {#if st.kind === 'ready'}
-          {#if busy}
+          {#if restartAt !== null && now - restartAt >= RESTART_GRACE_MS}
+            <p>Hindsight didn't restart. Quit Hindsight to install {st.next}, or look at the log to see why.</p>
+            <p class="row"><button type="button" onclick={() => void hub()?.showJobLog()}>Show log</button></p>
+          {:else if restartAt !== null}
+            <p>Restarting to install Hindsight {st.next}…</p>
+          {:else if busy}
             <p>A {busy} is running. Restarting stops it.</p>
             <p class="row"><button type="button" class="primary" onclick={() => restart(true)}>Restart anyway</button><button type="button" onclick={() => close(true)}>Wait</button></p>
           {:else}
@@ -102,8 +113,10 @@
         {:else if st.kind === 'downloading'}
           <p>{#if stalled}Downloading Hindsight {st.next}: no data for {Math.round((now - st.lastDataAt) / 1000)} s.{:else}Downloading Hindsight {st.next}{#if st.total > 0}: {mb(st.transferred)} of {mb(st.total)} MB, {(st.bytesPerSecond / 1e6).toFixed(1)} MB/s{/if}.{/if}</p>
           <p class="hint">It installs when you quit, or you can restart once it's downloaded.</p>
+        {:else if asking && (st.kind === 'failed' || st.kind === 'current')}
+          <p>Checking for a newer Hindsight…</p>
         {:else if st.kind === 'failed'}
-          <p>Couldn't reach GitHub to check for updates since {clock(st.since)}: {st.reason}.</p>
+          <p>Couldn't check for or download an update since {clock(st.since)}: {st.reason}.</p>
           <p class="row"><button type="button" class="primary" onclick={retry}>Retry</button><button type="button" onclick={() => void hub()?.showJobLog()}>Show log</button></p>
         {:else if st.kind === 'manual'}
           <p>Hindsight {st.next} is out. This copy can't update itself: download the new version, open it, and drag Hindsight into Applications to replace this one.</p>

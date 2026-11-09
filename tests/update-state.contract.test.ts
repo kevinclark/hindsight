@@ -145,7 +145,7 @@ describe('[US-10] chip: downloading', () => {
 describe('[US-11] chip: ready, failed, manual', () => {
   test('[US-11] wording, action and accent', () => {
     expect(chip(ready, T0, null)).toMatchObject({ text: '0.1.101 ready · Restart to update', action: 'restart', accent: true })
-    expect(chip(failed, T0 + 1e6, null)).toMatchObject({ text: `${V} · couldn't check since ${time(T0 + 10)} · Retry`, action: 'retry', accent: false })
+    expect(chip(failed, T0 + 1e6, null)).toMatchObject({ text: `${V} · couldn't update since ${time(T0 + 10)} · Retry`, action: 'retry', accent: false })
     expect(chip(manual, T0, null)).toMatchObject({ text: '0.1.101 is out · Download', action: 'download', accent: false })
   })
   test('[US-11] only ready and the what\'s-new label are accented', () => {

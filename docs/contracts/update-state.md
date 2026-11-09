@@ -35,7 +35,7 @@ Suite: `npx vitest run tests/update-state.contract.test.ts --reporter=junit --ou
 - **US-05** `error` from `checking`, `current`, `downloading` or `failed` gives `failed` with the reason; `since` is the time
   of the first error of a run of errors (an error while already `failed` keeps `since`), and `checkedAt` is the last
   success (kept from the state it left, null from `downloading`). A later `none`, `available` or `downloaded` ends the run.
-  `manual` and `ready` ignore an error. Why: "couldn't check since 7:56 AM" must say how long, not when the latest retry
+  `manual` and `ready` ignore an error. Why: "couldn't update since 7:56 AM" must say how long, not when the latest retry
   failed. Kind: failure mode.
 - **US-06** `progress` updates the byte counts and the rate while `downloading`, and moves `lastDataAt` to now only when
   `transferred` grew; outside `downloading` it is ignored. Why: a stalled download repeats the same count; only growth
@@ -53,7 +53,7 @@ Suite: `npx vitest run tests/update-state.contract.test.ts --reporter=junit --ou
 - **US-10** `downloading`: `Downloading N · <done> of <total> MB` (MB are bytes / 1e6, rounded; `Downloading N` while the
   total is not yet known); after `STALL_MS` with no new data: `Downloading N · no data for <s> s`. No action, no accent.
   Kind: behaviour.
-- **US-11** `ready`: `N ready · Restart to update`, action `restart`, accent. `failed`: `X · couldn't check since <time>
+- **US-11** `ready`: `N ready · Restart to update`, action `restart`, accent. `failed`: `X · couldn't update since <time>
   · Retry`, action `retry`, no accent. `manual`: `N is out · Download`, action `download`, no accent. `ready` and the
   What's new label are the only accented labels. Why: one thing at a time asks for the eye. Kind: behaviour.
 - **US-12** Every state's `title` is a tooltip in plain words ending in a full stop, naming the versions involved (the running

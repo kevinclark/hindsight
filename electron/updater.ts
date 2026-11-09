@@ -5,8 +5,10 @@
  * repo's releases and the chip offers the download link. Never restarts by itself: only `restart()`, which the user asks for.
  */
 import { app } from 'electron'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { selfUpdates, checkForUpdate } from '../src/hub/update.ts'
-import { CHECK_EVERY_MS, initial, step, type UpdateEvent, type UpdateState } from '../src/hub/update-state.ts'
+import { CHECK_EVERY_MS, STALL_ABORT_MS, initial, step, type UpdateEvent, type UpdateState } from '../src/hub/update-state.ts'
 
 
 export interface UpdaterDeps {
@@ -31,6 +33,10 @@ export class Updater {
   private checking = false
   private frozen = false
   private auto: Promise<AutoUpdater> | null = null
+  /** Cancels the download in flight (electron-updater's token from the check that started it). */
+  private cancelDownload: (() => void) | null = null
+  /** Set when we gave up a stalled download, so electron-updater's own 'cancelled' error doesn't replace our reason. */
+  private gaveUp = false
 
   private readonly deps: UpdaterDeps
 
@@ -55,6 +61,7 @@ export class Updater {
     if (this.frozen || this.state.kind === 'dev') return
     void this.check()
     setInterval(() => void this.check(), CHECK_EVERY_MS).unref()
+    setInterval(() => this.watchStall(), 5_000).unref()
   }
 
   /** One check; ignored while one is in flight, while a download runs, and in a dev run. */
@@ -82,13 +89,23 @@ export class Updater {
       au.autoDownload = true
       au.autoInstallOnAppQuit = true
       const feed = !this.packaged ? process.env.HINDSIGHT_UPDATE_FEED : undefined
-      if (feed) { au.forceDevUpdateConfig = true; au.setFeedURL({ provider: 'generic', url: feed }) }
+      if (feed) {
+        // A dev run reads its feed from dev-app-update.yml; this one sits in the run's own data folder and downloads into a cache
+        // folder of its own, never the installed app's (hindsight-updater).
+        const config = join(app.getPath('userData'), 'dev-app-update.yml')
+        writeFileSync(config, `provider: generic\nurl: ${JSON.stringify(feed)}\nupdaterCacheDirName: hindsight-dev-updater\n`)
+        au.forceDevUpdateConfig = true
+        au.updateConfigPath = config
+      }
       au.on('checking-for-update', () => this.dispatch({ type: 'checking' }))
       au.on('update-not-available', () => this.dispatch({ type: 'none' }))
       au.on('update-available', (info) => this.dispatch({ type: 'available', next: info.version }))
       au.on('download-progress', (p) => this.dispatch({ type: 'progress', transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond }))
       au.on('update-downloaded', (info) => this.dispatch({ type: 'downloaded', next: info.version }))
-      au.on('error', (e) => this.dispatch({ type: 'error', reason: reasonOf(e) }))
+      au.on('error', (e) => {
+        if (this.gaveUp && /cancel/i.test(reasonOf(e))) return
+        this.dispatch({ type: 'error', reason: reasonOf(e) })
+      })
       return au
     }))
   }
@@ -96,8 +113,26 @@ export class Updater {
   private async checkSelf(): Promise<void> {
     try {
       const au = await this.autoUpdater()
-      await au.checkForUpdates()
+      this.gaveUp = false
+      const result = await au.checkForUpdates()
+      const token = result?.cancellationToken
+      this.cancelDownload = token ? () => token.cancel() : null
+      // A failed download rejects this promise and also emits 'error', which is what the chip hears; without this catch the
+      // rejection is unhandled.
+      result?.downloadPromise?.catch(() => {})
     } catch (e) { this.dispatch({ type: 'error', reason: reasonOf(e) }) }
+  }
+
+  /** A download with no new bytes for STALL_ABORT_MS is cancelled and reported, so Retry (or the next check) can start it again. */
+  private watchStall(): void {
+    const s = this.state
+    if (s.kind !== 'downloading' || this.now() - s.lastDataAt < STALL_ABORT_MS) return
+    const mb = (n: number) => Math.round(n / 1e6)
+    this.gaveUp = true
+    this.cancelDownload?.()
+    this.cancelDownload = null
+    const quiet = `no data for ${Math.round(STALL_ABORT_MS / 1000)} s`
+    this.dispatch({ type: 'error', reason: s.total > 0 ? `the download of ${s.next} stopped at ${mb(s.transferred)} of ${mb(s.total)} MB (${quiet})` : `the download of ${s.next} got ${quiet}` })
   }
 
   /** Install the downloaded update and relaunch. Only in `ready`; with a job running it asks first (`{ busy }`) unless forced. */
@@ -125,6 +160,8 @@ export class Updater {
     else if (e.type === 'available' && after.kind === 'downloading' && !(before.kind === 'downloading' && before.next === after.next)) log(`update: downloading ${after.next}`)
     else if (e.type === 'downloaded' && after.kind === 'ready' && !(before.kind === 'ready' && before.next === after.next)) log(`update: downloaded ${after.next}, installs on quit`)
     else if (e.type === 'error' && after.kind === 'failed' && !(before.kind === 'failed' && before.reason === after.reason)) log(`update: failed: ${after.reason}`)
+    // A staged update stays offered, but an error now (macOS unpacking it, or a later check) is still worth a line: Restart may not work.
+    else if (e.type === 'error' && after.kind === 'ready') log(`update: error while ${after.next} is staged: ${e.reason}`)
     else if (e.type === 'manual' && after.kind === 'manual') log(`update: ${after.next} is out (manual download)`)
   }
 }
