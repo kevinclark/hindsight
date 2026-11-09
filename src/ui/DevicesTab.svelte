@@ -7,9 +7,9 @@
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import { hub, type Progress } from '../hub/bridge.ts'
-  import type { HootReading, HootReadReport, HootStatus } from '../hoot/types.ts'
+  import { BIN_S, type HootReading, type HootReadReport, type HootStatus } from '../hoot/types.ts'
   import { align, edgesOf, type Alignment } from '../hoot/align.ts'
-  import { deviceRows, enabledSpans, profileNames, type DeviceRow } from '../hoot/view.ts'
+  import { crossesGap, deviceRows, enabledSpans, profileNames, type DeviceRow } from '../hoot/view.ts'
   import { matchWhen } from '../match/match.ts'
   import { readNumbers } from '../readers/wpilog.ts'
   import { changes } from '../hoot/reduce.ts'
@@ -29,29 +29,51 @@
   let ticked = $state(false)
   let open = $state<string | null>(null)
 
+  // The hoot runner's jobs (owlet, reading) and the app's own (a Drive download of this log's .hoot): both drawn here.
+  let mainProgress = $state<Progress | null>(null)
   $effect(() => api.onHootProgress((p) => { progress = p }))
+  $effect(() => api.onProgress((p) => { mainProgress = p }))
   $effect(() => { void api.hootRunning().then((p) => { progress ??= p }) })
+  const busy = $derived(!!progress || !!mainProgress)
+
+  // Each refresh is for one log: an answer that arrives after another log was opened is dropped, never drawn on it.
+  let pass = 0
+  /** A read refused because another .hoot job was running: read again once that job ends. */
+  let waiting = $state(false)
+  $effect(() => { if (!progress && waiting) { waiting = false; void read() } })
 
   async function refresh(path: string) {
+    const mine = ++pass
     problem = ''
     report = null
+    waiting = false
     try {
-      status = await api.hootFor(path)
-      if (readable(status)) await read(path)
-    } catch (e) { problem = words(e) }
+      const s = await api.hootFor(path)
+      if (mine !== pass) return
+      status = s
+      if (readable(s)) await read(path, mine)
+    } catch (e) { if (mine === pass) problem = words(e) }
   }
   $effect(() => { void refresh(logPath) })
 
   const words = (e: unknown) => (e instanceof Error ? e.message : String(e))
   const held = $derived(status?.files.filter((f) => f.held) ?? [])
   const away = $derived(status?.files.filter((f) => !f.held) ?? [])
+  /** Held files too short to be a .hoot (no format byte). */
+  const unreadable = $derived(held.filter((f) => f.compliancy === null))
   /** Formats this log's held files need an owlet for and this computer has none. */
   const missing = $derived([...new Set(held.filter((f) => !f.owlet && f.compliancy !== null).map((f) => f.compliancy!))])
   const readable = (s: HootStatus) => s.licence && s.files.some((f) => f.held && f.owlet)
 
-  async function read(path = logPath) {
+  async function read(path = logPath, mine = pass) {
     problem = ''
-    try { report = await api.readHoots(path) } catch (e) { problem = words(e) }
+    try {
+      const r = await api.readHoots(path)
+      if (mine === pass) report = r
+    } catch (e) {
+      if (mine !== pass) return
+      if (/Another job is running/.test(words(e))) { waiting = true; problem = 'Waiting for the .hoot job that is running to finish…' } else problem = words(e)
+    }
   }
   async function accept() {
     await api.acceptCtreLicence()
@@ -72,8 +94,15 @@
     const s = key ? readNumbers(m.log, key) : null
     return edgesOf(changes(s).map((c) => ({ t: c.t, on: c.v !== 0 })))
   })
-  const alignments = $derived((report?.readings ?? []).map((r) => align(edgesOf(r.enable), logEdges, r.enable.some((e) => e.on))))
+  const alignments = $derived((report?.readings ?? []).map((r): Alignment => (m.profile.signals.enabled
+    ? align(edgesOf(r.enable), logEdges, r.enable.some((e) => e.on))
+    : { offset: null, why: "this log's robot profile names no enabled signal to line up by" })))
   const names = $derived(profileNames(m.profile, report?.readings ?? []))
+  /** Each file's rows, window and scale, worked out once per reading rather than on every render. */
+  const views = $derived((report?.readings ?? []).map((r, k) => {
+    const rows = deviceRows(r, names)
+    return { r, a: alignments[k], w: windowOf(r, alignments[k]), rows, scale: voltScale(rows), spans: enabledSpans(r) }
+  }))
 
   /** The window drawn: the match (else the log) on the robot log's clock; a .hoot that can't be lined up, its own span. */
   function windowOf(r: HootReading, a: Alignment): { from: number; to: number; shift: number } {
@@ -84,11 +113,16 @@
   const busLabel = (bus: string) => (bus.toLowerCase() === 'rio' ? "roboRIO's CAN bus" : `CANivore ${bus.slice(0, 4)}…${bus.slice(-4)}`)
   const f1 = (x: number | null, unit: string, digits = 1) => (x === null ? '—' : `${x.toFixed(digits)} ${unit}`)
 
-  /** One voltage scale for every strip of a file, so rows compare by eye. */
+  /**
+   * One voltage scale for every strip of a file, so rows compare by eye: from the lowest reading while enabled (a device
+   * reading 0 V while it boots would otherwise flatten every row), never above 10 V or below 13 V at the top.
+   */
   function voltScale(rows: DeviceRow[]): { lo: number; hi: number } {
-    let lo = Infinity, hi = -Infinity
-    for (const row of rows) for (const v of row.device.volts ?? []) if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v) }
-    return Number.isFinite(lo) ? { lo: Math.floor(Math.min(lo, 10)), hi: Math.ceil(Math.max(hi, 13)) } : { lo: 6, hi: 14 }
+    const lows = rows.map((r) => r.lowestVolts).filter((v): v is number => v !== null)
+    let hi = -Infinity
+    for (const row of rows) for (const v of row.device.volts ?? []) if (Number.isFinite(v)) hi = Math.max(hi, v)
+    const lo = lows.length ? Math.min(...lows) : 6
+    return { lo: Math.floor(Math.min(lo, 10)), hi: Math.ceil(Math.max(Number.isFinite(hi) ? hi : 13, 13)) }
   }
 
   const W = 360, H = 26
@@ -96,8 +130,9 @@
     const d = row.device
     if (!d.volts) return ''
     const x = (t: number) => ((t + w.shift - w.from) / (w.to - w.from)) * W
-    const y = (v: number) => H - 2 - ((v - scale.lo) / (scale.hi - scale.lo)) * (H - 4)
-    const broken = (a: number, b: number) => d.gaps.some((g) => g.from <= a && g.to >= b)
+    // Below the scale (a reading while disabled) sits on the bottom edge.
+    const y = (v: number) => H - 2 - ((Math.max(v, scale.lo) - scale.lo) / (scale.hi - scale.lo)) * (H - 4)
+    const broken = (a: number, b: number) => crossesGap(d.gaps, a, b, BIN_S)
     let path = ''
     let last: number | null = null
     for (let i = 0; i < d.t.length; i++) {
@@ -127,7 +162,9 @@
 
 <section class="devices">
   {#if progress}<JobBar {progress} onStop={() => void api.hootCancel()} />{/if}
-  {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
+  {#if mainProgress}<JobBar progress={mainProgress} onStop={() => void api.cancel()} />{/if}
+  {#if problem}<p class={waiting ? 'note' : 'problem'} role="alert">{problem}
+    {#if !waiting && status && readable(status) && !busy}<button class="button" onclick={() => read()}>Read again</button>{/if}</p>{/if}
 
   {#if !status}
     <p class="note">Looking for this log's .hoot files…</p>
@@ -136,8 +173,12 @@
   {:else}
     {#if away.length}
       <p class="note">{away.length === 1 ? "This log's .hoot is" : `${away.length} of this log's .hoot files are`} on the team Drive, not on this computer ({size(away.reduce((n, f) => n + f.size, 0))}).
-        <button class="button" disabled={!!progress} onclick={fetchAway}>Download</button></p>
+        <button class="button" disabled={busy} onclick={fetchAway}>Download</button></p>
     {/if}
+
+    {#each unreadable as f (f.path)}
+      <p class="note">{f.name} is on this computer but too short to be a .hoot ({f.size} bytes), so it can't be read.</p>
+    {/each}
 
     {#if held.length && !status.licence}
       <div class="licence">
@@ -149,20 +190,16 @@
     {:else if held.length}
       {#each missing as c (c)}
         <p class="note">No owlet on this computer reads {held.filter((f) => f.compliancy === c).length === 1 ? 'this .hoot' : 'these .hoot files'} (format {c}).
-          {#if status.canDownload}<button class="button" disabled={!!progress} onclick={() => getOwlet(c)}>Get CTRE's converter</button> (about 4 MB from CTRE's server){:else}CTRE has no owlet for this kind of computer.{/if}</p>
+          {#if status.canDownload}<button class="button" disabled={busy} onclick={() => getOwlet(c)}>Get CTRE's converter</button> (about 4 MB from CTRE's server){:else}CTRE has no owlet for this kind of computer.{/if}</p>
       {/each}
     {/if}
 
     {#if report}
       {#each report.problems as p (p.file)}
         <p class="problem">{p.file}: {p.why}
-          {#if /could not start/.test(p.why) && status.canDownload}{@const f = held.find((h) => h.name === p.file)}{#if f?.compliancy != null}<button class="button" disabled={!!progress} onclick={() => getOwlet(f.compliancy!)}>Get CTRE's converter again</button>{/if}{/if}</p>
+          {#if p.reget && status.canDownload}{@const f = held.find((h) => h.name === p.file)}{#if f?.compliancy != null}<button class="button" disabled={busy} onclick={() => getOwlet(f.compliancy!)}>Get CTRE's converter again</button>{/if}{/if}</p>
       {/each}
-      {#each report.readings as r, k (r.file)}
-        {@const a = alignments[k]}
-        {@const w = windowOf(r, a)}
-        {@const rows = deviceRows(r, names[k])}
-        {@const scale = voltScale(rows)}
+      {#each views as { r, a, w, rows, scale, spans } (r.file)}
         <h3>{busLabel(r.bus)} <span class="meta">{r.file} · owlet {r.owlet}</span></h3>
         {#if r.cutShort}<p class="note">The file ends early (owlet: "{r.cutShort}"): everything before that point is shown.</p>{/if}
         {#if rows.length === 0}
@@ -182,7 +219,7 @@
                   <th scope="row"><button class="link" aria-expanded={open === id}>{row.label}</button></th>
                   <td class="strip">
                     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`${row.label} supply voltage`}>
-                      {#each enabledSpans(r) as s (s.start)}
+                      {#each spans as s (s.start)}
                         <rect class="enabled" x={Math.max(0, xOf(s.start, w))} width={Math.max(0, Math.min(W, xOf(s.end, w)) - Math.max(0, xOf(s.start, w)))} y="0" height={H} />
                       {/each}
                       <path d={stripPath(row, w, scale)} />

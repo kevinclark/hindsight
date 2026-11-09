@@ -8,10 +8,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { align, edgesOf } from '../src/hoot/align.ts'
 import { binned, gapsIn, onOff } from '../src/hoot/reduce.ts'
-import { busOf, compliancyOf, findOwlet, parseScan, pickDownload, platformKey, runOutcome, sha1Of, wantedIds } from '../src/hoot/owlet.ts'
+import { busOf, compliancyOf, findOwlet, parseScan, pickDownload, platformKey, runOutcome, runOwlet, sha1Of, wantedIds } from '../src/hoot/owlet.ts'
 import { readHoot } from '../src/hoot/read-hoot.ts'
 import { downloadOwlet } from '../src/hoot/download.ts'
-import { deviceRows, enabledSpans, profileNames } from '../src/hoot/view.ts'
+import { crossesGap, deviceRows, enabledSpans, profileNames } from '../src/hoot/view.ts'
+import { namedTime } from '../src/hub/catalog.ts'
 import type { HootDevice, HootReading } from '../src/hoot/types.ts'
 import { fakeHootBytes, fakeOwletArgv, type FakeHoot } from './helpers/fake-owlet.ts'
 
@@ -249,8 +250,41 @@ describe('the Devices tab\'s rows', () => {
   it('names a motor from the profile only when its CAN id is unique in the profile and on one .hoot', () => {
     const profile = { motorGroups: [{ name: 'Shooter', motors: [{ name: 'Flywheel leader', canId: 12 }, { name: 'Hood', canId: 11 }, { name: 'Other hood', canId: 11 }] }], foresight: undefined } as unknown as Parameters<typeof profileNames>[0]
     const one = reading([device('TalonFX-12'), device('TalonFX-11')])
-    expect([...profileNames(profile, [one])[0]]).toEqual([['TalonFX-12', 'Flywheel leader']])
+    expect([...profileNames(profile, [one])]).toEqual([['TalonFX-12', 'Flywheel leader']])
     // A second bus with its own TalonFX-12: the profile names no bus, so neither is named.
-    expect(profileNames(profile, [one, reading([device('TalonFX-12')])])[0].size).toBe(0)
+    expect(profileNames(profile, [one, reading([device('TalonFX-12')])]).size).toBe(0)
   })
+})
+
+describe('review follow-ups', () => {
+  it('breaks a strip where the device went silent: the gap\'s ends lie inside the bins on either side', () => {
+    const gaps = [{ from: 1.98, to: 5.0 }]
+    expect(crossesGap(gaps, 1.75, 5.0, 0.25)).toBe(true)
+    expect(crossesGap(gaps, 1.5, 1.75, 0.25)).toBe(false)
+    expect(crossesGap(gaps, 5.0, 5.25, 0.25)).toBe(false)
+  })
+
+  it('refuses an offset when the edges line up two different ways equally well', () => {
+    // Two enables 100 s apart in the .hoot, two 100 s apart in the log, but shifted so each pairing matches one of each.
+    const hoot = [{ t: 10, on: true }, { t: 20, on: false }, { t: 110, on: true }, { t: 120, on: false }]
+    const log = [{ t: 60, on: true }, { t: 70, on: false }]
+    expect(align(hoot, log)).toEqual({ offset: null, why: expect.stringContaining('two different ways') })
+  })
+
+  it('reads the time in a WPILib DataLogManager name too', () => {
+    expect(namedTime('FRC_20260314_201432.wpilog')).toBe(Date.UTC(2026, 2, 14, 20, 14, 32))
+    expect(namedTime('akit_26-03-14_20-14-32.wpilog')).toBe(Date.UTC(2026, 2, 14, 20, 14, 32))
+    expect(namedTime('akit_0123456789abcdef.wpilog')).toBeNull()
+  })
+
+  it('Stop ends owlet at once and says so', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hoot-stop-'))
+    const hootPath = join(dir, 'ABC_2026-03-14_20-14-20.hoot')
+    await writeFile(hootPath, fakeHootBytes({ compliancy: 19, signals: {}, hang: 'scan' }))
+    const stop = new AbortController()
+    setTimeout(() => stop.abort(), 300)
+    const started = Date.now()
+    await expect(runOwlet([...fakeOwletArgv(), '--scan', '-F', hootPath], { what: 'ABC.hoot', deadlineMs: 20_000, signal: stop.signal })).rejects.toThrow(/Stopped while reading ABC\.hoot/)
+    expect(Date.now() - started).toBeLessThan(5_000)
+  }, 20_000)
 })

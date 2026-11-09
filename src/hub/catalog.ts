@@ -143,11 +143,12 @@ export class Catalog {
   entries(): Entry[] {
     const all = this.all()
     const robots = all.filter((r) => r.kind === 'wpilog')
+    const named = robots.map((robot) => ({ robot, at: robotNameTime(robot) }))
     const out = new Map<string, Entry>(robots.map((r) => [r.sha256, { record: r, names: this.namesOf(r.sha256), tags: this.tagsFor(r), attached: { dslog: [], dsevents: [], hoot: [] }, local: false, shared: false, toFetch: [] }]))
     for (const r of all) {
       if (r.kind === 'wpilog' || !r.wall && r.playedAt === null) continue
       const span = r.wall ?? { start: r.playedAt!, end: r.playedAt! }
-      const best = r.kind === 'hoot' ? hootOwner(r, robots, span.start)
+      const best = r.kind === 'hoot' ? hootOwner(r, named, span.start)
         : robots.map((robot) => ({ robot, seconds: overlapMs(span, robot) })).filter((x) => x.seconds > 0).sort((a, b) => b.seconds - a.seconds)[0]?.robot
       // A kind this version doesn't attach (from a newer teammate's manifest) is left out, not a crash.
       const list = best ? (out.get(best.sha256)!.attached as Record<string, LogRecord[]>)[r.kind] : undefined
@@ -173,17 +174,15 @@ function overlapMs(span: { start: number; end: number }, robot: LogRecord): numb
  * in 2025 both were Pacific while the robot log's own clock was UTC. A robot log with no time in its name (clock never
  * set) falls back to its wall clock: the one whose start is nearest, among those whose span the .hoot's start falls in.
  */
-function hootOwner(hoot: LogRecord, robots: LogRecord[], start: number): LogRecord | undefined {
+function hootOwner(hoot: LogRecord, robots: { robot: LogRecord; at: number | null }[], start: number): LogRecord | undefined {
   const named = namedTime(baseName(hoot.path))
   const nearest = (scored: { robot: LogRecord; miss: number }[]) => scored.sort((a, b) => a.miss - b.miss)[0]?.robot
-  const byName = named === null ? undefined : nearest(robots.flatMap((robot) => {
-    const t = robotNameTime(robot)
-    return t === null || Math.abs(t - named) > SLACK_MS ? [] : [{ robot, miss: Math.abs(t - named) }]
-  }))
+  const byName = named === null ? undefined : nearest(robots.flatMap(({ robot, at }) =>
+    at === null || Math.abs(at - named) > SLACK_MS ? [] : [{ robot, miss: Math.abs(at - named) }]))
   if (byName) return byName
-  return nearest(robots.flatMap((robot) => {
+  return nearest(robots.flatMap(({ robot, at }) => {
     // Only robot logs whose name gives no time: one that does and is far off belongs to another moment.
-    if (robotNameTime(robot) !== null || !robot.wall || start < robot.wall.start - SLACK_MS || start > robot.wall.end + SLACK_MS) return []
+    if (at !== null || !robot.wall || start < robot.wall.start - SLACK_MS || start > robot.wall.end + SLACK_MS) return []
     return [{ robot, miss: Math.abs(robot.wall.start - start) }]
   }))
 }

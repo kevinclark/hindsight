@@ -72,5 +72,6 @@ export interface HootStatus {
 export interface HootReadReport {
   readings: HootReading[]
   /** A file that could not be read, in words. */
-  problems: { file: string; why: string }[]
+  /** `reget`: owlet could not even start (a damaged copy): getting it again may fix it. */
+  problems: { file: string; why: string; reget?: boolean }[]
 }

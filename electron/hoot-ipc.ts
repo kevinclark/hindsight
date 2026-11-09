@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { checkPath } from '../src/hub/adapter.ts'
 import type { LocalLibrary } from '../src/hub/library-store.ts'
 import { JobRunner, type JobProgress, type ProgressFn } from '../src/hub/jobs.ts'
-import { advantageScopeOwletFolder, compliancyOf, findOwlet, platformKey, busOf, type FoundOwlet } from '../src/hoot/owlet.ts'
+import { advantageScopeOwletFolder, compliancyOf, findOwlet, platformKey, busOf, OwletWontStart, type FoundOwlet } from '../src/hoot/owlet.ts'
 import { readHoot } from '../src/hoot/read-hoot.ts'
 import { downloadOwlet } from '../src/hoot/download.ts'
 import type { HootFile, HootReadReport, HootStatus } from '../src/hoot/types.ts'
@@ -44,9 +44,9 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
     const entry = lib.catalog.entries().find((e) => e.record.path === logPath)
     return Promise.all((entry?.attached.hoot ?? []).map(async (r) => {
       const name = r.path.split('/').pop()!
-      const compliancy = await formatOf(lib.store.at(r.path))
+      const { held, compliancy } = await formatOf(lib.store.at(r.path))
       const owlet = compliancy === null ? null : owletFor(compliancy)
-      return { path: r.path, sha256: r.sha256, name, bus: busOf(name), size: r.size, held: compliancy !== null, compliancy, owlet: owlet && { version: owlet.version, where: owlet.where } }
+      return { path: r.path, sha256: r.sha256, name, bus: busOf(name), size: r.size, held, compliancy, owlet: owlet && { version: owlet.version, where: owlet.where } }
     }))
   }
 
@@ -74,7 +74,7 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
   ipcMain.handle('hub:readHoots', async (_e, logPath: string): Promise<HootReadReport> => {
     await needLicence()
     const lib = await o.open()
-    const files = (await filesFor(lib, String(logPath))).filter((f) => f.held)
+    const files = (await filesFor(lib, String(logPath))).filter((f) => f.held && f.compliancy !== null)
     return job('Reading device logs (.hoot)', async (progress, signal, log) => {
       const report: HootReadReport = { readings: [], problems: [] }
       for (const [i, f] of files.entries()) {
@@ -94,7 +94,7 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
         } catch (e) {
           const why = e instanceof Error ? e.message : String(e)
           log(`${f.name}: ${why}`)
-          report.problems.push({ file: f.name, why })
+          report.problems.push({ file: f.name, why, ...(e instanceof OwletWontStart ? { reget: true } : {}) })
         }
       }
       progress(files.length, files.length, '')
@@ -104,17 +104,17 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
 
   ipcMain.handle('hub:hootCancel', () => { abort?.abort(); jobs.cancel() })
   ipcMain.handle('hub:hootRunning', (): JobProgress | null => jobs.current())
-  // Quitting stops owlet: its scratch export is removed by the read that started it.
+  // Quitting stops owlet; the read that started it removes its scratch export if the app lives long enough (the OS clears its temp folder otherwise).
   app.on('before-quit', () => abort?.abort())
 }
 
-/** The format byte of a .hoot on this computer, or null when it isn't here. */
-async function formatOf(path: string): Promise<number | null> {
+/** Whether a .hoot is on this computer, and its format byte (null when it isn't, or is too short to have one). */
+async function formatOf(path: string): Promise<{ held: boolean; compliancy: number | null }> {
   const fh = await openFile(path).catch(() => null)
-  if (!fh) return null
+  if (!fh) return { held: false, compliancy: null }
   try {
     const head = new Uint8Array(80)
     const { bytesRead } = await fh.read(head, 0, 80, 0)
-    return compliancyOf(head.subarray(0, bytesRead))
+    return { held: true, compliancy: compliancyOf(head.subarray(0, bytesRead)) }
   } finally { await fh.close() }
 }

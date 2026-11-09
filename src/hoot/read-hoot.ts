@@ -4,7 +4,7 @@
  */
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { busOf, parseScan, runOutcome, runOwlet, SIGNAL_SET, wantedIds, type FoundOwlet } from './owlet.ts'
+import { busOf, lastWords, parseScan, runOutcome, runOwlet, SIGNAL_SET, wantedIds, type FoundOwlet } from './owlet.ts'
 import { reduceExport } from './reduce.ts'
 import type { HootReading } from './types.ts'
 
@@ -57,6 +57,7 @@ export async function readHoot(o: ReadHootOptions): Promise<HootReading & { cach
     const wrote = ((await stat(out).catch(() => null))?.size ?? 0) > 0
     const outcome = runOutcome(run, wrote)
     if (!outcome.ok) throw new Error(`Reading ${what}: ${outcome.why}`)
+    if (!wrote) throw new Error(`Reading ${what}: owlet finished but wrote nothing (${lastWords(run)})`)
     const reading = reduceExport(new Uint8Array(await readFile(out)), { ...about, cutShort: outcome.cutShort ?? scan.cutShort })
     await mkdir(o.cacheDir, { recursive: true })
     await writeFile(cached, JSON.stringify(reading))

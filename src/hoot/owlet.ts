@@ -7,6 +7,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { hootName } from '../hub/dates.ts'
 
 /** The .hoot's format version is the byte at this offset; owlet reads only its own compliancy. */
 export const COMPLIANCY_OFFSET = 70
@@ -103,10 +104,7 @@ export const SIGNAL_SET = createHash('sha1').update(WANTED.source).digest('hex')
 export const wantedIds = (ids: Map<string, string>): string[] => [...ids].filter(([name]) => WANTED.test(name)).map(([, id]) => id)
 
 /** The bus a .hoot is from, by its name: `<CANivore serial>_<date>_<time>.hoot` or `rio_…`, with any prefix (`_Q7_`) before it. */
-export function busOf(fileName: string): string {
-  const m = /([A-Za-z0-9]+)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.hoot$/i.exec(fileName)
-  return m ? m[1] : fileName.replace(/\.hoot$/i, '')
-}
+export const busOf = (fileName: string): string => hootName(fileName)?.hardwareId ?? fileName.replace(/\.hoot$/i, '')
 
 /** owlet could not be started at all (a damaged or unexecutable file): offered for download again. */
 export class OwletWontStart extends Error {
@@ -144,10 +142,13 @@ export function runOwlet(argv: string[], opts: { stallMs?: number; deadlineMs?: 
     opts.signal?.addEventListener('abort', stop, { once: true })
     // A scan lists every signal (130 KB for 26 devices): keep it all, up to a bound no listing comes near.
     const keep = (text: string, add: string) => (text + add).slice(-16 * 2 ** 20)
+    // The end of the last piece: a progress print can be split between two pieces of output.
+    let tail = ''
     child.stdout.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
       out = keep(out, text)
-      const all = [...text.matchAll(/Progress:\s*\[\s*(\d+)%\]/g)]
+      const all = [...(tail + text).matchAll(/Progress:\s*\[\s*(\d+)%\]/g)]
+      tail = (tail + text).slice(-24)
       if (all.length) {
         const p = Number(all[all.length - 1][1])
         // Only a new percentage is progress: an owlet printing the same one over and over is stuck.
@@ -173,8 +174,11 @@ export function runOutcome(r: RunResult, wroteOutput: boolean): { ok: true; cutS
   const cut = said.split(/\r?\n/).find((l) => l.includes(CUT_SHORT))?.trim() ?? null
   if (r.code === 0) return { ok: true, cutShort: cut }
   if (r.code === 1 && cut && wroteOutput) return { ok: true, cutShort: cut }
-  const last = said.split(/\r?\n/).map((l) => l.replace(/Progress:.*$/, '').trim()).filter(Boolean).at(-1) ?? 'no message'
-  return { ok: false, why: `owlet exited with ${r.code ?? 'no code'}: ${last}` }
+  return { ok: false, why: `owlet exited with ${r.code ?? 'no code'}: ${lastWords(r)}` }
 }
+
+/** owlet's last line of its own words (progress bars left out), or 'no message'. */
+export const lastWords = (r: RunResult): string =>
+  `${r.out}\n${r.err}`.split(/\r?\n/).map((l) => l.replace(/Progress:.*$/, '').trim()).filter(Boolean).at(-1) ?? 'no message'
 
 export const sha1Of = (bytes: Uint8Array): string => createHash('sha1').update(bytes).digest('hex')

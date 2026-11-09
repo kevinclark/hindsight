@@ -7,6 +7,7 @@
  * Run as `node --experimental-strip-types tests/helpers/fake-owlet.ts …` (see `fakeOwletArgv`).
  */
 import { readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { encodePayload, writeRecords, type RecordEntry } from '../../src/readers/wpilog-writer.ts'
 
 export interface FakeSignal { type: 'double' | 'boolean' | 'int64'; t: number[]; v: (number | boolean)[] }
@@ -68,6 +69,6 @@ function main(args: string[]): void {
 }
 
 /** The command that runs this fake as owlet. */
-export const fakeOwletArgv = (): string[] => [process.execPath, '--experimental-strip-types', '--no-warnings', new URL(import.meta.url).pathname]
+export const fakeOwletArgv = (): string[] => [process.execPath, '--experimental-strip-types', '--no-warnings', fileURLToPath(import.meta.url)]
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) main(process.argv.slice(2))
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main(process.argv.slice(2))

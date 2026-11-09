@@ -64,12 +64,16 @@ export function deviceRows(r: HootReading, names: Map<string, string>): DeviceRo
  * this log's .hoot files holds a TalonFX with it (the profile names no CAN bus); CANcoders and the Pigeon 2 from the
  * profile's Foresight snapshot devices the same way.
  */
-export function profileNames(profile: Pick<ResolvedProfile, 'motorGroups' | 'foresight'>, readings: HootReading[]): Map<string, string>[] {
+export function profileNames(profile: Pick<ResolvedProfile, 'motorGroups' | 'foresight'>, readings: HootReading[]): Map<string, string> {
   const candidates = new Map<string, string[]>()
   const add = (device: string, name: string) => candidates.set(device, [...(candidates.get(device) ?? []), name])
   for (const g of profile.motorGroups) for (const m of g.motors) if (m.canId !== undefined) add(`TalonFX-${m.canId}`, m.name)
   for (const d of profile.foresight?.snapshot?.devices ?? []) add(`${d.model === 'Pigeon 2' ? 'Pigeon2' : 'CANcoder'}-${d.canId}`, d.name)
   const held = new Map<string, number>()
   for (const r of readings) for (const d of r.devices) held.set(d.name, (held.get(d.name) ?? 0) + 1)
-  return readings.map(() => new Map([...candidates].filter(([device, names]) => names.length === 1 && held.get(device) === 1).map(([device, names]) => [device, names[0]])))
+  return new Map([...candidates].filter(([device, names]) => names.length === 1 && held.get(device) === 1).map(([device, names]) => [device, names[0]]))
 }
+
+/** Whether the line from the bin at `a` to the bin at `b` crosses a gap: a gap's ends are record times inside the bins on either side. */
+export const crossesGap = (gaps: { from: number; to: number }[], a: number, b: number, bin: number): boolean =>
+  gaps.some((g) => g.from >= a && g.to <= b + bin)

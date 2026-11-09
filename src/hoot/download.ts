@@ -1,7 +1,8 @@
 /**
  * Getting owlet from CTRE's own server, only after the user accepted CTRE's licence (the page asks; electron/hoot-ipc.ts
  * checks). The file is checked against CTRE's sha-1 in memory before anything is written, then written under a temporary
- * name and renamed, so a failed download leaves nothing behind and nothing is ever deleted. Main process only.
+ * name and renamed, so a failed download leaves nothing behind. Getting the same version again replaces that file (a
+ * damaged copy); nothing else is touched. Main process only.
  */
 import { chmod, mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -81,6 +82,7 @@ async function fetchBytes(get: typeof fetch, url: string, stallMs: number, onByt
     }
   } catch (e) {
     abort.abort()
+    if (signal?.aborted) throw new Error('The download of owlet was stopped.')
     throw e instanceof Error && /^(CTRE's|The download)/.test(e.message) ? e : new Error(`The download of owlet failed: ${e instanceof Error ? e.message : String(e)}`)
   } finally { clearTimeout(timer) }
   const out = new Uint8Array(done)
