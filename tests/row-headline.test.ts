@@ -32,6 +32,24 @@ describe('rowHeadline', () => {
   })
 })
 
+describe('rowHeadline keeps what made the finding fire', () => {
+  const limit = (on: string) => base({ measured: [{ label: 'peak supply current', value: 67, unit: 'A', threshold: 48 }], evidence: { 'configured limit (A)': 40, 'limit switched on in code': on } })
+  it('a current limit: the configured limit, and off in code when it is', () => {
+    expect(rowHeadline(limit('no (as of main abc1234; this log ran def5678)')).key).toBe('67 A against a 40 A limit, off in code')
+    expect(rowHeadline(limit('yes (as of main abc1234; this log ran def5678)')).key).toBe('67 A against a 40 A limit')
+  })
+  const stale = (value: number, drops: number) => base({ measured: [{ label: 'stale share of the match', value, unit: '%', threshold: 15 }], evidence: { 'stale share of the match (%)': value, 'dropouts during the match': drops, 'seconds disconnected': 5.6 } })
+  it('a camera dropout: the dropouts, the share only when past its line', () => {
+    expect(rowHeadline(stale(13.7, 1)).key).toBe('dropped out 1 time, 5.6 s disconnected')
+    expect(rowHeadline(stale(24.9, 2)).key).toBe('dropped out 2 times, 5.6 s disconnected · 24.9 % stale (line 15 %)')
+    expect(rowHeadline(stale(20, 0)).key).toBe('20 % (line 15 %)')
+  })
+  it('an alert seen only before or after the match says so in the time slot', () => {
+    expect(rowHeadline(base({ evidence: { 'times during the match': 0, 'times before or after the match': 1 } })).time).toBe('before/after the match')
+    expect(rowHeadline(base({ when: '1:21 into the match (teleop; robot time 399.4 s)', evidence: { 'times during the match': 1, 'times before or after the match': 0 } })).time).toBe('1:21 teleop')
+  })
+})
+
 describe('shortTitle cut at " (first at "', () => {
   it('stops before a parenthesised first-at aside', () => {
     expect(shortTitle('Camera saw nothing for 4 frames (first at 0:30 into the match (auto; robot time 1.0 s))')).toBe('Camera saw nothing for 4 frames')

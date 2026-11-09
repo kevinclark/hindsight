@@ -29,12 +29,35 @@ function compactWhen(when: string | null): string {
   return [t[2] ? `run ${t[2]} ·` : '', t[1], mode].filter(Boolean).join(' ')
 }
 
-/** What a finding's closed row shows: the rule's short title, what it is about, the judged number (measured only; its label only when it has no line, since the line already says what it is), and when. The long sentence is `finding.title`, kept inside the opened row. */
+/**
+ * The judged number for the closed row (measured only; its label only when it has no line, since the line already says
+ * what it is). Two evidence shapes say more than the number, and the closed row keeps what they say:
+ * - a configured current limit: the limit itself, not the check's line (120 % of it), and whether code switches it off;
+ * - a camera that dropped out: the dropouts, which are why it fired, with the stale share only when that is past its line.
+ */
+function rowKey(f: Finding): string {
+  const m = f.measured?.[0]
+  if (!m) return ''
+  const unit = m.unit ? ` ${m.unit}` : ''
+  const e = f.evidence
+  if (typeof e['configured limit (A)'] === 'number') {
+    const off = /^no\b/.test(String(e['limit switched on in code'] ?? ''))
+    return `${m.value}${unit} against a ${e['configured limit (A)']} A limit${off ? ', off in code' : ''}`
+  }
+  const drops = e['dropouts during the match']
+  if (typeof drops === 'number' && drops > 0) {
+    const secs = e['seconds disconnected']
+    const past = m.threshold !== undefined && m.value > m.threshold ? ` · ${m.value}${unit} stale (line ${m.threshold}${unit})` : ''
+    return `dropped out ${drops} ${drops === 1 ? 'time' : 'times'}${typeof secs === 'number' ? `, ${secs} s disconnected` : ''}${past}`
+  }
+  return m.threshold !== undefined ? `${m.value}${unit} (line ${m.threshold}${unit})` : `${m.value}${unit}${m.label ? ` ${m.label}` : ''}`
+}
+
+/** What a finding's closed row shows: the rule's short title, what it is about, the judged number (`rowKey`), and when. The long sentence is `finding.title`, kept inside the opened row. */
 export function rowHeadline(f: Finding): { lead: string; about: string; key: string; time: string } {
   const lead = makerOf(f.rule)?.title ?? cardTitle(f.title)
   const about = f.about && !lead.toLowerCase().includes(f.about.toLowerCase()) ? f.about : ''
-  const m = f.measured?.[0]
-  const unit = m?.unit ? ` ${m.unit}` : ''
-  const key = !m ? '' : m.threshold !== undefined ? `${m.value}${unit} (line ${m.threshold}${unit})` : `${m.value}${unit}${m.label ? ` ${m.label}` : ''}`
-  return { lead, about, key, time: compactWhen(f.when) }
+  // An alert seen only outside the match has no time; say so where the time would be.
+  const outside = !f.when && f.evidence['times during the match'] === 0 && Number(f.evidence['times before or after the match']) > 0
+  return { lead, about, key: rowKey(f), time: outside ? 'before/after the match' : compactWhen(f.when) }
 }
