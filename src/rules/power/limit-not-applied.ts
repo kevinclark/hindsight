@@ -33,7 +33,7 @@ export default rule({
     { id: 'default-limit', cause: 'The motor is running the controller\'s default limits (Phoenix 6: 70 A supply, 120 A stator), not the one you chose', look: 'whether the code sets this limit at all, and whether supply and stator limits were mixed up' },
     { id: 'wrong-value', cause: 'The limit is set too high for what the mechanism needs', look: 'the limit value in the code against the Limits tab: what current the mechanism actually needs' },
   ],
-  nextStep: 'If the limit is switched off in code, switch it on and measure the mechanism before and after. If it is on, check the config reaches every motor.',
+  nextStep: 'Check the limit config reaches every motor in the group; if the limit is off in code, switch it on.',
   incident: '2026 offseason event: flywheel 78–94 A vs a disabled 40 A supply limit',
   sources: [
     { ...CTRE_CURRENT_LIMITS_CONFIG, says: 'SupplyCurrentLimit defaults to 70 A and StatorCurrentLimit to 120 A, and each takes effect only when its Enable flag is true.' },
@@ -78,7 +78,7 @@ export default rule({
       const ruledOut: Record<string, string> = {}
       if (off) {
         likely = ['limit-off']
-        nextStep = `The ${kind} limit is switched off in ${group.limits.where}. On purpose? Mark it as a known issue. If not, switch it on and measure the mechanism before and after.`
+        nextStep = `Switch the ${kind} limit on in ${group.limits.where}, then measure the mechanism before and after. Off on purpose? Mark it as a known issue.`
       } else if (isOn && sameCode) {
         likely = ['not-saved', 'default-limit']
         ruledOut['limit-off'] = 'the limit is switched on in the code'

@@ -80,7 +80,7 @@ function dropoutsBeforeEnable(camera: CameraView, match: MatchView): Problem | u
     likely: ['connection', 'coprocessor'],
     message: dropoutMessage(camera.name, drops, match.windowWords, match),
     at: drops[0].start,
-    measured: [{ label: 'dropouts before enable', value: drops.length, unit: '' }],
+    measured: [{ label: drops.length === 1 ? 'dropout before enable' : 'dropouts before enable', value: drops.length, unit: '' }],
     evidence: { 'dropouts before enable': drops.length, 'seconds disconnected': round(totalSeconds(drops), 1) },
   }
 }

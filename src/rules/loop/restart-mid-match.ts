@@ -29,7 +29,7 @@ export default rule({
     { id: 'slow-sag', cause: 'The battery sagged until the roboRIO reset', look: 'Power tab: battery voltage in the seconds before the log ends; the power/brownout finding' },
     { id: 'cut-short', cause: 'Only the log file was cut short (copied while the robot was still writing it)', look: 'the robot\'s log folder: is there a later log from this match?' },
   ],
-  nextStep: 'Read the Driver Station log\'s messages for this match (a stack trace means the code crashed), and load the match\'s other robot logs to see how long the robot had no program.',
+  nextStep: 'Read the Driver Station log\'s messages for this match (a stack trace means a code crash), and load the match\'s other robot logs.',
   incident: 'One 2025 match: two restarts in teleop, three logs, no program for ~63 s of the last ~84 s',
   sources: [
     { ...WPILIB_STACKTRACES, says: 'An unhandled exception prints "An unexpected error has occurred." with a stack trace of the code that was running; the robot program may halt.' },
@@ -80,7 +80,7 @@ export default rule({
       at: startsMid ? null : match.logEnd,
       ruledOut,
       nextStep: pieces.length > 1
-        ? 'Read the Driver Station log\'s messages for this match: a stack trace means the code crashed; none points at power (tug-test the roboRIO\'s power wiring).'
+        ? 'Read the Driver Station log\'s messages: a stack trace means a code crash; none points at power, so tug-test the roboRIO\'s power wiring.'
         : undefined,
       measured: gaps.length
         ? [{ label: 'between logs (program down or starting up)', value: round(gaps.reduce((a, b) => a + b, 0), 1), unit: 's' }]

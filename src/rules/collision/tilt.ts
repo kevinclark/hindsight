@@ -23,7 +23,7 @@ export default rule({
     { id: 'tipping', cause: 'The robot tipped from driving or turning too hard', look: 'driver inputs and speed just before; how high the heavy parts sit' },
     { id: 'gyro', cause: 'The gyro is mounted tilted or reads wrong', look: 'the pitch and roll plot at rest before the match: should be near 0°' },
   ],
-  nextStep: 'Watch the match video at this time. If it was a field element, check what was raised and add a guard in code near that element.',
+  nextStep: 'Watch the match video at this time. Hit a field element? Check what was raised and add a guard in code near it.',
   incident: 'One 2026 match: −24° pitch for 0.8 s at the trench in auto',
   sources: [
     { ...GAME_MANUAL_2026, says: 'Section 5.5: the BUMP ramps are set at 15 degrees; section 5.6: the space under each TRENCH arm is 22.25 in tall.' },
@@ -44,7 +44,7 @@ export default rule({
         const phase = match.phaseAt(e.start)
         // In auto the path drives itself, so a wedge there points at the path and what was raised.
         const nextStep = phase === 'auto'
-          ? 'It tilted during auto, so the auto path drove into something: watch the video, and check the path near this spot and what was raised.'
+          ? 'Watch the video and check the auto path near this spot, and what was raised: it tilted during auto.'
           : undefined
         problems.push({
           message: `${axis.label} ${angle.toFixed(0)}° for ${secs(e.seconds)} ${match.whenAt(e.start)}`,

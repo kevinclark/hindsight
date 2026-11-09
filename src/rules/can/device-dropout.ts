@@ -36,7 +36,7 @@ export default rule({
     { id: 'terminator', cause: 'A missing or loose terminating resistor at an end of the CAN chain', look: 'the far end of the CAN chain: the PDH/PDP termination jumper or a 120 Ω resistor on the last device (the roboRIO end is built in)' },
     { id: 'device-fault', cause: 'The device itself (old firmware, damage)', look: 'its status light during a dropout; the vendor tool (Phoenix Tuner, REV Hardware Client) for firmware and faults' },
   ],
-  nextStep: 'Tug-test the CAN connectors on that device and the ones next to it, and check the CAN termination at the far end of the chain.',
+  nextStep: 'Tug-test the CAN connectors at this device and its neighbours, and check the termination at the chain\'s far end.',
   incident: 'One 2026 match: flywheel follower 16 off CAN 7 times at 5.85–6.31 V (the match analysis); #in-hindsight: ≥ 11 CAN dropout episodes',
   sources: [
     { ...CTRE_CAN_TROUBLESHOOTING, says: 'Bad crimps and connection points are the most common cause of intermittent connection issues; tug-test each crimped wire and jostle the CAN wiring to reproduce the red LED blips.' },
@@ -114,12 +114,12 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
       'other devices dropped at the same moment': othersDropped(together, others.length),
     },
     likely, ruledOut, nextStep: neverAnswered ? NEVER_ANSWERED : dropNextStep(allLow, everyDrop, together),
-    measured: [{ label: 'drops off CAN', value: drops.length, unit: '' }],
+    measured: [{ label: drops.length === 1 ? 'drop off CAN' : 'drops off CAN', value: drops.length, unit: '' }],
     plot: plotDrops(battery, readings.map((r) => r.timed), 3, drops[drops.length - 1].end + 2),
   }
 }
 
-const NEVER_ANSWERED = 'It never answered the Hindsight companion in this log. If Phoenix Tuner X shows it on the bus, the robot code has turned its status signals off (optimizeBusUtilization), so the companion can\'t read it; if not, check its power and CAN wiring.'
+const NEVER_ANSWERED = 'Look for it in Phoenix Tuner X. Listed: the code turned its status signals off (optimizeBusUtilization). Missing: check its power and CAN wiring.'
 
 /** The companion's status at the drops when it never read the device then ("not read", "unavailable: ..."), or null. */
 function unreadStatus(device: WatchedDeviceView, drops: Episode[]): string | null {
@@ -151,8 +151,8 @@ function devicesDroppedWith(others: { name: string; drops: number[]; watched: bo
 
 /** The next step when the battery was low at every drop, or other devices dropped with this one. */
 function dropNextStep(allLow: boolean, everyDrop: string, together: string[]): string | undefined {
-  if (allLow) return `The battery was low ${everyDrop}: fix the voltage sag first (Power tab), then wiggle-test the power connector on that device.`
-  if (together.length) return `${together.join(', ')} dropped at the same moment: check what they share (the same CAN branch or splice, the same power channel).`
+  if (allLow) return `Fix the voltage sag first (Power tab): the battery was low ${everyDrop}. Then wiggle-test this device's power connector.`
+  if (together.length) return `Check what this device shares with the ${together.length} ${together.length === 1 ? 'device' : 'devices'} that dropped at the same moment (listed in the evidence): CAN branch, splice or power channel.`
   return undefined
 }
 

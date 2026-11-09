@@ -62,7 +62,7 @@ export default rule({
       likely,
       ruledOut,
       message: `Camera time-sync problems: ${total} alerts`,
-      measured: [{ label: 'time-sync alerts', value: total, unit: '' }],
+      measured: [{ label: total === 1 ? 'time-sync alert' : 'time-sync alerts', value: total, unit: '' }],
       evidence,
     }
   },
