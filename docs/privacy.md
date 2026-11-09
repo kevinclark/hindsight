@@ -22,7 +22,9 @@ you choose. It never deletes, trashes or overwrites a file, and its code refuses
 your browser; Hindsight never sees your Google password.
 
 What goes into the team folder: copies of the logs you add, and a list of each log's facts, checksum, file names and the values
-people typed (driver names included). Everyone who can open the team folder can read it. Hindsight sends nothing to anyone else.
+people typed (driver names included); the triage marks people make; and, for the phone app, each event's match summaries
+(the findings and numbers Hindsight read from each log of every event in this computer's library, without the marks).
+Everyone who can open the team folder can read it. Hindsight sends nothing to anyone else.
 
 To stop: remove Hindsight at <https://myaccount.google.com/permissions>, and delete the app's library folder. Files already in
 the team folder stay there until the folder's owners remove them.
@@ -34,13 +36,14 @@ open from its Library. It only reads; it changes nothing on Drive and makes no m
 
 - **Google sign-in** asks for `drive.readonly`: Google words it as seeing all of your Drive files. The app reads only the
   team folder you choose (and, while you choose it, the names of the folders you browse): the files the laptops share
-  there for the phone (each laptop's match summaries for the event and its triage marks), the laptops' lists of logs (for
+  there for the phone (each laptop's match summaries for every event it holds, and its triage marks), the laptops' lists of logs (for
   the Library), and a log and its Driver Station logs when you open one. Sign-in happens in Apple's sign-in sheet; the app
   never sees your Google password.
 - **What stays on the phone:** the sign-in's refresh token in the iOS Keychain (kept for this device only: it does not move
   to a new phone); the team folder's id and name, the copies of the summaries, marks and lists it read (so it
-  opens with the last copy when there is no signal; a log you open is held in memory only and is gone when the app closes), and the team number, The Blue Alliance read key and Nexus Pull API key you type, all in
-  the app's own storage. Sign out removes the refresh token, the team folder and the copies at once; the typed keys
+  opens with the last copy when there is no signal; and the logs you opened most recently, up to the size you choose in the Library (1 GB to start), so reopening one needs no
+  download), and the team number, The Blue Alliance read key and Nexus Pull API key you type, all in
+  the app's own storage. Sign out removes the refresh token, the team folder, the copies and the kept logs at once; the typed keys
   stay until you clear them or delete the app, which removes everything.
 - **Who it talks to:** Google (sign-in and Drive), The Blue Alliance and Nexus (the schedule and queue times, with your own
   keys). Nothing else.

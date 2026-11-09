@@ -261,6 +261,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
     if (n > 0) (await sharing()).noteEvent(key)
     return n
   })
+  ipcMain.handle('hub:publishedLogs', async (): Promise<string[]> => (await open()).publishedShas())
   ipcMain.handle('hub:shareStatus', async (): Promise<ShareStatus> => (await sharing()).status())
   ipcMain.handle('hub:shareNow', async () => (await sharing()).pullNow())
   ipcMain.handle('hub:readLog', async (_e, path: string) => {

@@ -126,6 +126,8 @@ export interface HubApi {
   onProgress(callback: (p: Progress | null) => void): () => void
   /** Append the page's summaries of an event's logs (event-file lines) to this laptop's file for the phone; resolves with how many were new. */
   appendEvent(key: string, text: string): Promise<number>
+  /** sha-256 of every log this laptop has published for the phone (its own event files, at the current summary shape). */
+  publishedLogs(): Promise<string[]>
   /** What of this laptop's marks and event lines is not on the team Drive yet, and when teammates' marks were last brought down. */
   shareStatus(): Promise<ShareStatus>
   /** Bring teammates' marks down now (the window came to the front); does nothing before a sign-in is in use. */

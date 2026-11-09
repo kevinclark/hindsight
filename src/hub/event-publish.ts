@@ -14,7 +14,7 @@ export const ANALYZER_HASH = typeof __ANALYZER_HASH__ === 'string' ? __ANALYZER_
 
 const lastPlayed = (s: Session) => Math.max(...s.matches.map((m) => m.playedAt ?? -Infinity))
 
-/** The event session played most recently: the current event, or the last one (only these are written; no backfill). */
+/** The event session played most recently: the current event, or the last one (written as it changes; earlier events once, by src/hub/event-backfill.ts). */
 export function latestEventSession(sessions: readonly Session[]): Session | null {
   return sessions.filter((s) => s.kind === 'event' && s.matches.length > 0).reduce<Session | null>((best, s) => (best === null || lastPlayed(s) > lastPlayed(best) ? s : best), null)
 }

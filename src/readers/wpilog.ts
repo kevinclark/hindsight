@@ -198,7 +198,9 @@ function readControlRecord(
     return
   }
   nameById.set(id, name)
-  if (!entries.has(name)) entries.set(name, { id, name, type, metadata })
+  // Logs from WPILib releases of early 2023 type NetworkTables integers 'int' (8 bytes, as 'int64'): seen in a team's
+  // public logs from 2023-03-11..25; its logs from 2023-03-30 on already say 'int64'.
+  if (!entries.has(name)) entries.set(name, { id, name, type: type === 'int' ? 'int64' : type, metadata })
 }
 
 /** True when the log has this key (an entry, a struct field or a bit of one) with at least one record. */

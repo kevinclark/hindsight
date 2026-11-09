@@ -32,3 +32,8 @@ export function byDay(entries: Entry[]): { day: string; logs: Entry[] }[] {
   }
   return out
 }
+
+/** Only the logs kept on this phone (the log and its DS logs all kept): what opens with no download, and offline. */
+export function onThisPhone(entries: Entry[], kept: ReadonlySet<string>): Entry[] {
+  return entries.filter((e) => [e.record, ...e.attached.dslog, ...e.attached.dsevents].every((r) => kept.has(r.sha256)))
+}

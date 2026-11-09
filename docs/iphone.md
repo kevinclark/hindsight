@@ -1,7 +1,9 @@
 # The iPhone app
 
-The phone shows what the team's laptops found and marked at the current event, and opens any team log from its Library
-(downloaded whole, held in memory only), read only, from the team's Google Drive folder (design: the phone pages in `src/phone.ts`, `src/hub/browser-hub.ts`; what it keeps and sends: `docs/privacy.md`).
+The phone shows what the team's laptops found and marked at the current event (or any earlier event a laptop published,
+picked on the event line), and opens any team log from its Library
+(downloaded whole; the most recent kept on the phone, 1 GB to start, set in the Library; iOS gives an app's storage an
+undocumented limit and never asks, so the phone may keep less than the size chosen), read only, from the team's Google Drive folder (design: the phone pages in `src/phone.ts`, `src/hub/browser-hub.ts`; what it keeps and sends: `docs/privacy.md`).
 It is the same page as the laptop's, built for the phone (`phone.html`, `vite.phone.config.ts`) and run in a Capacitor 8
 WKWebView (`ios/`).
 

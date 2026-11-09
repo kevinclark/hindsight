@@ -6,6 +6,21 @@
 import { BrowserHub } from './hub/browser-hub.ts'
 import { DriveReader } from './hub/drive-read.ts'
 import { indexedDbCache, type ReadStore } from './hub/phone-cache.ts'
+import { LogKeep, indexedDbKeepStore } from './hub/log-keep.ts'
+import { keepCap } from './phone/keep-setting.ts'
+import { clearIndexedDbCache } from './hub/phone-cache.ts'
+
+/** Logs kept on the phone after opening (src/hub/log-keep.ts). */
+export const keptLogs = () => new LogKeep(indexedDbKeepStore(), { capBytes: keepCap(globalThis.localStorage) })
+
+/** Sign out: forget the copies of the team's files and the kept logs on this phone. */
+export async function forgetPhoneData(): Promise<void> {
+  await clearIndexedDbCache()
+  // Through the hub when there is one, so a log still being stored is waited for, not left behind.
+  const hub = (globalThis as unknown as { hindsightPhone?: BrowserHub }).hindsightPhone
+  if (hub) await hub.clearKept()
+  await keptLogs().clear()
+}
 import { VERSION } from './version.ts'
 
 export interface PhoneSetup {
@@ -30,7 +45,7 @@ export function installPhone(setup: PhoneSetup): BrowserHub {
 
 /** The same over any read-only store (the demo fixture, tests). */
 export function installPhoneOver(store: ReadStore, media?: DriveReader): BrowserHub {
-  const hub = new BrowserHub({ store, cache: indexedDbCache(), version: VERSION, ...(media ? { media } : {}) })
+  const hub = new BrowserHub({ store, cache: indexedDbCache(), version: VERSION, ...(media ? { media, keep: keptLogs() } : {}) })
   ;(globalThis as unknown as { hindsightPhone: BrowserHub }).hindsightPhone = hub
   return hub
 }

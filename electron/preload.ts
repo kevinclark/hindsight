@@ -16,7 +16,7 @@ const listen = (channel: string) => (callback: (p: unknown) => void) => {
 const CHANNELS = [
   'info', 'library', 'addFromFolder', 'cancel', 'runningJob', 'redescribe', 'lastJob', 'codePlan', 'team', 'setTeam', 'tba', 'setNexusKey', 'nexus', 'linkCode', 'setTag', 'history', 'appendHistory', 'readLog', 'openInAdvantageScope',
   'driveStatus', 'driveSignIn', 'driveSignOut', 'setGoogleClient', 'driveFolders', 'setTeamFolder', 'driveIngestPlan', 'addFromDrive',
-  'syncPlan', 'sync', 'fetchLogs', 'addFromRobot', 'showJobLog', 'updateInfo', 'appendEvent', 'shareStatus', 'shareNow',
+  'syncPlan', 'sync', 'fetchLogs', 'addFromRobot', 'showJobLog', 'updateInfo', 'appendEvent', 'publishedLogs', 'shareStatus', 'shareNow',
   'hootFor', 'getOwlet', 'readHoots', 'hootLog', 'hootCancel', 'hootRunning',
 ] as const
 

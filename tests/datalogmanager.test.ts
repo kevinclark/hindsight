@@ -104,6 +104,18 @@ describe('match identity in a plain WPILib log', () => {
     // WPILib Alerts found by their NT .type, and passed through.
     expect(a.report.findings.some((f) => f.rule === 'alerts/passthrough' && f.title.includes('Intake jammed'))).toBe(true)
   })
+  it("reads an early-2023 WPILib log, whose NetworkTables integers are typed 'int'", () => {
+    // WPILib's own entries there (systemTime) are already 'int64'.
+    const int = (n: number) => { const d = new DataView(new ArrayBuffer(8)); d.setBigInt64(0, BigInt(n), true); return new Uint8Array(d.buffer) }
+    const old = dlmMatch().map((e): FixtureEntry => e.name.startsWith('NT:/FMSInfo/') && e.type === 'int64'
+      ? { ...e, type: 'int', records: e.records.map(([t, v]) => [t, int(v as number)]) }
+      : e)
+    const { analyses, problems } = analyzeFiles([{ name: 'old.wpilog', bytes: writeWpilog(old) }])
+    expect(problems).toEqual([])
+    expect(analyses[0].match.event).toBe('TEST')
+    expect(analyses[0].match.matchLabel).toBe('Qualification 7')
+    expect(analyses[0].match.fms).toBe(true)
+  })
   it("another team's plain log fits no profile (the keys every such log has don't count toward fit)", () => {
     const { analyses } = analyzeFiles([{ name: 'third.wpilog', bytes: writeWpilog(dlmMatch()) }])
     expect(analyses[0].match.profileChoice.misfit).toBe(true)

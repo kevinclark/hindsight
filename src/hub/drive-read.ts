@@ -181,7 +181,7 @@ export class DriveReader {
    * byte; `signal` stops it (Stopped); progress counts the bytes in. Slices keep the peak near one copy of the file (one
    * ranged read of the whole file is buffered several times over on its way through `request`).
    */
-  async downloadWhole(path: string, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal } = {}): Promise<Uint8Array> {
+  async downloadWhole(path: string, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal; log?(line: string): void } = {}): Promise<Uint8Array> {
     opts.signal?.throwIfAborted()
     const f = await this.find(path)
     if (!f) throw new Error(`${path} not found`)
@@ -190,7 +190,9 @@ export class DriveReader {
     const cancelled = () => opts.signal?.aborted ?? false
     for (let at = 0; at < total; at += PIECE_READ) {
       const end = Math.min(at + PIECE_READ, total)
-      const part = await this.fetchRange(f, at, end, { cancelled, onBytes: (n) => opts.onProgress?.(at + n, total) })
+      opts.log?.(`bytes ${at}-${end - 1} of ${total}: asking`)
+      const part = await this.fetchRange(f, at, end, { cancelled, onBytes: (n) => opts.onProgress?.(at + n, total), log: opts.log, onStep: opts.log })
+      opts.log?.(`bytes ${at}-${end - 1}: got ${part.length}`)
       if (part.length !== end - at) throw new Error(`${path}: got ${at + part.length} of ${total} bytes`)
       out.set(part, at)
     }

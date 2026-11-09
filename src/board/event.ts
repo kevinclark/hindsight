@@ -8,7 +8,8 @@ import type { Session } from '../session/session.ts'
 import { identifyEvents, REFUSED_WORDS, type ClusterResult, type ResolvedEvent } from '../tba/identify.ts'
 import type { TbaGet } from '../tba/source.ts'
 
-export interface SessionEvent { event: ResolvedEvent | null; why: string | null }
+/** `retry`: The Blue Alliance could not be asked (unreachable, or the key refused), so the answer is not final. */
+export interface SessionEvent { event: ResolvedEvent | null; why: string | null; retry?: boolean }
 
 const WHY: Record<NonNullable<ClusterResult['why']>, string> = {
   'no quals': 'these logs name no qualification match numbers to look up',
@@ -25,5 +26,5 @@ export async function sessionEvent(session: Pick<Session, 'event' | 'matches'>, 
   const event = [...found.byFile.values()][0] ?? null
   if (event) return { event, why: null }
   const why = found.clusters.map((c) => c.why).find((w) => w !== null) ?? 'no'
-  return { event: null, why: why === 'no' ? 'no on-field qualification logs to look up' : WHY[why] }
+  return { event: null, why: why === 'no' ? 'no on-field qualification logs to look up' : WHY[why], retry: why === 'unreachable' || why === 'refused' }
 }
