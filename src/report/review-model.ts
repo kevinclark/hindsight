@@ -61,6 +61,8 @@ export interface ReviewModel {
   warnings: Finding[]
   infos: Finding[]
   notChecked: { rule: string; reason: string }[]
+  /** Why no rule read this log (a log made from a .hoot): the report then says so instead of "nothing to fix". */
+  noRules?: string
   /** Rules that crashed (a Hindsight bug): they say nothing about the log either. */
   crashed: { rule: string; reason: string }[]
   /** Keys of active findings that came back after being marked fixed. */
@@ -127,6 +129,7 @@ export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>,
     knownHeadlines: nest(withParents(known, parents), withGroups),
     errors: bySeverity('error'), warnings: bySeverity('warning'), infos: bySeverity('info'),
     notChecked: analysis.report.skipped.map((s) => ({ rule: s.rule, reason: s.reason })),
+    noRules: analysis.report.noRules,
     crashed: analysis.report.crashed.map((s) => ({ rule: s.rule, reason: `crashed: ${s.reason}` })),
     cameBack: new Set(active.filter((f) => status(f) === 'came back').map((f) => f.key)),
     header: {
@@ -261,7 +264,7 @@ export function reviewCard(m: ReviewModel): CardModel {
       return { word, tone, title: head.about ? `${head.lead} · ${head.about}` : head.lead, number }
     }),
     // "No new errors": true by construction, whereas "nothing new" was false when only the errors folded and new warnings stayed.
-    emptyText: m.standing.length ? `No new ${tone}s in this match.` : 'Nothing to fix from this log.',
+    emptyText: m.noRules ? `No rule read this log: ${m.noRules}.` : m.standing.length ? `No new ${tone}s in this match.` : 'Nothing to fix from this log.',
     footer: [h.build.text, `Hindsight ${h.version}`],
     uncommitted: h.build.uncommitted,
     uncommittedText: 'UNCOMMITTED CODE ran this match',

@@ -14,6 +14,7 @@ import { CONSOLIDATORS, RULES, runRules, type Report } from './rules/index.ts'
 import { rerunRules } from './rules/run.ts'
 import { PROFILES, mapRobotIds } from './profiles/index.ts'
 import { chooseProfile } from './profiles/choose.ts'
+import { formatOf } from './profiles/formats.ts'
 import type { RobotProfile } from './profiles/types.ts'
 import type { PowerMap } from './power/power-map.ts'
 import { compareMatchLimits, type CodeFolder } from './code/limit-lines.ts'
@@ -109,7 +110,9 @@ function runAll({ analyses, problems, history }: AnalyzeResult, given: HistoryEv
   const known = [...given, ...history]
   for (const a of analyses) a.match.powerMap = powerMapFor(a.match, known)
   // Rules can look across the logs loaded together (a match recorded in pieces, earlier runs of an auto).
-  for (const a of analyses) a.match.others = analyses.map((x) => x.match).filter((m) => m !== a.match)
+  // A log made from a .hoot (formats.ts runsNoRules) is no other match's neighbour and has none.
+  const reads = (m: Match) => !formatOf(m.log)?.runsNoRules
+  for (const a of analyses) a.match.others = reads(a.match) ? analyses.map((x) => x.match).filter((m) => m !== a.match && reads(m)) : []
   for (const a of analyses) {
     const started = performance.now()
     a.report = runRules(a.match, RULES, CONSOLIDATORS)

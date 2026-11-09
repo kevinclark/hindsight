@@ -138,7 +138,7 @@ function summary(match: Match): Record<string, unknown> {
 }
 
 export function findingsFileName(match: Match): string {
-  return `${match.fileName.replace(/\.wpilog$/i, '')}.findings.json`
+  return `${match.fileName.replace(/\.(wpilog|hoot)$/i, '')}.findings.json`
 }
 
 export type { Finding }

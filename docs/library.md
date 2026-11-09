@@ -27,8 +27,10 @@ panel. Neither is committed.
   robot clock, else the AdvantageKit file name (read as UTC from 2026, Pacific for 2025 and earlier), and the day is the
   computer's local day. Event and match come from `/DriverStation/MatchType` + `MatchNumber`, never the name.
 - `.dslog` and `.dsevents` attach to the robot log whose match they overlap on the wall clock. `.hoot` files are stored
-  unparsed (Hindsight has no hoot reader and CTRE's converter is never bundled); they attach by the time in their name,
-  else the roboRIO's modified time recorded at the pull.
+  as they are (only CTRE's converter, owlet, reads them, and it is never bundled: ADR 13); each attaches to the robot
+  log whose file-name time is nearest its own, within 5 minutes, both read as written (`hootOwner`); a robot log with
+  no time in its name falls back to its wall clock. A `.hoot` no robot log takes is listed on its own, one entry per
+  boot (`Catalog.hootOnly`: a CANivore file and its roboRIO twin with the same name time are one), desktop only.
 - The **report** after an import lists what was added, what was already there (under which name), what could not be read
   (and why), logs with no date, and stubs (under 1 MB, never enabled).
 - **Filters** (within a facet OR, across facets AND; a count is how many logs with that value the list would hold, shown

@@ -125,7 +125,9 @@
   </div>
 {/if}
 
-{#if active.length === 0}
+{#if active.length === 0 && analysis.report.noRules}
+  <p>No rule read this log: {analysis.report.noRules}.</p>
+{:else if active.length === 0}
   <p>No new findings{audience === 'all' ? '' : ' for this group'}. Every rule not listed under "Not checked" looked and found nothing new.</p>
 {:else if mainTree.length}
   <ul class="findings">
@@ -186,6 +188,8 @@
   <h3>Not checked</h3>
   {#if analysis.report.skipped.length === 0}
     <p>Every rule ran.</p>
+  {:else if analysis.report.noRules}
+    <p>All {analysis.report.skipped.length} rules: {analysis.report.noRules}.</p>
   {:else}
     <p class="hint">These rules couldn't run (or only partly) on this log, so silence from them means nothing.</p>
     <table>

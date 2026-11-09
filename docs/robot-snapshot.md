@@ -141,7 +141,7 @@ Phoenix can record every device signal in `.hoot` log files on the roboRIO. The 
 ones you name, and convert them so Hindsight can open them.
 
 1. **Once per season:** open any `.hoot` file in AdvantageScope. AdvantageScope asks you to accept CTRE's licence
-   for their converter (owlet) and then keeps a copy. This program uses that copy. It never downloads owlet itself.
+   for their converter (owlet) and then keeps a copy. This program uses that copy. It never downloads owlet itself (the desktop app can download it from CTRE's server, which means agreeing to CTRE's licence: ADR 13).
 2. List the files on the robot:
 
    ```bash

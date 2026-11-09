@@ -18,6 +18,7 @@
   import { openPowerMap, setMapHistory, setMapWriter } from './ui/power-map-bridge.svelte.ts'
   import LimitsTab from './ui/LimitsTab.svelte'
   import LoggingTab from './ui/LoggingTab.svelte'
+  import DevicesTab from './ui/DevicesTab.svelte'
   import Wizard from './ui/Wizard.svelte'
   import SessionView from './ui/SessionView.svelte'
   import { standingKeys, type Session } from './session/session.ts'
@@ -83,7 +84,7 @@
   let analyses = $state<Analysis[]>([])
   let problems = $state<string[]>([])
   let selected = $state(0)
-  let tab = $state<'match' | 'power' | 'limits' | 'logging'>('match')
+  let tab = $state<'match' | 'power' | 'devices' | 'limits' | 'logging'>('match')
   // Now (what to do at this moment: the screen the app opens on, ADR 10); review match logs, a whole session of them, the
   // limits wizard, or a robot snapshot (device settings and faults).
   let mode = $state<'now' | 'review' | 'session' | 'wizard' | 'snapshot' | 'profile' | 'foresight' | 'library' | 'powermap'>('now')
@@ -506,6 +507,9 @@
     if (path) fileLocations.set(f.name, { file: path })
   }
   const ascopeTarget = $derived(current ? fileLocations.get(current.match.fileName) : undefined)
+  // The Devices tab reads a log's .hoot files through the desktop app, so it shows for library logs there (ADR 13).
+  const devicesPath = $derived(!readOnly && hub() && ascopeTarget && 'library' in ascopeTarget ? ascopeTarget.library : null)
+  $effect(() => { if (tab === 'devices' && !devicesPath) tab = 'match' })
   let ascopeBusy = $state(false)
   let ascopeError = $state('')
   $effect(() => { current?.match.fileName; ascopeError = '' })
@@ -654,7 +658,7 @@
   async function saveForSlackReview() {
     saveProblem = null
     if (!current) return
-    const base = current.match.fileName.replace(/\.wpilog$/i, '')
+    const base = current.match.fileName.replace(/\.(wpilog|hoot)$/i, '')
     try { saveProblem = await saveForSlack(`${base}.report`, `${base}.card.png`, reviewCardOf(current)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   // Print shows the report instead of the app, in Match review (with a log loaded), Foresight and Session (with a
@@ -803,7 +807,7 @@
       {#if modeNow && !readOnly}<ModeLine text={modeNow.text} mode={modeNow.mode} byHand={modeNow.byHand} onChange={(m) => chooseMode(modeNow.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />{/if}
       <p class="meta">
         <code>{current.match.fileName}</code>{#each current.match.ds as d (d.fileName)}{' + '}<code>{d.fileName}</code>{/each} ·
-        {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}
+        {fmtDuration(current)}{#if !current.report.noRules}{' '}· code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}{/if}
         {#if isUncommitted(current.match.build.dirty)}<strong class="dirty">(uncommitted changes)</strong>{/if}
       </p>
       <details class="more">
@@ -827,12 +831,13 @@
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected={tab === 'match'} class:active={tab === 'match'} onclick={() => (tab = 'match')}>Match</button>
     <button role="tab" aria-selected={tab === 'power'} class:active={tab === 'power'} onclick={() => (tab = 'power')}>Power</button>
+    {#if devicesPath}<button role="tab" aria-selected={tab === 'devices'} class:active={tab === 'devices'} onclick={() => (tab = 'devices')}>Devices</button>{/if}
     <button role="tab" aria-selected={tab === 'limits'} class:active={tab === 'limits'} onclick={() => (tab = 'limits')}>Limits</button>
     <button role="tab" aria-selected={tab === 'logging'} class:active={tab === 'logging'} onclick={() => (tab = 'logging')}>Logging</button>
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>
@@ -845,7 +850,7 @@
   <section class="empty">
     <h2>How to use it</h2>
     <ol>
-      <li>Get the match's log off the robot with AdvantageScope ("Download Logs"). For Phoenix <code>.hoot</code> files, export them as <code>.wpilog</code> in AdvantageScope first.</li>
+      <li>Get the match's log off the robot with AdvantageScope ("Download Logs"). Phoenix <code>.hoot</code> files: add them to the Library in the desktop app (they come with the robot's logs, or from a folder). Match review reads them with CTRE's converter and shows each device in the Devices tab; rules don't read <code>.hoot</code> data yet.</li>
       <li>Drop the <code>.wpilog</code> here. Add the Driver Station's <code>.dslog</code> and <code>.dsevents</code> for the same match if you have them (on the DS laptop in <code>C:\Users\Public\Documents\FRC\Log Files</code>).</li>
       <li>Read the <strong>Match</strong> tab worst first: red cost or nearly cost a match, amber is a margin eroding, grey is context.</li>
       <li>Open the <strong>Power</strong> tab for brownouts and battery health.</li>

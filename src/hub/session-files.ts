@@ -2,7 +2,7 @@
  * Library logs as the Session view and Match review take them, and finding them again by the name a session knows them
  * by (a summary restored from an earlier visit keeps the log's name, not the log).
  */
-import { LibraryFile, type HubApi } from './bridge.ts'
+import { HootLibraryFile, LibraryFile, type HubApi } from './bridge.ts'
 import type { Entry } from './catalog.ts'
 import { baseName, withShaSuffix } from './layout.ts'
 import { isCodeLink, type CodeLink } from './types.ts'
@@ -40,9 +40,18 @@ export function asFile({ entry, name }: Named, api: HubApi): File {
   return new LibraryFile(name, r.size, r.modifiedTime ?? r.recordedAt, r.path, api, dsFiles(entry, api)) as unknown as File
 }
 
+/** A hoot-only entry (`LibrarySnapshot.hootOnly`) as a File for Match review: read through owlet into a synthetic .wpilog when opened. Named as the .hoot is. Never given to the Session view. */
+export function hootAsFile(entry: Entry, api: HubApi, preread?: Uint8Array): File {
+  const r = entry.record
+  const file = new HootLibraryFile(baseName(r.path), r.size, r.modifiedTime ?? r.recordedAt, r.path, api, [])
+  file.preread = preread
+  return file as unknown as File
+}
+
 /**
  * The .dslog and .dsevents files the library attached to a robot log, those this computer holds, as Files: `comms/*` and
- * `can/usb-dropout` read them. Hoot files are left out (no rule reads them).
+ * `can/usb-dropout` read them. Hoot files are left out: no rule reads them; the Devices tab asks for them
+ * itself (electron/hoot-ipc.ts).
  */
 export function dsFiles(entry: Entry, api: HubApi): File[] {
   const held = new Set(entry.held ?? [])
@@ -59,7 +68,8 @@ export async function freshFiles(api: HubApi, files: File[]): Promise<File[]> {
   const { entries } = await api.library()
   const byPath = new Map(entries.map((e) => [e.record.path, e]))
   return files.map((f) => {
-    const entry = f instanceof LibraryFile ? byPath.get(f.libraryPath) : undefined
+    // A hoot-only file is not a robot log: never swapped for one (its path is in no entry, and this says so).
+    const entry = f instanceof LibraryFile && !(f instanceof HootLibraryFile) ? byPath.get(f.libraryPath) : undefined
     return entry ? asFile({ entry, name: f.name }, api) : f
   })
 }

@@ -21,6 +21,7 @@ import { namesRobot, PROFILE_FIT_MIN, profileFit, robotName, type ProfileChoice 
 import { profileId } from '../profiles/index.ts'
 import { coverage, worstAcross, type LoggedState } from '../coverage/coverage.ts'
 import { playedAt } from '../match/played-at.ts'
+import { formatOf } from '../profiles/formats.ts'
 
 export { dateFromFileName, playedAt } from '../match/played-at.ts'
 
@@ -137,9 +138,18 @@ export async function summarizeLogWithCode(file: InputFile, code: CodeFolder | n
   return s
 }
 
+/** What the Session view lists for a log made from a .hoot (formats.ts `runsNoRules`): no summary is made of one. */
+export const HOOT_NOT_IN_SESSIONS = "read from a .hoot: open it in Match review. Sessions don't read .hoot data yet."
+
+/**
+ * The one place both `summarizeLog` and `summarizeLogWithCode` end, so a log whose type runs no rule gets no summary on any
+ * path (and none is cached or reaches an event line). Thrown, so the Session view lists it as `<name>: <this>` among its
+ * problems as it does any log it couldn't read.
+ */
 function summaryOf({ analyses, problems }: AnalyzeResult, file: InputFile): MatchSummary | null {
   const a = analyses[0]
   if (!a) return null
+  if (formatOf(a.match.log)?.runsNoRules) throw new Error(HOOT_NOT_IN_SESSIONS)
   const s = summarizeMatch(a.match, a.report, file.bytes.length, a.timing)
   s.problems = problems
   return s

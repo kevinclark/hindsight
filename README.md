@@ -52,10 +52,11 @@ auto-moved, red-vs-blue and drive-forward checks read AdvantageKit's NetworkTabl
 the robot's `/AdvantageKit` NetworkTables; on another robot it never shows a verdict), and the
 [companion library](companion/README.md).
 
-**Phoenix `.hoot` files:** the robot pull copies them and the Library keeps each beside the robot log it overlaps,
-but Hindsight does not read them yet. A `.hoot` converted to `.wpilog` (AdvantageScope's export) is not a log
-Hindsight understands either: on one of our 2026 files it found no enabled time and checked nothing (2026-11-09). A
-robot that logs only `.hoot` needs step 2 for now.
+**Phoenix `.hoot` files:** the robot pull copies them and the Library keeps each beside the robot log it belongs to.
+The desktop app reads them with CTRE's converter, owlet (CTRE's software under CTRE's licence: one already on the
+computer, such as AdvantageScope's, or downloaded from CTRE when you ask), and Match review's Devices tab shows each
+CTRE device's voltage, current, temperature and faults. A `.hoot` with no robot log opens from the Library on its own.
+No rule reads `.hoot` data yet, so a robot that logs only `.hoot` still needs step 2 for the checks.
 
 ## Use it
 
