@@ -4,14 +4,12 @@
   import type { BrowserHub, OpenedFile } from '../hub/browser-hub.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { LogRecord } from '../hub/types.ts'
-  import { dayText } from '../hub/layout.ts'
+  import { NO_EVENT, byDay, filterByEvent, isLarge, logLabel } from './phone-library.ts'
 
-  let { hub, onOpen }: { hub: BrowserHub; onOpen: (files: OpenedFile[]) => void } = $props()
+  /** `onOpening`: before a download starts, so the log held now can be let go first (one log in memory at a time). */
+  let { hub, onOpening, onOpen }: { hub: BrowserHub; onOpening: () => void; onOpen: (files: OpenedFile[]) => void } = $props()
 
-  /** Above this (the p99 of the team's logs, 275 MB) a log opened on an iPhone 17 Pro; older phones are not measured. */
-  const LARGE = 275 * 2 ** 20
-  const ALL = '' as const
-  const NONE = '\u0000none'
+  const ALL = ''
 
   let entries = $state.raw<Entry[] | null>(null)
   let problem = $state<string | null>(null)
@@ -25,29 +23,15 @@
   void list()
 
   const events = $derived([...new Set((entries ?? []).map((e) => e.record.event).filter(Boolean))].sort())
-  const shown = $derived((entries ?? []).filter((e) => event === ALL || (event === NONE ? !e.record.event : e.record.event === event)))
-  const days = $derived.by(() => {
-    const out: { day: string; logs: Entry[] }[] = []
-    for (const e of shown) {
-      const day = e.record.playedAt === null ? 'No date' : dayText(e.record.playedAt)
-      const last = out.at(-1)
-      if (last?.day === day) last.logs.push(e); else out.push({ day, logs: [e] })
-    }
-    return out
-  })
+  const days = $derived(byDay(filterByEvent(entries ?? [], event)))
 
   const mb = (n: number) => (n >= 10 * 2 ** 20 ? (n / 2 ** 20).toFixed(0) : (n / 2 ** 20).toFixed(1))
   const sizeOf = (e: Entry) => [e.record, ...e.attached.dslog, ...e.attached.dsevents].reduce((n, r) => n + r.size, 0)
-  function label(r: LogRecord): string {
-    if (r.matchNumber !== null && r.matchType === 2) return `Q${r.matchNumber}`
-    if (r.matchNumber !== null && r.matchType === 3) return `Playoff ${r.matchNumber}`
-    if (r.matchNumber !== null && r.matchType === 1) return `Practice ${r.matchNumber}`
-    return r.onField ? 'On the field' : 'Off the field'
-  }
   const time = (r: LogRecord) => (r.playedAt === null ? '' : new Date(r.playedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
 
   async function open(entry: Entry) {
     const stop = new AbortController()
+    onOpening()
     opening = { entry, got: 0, total: sizeOf(entry), stop }
     problem = null
     try {
@@ -77,7 +61,7 @@
     <label class="filter">Event <select bind:value={event}>
       <option value={ALL}>All ({entries.length} logs)</option>
       {#each events as ev (ev)}<option value={ev}>{ev}</option>{/each}
-      <option value={NONE}>No event</option>
+      <option value={NO_EVENT}>No event</option>
     </select></label>
     {#each days as d (d.day)}
       <h3>{d.day}</h3>
@@ -85,9 +69,9 @@
         {#each d.logs as e (e.record.sha256)}
           {@const size = sizeOf(e)}
           <li>
-            <span class="what"><strong>{label(e.record)}</strong>{#if e.record.event}{' '}<span class="meta">{e.record.event}</span>{/if}
+            <span class="what"><strong>{logLabel(e.record)}</strong>{#if e.record.event}{' '}<span class="meta">{e.record.event}</span>{/if}
               <span class="meta">{time(e.record)}{#if e.record.robot}{' · '}{e.record.robot.name}{/if}{#if e.attached.dslog.length + e.attached.dsevents.length}{' · '}with DS log{/if}</span>
-              {#if size > LARGE}<span class="meta large">Large: may not open on older phones.</span>{/if}
+              {#if isLarge(size)}<span class="meta large">Large: may not open on older phones.</span>{/if}
             </span>
             <button disabled={!!opening} onclick={() => open(e)}>Open · {mb(size)} MB</button>
           </li>

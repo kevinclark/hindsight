@@ -116,3 +116,77 @@ describe('installPhone', () => {
     expect(went.filter((w) => w === 'web api').length).toBeGreaterThan(0) // finding the file by path
   })
 })
+
+describe('DriveReader.downloadWhole', () => {
+  // A Drive whose media answers come in chunks, so a stop can land mid-download; `say` overrides the size Drive reports.
+  function chunked(content: Uint8Array, opts: { say?: number; status?: number[] } = {}) {
+    const drive = new FakeDrive()
+    const folder = drive.addFolder('root', 'logs')
+    drive.addFile(folder, 'a.wpilog', content)
+    let gets = 0
+    const statuses = [...(opts.status ?? [])]
+    const f: typeof fetch = async (url, init) => {
+      const u = String(url)
+      if (!u.includes('alt=media')) {
+        const res = await drive.fetch(url, init)
+        if (opts.say === undefined) return res
+        const body = await res.json() as { files?: { size?: string }[]; size?: string }
+        for (const file of body.files ?? [body]) if (file.size) file.size = String(opts.say)
+        return new Response(JSON.stringify(body), { status: res.status })
+      }
+      gets++
+      const s = statuses.shift()
+      if (s) return new Response('busy', { status: s })
+      let i = 0
+      return new Response(new ReadableStream<Uint8Array>({ pull(c) { if (i >= content.length) c.close(); else { c.enqueue(content.slice(i, i + 1000)); i += 1000 } } }))
+    }
+    let slept = 0
+    const reader = new DriveReader({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async (ms) => { slept += ms } })
+    return { reader, gets: () => gets, slept: () => slept }
+  }
+
+  it('stops mid-download when asked, and sends no second request', async () => {
+    const { reader, gets } = chunked(bytes(10_000, 4))
+    const stop = new AbortController()
+    const got = reader.downloadWhole('logs/a.wpilog', { signal: stop.signal, onProgress: (n) => { if (n >= 3000) stop.abort() } })
+    await expect(got).rejects.toThrow(/abort/i)
+    expect(gets()).toBe(1)
+  })
+
+  it('stops during a retry wait instead of sleeping it out', async () => {
+    const { reader, gets } = chunked(bytes(1000, 5), { status: [503, 503, 503] })
+    const stop = new AbortController()
+    const was = (reader as unknown as { sleep: (ms: number) => Promise<void> }).sleep
+    ;(reader as unknown as { sleep: (ms: number) => Promise<void> }).sleep = async (ms) => { stop.abort(); return was(ms) }
+    await expect(reader.downloadWhole('logs/a.wpilog', { signal: stop.signal })).rejects.toThrow(/abort/i)
+    expect(gets()).toBe(1)
+  })
+
+  it('refuses a body shorter or longer than the size Drive gave', async () => {
+    await expect(chunked(bytes(5000, 6), { say: 6000 }).reader.downloadWhole('logs/a.wpilog')).rejects.toThrow(/got 5000 of 6000 bytes/)
+    await expect(chunked(bytes(5000, 6), { say: 4000 }).reader.downloadWhole('logs/a.wpilog')).rejects.toThrow(/larger than Drive said/)
+  })
+})
+
+describe('Library list helpers', () => {
+  it('labels a log by its match, else on or off the field', async () => {
+    const { logLabel } = await import('../src/ui/phone-library.ts')
+    const r = (matchType: number | null, matchNumber: number | null, onField = true) => ({ matchType, matchNumber, onField }) as LogRecord
+    expect([r(2, 13), r(3, 2), r(1, 4), r(null, null), r(0, null, false)].map(logLabel)).toEqual(['Q13', 'Playoff 2', 'Practice 4', 'On the field', 'Off the field'])
+  })
+
+  it('filters by event (all, one, none) and groups by day, newest first as given, undated last', async () => {
+    const { byDay, filterByEvent, NO_EVENT } = await import('../src/ui/phone-library.ts')
+    const e = (event: string, playedAt: number | null) => ({ record: { event, playedAt } }) as unknown as import('../src/hub/catalog.ts').Entry
+    const list = [e('TEST', Date.UTC(2099, 2, 6, 18)), e('TEST', Date.UTC(2099, 2, 6, 17)), e('', Date.UTC(2099, 2, 5, 18)), e('OTHER', null)]
+    expect(filterByEvent(list, '').length).toBe(4)
+    expect(filterByEvent(list, 'TEST').length).toBe(2)
+    expect(filterByEvent(list, NO_EVENT).map((x) => x.record.event)).toEqual([''])
+    expect(byDay(list).map((d) => [d.day, d.logs.length])).toEqual([['2099-03-06', 2], ['2099-03-05', 1], ['No date', 1]])
+  })
+
+  it('marks a log over 275 MB as large (the size measured on one recent iPhone)', async () => {
+    const { isLarge } = await import('../src/ui/phone-library.ts')
+    expect([isLarge(275 * 2 ** 20), isLarge(275 * 2 ** 20 + 1)]).toEqual([false, true])
+  })
+})

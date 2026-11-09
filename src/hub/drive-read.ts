@@ -210,22 +210,29 @@ export class DriveReader {
     // Creating a folder or a copy is not repeated after a lost answer (the first may have worked): the caller looks first next time.
     const retryNetwork = method !== 'POST' || url.includes('uploadType=resumable')
     let refreshed = false
+    // A wait between tries ends early when the caller stops (a download's Stop must not sit out a 30 s back-off).
+    const signal = init.signal ?? undefined
+    const wait = (ms: number) => !signal ? this.sleep(ms) : Promise.race([this.sleep(ms), new Promise<never>((_, reject) => {
+      if (signal.aborted) reject(signal.reason)
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })])
     for (let attempt = 0; ; attempt++) {
+      signal?.throwIfAborted()
       const token = await this.opts.token(refreshed)
       let res: Response
       try {
         res = await this.fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` } })
       } catch (e) {
-        if (init.signal?.aborted || !retryNetwork || attempt >= RETRIES - 1) throw e
-        await this.sleep(2 ** attempt * 500)
+        if (signal?.aborted || !retryNetwork || attempt >= RETRIES - 1) throw e
+        await wait(2 ** attempt * 500)
         continue
       }
       if (res.ok || okStatuses.includes(res.status)) return res
       if (res.status === 401 && !refreshed) { refreshed = true; continue }
       const limited = res.status === 429 || (res.status === 403 && (await isRateLimit(res)))
-      if (limited && attempt < RATE_RETRIES - 1) { await this.sleep(Math.min(2 ** attempt, 30) * 1000 + Math.random() * 250); continue }
+      if (limited && attempt < RATE_RETRIES - 1) { await wait(Math.min(2 ** attempt, 30) * 1000 + Math.random() * 250); continue }
       // A 5xx can come after Drive made the folder or copy, so those POSTs are not repeated either.
-      if (res.status >= 500 && retryNetwork && attempt < RETRIES - 1) { await this.sleep(2 ** attempt * 500); continue }
+      if (res.status >= 500 && retryNetwork && attempt < RETRIES - 1) { await wait(2 ** attempt * 500); continue }
       if (res.status === 401) throw new SignInAgain()
       throw new DriveError(res.status, `Google Drive said ${res.status} to ${method} ${url.split('?')[0]}: ${(await res.text()).slice(0, 300)}`)
     }

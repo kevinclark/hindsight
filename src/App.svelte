@@ -421,6 +421,9 @@
     const t = (ms: number | null) => (ms === null ? null : new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
     return f ? { read: t(f.readAt), pushed: t(f.newestFile) } : null
   })
+  // The phone's Library reads the laptops' lists only once it is first opened, then stays mounted (a download keeps its Stop).
+  let libraryOpened = $state(false)
+  $effect(() => { if (mode === 'library') libraryOpened = true })
   // A summary from the board or Session: it takes the place of a log opened from the phone's Library.
   function openSummary(m: MatchSummary) { if (readOnly) clearAll(); reviewing = m; mode = 'review' }
 
@@ -530,6 +533,8 @@
   })
 
   function clearAll() {
+    passes++ // a read still running for what is cleared lands nowhere
+    busy = false
     fileLocations.clear()
     inputs = []
     analyses = []
@@ -647,10 +652,10 @@
   <ForesightView signal={todaySig} {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>{/if}
-{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{:else if phoneHub && mode === 'library'}<div><PhoneLibrary hub={phoneHub} onOpen={openFromPhone} /></div>{/if}
+{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{:else if phoneHub && libraryOpened}<div hidden={mode !== 'library'}><PhoneLibrary hub={phoneHub} onOpening={clearAll} onOpen={openFromPhone} /></div>{/if}
 <div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={readOnly ? undefined : writeBoard} {readOnly} onOpenSummary={readOnly ? openSummary : undefined} bind:summariesOut={summaries} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} />{#if readOnly}<div class="screen-only phone-setup"><TbaFields /></div>{/if}</div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
-{#if readOnly && !current && !busy}
+{#if readOnly && !current && !busy && !problems.length}
   {@const ev = latestEventSession(sessions)}
   {@const shownSummary = reviewing ?? ev?.matches.at(-1) ?? null}
   {#if ev}
@@ -666,7 +671,7 @@
     <SummaryReview summary={shownSummary} issues={marks.issues} wrong={wrongHere(ref, marks)} real={realHere(ref, marks)} laptop={phoneFrom.get(shownSummary.fileName)?.laptop ?? null} olderRead={phoneFrom.get(shownSummary.fileName)?.olderRead ?? null} mapStale={summaryMapStale(shownSummary, history)} />
   {/if}
 {:else}
-{#if readOnly && (current || busy)}
+{#if readOnly && (current || busy || problems.length)}
   <p class="phone-line">Opened from the Library{#if busy}: reading…{/if} · <button class="link" onclick={clearAll}>Back to this event's matches</button></p>
 {/if}
 {#if !readOnly && (!current || dragging)}
