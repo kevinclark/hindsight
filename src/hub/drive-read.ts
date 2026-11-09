@@ -38,6 +38,8 @@ export interface RequestWatch extends TransferWatch {
   once?: boolean
 }
 
+/** A whole-file download (the phone) is read in slices of this size, the size the Drive sync moves a log in. */
+export const PIECE_READ = 8 << 20
 /** Pieces an upload body is handed over in: each one taken is data moving. */
 const PIECE = 256 << 10
 const NULL_BODY = new Set([101, 103, 204, 205, 304])
@@ -171,6 +173,52 @@ export class DriveReader {
     const f = await this.find(path)
     if (!f) throw new Error(`${path} not found`)
     return this.fetchRange(f, start, end, watch)
+  }
+
+  /**
+   * A whole file (the phone opening a log), into one buffer of its size, in slices of PIECE_READ bytes, each by the same
+   * watched, resumable ranged read as `read`: a stall or a dropped connection asks for the rest of that slice from the next
+   * byte; `signal` stops it (Stopped); progress counts the bytes in. Slices keep the peak near one copy of the file (one
+   * ranged read of the whole file is buffered several times over on its way through `request`).
+   */
+  async downloadWhole(path: string, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal } = {}): Promise<Uint8Array> {
+    opts.signal?.throwIfAborted()
+    const f = await this.find(path)
+    if (!f) throw new Error(`${path} not found`)
+    const total = Number(f.size ?? 0)
+    const out = new Uint8Array(total)
+    const cancelled = () => opts.signal?.aborted ?? false
+    for (let at = 0; at < total; at += PIECE_READ) {
+      const end = Math.min(at + PIECE_READ, total)
+      const part = await this.fetchRange(f, at, end, { cancelled, onBytes: (n) => opts.onProgress?.(at + n, total) })
+      if (part.length !== end - at) throw new Error(`${path}: got ${at + part.length} of ${total} bytes`)
+      out.set(part, at)
+    }
+    return out
+  }
+
+  /** Name and kind of a folder by id (to show what was chosen); null if it can't be seen. */
+  async describeFolder(id: string): Promise<{ id: string; name: string } | null> {
+    try {
+      const res = await this.request(`${API}/files/${id}?fields=id,name,mimeType&supportsAllDrives=true`)
+      const f = (await res.json()) as DriveFile
+      return f.mimeType === FOLDER ? { id: f.id, name: f.name } : null
+    } catch (e) { if (e instanceof DriveError && (e.status === 404 || e.status === 403)) return null; throw e }
+  }
+
+  /** The folders directly under a folder (or, for 'root', My Drive's top and the shared drives), for the folder picker. */
+  async folderChoices(parentId: string): Promise<{ id: string; name: string }[]> {
+    if (parentId === 'roots') {
+      const drives: { id: string; name: string }[] = [{ id: 'root', name: 'My Drive' }]
+      for (let page: string | undefined; ; ) {
+        const res = await this.request(`${API}/drives?pageSize=100${page ? `&pageToken=${page}` : ''}`)
+        const body = (await res.json()) as { drives?: { id: string; name: string }[]; nextPageToken?: string }
+        drives.push(...(body.drives ?? []))
+        page = body.nextPageToken
+        if (!page) return drives
+      }
+    }
+    return (await this.children(parentId)).filter((f) => f.mimeType === FOLDER).map((f) => ({ id: f.id, name: f.name })).sort((a, b) => a.name.localeCompare(b.name))
   }
 
   protected async fetchRange(f: DriveFile, start: number, end: number, watch: TransferWatch = {}): Promise<Uint8Array> {
@@ -333,6 +381,13 @@ async function isRateLimit(res: Response): Promise<boolean> {
 export function splitPath(path: string): { parent: string; name: string } {
   const i = path.lastIndexOf('/')
   return i < 0 ? { parent: '', name: path } : { parent: path.slice(0, i), name: path.slice(i + 1) }
+}
+
+/** A folder id from what was pasted: a bare id, or a drive.google.com/drive/folders/<id> link. */
+export function folderIdFrom(text: string): string | null {
+  const t = text.trim()
+  const fromLink = /\/folders\/([\w-]+)/.exec(t)?.[1] ?? /[?&]id=([\w-]+)/.exec(t)?.[1]
+  return fromLink ?? (/^[\w-]{10,}$/.test(t) ? t : null)
 }
 
 export const escapeQ = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")

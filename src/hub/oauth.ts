@@ -1,30 +1,40 @@
 /**
- * Google sign-in for an installed app: the system browser, a loopback redirect and PKCE (RFC 7636, RFC 8252). The app
- * never sees a password. Pure functions over an injected fetch; the loopback server and token storage are in
- * electron/google-auth.ts. A Desktop client's secret is not secret (Google says so): it is injected at build time and
- * never committed.
+ * Google sign-in for an installed app: the system browser, a redirect back to the app and PKCE (RFC 7636, RFC 8252). The
+ * app never sees a password. Pure functions over an injected fetch; the redirect and token storage are the shell's: a
+ * loopback server and safeStorage on the desktop (electron/google-auth.ts), ASWebAuthenticationSession and the Keychain on
+ * the phone (src/phone/google.ts). A Desktop client's secret is not secret (Google says so): it is injected at build time
+ * and never committed; an iOS client has none.
+ *
+ * No `node:` imports (WebCrypto only), so the phone's WebView can bundle it.
  */
-import { createHash, randomBytes } from 'node:crypto'
 import { SignInAgain } from './adapter.ts'
 
 export const SCOPE = 'https://www.googleapis.com/auth/drive'
+/** The phone reads and never writes. */
+export const READ_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
-export interface Client { id: string; secret: string }
+/** A Desktop client has a secret; an iOS client has none, and none is sent. */
+export interface Client { id: string; secret?: string }
 
-export interface Tokens { access: string; refresh: string | null; expiresAt: number }
+/** `scope`: what Google granted (space-separated), when it says. */
+export interface Tokens { access: string; refresh: string | null; expiresAt: number; scope?: string }
 
-const b64url = (b: Buffer) => b.toString('base64url')
+const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
-export function newPkce(): { verifier: string; challenge: string } {
-  const verifier = b64url(randomBytes(48))
-  return { verifier, challenge: b64url(createHash('sha256').update(verifier).digest()) }
+/** `n` random bytes as base64url: for a PKCE verifier (48 bytes, 64 characters) or a `state`. */
+export const randomToken = (n: number): string => b64url(crypto.getRandomValues(new Uint8Array(n)))
+
+export async function newPkce(): Promise<{ verifier: string; challenge: string }> {
+  const verifier = randomToken(48)
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))
+  return { verifier, challenge: b64url(digest) }
 }
 
-export function authUrl(client: Client, redirectUri: string, challenge: string, state: string): string {
+export function authUrl(client: Client, redirectUri: string, challenge: string, state: string, scope = SCOPE): string {
   const q = new URLSearchParams({
-    client_id: client.id, redirect_uri: redirectUri, response_type: 'code', scope: SCOPE, code_challenge: challenge, code_challenge_method: 'S256',
+    client_id: client.id, redirect_uri: redirectUri, response_type: 'code', scope, code_challenge: challenge, code_challenge_method: 'S256',
     state, access_type: 'offline', prompt: 'consent',
   })
   return `${AUTH_URL}?${q}`
@@ -35,12 +45,12 @@ const TOKEN_MS = 30_000
 
 async function tokenRequest(body: Record<string, string>, client: Client, now: number, doFetch: typeof fetch): Promise<Tokens> {
   // Bounded: a token asked for over a dead link must not hold the request that needs it (the Drive client also gives up waiting at its stall time).
-  const res = await doFetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: client.id, client_secret: client.secret, ...body }), signal: AbortSignal.timeout(TOKEN_MS) })
-  const json = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string }
+  const res = await doFetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: client.id, ...(client.secret ? { client_secret: client.secret } : {}), ...body }), signal: AbortSignal.timeout(TOKEN_MS) })
+  const json = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string; error?: string; error_description?: string }
   // A refresh token Google no longer honours (revoked, expired in Testing, password change): sign in again, don't retry.
   if (json.error === 'invalid_grant') throw new SignInAgain('Google no longer accepts this sign-in. Sign in again.')
   if (!res.ok || !json.access_token) throw new Error(`Google sign-in failed: ${json.error_description ?? json.error ?? res.status}`)
-  return { access: json.access_token, refresh: json.refresh_token ?? null, expiresAt: now + (json.expires_in ?? 3600) * 1000 }
+  return { access: json.access_token, refresh: json.refresh_token ?? null, expiresAt: now + (json.expires_in ?? 3600) * 1000, ...(json.scope ? { scope: json.scope } : {}) }
 }
 
 export function exchangeCode(client: Client, code: string, verifier: string, redirectUri: string, now = Date.now(), doFetch: typeof fetch = fetch): Promise<Tokens> {
@@ -53,7 +63,7 @@ export async function refreshAccess(client: Client, refresh: string, now = Date.
 }
 
 /** An access token that renews itself: what DriveAdapter's `token` needs. `store` keeps the refresh token between runs. */
-export function tokenSource(client: Client, store: { load(): Promise<string | null>; save(refresh: string): Promise<void>; clear(): Promise<void> }, doFetch: typeof fetch = fetch, now: () => number = Date.now) {
+export function tokenSource(client: Client, store: { load(): Promise<string | null>; save(refresh: string): Promise<void>; clear(): Promise<void> }, doFetch: typeof fetch = fetch, now: () => number = Date.now, onGrant?: (scope: string) => void) {
   let current: Tokens | null = null
   return async (forceRefresh = false): Promise<string> => {
     if (current && !forceRefresh && current.expiresAt - now() > 60_000) return current.access
@@ -61,6 +71,7 @@ export function tokenSource(client: Client, store: { load(): Promise<string | nu
     if (!refresh) throw new SignInAgain('Sign in to Google first.')
     try {
       current = await refreshAccess(client, refresh, now(), doFetch)
+      if (current.scope) onGrant?.(current.scope)
     } catch (e) {
       if (e instanceof SignInAgain) { current = null; await store.clear() }
       throw e

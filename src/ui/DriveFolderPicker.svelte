@@ -2,7 +2,7 @@
 <script lang="ts">
   import type { HubApi } from '../hub/bridge.ts'
 
-  let { api, label, onPick, onCancel }: { api: HubApi; label: string; onPick: (idOrLink: string) => void; onCancel: () => void } = $props()
+  let { api, label, onPick, onCancel, cancelLabel = 'Cancel' }: { api: Pick<HubApi, 'driveFolders'>; label: string; onPick: (idOrLink: string) => void; onCancel: () => void; cancelLabel?: string } = $props()
 
   let trail = $state<{ id: string; name: string }[]>([{ id: 'roots', name: 'Drive' }])
   let choices = $state.raw<{ id: string; name: string }[]>([])
@@ -30,7 +30,7 @@
     <span class="meta">or paste a link</span>
     <input bind:value={pasted} placeholder="https://drive.google.com/drive/folders/…" />
     <button class="primary" disabled={!pasted.trim()} onclick={() => onPick(pasted)}>Use it</button>
-    <button class="link" onclick={onCancel}>Cancel</button>
+    <button class="link" onclick={onCancel}>{cancelLabel}</button>
   </div>
 </div>
 

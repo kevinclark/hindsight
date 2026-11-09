@@ -231,6 +231,20 @@ describe('DriveReader', () => {
     expect(methods.length).toBe(methods.filter((m) => m === 'GET').length)
   })
 
+  it('lists folder choices and names a chosen folder with GETs only (the phone picks its team folder)', async () => {
+    const drive = new FakeDrive()
+    const team = drive.addFolder('root', 'team')
+    drive.addFile('root', 'notes.txt', 'x')
+    const methods: string[] = []
+    const fetchSpy: typeof fetch = (url, init) => { methods.push((init?.method ?? 'GET').toUpperCase()); return drive.fetch(url, init) }
+    const r = new DriveReader({ rootId: 'root', token: async () => 'good', fetch: fetchSpy, sleep: async () => {} })
+    expect((await r.folderChoices('roots')).map((f) => f.name)).toEqual(['My Drive', 'Shared one'])
+    expect(await r.folderChoices('root')).toEqual([{ id: team, name: 'team' }])
+    expect(await r.describeFolder(team)).toEqual({ id: team, name: 'team' })
+    expect(await r.describeFolder('missing')).toBeNull()
+    expect(new Set(methods)).toEqual(new Set(['GET']))
+  })
+
   it('refreshes the token once on a 401, then throws SignInAgain', async () => {
     const drive = new FakeDrive()
     const asked: (boolean | undefined)[] = []

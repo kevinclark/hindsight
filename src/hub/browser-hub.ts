@@ -1,11 +1,15 @@
 /**
- * The hub as the phone has it: read-only, straight from the team's Drive folder. It reads two kinds of file, each laptop's
- * `history/<machine>.jsonl` (triage marks) and `events/<key>--<machine>.jsonl` (match summaries), through a cache that
- * fetches only what grew. It never lists or reads `manifests/` (2 MB) and has no method that writes.
+ * The hub as the phone has it: read-only, straight from the team's Drive folder. For the event it reads each laptop's
+ * `history/<machine>.jsonl` (triage marks) and `events/<key>--<machine>.jsonl` (match summaries) through a cache that
+ * fetches only what grew. Its Library reads the laptops' `manifests/` (about 2 MB each, the same cache) only when asked,
+ * and opens a log by downloading it whole through `media`, kept in memory only. It has no method that writes.
  *
  * No `node:` imports.
  */
 import type { FileInfo } from './adapter.ts'
+import { Catalog, type Entry } from './catalog.ts'
+import { baseName } from './layout.ts'
+import { sha256Hex } from './phone-cache.ts'
 import { foldEvent, isEventKey, parseEventPath, type FoldedLine } from './event-file.ts'
 import { readAppendOnly, type ReadStore, type TextCache } from './phone-cache.ts'
 import { mergeHistory, parseHistory, serializeHistory, type HistoryEvent } from '../triage/history.ts'
@@ -15,6 +19,8 @@ export interface BrowserHubOptions {
   cache: TextCache
   /** The app version, shown on the phone. */
   version: string
+  /** Where log bytes come from (the iPhone app: Drive through the WebView's own fetch, never the base64 bridge). Without it no log opens. */
+  media?: { downloadWhole(path: string, opts?: { onProgress?(got: number, total: number): void; signal?: AbortSignal }): Promise<Uint8Array> }
   now?: () => number
 }
 
@@ -26,10 +32,14 @@ export interface EventView {
 }
 
 const isHistoryFile = (f: FileInfo) => /^history\/[A-Za-z0-9_-]+\.jsonl$/.test(f.path)
+const isManifest = (f: FileInfo) => /^manifests\/[A-Za-z0-9_-]+\.jsonl$/.test(f.path)
+
+export interface OpenedFile { name: string; bytes: Uint8Array }
 
 export class BrowserHub {
   readonly readOnly = true as const
   private readonly store: ReadStore
+  private readonly media: BrowserHubOptions['media']
   private readonly cache: TextCache
   private readonly version: string
   private readonly now: () => number
@@ -39,6 +49,7 @@ export class BrowserHub {
 
   constructor(opts: BrowserHubOptions) {
     this.store = opts.store
+    this.media = opts.media
     this.cache = opts.cache
     this.version = opts.version
     this.now = opts.now ?? Date.now
@@ -117,6 +128,29 @@ export class BrowserHub {
       clearInterval(timer)
       if (hasDocument) document.removeEventListener('visibilitychange', onVisible)
     }
+  }
+
+  /** Every robot log the laptops' manifests list, with the DS logs and hoot files that belong to it, newest first. */
+  async logs(): Promise<Entry[]> {
+    const texts: string[] = []
+    for (const info of (await this.store.list('manifests')).filter(isManifest)) texts.push((await readAppendOnly(this.store, info, this.cache)).text)
+    return Catalog.from(texts).entries().sort((a, b) => (b.record.playedAt ?? -Infinity) - (a.record.playedAt ?? -Infinity))
+  }
+
+  /** A log and its DS logs, downloaded whole and each checked against the sha-256 the manifest gives. Nothing is kept. */
+  async openLog(entry: Pick<Entry, 'record' | 'attached'>, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal } = {}): Promise<OpenedFile[]> {
+    if (!this.media) throw new Error('This phone cannot open logs.')
+    const records = [entry.record, ...entry.attached.dslog, ...entry.attached.dsevents]
+    const total = records.reduce((n, r) => n + r.size, 0)
+    const out: OpenedFile[] = []
+    let before = 0
+    for (const r of records) {
+      const bytes = await this.media.downloadWhole(r.path, { signal: opts.signal, onProgress: (got) => opts.onProgress?.(before + got, total) })
+      if ((await sha256Hex(bytes)) !== r.sha256) throw new Error(`${baseName(r.path)} on the team Drive is not the log the team's list names (its checksum differs).`)
+      out.push({ name: baseName(r.path), bytes })
+      before += r.size
+    }
+    return out
   }
 
   /** A listing of `events` or `history`, which also moves the freshness marks. */

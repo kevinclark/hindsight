@@ -30,7 +30,8 @@
     sure?: (rule: string) => string | null
     /** Issue keys that fired in every match of this match's session (session.ts standingKeys); empty when no loaded session holds it. */
     standing?: Set<string>
-    onMark: (finding: Finding, status: IssueStatus, note: string) => void
+    /** Without it (the phone, read only) no finding draws a mark control. */
+    onMark?: (finding: Finding, status: IssueStatus, note: string) => void
     /** The debug workspace's record (ADR 3): what the team found per cause, and how to write it. Without it a finding has no "Debug this". */
     debug?: { marks: (finding: Finding) => CauseMarks; write: (finding: Finding, changes: Change[]) => void; role: BoardRole | null; setRole: (role: BoardRole) => void }
   } = $props()

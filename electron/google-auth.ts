@@ -68,7 +68,7 @@ export async function driveToken(): Promise<(refresh?: boolean) => Promise<strin
 export async function signIn(): Promise<void> {
   const client = await googleClient()
   if (!client) throw new Error('Google Drive is not set up in this build: no Google client.')
-  const { verifier, challenge } = newPkce()
+  const { verifier, challenge } = await newPkce()
   const state = randomBytes(16).toString('hex')
   const server = createServer()
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))

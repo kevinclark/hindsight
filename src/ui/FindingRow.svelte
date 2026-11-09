@@ -25,7 +25,8 @@
     issue?: IssueEvent
     /** Marked fixed, but the fix came after this match was played. */
     fixedLater?: boolean
-    onMark: (finding: Finding, status: IssueStatus, note: string) => void
+    /** Without it (read only) the row draws no mark buttons. */
+    onMark?: (finding: Finding, status: IssueStatus, note: string) => void
     /** The findings this one explains, shown collapsed under it. */
     explains?: FindingNode[]
     /** Something explains this finding but it is listed on its own: says what. */
@@ -79,7 +80,7 @@
     // A wrong mark needs its reason: it turns this check's reds amber on the event's other matches.
     while (status === 'wrong' && note !== null && !note.trim()) note = await askText(`A reason is needed. ${ask}`, '')
     if (note === null) return // cancelled
-    onMark(finding, status, note.trim())
+    onMark?.(finding, status, note.trim())
   }
   const date = (iso: string) => iso.slice(0, 10)
 
@@ -176,12 +177,14 @@
       {/if}
       <div class="actions">
         {#if onDebug && rule && 'causes' in rule && rule.causes.length}<button class="debug" onclick={() => onDebug(finding)}>Debug this</button>{/if}
+        {#if onMark}
         {#if wrongMark || issue?.status !== 'known'}<button onclick={() => mark('known')}>Mark as known…</button>{/if}
         {#if wrongMark || issue?.status !== 'fixed'}<button onclick={() => mark('fixed')}>Mark as fixed…</button>{/if}
         {#if !realMark}<button onclick={() => mark('real')}>Real problem…</button>{/if}
         {#if !wrongMark}<button onclick={() => mark('wrong')}>Not a real problem…</button>{/if}
         {#if wrongMark}<button onclick={() => mark('unmark')}>Undo "not a real problem"</button>{:else if realMark}<button onclick={() => mark('unmark')}>Undo "real problem"</button>{/if}
         {#if issue && !wrongMark}<button onclick={() => mark('new')}>Treat as new</button>{/if}
+        {/if}
       </div>
     </div>
   </details>
