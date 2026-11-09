@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { buildCard, CARD_MAX_HEIGHT, CARD_MIN_TYPE, CARD_WIDTH, wrap, type CardModel } from '../src/report/card.ts'
 import { bottomLine, cardTitle, keyNumber, reviewCard, reviewModel, shortTitle, stripRepoPaths, titleHasValue } from '../src/report/review-model.ts'
 import { didNotRun, foresightCard, shortShas, type ForesightReportInput } from '../src/report/foresight-model.ts'
+import { rowHeadline } from '../src/report/titles.ts'
 import { RULES } from '../src/rules/index.ts'
 import type { Finding } from '../src/rules/types.ts'
 import { analyzeFixture } from './helpers/load.ts'
@@ -116,14 +117,25 @@ describe('report model, from the fixtures cut from real logs', () => {
     const f = brownout.report.findings.find((x) => x.measured?.[0]?.threshold !== undefined)!
     expect(keyNumber(f).text).toContain('(line ')
   })
+  it('a card item reads "<lead> · <about>" with number "<key> · <time>" for a finding with all four', () => {
+    const f = { ...brownout.report.findings.find((x) => x.rule === 'power/brownout')!, about: 'test part' }
+    const h = rowHeadline(f)
+    expect(h.about).toBe('test part')
+    expect(h.key && h.time).toBeTruthy()
+    const a = { ...brownout, report: { ...brownout.report, findings: brownout.report.findings.map((x) => (x.key === f.key && x.time === f.time ? f : x)) } }
+    const item = reviewCard(reviewModel(a, new Map())).items.find((i) => i.title.startsWith(h.lead))!
+    expect(item.title).toBe(`${h.lead} · test part`)
+    expect(item.number.startsWith(`${h.key} · ${h.time}`)).toBe(true)
+  })
   it('leaves the number line out when the title already says the value', () => {
     const brown = brownout.report.findings.find((x) => x.rule === 'power/brownout')!
     expect(keyNumber(brown).inTitle).toBe(true)
     const drop = brownout.report.findings.find((x) => x.rule === 'can/device-dropout')!
     expect(keyNumber(drop).inTitle).toBe(true)
     const items = reviewCard(reviewModel(brownout, new Map())).items
-    // No number (the title says 53); only what it explains (in this cut: the follower dropout and the margin).
-    expect(items.find((i) => i.title.startsWith('Browned out 53 times'))!.number).toBe('explains 1 error, 1 warning')
+    // The card leads with the screen's headline: the short title, then the judged number and the time, then what it explains
+    // (in this cut: the follower dropout and the margin).
+    expect(items.find((i) => i.title.startsWith('roboRIO brownout'))!.number).toBe('53 brownouts · 2:25 teleop · explains 1 error, 1 warning')
     expect(titleHasValue('Lost comms at 2:27 into the match', 2)).toBe(false)
     expect(titleHasValue('Browned out 53 times', 53)).toBe(true)
     expect(titleHasValue('Browned out 253 times', 53)).toBe(false)
