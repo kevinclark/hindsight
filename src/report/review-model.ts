@@ -13,7 +13,7 @@ import { robotName } from '../profiles/choose.ts'
 import { SCHEMA, findingsFileName } from './findings-json.ts'
 import type { CardModel, Tone } from './card.ts'
 import { descendants, nest, partitionStanding, severityWords, withParents, type FindingNode } from './finding-tree.ts'
-import { cardTitle, shortTitle } from './titles.ts'
+import { cardTitle, rowHeadline, shortTitle } from './titles.ts'
 import { stripRepoPaths } from './repo-paths.ts'
 import { playedAt as summaryPlayedAt } from '../session/summary.ts'
 
@@ -199,7 +199,8 @@ export function keyNumber(f: Finding): { label: string; value: string; text: str
   if (m) {
     const unit = m.unit ? ` ${m.unit}` : ''
     const value = `${m.value}${unit}${m.threshold !== undefined ? ` (line ${m.threshold}${unit})` : ''}`
-    return { label: m.label, value, text: `${value} ${m.label}`, inTitle: titleHasValue(f.title, m.value) }
+    const label = m.value === 1 && m.one ? m.one : m.label
+    return { label, value, text: `${value} ${label}`, inTitle: titleHasValue(f.title, m.value) }
   }
   // Fallback: the first evidence line that holds a number ("group: Alerts" says nothing on a card).
   const first = Object.entries(f.evidence).find(([, v]) => /\d/.test(String(v)))
@@ -252,11 +253,12 @@ export function reviewCard(m: ReviewModel): CardModel {
     standingNote: m.standing.length ? `+ ${m.standing.length} in every match this session${worst.length ? '' : foldedFirst(m)}` : undefined,
     items: worst.map((n) => {
       const f = n.finding
-      const k = keyNumber(f)
+      // The same headline as the screen's closed row: short title · part, then the judged number and the time.
+      const head = rowHeadline(f)
       const word = (m.errors.length ? 'ERROR' : 'WARNING') + (m.cameBack.has(f.key) ? ' · CAME BACK' : '')
       const under = descendants(n)
-      const number = [k.inTitle ? '' : k.text, under.length ? `explains ${severityWords(under)}` : ''].filter(Boolean).join(' · ')
-      return { word, tone, title: cardTitle(f.title), number }
+      const number = [head.key, head.time, under.length ? `explains ${severityWords(under)}` : ''].filter(Boolean).join(' · ')
+      return { word, tone, title: head.about ? `${head.lead} · ${head.about}` : head.lead, number }
     }),
     // "No new errors": true by construction, whereas "nothing new" was false when only the errors folded and new warnings stayed.
     emptyText: m.standing.length ? `No new ${tone}s in this match.` : 'Nothing to fix from this log.',

@@ -48,7 +48,7 @@ export default rule({
       message: `No controller on Driver Station ${portWord} ${missing.join(' and ')} (the code reads ports 0 to ${names.length - 1})`,
       at: now,
       evidence: Object.fromEntries(names.map((name, port) => [`port ${port}`, name || '(nothing)'])),
-      measured: [{ label: 'controllers missing', value: missing.length, unit: '' }],
+      measured: [{ label: 'controllers missing', one: 'controller missing', value: missing.length, unit: '' }],
     }
   },
 })

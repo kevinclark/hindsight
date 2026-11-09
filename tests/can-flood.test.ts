@@ -96,8 +96,10 @@ describe('can/device-dropout: bus-wide and partial drops', () => {
     expect(bottomLine(model.errors, [], [], 0, { title: parents[0].title, covers: 24 })).toBe('25 errors, 0 warnings, 0 info. Worst: 24 CAN devices dropped within 0.92 s; +1 more error.')
     const card = reviewCard(model)
     expect(card.heading).toBe('25 errors')
-    expect(card.items.map((it) => it.title)[1]).toBe('24 CAN devices dropped within 0.92 s')
-    expect(card.items[1].number).toBe('explains 24 errors')
+    // The card leads with the screen's headline: short title · part, then the judged number, the time, and what it explains.
+    expect(card.items.map((it) => it.title)).toEqual(['Device dropped off CAN · Hood', 'CAN devices dropped together'])
+    expect(card.items[0].number).toBe('1 drop off CAN · 0:00 teleop')
+    expect(card.items[1].number).toBe('24 in the group · 0:20 teleop · explains 24 errors')
     expect(JSON.stringify(buildFindingsJson(analysis.match, analysis.report))).toContain('"parents":[{"rule":"can/devices-dropped-together"')
   })
 

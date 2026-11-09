@@ -21,6 +21,9 @@ describe('rowHeadline', () => {
     expect(rowHeadline(base({ measured: [{ label: 'lowest voltage while enabled', value: 6.26, unit: 'V', threshold: 7 }] })).key).toBe('6.26 V (line 7 V)')
     expect(rowHeadline(base({ measured: [{ label: 'times', value: 3, unit: '' }] })).key).toBe('3 times')
     expect(rowHeadline(base({ evidence: { 'devices dropped': 2 } })).key).toBe('')
+    expect(rowHeadline(base({ measured: [{ label: 'brownouts', one: 'brownout', value: 1, unit: '' }] })).key).toBe('1 brownout')
+    expect(rowHeadline(base({ measured: [{ label: 'brownouts', one: 'brownout', value: 3, unit: '' }] })).key).toBe('3 brownouts')
+    expect(rowHeadline(base({ measured: [{ label: 'main breaker heat, fast edge', short: 'of a fast trip', value: 156, unit: '%', threshold: 100 }] })).key).toBe('156 % of a fast trip (line 100 %)')
   })
   it('compacts the time four ways', () => {
     const t = (when: string | null) => rowHeadline(base({ when })).time

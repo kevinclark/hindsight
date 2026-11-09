@@ -233,7 +233,7 @@ test('[LN-09] the log ran the profile\'s commit when its commit starts with the 
 })
 
 const causeView = (f: Finding) => f.causes.map((c) => [c.id, c.likely ?? false, c.ruledOut ?? null])
-const OFF_STEP = 'The supply limit is switched off in RollerIO.java:12-15. On purpose? Mark it as a known issue. If not, switch it on and measure the mechanism before and after.'
+const OFF_STEP = 'Switch the supply limit on in RollerIO.java:12-15, then measure the mechanism before and after. Off on purpose? Mark it as a known issue.'
 
 test('[LN-10] switched off: the likely cause is limit-off, and the next step says where to switch it on, whatever code the log ran', () => {
   for (const f of [only(leftSupply(90), robot({ supplyEnabled: false })), only({ ...leftSupply(90), ran: 'def5678' }, robot({ supplyEnabled: false }))]) {

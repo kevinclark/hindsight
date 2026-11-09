@@ -67,7 +67,7 @@ export default rule({
         [`lowest battery voltage in the ${LOOK_BACK_SECONDS} s before each (V)`]: lowestBefore?.join(', '),
         'first brownout': firstBrownout === undefined ? undefined : match.when(firstBrownout),
       },
-      measured: [{ label: 'CANivore USB drops', value: drops.length, unit: '' }],
+      measured: [{ label: 'CANivore USB drops', one: 'CANivore USB drop', value: drops.length, unit: '' }],
       plot: battery
         ? { signals: [battery], unit: 'V', from: first - 10, to: drops[drops.length - 1] + 10, marks: drops }
         : { signals: ['canivoreUsbDisconnects'], unit: '' },

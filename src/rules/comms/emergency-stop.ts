@@ -23,7 +23,7 @@ export default rule({
     { id: 'on-purpose', cause: 'The drive team pressed the e-stop on purpose because the robot was unsafe or out of control', look: 'ask the drive team; the match video at this time' },
     { id: 'field', cause: 'The field staff (FTA or head referee) e-stopped the robot', look: 'ask the FTA why; the field log for this match' },
   ],
-  nextStep: 'Ask the drive team who pressed the e-stop (the button or the DS space bar) and why. Keep hands off the DS keyboard once the robot is enabled.',
+  nextStep: 'Ask the drive team who pressed the e-stop and why. Keep hands off the DS keyboard once the robot is enabled.',
   incident: 'One 2025 match: e-stopped 1.5 s before the end; on one day, three runs e-stopped 0.02 s after enable',
   sources: [
     { ...WPILIB_DS, says: 'The space bar is the Driver Station e-stop whether or not its window has focus; after an e-stop the roboRIO must be rebooted before the robot can be enabled again.' },
@@ -55,7 +55,7 @@ export default rule({
 
       // Pressed in the same instant as the enable: not a reaction to what the robot did.
       const nextStep = sinceEnable !== null && sinceEnable < 0.5
-        ? `The e-stop came ${sinceEnable.toFixed(2)} s after the enable, before the robot could have done anything to react to: look for a key pressed at enable (the DS space bar).`
+        ? `Look for a key pressed at enable (the DS space bar): the e-stop came ${sinceEnable.toFixed(2)} s after it, too soon to be a reaction.`
         : undefined
 
       return {

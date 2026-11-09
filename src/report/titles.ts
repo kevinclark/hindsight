@@ -30,8 +30,8 @@ function compactWhen(when: string | null): string {
 }
 
 /**
- * The judged number for the closed row (measured only; its label only when it has no line, since the line already says
- * what it is). Two evidence shapes say more than the number, and the closed row keeps what they say:
+ * The judged number for the closed row (measured only; the rule's `short` phrase when it has one, else its label only when it has no
+ * line, since the line already says what it is). Two evidence shapes say more than the number, and the closed row keeps what they say:
  * - a configured current limit: the limit itself, not the check's line (120 % of it), and whether code switches it off;
  * - a camera that dropped out: the dropouts, which are why it fired, with the stale share only when that is past its line.
  */
@@ -50,7 +50,10 @@ function rowKey(f: Finding): string {
     const past = m.threshold !== undefined && m.value > m.threshold ? ` · ${m.value}${unit} stale (line ${m.threshold}${unit})` : ''
     return `dropped out ${drops} ${drops === 1 ? 'time' : 'times'}${typeof secs === 'number' ? `, ${secs} s disconnected` : ''}${past}`
   }
-  return m.threshold !== undefined ? `${m.value}${unit} (line ${m.threshold}${unit})` : `${m.value}${unit}${m.label ? ` ${m.label}` : ''}`
+  // A rule's short phrase says what a percentage is of ("156 % of a fast trip"), which a line alone doesn't.
+  if (m.short) return `${m.value}${unit} ${m.short}${m.threshold !== undefined ? ` (line ${m.threshold}${unit})` : ''}`
+  const label = m.value === 1 && m.one ? m.one : m.label
+  return m.threshold !== undefined ? `${m.value}${unit} (line ${m.threshold}${unit})` : `${m.value}${unit}${label ? ` ${label}` : ''}`
 }
 
 /** What a finding's closed row shows: the rule's short title, what it is about, the judged number (`rowKey`), and when. The long sentence is `finding.title`, kept inside the opened row. */
