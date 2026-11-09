@@ -19,6 +19,8 @@ export type UpdateEvent =
   | { type: 'progress'; transferred: number; total: number; bytesPerSecond: number }
   | { type: 'downloaded'; next: string } | { type: 'error'; reason: string }
   | { type: 'manual'; next: string; url: string }
+  /** macOS's Squirrel couldn't fetch or unpack what was downloaded: the update will not install. */
+  | { type: 'install-failed'; reason: string }
 
 /** A check every four hours: releases ship up to ten a day. */
 export const CHECK_EVERY_MS = 4 * 60 * 60 * 1000
@@ -41,6 +43,7 @@ export function step(s: UpdateState, e: UpdateEvent, now: number): UpdateState {
     // Sticky: the staged update installs on quit whatever a later check says. Only a newer release replaces it.
     if (e.type === 'available' && isNewer(e.next, s.next)) return startDownload(s.version, e.next, now)
     if (e.type === 'downloaded' && isNewer(e.next, s.next)) return { kind: 'ready', version: s.version, next: e.next }
+    if (e.type === 'install-failed') return { kind: 'failed', version: s.version, checkedAt: null, since: now, reason: `${s.next} was downloaded but macOS couldn't prepare it (${e.reason})` }
     return s
   }
   switch (e.type) {
@@ -63,6 +66,8 @@ export function step(s: UpdateState, e: UpdateEvent, now: number): UpdateState {
         checkedAt: s.kind === 'downloading' ? null : s.checkedAt,
         since: s.kind === 'failed' ? s.since : now,
       }
+    case 'install-failed':
+      return s
     case 'manual':
       return { kind: 'manual', version: s.version, next: e.next, url: e.url, checkedAt: now }
   }

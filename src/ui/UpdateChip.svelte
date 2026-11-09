@@ -28,6 +28,8 @@
   let asking = $state(false)
   /** When Restart now was pressed (the app should be gone within seconds; if it isn't, say so). */
   let restartAt = $state<number | null>(null)
+  /** macOS is still unpacking the update: Restart was refused for now. */
+  let preparing = $state(false)
   const RESTART_GRACE_MS = 20_000
   let root: HTMLDivElement | undefined = $state()
   let button: HTMLButtonElement | undefined = $state()
@@ -36,15 +38,21 @@
   const remember = (v: string) => { try { localStorage.setItem(KEY, v) } catch { /* private window: asked again next time */ } }
 
   /** What's new is worked out once, when the running version is first known (as the old card on Now did). */
+  let decided = false
   function learnVersion(version: string) {
-    if (lines.length || unseen) return
+    if (decided) return
+    decided = true
     let seen: string | null = null
     try { seen = localStorage.getItem(KEY) } catch { /* private window */ }
     lines = whatsNew(builtChangelog(), version, seen, hasLogs)
     if (lines.length) unseen = true
     else remember(version)
   }
-  const take = (s: UpdateState) => { st = s; asking = false; learnVersion(s.version) }
+  const take = (s: UpdateState) => {
+    // A new offer (or none) forgets an earlier Restart press and its answers.
+    if (!st || st.kind !== s.kind || (st.kind === 'ready' && s.kind === 'ready' && st.next !== s.next)) { restartAt = null; preparing = false }
+    st = s; asking = false; learnVersion(s.version)
+  }
 
   onMount(() => {
     const api = hub()
@@ -74,10 +82,11 @@
     try {
       const r = await hub()!.updateRestart(force)
       busy = r.busy ?? null
-      if (!busy) restartAt = Date.now()
+      preparing = !!r.preparing
+      if (r.started) restartAt = Date.now()
     } catch { busy = null }
   }
-  const retry = () => { asking = true; void hub()?.updateCheck().catch(() => { asking = false }) }
+  const retry = () => { asking = true; void hub()?.updateCheck().then((started) => { if (!started) asking = false }).catch(() => { asking = false }) }
   const mb = (n: number) => (n / 1e6).toFixed(0)
 
   /** A download that has had no new bytes for STALL_MS. */
@@ -97,10 +106,13 @@
       <div class="pop" id="{id}-pop" role="dialog" aria-label="Updates" data-update-popover>
         {#if st.kind === 'ready'}
           {#if restartAt !== null && now - restartAt >= RESTART_GRACE_MS}
-            <p>Hindsight didn't restart. Quit Hindsight to install {st.next}, or look at the log to see why.</p>
+            <p>Hindsight didn't restart. Quit and reopen it to install {st.next}; the log says what happened.</p>
             <p class="row"><button type="button" onclick={() => void hub()?.showJobLog()}>Show log</button></p>
           {:else if restartAt !== null}
             <p>Restarting to install Hindsight {st.next}…</p>
+          {:else if preparing}
+            <p>macOS is still preparing Hindsight {st.next}. Try again in a few seconds.</p>
+            <p class="row"><button type="button" class="primary" onclick={() => restart(false)}>Restart now</button></p>
           {:else if busy}
             <p>A {busy} is running. Restarting stops it.</p>
             <p class="row"><button type="button" class="primary" onclick={() => restart(true)}>Restart anyway</button><button type="button" onclick={() => close(true)}>Wait</button></p>

@@ -17,7 +17,8 @@ import { downloadOwlet } from '../src/hoot/download.ts'
 import type { HootFile, HootReadReport, HootStatus } from '../src/hoot/types.ts'
 import type { JobLog } from './job-log.ts'
 
-export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: JobLog; send: (channel: string, payload: unknown) => void }): void {
+/** Returns the name of the .hoot job running now (or null), for the update chip's Restart check. */
+export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: JobLog; send: (channel: string, payload: unknown) => void }): () => string | null {
   const jobs = new JobRunner(Date.now, o.jobLog, app.getVersion())
   let abort: AbortController | null = null
   const job = <T>(name: string, work: (progress: ProgressFn, signal: AbortSignal, log: (line: string) => void) => Promise<T>): Promise<T> => {
@@ -125,6 +126,7 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
   ipcMain.handle('hub:hootRunning', (): JobProgress | null => jobs.current())
   // Quitting stops owlet; the read that started it removes its scratch export if the app lives long enough (the OS clears its temp folder otherwise).
   app.on('before-quit', () => abort?.abort())
+  return () => jobs.current()?.job ?? null
 }
 
 /** Whether a .hoot is on this computer, and its format byte (null when it isn't, or is too short to have one). */

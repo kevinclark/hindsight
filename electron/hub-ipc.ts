@@ -15,7 +15,7 @@ import { isEventKey } from '../src/hub/event-file.ts'
 import { createHash } from 'node:crypto'
 import { SignInAgain, Stopped } from '../src/hub/adapter.ts'
 import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
-import { Updater } from './updater.ts'
+import { Updater, electronEnv } from './updater.ts'
 import { JobRunner, type JobHandle, type ProgressFn, type Work } from '../src/hub/jobs.ts'
 import { applyLinks } from '../src/hub/links.ts'
 import { redescribe, type RedescribeReport } from '../src/hub/redescribe.ts'
@@ -349,15 +349,18 @@ export function registerHub(window: () => BrowserWindow | null): void {
   })
 
   // The update chip's state (electron/updater.ts): the page asks once on mount and then hears each change.
-  const updater = new Updater({
-    log: (line) => jobLog.line(line), send: (state) => send('hub:updateState', state), runningJob: () => jobs.current()?.job ?? null,
+  const hootJob = registerHoot({ open, jobLog, send })
+  const updater = electronEnv().then((env) => {
+    const u = new Updater(env, {
+      log: (line) => jobLog.line(line), send: (state) => send('hub:updateState', state),
+      runningJob: () => jobs.current()?.job ?? hootJob(),
+    })
+    u.start()
+    return u
   })
-  ipcMain.handle('hub:updateState', () => updater.current())
-  ipcMain.handle('hub:updateCheck', () => { void updater.check() })
-  ipcMain.handle('hub:updateRestart', (_e, force: unknown) => updater.restart(force === true))
-  updater.start()
-
-  registerHoot({ open, jobLog, send })
+  ipcMain.handle('hub:updateState', async () => (await updater).current())
+  ipcMain.handle('hub:updateCheck', async () => (await updater).check())
+  ipcMain.handle('hub:updateRestart', async (_e, force: unknown) => (await updater).restart(force === true))
 
   app.on('before-quit', () => describer.stop())
 }

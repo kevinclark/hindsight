@@ -156,10 +156,10 @@ export interface HubApi {
   showJobLog(): Promise<void>
   /** The update chip's state (electron/updater.ts); changes arrive through `onUpdateState`. */
   updateState(): Promise<UpdateState>
-  /** Check for a newer release now (ignored while a check or download is under way). */
-  updateCheck(): Promise<void>
-  /** Install the downloaded update and relaunch; `{ busy }` (a job's name) when a job runs and `force` is false. */
-  updateRestart(force: boolean): Promise<{ busy?: string }>
+  /** Check for a newer release now; false when it didn't start (a check or download under way, or an update ready). */
+  updateCheck(): Promise<boolean>
+  /** Install the downloaded update and relaunch: `started`; `busy` (a job's name) when a job runs and `force` is false; `preparing` while macOS is still unpacking it. */
+  updateRestart(force: boolean): Promise<{ busy?: string; preparing?: boolean; started?: boolean }>
   onUpdateState(callback: (s: UpdateState) => void): () => void
 
   // ---- .hoot files (ADR 13): their own job runner, so a sync running doesn't block the Devices tab ----

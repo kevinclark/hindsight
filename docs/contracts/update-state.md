@@ -7,7 +7,7 @@ over what the updater reports, and a pure `chip` that turns a state into the lab
 only draws it. It does not install anything, never restarts the app by itself, and never interrupts the user (no modal,
 no OS notification). Readers: the chip and its popover, the job log lines that `updater.ts` writes from the same states.
 
-Suite: `npx vitest run tests/update-state.contract.test.ts --reporter=junit --outputFile={junit}`
+Suite: `npx vitest run tests/update-state.contract.test.ts tests/updater.test.ts --reporter=junit --outputFile={junit}`
 
 ## Interface
 - `initial(version, selfUpdating, packaged): UpdateState`; `step(state, event, now): UpdateState`;
@@ -42,7 +42,7 @@ Suite: `npx vitest run tests/update-state.contract.test.ts --reporter=junit --ou
   is data. Kind: behaviour.
 - **US-07** `manual` gives `manual` with the version, its link and `checkedAt` now (from any state but `dev` and `ready`).
   Why: a build that cannot update itself still tells the user where the new one is. Kind: behaviour.
-- **US-08** `CHECK_EVERY_MS` is 4 hours and `STALL_MS` is 15 seconds. Why: releases ship up to ten a day, and a user must
+- **US-08** `CHECK_EVERY_MS` is 4 hours, `STALL_MS` is 15 seconds and `STALL_ABORT_MS` 120 seconds. Why: releases ship up to ten a day, and a user must
   not wait a day to learn of one; 15 s is the stall time the app's other transfers use. Kind: compatibility.
 
 ### Behaviour: the chip's words (`X` the running version, `N` the next)
@@ -59,3 +59,23 @@ Suite: `npx vitest run tests/update-state.contract.test.ts --reporter=junit --ou
 - **US-12** Every state's `title` is a tooltip in plain words ending in a full stop, naming the versions involved (the running
   one, and the next where there is one); the `ready` title is `Hindsight N is downloaded. Restart now, or it installs the
   next time you quit.` Kind: behaviour.
+
+### The updater (`electron/updater.ts`, tested through fakes of electron-updater and Squirrel.Mac)
+- **US-13** An `install-failed` event (Squirrel.Mac's own error before it has staged the download) turns `ready` into
+  `failed` with the reason; anywhere else it changes nothing, and a Squirrel error after staging is ignored. Why:
+  electron-updater says "downloaded" before Squirrel has the update; if Squirrel then fails, neither Restart nor quitting
+  installs it, and the chip must not say they will. Kind: failure mode.
+- **US-14** `check()` starts nothing (and returns false) while a check is in flight, a download runs, or an update is ready.
+  Why: a second check while ready downloads and hands the update to Squirrel again, and on Windows and Linux a failed newer
+  download deletes the staged installer. Kind: behaviour.
+- **US-15** A check with no answer in `CHECK_TIMEOUT_MS` (60 s), or one electron-updater answers with nothing, is `failed`,
+  and a new check may then start. Why: the chip must never sit on "checking…". Kind: failure mode.
+- **US-16** A download with no new bytes for `STALL_ABORT_MS` is cancelled and `failed`, the reason saying where it stopped;
+  electron-updater's own "cancelled" error doesn't replace that reason; a gap between stall checks longer than `STALL_MS`
+  (the computer slept) starts the wait again. Kind: failure mode.
+- **US-17** Restart installs (`quitAndInstall(true, true)`) only from `ready`; on a Mac only once Squirrel has staged the
+  update (before that: `preparing`); with a job running only when forced (else `busy`, the job's name). Why: asked before
+  Squirrel has staged, electron-updater leaves a listener that quits the app whenever staging finishes, a restart nobody
+  asked for at that moment. Kind: safety.
+- **US-18** Nothing the updater does in reply to an electron-updater event throws back into it; a failure is logged. Why:
+  the listeners run inside electron-updater's emit, before its install steps. Kind: failure mode.
