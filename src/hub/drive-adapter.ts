@@ -110,30 +110,6 @@ export class DriveAdapter extends DriveReader implements StorageAdapter {
     return infoOf(path, (await res.json()) as DriveFile)
   }
 
-  /** Name and kind of a folder by id (to show what was chosen); null if it can't be seen. */
-  async describeFolder(id: string): Promise<{ id: string; name: string } | null> {
-    try {
-      const res = await this.request(`${API}/files/${id}?fields=id,name,mimeType&supportsAllDrives=true`)
-      const f = (await res.json()) as DriveFile
-      return f.mimeType === FOLDER ? { id: f.id, name: f.name } : null
-    } catch (e) { if (e instanceof DriveError && (e.status === 404 || e.status === 403)) return null; throw e }
-  }
-
-  /** The folders directly under a folder (or, for 'root', My Drive's top and the shared drives), for the folder picker. */
-  async folderChoices(parentId: string): Promise<{ id: string; name: string }[]> {
-    if (parentId === 'roots') {
-      const drives: { id: string; name: string }[] = [{ id: 'root', name: 'My Drive' }]
-      for (let page: string | undefined; ; ) {
-        const res = await this.request(`${API}/drives?pageSize=100${page ? `&pageToken=${page}` : ''}`)
-        const body = (await res.json()) as { drives?: { id: string; name: string }[]; nextPageToken?: string }
-        drives.push(...(body.drives ?? []))
-        page = body.nextPageToken
-        if (!page) return drives
-      }
-    }
-    return (await this.children(parentId)).filter((f) => f.mimeType === FOLDER).map((f) => ({ id: f.id, name: f.name })).sort((a, b) => a.name.localeCompare(b.name))
-  }
-
   // ---- internals ----------------------------------------------------------------------------------------
 
   protected override async createFolder(parentId: string, name: string): Promise<string> {

@@ -1,7 +1,7 @@
 # Hindsight privacy
 
 Hindsight is open-source software (BSD-3-Clause) that reads FRC robot logs. It has no server, no accounts of its own,
-no analytics and no advertising. This page says what the desktop app does with data. The page `hindsight.html`, opened
+no analytics and no advertising. This page says what the desktop app and the iPhone app do with data. The page `hindsight.html`, opened
 from a file, sends nothing anywhere.
 
 ## On your computer
@@ -27,10 +27,30 @@ people typed (driver names included). Everyone who can open the team folder can 
 To stop: remove Hindsight at <https://myaccount.google.com/permissions>, and delete the app's library folder. Files already in
 the team folder stay there until the folder's owners remove them.
 
+## On an iPhone
+
+The iPhone app shows what the team's laptops found and marked at the current event. It only reads; it changes nothing on
+Drive and makes no marks.
+
+- **Google sign-in** asks for `drive.readonly`: Google words it as seeing all of your Drive files. The app reads only the
+  team folder you choose: the files the laptops share there for the phone (each laptop's match summaries for the event
+  and its triage marks), never the logs and never the laptops' lists. Sign-in happens in Apple's sign-in sheet; the app
+  never sees your Google password.
+- **What stays on the phone:** the sign-in's refresh token in the iOS Keychain (kept for this device only: it does not move
+  to a new phone); the team folder's id and name, the copies of the files it read (so it opens with the last
+  copy when there is no signal), and the team number, The Blue Alliance read key and Nexus Pull API key you type, all in
+  the app's own storage. Deleting the app removes them all; Sign out removes the refresh token at once.
+- **Who it talks to:** Google (sign-in and Drive), The Blue Alliance and Nexus (the schedule and queue times, with your own
+  keys). Nothing else.
+
+To stop: Sign out in the app, then remove Hindsight at <https://myaccount.google.com/permissions>.
+
 ## Other network use
 
 - **The robot:** when you ask, the app connects to the roboRIO on your network (its read-only status feed and its file
   server) to list and copy logs. Nothing is written to the robot.
+- **Event schedule:** with a team number and your own The Blue Alliance read key (and, optionally, a Nexus Pull API key),
+  the app asks The Blue Alliance and Nexus for the event's schedule, results and queue times.
 - **Updates:** on start the app asks `api.github.com` once for the list of Hindsight releases, to show a "newer version" notice.
   GitHub sees your address as for any web request.
 

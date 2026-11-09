@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { DriveAdapter, DriveError, isAllowedRequest } from '../src/hub/drive-adapter.ts'
 import { AlreadyExists, ChecksumMismatch, SignInAgain, bytesSource, readText } from '../src/hub/adapter.ts'
-import { SCOPE, authUrl, exchangeCode, newPkce, refreshAccess, tokenSource } from '../src/hub/oauth.ts'
+import { READ_SCOPE, SCOPE, authUrl, exchangeCode, newPkce, refreshAccess, tokenSource } from '../src/hub/oauth.ts'
+import { readFileSync } from 'node:fs'
 import { adapterContract } from './helpers/adapter-contract.ts'
 import { FakeDrive } from './helpers/fake-drive.ts'
 
@@ -237,8 +238,8 @@ describe('Google sign-in', () => {
     return new Response(JSON.stringify(a), { status: 'error' in a ? 400 : 200 })
   }
 
-  it('builds a PKCE authorisation URL with the drive scope, offline access and a loopback redirect', () => {
-    const { verifier, challenge } = newPkce()
+  it('builds a PKCE authorisation URL with the drive scope, offline access and a loopback redirect', async () => {
+    const { verifier, challenge } = await newPkce()
     const url = new URL(authUrl(client, 'http://127.0.0.1:5555', challenge, 'st'))
     expect(Object.fromEntries(url.searchParams)).toMatchObject({ client_id: 'client-id', redirect_uri: 'http://127.0.0.1:5555', scope: SCOPE, code_challenge: challenge, code_challenge_method: 'S256', access_type: 'offline', state: 'st' })
     expect(challenge).toBe(createHash('sha256').update(verifier).digest('base64url'))
@@ -268,5 +269,28 @@ describe('Google sign-in', () => {
 
   it('refreshAccess keeps the old refresh token when Google sends no new one', async () => {
     expect((await refreshAccess(client, 'r1', 0, tokenFetch([{ access_token: 'a', expires_in: 10 }]))).refresh).toBe('r1')
+  })
+
+  // The phone runs this file in a WebView: no node: modules, a scope of its own, and an iOS client that has no secret.
+  it('runs without node: modules (WebCrypto only), so a WebView can bundle it', async () => {
+    expect(readFileSync('src/hub/oauth.ts', 'utf8')).not.toMatch(/from\s+['"]node:/)
+    const a = await newPkce(), b = await newPkce()
+    expect(a.verifier).not.toBe(b.verifier)
+    expect(a.verifier).toMatch(/^[A-Za-z0-9_-]{43,128}$/)
+    expect(a.challenge).toBe(createHash('sha256').update(a.verifier).digest('base64url'))
+  })
+
+  it('asks for the scope it is given (the phone: drive.readonly), the desktop default unchanged', () => {
+    expect(new URL(authUrl(client, 'r:/x', 'c', 's', READ_SCOPE)).searchParams.get('scope')).toBe('https://www.googleapis.com/auth/drive.readonly')
+    expect(new URL(authUrl(client, 'r:/x', 'c', 's')).searchParams.get('scope')).toBe('https://www.googleapis.com/auth/drive')
+  })
+
+  it('sends no client_secret for a client without one (an iOS client), and still sends the desktop one', async () => {
+    const seen: URLSearchParams[] = []
+    await exchangeCode({ id: 'ios-id' }, 'c', 'v', 'r:/x', 0, tokenFetch([{ access_token: 'a', refresh_token: 'r', expires_in: 10 }], seen))
+    await refreshAccess({ id: 'ios-id' }, 'r', 0, tokenFetch([{ access_token: 'a', expires_in: 10 }], seen))
+    expect(seen.map((s) => s.has('client_secret'))).toEqual([false, false])
+    await refreshAccess(client, 'r', 0, tokenFetch([{ access_token: 'a', expires_in: 10 }], seen))
+    expect(seen[2].get('client_secret')).toBe('client-secret')
   })
 })

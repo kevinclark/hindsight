@@ -8,6 +8,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && cp dist/index.html hindsight.html",
+    "build:phone": "vite build -c vite.phone.config.ts && mv dist-phone/phone.html dist-phone/index.html",
+    "phone:fixture": "PHONE_BUILD=fixture npm run build:phone && cap sync ios",
+    "phone": "npm run build:phone && cap sync ios",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -25,6 +28,9 @@
     "web-tree-sitter": "0.27.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3",
     "@msgpack/msgpack": "3.1.2",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tsconfig/svelte": "5.0.8",

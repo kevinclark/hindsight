@@ -2,7 +2,7 @@
 <script lang="ts">
   import type { HubApi } from '../hub/bridge.ts'
 
-  let { api, label, onPick, onCancel }: { api: HubApi; label: string; onPick: (idOrLink: string) => void; onCancel: () => void } = $props()
+  let { api, label, onPick, onCancel }: { api: Pick<HubApi, 'driveFolders'>; label: string; onPick: (idOrLink: string) => void; onCancel: () => void } = $props()
 
   let trail = $state<{ id: string; name: string }[]>([{ id: 'roots', name: 'Drive' }])
   let choices = $state.raw<{ id: string; name: string }[]>([])

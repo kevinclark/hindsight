@@ -24,6 +24,8 @@
     "electron/**/*.ts",
     "vite.config.ts",
     "vite.electron.config.ts",
+    "vite.phone.config.ts",
+    "capacitor.config.ts",
     "vite.build-id.ts"
   ]
 }

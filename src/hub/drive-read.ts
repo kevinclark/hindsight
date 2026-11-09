@@ -83,6 +83,30 @@ export class DriveReader {
     return this.fetchRange(f, start, end)
   }
 
+  /** Name and kind of a folder by id (to show what was chosen); null if it can't be seen. */
+  async describeFolder(id: string): Promise<{ id: string; name: string } | null> {
+    try {
+      const res = await this.request(`${API}/files/${id}?fields=id,name,mimeType&supportsAllDrives=true`)
+      const f = (await res.json()) as DriveFile
+      return f.mimeType === FOLDER ? { id: f.id, name: f.name } : null
+    } catch (e) { if (e instanceof DriveError && (e.status === 404 || e.status === 403)) return null; throw e }
+  }
+
+  /** The folders directly under a folder (or, for 'root', My Drive's top and the shared drives), for the folder picker. */
+  async folderChoices(parentId: string): Promise<{ id: string; name: string }[]> {
+    if (parentId === 'roots') {
+      const drives: { id: string; name: string }[] = [{ id: 'root', name: 'My Drive' }]
+      for (let page: string | undefined; ; ) {
+        const res = await this.request(`${API}/drives?pageSize=100${page ? `&pageToken=${page}` : ''}`)
+        const body = (await res.json()) as { drives?: { id: string; name: string }[]; nextPageToken?: string }
+        drives.push(...(body.drives ?? []))
+        page = body.nextPageToken
+        if (!page) return drives
+      }
+    }
+    return (await this.children(parentId)).filter((f) => f.mimeType === FOLDER).map((f) => ({ id: f.id, name: f.name })).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
   protected async fetchRange(f: DriveFile, start: number, end: number): Promise<Uint8Array> {
     this.calls.download++
     const res = await this.request(`${API}/files/${f.id}?alt=media&supportsAllDrives=true`, { headers: { Range: `bytes=${start}-${end - 1}` } })
@@ -185,6 +209,13 @@ async function isRateLimit(res: Response): Promise<boolean> {
 export function splitPath(path: string): { parent: string; name: string } {
   const i = path.lastIndexOf('/')
   return i < 0 ? { parent: '', name: path } : { parent: path.slice(0, i), name: path.slice(i + 1) }
+}
+
+/** A folder id from what was pasted: a bare id, or a drive.google.com/drive/folders/<id> link. */
+export function folderIdFrom(text: string): string | null {
+  const t = text.trim()
+  const fromLink = /\/folders\/([\w-]+)/.exec(t)?.[1] ?? /[?&]id=([\w-]+)/.exec(t)?.[1]
+  return fromLink ?? (/^[\w-]{10,}$/.test(t) ? t : null)
 }
 
 export const escapeQ = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
