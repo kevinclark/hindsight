@@ -4,7 +4,8 @@
   import type { BrowserHub, OpenedFile } from '../hub/browser-hub.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { LogRecord } from '../hub/types.ts'
-  import { NO_EVENT, byDay, filterByEvent, isLarge, logLabel } from './phone-library.ts'
+  import { NO_EVENT, byDay, filterByEvent, isLarge, logLabel, onThisPhone } from './phone-library.ts'
+  import { KEEP_CHOICES, keepCap, setKeepCap } from '../phone/keep-setting.ts'
 
   /** `onOpening`: before a download starts, so the log held now can be let go first (one log in memory at a time). */
   let { hub, onOpening, onOpen }: { hub: BrowserHub; onOpening: () => void; onOpen: (files: OpenedFile[]) => void } = $props()
@@ -12,45 +13,72 @@
   const ALL = ''
 
   let entries = $state.raw<Entry[] | null>(null)
+  /** sha-256 of the logs kept on this phone (opening one reads no Drive bytes). */
+  let kept = $state.raw<Set<string>>(new Set())
+  let keptBytes = $state(0)
+  let cap = $state(keepCap(localStorage))
+  const refreshKept = async () => { try { kept = await hub.keptLogs(); keptBytes = await hub.keptBytes() } catch { /* shown as not kept */ } }
+  async function chooseCap(bytes: number) {
+    cap = bytes
+    setKeepCap(localStorage, bytes)
+    await hub.setKeepCap(bytes)
+    await refreshKept()
+  }
+  async function clearKept() { await hub.clearKept(); await refreshKept() }
   let problem = $state<string | null>(null)
   let event = $state<string>(ALL)
-  let opening = $state<{ entry: Entry; got: number; total: number; stop: AbortController } | null>(null)
+  // Raw, and told apart by a number: a $state object would wrap `entry` in a proxy, so `opening.entry === entry` never
+  // held, progress never showed, and the line never cleared (seen on the phone, 2026-11-09).
+  let opening = $state.raw<{ id: number; entry: Entry; got: number; total: number; stop: AbortController } | null>(null)
+  let opens = 0
 
   async function list() {
     problem = null
+    void refreshKept()
     try { entries = await hub.logs() } catch (e) { problem = `Could not list the team's logs (${e instanceof Error ? e.message : String(e)}).` }
   }
   void list()
 
   const events = $derived([...new Set((entries ?? []).map((e) => e.record.event).filter(Boolean))].sort())
-  const days = $derived(byDay(filterByEvent(entries ?? [], event)))
+  let onlyHere = $state(false)
+  const days = $derived(byDay(filterByEvent(onlyHere ? onThisPhone(entries ?? [], kept) : (entries ?? []), event)))
 
   const mb = (n: number) => (n >= 10 * 2 ** 20 ? (n / 2 ** 20).toFixed(0) : (n / 2 ** 20).toFixed(1))
   const sizeOf = (e: Entry) => [e.record, ...e.attached.dslog, ...e.attached.dsevents].reduce((n, r) => n + r.size, 0)
   const time = (r: LogRecord) => (r.playedAt === null ? '' : new Date(r.playedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
 
+  /** Each step to the app's console (Xcode, `devicectl … launch --console`): a download that hangs shows where. */
+  const say = (line: string) => console.log(`Hindsight Library: ${line}`)
+
   async function open(entry: Entry) {
     const stop = new AbortController()
     onOpening()
-    opening = { entry, got: 0, total: sizeOf(entry), stop }
+    const id = ++opens
+    opening = { id, entry, got: 0, total: sizeOf(entry), stop }
     problem = null
     try {
-      const files = await hub.openLog(entry, { signal: stop.signal, onProgress: (got, total) => { if (opening?.entry === entry) opening = { ...opening, got, total } } })
+      const files = await hub.openLog(entry, { signal: stop.signal, log: say, onProgress: (got, total) => { if (opening?.id === id) opening = { ...opening, got, total } } })
+      say('downloaded; opening in Match review')
+      void refreshKept()
       onOpen(files)
     } catch (e) {
+      say(`ended: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`)
       if (!stop.signal.aborted) problem = `Could not open ${entry.record.names[0]} (${e instanceof Error ? e.message : String(e)}).`
-    } finally { if (opening?.entry === entry) opening = null }
+    } finally { if (opening?.id === id) opening = null }
   }
 </script>
 
 <section class="phone-library">
-  <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review; it isn't kept after the app closes.</p>
+  <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review. The ones you opened last stay on this phone (reopening needs no download) until Sign out.</p>
+  <p class="keep"><label>Keep opened logs: <select value={cap} onchange={(e) => chooseCap(Number((e.currentTarget as HTMLSelectElement).value))}>
+    {#each KEEP_CHOICES as c (c.bytes)}<option value={c.bytes}>{c.label}</option>{/each}
+  </select></label> <span class="meta">{mb(keptBytes)} MB kept</span>{#if keptBytes > 0}{' '}<button class="link" onclick={clearKept}>Clear</button>{/if}</p>
   {#if problem}<p class="problem" role="alert">{problem} <button class="link" onclick={list}>Try again</button></p>{/if}
   {#if opening}
     <div class="opening" role="status">
       <p>Downloading {opening.entry.record.names[0]}: {mb(opening.got)} of {mb(opening.total)} MB</p>
       <progress max={opening.total} value={opening.got}></progress>
-      <button onclick={() => opening?.stop.abort()}>Stop</button>
+      <button onclick={() => { say('Stop pressed'); opening?.stop.abort() }}>Stop</button>
     </div>
   {/if}
   {#if entries === null}
@@ -63,6 +91,7 @@
       {#each events as ev (ev)}<option value={ev}>{ev}</option>{/each}
       <option value={NO_EVENT}>No event</option>
     </select></label>
+    <label class="filter"><input type="checkbox" bind:checked={onlyHere} /> Only on this phone</label>
     {#each days as d (d.day)}
       <h3>{d.day}</h3>
       <ul>
@@ -73,7 +102,7 @@
               <span class="meta">{time(e.record)}{#if e.record.robot}{' · '}{e.record.robot.name}{/if}{#if e.attached.dslog.length + e.attached.dsevents.length}{' · '}with DS log{/if}</span>
               {#if isLarge(size)}<span class="meta large">Large: may not open on older phones.</span>{/if}
             </span>
-            <button disabled={!!opening} onclick={() => open(e)}>Open · {mb(size)} MB</button>
+            <button disabled={!!opening} onclick={() => open(e)}>{onThisPhone([e], kept).length ? 'Open · on this phone' : `Open · ${mb(size)} MB`}</button>
           </li>
         {/each}
       </ul>
@@ -85,6 +114,7 @@
   .phone-library { max-width: 46rem; }
   .meta { color: var(--muted); font-size: 0.85rem; }
   .problem { color: var(--error); }
+  .keep { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.25rem 0 0.75rem; }
   .filter { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0 1rem; }
   select { font: inherit; }
   h3 { font-size: 0.95rem; margin: 1.25rem 0 0.25rem; }

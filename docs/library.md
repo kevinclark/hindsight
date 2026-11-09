@@ -128,7 +128,10 @@ panel. Neither is committed.
   with Sync's history step. The Library says what is not up yet. Logs and manifests still wait for Sync.
 - **Event files for the phone** (src/hub/event-file.ts): `events/<TBA event key>--<machine id>.jsonl`, flat in one folder,
   appended only by that computer. One line per log of the latest event (its matches and the pit runs on its days, as the
-  Session view groups them) per analyzer: `{sha256, analyzer, shape, at, summary}`, the summary without the team's marks.
+  Session view groups them) per analyzer, and, once, every earlier event in the library (src/hub/event-backfill.ts: a
+  minute after start, read out of sight of the Session view without the code folder; an event whose logs this computer
+  has all published is skipped unread, and logs found in no event The Blue Alliance places are remembered in the page's
+  storage per summary shape; offline, nothing is remembered and the next start tries again): `{sha256, analyzer, shape, at, summary}`, the summary without the team's marks.
   The analyzer id is `<version>+<hash>`; only the hash (the analyzer's own source, the robot profile, whether a code folder
   was used) makes a line new, so a release that changes nothing the analyzer reads appends nothing. Without a team number
   and a The Blue Alliance key the event can't be named and nothing is published (the Library says so).
