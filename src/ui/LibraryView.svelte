@@ -583,9 +583,9 @@
 
   <section class="list">
     {#if all.length || hootRows.length}<div class="summary" role="status">
-      <strong>{filtered.length}</strong> log{filtered.length === 1 ? '' : 's'} · {size(bytes)} · <strong>{local.length}</strong> on this computer{filtered.length - local.length ? ` (${filtered.length - local.length} not)` : ''}{attachments ? ` · ${attachments} DS or hoot files attached` : ''}{hootRows.length ? ` · ${hootRows.length} .hoot only` : ''}{hootHidden ? ` · ${hootHidden} .hoot-only file${hootHidden === 1 ? '' : 's'} hidden while a filter is picked` : ''}
+      {#if all.length}<strong>{filtered.length}</strong> log{filtered.length === 1 ? '' : 's'} · {size(bytes)} · <strong>{local.length}</strong> on this computer{filtered.length - local.length ? ` (${filtered.length - local.length} not)` : ''}{attachments ? ` · ${attachments} DS or hoot files attached` : ''}{hootRows.length ? ' · ' : ''}{/if}{#if hootRows.length}<strong>{hootRows.length}</strong> .hoot only (no robot log){/if}{hootHidden ? ` · ${hootHidden} .hoot-only file${hootHidden === 1 ? '' : 's'} hidden while a filter is picked` : ''}
       {#if fetchable.length}<button class="primary" onclick={download} disabled={driveBusy}>Download {fetchable.length} file{fetchable.length === 1 ? '' : 's'} ({size(fetchable.reduce((n, r) => n + r.size, 0))})</button>{/if}
-      <button class="primary" onclick={openInSession} disabled={local.length === 0}>Open in Session view</button>
+      {#if all.length}<button class="primary" onclick={openInSession} disabled={local.length === 0}>Open in Session view</button>{/if}
     </div>{/if}
     {#if all.length === 0 && hootRows.length === 0}
       <div class="first" data-empty-library>
