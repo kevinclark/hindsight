@@ -3,7 +3,7 @@
 <script lang="ts">
   import App from '../App.svelte'
   import DriveFolderPicker from '../ui/DriveFolderPicker.svelte'
-  import { installPhone } from '../phone.ts'
+  import { installPhone, keptLogs } from '../phone.ts'
   import { clearIndexedDbCache } from '../hub/phone-cache.ts'
   import { PhoneSession } from './session.svelte.ts'
   import { native, viaNative, webFetch } from './runtime.ts'
@@ -12,7 +12,7 @@
     native, fetch: viaNative, store: localStorage,
     // Requests go through native HTTP; whole logs through the WebView's own fetch (never base64 across the bridge).
     install: (folder, token) => installPhone({ rootId: folder.id, token, fetch: viaNative, mediaFetch: webFetch }),
-    clearCopies: () => clearIndexedDbCache(),
+    clearCopies: async () => { await clearIndexedDbCache(); await keptLogs().clear() },
     reload: () => location.reload(),
   })
   void s.begin()

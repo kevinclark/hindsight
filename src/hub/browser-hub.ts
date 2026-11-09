@@ -10,6 +10,7 @@ import type { FileInfo } from './adapter.ts'
 import { Catalog, type Entry } from './catalog.ts'
 import { baseName } from './layout.ts'
 import { sha256Hex } from './phone-cache.ts'
+import type { LogKeep } from './log-keep.ts'
 import { foldEvent, isEventKey, parseEventPath, type FoldedLine } from './event-file.ts'
 import { readAppendOnly, type ReadStore, type TextCache } from './phone-cache.ts'
 import { mergeHistory, parseHistory, serializeHistory, type HistoryEvent } from '../triage/history.ts'
@@ -20,6 +21,8 @@ export interface BrowserHubOptions {
   /** The app version, shown on the phone. */
   version: string
   /** Where log bytes come from (the iPhone app: Drive through the WebView's own fetch, never the base64 bridge). Without it no log opens. */
+  /** Logs kept on the phone after opening (src/hub/log-keep.ts): reopening one reads no Drive bytes. */
+  keep?: LogKeep
   media?: { downloadWhole(path: string, opts?: { onProgress?(got: number, total: number): void; signal?: AbortSignal; log?(line: string): void }): Promise<Uint8Array> }
   now?: () => number
 }
@@ -40,6 +43,7 @@ export class BrowserHub {
   readonly readOnly = true as const
   private readonly store: ReadStore
   private readonly media: BrowserHubOptions['media']
+  private readonly keep: LogKeep | undefined
   private readonly cache: TextCache
   private readonly version: string
   private readonly now: () => number
@@ -50,6 +54,7 @@ export class BrowserHub {
   constructor(opts: BrowserHubOptions) {
     this.store = opts.store
     this.media = opts.media
+    this.keep = opts.keep
     this.cache = opts.cache
     this.version = opts.version
     this.now = opts.now ?? Date.now
@@ -145,15 +150,25 @@ export class BrowserHub {
     const out: OpenedFile[] = []
     let before = 0
     for (const r of records) {
-      opts.log?.(`${baseName(r.path)}: downloading ${r.size} bytes`)
-      const bytes = await this.media.downloadWhole(r.path, { signal: opts.signal, onProgress: (got) => opts.onProgress?.(before + got, total), log: opts.log })
-      opts.log?.(`${baseName(r.path)}: checking sha-256`)
-      if ((await sha256Hex(bytes)) !== r.sha256) throw new Error(`${baseName(r.path)} on the team Drive is not the log the team's list names (its checksum differs).`)
+      let bytes = await this.keep?.get(r.sha256) ?? null
+      if (bytes && (await sha256Hex(bytes)) !== r.sha256) { opts.log?.(`${baseName(r.path)}: kept copy damaged, downloading`); await this.keep?.remove(r.sha256); bytes = null }
+      if (bytes) opts.log?.(`${baseName(r.path)}: kept on this phone`)
+      else {
+        opts.log?.(`${baseName(r.path)}: downloading ${r.size} bytes`)
+        bytes = await this.media.downloadWhole(r.path, { signal: opts.signal, onProgress: (got) => opts.onProgress?.(before + got, total), log: opts.log })
+        opts.log?.(`${baseName(r.path)}: checking sha-256`)
+        if ((await sha256Hex(bytes)) !== r.sha256) throw new Error(`${baseName(r.path)} on the team Drive is not the log the team's list names (its checksum differs).`)
+        await this.keep?.put(r.sha256, bytes)
+      }
+      opts.onProgress?.(before + r.size, total)
       out.push({ name: baseName(r.path), bytes })
       before += r.size
     }
     return out
   }
+
+  /** The sha-256 of every log kept on this phone (the Library marks them). */
+  async keptLogs(): Promise<Set<string>> { return new Set((await this.keep?.kept()) ?? []) }
 
   /** A listing of `events` or `history`, which also moves the freshness marks. */
   private async listed(prefix: 'events' | 'history'): Promise<FileInfo[]> {

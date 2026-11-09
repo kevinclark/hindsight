@@ -6,6 +6,11 @@
 import { BrowserHub } from './hub/browser-hub.ts'
 import { DriveReader } from './hub/drive-read.ts'
 import { indexedDbCache, type ReadStore } from './hub/phone-cache.ts'
+import { LogKeep, indexedDbKeepStore } from './hub/log-keep.ts'
+import { LARGE_BYTES } from './ui/phone-library.ts'
+
+/** Logs kept on the phone after opening: up to 1 GB, none over the large-log size (chosen 2026-11-09). */
+export const keptLogs = () => new LogKeep(indexedDbKeepStore(), { capBytes: 2 ** 30, maxLogBytes: LARGE_BYTES })
 import { VERSION } from './version.ts'
 
 export interface PhoneSetup {
@@ -30,7 +35,7 @@ export function installPhone(setup: PhoneSetup): BrowserHub {
 
 /** The same over any read-only store (the demo fixture, tests). */
 export function installPhoneOver(store: ReadStore, media?: DriveReader): BrowserHub {
-  const hub = new BrowserHub({ store, cache: indexedDbCache(), version: VERSION, ...(media ? { media } : {}) })
+  const hub = new BrowserHub({ store, cache: indexedDbCache(), version: VERSION, ...(media ? { media, keep: keptLogs() } : {}) })
   ;(globalThis as unknown as { hindsightPhone: BrowserHub }).hindsightPhone = hub
   return hub
 }

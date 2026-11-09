@@ -12,6 +12,9 @@
   const ALL = ''
 
   let entries = $state.raw<Entry[] | null>(null)
+  /** sha-256 of the logs kept on this phone (opening one reads no Drive bytes). */
+  let kept = $state.raw<Set<string>>(new Set())
+  const refreshKept = async () => { try { kept = await hub.keptLogs() } catch { /* shown as not kept */ } }
   let problem = $state<string | null>(null)
   let event = $state<string>(ALL)
   // Raw, and told apart by a number: a $state object would wrap `entry` in a proxy, so `opening.entry === entry` never
@@ -21,6 +24,7 @@
 
   async function list() {
     problem = null
+    void refreshKept()
     try { entries = await hub.logs() } catch (e) { problem = `Could not list the team's logs (${e instanceof Error ? e.message : String(e)}).` }
   }
   void list()
@@ -44,6 +48,7 @@
     try {
       const files = await hub.openLog(entry, { signal: stop.signal, log: say, onProgress: (got, total) => { if (opening?.id === id) opening = { ...opening, got, total } } })
       say('downloaded; opening in Match review')
+      void refreshKept()
       onOpen(files)
     } catch (e) {
       say(`ended: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`)
@@ -53,7 +58,7 @@
 </script>
 
 <section class="phone-library">
-  <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review; it isn't kept after the app closes.</p>
+  <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review. The last ones you opened (up to 1 GB, none over 275 MB) stay on this phone until Sign out.</p>
   {#if problem}<p class="problem" role="alert">{problem} <button class="link" onclick={list}>Try again</button></p>{/if}
   {#if opening}
     <div class="opening" role="status">
@@ -82,7 +87,7 @@
               <span class="meta">{time(e.record)}{#if e.record.robot}{' · '}{e.record.robot.name}{/if}{#if e.attached.dslog.length + e.attached.dsevents.length}{' · '}with DS log{/if}</span>
               {#if isLarge(size)}<span class="meta large">Large: may not open on older phones.</span>{/if}
             </span>
-            <button disabled={!!opening} onclick={() => open(e)}>Open · {mb(size)} MB</button>
+            <button disabled={!!opening} onclick={() => open(e)}>{kept.has(e.record.sha256) ? 'Open · on this phone' : `Open · ${mb(size)} MB`}</button>
           </li>
         {/each}
       </ul>
