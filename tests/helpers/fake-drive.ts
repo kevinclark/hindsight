@@ -62,7 +62,8 @@ export class FakeDrive {
     const headers = new Headers(init.headers as Record<string, string>)
     this.log.push(`${method} ${url.pathname}${url.searchParams.get('uploadType') ? `?${url.searchParams.get('uploadType')}` : ''}`)
     if (headers.get('authorization') !== `Bearer ${this.validToken}`) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401)
-    const body = init.body === undefined ? undefined : typeof init.body === 'string' ? new TextEncoder().encode(init.body) : new Uint8Array(init.body as ArrayBuffer)
+    // An upload chunk comes as a stream the adapter hands over in pieces (drive-read.ts), the rest as bytes or text.
+    const body = init.body == null ? undefined : typeof init.body === 'string' ? new TextEncoder().encode(init.body) : init.body instanceof ReadableStream ? new Uint8Array(await new Response(init.body).arrayBuffer()) : new Uint8Array(init.body as ArrayBuffer)
     const p = url.pathname
 
     if (p.startsWith('/session/')) return this.putSession(p.slice('/session/'.length), method, headers, body ?? new Uint8Array(0))

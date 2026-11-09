@@ -32,7 +32,7 @@ export default rule({
     { id: 'sensor', cause: 'A sensor fault: the sensor the state waits for didn\'t change although the piece was there', look: 'that sensor\'s wiring and mount; did it work earlier in this log? Its raw value (beam break, CANrange distance) if the code logs it' },
     { id: 'no-exit', cause: 'The code has no way out of this state for this situation (no timeout, no operator cancel)', look: 'the state machine code for this state: its exit conditions, and whether the operator can cancel it' },
   ],
-  nextStep: 'Check what the state waits for (the evidence) on the robot: the game piece path and that sensor. Then give the state a way out in code: a timeout or an operator cancel.',
+  nextStep: 'Check the sensor the state waits for (in the evidence) and the game piece path, then give the state a timeout or an operator cancel.',
   incident: 'Two 2025 practice matches: RIGHT_HANDOFF for 107 s and SCORE_L4_RIGHT for 135 s',
   sources: [
     { ...WPILIB_COMMAND_COMPOSITIONS, says: 'withTimeout() interrupts a command after a set time and until() ends it on a condition: two ways to give a state a way out.' },

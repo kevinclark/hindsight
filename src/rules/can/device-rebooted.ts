@@ -80,7 +80,7 @@ function rebootProblem(device: WatchedDeviceView, reboots: number[], match: Matc
       'reboots since the robot code started': round(device.resets().last(), 0),
     },
     likely, ruledOut,
-    measured: [{ label: 'reboots', value: reboots.length, unit: '' }],
+    measured: [{ label: 'reboots', one: 'reboot', value: reboots.length, unit: '' }],
     plot: battery ? {
       signals: [battery], unit: 'V', from: reboots[0] - 3, to: reboots[reboots.length - 1] + 2,
       marks: reboots, line: { value: LOW_VOLTS, label: `${LOW_VOLTS} V` },

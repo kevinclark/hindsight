@@ -101,8 +101,10 @@ describe('Stop part way through a file leaves nothing at its path', () => {
     const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: drive.fetch, sleep: async () => {} })
     const bytes = pattern(17 * MiB) // three 8 MiB pieces
     const sent: number[] = []
-    await expect(store.writeNew('logs/y/a.wpilog', bytesSource(bytes), { sha256: sha(bytes), cancelled: stopAfter(1), onProgress: (n) => sent.push(n) })).rejects.toBeInstanceOf(Stopped)
-    expect(sent).toEqual([8 * MiB]) // one piece went, the second was never sent
+    let stop = false // pressed once the first 8 MiB piece is handed over
+    await expect(store.writeNew('logs/y/a.wpilog', bytesSource(bytes), { sha256: sha(bytes), cancelled: () => stop, onProgress: (n) => { sent.push(n); if (n >= 8 * MiB) stop = true } })).rejects.toBeInstanceOf(Stopped)
+    expect(Math.max(...sent)).toBe(8 * MiB) // the first piece went (counted as the connection took it), the second was never sent
+    expect(sent.length).toBeGreaterThan(1)
     expect(drive.at('logs/y/a.wpilog')).toBeFalsy()
   })
 })

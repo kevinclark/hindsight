@@ -24,7 +24,7 @@ export default rule({
     { id: 'weak-battery', cause: 'A weak or worn battery that sags a lot under load', look: 'the power/battery-collapse finding; a load test of this battery' },
     { id: 'wiring', cause: 'High resistance in the battery leads, connectors or main breaker', look: 'Power tab: battery + wiring resistance (over 20 mΩ is high); tug-test the battery leads and main breaker lugs' },
   ],
-  nextStep: 'Keep at least 1 V of margin: turn on supply limits on the big motor groups, use only batteries that pass a load test, and shed load in code when the voltage nears 7 V.',
+  nextStep: 'Keep 1 V of margin: supply limits on the big motor groups, load-tested batteries only, and shed load in code near 7 V.',
   incident: 'Two 2026 matches: minimum 6.28 V and 6.15 V against a 6.0 V setting',
   sources: [
     { ...WPILIB_BROWNOUTS, says: 'The roboRIO 1 browns out below 6.3 V; a roboRIO 2 defaults to 6.75 V and RobotController.setBrownoutVoltage() changes it.' },

@@ -4,7 +4,7 @@
  */
 import type { Entry } from './catalog.ts'
 import type { IngestPlan, IngestReport } from './ingest.ts'
-import type { FetchReport, SyncReport } from './sync.ts'
+import type { FetchReport, SyncPlan, SyncReport } from './sync.ts'
 import type { Update } from './update.ts'
 import type { RedescribeReport } from './redescribe.ts'
 import type { TagField, TagTarget } from './types.ts'
@@ -78,7 +78,7 @@ export interface DriveStatus {
   lastSync: number | null
 }
 
-export interface SyncPlan { uploads: number; uploadBytes: number }
+export type { SyncPlan }
 
 export type RobotResult = { refused: string } | { report: IngestReport; stillWriting: string[] }
 
@@ -166,7 +166,8 @@ export function hub(): HubApi | undefined {
 
 /**
  * A log in the library as the Session view takes it: it only asks for name, size, modified time and the bytes, so the
- * bytes are fetched when asked, one log at a time, not all held at once.
+ * bytes are fetched when asked, one log at a time, not all held at once. `beside`: the Driver Station files the library
+ * attached to this robot log, read with it (`readBeside`).
  */
 export class LibraryFile {
   readonly webkitRelativePath = ''
@@ -175,13 +176,31 @@ export class LibraryFile {
   readonly lastModified: number
   /** The path as in the manifest. */
   readonly libraryPath: string
+  readonly beside: File[]
   private readonly api: HubApi
-  constructor(name: string, size: number, lastModified: number, path: string, api: HubApi) {
-    this.name = name; this.size = size; this.lastModified = lastModified; this.libraryPath = path; this.api = api
+  constructor(name: string, size: number, lastModified: number, path: string, api: HubApi, beside: File[] = []) {
+    this.name = name; this.size = size; this.lastModified = lastModified; this.libraryPath = path; this.api = api; this.beside = beside
   }
   async arrayBuffer(): Promise<ArrayBuffer> {
     const bytes = await this.api.readLog(this.libraryPath)
     // The bytes usually fill their buffer: hand it over rather than copy a log that can be hundreds of MB.
     return (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)) as ArrayBuffer
   }
+}
+
+/** The files read beside this one: a library log's attached Driver Station files; none for a file chosen from disk. */
+export const besideOf = (f: File): File[] => (f instanceof LibraryFile ? f.beside : [])
+
+/**
+ * The bytes of the files read beside this one, for the rules that read the Driver Station's files. One that can't be read
+ * (gone since the library was listed) is left out and named in `unread`: it never stops the log itself from opening.
+ */
+export async function readBeside(f: File, unread: string[]): Promise<{ name: string; bytes: Uint8Array }[]> {
+  const read = await Promise.all(besideOf(f).map(async (b) => {
+    try { return { name: b.name, bytes: new Uint8Array(await b.arrayBuffer()) } } catch (error) {
+      unread.push(`${b.name}: not read (${error instanceof Error ? error.message : String(error)}), so ${f.name} was read without it`)
+      return null
+    }
+  }))
+  return read.filter((r) => r !== null)
 }

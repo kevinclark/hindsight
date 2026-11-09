@@ -30,7 +30,7 @@
   import LibraryView from './ui/LibraryView.svelte'
   import PhoneLibrary from './ui/PhoneLibrary.svelte'
   import type { OpenedFile } from './hub/browser-hub.ts'
-  import { hub, phone, LibraryFile } from './hub/bridge.ts'
+  import { hub, phone, LibraryFile, readBeside } from './hub/bridge.ts'
   import { keepHistory } from './triage/keeper.ts'
   import SummaryReview from './ui/SummaryReview.svelte'
   import TbaFields from './ui/TbaFields.svelte'
@@ -45,7 +45,7 @@
   import { loadTba } from './ui/tba-setting.svelte.ts'
   import { robotChoices } from './ui/robot-list.ts'
   import RobotOptions from './ui/RobotOptions.svelte'
-  import { asFile, codeSpec, libraryLinks, libraryLogs, sessionNames as libraryNames, type LibraryLink } from './hub/session-files.ts'
+  import { asFile, codeSpec, freshFiles, libraryLinks, libraryLogs, sessionNames as libraryNames, type LibraryLink } from './hub/session-files.ts'
   import ReviewReport from './ui/ReviewReport.svelte'
   import { buildCard } from './report/card.ts'
   import { cardToPngDataUrl, saveForSlack } from './report/card-png.ts'
@@ -122,6 +122,7 @@
   let sessionView = $state<{ addFiles(files: File[], opts?: { select?: boolean }): Promise<void>; showSummaries(list: MatchSummary[], olderRead?: Record<string, { version: string; at: number }>): void }>()
   // Session summaries restored without their file read the library's copy (desktop app only).
   const findInLibrary = hub() ? (names: string[]) => libraryLogs(hub()!, names) : undefined
+  const freshFromLibrary = hub() ? (files: File[]) => freshFiles(hub()!, files) : undefined
   const linksInLibrary = hub() ? (names: string[]) => libraryLinks(hub()!, names) : undefined
   let profileBuilder = $state<{ start(files: File[], spec: string): Promise<void> }>()
   // From a session's "Draft a profile from it": the library's copy of that log, in the profile builder, with the linked code to read.
@@ -459,8 +460,10 @@
     await new Promise((r) => setTimeout(r, 30)) // let "Reading…" paint
     try {
       const started = performance.now()
-      const added: InputFile[] = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
-      await analyzeAdded(added, files.length, started, pass)
+      // A library log brings its Driver Station files with it.
+      const unread: string[] = []
+      const added: InputFile[] = (await Promise.all(files.map(async (f) => [{ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }, ...(await readBeside(f, unread))]))).flat()
+      await analyzeAdded(added, files.length, started, pass, unread)
     } catch (error) {
       problems = [String(error)]
     } finally {
@@ -481,7 +484,7 @@
   }
 
   /** Read the added files with those already open; the newest becomes the shown match. */
-  async function analyzeAdded(added: InputFile[], count: number, started: number, pass: number) {
+  async function analyzeAdded(added: InputFile[], count: number, started: number, pass: number, unread: string[] = []) {
     // The same file dropped twice replaces the first copy.
     const sameFile = (a: InputFile, b: InputFile) => a.name === b.name && a.bytes.length === b.bytes.length
     inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
@@ -491,7 +494,7 @@
     if (pass !== passes) return // a later pass (another code folder, another robot) has the newer answer
     const done = performance.now()
     analyses = result.analyses
-    problems = result.problems
+    problems = [...unread, ...result.problems]
     const newest = result.analyses.findIndex((a) => added.some((f) => f.name === a.match.fileName))
     selected = Math.max(0, newest)
     const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
@@ -653,7 +656,7 @@
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>{/if}
 {#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{:else if phoneHub && libraryOpened}<div hidden={mode !== 'library'}><PhoneLibrary hub={phoneHub} onOpening={clearAll} onOpen={openFromPhone} /></div>{/if}
-<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={readOnly ? undefined : writeBoard} {readOnly} onOpenSummary={readOnly ? openSummary : undefined} bind:summariesOut={summaries} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} />{#if readOnly}<div class="screen-only phone-setup"><TbaFields /></div>{/if}</div>
+<div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={readOnly ? undefined : writeBoard} {readOnly} onOpenSummary={readOnly ? openSummary : undefined} bind:summariesOut={summaries} onOpen={openFromSession} findLogs={findInLibrary} freshen={freshFromLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} />{#if readOnly}<div class="screen-only phone-setup"><TbaFields /></div>{/if}</div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
 {#if readOnly && !current && !busy && !problems.length}
   {@const ev = latestEventSession(sessions)}

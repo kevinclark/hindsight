@@ -8,12 +8,13 @@
   import type { Analysis } from '../analyze.ts'
   import type { IssueEvent } from '../triage/history.ts'
   import { makerOf } from '../rules/index.ts'
+  import { rowHeadline } from '../report/titles.ts'
   import { headlinesOf as headlinesIn, incidentFor, keyNumber, listedAbove, reviewModel, shortWhen, standingSummary } from '../report/review-model.ts'
   import { stamp } from '../report/foresight-model.ts'
   import Plot from './Plot.svelte'
   import { plotModel } from './plot-data.ts'
   import { under, type FindingNode } from '../report/finding-tree.ts'
-  import type { Severity } from '../rules/types.ts'
+  import type { Finding, Severity } from '../rules/types.ts'
 
   // `analysis` as the team's marks show it (track-record.ts withMarks); `wrong`: this match's "not a real problem" marks.
   let { analysis, issues, standing = new Set<string>(), wrong = new Map() }: { analysis: Analysis; issues: Map<string, IssueEvent>; standing?: Set<string>; wrong?: Map<string, IssueEvent> } = $props()
@@ -32,6 +33,10 @@
     return n ? `; ${n} listed under a more serious finding above` : ''
   }
 </script>
+
+{#snippet headline(f: Finding)}
+  {@const h = rowHeadline(f)}<b>{h.lead}</b>{#each [h.about, h.key].filter(Boolean) as part, i (i)}{' · '}<span class="part">{part}</span>{/each}{#if h.time}{' · '}<span class="when">{h.time}</span>{/if}
+{/snippet}
 
 {#snippet explained(node: FindingNode)}
   {#each under(node) as u (u.finding.key + u.finding.time)}
@@ -56,8 +61,10 @@
         {@const k = keyNumber(f)}
         <div class="err">
           <div class="txt">
-            <p class="title"><span class="sev error">Error</span>{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}</p>
-            <p class="num">{#if k.label && !k.inTitle}<span class="s"><span class="n">{k.value}</span> {k.label}</span>{/if}{#if f.when && !f.title.includes(shortWhen(f.when))}<span class="s">{shortWhen(f.when)}</span>{/if}<code class="s">{f.rule}</code></p>
+            <p class="title"><span class="sev error">Error</span>{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{@render headline(f)}</p>
+            <p class="full">{f.title}</p>
+            <!-- The headline above carries the judged number and the time; this line adds only what it lacks. -->
+            <p class="num">{#if k.label && !k.inTitle && !rowHeadline(f).key}<span class="s"><span class="n">{k.value}</span> {k.label}</span>{/if}{#if f.when && !rowHeadline(f).time}<span class="s">{shortWhen(f.when)}</span>{/if}<code class="s">{f.rule}</code></p>
             {#if node.note}<p class="small">↳ {node.note}</p>{/if}
             <p class="next"><strong>Next step:</strong> {f.nextStep}</p>
             {@render explained(node)}
@@ -77,19 +84,19 @@
   {#if m.warnings.length}
     <section>
       <h2>Warnings ({m.warnings.length}{aboveNote('warning')})</h2>
-      <ul class="lines">{#each headlinesOf('warning') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev warning">Warning</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{#if f.demoted}<span class="small"> ↳ amber, not red: marked not a real problem in {f.demoted.match}{f.demoted.reason ? `: ${f.demoted.reason}` : ''}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
+      <ul class="lines">{#each headlinesOf('warning') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev warning">Warning</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{@render headline(f)}<span class="full">{f.title}</span>{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{#if f.demoted}<span class="small"> ↳ amber, not red: marked not a real problem in {f.demoted.match}{f.demoted.reason ? `: ${f.demoted.reason}` : ''}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   {#if m.infos.length}
     <section>
       <h2>Info ({m.infos.length}{aboveNote('info')})</h2>
-      <ul class="lines">{#each headlinesOf('info') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">Info</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{f.title}{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
+      <ul class="lines">{#each headlinesOf('info') as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">Info</span><span class="t">{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{@render headline(f)}<span class="full">{f.title}</span>{#if node.note}<span class="small"> ↳ {node.note}</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   {#if m.known.length}
     <section>
       <h2>{wrong.size && m.known.some((f) => wrong.has(f.key)) ? 'Known issues and false alarms' : 'Known issues'} seen this match ({m.known.length})</h2>
-      <ul class="lines">{#each m.knownHeadlines as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">{SEV[f.severity]}</span><span class="t"><span class="badge">{wrong.has(f.key) ? 'Not a real problem' : 'Known'}</span> {f.title}{#if wrong.get(f.key)?.note}<span class="small"> ({wrong.get(f.key)?.note})</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
+      <ul class="lines">{#each m.knownHeadlines as node (node.finding.key + node.finding.time)}{@const f = node.finding}<li><span class="sev info">{SEV[f.severity]}</span><span class="t"><span class="badge">{wrong.has(f.key) ? 'Not a real problem' : 'Known'}</span> {@render headline(f)}<span class="full">{f.title}</span>{#if wrong.get(f.key)?.note}<span class="small"> ({wrong.get(f.key)?.note})</span>{/if}{@render explained(node)}</span><code>{f.rule}</code></li>{/each}</ul>
     </section>
   {/if}
   <p class="notchecked">
@@ -149,6 +156,9 @@
   .sev.info { color: var(--muted); }
   .err { display: grid; grid-template-columns: minmax(0, 1fr) 3.1in; gap: 0 0.2in; break-inside: avoid; padding: 0.1rem 0; border-bottom: 1px solid var(--border); }
   .err .title { font-weight: 700; font-size: 10pt; }
+  .part, .when { font-weight: 400; }
+  .err .full { margin: 0; font-size: 9pt; }
+  .lines .full { display: block; font-size: 8.5pt; color: var(--muted); }
   .err .num { font-size: 8.5pt; }
   .err .num .s + .s::before { content: ' · '; color: var(--muted); }
   .err .num code { color: var(--muted); font-size: 8pt; }

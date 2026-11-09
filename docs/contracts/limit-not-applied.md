@@ -100,8 +100,8 @@ Two terms, used only in these senses below:
   behaviour.
 - **LN-10** Causes and next step:
   - switched off (whatever code the log ran): `likely: ['limit-off']`, nothing ruled out, and the next step, word for
-    word, `The <kind> limit is switched off in <where>. On purpose? Mark it as a known issue. If not, switch it on and
-    measure the mechanism before and after.`
+    word, `Switch the <kind> limit on in <where>, then measure the mechanism before and after. Off on purpose? Mark it
+    as a known issue.`
   - switched on, and the log **ran the profile's code** (the pinned commit, or another commit with `same` lines):
     `likely: ['not-saved', 'default-limit']`, `limit-off` ruled out with `the limit is switched on in the code`, and
     the rule's own next step.

@@ -54,7 +54,7 @@ describe('phone Library', () => {
     expect(logs[0].attached.dslog.map((r) => r.names[0])).toEqual(['q2.dslog'])
   })
 
-  it('opens a log whole: one plain GET per file through the media reader, the bytes checked, progress to the total', async () => {
+  it('opens a log whole through the media reader (watched ranged reads), the bytes checked, progress to the total', async () => {
     const { drive, q2, ds } = team()
     const { hub, requests } = hubOver(drive)
     const [entry] = await hub.logs()
@@ -65,9 +65,8 @@ describe('phone Library', () => {
     expect(files[0].bytes).toEqual(q2)
     expect(files[1].bytes).toEqual(ds)
     expect(seen.at(-1)).toEqual([q2.length + ds.length, q2.length + ds.length])
-    const reads = requests.filter((r) => r.startsWith('media') && !r.includes('files/files'))
-    expect(requests.filter((r) => r.startsWith('store') && /wpilog|dslog/.test(r))).toEqual([])
-    expect(reads.every((r) => !r.includes('range'))).toBe(true)
+    expect(requests.filter((r) => r.startsWith('media')).length).toBeGreaterThan(0)
+    expect(requests.filter((r) => r.startsWith('store'))).toEqual([]) // nothing of an opened log goes through the native path
   })
 
   it('refuses a file whose bytes are not the ones the manifest names', async () => {
@@ -104,15 +103,16 @@ describe('installPhone', () => {
     const { installPhone } = await import('../src/phone.ts')
     const { drive } = team()
     const went: string[] = []
-    // A whole-file download is alt=media with no Range; the manifests are small ranged reads, through the native path by design.
-    const kind = (url: string, init?: RequestInit) => !url.includes('alt=media') ? 'api' : new Headers(init?.headers as Record<string, string>).has('range') ? 'ranged' : 'whole'
-    const spy = (who: string): typeof fetch => (url, init) => { went.push(`${who} ${kind(String(url), init)}`); return drive.fetch(url, init) }
+    // Which file a media read is for, by its Drive id: the manifests go through fetch (native), the log and its DS log through mediaFetch.
+    const nameOf = (url: string) => drive.nodes.get(/files\/([^/?]+)\?alt=media/.exec(url)?.[1] ?? '')?.name
+    const kind = (url: string) => !url.includes('alt=media') ? 'api' : /\.jsonl$/.test(nameOf(url) ?? '') ? 'manifest' : 'log'
+    const spy = (who: string): typeof fetch => (url, init) => { went.push(`${who} ${kind(String(url))}`); return drive.fetch(url, init) }
     const hub = installPhone({ rootId: 'root', token: async () => 'good', fetch: spy('native'), mediaFetch: spy('web') })
     const [entry] = await hub.logs()
     await hub.openLog(entry)
-    expect(went.filter((w) => w === 'native whole')).toEqual([])
-    expect(went.filter((w) => w === 'web whole').length).toBe(2)
-    expect(went.filter((w) => w === 'web ranged')).toEqual([])
+    expect(went.filter((w) => w === 'native log')).toEqual([])
+    expect(went.filter((w) => w === 'web log').length).toBe(2)
+    expect(went.filter((w) => w === 'web manifest')).toEqual([])
     expect(went.filter((w) => w === 'web api').length).toBeGreaterThan(0) // finding the file by path
   })
 })
@@ -138,7 +138,8 @@ describe('DriveReader.downloadWhole', () => {
       const s = statuses.shift()
       if (s) return new Response('busy', { status: s })
       let i = 0
-      return new Response(new ReadableStream<Uint8Array>({ pull(c) { if (i >= content.length) c.close(); else { c.enqueue(content.slice(i, i + 1000)); i += 1000 } } }))
+      // Slow enough (20 ms a chunk) for the reader's Stop check to land mid-body.
+      return new Response(new ReadableStream<Uint8Array>({ async pull(c) { await new Promise((r) => setTimeout(r, 20)); if (i >= content.length) c.close(); else { c.enqueue(content.slice(i, i + 1000)); i += 1000 } } }))
     }
     let slept = 0
     const reader = new DriveReader({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async (ms) => { slept += ms } })
@@ -149,7 +150,7 @@ describe('DriveReader.downloadWhole', () => {
     const { reader, gets } = chunked(bytes(10_000, 4))
     const stop = new AbortController()
     const got = reader.downloadWhole('logs/a.wpilog', { signal: stop.signal, onProgress: (n) => { if (n >= 3000) stop.abort() } })
-    await expect(got).rejects.toThrow(/abort/i)
+    await expect(got).rejects.toThrow(/stopped/i)
     expect(gets()).toBe(1)
   })
 
@@ -158,13 +159,15 @@ describe('DriveReader.downloadWhole', () => {
     const stop = new AbortController()
     const was = (reader as unknown as { sleep: (ms: number) => Promise<void> }).sleep
     ;(reader as unknown as { sleep: (ms: number) => Promise<void> }).sleep = async (ms) => { stop.abort(); return was(ms) }
-    await expect(reader.downloadWhole('logs/a.wpilog', { signal: stop.signal })).rejects.toThrow(/abort/i)
+    await expect(reader.downloadWhole('logs/a.wpilog', { signal: stop.signal })).rejects.toThrow(/stopped/i)
     expect(gets()).toBe(1)
   })
 
-  it('refuses a body shorter or longer than the size Drive gave', async () => {
-    await expect(chunked(bytes(5000, 6), { say: 6000 }).reader.downloadWhole('logs/a.wpilog')).rejects.toThrow(/got 5000 of 6000 bytes/)
-    await expect(chunked(bytes(5000, 6), { say: 4000 }).reader.downloadWhole('logs/a.wpilog')).rejects.toThrow(/larger than Drive said/)
+  // Longer than Drive said is cut to the size asked for; openLog's sha-256 check refuses it (tested above).
+  it('refuses a body shorter than the size Drive gave (after asking for the rest)', async () => {
+    const short = chunked(bytes(5000, 6), { say: 6000 })
+    await expect(short.reader.downloadWhole('logs/a.wpilog')).rejects.toThrow()
+    expect(short.gets()).toBeGreaterThan(1)
   })
 })
 

@@ -54,13 +54,13 @@ export default rule({
     if (health.collapse) {
       likely.push('weak-battery')
       const { below, ah } = health.collapse
-      nextStep = `The battery fell ${below.toFixed(1)} V below a healthy one at ${ah} Ah drawn: swap the battery first and capacity-test it (see power/battery-collapse).`
+      nextStep = `Swap this battery and capacity-test it: it fell ${below.toFixed(1)} V below a healthy one at ${ah} Ah drawn.`
     } else if (health.wiringHigh) {
       likely.push('wiring', 'weak-battery')
     } else if (health.wiringFine) {
       likely.push('load', 'weak-battery')
       const biggest = load?.biggest ? ` (${load.biggest} drew the most at the first brownout)` : ''
-      nextStep = `Resistance is fine, so look at the load${biggest}: turn on current limits for the big motors, and load-test the battery used.`
+      nextStep = `Turn on current limits for the big motors${biggest}, and load-test the battery used.`
     }
     const ruledOut: Record<string, string> = {}
     if (health.wiringFine) ruledOut.wiring = `battery + wiring resistance was only ${health.milliohms} mΩ`
@@ -80,7 +80,7 @@ export default rule({
       },
       measured: [
         // Context only: a brownout happens at the setting by definition, so "how far past it" says nothing.
-        { label: 'brownouts', value: onsets.length, unit: '' },
+        { label: 'brownouts', one: 'brownout', value: onsets.length, unit: '' },
         { label: 'lowest voltage at the first brownout', value: lowest, unit: 'V' },
       ],
       plot: {

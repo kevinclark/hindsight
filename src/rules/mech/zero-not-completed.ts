@@ -28,7 +28,7 @@ export default rule({
     { id: 'zero-late', cause: 'The zero only runs after the robot is enabled, and something else moves the mechanism first', look: 'the code that starts the zero: can it run at boot or in disabled, before any command?' },
     { id: 'zero-never-ran', cause: 'The zero was never started, or its \'done\' message is never printed', look: 'the code: is the zero command scheduled at all? The console log for the zero-complete message' },
   ],
-  nextStep: 'Make the zero finish before any command can move the mechanism: zero at boot, or put the zero command ahead of the first auto command; set the zeroed flag when it completes.',
+  nextStep: 'Block movement until the zero finishes: zero at boot or before the first auto command, then set the zeroed flag.',
   incident: 'Two 2026 matches: hood zero cancelled 0.2 s into auto; fixed by 8ba92cb',
   sources: [
     { ...CTRE_TUNER_ELEVATOR, says: 'The elevator subsystem that Tuner X generates includes a current-based homing routine to zero the elevator.' },

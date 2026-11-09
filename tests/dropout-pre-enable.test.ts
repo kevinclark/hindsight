@@ -83,7 +83,7 @@ describe('can/bus-dropout', () => {
     expect(f.evidence['still off at the end of the log']).toBe('Back Left module, Back Right module')
     expect(f.evidence['back after (s)']).toBe('Gyro (Pigeon) 1.0, Front Left module 1.0, Front Right module 1.0')
     expect(f.evidence['seconds until every device was back']).toBe('never')
-    expect(f.nextStep).toMatch(/^Check the CAN chain between the last device that kept reporting \(Gyro \(Pigeon\)/)
+    expect(f.nextStep).toMatch(/^Tug the CAN connectors between Gyro \(Pigeon\)/)
     expect(f.causes.find((c) => c.id === 'can-chain')?.likely).toBe(true)
     expect(f.causes.find((c) => c.id === 'bus')?.likely).toBeUndefined()
   })
@@ -91,7 +91,7 @@ describe('can/bus-dropout', () => {
   it('every device off to the end of the log keeps the CANivore-level wording', () => {
     const [f] = findings(bus([[5, true], [50, false]], [[5, 'OK'], [50, 'CanMessageStale']]), 'can/bus-dropout')
     expect(f.title).toMatch(/5 of them never came back \(still off at the end of the log, 30 s of the enabled match without them\)$/)
-    expect(f.nextStep).toMatch(/^Check the CANivore itself/)
+    expect(f.nextStep).toMatch(/^Check the CANivore: its USB cable/)
     expect(f.causes.find((c) => c.id === 'bus')?.likely).toBe(true)
   })
 

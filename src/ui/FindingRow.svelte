@@ -12,8 +12,7 @@
   import { plotModel } from './plot-data.ts'
   import FindingRow from './FindingRow.svelte'
   import { descendants, severityWords, type FindingNode } from '../report/finding-tree.ts'
-  import { shortTitle } from '../report/titles.ts'
-  import { keyNumber } from '../report/review-model.ts'
+  import { rowHeadline, shortTitle } from '../report/titles.ts'
   import PdpThumb from './PdpThumb.svelte'
   import { judgedAgainst } from '../power/power-map-view.ts'
   import { openPowerMap } from './power-map-bridge.svelte.ts'
@@ -64,8 +63,9 @@
   const LABEL = { error: 'Error', warning: 'Warning', info: 'Info' } as const
   const ICON = { error: '●', warning: '▲', info: '○' } as const
   const WHO = { software: 'software team', pit: 'pit crew', drive: 'drive team' } as const
-  // The headline shows only the rule's judged measurement: the evidence fallback reads oddly beside a title ("0 times during the match" next to "(1×)").
-  const key = $derived(keyNumber(finding))
+  // The closed row leads with the rule's short title, the part, the judged measurement (never the evidence fallback) and the time; the long sentence opens inside.
+  const head = $derived(rowHeadline(finding))
+  const rest = $derived([head.about, head.key].filter(Boolean))
   // Every row starts closed except one that came back after a fix; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
   let open = $state(!nested && issue?.status === 'fixed' && !fixedLater && !wrong?.has(finding.key))
@@ -105,16 +105,17 @@
         {#if wrongMark}<span class="badge known-badge">Not a real problem</span>{:else if realMark}<span class="badge real-badge">Real problem</span>{/if}
         {#if !wrongMark && issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
         {#if fixedLater && !wrongMark}<span class="badge known-badge">{issue?.when ? 'Fixed after this match' : 'Fixed (date unknown)'}</span>{/if}
-        {finding.title}
+        <b>{head.lead}</b>{#each rest as part, i (i)}{' · '}{part}{/each}
         {#if nested && finding.explainedBy}<span class="why">↳ {via ? `explained by ${via}: ` : ''}{finding.explainedBy.why}</span>{/if}
         {#if note}<span class="why">↳ {note}</span>{/if}
         {#if finding.demoted}<span class="why">↳ amber, not red: marked not a real problem in {finding.demoted.match}{finding.demoted.reason ? `: ${finding.demoted.reason}` : ''}</span>{/if}
-        {#if finding.measured?.length && !key.inTitle}<span class="key">{key.value}{key.label ? ` ${key.label}` : ''}</span>{/if}
       </span>
+      <span class="when">{head.time}</span>
       <span class="rule">{finding.rule}</span>
       {#if showNext && !open}<span class="next"><strong>Next step:</strong> {finding.nextStep}{#if who}{' · '}<strong>Who acts:</strong> {who}{/if}</span>{/if}
     </summary>
     <div class="body">
+      <p class="sentence">{finding.title}</p>
       {#if finding.run && analysis.match.runs.length > 1}<p class="issue-note" data-run>Run {finding.run} of {analysis.match.runs.length}{finding.when ? `: ${finding.when}` : ''}</p>{/if}
       {#if wrongMark}
         <p class="issue-note"><strong>Not a real problem</strong> on this match, marked {date(wrongMark.when)}: {wrongMark.note}</p>
@@ -203,7 +204,7 @@
   .judged { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin: 0.5rem 0; font-size: 0.9rem; }
   .judged .link { background: none; border: none; padding: 0; color: var(--link, var(--fg)); text-decoration: underline; cursor: pointer; font: inherit; min-height: 24px; }
   .finding { border-bottom: 1px solid var(--border); list-style: none; }
-  summary { display: grid; grid-template-columns: 6.5rem 1fr auto; gap: 0.75rem; align-items: baseline; padding: 0.4rem 0.25rem; cursor: pointer; }
+  summary { display: grid; grid-template-columns: 6.5rem 1fr 9.5rem 13.5rem; gap: 0.75rem; align-items: baseline; padding: 0.4rem 0.25rem; cursor: pointer; }
   summary::-webkit-details-marker { display: none; }
   summary:hover { background: var(--hover); }
   summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
@@ -216,9 +217,10 @@
   .back { background: var(--error); color: var(--bg); }
   .known-badge { border: 1px solid var(--muted); color: var(--muted); }
   .real-badge { border: 1px solid var(--error); color: var(--error); }
-  .key { margin-left: 0.5rem; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .next { grid-column: 2 / 4; font-size: 0.85rem; color: var(--muted); }
-  .rule { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  .sentence { margin: 0 0 0.5rem; max-width: 70ch; }
+  .next { grid-column: 2 / 5; font-size: 0.85rem; color: var(--muted); }
+  .when { text-align: right; font-size: 0.75rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rule { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); white-space: nowrap; text-align: right; }
   .body { padding: 0 0.25rem 0.9rem 7.25rem; }
   .issue-note { font-size: 0.85rem; margin: 0 0 0.5rem; padding: 0.25rem 0.6rem; border-left: 3px solid var(--muted); }
   .sure { font-size: 0.85rem; margin: 0 0 0.5rem; color: var(--muted); }
@@ -248,6 +250,7 @@
   .actions button:hover { border-color: var(--muted); }
   @media (max-width: 640px) {
     summary { grid-template-columns: 1fr; gap: 0.15rem; }
+    .when:empty { display: none; }
     /* The wide layout puts this under columns 2 to 4; on one column that would add two implicit columns and squeeze the title (WCAG 1.4.10 reflow). */
     .next { grid-column: 1; }
     .body { padding-left: 0.25rem; }

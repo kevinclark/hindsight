@@ -24,7 +24,7 @@ export default rule({
     { id: 'not-full', cause: 'The battery started the match only partly charged', look: 'the power/rest-voltage finding: voltage before auto; the charger cart' },
     { id: 'wiring', cause: 'High resistance in the battery leads or connections hiding as a weak battery', look: 'Power tab: battery + wiring resistance; tug-test and re-crimp the leads and main breaker lugs' },
   ],
-  nextStep: 'Take this battery out of competition use and capacity-test it (a battery analyzer: 10 A down to 11 V). Under 12 Ah twice means practice only.',
+  nextStep: 'Pull this battery from competition and capacity-test it (10 A down to 11 V). Under 12 Ah twice means practice only.',
   incident: 'One 2026 match: estimated open-circuit voltage collapsed after ~3.5 Ah (hindsight-research/REVIEW.md items 1–3)',
   sources: [
     { ...MK_ES17_12, says: 'The ES17-12 is rated 18 Ah at the 20-hour rate but 6.3 Ah when drawn at 3C (54 A) down to 9.6 V: capacity shrinks as the draw grows.' },

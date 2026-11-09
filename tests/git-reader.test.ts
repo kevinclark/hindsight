@@ -25,6 +25,9 @@ function makeRepo(): string {
   git(dir, 'config', 'user.email', 'test@example.com')
   git(dir, 'config', 'user.name', 'Test')
   git(dir, 'config', 'commit.gpgsign', 'false')
+  // Newer git (2.54 on macOS) runs maintenance after a commit, which can pack these objects mid-build: keep them loose.
+  git(dir, 'config', 'maintenance.auto', 'false')
+  git(dir, 'config', 'gc.auto', '0')
   execFileSync('mkdir', ['-p', join(dir, 'src/main/java/frc/robot/subsystems/indexer')])
   for (let c = 0; c < 30; c++) {
     const lines = Array.from({ length: 400 }, (_, i) => `    config.Line${i} = ${i === 123 ? c % 3 : i};`)

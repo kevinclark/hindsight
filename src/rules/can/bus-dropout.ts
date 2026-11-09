@@ -28,7 +28,7 @@ export default rule({
     { id: 'battery-sag', cause: 'The battery sagged so low that the devices lost power (voltage under about 7 V)', look: 'Power tab: battery voltage at each drop; the power/brownout and power/margin findings' },
     { id: 'device-fault', cause: 'One device faulting and taking the others with it', look: 'its status light during a dropout; the vendor tool (Phoenix Tuner, REV Hardware Client) for firmware and faults' },
   ],
-  nextStep: 'Check the CANivore itself: its USB cable to the roboRIO (seated and strain-relieved), its power wiring and the CAN wiring at it. Have the code log its status every loop, so the next drop says why.',
+  nextStep: 'Check the CANivore: its USB cable to the roboRIO, its power and the CAN wiring at it. Log its status every loop, so the next drop says why.',
   incident: 'One 2025 match: the whole CANivore bus gone for 58 s',
   sources: [
     { ...CTRE_CAN_TROUBLESHOOTING, says: 'A CAN bus needs a 120 Ω terminator at each end (the PDP, CANivore and roboRIO have integrated termination); flicking the wiring reproduces intermittent faults.' },
@@ -99,8 +99,8 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
     likely,
     ruledOut,
     nextStep: keptReporting
-      ? `Check the CAN chain between the last device that kept reporting (${cameBack.map((m) => m.name).join(', ')}) and the first that did not: tug the connectors and wires at those devices and the ones next to them. Only if nothing is loose, check the ${bus.name} itself.`
-      : `Check the ${bus.name} itself: its USB cable to the roboRIO (seated and strain-relieved), its power wiring and the CAN wiring at it. Have the code log the ${bus.name}'s status every loop, so the next drop says why.`,
+      ? `Tug the CAN connectors between ${cameBack.map((m) => m.name).join(', ')} (still reporting) and the first device that stopped. Nothing loose? Check the ${bus.name} itself.`
+      : `Check the ${bus.name}: its USB cable to the roboRIO, its power and the CAN wiring at it. Log its status every loop, so the next drop says why.`,
     evidence: {
       [BUS_DEVICES]: bus.members.map((m) => m.name).join(', '),
       drops: drops.length,
@@ -111,7 +111,7 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
       'lowest battery voltage in the 0.5 s before each drop (V)': readings.map((r) => r.text).join(', '),
       'lowest battery voltage earlier while enabled, with no bus drop (V)': Number.isFinite(earlier) ? round(earlier) : undefined,
     },
-    measured: [{ label: 'whole-bus drops', value: drops.length, unit: '' }],
+    measured: [{ label: 'whole-bus drops', one: 'whole-bus drop', value: drops.length, unit: '' }],
     plot: plotDrops(battery, readings.map((r) => r.timed), 5, first + gone + 2),
   }
 }

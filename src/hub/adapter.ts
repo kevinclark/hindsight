@@ -23,7 +23,19 @@ export interface ByteSource {
   read(start: number, end: number): Promise<Uint8Array>
 }
 
-export interface WriteOptions {
+/** What a transfer listens for and reports besides its bytes: Stop, bytes as they move, words while it tries again, log lines. */
+export interface TransferWatch {
+  /** True stops the transfer with Stopped, promptly, even while nothing arrives. */
+  cancelled?: () => boolean
+  /** Bytes moved so far in this call (read, or handed to the connection), as they move. */
+  onBytes?: (n: number) => void
+  /** Words for the job bar while a stalled or dropped transfer is tried again. */
+  onStep?: (words: string) => void
+  /** Lines for the job log (stalls, retries, resumes). */
+  log?: (line: string) => void
+}
+
+export interface WriteOptions extends Pick<TransferWatch, 'onStep' | 'log'> {
   /** The log's sha-256. A store that can check before it commits does (the local folder); one that can't (Drive) checks the answer and throws ChecksumMismatch. */
   sha256?: string
   /** The file's own time to keep (ms): a log's modified time, so Drive's modifiedTime isn't the upload time. */
@@ -38,7 +50,8 @@ export interface StorageAdapter {
   /** Every file under `prefix`, however deep. */
   list(prefix: string): Promise<FileInfo[]>
   stat(path: string): Promise<FileInfo | null>
-  read(path: string, start: number, end: number): Promise<Uint8Array>
+  /** Bytes `[start, end)`. A remote store fails a read that goes quiet (Stalled words, then LinkLost after its tries) and stops on `watch.cancelled`. */
+  read(path: string, start: number, end: number, watch?: TransferWatch): Promise<Uint8Array>
   /**
    * Create a file that does not exist. Throws AlreadyExists if it does. If it fails part way, nothing is left at `path`
    * (a local temp file is removed, a Drive upload session is abandoned).

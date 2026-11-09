@@ -27,11 +27,12 @@ export async function driveFolderFiles(drive: DriveAdapter, folderId: string, te
           const sink = createWriteStream(path)
           let got = 0
           try {
+            // Bytes are counted as they arrive; a read that goes quiet is asked again from its next byte, then stops the add with LinkLost.
             await drive.download(f.id, f.size, async (chunk) => {
               await new Promise<void>((resolve, reject) => sink.write(chunk, (e) => (e ? reject(e) : resolve())))
-              watch.onProgress?.((got += chunk.length), f.size)
+              got += chunk.length
               if (got < f.size) stopIfAsked(watch.cancelled) // the temp folder is removed below; a finished file is kept
-            })
+            }, { cancelled: watch.cancelled, onBytes: (n) => watch.onProgress?.(n, f.size), onStep: watch.onStep, log: watch.log })
             await new Promise<void>((resolve, reject) => sink.end((e?: Error | null) => (e ? reject(e) : resolve())))
           } catch (e) {
             // Closed before the folder is removed: Windows keeps a folder with an open file in it.

@@ -34,10 +34,34 @@ export function findByName(entries: Entry[], names: string[]): Named[] {
   })
 }
 
-/** A library log as a File: the bytes are fetched when read, one log at a time. */
+/** A library log as a File: the bytes are fetched when read, one log at a time. Its DS log and DS events on this computer come beside it. */
 export function asFile({ entry, name }: Named, api: HubApi): File {
   const r = entry.record
-  return new LibraryFile(name, r.size, r.modifiedTime ?? r.recordedAt, r.path, api) as unknown as File
+  return new LibraryFile(name, r.size, r.modifiedTime ?? r.recordedAt, r.path, api, dsFiles(entry, api)) as unknown as File
+}
+
+/**
+ * The .dslog and .dsevents files the library attached to a robot log, those this computer holds, as Files: `comms/*` and
+ * `can/usb-dropout` read them. Hoot files are left out (no rule reads them).
+ */
+export function dsFiles(entry: Entry, api: HubApi): File[] {
+  const held = new Set(entry.held ?? [])
+  return [...entry.attached.dslog, ...entry.attached.dsevents].filter((r) => held.has(r.path))
+    .map((r) => new LibraryFile(baseName(r.path), r.size, r.modifiedTime ?? r.recordedAt, r.path, api) as unknown as File)
+}
+
+/**
+ * Library logs as the library holds them now, each under the name it was given: a log's DS files attached since it was
+ * read come with it. A file not from the library, or a log the library no longer lists, is kept as it was.
+ */
+export async function freshFiles(api: HubApi, files: File[]): Promise<File[]> {
+  if (!files.some((f) => f instanceof LibraryFile)) return files
+  const { entries } = await api.library()
+  const byPath = new Map(entries.map((e) => [e.record.path, e]))
+  return files.map((f) => {
+    const entry = f instanceof LibraryFile ? byPath.get(f.libraryPath) : undefined
+    return entry ? asFile({ entry, name: f.name }, api) : f
+  })
 }
 
 /** The library's copies of the named logs (those it holds once, on this computer). */

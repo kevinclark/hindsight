@@ -32,7 +32,7 @@ export default rule({
     { id: 'wireless', cause: 'The wireless link (interference, radio mounted near metal or motors)', look: 'the DS log: lost packets and trip time in the seconds before the loss; where the radio is mounted' },
     { id: 'field', cause: 'A problem on the field side', look: 'ask the FTA for the field log for this match' },
   ],
-  nextStep: 'Load this match\'s .dslog too (on the DS laptop in C:\\Users\\Public\\Documents\\FRC\\Log Files): it tells a DS laptop problem from a radio or wireless one.',
+  nextStep: 'Load this match\'s .dslog too (DS laptop, C:\\Users\\Public\\Documents\\FRC\\Log Files): it tells a laptop problem from a wireless one.',
   incident: 'One 2026 match: comms lost at 417.4 s (7.4 s dead) and 426.4 s (4.3 s)',
   sources: [
     { ...WPILIB_DS_LOG_VIEWER, says: 'A radio reboot shows as a connection loss of about 40 to 50 s with the radio unreachable; a good radio ping points at cabling; the log shows trip time, lost packets and roboRIO CPU.' },
@@ -95,7 +95,7 @@ export default rule({
         'DS log loaded': ds ? 'yes' : 'no',
         ...ds?.evidence,
       },
-      measured: [{ label: 'comms losses', value: losses.length, unit: '' }],
+      measured: [{ label: 'comms losses', one: 'comms loss', value: losses.length, unit: '' }],
       plot: {
         signals: [match.signal('dsAttached', 'DS attached'), ...(match.has('systemActive') ? [match.signal('systemActive', 'Outputs enabled')] : [])],
         from: losses[0] - 5, to: losses[losses.length - 1] + 10, marks: losses,
@@ -135,13 +135,13 @@ function dsLogsAround(match: MatchView, losses: number[]): { evidence: Record<st
     'DS log, 3 s before the first loss: DS laptop CPU (%)': `${round(Math.min(...cpu), 0)}–${round(Math.max(...cpu), 0)}`,
   }
   if (cut) {
-    return { evidence, points: 'ds-laptop', nextStep: `The DS log stops ${match.whenAt(cut.endTime)}, during the loss: check the DS laptop (plugged in, high-performance power plan, nothing else running) and its Windows Event Viewer for a Driver Station crash.` }
+    return { evidence, points: 'ds-laptop', nextStep: `Check the DS laptop for a Driver Station crash (Windows Event Viewer): its log stops ${match.whenAt(cut.endTime)}, during the loss.` }
   }
   if (lostPct !== null && lostPct > 10) {
-    return { evidence, points: 'wireless', nextStep: `The DS log shows up to ${lostPct.toFixed(0)} % lost packets in the 3 s before the loss: check where the radio is mounted and ask the FTA about the field's wireless.` }
+    return { evidence, points: 'wireless', nextStep: `Check where the radio is mounted and ask the FTA about the field's wireless: up to ${lostPct.toFixed(0)} % of packets were lost in the 3 s before.` }
   }
   if (lostPct !== null) {
-    return { evidence, points: 'not-ds-laptop', nextStep: 'The DS log ran through the loss with no packet loss before it: ask the FTA for the field log for this match.' }
+    return { evidence, points: 'not-ds-laptop', nextStep: 'Ask the FTA for this match\'s field log: the DS log ran through the loss with no packet loss before it.' }
   }
-  return { evidence, points: null, nextStep: 'The DS log has no records in the seconds before the loss (it may not line up with this match): check its file is from this match, and ask the FTA for the field log.' }
+  return { evidence, points: null, nextStep: 'Check the DS log is from this match (it has no records near the loss), and ask the FTA for the field log.' }
 }
