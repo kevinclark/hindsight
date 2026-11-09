@@ -80,7 +80,7 @@ export default rule({
       },
       measured: [
         // Context only: a brownout happens at the setting by definition, so "how far past it" says nothing.
-        { label: onsets.length === 1 ? 'brownout' : 'brownouts', value: onsets.length, unit: '' },
+        { label: 'brownouts', one: 'brownout', value: onsets.length, unit: '' },
         { label: 'lowest voltage at the first brownout', value: lowest, unit: 'V' },
       ],
       plot: {

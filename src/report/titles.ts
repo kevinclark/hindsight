@@ -52,7 +52,8 @@ function rowKey(f: Finding): string {
   }
   // A rule's short phrase says what a percentage is of ("156 % of a fast trip"), which a line alone doesn't.
   if (m.short) return `${m.value}${unit} ${m.short}${m.threshold !== undefined ? ` (line ${m.threshold}${unit})` : ''}`
-  return m.threshold !== undefined ? `${m.value}${unit} (line ${m.threshold}${unit})` : `${m.value}${unit}${m.label ? ` ${m.label}` : ''}`
+  const label = m.value === 1 && m.one ? m.one : m.label
+  return m.threshold !== undefined ? `${m.value}${unit} (line ${m.threshold}${unit})` : `${m.value}${unit}${label ? ` ${label}` : ''}`
 }
 
 /** What a finding's closed row shows: the rule's short title, what it is about, the judged number (`rowKey`), and when. The long sentence is `finding.title`, kept inside the opened row. */

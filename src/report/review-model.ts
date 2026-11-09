@@ -199,7 +199,8 @@ export function keyNumber(f: Finding): { label: string; value: string; text: str
   if (m) {
     const unit = m.unit ? ` ${m.unit}` : ''
     const value = `${m.value}${unit}${m.threshold !== undefined ? ` (line ${m.threshold}${unit})` : ''}`
-    return { label: m.label, value, text: `${value} ${m.label}`, inTitle: titleHasValue(f.title, m.value) }
+    const label = m.value === 1 && m.one ? m.one : m.label
+    return { label, value, text: `${value} ${label}`, inTitle: titleHasValue(f.title, m.value) }
   }
   // Fallback: the first evidence line that holds a number ("group: Alerts" says nothing on a card).
   const first = Object.entries(f.evidence).find(([, v]) => /\d/.test(String(v)))

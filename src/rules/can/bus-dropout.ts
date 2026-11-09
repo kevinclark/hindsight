@@ -111,7 +111,7 @@ function busProblem(bus: CanBus, drops: Episode[], match: MatchView): Problem {
       'lowest battery voltage in the 0.5 s before each drop (V)': readings.map((r) => r.text).join(', '),
       'lowest battery voltage earlier while enabled, with no bus drop (V)': Number.isFinite(earlier) ? round(earlier) : undefined,
     },
-    measured: [{ label: drops.length === 1 ? 'whole-bus drop' : 'whole-bus drops', value: drops.length, unit: '' }],
+    measured: [{ label: 'whole-bus drops', one: 'whole-bus drop', value: drops.length, unit: '' }],
     plot: plotDrops(battery, readings.map((r) => r.timed), 5, first + gone + 2),
   }
 }

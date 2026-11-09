@@ -63,7 +63,8 @@
           <div class="txt">
             <p class="title"><span class="sev error">Error</span>{#if m.cameBack.has(f.key)}<span class="badge">Came back after a fix</span> {/if}{@render headline(f)}</p>
             <p class="full">{f.title}</p>
-            <p class="num">{#if k.label && !k.inTitle}<span class="s"><span class="n">{k.value}</span> {k.label}</span>{/if}{#if f.when && !f.title.includes(shortWhen(f.when))}<span class="s">{shortWhen(f.when)}</span>{/if}<code class="s">{f.rule}</code></p>
+            <!-- The headline above carries the judged number and the time; this line adds only what it lacks. -->
+            <p class="num">{#if k.label && !k.inTitle && !rowHeadline(f).key}<span class="s"><span class="n">{k.value}</span> {k.label}</span>{/if}{#if f.when && !rowHeadline(f).time}<span class="s">{shortWhen(f.when)}</span>{/if}<code class="s">{f.rule}</code></p>
             {#if node.note}<p class="small">↳ {node.note}</p>{/if}
             <p class="next"><strong>Next step:</strong> {f.nextStep}</p>
             {@render explained(node)}

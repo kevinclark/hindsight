@@ -61,6 +61,8 @@ export interface Finding {
     value: number
     unit: string
     threshold?: number
+    /** The label when the value is exactly 1 ('brownout' beside 'brownouts'). The label itself stays plural, so a session groups every match's count under one name. */
+    one?: string
     /** What the number is, in a few words for the finding's closed row, when the label beside a line would be needed (a percentage of something). */
     short?: string
   }[]

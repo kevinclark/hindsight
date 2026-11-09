@@ -114,7 +114,7 @@ function deviceProblem(device: DeviceView, drops: Episode[], match: MatchView): 
       'other devices dropped at the same moment': othersDropped(together, others.length),
     },
     likely, ruledOut, nextStep: neverAnswered ? NEVER_ANSWERED : dropNextStep(allLow, everyDrop, together),
-    measured: [{ label: drops.length === 1 ? 'drop off CAN' : 'drops off CAN', value: drops.length, unit: '' }],
+    measured: [{ label: 'drops off CAN', one: 'drop off CAN', value: drops.length, unit: '' }],
     plot: plotDrops(battery, readings.map((r) => r.timed), 3, drops[drops.length - 1].end + 2),
   }
 }

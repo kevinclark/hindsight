@@ -95,7 +95,7 @@ export default rule({
         'DS log loaded': ds ? 'yes' : 'no',
         ...ds?.evidence,
       },
-      measured: [{ label: losses.length === 1 ? 'comms loss' : 'comms losses', value: losses.length, unit: '' }],
+      measured: [{ label: 'comms losses', one: 'comms loss', value: losses.length, unit: '' }],
       plot: {
         signals: [match.signal('dsAttached', 'DS attached'), ...(match.has('systemActive') ? [match.signal('systemActive', 'Outputs enabled')] : [])],
         from: losses[0] - 5, to: losses[losses.length - 1] + 10, marks: losses,
