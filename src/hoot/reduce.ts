@@ -2,8 +2,9 @@
  * owlet's wpilog export of a .hoot, reduced to what the device view draws (src/hoot/types.ts). The export is ~1.8x the
  * .hoot even with only the wanted signals, so nothing else of it is kept. Pure: the main process hands in the opened file.
  */
-import { openWpilog, readNumbers, type WpilogFile } from '../readers/wpilog.ts'
-import type { NumberSeries } from '../match/series.ts'
+import { openWpilog, readNumbers, readValues, type WpilogFile } from '../readers/wpilog.ts'
+import { makeGrid, type NumberSeries } from '../match/series.ts'
+import { DT } from '../power/battery-model.ts'
 import { BIN_S, GAP_S, TEMP_BIN_S, type HootDevice, type HootReading } from './types.ts'
 
 /** owlet's names in the export: `Phoenix6/TalonFX-11/SupplyVoltage`. */
@@ -19,7 +20,41 @@ export function reduceExport(bytes: Uint8Array, about: Pick<HootReading, 'file' 
   const start = log.firstTime
   const end = log.lastTime
   const devices = [...signals].map(([name, has]) => readDevice(log, name, has, start, end)).sort((a, b) => byDeviceName(a.name, b.name))
-  return { ...about, start, end, enable: changes(readNumbers(log, 'RobotEnable')).map((c) => ({ t: c.t, on: c.v !== 0 })), devices }
+  const modes = readValues<string>(log, 'RobotMode')
+  const mode: HootReading['mode'] = []
+  if (modes) for (let i = 0; i < modes.t.length; i++) if (i === 0 || modes.v[i] !== modes.v[i - 1]) mode.push({ t: modes.t[i], v: String(modes.v[i]) })
+  return {
+    ...about, start, end,
+    enable: changes(readNumbers(log, 'RobotEnable')).map((c) => ({ t: c.t, on: c.v !== 0 })),
+    mode,
+    fms: changes(readNumbers(log, 'DS:IsFMSAttached')).map((c) => ({ t: c.t, on: c.v !== 0 })),
+    totalAmps: totalSupplyCurrent(log, [...signals].filter(([name, has]) => name.startsWith('TalonFX-') && has.has('SupplyCurrent')).map(([name]) => name), start, end),
+    devices,
+  }
+}
+
+/**
+ * The sum of every TalonFX's supply current on the 0.02 s grid (DT) from `start` to `end`: at each grid time each device's
+ * last record at or before it; 0 A before its first record and inside its gaps (`gapsIn`, the same rule the strips break on).
+ */
+export function totalSupplyCurrent(log: WpilogFile, talons: string[], start: number, end: number): { t: number[]; a: number[] } {
+  const grid = makeGrid(start, end, DT)
+  const sums = new Float64Array(grid.length)
+  for (const name of talons) {
+    const s = readNumbers(log, `Phoenix6/${name}/SupplyCurrent`)
+    if (!s) continue
+    const gaps = gapsIn(s.t, start, end)
+    let j = -1
+    let g = 0
+    for (let i = 0; i < grid.length; i++) {
+      const t = grid[i]
+      while (j + 1 < s.t.length && s.t[j + 1] <= t) j++
+      while (g < gaps.length && gaps[g].to <= t) g++
+      const inGap = g < gaps.length && t > gaps[g].from && t < gaps[g].to
+      if (j >= 0 && !inGap && Number.isFinite(s.v[j])) sums[i] += s.v[j]
+    }
+  }
+  return { t: Array.from(grid, (x) => Math.round(x * 1e6) / 1e6), a: Array.from(sums, (x) => Math.round(x * 100) / 100) }
 }
 
 function readDevice(log: WpilogFile, name: string, has: Set<string>, start: number, end: number): HootDevice {

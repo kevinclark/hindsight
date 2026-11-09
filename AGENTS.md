@@ -140,9 +140,10 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
 
 ## .hoot files and owlet (`src/hoot/`, `electron/hoot-ipc.ts`, ADR 13)
 
-- **owlet is CTRE's software: found or fetched, never shipped.** The Devices tab asks for CTRE's licence on each laptop
-  (even when AdvantageScope has a copy), then uses Hindsight's own owlet folder, then AdvantageScope's cache, or downloads
-  from CTRE's index after the user accepts (`src/hoot/download.ts`: CTRE's address only, no redirect, sha-1 checked before
+- **owlet is CTRE's software: found or fetched, never shipped.** Hindsight uses its own owlet folder, then
+  AdvantageScope's cache, without asking; with none, a button downloads owlet from CTRE's index beside a line saying that
+  downloading it means agreeing to CTRE's licence, with a link (Kevin, 2026-11-09: Hindsight doesn't proxy CTRE's licence,
+  so no checkbox and no stored acceptance; CTRE's terms bind by downloading or using) (`src/hoot/download.ts`: CTRE's address only, no redirect, sha-1 checked before
   writing). No owlet binary, CTRE index or real `.hoot` in the repo: the tests run `tests/helpers/fake-owlet.ts`.
 - **Resolve signals by name from `--scan`** (`wantedIds`); ids change between Phoenix versions. A scan lists ~130 KB for
   26 devices: keep all of owlet's output (a 64 KB tail once dropped `RobotEnable`, and every file read 0 enables).
@@ -155,6 +156,12 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
   Chromium's `Cache` folder) and never in the library (Sync uploads it). Change what `reduceExport` keeps: bump
   `READING_VERSION`.
 - Nothing from a `.hoot` enters `summary.ts`, rules or event lines yet; if it does, it joins `analyzerId`.
+- **A .hoot no robot log took is a hoot-only entry** (`Catalog.hootOnly()`, one per boot by name time, desktop only): it is
+  in `LibrarySnapshot.hootOnly`, never in `entries` (seven readers assume a robot log). The Library opens one in Match review
+  through `hub:hootLog`: owlet's reading as a synthetic .wpilog (`src/hoot/synthetic.ts`) read as the "Phoenix hoot" log
+  format (marker `RobotEnable`, `runsNoRules`: no rule, no consolidator, no `others`, no Session summary: `summaryOf` throws).
+- `DS:IsFMSAttached` has no real case: 0 of our .hoot files carry it (checked only with a fake owlet); a log that says FMS
+  was attached is still read as practice, with a note. Don't build field semantics on it before a real field .hoot is read.
 
 ## Gradle plugin (`companion/gradle-plugin/`)
 

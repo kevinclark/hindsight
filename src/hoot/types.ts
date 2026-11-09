@@ -34,6 +34,12 @@ export interface HootReading {
   end: number
   /** RobotEnable as the .hoot recorded it: each change, with its new value. */
   enable: { t: number; on: boolean }[]
+  /** RobotMode as the .hoot recorded it (`Disabled`, `Autonomous`, `Teleop`): each change. Empty when absent. */
+  mode: { t: number; v: string }[]
+  /** DS:IsFMSAttached: each change. Empty when the file has none. */
+  fms: { t: number; on: boolean }[]
+  /** Every TalonFX's supply current summed on Hindsight's 0.02 s grid from `start` to `end` (a device counts 0 A before its first record and inside its gaps), amps to 0.01. */
+  totalAmps: { t: number[]; a: number[] }
   devices: HootDevice[]
   /** owlet said the file ends early (cut short, usually power off mid-write); what it held was still read. */
   cutShort: string | null
@@ -63,8 +69,6 @@ export interface HootFile {
 
 export interface HootStatus {
   files: HootFile[]
-  /** CTRE's licence accepted on this laptop (never synced). */
-  licence: boolean
   /** Whether CTRE has a build for this computer at all (no download button otherwise). */
   canDownload: boolean
 }

@@ -230,7 +230,7 @@ describe('downloading owlet from CTRE', () => {
 
 describe('the Devices tab\'s rows', () => {
   const device = (name: string, over: Partial<HootDevice> = {}): HootDevice => ({ name, t: [0, 1, 2, 3], volts: [12, 11, 7, 12], amps: [0, 10, 80, 0], temp: { t: [0, 3], c: [25, 40] }, gaps: [], faults: [], resets: [], ...over })
-  const reading = (devices: HootDevice[]): HootReading => ({ file: 'ABC_2026-03-14_20-14-20.hoot', bus: 'ABC', start: 0, end: 4, enable: [{ t: 0, on: false }, { t: 1.5, on: true }, { t: 3.5, on: false }], devices, cutShort: null, owlet: '26.3.0-C19' })
+  const reading = (devices: HootDevice[]): HootReading => ({ file: 'ABC_2026-03-14_20-14-20.hoot', bus: 'ABC', start: 0, end: 4, enable: [{ t: 0, on: false }, { t: 1.5, on: true }, { t: 3.5, on: false }], mode: [], fms: [], totalAmps: { t: [], a: [] }, devices, cutShort: null, owlet: '26.3.0-C19' })
 
   it('takes the lowest voltage and peak current while enabled on the .hoot\'s own clock, temperature over the file', () => {
     const [row] = deviceRows(reading([device('TalonFX-1')]), new Map())

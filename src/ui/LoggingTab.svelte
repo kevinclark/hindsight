@@ -18,6 +18,9 @@
   const hz = (l: CoverageLine) => (l.measuredHz ? `${Math.round(l.measuredHz)} Hz` : '')
 </script>
 
+{#if analysis.report.noRules}
+  <p>No rule reads this log ({analysis.report.noRules}), so no signal is missing for one.</p>
+{:else}
 <p class="counts">
   {cov.lines.length} signals the checks need: {count('logged')} logged ·
   <span class:w={count('slow') > 0}>{count('slow')} slow</span> · <span class:w={count('never changes') > 0}>{count('never changes')} never change</span> ·
@@ -88,6 +91,7 @@
     </tbody>
   </table>
 </details>
+{/if}
 
 <style>
   .counts { color: var(--muted); margin: 0 0 0.5rem; }

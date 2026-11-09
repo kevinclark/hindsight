@@ -7,10 +7,10 @@
  *   5. else no robot's profile: the log is read with the standard signals found in it (ownSignals), so nothing from a
  *      profile already shown not to be this robot's (its motors, cameras, battery keys, code) is applied.
  */
-import { hasEntry, type WpilogFile } from '../readers/wpilog.ts'
+import { hasEntry, readNumbers, type WpilogFile } from '../readers/wpilog.ts'
 import type { RobotProfile } from './types.ts'
 import { hasPin } from './pin.ts'
-import { codeIdentity, KEYS_SAME_ON_EVERY_ROBOT, NAMES_SAME_ON_EVERY_ROBOT } from './formats.ts'
+import { codeIdentity, formatOf, KEYS_SAME_ON_EVERY_ROBOT, NAMES_SAME_ON_EVERY_ROBOT } from './formats.ts'
 import { isOtherLogKey, keysOf } from './sources.ts'
 import { signalsFromLog } from '../builder/signals.ts'
 import { toProfile } from '../builder/json.ts'
@@ -89,7 +89,25 @@ const RULES_NOT_RUN = 'the rules about specific motors, devices, cameras and mec
 const MISFIT_TEXT = `So ${RULES_NOT_RUN}`
 
 
+const HOOT_NOTE = 'Read as a Phoenix .hoot: no rule reads it yet; the Devices tab shows each device.'
+const HOOT_FMS_NOTE = 'This .hoot says a field (FMS) was attached at some point. Hindsight has not been checked against a .hoot from a field match, so this log is read as practice: every run counts.'
+
+/**
+ * A log made from a Phoenix .hoot (formats.ts `runsNoRules`): the profile's signals are the format's, never a profile's
+ * AdvantageKit keys. A robot the student chose keeps its motor names (the Devices tab uses them); without one the log is
+ * read as a robot of no profile, with no motors. Never "Add a profile for this robot": no rule would read it.
+ */
+function chooseForHoot(log: WpilogFile, format: NonNullable<ReturnType<typeof formatOf>>, chosen?: RobotProfile): { profile: RobotProfile; choice: ProfileChoice } {
+  const fms = readNumbers(log, 'DS:IsFMSAttached')
+  const note = fms && fms.v.some((v) => v !== 0) ? `${HOOT_NOTE} ${HOOT_FMS_NOTE}` : HOOT_NOTE
+  if (chosen) return { profile: { ...chosen, signals: format.signals }, choice: { how: 'chosen by you', fit: null, misfit: false, note } }
+  const profile = toProfile({ name: robotName('', { how: 'signals', misfit: true, codebase: '' }), motorGroups: [], signals: format.signals, battery: {}, codebase: '' } as Parameters<typeof toProfile>[0])
+  return { profile, choice: { how: 'signals', fit: null, misfit: true, codebase: '', note } }
+}
+
 export function chooseProfile(log: WpilogFile, profiles: RobotProfile[], chosen?: RobotProfile): { profile: RobotProfile; choice: ProfileChoice } {
+  const format = formatOf(log)
+  if (format?.runsNoRules) return chooseForHoot(log, format, chosen)
   const fitText = (f: { present: number; total: number }) => `${f.present} of its ${f.total} signals are in this log`
   const low = (f: { present: number; total: number }) => f.present < PROFILE_FIT_MIN * f.total
   if (chosen) {

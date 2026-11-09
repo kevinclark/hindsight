@@ -60,7 +60,10 @@ export interface LinkReport {
 }
 
 export interface LibrarySnapshot {
+  /** Robot logs only. Never holds a .hoot record: seven readers assume each entry is a robot log. */
   entries: Entry[]
+  /** .hoot files no robot log took, one per boot (`Catalog.hootOnly`). Desktop only; the phone leaves it out; only the Library page reads it. */
+  hootOnly?: Entry[]
   /** Manifest lines that could not be read. */
   skipped: number
   libraryDir: string
@@ -152,14 +155,14 @@ export interface HubApi {
   updateInfo(): Promise<Update | null>
 
   // ---- .hoot files (ADR 13): their own job runner, so a sync running doesn't block the Devices tab ----
-  /** The .hoot files attached to a library robot log, what this computer holds and can read them with, and the licence. */
+  /** The .hoot files attached to a library robot log, and what this computer holds and can read them with. */
   hootFor(logPath: string): Promise<HootStatus>
-  /** Record that this laptop's user accepted CTRE's licence (this laptop only). */
-  acceptCtreLicence(): Promise<void>
-  /** Download the owlet for this .hoot format from CTRE's server (refused before the licence is accepted). */
+  /** Download the owlet for this .hoot format from CTRE's server (the user agrees to CTRE's licence by downloading it). */
   getOwlet(compliancy: number): Promise<{ version: string; compliancy: number }>
   /** Read the log's held .hoot files through owlet (cached after the first read). */
   readHoots(logPath: string): Promise<HootReadReport>
+  /** A hoot-only entry's `.hoot` (library path of its record) read through owlet and returned as a synthetic .wpilog (src/hoot/synthetic.ts). Throws a sentence for the user. */
+  hootLog(path: string): Promise<Uint8Array>
   hootCancel(): Promise<void>
   hootRunning(): Promise<Progress | null>
   onHootProgress(callback: (p: Progress | null) => void): () => void
@@ -191,13 +194,27 @@ export class LibraryFile {
   /** The path as in the manifest. */
   readonly libraryPath: string
   readonly beside: File[]
-  private readonly api: HubApi
+  protected readonly api: HubApi
   constructor(name: string, size: number, lastModified: number, path: string, api: HubApi, beside: File[] = []) {
     this.name = name; this.size = size; this.lastModified = lastModified; this.libraryPath = path; this.api = api; this.beside = beside
   }
   async arrayBuffer(): Promise<ArrayBuffer> {
     const bytes = await this.api.readLog(this.libraryPath)
     // The bytes usually fill their buffer: hand it over rather than copy a log that can be hundreds of MB.
+    return (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)) as ArrayBuffer
+  }
+}
+
+/**
+ * A hoot-only library entry as a File (src/hub/session-files.ts `hootAsFile`): its bytes are the synthetic .wpilog the desktop
+ * app makes of the .hoot through owlet (`hootLog`), not the .hoot's own. Still a LibraryFile, so the app keeps its library
+ * path (Open in AdvantageScope, the Devices tab); `beside` stays empty and `freshFiles` leaves it alone.
+ */
+export class HootLibraryFile extends LibraryFile {
+  /** The synthetic log when the Library already read it (so showing its progress there doesn't read the .hoot twice). */
+  preread?: Uint8Array
+  override async arrayBuffer(): Promise<ArrayBuffer> {
+    const bytes = this.preread ?? await this.api.hootLog(this.libraryPath)
     return (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)) as ArrayBuffer
   }
 }

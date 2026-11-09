@@ -15,15 +15,18 @@ owlet, under CTRE's licence (`CTRE_LICENSE.txt` in CTRE's Phoenix-Releases repos
 - forbids reverse engineering or decompiling any part of it.
 
 AdvantageScope reads `.hoot` the same way: it asks the user to accept CTRE's licence once, then downloads owlet from
-CTRE's own index (`https://redist.ctr-electronics.com/index.json`) and runs it.
+CTRE's own index (`https://redist.ctr-electronics.com/index.json`) and runs it. CTRE's licence itself binds by use: "By
+downloading, installing, accessing, or using the Software you are agreeing to be bound by the terms and conditions of
+this Agreement", an agreement "between you" and CTRE.
 
 ## Decision
 
 1. owlet is found or fetched, never shipped: no owlet binary in this repository, in a build, on the team's Drive or in
    any store Hindsight shares. CI never downloads it (the tests run a fake).
-2. The licence is asked at the point of use: the first time a `.hoot` would be read on a laptop, the Devices tab shows
-   CTRE's licence link and a checkbox. It is asked even when AdvantageScope already has a copy (a copy there is no sign
-   that this user accepted). Acceptance is kept in that laptop's own settings, never synced.
+2. Hindsight does not stand between the user and CTRE's licence: no checkbox, no acceptance kept. An owlet already on
+   the computer is used as it is. Where there is none, the download button sits beside a line saying that downloading
+   owlet means agreeing to CTRE's licence, linked (Kevin, 2026-11-09; the first build asked with a checkbox, as
+   AdvantageScope does).
 3. Hindsight looks in its own owlet folder first, then AdvantageScope's cache, for the highest version that reads the
    file's format (byte 70 of the `.hoot`). The download button shows only when neither has one.
 4. A download comes from CTRE's index: the newest owlet for the file's format with a build for this computer (every Mac
@@ -44,7 +47,7 @@ and never downloads one.
 
 ## Consequences
 
-Reading a `.hoot` costs one click and one licence tick per laptop. The robot profile names no CAN bus, so a device is
+Reading a `.hoot` costs nothing with AdvantageScope's owlet on the computer, else one click per laptop. The robot profile names no CAN bus, so a device is
 named from the profile only when its CAN id is unique in the profile and found on one of the log's `.hoot` files.
 A `.hoot` is lined up with its robot log by the enables and disables both record; a file with fewer than two that pair
 up (a match's `.hoot` that Phoenix started mid-match) is drawn on its own clock and says so. Files without a Phoenix Pro

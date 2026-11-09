@@ -22,8 +22,6 @@ export interface Settings {
   codeSources?: string[]
   /** The sources of the last full link pass that finished without a rate limit or problem: saving the same sources again links nothing. */
   linkedSources?: string[]
-  /** When this laptop's user accepted CTRE's licence for owlet, the .hoot converter (ADR 13). This laptop only, never synced. */
-  ctreLicence?: { acceptedAt: number }
   /** The last sync: when, and the paths the team store held (what "shared" means in the Library view). */
   lastSync?: { at: number; paths: string[] }
 }

@@ -9,7 +9,7 @@ import { reduceExport } from './reduce.ts'
 import type { HootReading } from './types.ts'
 
 /** Bump when reduceExport changes what it keeps: every cached reading is then read again. */
-export const READING_VERSION = 1
+export const READING_VERSION = 2
 
 export interface ReadHootOptions {
   owlet: FoundOwlet
@@ -48,7 +48,7 @@ export async function readHoot(o: ReadHootOptions): Promise<HootReading & { cach
   o.log?.(`${what}: ${scan.ids.size} signals, reading ${ids.length}${scan.cutShort ? ' (file ends early)' : ''}`)
 
   const about = { file: o.fileName, bus: busOf(o.fileName), owlet: `${o.owlet.version}-C${o.owlet.compliancy}` }
-  if (ids.length === 0) return { ...about, start: 0, end: 0, enable: [], devices: [], cutShort: scan.cutShort, cached: false }
+  if (ids.length === 0) return { ...about, start: 0, end: 0, enable: [], mode: [], fms: [], totalAmps: { t: [], a: [] }, devices: [], cutShort: scan.cutShort, cached: false }
 
   const dir = await mkdtemp(join(o.tempRoot, 'hindsight-hoot-'))
   try {

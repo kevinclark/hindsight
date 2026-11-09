@@ -1,7 +1,7 @@
 /**
  * CTRE's owlet, the only reader of .hoot files (ADR 13). Hindsight never ships, hosts or copies owlet and never parses a
  * .hoot itself: it runs an owlet the user already has (Hindsight's own folder, then AdvantageScope's cache) or one the user
- * downloads from CTRE's server after accepting CTRE's licence. Main process only (`node:` imports); the pure parts are
+ * downloads from CTRE's server, agreeing to CTRE's licence by doing so. Main process only (`node:` imports); the pure parts are
  * exported for the tests.
  */
 import { spawn } from 'node:child_process'
@@ -87,7 +87,8 @@ export function parseScan(text: string): { ids: Map<string, string>; cutShort: s
   let cutShort: string | null = null
   for (const line of text.split(/\r?\n/)) {
     if (line.includes(CUT_SHORT)) cutShort ??= line.trim()
-    const m = /^([^\s:][^:]*):\s+([0-9a-fA-F]+)\s*$/.exec(line)
+    // A name may hold a colon (`DS:IsFMSAttached`): the id is the last colon's right side.
+    const m = /^(\S.*?):\s+([0-9a-fA-F]+)\s*$/.exec(line)
     if (m) ids.set(m[1], m[2])
   }
   return { ids, cutShort }
@@ -96,7 +97,7 @@ export function parseScan(text: string): { ids: Map<string, string>; cutShort: s
 /** The health faults the view marks: power, temperature, hardware and restarts. Limit faults are normal operation and left out. */
 export const HEALTH_FAULTS = ['Hardware', 'ProcTemp', 'DeviceTemp', 'Undervoltage', 'BootDuringEnable', 'BridgeBrownout', 'OverSupplyV', 'UnstableSupplyV',
   'BadMagnet', 'Thermal', 'ShortCircuit', 'SoftwareFuse', '5VTooLow', '5VTooHigh', 'Overvoltage']
-const WANTED = new RegExp(`^(RobotEnable|[A-Za-z0-9]+-\\d+/(SupplyVoltage|SupplyCurrent|DeviceTemp|Temperature|Fault_(${HEALTH_FAULTS.join('|')})))$`)
+const WANTED = new RegExp(`^(RobotEnable|RobotMode|DS:IsFMSAttached|[A-Za-z0-9]+-\\d+/(SupplyVoltage|SupplyCurrent|DeviceTemp|Temperature|Fault_(${HEALTH_FAULTS.join('|')})))$`)
 /** Names the cache key on: a change to what is read rebuilds every cached reading. */
 export const SIGNAL_SET = createHash('sha1').update(WANTED.source).digest('hex').slice(0, 8)
 

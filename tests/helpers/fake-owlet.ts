@@ -10,7 +10,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { encodePayload, writeRecords, type RecordEntry } from '../../src/readers/wpilog-writer.ts'
 
-export interface FakeSignal { type: 'double' | 'boolean' | 'int64'; t: number[]; v: (number | boolean)[] }
+export interface FakeSignal { type: 'double' | 'boolean' | 'int64' | 'string'; t: number[]; v: (number | boolean | string)[] }
 export interface FakeHoot {
   compliancy: number
   /** By owlet's scan name: `RobotEnable`, `TalonFX-11/SupplyVoltage`. */

@@ -3,6 +3,8 @@
  * numbers beside its strip. Pure; the page draws it (src/ui/DevicesTab.svelte).
  */
 import type { ResolvedProfile } from '../profiles/types.ts'
+import { namedTime } from '../hub/catalog.ts'
+import { hootName } from '../hub/dates.ts'
 import type { HootDevice, HootReading } from './types.ts'
 
 export interface DeviceRow {
@@ -77,3 +79,28 @@ export function profileNames(profile: Pick<ResolvedProfile, 'motorGroups' | 'for
 /** Whether the line from the bin at `a` to the bin at `b` crosses a gap: a gap's ends are record times inside the bins on either side. */
 export const crossesGap = (gaps: { from: number; to: number }[], a: number, b: number, bin: number): boolean =>
   gaps.some((g) => g.from >= a && g.to <= b + bin)
+
+const dayOf = (ms: number) => Math.floor(ms / 86_400_000)
+
+/**
+ * What the Devices tab says about a .hoot that is itself the opened log (a hoot-only entry), in place of any lining up: that
+ * it is the log when it shares the opened file's name time ("This log is the .hoot itself."), and the nearest other .hoot on
+ * the same bus whose name time is later the same day, with how long after this one's end it starts (its name time minus this
+ * name time plus the reading's `end`; whole seconds; no threshold, a negative number says the next file started first).
+ * `others`: the file names of every other .hoot in the library.
+ */
+/** Seconds as a reader counts them: whole seconds under two minutes, else whole minutes. */
+const afterWords = (s: number) => (Math.abs(s) < 120 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`)
+
+export function hootOwnNotes(reading: Pick<HootReading, 'file' | 'bus' | 'end'>, opened: string, others: string[]): string[] {
+  const at = namedTime(reading.file)
+  const notes: string[] = []
+  if (reading.file === opened || (at !== null && at === namedTime(opened))) notes.push('This log is the .hoot itself.')
+  if (at === null) return notes
+  const next = others
+    .filter((name) => name !== reading.file && hootName(name)?.hardwareId === reading.bus)
+    .flatMap((name) => { const t = namedTime(name); return t !== null && t > at && dayOf(t) === dayOf(at) ? [{ name, t }] : [] })
+    .sort((a, b) => a.t - b.t)[0]
+  if (next) notes.push(`Another file on this bus starts ${afterWords((next.t - (at + reading.end * 1000)) / 1000)} after this one ends: ${next.name}.`)
+  return notes
+}

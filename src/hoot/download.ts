@@ -1,6 +1,6 @@
 /**
- * Getting owlet from CTRE's own server, only after the user accepted CTRE's licence (the page asks; electron/hoot-ipc.ts
- * checks). The file is checked against CTRE's sha-1 in memory before anything is written, then written under a temporary
+ * Getting owlet from CTRE's own server when the user presses the button that says downloading it means agreeing to CTRE's
+ * licence (src/ui/HootAccess.svelte). The file is checked against CTRE's sha-1 in memory before anything is written, then written under a temporary
  * name and renamed, so a failed download leaves nothing behind. Getting the same version again replaces that file (a
  * damaged copy); nothing else is touched. Main process only.
  */

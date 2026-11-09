@@ -5,6 +5,7 @@
 import { runAt, SHORT_RUN_SECONDS, type Match } from '../match/match.ts'
 import type { Finding, Plot, PlotLine } from './types.ts'
 import type { Answer, Cause, Link, Parent, Problem, Rule, Severity } from './rule.ts'
+import { formatOf } from '../profiles/formats.ts'
 import { MatchView, MissingSignal, SLOW_HZ, SLOWEST_AVERAGED_HZ, words, type CameraView, type DeviceView, type GroupView, type MechanismView, type MotorView } from './view.ts'
 
 export interface SkippedRule { rule: string; reason: string }
@@ -25,6 +26,8 @@ export interface Report {
    * they add nothing to any count; the findings they group point at them with `explainedBy`. Left out when none.
    */
   parents?: Finding[]
+  /** Set when the log's type runs no rule at all (formats.ts `runsNoRules`): why. Every rule is then in `skipped` with this reason. */
+  noRules?: string
 }
 
 /**
@@ -50,6 +53,11 @@ export function worstFirst(rules: { id: string }[]): (a: Finding, b: Finding) =>
 }
 
 export function runRules(match: Match, rules: Rule[], consolidators: Consolidators = {}): Report {
+  const noRules = formatOf(match.log)?.runsNoRules
+  if (noRules) {
+    const skipped = rules.map((rule) => ({ rule: rule.id, reason: noRules }))
+    return { findings: skipped.length ? [notCheckedFinding(skipped, noRules)] : [], skipped, crashed: [], noRules }
+  }
   const view = new MatchView(match)
   const findings: Finding[] = []
   const skipped: SkippedRule[] = []
@@ -88,7 +96,17 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
 }
 
 /** The grey finding that lists every rule that could not look at the log, or only partly. */
-function notCheckedFinding(skipped: SkippedRule[]): Finding {
+function notCheckedFinding(skipped: SkippedRule[], noRules?: string): Finding {
+  if (noRules) {
+    return {
+      rule: 'meta/not-checked', severity: 'info', time: null, matchTime: null, when: null, about: null, key: 'meta/not-checked',
+      title: `No rule read this log: ${noRules}`,
+      meaning: 'This log was made from a Phoenix .hoot file, which no rule reads, so the silence says nothing about this run.',
+      causes: [{ id: 'hoot', cause: "Hindsight's rules read AdvantageKit, DogLog and WPILib logs, not .hoot files", look: 'open the robot log of the same run, if there is one' }],
+      nextStep: "The Devices tab shows each CTRE device's voltage, current, temperature and faults.",
+      evidence: Object.fromEntries(skipped.map((s) => [s.rule, s.reason])),
+    }
+  }
   return {
     rule: 'meta/not-checked', severity: 'info', time: null, matchTime: null, when: null, about: null, key: 'meta/not-checked',
     title: `${skipped.length} rule${skipped.length === 1 ? '' : 's'} not checked or partly checked${skipped.every((x) => x.reason.includes('missing')) ? ': signals missing' : ''}`,
@@ -109,6 +127,8 @@ function notCheckedFinding(skipped: SkippedRule[]): Finding {
  * changes (the robot's power map). Links and parents are not run again: none of them names these rules.
  */
 export function rerunRules(match: Match, report: Report, rules: Rule[], all: Rule[]): Report {
+  // A log no rule reads has nothing to run again.
+  if (report.noRules) return report
   const ids = new Set(rules.map((r) => r.id))
   const part = runRules(match, rules)
   // In rule order, as a whole run lists them.

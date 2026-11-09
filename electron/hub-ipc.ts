@@ -128,7 +128,8 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const lib = await open()
     const shared = new Set((await loadSettings()).lastSync?.paths ?? [])
     const entries = lib.catalog.entries()
-    await Promise.all(entries.map(async (e) => {
+    const hootOnly = lib.catalog.hootOnly()
+    await Promise.all([...entries, ...hootOnly].map(async (e) => {
       const held = new Set<string>()
       await Promise.all([e.record, ...e.attached.dslog, ...e.attached.dsevents, ...e.attached.hoot].map(async (r) => {
         if ((await stat(lib.store.at(r.path)).catch(() => null)) !== null) held.add(r.path)
@@ -138,7 +139,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
       e.shared = shared.has(e.record.path)
       e.toFetch = filesToFetch(e, held, shared)
     }))
-    return { entries, skipped: lib.catalog.skipped, libraryDir: lib.root, machineId: lib.machine }
+    return { entries, hootOnly, skipped: lib.catalog.skipped, libraryDir: lib.root, machineId: lib.machine }
   })
 
   ipcMain.handle('hub:addFromFolder', async (): Promise<IngestReport | null> => {

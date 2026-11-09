@@ -154,9 +154,32 @@ export class Catalog {
       const list = best ? (out.get(best.sha256)!.attached as Record<string, LogRecord[]>)[r.kind] : undefined
       if (Array.isArray(list)) list.push(r)
     }
-    return [...out.values()].sort((a, b) => (a.record.playedAt ?? Infinity) - (b.record.playedAt ?? Infinity) || a.record.path.localeCompare(b.record.path))
+    return [...out.values()].sort(byPlayed)
+  }
+
+  /**
+   * The .hoot files no robot log took (`entries()` leaves them unattached, undated ones too), one Entry per boot: files whose
+   * names carry the same time (a CANivore's and the roboRIO's twin) are one group, the largest is the `record` and the others
+   * are in `attached.hoot`. A name with no time is its own group; different times are never stitched. Kept apart from
+   * `entries()`: every reader of that list assumes a robot log (src/hub/bridge.ts `hootOnly`).
+   */
+  hootOnly(): Entry[] {
+    const taken = new Set(this.entries().flatMap((e) => e.attached.hoot.map((r) => r.sha256)))
+    const groups = new Map<string, LogRecord[]>()
+    for (const r of this.all()) {
+      if (r.kind !== 'hoot' || taken.has(r.sha256)) continue
+      const at = namedTime(baseName(r.path))
+      const key = at === null ? `sha:${r.sha256}` : `at:${at}`
+      groups.set(key, [...(groups.get(key) ?? []), r])
+    }
+    return [...groups.values()].map((files): Entry => {
+      const [record, ...rest] = [...files].sort((a, b) => b.size - a.size || a.path.localeCompare(b.path))
+      return { record, names: this.namesOf(record.sha256), tags: this.tagsFor(record), attached: { dslog: [], dsevents: [], hoot: rest }, local: false, shared: false, toFetch: [] }
+    }).sort(byPlayed)
   }
 }
+
+const byPlayed = (a: Entry, b: Entry) => (a.record.playedAt ?? Infinity) - (b.record.playedAt ?? Infinity) || a.record.path.localeCompare(b.record.path)
 
 const SLACK_MS = 5 * 60e3
 

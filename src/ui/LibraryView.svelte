@@ -26,7 +26,9 @@
   import { ADD_LINK_REQUESTS, describeCodeLink } from '../hub/codelink.ts'
   import { setTeamNow } from './team-setting.svelte.ts'
   import type { CodePlan, LastJob, LinkReport } from '../hub/bridge.ts'
-  import { asFile, codeSpec, sessionNames } from '../hub/session-files.ts'
+  import { asFile, codeSpec, hootAsFile, sessionNames } from '../hub/session-files.ts'
+  import HootAccess from './HootAccess.svelte'
+  import type { HootStatus } from '../hoot/types.ts'
   import { robotsToProfile, type RobotToProfile } from '../hub/drafts.ts'
   import { keptNow } from './kept-profiles.svelte.ts'
   import { pullAddresses } from '../foresight/addresses.ts'
@@ -268,15 +270,25 @@
   })
   const filtered = $derived(filterEntries(base, selection, labels, places))
   const counts = $derived(facetCounts(base, selection, labels, places))
+  const picked = $derived(FACETS.some((f) => selection[f]?.length))
+  /**
+   * The .hoot files no robot log took (one per boot), shown in their day beside the robot logs, with no filter picked: the filters
+   * are about robot logs (robot, event, battery), which these have none of. Never in `all`, `filtered` or what the Session view takes.
+   */
+  const hootRows = $derived(picked ? [] : (snapshot?.hootOnly ?? []).filter((e) => !e.record.stub))
+  const hootPaths = $derived(new Set(hootRows.map((e) => e.record.path)))
   const bytes = $derived(filtered.reduce((n, e) => n + e.record.size, 0))
   const local = $derived(filtered.filter((e) => e.local))
   /** Logs the team has that this computer lacks: what a download would fetch. */
-  const fetchable = $derived(filtered.flatMap((e) => e.toFetch))
+  const fetchable = $derived([...filtered, ...hootRows].flatMap((e) => e.toFetch))
   const attachments = $derived(filtered.reduce((n, e) => n + e.attached.dslog.length + e.attached.dsevents.length + e.attached.hoot.length, 0))
 
   const days = $derived.by(() => {
     const groups = new Map<string, Entry[]>()
-    for (const e of filtered) {
+    const merged = hootRows.length
+      ? [...filtered, ...hootRows].sort((a, b) => (a.record.playedAt ?? Infinity) - (b.record.playedAt ?? Infinity) || a.record.path.localeCompare(b.record.path))
+      : filtered
+    for (const e of merged) {
       const day = e.record.playedAt === null ? 'No date' : dayText(e.record.playedAt)
       groups.set(day, [...(groups.get(day) ?? []), e])
     }
@@ -297,7 +309,6 @@
     const now = selection[f] ?? []
     selection = { ...selection, [f]: now.includes(value) ? now.filter((v) => v !== value) : [...now, value] }
   }
-  const picked = $derived(FACETS.some((f) => selection[f]?.length))
 
   function openInSession() {
     if (!api) return
@@ -306,6 +317,39 @@
   function draft(r: RobotToProfile) {
     if (api && r.source.kind === 'draft') onDraft([asFile({ entry: r.source.entry, name: baseName(r.source.entry.record.path) }, api)], codeSpec({ code: r.source.code, build: r.source.entry.record.build }))
   }
+  // ---- A .hoot no robot log took: opened in Match review through CTRE's owlet (src/hoot/synthetic.ts) ----
+  let hootProgress = $state<Progress | null>(null)
+  $effect(() => api?.onHootProgress((p) => { hootProgress = p }))
+  $effect(() => { void api?.hootRunning().then((p) => { hootProgress ??= p }) })
+  /** The row whose read is under way, the rows that need an owlet first (with the status that says so), and each row's words. */
+  let hootBusy = $state<string | null>(null)
+  let hootAsk = $state.raw<Record<string, HootStatus>>({})
+  let hootWords = $state<Record<string, { text: string; error: boolean }>>({})
+  /** A read refused because another .hoot job was running: tried again when that job ends. */
+  let hootWaiting = $state<Entry | null>(null)
+  $effect(() => { if (!hootProgress && hootWaiting) { const e = hootWaiting; hootWaiting = null; void openHoot(e) } })
+  const hootSay = (path: string, text: string, error = true) => { hootWords = { ...hootWords, [path]: { text, error } } }
+  const hootClear = (path: string) => { const { [path]: _w, ...words } = hootWords; hootWords = words; const { [path]: _a, ...ask } = hootAsk; hootAsk = ask }
+  const words = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+  /** Check for an owlet first (the card in the row offers CTRE's download when there is none), then read the .hoot and open it. */
+  async function openHoot(e: Entry) {
+    if (!api) return
+    const path = e.record.path
+    hootClear(path)
+    try {
+      const s = await api.hootFor(path)
+      const mine = s.files.filter((f) => f.path === path)
+      if (mine.some((f) => f.held && f.compliancy !== null && !f.owlet)) { hootAsk = { ...hootAsk, [path]: { ...s, files: mine } }; return }
+      hootBusy = path
+      const bytes = await api.hootLog(path)
+      onOpenMatch([hootAsFile(e, api, bytes)])
+    } catch (err) {
+      if (/Another job is running/.test(words(err))) { hootWaiting = e; hootSay(path, 'Waiting for the .hoot job that is running to finish…', false) } else hootSay(path, words(err))
+    } finally { hootBusy = null }
+  }
+  async function getOwlet(e: Entry, compliancy: number) { try { await api!.getOwlet(compliancy); await openHoot(e) } catch (err) { hootSay(e.record.path, words(err)) } }
+
   function openMatch(e: Entry) {
     if (api) onOpenMatch([asFile({ entry: e, name: baseName(e.record.path) }, api)])
   }
@@ -540,14 +584,14 @@
       {#if fetchable.length}<button class="primary" onclick={download} disabled={driveBusy}>Download {fetchable.length} file{fetchable.length === 1 ? '' : 's'} ({size(fetchable.reduce((n, r) => n + r.size, 0))})</button>{/if}
       <button class="primary" onclick={openInSession} disabled={local.length === 0}>Open in Session view</button>
     </div>{/if}
-    {#if all.length === 0}
+    {#if all.length === 0 && hootRows.length === 0}
       <div class="first" data-empty-library>
         <p class="lead">Your team's robot logs live here.</p>
         <p>Hindsight reads each one and lists what went wrong. It copies what it finds into its library and leaves your folder as it was.</p>
         <p class="row"><button class="primary strong" onclick={addFolder} disabled={!!progress}>Add a folder of logs…</button> <button class="secondary" onclick={pullFirstThatAnswers} disabled={driveBusy}>Pull logs off the robot</button> <span class="meta">Plug in the cable first.</span></p>
         {#if onReview}<p class="meta">Have one match's log?{' '}<button class="link" onclick={onReview}>Open it in Match review</button></p>{/if}
       </div>
-    {:else if filtered.length === 0}
+    {:else if filtered.length === 0 && hootRows.length === 0}
       <p class="empty">No log matches these filters.</p>
     {/if}
     {#each days as [day, rows] (day)}
@@ -566,6 +610,29 @@
       <table>
         <tbody>
           {#each rows as e (e.record.sha256)}
+            {#if hootPaths.has(e.record.path)}
+              {@const path = e.record.path}
+              <tr class:remote={!e.local}>
+                <td class="time">{clock(e.record.playedAt)}</td>
+                <td class="name">{#if e.local}<button class="link open" title={`Open ${path} in Match review: Hindsight reads it with CTRE's converter and shows its devices; no rule reads it`} disabled={hootBusy !== null} onclick={() => openHoot(e)}><code>{baseName(path)}</code></button>{:else}<code title={path}>{baseName(path)}</code>{/if}</td>
+                <td></td>
+                <td></td>
+                <td><span class="meta" title={e.attached.hoot.length ? `Also from this boot: ${e.attached.hoot.map((r) => baseName(r.path)).join(', ')}` : 'No robot log was found for this .hoot'}>Phoenix .hoot only</span></td>
+                <td></td>
+                <td class="num">{size(e.record.size)}</td>
+                <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
+                <td></td>
+              </tr>
+              {#if hootBusy === path || hootAsk[path] || hootWords[path]}
+                <tr class="more"><td></td><td colspan="8">
+                  {#if hootBusy === path && hootProgress}<JobBar progress={hootProgress} onStop={() => void api.hootCancel()} />{/if}
+                  {#if hootAsk[path]}
+                    <HootAccess files={hootAsk[path].files.filter((f) => f.held)} canDownload={hootAsk[path].canDownload} busy={!!progress || !!hootProgress} onGetOwlet={(c) => getOwlet(e, c)} />
+                  {/if}
+                  {#if hootWords[path]}<p class={hootWords[path].error ? 'problem' : 'meta'} role="alert">{hootWords[path].text}</p>{/if}
+                </td></tr>
+              {/if}
+            {:else}
             {@const v = facetValues(e, labels, places)}
             {@const code = describeCodeLink(e.record)}
             {@const profileMark = !e.tags.robot && robotIsGuess(e.record) ? (e.record.robot?.profileId === null ? 'code name' : 'guess') : null}
@@ -599,6 +666,7 @@
                   Date from {e.record.dateSource}. <code>{e.record.sha256.slice(0, 12)}</code>
                 </p>
               </td></tr>
+            {/if}
             {/if}
           {/each}
         </tbody>

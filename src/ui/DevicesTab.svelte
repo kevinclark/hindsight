@@ -9,12 +9,13 @@
   import { hub, type Progress } from '../hub/bridge.ts'
   import { BIN_S, type HootReading, type HootReadReport, type HootStatus } from '../hoot/types.ts'
   import { align, edgesOf, type Alignment } from '../hoot/align.ts'
-  import { crossesGap, deviceRows, enabledSpans, profileNames, type DeviceRow } from '../hoot/view.ts'
+  import { crossesGap, deviceRows, enabledSpans, hootOwnNotes, profileNames, type DeviceRow } from '../hoot/view.ts'
   import { matchWhen } from '../match/match.ts'
   import { readNumbers } from '../readers/wpilog.ts'
   import { changes } from '../hoot/reduce.ts'
   import { size } from './job-bar.ts'
   import JobBar from './JobBar.svelte'
+  import HootAccess from './HootAccess.svelte'
   import Plot from './Plot.svelte'
   import type { PlotModel } from './plot-data.ts'
 
@@ -26,7 +27,6 @@
   let report = $state<HootReadReport | null>(null)
   let problem = $state('')
   let progress = $state<Progress | null>(null)
-  let ticked = $state(false)
   let open = $state<string | null>(null)
 
   // The hoot runner's jobs (owlet, reading) and the app's own (a Drive download of this log's .hoot): both drawn here.
@@ -61,9 +61,7 @@
   const away = $derived(status?.files.filter((f) => !f.held) ?? [])
   /** Held files too short to be a .hoot (no format byte). */
   const unreadable = $derived(held.filter((f) => f.compliancy === null))
-  /** Formats this log's held files need an owlet for and this computer has none. */
-  const missing = $derived([...new Set(held.filter((f) => !f.owlet && f.compliancy !== null).map((f) => f.compliancy!))])
-  const readable = (s: HootStatus) => s.licence && s.files.some((f) => f.held && f.owlet)
+  const readable = (s: HootStatus) => s.files.some((f) => f.held && f.owlet)
 
   async function read(path = logPath, mine = pass) {
     problem = ''
@@ -75,10 +73,6 @@
       if (/Another job is running/.test(words(e))) { waiting = true; problem = 'Waiting for the .hoot job that is running to finish…' } else problem = words(e)
     }
   }
-  async function accept() {
-    await api.acceptCtreLicence()
-    await refresh(logPath)
-  }
   async function getOwlet(compliancy: number) {
     problem = ''
     try { await api.getOwlet(compliancy); await refresh(logPath) } catch (e) { problem = words(e) }
@@ -88,13 +82,28 @@
     try { await api.fetchLogs(away.map((f) => f.path)); await refresh(logPath) } catch (e) { problem = words(e) }
   }
 
+  /** The opened log is itself a .hoot (a hoot-only library entry): nothing to line up with, and its own clock is the log's. */
+  const isHoot = $derived(/\.hoot$/i.test(logPath))
+  /** Every other .hoot's file name in the library, for "another file on this bus starts…". */
+  let otherHoots = $state<string[]>([])
+  $effect(() => {
+    if (!isHoot) { otherHoots = []; return }
+    let stale = false
+    void api.library().then((lib) => {
+      if (stale) return
+      const names = [...lib.entries.flatMap((e) => e.attached.hoot), ...(lib.hootOnly ?? []).flatMap((e) => [e.record, ...e.attached.hoot])].map((r) => r.path.split('/').pop()!)
+      otherHoots = [...new Set(names)]
+    }).catch(() => {})
+    return () => { stale = true }
+  })
+
   // The robot log's own enables and disables, which each .hoot is lined up against.
   const logEdges = $derived.by(() => {
     const key = m.profile.signals.enabled
     const s = key ? readNumbers(m.log, key) : null
     return edgesOf(changes(s).map((c) => ({ t: c.t, on: c.v !== 0 })))
   })
-  const alignments = $derived((report?.readings ?? []).map((r): Alignment => (m.profile.signals.enabled
+  const alignments = $derived((report?.readings ?? []).map((r): Alignment => (isHoot ? { offset: 0, matched: 0, spread: 0 } : m.profile.signals.enabled
     ? align(edgesOf(r.enable), logEdges, r.enable.some((e) => e.on))
     : { offset: null, why: "this log's robot profile names no enabled signal to line up by" })))
   const names = $derived(profileNames(m.profile, report?.readings ?? []))
@@ -106,10 +115,10 @@
 
   /** The window drawn: the match (else the log) on the robot log's clock; a .hoot that can't be lined up, its own span. */
   function windowOf(r: HootReading, a: Alignment): { from: number; to: number; shift: number } {
-    if (a.offset === null) return { from: r.start, to: r.end, shift: 0 }
+    if (isHoot || a.offset === null) return { from: r.start, to: r.end, shift: 0 }
     return { from: (m.matchStart ?? m.logStart) - 2, to: (m.matchEnd ?? m.logEnd) + 2, shift: a.offset }
   }
-  const when = (t: number, a: Alignment) => (a.offset === null ? `${t.toFixed(1)} s into the .hoot` : matchWhen(m, t + a.offset))
+  const when = (t: number, a: Alignment) => (isHoot || a.offset === null ? `${t.toFixed(1)} s into the .hoot` : matchWhen(m, t + a.offset))
   const busLabel = (bus: string) => (bus.toLowerCase() === 'rio' ? "roboRIO's CAN bus" : `CANivore ${bus.slice(0, 4)}…${bus.slice(-4)}`)
   const f1 = (x: number | null, unit: string, digits = 1) => (x === null ? '—' : `${x.toFixed(digits)} ${unit}`)
 
@@ -151,7 +160,7 @@
     const d = row.device
     const shift = (ts: number[]) => ts.map((t) => t + w.shift)
     const markers = row.events.map((e) => ({ t: e.t + w.shift, label: e.what }))
-    const base = { from: w.from, to: w.to, markers, matchStart: a.offset === null ? null : m.matchStart }
+    const base = { from: w.from, to: w.to, markers, matchStart: isHoot || a.offset === null ? null : m.matchStart }
     const plots: PlotModel[] = []
     if (d.volts) plots.push({ ...base, unit: 'V', series: [{ label: 'Supply voltage (lowest per ¼ s)', t: shift(d.t), v: d.volts }] })
     if (d.amps) plots.push({ ...base, unit: 'A', series: [{ label: 'Supply current (highest per ¼ s)', t: shift(d.t), v: d.amps }] })
@@ -180,19 +189,7 @@
       <p class="note">{f.name} is on this computer but too short to be a .hoot ({f.size} bytes), so it can't be read.</p>
     {/each}
 
-    {#if held.length && !status.licence}
-      <div class="licence">
-        <p><strong>Reading .hoot files needs CTRE's converter, owlet.</strong> owlet is CTRE's software, used under CTRE's licence: an agreement between you and CTRE, not with Hindsight. Hindsight runs a copy already on this computer (AdvantageScope keeps one) or downloads it from CTRE's own server.</p>
-        <p><a href="https://raw.githubusercontent.com/CrossTheRoadElec/Phoenix-Releases/refs/heads/master/CTRE_LICENSE.txt" target="_blank" rel="noreferrer">Read CTRE's licence</a></p>
-        <label class="tick"><input type="checkbox" bind:checked={ticked} /> I accept CTRE's licence for owlet</label>
-        <button class="button" disabled={!ticked} onclick={accept}>{held.every((f) => f.owlet) ? "Use CTRE's converter" : "Accept"}</button>
-      </div>
-    {:else if held.length}
-      {#each missing as c (c)}
-        <p class="note">No owlet on this computer reads {held.filter((f) => f.compliancy === c).length === 1 ? 'this .hoot' : 'these .hoot files'} (format {c}).
-          {#if status.canDownload}<button class="button" disabled={busy} onclick={() => getOwlet(c)}>Get CTRE's converter</button> (about 4 MB from CTRE's server){:else}CTRE has no owlet for this kind of computer.{/if}</p>
-      {/each}
-    {/if}
+    <HootAccess files={held} canDownload={status.canDownload} {busy} onGetOwlet={getOwlet} />
 
     {#if report}
       {#each report.problems as p (p.file)}
@@ -206,7 +203,8 @@
           <p class="note">No devices on this bus.</p>
         {:else}
           <p class="note">
-            {#if a.offset !== null}Lined up with this log by {a.matched} enables and disables (they agree to within {a.spread.toFixed(2)} s).
+            {#if isHoot}{#each hootOwnNotes(r, logPath.split('/').pop()!, otherHoots) as n (n)}{n}{' '}{/each}Drawn on the .hoot's own clock.
+            {:else if a.offset !== null}Lined up with this log by {a.matched} enables and disables (they agree to within {a.spread.toFixed(2)} s).
             {:else}Not lined up with this log: {a.why}. Drawn on the .hoot's own clock, not the match clock.{/if}
             Voltage {scale.lo}–{scale.hi} V on every row; shaded: enabled. Lowest voltage and peak current are while enabled.
           </p>
@@ -250,9 +248,6 @@
   .problem { font-size: 0.85rem; color: var(--error); max-width: 80ch; }
   h3 { font-size: 1rem; margin: 1.25rem 0 0.25rem; }
   h3 .meta { font-weight: normal; font-size: 0.8rem; color: var(--muted); }
-  .licence { border-left: 3px solid var(--border); padding: 0.25rem 0.75rem; max-width: 80ch; font-size: 0.9rem; }
-  .tick { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 24px; margin-right: 1rem; }
-  .tick input { width: 24px; height: 24px; margin: 0; }
   table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; width: 100%; }
   td.num, th.num { white-space: nowrap; text-align: right; }
   td.strip { width: 40%; min-width: 12rem; }

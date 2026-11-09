@@ -31,7 +31,25 @@ export interface LogFormat {
    * flags are not devices (outputs the code computed). Leave out for a type whose logs have no such convention.
    */
   deviceFlag?: { suffix: string; notDevices: string[] }
+  /**
+   * Set for a log type that no rule reads: the sentence says why ("rules don't read .hoot data yet"). Such a log runs no rule
+   * and no consolidator (rules/run.ts), gets no Session summary and is nobody's `others` (analyze.ts).
+   */
+  runsNoRules?: string
 }
+
+/**
+ * What a log made from a Phoenix .hoot (src/hoot/synthetic.ts, or AdvantageScope's export of one) holds: the robot's enable,
+ * whether it was in autonomous, and the Talons' summed supply current. Every other source is empty, and with no FMS key
+ * every such log has practice semantics.
+ */
+const HOOT_SIGNALS = {
+  ...(Object.fromEntries(Object.entries(DATALOGMANAGER_SIGNALS).map(([name, source]) => [name, Array.isArray(source) ? [] : ''])) as unknown as SignalSources),
+  enabled: 'RobotEnable',
+  autonomous: 'Phoenix6/Autonomous',
+  totalCurrent: 'Phoenix6/TotalSupplyCurrent',
+  fmsAttached: '',
+} satisfies SignalSources
 
 export const LOG_FORMATS: LogFormat[] = [
   {
@@ -54,6 +72,8 @@ export const LOG_FORMATS: LogFormat[] = [
     roboRioFolders: ['/Robot/SystemStats', '/Robot/RadioStatus'],
   },
   { name: 'WPILib DataLogManager', signals: DATALOGMANAGER_SIGNALS, marker: 'DS:enabled', sameOnEveryRobot: 'all', roboRioFolders: [] },
+  // Last: no real AdvantageKit, WPILib or DogLog log has RobotEnable, so this marker only matches a log made from a .hoot.
+  { name: 'Phoenix hoot', marker: 'RobotEnable', sameOnEveryRobot: 'all', roboRioFolders: [], runsNoRules: "rules don't read .hoot data yet", signals: HOOT_SIGNALS },
 ]
 
 /** True for a key under any log type's roboRIO folders (with or without NetworkTables' "NT:"). */

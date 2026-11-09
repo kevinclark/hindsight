@@ -593,7 +593,7 @@
   async function saveForSlackReview() {
     saveProblem = null
     if (!current) return
-    const base = current.match.fileName.replace(/\.wpilog$/i, '')
+    const base = current.match.fileName.replace(/\.(wpilog|hoot)$/i, '')
     try { saveProblem = await saveForSlack(`${base}.report`, `${base}.card.png`, reviewCardOf(current)) } catch (error) { saveProblem = `Save for Slack failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   // Print shows the report instead of the app, in Match review (with a log loaded), Foresight and Session (with a
@@ -742,7 +742,7 @@
       {#if modeNow && !readOnly}<ModeLine text={modeNow.text} mode={modeNow.mode} byHand={modeNow.byHand} onChange={(m) => chooseMode(modeNow.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />{/if}
       <p class="meta">
         <code>{current.match.fileName}</code>{#each current.match.ds as d (d.fileName)}{' + '}<code>{d.fileName}</code>{/each} ·
-        {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}
+        {fmtDuration(current)}{#if !current.report.noRules}{' '}· code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}{/if}
         {#if isUncommitted(current.match.build.dirty)}<strong class="dirty">(uncommitted changes)</strong>{/if}
       </p>
       <details class="more">
@@ -785,7 +785,7 @@
   <section class="empty">
     <h2>How to use it</h2>
     <ol>
-      <li>Get the match's log off the robot with AdvantageScope ("Download Logs"). For Phoenix <code>.hoot</code> files, export them as <code>.wpilog</code> in AdvantageScope first.</li>
+      <li>Get the match's log off the robot with AdvantageScope ("Download Logs"). Phoenix <code>.hoot</code> files: add them to the Library in the desktop app (they come with the robot's logs, or from a folder). Match review reads them with CTRE's converter and shows each device in the Devices tab; rules don't read <code>.hoot</code> data yet.</li>
       <li>Drop the <code>.wpilog</code> here. Add the Driver Station's <code>.dslog</code> and <code>.dsevents</code> for the same match if you have them (on the DS laptop in <code>C:\Users\Public\Documents\FRC\Log Files</code>).</li>
       <li>Read the <strong>Match</strong> tab worst first: red cost or nearly cost a match, amber is a margin eroding, grey is context.</li>
       <li>Open the <strong>Power</strong> tab for brownouts and battery health.</li>
