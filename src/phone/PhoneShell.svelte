@@ -29,7 +29,7 @@
   <main class="setup">
     <h1>Hindsight</h1>
     {#if s.step === 'signed-out'}
-      <p>What your team's laptops found and marked at this event, from your team's Google Drive folder. Sign in with the Google account that can open that folder. This app only reads it.</p>
+      <p>What your team's laptops found and marked at this event, and any of the team's logs, from your team's Google Drive folder. Sign in with the Google account that can open that folder. This app only reads it.</p>
       <button class="primary" onclick={() => s.signIn()} disabled={s.busy}>{s.busy ? 'Signing in…' : 'Sign in with Google'}</button>
     {:else}
       <p>Choose your team's Hindsight folder: the one your laptops sync to.</p>

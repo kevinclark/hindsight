@@ -618,7 +618,7 @@
 <div class="top" class:compact={mode === 'review' && !!current}>
 <header class:screen-only={reportable}>
   <h1>Hindsight</h1>
-  {#if readOnly}<p class="tag">What the team's laptops found and marked at this event.</p>{:else if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
+  {#if readOnly}<p class="tag">What the team's laptops found and marked at this event, and any team log from the Library.</p>{:else if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
 </header>
 
 {#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
