@@ -149,7 +149,15 @@ jobs:
           HINDSIGHT_GOOGLE_CLIENT_SECRET: ${{ secrets.HINDSIGHT_GOOGLE_CLIENT_SECRET }}
         run: |
           npm run build:app
-          npx electron-builder --linux AppImage --x64 --publish never
+          # electron-builder fetches its AppImage tools from GitHub Releases and does not retry; on 2026-11-08 those
+          # downloads answered 504 about half the time. Files fetched on a failed try stay in its cache, so each retry
+          # needs only the rest.
+          for try in 1 2 3 4 5; do
+            npx electron-builder --linux AppImage --x64 --publish never && break
+            if [ "$try" = 5 ]; then exit 1; fi
+            echo "::warning::Linux packaging failed (try $try of 5); retrying in 20 s"
+            sleep 20
+          done
           test -e release/latest-linux.yml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
