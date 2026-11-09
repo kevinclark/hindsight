@@ -18,7 +18,7 @@ describe('rowHeadline', () => {
     expect(rowHeadline(base({ about: null })).about).toBe('')
   })
   it('takes the key only from measured, with and without a threshold', () => {
-    expect(rowHeadline(base({ measured: [{ label: 'lowest voltage while enabled', value: 6.26, unit: 'V', threshold: 7 }] })).key).toBe('6.26 V lowest voltage while enabled (line 7 V)')
+    expect(rowHeadline(base({ measured: [{ label: 'lowest voltage while enabled', value: 6.26, unit: 'V', threshold: 7 }] })).key).toBe('6.26 V (line 7 V)')
     expect(rowHeadline(base({ measured: [{ label: 'times', value: 3, unit: '' }] })).key).toBe('3 times')
     expect(rowHeadline(base({ evidence: { 'devices dropped': 2 } })).key).toBe('')
   })

@@ -104,7 +104,7 @@
         {#if wrongMark}<span class="badge known-badge">Not a real problem</span>{:else if realMark}<span class="badge real-badge">Real problem</span>{/if}
         {#if !wrongMark && issue?.status === 'known'}<span class="badge known-badge">Known</span>{/if}
         {#if fixedLater && !wrongMark}<span class="badge known-badge">{issue?.when ? 'Fixed after this match' : 'Fixed (date unknown)'}</span>{/if}
-        <b>{head.lead}</b>{#each rest as part (part)}{' · '}{part}{/each}
+        <b>{head.lead}</b>{#each rest as part, i (i)}{' · '}{part}{/each}
         {#if nested && finding.explainedBy}<span class="why">↳ {via ? `explained by ${via}: ` : ''}{finding.explainedBy.why}</span>{/if}
         {#if note}<span class="why">↳ {note}</span>{/if}
         {#if finding.demoted}<span class="why">↳ amber, not red: marked not a real problem in {finding.demoted.match}{finding.demoted.reason ? `: ${finding.demoted.reason}` : ''}</span>{/if}

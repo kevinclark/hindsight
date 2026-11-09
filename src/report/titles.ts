@@ -29,12 +29,12 @@ function compactWhen(when: string | null): string {
   return [t[2] ? `run ${t[2]} ·` : '', t[1], mode].filter(Boolean).join(' ')
 }
 
-/** What a finding's closed row shows: the rule's short title, what it is about, the judged number (measured only), and when. The long sentence is `finding.title`, kept inside the opened row. */
+/** What a finding's closed row shows: the rule's short title, what it is about, the judged number (measured only; its label only when it has no line, since the line already says what it is), and when. The long sentence is `finding.title`, kept inside the opened row. */
 export function rowHeadline(f: Finding): { lead: string; about: string; key: string; time: string } {
   const lead = makerOf(f.rule)?.title ?? cardTitle(f.title)
   const about = f.about && !lead.toLowerCase().includes(f.about.toLowerCase()) ? f.about : ''
   const m = f.measured?.[0]
   const unit = m?.unit ? ` ${m.unit}` : ''
-  const key = m ? `${m.value}${unit}${m.label ? ` ${m.label}` : ''}${m.threshold !== undefined ? ` (line ${m.threshold}${unit})` : ''}` : ''
+  const key = !m ? '' : m.threshold !== undefined ? `${m.value}${unit} (line ${m.threshold}${unit})` : `${m.value}${unit}${m.label ? ` ${m.label}` : ''}`
   return { lead, about, key, time: compactWhen(f.when) }
 }
