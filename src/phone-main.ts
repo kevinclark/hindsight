@@ -4,12 +4,14 @@
  */
 import { mount } from 'svelte'
 
-declare const __PHONE_BUILD__: 'native' | 'fixture' | 'selftest'
+declare const __PHONE_BUILD__: 'native' | 'fixture' | 'selftest' | 'measure'
 
 const target = document.getElementById('app')!
 target.classList.add('phone')
 
-if (__PHONE_BUILD__ === 'fixture') {
+if (__PHONE_BUILD__ === 'measure') {
+  await (await import('./phone/measure.ts')).runMeasure(target)
+} else if (__PHONE_BUILD__ === 'fixture') {
   ;(await import('./phone-fixture.ts')).installFixture()
   const { default: App } = await import('./App.svelte')
   mount(App, { target })
