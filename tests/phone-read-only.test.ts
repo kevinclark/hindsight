@@ -78,3 +78,16 @@ describe('read-only mode', () => {
     expect(store).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('read-only Match review of a whole log (the phone opens one from the Library)', () => {
+  it('draws no mark buttons and no Debug this without a writer; with one, it does', async () => {
+    const { analyzeFixture } = await import('./helpers/load.ts')
+    const MatchTab = (await import('../src/ui/MatchTab.svelte')).default
+    const analysis = analyzeFixture('brownout').analyses[0]
+    const ro = render(MatchTab, { props: ({ analysis, issues: new Map() }) as never }).body
+    expect(controls(ro)).toEqual([])
+    expect(ro).toMatch(/power\/brownout|Brownout/i) // the findings themselves are there
+    const rw = render(MatchTab, { props: ({ analysis, issues: new Map(), onMark: () => {}, debug: { marks: () => ({}), write: () => {}, role: null, setRole: () => {} } }) as never }).body
+    expect(controls(rw).length).toBeGreaterThan(1)
+  })
+})

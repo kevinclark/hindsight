@@ -28,6 +28,8 @@
   import type { Place } from './now/now.ts'
   import { dateText } from './session/day.ts'
   import LibraryView from './ui/LibraryView.svelte'
+  import PhoneLibrary from './ui/PhoneLibrary.svelte'
+  import type { OpenedFile } from './hub/browser-hub.ts'
   import { hub, phone, LibraryFile } from './hub/bridge.ts'
   import { keepHistory } from './triage/keeper.ts'
   import SummaryReview from './ui/SummaryReview.svelte'
@@ -101,7 +103,7 @@
     { id: 'now', label: 'Now' } as const,
     { id: 'review', label: 'Match review' }, { id: 'session', label: 'Session' },
     ...(readOnly ? [] : [{ id: 'foresight', label: 'Robot check' } as const]),
-    ...(hub() ? [{ id: 'library', label: 'Library' } as const] : []),
+    ...(hub() || readOnly ? [{ id: 'library', label: 'Library' } as const] : []),
   ] as const
   const TOOLS = [
     { id: 'wizard', label: 'Limits wizard', hint: 'measure a supply current limit with the robot' },
@@ -419,7 +421,8 @@
     const t = (ms: number | null) => (ms === null ? null : new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
     return f ? { read: t(f.readAt), pushed: t(f.newestFile) } : null
   })
-  function openSummary(m: MatchSummary) { reviewing = m; mode = 'review' }
+  // A summary from the board or Session: it takes the place of a log opened from the phone's Library.
+  function openSummary(m: MatchSummary) { if (readOnly) clearAll(); reviewing = m; mode = 'review' }
 
   function saveHistory() {
     downloadText(HISTORY_FILE_NAME, serializeHistory(history), 'application/x-ndjson')
@@ -454,26 +457,44 @@
     try {
       const started = performance.now()
       const added: InputFile[] = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
-      // The same file dropped twice replaces the first copy.
-      const sameFile = (a: InputFile, b: InputFile) => a.name === b.name && a.bytes.length === b.bytes.length
-      inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
-      const read = performance.now()
-      const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored], history)
-      if (result.history.length) keep(mergeHistory(history, result.history), false)
-      if (pass !== passes) return // a later pass (another code folder, another robot) has the newer answer
-      const done = performance.now()
-      analyses = result.analyses
-      problems = result.problems
-      const newest = result.analyses.findIndex((a) => added.some((f) => f.name === a.match.fileName))
-      selected = Math.max(0, newest)
-      const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
-      lastLoad = { files: files.length, readMs: read - started, analyzeMs: done - read, heapMB: mem ? mem.usedJSHeapSize / 2 ** 20 : null }
+      await analyzeAdded(added, files.length, started, pass)
     } catch (error) {
       problems = [String(error)]
     } finally {
       if (pass === passes) busy = false
     }
   }
+
+  /** The phone's Library opened a log: its bytes as downloaded (never copied into a File), and only that log held. */
+  async function openFromPhone(files: OpenedFile[]) {
+    mode = 'review'
+    tab = 'match'
+    reviewing = null
+    inputs = []
+    busy = true
+    const pass = ++passes
+    await new Promise((r) => setTimeout(r, 30)) // let "Reading…" paint
+    try { await analyzeAdded(files, files.length, performance.now(), pass) } catch (error) { problems = [String(error)] } finally { if (pass === passes) busy = false }
+  }
+
+  /** Read the added files with those already open; the newest becomes the shown match. */
+  async function analyzeAdded(added: InputFile[], count: number, started: number, pass: number) {
+    // The same file dropped twice replaces the first copy.
+    const sameFile = (a: InputFile, b: InputFile) => a.name === b.name && a.bytes.length === b.bytes.length
+    inputs = [...inputs.filter((old) => !added.some((n) => sameFile(old, n))), ...added]
+    const read = performance.now()
+    const result = await analyzeFilesWithCode(inputs, codeFolder.current, chosenRobot, [...PROFILES, ...stored], history)
+    if (result.history.length) keep(mergeHistory(history, result.history), false)
+    if (pass !== passes) return // a later pass (another code folder, another robot) has the newer answer
+    const done = performance.now()
+    analyses = result.analyses
+    problems = result.problems
+    const newest = result.analyses.findIndex((a) => added.some((f) => f.name === a.match.fileName))
+    selected = Math.max(0, newest)
+    const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
+    lastLoad = { files: count, readMs: read - started, analyzeMs: done - read, heapMB: mem ? mem.usedJSHeapSize / 2 ** 20 : null }
+  }
+
 
   // The student picked another robot for this log: run it again with that profile.
   function setRobot(id: string) {
@@ -626,10 +647,10 @@
   <ForesightView signal={todaySig} {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>{/if}
-{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{/if}
+{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{:else if phoneHub && mode === 'library'}<div><PhoneLibrary hub={phoneHub} onOpen={openFromPhone} /></div>{/if}
 <div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={readOnly ? undefined : writeBoard} {readOnly} onOpenSummary={readOnly ? openSummary : undefined} bind:summariesOut={summaries} onOpen={openFromSession} findLogs={findInLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} />{#if readOnly}<div class="screen-only phone-setup"><TbaFields /></div>{/if}</div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
-{#if readOnly}
+{#if readOnly && !current && !busy}
   {@const ev = latestEventSession(sessions)}
   {@const shownSummary = reviewing ?? ev?.matches.at(-1) ?? null}
   {#if ev}
@@ -645,7 +666,10 @@
     <SummaryReview summary={shownSummary} issues={marks.issues} wrong={wrongHere(ref, marks)} real={realHere(ref, marks)} laptop={phoneFrom.get(shownSummary.fileName)?.laptop ?? null} olderRead={phoneFrom.get(shownSummary.fileName)?.olderRead ?? null} mapStale={summaryMapStale(shownSummary, history)} />
   {/if}
 {:else}
-{#if !current || dragging}
+{#if readOnly && (current || busy)}
+  <p class="phone-line">Opened from the Library{#if busy}: reading…{/if} · <button class="link" onclick={clearAll}>Back to this event's matches</button></p>
+{/if}
+{#if !readOnly && (!current || dragging)}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>
   <label class="button">
     <input type="file" multiple accept=".wpilog,.dslog,.dsevents,.jsonl" onchange={chosen} />
@@ -665,7 +689,7 @@
 {#each problems as p (p)}<p class="problem" role="alert">{p}</p>{/each}
 
 {#if historyNote}<p class="history screen-only" role="status">{historyNote}</p>{/if}
-{#if history.length}
+{#if history.length && !readOnly}
   <p class="history">
     Known issues: {issues.size} tracked{#if marks.wrong.size}{' · '}{marks.wrong.size} marked not a real problem{/if}{#if marks.real.size}{' · '}{marks.real.size} marked a real problem{/if}{#if unsaved}{' · '}<strong>changes not saved to a file yet</strong>{/if}
     <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button>
@@ -692,7 +716,7 @@
       {#if ascopeTarget}
         <button class="button choose" title="Open this log in AdvantageScope" disabled={ascopeBusy} onclick={openInAdvantageScope}>Open in AdvantageScope</button>
       {/if}
-      <label class="button choose">
+      {#if !readOnly}<label class="button choose">
         <input type="file" multiple accept=".wpilog,.dslog,.dsevents,.jsonl" onchange={chosen} />
         Choose logs…
       </label>
@@ -700,10 +724,10 @@
         { id: 'claude', label: 'Download for Claude', hint: 'findings.json: findings, evidence and short data windows', onselect: downloadForClaude },
         { id: 'slack', label: 'Save for Slack', hint: 'print dialog (choose Save as PDF) and a phone-sized card (PNG)', onselect: saveForSlackReview },
         { id: 'clear', label: 'Clear all', hint: 'forget the loaded logs', onselect: clearAll },
-      ]} />
+      ]} />{/if}
     </span>
     <div class="rest">
-      {#if modeNow}<ModeLine text={modeNow.text} mode={modeNow.mode} byHand={modeNow.byHand} onChange={(m) => chooseMode(modeNow.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />{/if}
+      {#if modeNow && !readOnly}<ModeLine text={modeNow.text} mode={modeNow.mode} byHand={modeNow.byHand} onChange={(m) => chooseMode(modeNow.id, m)} hint="Changes how this session's logs are grouped and counted (matches or logs, pit runs, trends). Each log is judged from its own field data." />{/if}
       <p class="meta">
         <code>{current.match.fileName}</code>{#each current.match.ds as d (d.fileName)}{' + '}<code>{d.fileName}</code>{/each} ·
         {fmtDuration(current)} · code <code>{current.match.build.sha.slice(0, 7) || '?'}</code> on {current.match.build.branch || '?'}
@@ -714,10 +738,10 @@
         <p class="meta">
           {#if !namesRobot(current.match.profileChoice)}No profile is for this robot ·{:else}{#if hasPin(current.match.profile.code)}Code as of {current.match.profile.code.branch} <code>{current.match.profile.code.sha}</code>{:else}Code not known{/if}
           ({HOW_WORDS[current.match.profileChoice.how]}) ·{/if}
-          <label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
+          {#if !readOnly}<label>use <select onchange={(e) => setRobot((e.currentTarget as HTMLSelectElement).value)}>
             <option value="auto" selected={current.match.profileChoice.how !== 'chosen by you'}>automatic</option>
             <RobotOptions groups={robotChoices(PROFILES, stored, teamNow(), namesRobot(current.match.profileChoice) ? [profileId(current.match.profile)] : [])} selectedId={current.match.profileChoice.how === 'chosen by you' ? profileId(current.match.profile) : null} />
-          </select></label>
+          </select></label>{/if}
         </p>
       </details>
       {#if current.report.droppedInShortRuns}<p class="meta" data-short-runs>{current.report.droppedInShortRuns.length} performance finding{current.report.droppedInShortRuns.length === 1 ? ' was' : 's were'} not shown: {current.report.droppedInShortRuns.length === 1 ? 'it fell' : 'they fell'} in a run under {SHORT_RUN_SECONDS} s, too short to show a margin or a rate ({[...new Set(current.report.droppedInShortRuns)].join(', ')}). Faults are always shown.</p>{/if}
@@ -735,7 +759,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={mark} debug={debug} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>
@@ -855,6 +879,8 @@
     .modes { flex-wrap: nowrap; overflow-x: auto; }
     .modes button { flex: 1 0 auto; }
   }
+  /* The phone's four places in two rows: a tab scrolled out of sight is one nobody finds (it hid "Now" at 375 px). */
+  :global(#app.phone) .modes { display: grid; grid-template-columns: 1fr 1fr; overflow: visible; }
   .phone-line.warn { color: var(--warning); }
   .phone-setup { margin-top: 2rem; }
   .pick { display: flex; gap: 0.4rem; margin: 0.25rem 0 0.75rem; overflow-x: auto; padding-bottom: 0.2rem; }

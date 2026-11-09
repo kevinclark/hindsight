@@ -15,16 +15,22 @@ export interface PhoneSetup {
   token(refresh?: boolean): Promise<string>
   /** How requests reach Drive (the iPhone app: its native HTTP). The page's own fetch when absent. */
   fetch?: typeof fetch
+  /**
+   * How whole logs are downloaded (the iPhone app: the WebView's own fetch, so a big log is never carried across the
+   * native bridge as base64). Without it the Library lists logs but cannot open them.
+   */
+  mediaFetch?: typeof fetch
 }
 
 /** Install the phone's hub over Drive. Call before mounting App. */
 export function installPhone(setup: PhoneSetup): BrowserHub {
-  return installPhoneOver(new DriveReader({ rootId: setup.rootId, token: setup.token, ...(setup.fetch ? { fetch: setup.fetch } : {}) }))
+  const reader = (f?: typeof fetch) => new DriveReader({ rootId: setup.rootId, token: setup.token, ...(f ? { fetch: f } : {}) })
+  return installPhoneOver(reader(setup.fetch), setup.mediaFetch ? reader(setup.mediaFetch) : undefined)
 }
 
 /** The same over any read-only store (the demo fixture, tests). */
-export function installPhoneOver(store: ReadStore): BrowserHub {
-  const hub = new BrowserHub({ store, cache: indexedDbCache(), version: VERSION })
-  ;(window as unknown as { hindsightPhone: BrowserHub }).hindsightPhone = hub
+export function installPhoneOver(store: ReadStore, media?: DriveReader): BrowserHub {
+  const hub = new BrowserHub({ store, cache: indexedDbCache(), version: VERSION, ...(media ? { media } : {}) })
+  ;(globalThis as unknown as { hindsightPhone: BrowserHub }).hindsightPhone = hub
   return hub
 }

@@ -6,11 +6,12 @@
   import { installPhone } from '../phone.ts'
   import { clearIndexedDbCache } from '../hub/phone-cache.ts'
   import { PhoneSession } from './session.svelte.ts'
-  import { native, viaNative } from './runtime.ts'
+  import { native, viaNative, webFetch } from './runtime.ts'
 
   const s = new PhoneSession({
     native, fetch: viaNative, store: localStorage,
-    install: (folder, token, fetch) => installPhone({ rootId: folder.id, token, fetch }),
+    // Requests go through native HTTP; whole logs through the WebView's own fetch (never base64 across the bridge).
+    install: (folder, token) => installPhone({ rootId: folder.id, token, fetch: viaNative, mediaFetch: webFetch }),
     clearCopies: () => clearIndexedDbCache(),
     reload: () => location.reload(),
   })

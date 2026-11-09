@@ -16,9 +16,8 @@ if (__PHONE_BUILD__ === 'measure') {
   const { default: App } = await import('./App.svelte')
   mount(App, { target })
 } else {
-  const { native, viaNative } = await import('./phone/runtime.ts')
+  const { native, viaNative, webFetch } = await import('./phone/runtime.ts')
   const { routedFetch } = await import('./phone/native-fetch.ts')
-  const webFetch = globalThis.fetch.bind(globalThis)
   globalThis.fetch = routedFetch(webFetch, viaNative)
   if (__PHONE_BUILD__ === 'selftest') await (await import('./phone/selftest.ts')).runSelftest(native, viaNative, webFetch, target)
   else {

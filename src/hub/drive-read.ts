@@ -107,6 +107,37 @@ export class DriveReader {
     return (await this.children(parentId)).filter((f) => f.mimeType === FOLDER).map((f) => ({ id: f.id, name: f.name })).sort((a, b) => a.name.localeCompare(b.name))
   }
 
+  /**
+   * A whole file by one plain GET (no Range: Drive is reported to refuse Range on cross-origin requests from a page), its
+   * bytes counted as they arrive into one buffer of the file's size, so a big log is held once. `signal` stops it; a stopped
+   * or failed download starts again from zero.
+   */
+  async downloadWhole(path: string, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal } = {}): Promise<Uint8Array> {
+    opts.signal?.throwIfAborted()
+    const f = await this.find(path)
+    if (!f) throw new Error(`${path} not found`)
+    this.calls.download++
+    const total = Number(f.size ?? 0)
+    const res = await this.request(`${API}/files/${f.id}?alt=media&supportsAllDrives=true`, { signal: opts.signal })
+    const out = new Uint8Array(total)
+    let at = 0
+    const take = (chunk: Uint8Array) => {
+      if (at + chunk.length > total) throw new Error(`${path} is larger than Drive said (${total} bytes)`)
+      out.set(chunk, at)
+      at += chunk.length
+      opts.onProgress?.(at, total)
+    }
+    if (!res.body) take(new Uint8Array(await res.arrayBuffer()))
+    else for (const reader = res.body.getReader(); ; ) {
+      if (opts.signal?.aborted) { await reader.cancel(); opts.signal.throwIfAborted() }
+      const { done, value } = await reader.read()
+      if (done) break
+      take(value)
+    }
+    if (at !== total) throw new Error(`${path}: got ${at} of ${total} bytes`)
+    return out
+  }
+
   protected async fetchRange(f: DriveFile, start: number, end: number): Promise<Uint8Array> {
     this.calls.download++
     const res = await this.request(`${API}/files/${f.id}?alt=media&supportsAllDrives=true`, { headers: { Range: `bytes=${start}-${end - 1}` } })
@@ -185,7 +216,7 @@ export class DriveReader {
       try {
         res = await this.fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` } })
       } catch (e) {
-        if (!retryNetwork || attempt >= RETRIES - 1) throw e
+        if (init.signal?.aborted || !retryNetwork || attempt >= RETRIES - 1) throw e
         await this.sleep(2 ** attempt * 500)
         continue
       }

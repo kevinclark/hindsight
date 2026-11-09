@@ -17,7 +17,7 @@ export interface SessionDeps {
   fetch: Fetch
   store: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
   /** Put the read-only hub over this folder (src/phone.ts `installPhone`). */
-  install(folder: TeamFolder, token: (refresh?: boolean) => Promise<string>, fetch: Fetch): void
+  install(folder: TeamFolder, token: (refresh?: boolean) => Promise<string>): void
   /** Forget the copies of the team's files this phone keeps (the IndexedDB cache). */
   clearCopies(): Promise<void>
   /** Start the pages over: what they hold came from the old folder or account. */
@@ -96,7 +96,7 @@ export class PhoneSession {
 
   private open(folder: TeamFolder): void {
     this.folder = folder
-    this.deps.install(folder, this.token, this.deps.fetch)
+    this.deps.install(folder, this.token)
     this.step = 'ready'
   }
 }
