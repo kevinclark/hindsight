@@ -3,7 +3,7 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { CHECK_TIMEOUT_MS, Updater, type AutoUpdaterLike, type UpdaterEnv } from '../electron/updater.ts'
-import { STALL_ABORT_MS, step } from '../src/hub/update-state.ts'
+import { STALL_ABORT_MS, chip, step } from '../src/hub/update-state.ts'
 import type { UpdateState } from '../src/hub/update-state.ts'
 
 const V = '0.1.100'
@@ -17,6 +17,16 @@ class FakeAuto extends EventEmitter implements AutoUpdaterLike {
   /** What the next checkForUpdates does: emit events and resolve, or hang. */
   answer: 'available' | 'none' | 'hang' | 'null' = 'available'
   checks = 0
+  downloads = 0
+  /** Like electron-updater: a download joins one still in flight, and a cancelled one ends only when settle() is called. */
+  inFlight: Promise<unknown> | null = null
+  settle: (() => void) | null = null
+  async downloadUpdate() {
+    if (this.inFlight) return this.inFlight
+    this.downloads++
+    this.inFlight = new Promise((_, reject) => { this.settle = () => reject(new Error('cancelled')) }).finally(() => { this.inFlight = null })
+    return this.inFlight
+  }
   async checkForUpdates() {
     this.checks++
     if (this.answer === 'hang') return new Promise<never>(() => {})
@@ -24,12 +34,12 @@ class FakeAuto extends EventEmitter implements AutoUpdaterLike {
     this.emit('checking-for-update')
     if (this.answer === 'none') { this.emit('update-not-available', { version: V }); return { downloadPromise: null } }
     this.emit('update-available', { version: N })
-    return { cancellationToken: { cancel: () => { this.cancelled++ } }, downloadPromise: new Promise(() => {}) }
+    return { isUpdateAvailable: true, cancellationToken: { cancel: () => { this.cancelled++ } }, downloadPromise: null }
   }
   quitAndInstall(a?: boolean, b?: boolean) { this.installs.push([a, b]) }
 }
 
-function setup(o: { platform?: string; job?: string | null; send?: (s: UpdateState) => void } = {}) {
+function setup(o: { platform?: string; job?: string | null; send?: (s: UpdateState) => void; jobNow?: () => string | null } = {}) {
   let t = 1_762_000_000_000
   const auto = new FakeAuto()
   const native = o.platform === 'darwin' ? new EventEmitter() : null
@@ -41,7 +51,7 @@ function setup(o: { platform?: string; job?: string | null; send?: (s: UpdateSta
   const sent: UpdateState[] = []
   const lines: string[] = []
   const u = new Updater(env, {
-    log: (l) => lines.push(l), send: o.send ?? ((s) => sent.push(s)), runningJob: () => o.job ?? null, now: () => t,
+    log: (l) => lines.push(l), send: o.send ?? ((s) => sent.push(s)), runningJob: o.jobNow ?? (() => o.job ?? null), now: () => t,
   })
   return { u, auto, native, sent, lines, advance: (ms: number) => { t += ms }, at: () => t }
 }
@@ -184,5 +194,70 @@ describe('[US-18] never throws into electron-updater', () => {
     expect(() => s.auto.emit('update-downloaded', { version: N })).not.toThrow()
     expect(s.u.current().kind).toBe('ready')
     expect(s.lines.some((l) => l.includes('window gone'))).toBe(true)
+  })
+})
+
+describe('[US-19] the user\'s own jobs come first', () => {
+  test('[US-19] a release found while a job runs waits, and nothing downloads until the job ends', async () => {
+    let job: string | null = 'Syncing'
+    const s = setup({ jobNow: () => job })
+    s.u.check(); await flush()
+    expect(s.u.current()).toMatchObject({ kind: 'waiting', next: N, job: 'Syncing' })
+    expect(s.auto.downloads).toBe(0)
+    // electron-updater must not download on its own either: only the updater starts one.
+    expect(s.auto.autoDownload).toBe(false)
+    s.advance(5000); s.u.tick(); await flush()
+    expect(s.auto.downloads).toBe(0)
+    job = null
+    s.advance(5000); s.u.tick(); await flush()
+    expect(s.u.current().kind).toBe('downloading')
+    expect(s.auto.downloads).toBe(1)
+    expect(s.auto.checks).toBe(2)
+  })
+  test('[US-19] a job that starts mid-download stops it; the download starts again after', async () => {
+    let job: string | null = null
+    const s = setup({ jobNow: () => job })
+    s.u.check(); await flush()
+    expect(s.auto.downloads).toBe(1)
+    job = 'Pulling logs off the robot'
+    s.advance(5000); s.u.tick()
+    expect(s.auto.cancelled).toBe(1)
+    expect(s.u.current()).toMatchObject({ kind: 'waiting', job: 'Pulling logs off the robot' })
+    s.auto.emit('error', new Error('cancelled'))
+    expect(s.u.current().kind).toBe('waiting')
+    job = null
+    // The cancelled download hasn't ended yet: no check, or the new download would join it.
+    s.advance(5000); s.u.tick(); await flush()
+    expect(s.u.current().kind).toBe('waiting')
+    expect(s.auto.checks).toBe(1)
+    s.auto.settle!(); await flush()
+    s.advance(5000); s.u.tick(); await flush()
+    expect(s.u.current().kind).toBe('downloading')
+    expect(s.auto.downloads).toBe(2)
+  })
+  test('[US-19] the waiting label names the job in plain words and asks nothing', () => {
+    expect(chip({ kind: 'waiting', version: V, next: N, job: 'Syncing' }, 0, null)).toMatchObject({ text: `${N} waits for the Sync`, action: null, accent: false })
+    expect(chip({ kind: 'waiting', version: V, next: N, job: 'Downloading' }, 0, null).text).toBe(`${N} waits for the log download`)
+    expect(chip({ kind: 'waiting', version: V, next: N, job: 'Adding logs' }, 0, null).text).toBe(`${N} waits for adding logs`)
+  })
+  test('[US-19] a cancelled download that never ends stops blocking checks after STALL_ABORT_MS', async () => {
+    let job: string | null = null
+    const s = setup({ jobNow: () => job })
+    s.u.check(); await flush()
+    job = 'Syncing'; s.advance(5000); s.u.tick()
+    job = null
+    for (let i = 0; i < STALL_ABORT_MS / 5000 - 1; i++) { s.advance(5000); s.u.tick(); await flush() }
+    expect(s.auto.checks).toBe(1)
+    s.advance(5000); s.u.tick(); await flush()
+    expect(s.auto.checks).toBe(2)
+  })
+  test('[US-19] a check from waiting that never answers is reported', async () => {
+    const s = setup({ job: 'Syncing' })
+    s.u.check(); await flush()
+    expect(s.u.current().kind).toBe('waiting')
+    s.auto.answer = 'hang'
+    expect(s.u.check()).toBe(true)
+    await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS)
+    expect(s.u.current()).toMatchObject({ kind: 'failed', reason: expect.stringContaining("didn't answer") })
   })
 })
