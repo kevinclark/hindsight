@@ -33,13 +33,15 @@ The iPhone app shows what the team's laptops found and marked at the current eve
 Drive and makes no marks.
 
 - **Google sign-in** asks for `drive.readonly`: Google words it as seeing all of your Drive files. The app reads only the
-  team folder you choose: the files the laptops share there for the phone (each laptop's match summaries for the event
-  and its triage marks), never the logs and never the laptops' lists. Sign-in happens in Apple's sign-in sheet; the app
+  team folder you choose (and, while you choose it, the names of the folders you browse): the files the laptops share
+  there for the phone (each laptop's match summaries for the event and its triage marks), never the logs and never the
+  laptops' lists. Sign-in happens in Apple's sign-in sheet; the app
   never sees your Google password.
 - **What stays on the phone:** the sign-in's refresh token in the iOS Keychain (kept for this device only: it does not move
   to a new phone); the team folder's id and name, the copies of the files it read (so it opens with the last
   copy when there is no signal), and the team number, The Blue Alliance read key and Nexus Pull API key you type, all in
-  the app's own storage. Deleting the app removes them all; Sign out removes the refresh token at once.
+  the app's own storage. Sign out removes the refresh token, the team folder and the copies at once; the typed keys
+  stay until you clear them or delete the app, which removes everything.
 - **Who it talks to:** Google (sign-in and Drive), The Blue Alliance and Nexus (the schedule and queue times, with your own
   keys). Nothing else.
 

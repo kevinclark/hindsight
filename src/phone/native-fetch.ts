@@ -1,9 +1,11 @@
 /**
- * `fetch` over the app's native HTTP, and the router that decides which requests take it. Google's token endpoint answers
- * a page at capacitor://localhost with no CORS headers, so the WebView's fetch can't read it; Drive, The Blue Alliance and
- * Nexus go the same way so every request the phone makes to the outside is one path. The native side hands back the bytes
- * as they arrived, whatever the content type (Capacitor's own HTTP plugin parses any application/json answer, which would
- * break the byte-exact sha-256 check on Drive's files: HttpRequestHandler.swift, `buildResponse`).
+ * `fetch` over the app's native HTTP, and the router that decides which requests take it. Not forced by CORS: measured
+ * 2026-11-08, Google's token endpoint, Drive, The Blue Alliance and Nexus all allow capacitor://localhost, and the
+ * WebView's own fetch read the token endpoint's answer. Kept as insurance against a vendor changing that, for reads with
+ * no cache and no cookies, and so every request the phone makes to the outside is one path with one host list. The native
+ * side hands back the bytes as they arrived, whatever the content type (Capacitor's own HTTP plugin parses any
+ * application/json answer, which would break the byte-exact sha-256 check on Drive's files: HttpRequestHandler.swift,
+ * `buildResponse`).
  */
 import type { NativeHttp } from './native.ts'
 

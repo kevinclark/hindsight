@@ -1,7 +1,7 @@
 /**
- * The iPhone app's own native plugin (ios/App/App/HindsightNativePlugin.swift), as the page sees it. Three jobs the WebView
- * can't do: HTTP that CORS doesn't apply to and that hands back raw bytes, Google's sign-in in ASWebAuthenticationSession
- * (Google refuses sign-in inside a WKWebView), and the Keychain. Bodies cross the bridge as base64.
+ * The iPhone app's own native plugin (ios/App/App/HindsightNativePlugin.swift), as the page sees it. Google's sign-in in
+ * ASWebAuthenticationSession (Google refuses sign-in inside a WKWebView), the Keychain, and HTTP to a fixed list of hosts
+ * that hands back raw bytes (why: src/phone/native-fetch.ts). Bodies cross the bridge as base64.
  */
 import { registerPlugin } from '@capacitor/core'
 

@@ -77,6 +77,24 @@ export function indexedDbCache(dbName = 'hindsight-phone'): TextCache {
   }
 }
 
+/** Empty the phone's copies (on sign out). Clears the store rather than deleting the database, which an open page would block. */
+export async function clearIndexedDbCache(dbName = 'hindsight-phone'): Promise<void> {
+  await new Promise<void>((resolve) => {
+    try {
+      const req = indexedDB.open(dbName, 1)
+      req.onupgradeneeded = () => { try { req.result.createObjectStore(STORE, { keyPath: 'path' }) } catch { /* cleared below or nothing kept */ } }
+      req.onsuccess = () => {
+        try {
+          const tx = req.result.transaction(STORE, 'readwrite')
+          tx.objectStore(STORE).clear()
+          tx.oncomplete = tx.onerror = tx.onabort = () => { req.result.close(); resolve() }
+        } catch { resolve() }
+      }
+      req.onerror = req.onblocked = () => resolve()
+    } catch { resolve() }
+  })
+}
+
 const enc = new TextEncoder()
 const dec = new TextDecoder()
 

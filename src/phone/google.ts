@@ -14,6 +14,13 @@ import type { HindsightNative } from './native.ts'
 /** Google Cloud project hindsight-512414, iOS client for io.github.kevinclark.hindsight. */
 export const GOOGLE_IOS_CLIENT_ID = '948803611909-ufa595ibhklqehal25p89de9tnaasrcf.apps.googleusercontent.com'
 const CLIENT: Client = { id: GOOGLE_IOS_CLIENT_ID }
+/**
+ * The one scope the phone asks for. drive.readonly is not declared on the consent screen (declaring it starts Google's
+ * restricted-scope verification); only `drive` is. Tried first at the first real sign-in: whatever Google answers there
+ * is pinned here and in docs/privacy.md, with no fallback at run time. Either way the phone's Drive client sends only GETs
+ * (src/hub/drive-read.ts `isReadOnlyRequest`).
+ */
+export const PHONE_SCOPE = READ_SCOPE
 const REFRESH = 'google.refresh'
 
 /** `123-abc.apps.googleusercontent.com` → `com.googleusercontent.apps.123-abc`: the scheme Google redirects an iOS client to. */
@@ -36,7 +43,7 @@ export async function signIn(native: HindsightNative, doFetch: typeof fetch): Pr
   const { verifier, challenge } = await newPkce()
   const state = randomToken(16)
   const redirect = redirectUri(CLIENT.id)
-  const { url } = await native.signIn({ url: authUrl(CLIENT, redirect, challenge, state, READ_SCOPE), scheme: reversedClientId(CLIENT.id) })
+  const { url } = await native.signIn({ url: authUrl(CLIENT, redirect, challenge, state, PHONE_SCOPE), scheme: reversedClientId(CLIENT.id) })
   const answer = new URL(url).searchParams
   if (answer.get('state') !== state) throw new Error('Google answered, but not the sign-in this app started. Try again.')
   const error = answer.get('error')

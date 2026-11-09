@@ -3,8 +3,8 @@ import Capacitor
 import AuthenticationServices
 import Security
 
-/// The app's own native plugin (src/phone/native.ts is its JavaScript side). Three things the WebView can't do:
-/// - `http`: requests CORS doesn't apply to, to a fixed list of hosts, bodies as base64 both ways and the answer's bytes
+/// The app's own native plugin (src/phone/native.ts is its JavaScript side):
+/// - `http`: requests to a fixed list of hosts (redirects elsewhere are refused; why native at all: src/phone/native-fetch.ts), bodies as base64 both ways and the answer's bytes
 ///   exactly as they arrived (Capacitor's own HTTP plugin parses any application/json answer, which would break the
 ///   sha-256 check on Drive files).
 /// - `signIn`: Google's sign-in in ASWebAuthenticationSession (Google refuses sign-in inside a WKWebView).
@@ -24,8 +24,9 @@ public class HindsightNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentica
     /// The same list as NATIVE_HOSTS in src/phone/native-fetch.ts.
     static let hosts: Set<String> = ["www.googleapis.com", "oauth2.googleapis.com", "www.thebluealliance.com", "frc.nexus"]
 
-    /// No cache and no cookies: every read asks the server, and nothing a server sets outlives the app.
-    private let session = URLSession(configuration: .ephemeral)
+    /// No cache and no cookies: every read asks the server, and nothing a server sets outlives the app. A redirect is
+    /// followed only to https on the same list, so a header (a token, a key) never goes anywhere else.
+    private let session = URLSession(configuration: .ephemeral, delegate: RedirectsOnTheList(), delegateQueue: nil)
     private var signInSession: ASWebAuthenticationSession?
 
     // MARK: HTTP
@@ -128,6 +129,18 @@ public class HindsightNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentica
         guard let query = keychainQuery(call) else { return }
         let status = SecItemDelete(query as CFDictionary)
         if status == errSecSuccess || status == errSecItemNotFound { call.resolve() } else { call.reject("Keychain delete failed (\(status))", "KEYCHAIN") }
+    }
+}
+
+final class RedirectsOnTheList: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        // nil: the redirect itself (3xx) is the answer the page gets.
+        guard let url = request.url, url.scheme == "https", let host = url.host, HindsightNativePlugin.hosts.contains(host) else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 }
 

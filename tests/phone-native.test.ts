@@ -3,7 +3,8 @@
 // the sha-256 check), everything else stays with the WebView's fetch.
 import { describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { NATIVE_HOSTS, goesNative, nativeFetch, routedFetch } from '../src/phone/native-fetch.ts'
+import { readFileSync } from 'node:fs'
+import { NATIVE_HOSTS, fromBase64, goesNative, nativeFetch, routedFetch, toBase64 } from '../src/phone/native-fetch.ts'
 import type { NativeHttp, NativeHttpRequest } from '../src/phone/native.ts'
 import { DriveReader } from '../src/hub/drive-read.ts'
 import { memoryCache, readAppendOnly } from '../src/hub/phone-cache.ts'
@@ -64,6 +65,28 @@ describe('nativeFetch', () => {
     const f = nativeFetch(fakeNative(async () => new Response('x'), seen))
     for (const u of ['http://www.googleapis.com/drive/v3/files', 'https://evil.example/x', 'https://www.googleapis.com.evil.example/x']) await expect(f(u)).rejects.toThrow(/not sent/)
     expect(seen).toEqual([])
+  })
+})
+
+describe('native bridge details', () => {
+  it('the Swift side allows exactly NATIVE_HOSTS', () => {
+    const swift = readFileSync('ios/App/App/HindsightNativePlugin.swift', 'utf8')
+    const set = /static let hosts: Set<String> = \[([^\]]*)\]/.exec(swift)?.[1] ?? ''
+    expect([...set.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort()).toEqual([...NATIVE_HOSTS].sort())
+  })
+
+  it('base64 round-trips a body larger than one encoding chunk (32 KiB)', () => {
+    const big = Uint8Array.from({ length: 0x8000 * 3 + 17 }, (_, i) => (i * 131 + 7) & 255)
+    expect(toBase64(big)).toBe(Buffer.from(big).toString('base64'))
+    expect(fromBase64(toBase64(big))).toEqual(big)
+  })
+
+  it('takes a Request with a body, as fetch does', async () => {
+    const seen: NativeHttpRequest[] = []
+    const f = nativeFetch(fakeNative(async () => new Response('ok'), seen))
+    await f(new Request('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'a=1' }))
+    expect(seen[0]).toMatchObject({ method: 'POST', headers: { 'content-type': 'text/plain' } })
+    expect(new TextDecoder().decode(unb64(seen[0].body!))).toBe('a=1')
   })
 })
 
