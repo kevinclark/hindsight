@@ -167,7 +167,7 @@ export function hub(): HubApi | undefined {
 /**
  * A log in the library as the Session view takes it: it only asks for name, size, modified time and the bytes, so the
  * bytes are fetched when asked, one log at a time, not all held at once. `beside`: the Driver Station files the library
- * attached to this robot log, read with it (`withBeside`).
+ * attached to this robot log, read with it (`readBeside`).
  */
 export class LibraryFile {
   readonly webkitRelativePath = ''
@@ -191,5 +191,16 @@ export class LibraryFile {
 /** The files read beside this one: a library log's attached Driver Station files; none for a file chosen from disk. */
 export const besideOf = (f: File): File[] => (f instanceof LibraryFile ? f.beside : [])
 
-/** Each file followed by the files read beside it, so the rules that read the Driver Station's files get them. */
-export const withBeside = (files: File[]): File[] => files.flatMap((f) => [f, ...besideOf(f)])
+/**
+ * The bytes of the files read beside this one, for the rules that read the Driver Station's files. One that can't be read
+ * (gone since the library was listed) is left out and named in `unread`: it never stops the log itself from opening.
+ */
+export async function readBeside(f: File, unread: string[]): Promise<{ name: string; bytes: Uint8Array }[]> {
+  const read = await Promise.all(besideOf(f).map(async (b) => {
+    try { return { name: b.name, bytes: new Uint8Array(await b.arrayBuffer()) } } catch (error) {
+      unread.push(`${b.name}: not read (${error instanceof Error ? error.message : String(error)}), so ${f.name} was read without it`)
+      return null
+    }
+  }))
+  return read.filter((r) => r !== null)
+}

@@ -1,7 +1,7 @@
 // Library logs named for the Session view, and found again by those names (summaries restored without their file).
 import { describe, expect, it } from 'vitest'
-import { asFile, codeSpec, draftOffers, dsFiles, findByName, libraryLinks, sessionNames } from '../src/hub/session-files.ts'
-import { besideOf, withBeside, type HubApi } from '../src/hub/bridge.ts'
+import { asFile, codeSpec, draftOffers, dsFiles, findByName, freshFiles, libraryLinks, sessionNames } from '../src/hub/session-files.ts'
+import { besideOf, readBeside, type HubApi } from '../src/hub/bridge.ts'
 import type { Entry } from '../src/hub/catalog.ts'
 import type { CodeLink, LogRecord } from '../src/hub/types.ts'
 
@@ -64,7 +64,8 @@ describe('code links of library logs', () => {
 })
 
 describe('a library log opens with its Driver Station files', () => {
-  const api = { readLog: async (path: string) => new TextEncoder().encode(path) } as unknown as HubApi
+  const gone = 'logs/2025-2026/2026-02-19/gone.dslog'
+  const api = { readLog: async (path: string) => { if (path === gone) throw new Error(`${path} is not on this computer`); return new TextEncoder().encode(path) } } as unknown as HubApi
   const att = (kind: LogRecord['kind'], path: string) => ({ type: 'log', kind, sha256: path, path, size: 2, modifiedTime: 7, recordedAt: 1 }) as LogRecord
   const robot = entry('ffffffff66', 'logs/2025-2026/2026-02-19/akit_26-02-19_q4.wpilog')
   const dslog = att('dslog', 'logs/2025-2026/2026-02-19/2026_02_19 12_00_00 Thu.dslog')
@@ -72,6 +73,7 @@ describe('a library log opens with its Driver Station files', () => {
   const elsewhere = att('dslog', 'logs/2025-2026/2026-02-19/2026_02_19 12_05_00 Thu.dslog')
   const hoot = att('hoot', 'logs/2025-2026/2026-02-19/ABC_2026-02-19_12-00-00.hoot')
   const withDs: Entry = { ...robot, attached: { dslog: [dslog, elsewhere], dsevents: [dsevents], hoot: [hoot] }, held: [robot.record.path, dslog.path, dsevents.path, hoot.path] }
+  const libraryOf = (entries: Entry[]) => ({ ...api, library: async () => ({ entries, skipped: 0, libraryDir: '', machineId: '' }) }) as unknown as HubApi
 
   it('brings the attached .dslog and .dsevents this computer holds, named by their file name; not one held only on Drive, nor hoot files', () => {
     expect(dsFiles(withDs, api).map((f) => f.name)).toEqual(['2026_02_19 12_00_00 Thu.dslog', '2026_02_19 12_00_00 Thu.dsevents'])
@@ -79,14 +81,32 @@ describe('a library log opens with its Driver Station files', () => {
   })
   it('puts them beside the robot log, which keeps the name the session knows it by, and reads each one\'s own bytes', async () => {
     const file = asFile({ entry: withDs, name: 'akit_26-02-19_q4.wpilog' }, api)
-    const all = withBeside([file])
-    expect(all.map((f) => f.name)).toEqual(['akit_26-02-19_q4.wpilog', '2026_02_19 12_00_00 Thu.dslog', '2026_02_19 12_00_00 Thu.dsevents'])
-    expect(new TextDecoder().decode(await all[1].arrayBuffer())).toBe(dslog.path)
-    expect(besideOf(all[1])).toEqual([]) // a DS file brings nothing more
+    expect(file.name).toBe('akit_26-02-19_q4.wpilog')
+    const unread: string[] = []
+    const read = await readBeside(file, unread)
+    expect(read.map((r) => [r.name, new TextDecoder().decode(r.bytes)])).toEqual([['2026_02_19 12_00_00 Thu.dslog', dslog.path], ['2026_02_19 12_00_00 Thu.dsevents', dsevents.path]])
+    expect(unread).toEqual([])
+    expect(besideOf(besideOf(file)[0])).toEqual([]) // a DS file brings nothing more
   })
-  it('a file chosen from disk, or a log with nothing attached, comes alone', () => {
+  it('a DS file that can no longer be read is left out and named, and never stops the log', async () => {
+    const lost = att('dslog', gone)
+    const file = asFile({ entry: { ...withDs, attached: { ...withDs.attached, dslog: [lost] }, held: [...withDs.held!, gone] }, name: 'q4.wpilog' }, api)
+    const unread: string[] = []
+    expect((await readBeside(file, unread)).map((r) => r.name)).toEqual(['2026_02_19 12_00_00 Thu.dsevents'])
+    expect(unread).toEqual(['gone.dslog: not read (logs/2025-2026/2026-02-19/gone.dslog is not on this computer), so q4.wpilog was read without it'])
+  })
+  it('a file chosen from disk, or a log with nothing attached, comes alone', async () => {
+    expect(besideOf(new File([new Uint8Array(1)], 'q5.wpilog'))).toEqual([])
+    expect(await readBeside(asFile({ entry: a, name: 'akit_26-02-19_q1.wpilog' }, api), [])).toEqual([])
+  })
+  it('a log kept since an earlier read picks up DS files attached since, under the name it was given; other files stay as they were', async () => {
+    const before = asFile({ entry: robot, name: 'Log_1-ffffffff.wpilog' }, api)
     const chosen = new File([new Uint8Array(1)], 'q5.wpilog')
-    expect(withBeside([chosen])).toEqual([chosen])
-    expect(withBeside([asFile({ entry: a, name: 'akit_26-02-19_q1.wpilog' }, api)]).map((f) => f.name)).toEqual(['akit_26-02-19_q1.wpilog'])
+    const gonePath = asFile({ entry: b1, name: 'Log_1.wpilog' }, api)
+    const now = await freshFiles(libraryOf([withDs]), [before, chosen, gonePath])
+    expect(now.map((f) => f.name)).toEqual(['Log_1-ffffffff.wpilog', 'q5.wpilog', 'Log_1.wpilog'])
+    expect(besideOf(now[0]).map((f) => f.name)).toEqual(['2026_02_19 12_00_00 Thu.dslog', '2026_02_19 12_00_00 Thu.dsevents'])
+    expect(now[1]).toBe(chosen)
+    expect(now[2]).toBe(gonePath)
   })
 })

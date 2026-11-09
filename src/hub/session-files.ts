@@ -50,6 +50,20 @@ export function dsFiles(entry: Entry, api: HubApi): File[] {
     .map((r) => new LibraryFile(baseName(r.path), r.size, r.modifiedTime ?? r.recordedAt, r.path, api) as unknown as File)
 }
 
+/**
+ * Library logs as the library holds them now, each under the name it was given: a log's DS files attached since it was
+ * read come with it. A file not from the library, or a log the library no longer lists, is kept as it was.
+ */
+export async function freshFiles(api: HubApi, files: File[]): Promise<File[]> {
+  if (!files.some((f) => f instanceof LibraryFile)) return files
+  const { entries } = await api.library()
+  const byPath = new Map(entries.map((e) => [e.record.path, e]))
+  return files.map((f) => {
+    const entry = f instanceof LibraryFile ? byPath.get(f.libraryPath) : undefined
+    return entry ? asFile({ entry, name: f.name }, api) : f
+  })
+}
+
 /** The library's copies of the named logs (those it holds once, on this computer). */
 export async function libraryLogs(api: HubApi, names: string[]): Promise<File[]> {
   const { entries } = await api.library()
