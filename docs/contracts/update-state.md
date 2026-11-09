@@ -80,8 +80,9 @@ Suite: `npx vitest run tests/update-state.contract.test.ts tests/updater.test.ts
 - **US-18** Nothing the updater does in reply to an electron-updater event throws back into it; a failure is logged. Why:
   the listeners run inside electron-updater's emit, before its install steps. Kind: failure mode.
 - **US-19** An update never downloads while one of the user's own jobs runs (a pull, a Sync, a log download, a .hoot read,
-  any job either runner holds): a release found then is `waiting` with the job's name (label `N waits for <job>`, no action,
-  no accent); a job that starts mid-download stops it and the state is `waiting`; once no job runs, a fresh check starts
-  the download. electron-updater's own "cancelled" error for that stop changes nothing. Why: the user's work comes first,
+  any job either runner holds): a release found then (or while the check ran) is `waiting` with the job's name (label `N waits for
+  <job in plain words>`, e.g. "the log download"; no action, no accent); a job that starts mid-download stops it and the
+  state is `waiting`; once no job runs and the stopped download has ended (or `STALL_ABORT_MS` has passed), a fresh check
+  starts the download, and a check from `waiting` that never answers is `failed`. electron-updater's own "cancelled" error for that stop changes nothing. Why: the user's work comes first,
   above all on a weak connection (Kevin, 2026-11-09); a stopped update refetches only its changed blocks (about 5 MB, from
   the release blockmaps). Kind: behaviour.

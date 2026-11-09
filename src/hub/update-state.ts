@@ -53,6 +53,7 @@ export function step(s: UpdateState, e: UpdateEvent, now: number): UpdateState {
   switch (e.type) {
     case 'checking':
       if (s.kind === 'checking') return s
+      if (s.kind === 'waiting') return { kind: 'checking', version: s.version, checkedAt: null }
       return s.kind === 'current' ? { kind: 'checking', version: s.version, checkedAt: s.checkedAt } : s
     case 'none':
       return s.kind === 'downloading' ? s : { kind: 'current', version: s.version, checkedAt: now }
@@ -80,6 +81,14 @@ export function step(s: UpdateState, e: UpdateEvent, now: number): UpdateState {
   }
 }
 
+/** A job's name as the update label says it: "waits for the Sync" (the log download's job is named just "Downloading"). */
+const JOB_PHRASES: Record<string, string> = {
+  'Syncing': 'the Sync', 'Downloading': 'the log download', 'Pulling logs off the robot': 'the robot pull',
+  'Reading device logs (.hoot)': 'the .hoot read', "Getting CTRE's converter (owlet)": "the owlet download",
+  'Reading logs again': 'Read logs again', 'Linking code': 'Link code',
+}
+export const jobPhrase = (job: string): string => JOB_PHRASES[job] ?? job.charAt(0).toLowerCase() + job.slice(1)
+
 export interface Chip { text: string; action: 'restart' | 'retry' | 'download' | 'whatsnew' | null; accent: boolean; title: string }
 
 /** The clock time the Library uses for "synced 10:42 AM". */
@@ -106,7 +115,7 @@ export function chip(s: UpdateState, now: number, whatsNewVersion: string | null
     case 'failed':
       return { text: `${X} · couldn't update since ${clock(s.since)} · Retry`, action: 'retry', accent: false, title: `Hindsight ${X} could not check for or download an update since ${clock(s.since)}; select this to try again.` }
     case 'waiting': {
-      const job = s.job.charAt(0).toLowerCase() + s.job.slice(1)
+      const job = jobPhrase(s.job)
       return { text: `${s.next} waits for ${job}`, action: null, accent: false, title: `Hindsight ${s.next} downloads when ${job} finishes; your work comes first.` }
     }
     case 'manual':

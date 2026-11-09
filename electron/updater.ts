@@ -83,6 +83,15 @@ export class Updater {
   private cancelDownload: (() => void) | null = null
   /** Set when we gave up a stalled download, so electron-updater's own 'cancelled' error doesn't replace our reason. */
   private gaveUp = false
+  /** The download promise of the last download started, until it settles. */
+  private inFlight: Promise<unknown> | null = null
+  /**
+   * A cancelled download that hasn't ended yet. electron-updater joins a new download to one still in flight (AppUpdater.js
+   * 442), and on the differential path a cancel is seen only when the next chunk arrives: no check until it has ended.
+   */
+  private stopping = false
+  /** When the stop began: a cancelled download that never ends (a dead link with no chunk to notice the cancel) stops blocking checks after STALL_ABORT_MS. */
+  private stoppingSince = 0
   /** darwin: Squirrel has staged the downloaded update (electron-updater says 'downloaded' before Squirrel has it). */
   private staged = false
   private lastTick: number
@@ -128,7 +137,7 @@ export class Updater {
    */
   check(): boolean {
     const k = this.state.kind
-    if (this.frozen || k === 'dev' || k === 'ready' || k === 'downloading' || this.checking) return false
+    if (this.frozen || k === 'dev' || k === 'ready' || k === 'downloading' || this.checking || (this.stopping && this.now() - this.stoppingSince < STALL_ABORT_MS)) return false
     this.checking = true
     const work = this.selfUpdating ? this.checkSelf() : this.checkManual()
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -137,7 +146,7 @@ export class Updater {
       clearTimeout(timer)
       this.checking = false
       // From 'failed' a retry never left 'failed' (US-04), so the timeout must answer there too, or the chip waits on it.
-      if (r === 'timeout' && (this.state.kind === 'checking' || this.state.kind === 'failed')) this.dispatch({ type: 'error', reason: `the update server didn't answer in ${CHECK_TIMEOUT_MS / 1000} s` })
+      if (r === 'timeout' && (this.state.kind === 'checking' || this.state.kind === 'failed' || this.state.kind === 'waiting')) this.dispatch({ type: 'error', reason: `the update server didn't answer in ${CHECK_TIMEOUT_MS / 1000} s` })
     })
     return true
   }
@@ -191,11 +200,17 @@ export class Updater {
       if (!result) { if (this.state.kind === 'checking') this.dispatch({ type: 'error', reason: "this copy can't update itself" }); return }
       // 'update-available' already chose: downloading (nothing of the user's runs) or waiting (it starts after, from tick()).
       if (!result.isUpdateAvailable || this.state.kind !== 'downloading') return
+      // A job that started during the check also comes first.
+      const job = this.deps.runningJob()
+      if (job) { this.dispatch({ type: 'wait', next: this.state.next, job }); return }
       const token = result.cancellationToken
       this.cancelDownload = token ? () => token.cancel() : null
       // A failed download rejects this promise and also emits 'error', which is what the chip hears; without this catch the
       // rejection is unhandled.
-      au.downloadUpdate(token).catch(() => {})
+      const download: Promise<unknown> = au.downloadUpdate(token).catch(() => {}).finally(() => {
+        if (this.inFlight === download) { this.inFlight = null; this.stopping = false }
+      })
+      this.inFlight = download
     } catch (e) { this.dispatch({ type: 'error', reason: reasonOf(e) }) }
   }
 
@@ -212,20 +227,24 @@ export class Updater {
     // The user's own work comes first (US-19): a download in progress stops (at most one update's changed blocks, ~5 MB,
     // are fetched again) and waits; a waiting one starts with a fresh check once nothing of the user's runs.
     if (s.kind === 'downloading' && job) {
-      this.gaveUp = true
-      this.cancelDownload?.()
-      this.cancelDownload = null
+      this.stop()
       this.dispatch({ type: 'wait', next: s.next, job })
       return
     }
     if (s.kind === 'waiting') { if (!job) this.check(); return }
     if (s.kind !== 'downloading' || now - Math.max(s.lastDataAt, this.awakeAt) < STALL_ABORT_MS) return
     const mb = (n: number) => Math.round(n / 1e6)
+    this.stop()
+    const quiet = `no data for ${Math.round(STALL_ABORT_MS / 1000)} s`
+    this.dispatch({ type: 'error', reason: s.total > 0 ? `the download of ${s.next} stopped at ${mb(s.transferred)} of ${mb(s.total)} MB (${quiet})` : `the download of ${s.next} got ${quiet}` })
+  }
+
+  /** Cancel the download in flight; no check starts until it has ended (`stopping`). */
+  private stop(): void {
     this.gaveUp = true
     this.cancelDownload?.()
     this.cancelDownload = null
-    const quiet = `no data for ${Math.round(STALL_ABORT_MS / 1000)} s`
-    this.dispatch({ type: 'error', reason: s.total > 0 ? `the download of ${s.next} stopped at ${mb(s.transferred)} of ${mb(s.total)} MB (${quiet})` : `the download of ${s.next} got ${quiet}` })
+    if (this.inFlight) { this.stopping = true; this.stoppingSince = this.now() }
   }
 
   /**
