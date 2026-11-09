@@ -44,8 +44,11 @@ export interface BackfillDeps {
   markSkipped?(shas: string[]): Promise<void>
   /** One log read into a summary (the Session view's summarizer), or null. */
   read(entry: Entry): Promise<MatchSummary | null>
-  /** The Blue Alliance's key for an event session, or null when it can't be placed (then it is not published). */
-  place(session: Session): Promise<string | null>
+  /**
+   * The Blue Alliance's key for an event session, or null when it can't be placed (then it is not published). `retry`: it
+   * could not be asked (offline, a refused key), so nothing is recorded and the pass stops, to try again next start.
+   */
+  place(session: Session): Promise<{ key: string | null; retry: boolean }>
   append(key: string, lines: EventLine[]): Promise<void>
   version: string
   analyzerHash: string
@@ -64,13 +67,15 @@ export async function backfillEvents(d: BackfillDeps): Promise<{ events: number;
     const shaByName = new Map<string, string>()
     for (const e of cluster) {
       if (d.shouldStop?.()) return { events, read }
-      const s = await d.read(e)
+      // A log that can't be read is left out (and, below, remembered), never the end of the pass.
+      const s = await d.read(e).catch(() => null)
       read++
       if (s) { summaries.push(s); shaByName.set(s.fileName, e.record.sha256) }
     }
     const appended = new Set<string>()
     for (const s of groupSessions(summaries).filter((x) => x.kind === 'event' && x.matches.length > 0)) {
-      const key = await d.place(s)
+      const { key, retry } = await d.place(s)
+      if (retry) return { events, read }
       if (!key) continue
       const shaOf = (name: string) => { const sha = shaByName.get(name); return sha && !d.published.has(sha) ? sha : null }
       const lines = eventLines({ summaries, names: eventLogNames(s), shaOf, version: d.version, analyzerHash: d.analyzerHash, at: d.now() })
@@ -81,4 +86,16 @@ export async function backfillEvents(d: BackfillDeps): Promise<{ events: number;
     if (left.length) await d.markSkipped?.(left)
   }
   return { events, read }
+}
+
+type KeyStore = Pick<Storage, 'getItem' | 'setItem'>
+const skippedKey = (shape: number) => `hindsight.backfill.skipped.${shape}`
+
+/** The laptop's own list of logs looked at and found to belong to no event, per summary shape (a new shape looks again). */
+export function readSkipped(store: KeyStore, shape: number): string[] {
+  try { const v = JSON.parse(store.getItem(skippedKey(shape)) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] } catch { return [] }
+}
+
+export function writeSkipped(store: KeyStore, shape: number, shas: string[]): void {
+  try { store.setItem(skippedKey(shape), JSON.stringify([...new Set(shas)])) } catch { /* looked at again next run */ }
 }

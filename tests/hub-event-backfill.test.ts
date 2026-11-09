@@ -30,7 +30,7 @@ function deps(entries: Entry[], published: string[], over: Partial<BackfillDeps>
   const d: BackfillDeps = {
     entries, published: new Set(published),
     read: async (e) => { read.push(e.names[0]); return summaryOf(e) },
-    place: async (s) => `2099t${Math.floor(((s.matches[0].playedAt ?? 0) - BASE) / DAY) + 100}`,
+    place: async (s) => ({ key: `2099t${Math.floor(((s.matches[0].playedAt ?? 0) - BASE) / DAY) + 100}`, retry: false }),
     append: async (key, lines) => { appended.push({ key, lines }) },
     version: '0.1.700', analyzerHash: 'test', now: () => 5,
     ...over,
@@ -73,7 +73,7 @@ describe('backfillEvents', () => {
 
   it('logs read and found to belong to no event are recorded, and the next run reads nothing', async () => {
     const marked: string[] = []
-    const first = deps(old, [], { place: async () => null, markSkipped: async (shas) => { marked.push(...shas) } })
+    const first = deps(old, [], { place: async () => ({ key: null, retry: false }), markSkipped: async (shas) => { marked.push(...shas) } })
     await backfillEvents(first.d)
     expect(marked.sort()).toEqual(old.map((e) => e.record.sha256).sort())
     const again = deps(old, [], { skipped: new Set(marked) })
@@ -81,15 +81,24 @@ describe('backfillEvents', () => {
     expect(again.read).toEqual([])
   })
 
-  it('a failure placing an event (no answer) records nothing, so the next run tries again', async () => {
+  it('The Blue Alliance offline or refusing records nothing and stops the pass, so the next run tries again', async () => {
     const marked: string[] = []
-    const { d } = deps(old, [], { place: async () => { throw new Error('offline') }, markSkipped: async (shas) => { marked.push(...shas) } })
-    await expect(backfillEvents(d)).rejects.toThrow('offline')
+    const { d, read } = deps([...old, ...recent], [], { place: async () => ({ key: null, retry: true }), markSkipped: async (shas) => { marked.push(...shas) } })
+    await backfillEvents(d)
     expect(marked).toEqual([])
+    expect(read.sort()).toEqual(['b1.wpilog', 'b2.wpilog']) // stopped after the first event: the rest would fail the same way
+  })
+
+  it('a log that can\'t be read is noted once and does not stop the pass', async () => {
+    const marked: string[] = []
+    const { d, appended } = deps(old, [], { read: async (e) => { if (e.names[0] === 'a1.wpilog') throw new Error('unreadable'); return summaryOf(e) }, markSkipped: async (shas) => { marked.push(...shas) } })
+    await backfillEvents(d)
+    expect(appended.flatMap((a) => a.lines.map((l) => l.sha256))).toEqual([old[1].record.sha256])
+    expect(marked).toEqual([old[0].record.sha256])
   })
 
   it('an event The Blue Alliance can\'t place is skipped, not guessed', async () => {
-    const { d, appended } = deps(old, [], { place: async () => null })
+    const { d, appended } = deps(old, [], { place: async () => ({ key: null, retry: false }) })
     await backfillEvents(d)
     expect(appended).toEqual([])
   })
@@ -106,5 +115,18 @@ describe('what a laptop has published', () => {
     await lib.appendEvent('2099test', [line(1, SUMMARY_SHAPE), line(2, SUMMARY_SHAPE - 1)].map((l) => `${JSON.stringify(l)}\n`).join(''))
     await lib.appendEvent('2099other', `${JSON.stringify(line(3, SUMMARY_SHAPE))}\n`)
     expect((await lib.publishedShas()).sort()).toEqual([sha('1'), sha('3')].sort())
+  })
+})
+
+describe('the laptop\'s list of logs looked at', () => {
+  it('is kept per summary shape, deduplicated, and reads as empty when damaged', async () => {
+    const { readSkipped, writeSkipped } = await import('../src/hub/event-backfill.ts')
+    const m = new Map<string, string>()
+    const store = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) } }
+    writeSkipped(store, 4, ['a', 'b', 'a'])
+    expect(readSkipped(store, 4)).toEqual(['a', 'b'])
+    expect(readSkipped(store, 5)).toEqual([])
+    m.set('hindsight.backfill.skipped.4', '{oops')
+    expect(readSkipped(store, 4)).toEqual([])
   })
 })

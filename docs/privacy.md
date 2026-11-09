@@ -22,7 +22,9 @@ you choose. It never deletes, trashes or overwrites a file, and its code refuses
 your browser; Hindsight never sees your Google password.
 
 What goes into the team folder: copies of the logs you add, and a list of each log's facts, checksum, file names and the values
-people typed (driver names included). Everyone who can open the team folder can read it. Hindsight sends nothing to anyone else.
+people typed (driver names included); the triage marks people make; and, for the phone app, each event's match summaries
+(the findings and numbers Hindsight read from each log of every event in this computer's library, without the marks).
+Everyone who can open the team folder can read it. Hindsight sends nothing to anyone else.
 
 To stop: remove Hindsight at <https://myaccount.google.com/permissions>, and delete the app's library folder. Files already in
 the team folder stay there until the folder's owners remove them.
@@ -34,7 +36,7 @@ open from its Library. It only reads; it changes nothing on Drive and makes no m
 
 - **Google sign-in** asks for `drive.readonly`: Google words it as seeing all of your Drive files. The app reads only the
   team folder you choose (and, while you choose it, the names of the folders you browse): the files the laptops share
-  there for the phone (each laptop's match summaries for the event and its triage marks), the laptops' lists of logs (for
+  there for the phone (each laptop's match summaries for every event it holds, and its triage marks), the laptops' lists of logs (for
   the Library), and a log and its Driver Station logs when you open one. Sign-in happens in Apple's sign-in sheet; the app
   never sees your Google password.
 - **What stays on the phone:** the sign-in's refresh token in the iOS Keychain (kept for this device only: it does not move

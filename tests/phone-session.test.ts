@@ -120,3 +120,14 @@ describe('which event the phone shows', () => {
     expect(phoneEvent(null, null, [])).toBeNull()
   })
 })
+
+describe('the events the phone offers', () => {
+  it('newest start date first when The Blue Alliance knows them, unknown ones after; named by year and name', async () => {
+    const { orderEvents, eventLabel } = await import('../src/phone/event-choice.ts')
+    const info = new Map([['2099aaa', { name: 'Early Test', start: '2099-03-01' }], ['2099zzz', { name: 'Late Test', start: '2099-10-01' }]])
+    // as Drive lists them: the oldest pushed last by a laptop publishing old events
+    expect(orderEvents(['2099mystery', '2099aaa', '2099zzz'], info)).toEqual(['2099zzz', '2099aaa', '2099mystery'])
+    expect(eventLabel('2099zzz', info)).toBe('2099 Late Test')
+    expect(eventLabel('2099mystery', info)).toBe('2099mystery')
+  })
+})

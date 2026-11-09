@@ -29,8 +29,9 @@
   import { dateText } from './session/day.ts'
   import LibraryView from './ui/LibraryView.svelte'
   import PhoneLibrary from './ui/PhoneLibrary.svelte'
-  import { backfillEvents } from './hub/event-backfill.ts'
-  import { phoneEvent, pickEvent, pickedEvent } from './phone/event-choice.ts'
+  import { backfillEvents, readSkipped, writeSkipped } from './hub/event-backfill.ts'
+  import { eventLabel, orderEvents, phoneEvent, pickEvent, pickedEvent, type EventInfo } from './phone/event-choice.ts'
+  import { teamEvents } from './tba/api.ts'
   import { summarizeLogWithCode } from './session/summary.ts'
   import type { OpenedFile } from './hub/browser-hub.ts'
   import { hub, phone, LibraryFile, readBeside } from './hub/bridge.ts'
@@ -356,18 +357,22 @@
     const t = setTimeout(() => { publishing = publishing.then(publishEvent) }, 3_000)
     return () => clearTimeout(t)
   })
-  // Every other event in the library, published once (src/hub/event-backfill.ts): a minute after the library is first read,
-  // so start-up isn't slowed; events this laptop has already published are skipped without reading a byte.
+  // Every other event in the library, published once (src/hub/event-backfill.ts): a minute after the library is first read
+  // (or once a team number and The Blue Alliance key are set), so start-up isn't slowed; events this laptop has already
+  // published are skipped without reading a byte. The latest event is left to publishEvent (it has the code folder).
   let backfillStarted = false
   $effect(() => {
-    if (!library || !todaySig.libraryLoaded || backfillStarted) return
+    void tbaTeam(); void tbaGetter()
+    if (!library || !todaySig.libraryLoaded || backfillStarted || !tbaGetter() || tbaTeam() === null) return
     backfillStarted = true
     const t = setTimeout(() => { publishing = publishing.then(backfillPublish) }, 60_000)
-    return () => clearTimeout(t)
+    return () => { clearTimeout(t); backfillStarted = false }
   })
-  const SKIPPED = `hindsight.backfill.skipped.${SUMMARY_SHAPE}`
-  const readSkipped = (): string[] => { try { return JSON.parse(localStorage.getItem(SKIPPED) ?? '[]') as string[] } catch { return [] } }
-  const writeSkipped = (shas: string[]) => { try { localStorage.setItem(SKIPPED, JSON.stringify([...new Set(shas)])) } catch { /* looked at again next run */ } }
+  /** Wait until the page is idle, then a moment more: the pass reads logs on the page's own thread. */
+  const idle = () => new Promise<void>((r) => {
+    const ric = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback
+    if (ric) ric(() => setTimeout(r, 500), { timeout: 5_000 }); else setTimeout(r, 500)
+  })
   async function backfillPublish() {
     const app = hub()
     const [get, team] = [tbaGetter(), tbaTeam()]
@@ -375,17 +380,19 @@
     try {
       const { entries } = await app.library()
       const named = new Map(libraryNames(entries).map((n) => [n.entry, n]))
+      // The latest event's logs count as done here: publishEvent publishes them, with the code folder.
+      const latest = new Set((await latestEventFiles(true)).map((f) => f.name))
+      const latestShas = libraryNames(entries).filter((n) => latest.has(n.name)).map((n) => n.entry.record.sha256)
       const done = await backfillEvents({
-        entries, published: new Set(await app.publishedLogs()),
-        // Logs looked at and found to belong to no event, by summary shape (a new shape looks again): this laptop's own note.
-        skipped: new Set(readSkipped()), markSkipped: async (shas) => { writeSkipped([...readSkipped(), ...shas]) },
+        entries, published: new Set([...(await app.publishedLogs()), ...latestShas]),
+        skipped: new Set(readSkipped(localStorage, SUMMARY_SHAPE)), markSkipped: async (shas) => { writeSkipped(localStorage, SUMMARY_SHAPE, [...readSkipped(localStorage, SUMMARY_SHAPE), ...shas]) },
         read: async (e) => {
           const f = asFile(named.get(e)!, app)
           const [bytes, beside] = await Promise.all([f.arrayBuffer().then((b) => new Uint8Array(b)), readBeside(f, [])])
-          await new Promise((r) => setTimeout(r, 0)) // let the page paint between logs
+          await idle()
           return summarizeLogWithCode({ name: f.name, bytes }, null, null, chosenRobot(f.name), [...PROFILES, ...stored], history, beside)
         },
-        place: async (s) => (await sessionEvent(s, team, get)).event?.key ?? null,
+        place: async (s) => { const found = await sessionEvent(s, team, get); return { key: found.event?.key ?? null, retry: !!found.retry } },
         append: async (key, lines) => { await app.appendEvent(key, lines.map(serializeEventLine).join('')) },
         version: VERSION, analyzerHash: ANALYZER_HASH, now: Date.now,
       })
@@ -417,6 +424,17 @@
   let phoneEvents = $state.raw<string[]>([])
   let picked = $state<string | null>(readOnly ? pickedEvent(localStorage) : null)
   function choosePhoneEvent(key: string) { picked = key; pickEvent(localStorage, key) }
+  let phoneEventInfo = $state.raw<Map<string, EventInfo>>(new Map())
+  /** Names and start dates from The Blue Alliance (the team's events of each year, one cached request a year); none offline. */
+  async function eventInfo(keys: string[]): Promise<Map<string, EventInfo>> {
+    const [get, team] = [tbaGetter(), tbaTeam()]
+    const out = new Map<string, EventInfo>()
+    if (!get || team === null) return out
+    for (const year of new Set(keys.map((k) => Number(k.slice(0, 4))))) {
+      try { for (const e of (await teamEvents(get, team, year)).data) out.set(e.key, { name: e.name, start: e.start_date }) } catch { /* that year unnamed */ }
+    }
+    return out
+  }
   let phoneNote = $state('')
   let phoneFrom = $state.raw<Map<string, { laptop: string; olderRead: string | null }>>(new Map())
   let reviewing = $state.raw<MatchSummary | null>(null)
@@ -429,7 +447,9 @@
       if (!phoneHub) return
       try {
         history = parseHistory(await phoneHub.history()).events
-        phoneEvents = (await phoneHub.eventKeys()).map((e) => e.key)
+        const keys = (await phoneHub.eventKeys()).map((e) => e.key)
+        phoneEventInfo = await eventInfo(keys)
+        phoneEvents = orderEvents(keys, phoneEventInfo)
         const key = phoneEvent(todaySig.external?.key ?? null, picked, phoneEvents)
         phoneKey = key
         if (!key) { phoneNote = 'No laptop has published an event to the team Drive yet.'; return }
@@ -680,7 +700,7 @@
   {#if !readOnly}<Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (t.id === 'powermap' ? openPowerMap() : (mode = t.id)) }))} />{/if}
 </nav>
 {#if readOnly}
-  <p class="phone-line screen-only" role="status" data-phone-fresh>{#if !todaySig.external?.key && phoneEvents.length > 1}<label>Event <select value={phoneKey} onchange={(e) => choosePhoneEvent((e.currentTarget as HTMLSelectElement).value)}>{#each phoneEvents as k (k)}<option value={k}>{k}</option>{/each}</select></label>{:else}{phoneKey ?? 'No event yet'}{/if}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
+  <p class="phone-line screen-only" role="status" data-phone-fresh>{#if !todaySig.external?.key && phoneEvents.length > 1}<label>Event <select value={phoneKey} onchange={(e) => choosePhoneEvent((e.currentTarget as HTMLSelectElement).value)}>{#each phoneEvents as k (k)}<option value={k}>{eventLabel(k, phoneEventInfo)}</option>{/each}</select></label>{:else}{phoneKey ? eventLabel(phoneKey, phoneEventInfo) : 'No event yet'}{/if}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
   {#if phoneNote}<p class="phone-line warn" role="status">{phoneNote}</p>{/if}
 {/if}
 </div>

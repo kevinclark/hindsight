@@ -19,3 +19,21 @@ export function pickedEvent(store: KeyStore): string | null {
 export function pickEvent(store: KeyStore, key: string | null): void {
   try { if (key) store.setItem(KEY, key); else store.removeItem(KEY) } catch { /* lasts until the app closes */ }
 }
+
+export interface EventInfo { name: string; start: string }
+
+/**
+ * The published events in the order the phone offers them: by The Blue Alliance's start date, newest first, when known
+ * (the order Drive last changed them in is not it: a laptop publishing old events pushes the oldest last); events TBA
+ * does not know keep the order given, after them.
+ */
+export function orderEvents(keys: readonly string[], info: ReadonlyMap<string, EventInfo>): string[] {
+  const known = keys.filter((k) => info.has(k)).sort((a, b) => info.get(b)!.start.localeCompare(info.get(a)!.start))
+  return [...known, ...keys.filter((k) => !info.has(k))]
+}
+
+/** "2025 Madtown ThrowDown" for a known event, else the key. */
+export const eventLabel = (key: string, info: ReadonlyMap<string, EventInfo>): string => {
+  const i = info.get(key)
+  return i ? `${key.slice(0, 4)} ${i.name}` : key
+}
