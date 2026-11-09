@@ -20,7 +20,7 @@ export interface HttpDriveOptions {
 
 export interface HttpDrive {
   base: string
-  /** "GET bytes=a-b" and "PUT bytes a-b/total" (and status queries, "PUT bytes &#42;/total") in order. */
+  /** "GET bytes=a-b" and "PUT bytes a-b/total" (a status query is "PUT bytes" then an asterisk and the total) in order. */
   log: string[]
   /** The finished upload's bytes, once Drive has them all. */
   uploaded: Uint8Array | null

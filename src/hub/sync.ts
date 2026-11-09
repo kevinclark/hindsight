@@ -337,7 +337,7 @@ export async function fetchLogs(lib: LocalLibrary, team: StorageAdapter, records
       if (e instanceof Stopped) { report.stopped = true; break }
       // The link to Drive is gone: the next log would meet the same wait. Its temp file is gone; it is not a failed log.
       if (e instanceof LinkLost) {
-        report.problems.push(`Stopped at log ${done} of ${records.length} (${r.names[0]}): ${e.reason}. The ${report.fetched.length} log${report.fetched.length === 1 ? '' : 's'} that came down are kept. Download again to continue from here.`)
+        report.problems.push(`Stopped at log ${done} of ${records.length} (${r.names[0]}): ${e.reason}. ${report.fetched.length === 1 ? 'The 1 log that came down is' : `The ${report.fetched.length} logs that came down are`} kept. Download again to continue from here.`)
         break
       }
       const reason = e instanceof Error ? e.message : String(e)

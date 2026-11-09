@@ -137,6 +137,14 @@ panel. Neither is committed.
   repository.
 - Logs the team has and this computer lacks are listed with a size; **Download** fetches them under a temp name and
   renames each only after its sha-256 matches.
+- **Never silent** (src/hub/transfer-watch.ts, the robot pull's rule): every Drive request, its answer and its body are
+  watched, so nothing moving for 15 s fails it in words, and Stop aborts it at once. A read that goes quiet or drops is
+  asked again from its next byte (`Range`), never from the start; an upload chunk asks Drive how much it kept and sends the
+  rest from there. An upload is handed to the connection in 256 KiB pieces, so its bytes count as they go and a stalled
+  upload shows (after the last piece, Drive's answer is allowed as long again as the hand-over took: the connection's
+  buffers drain unseen). After 3 stalls (or 5 dropped connections) with no byte moving, Download, Sync and an add from a
+  Drive folder stop at the log they were on, keep what is done, fail no log for it, and say where and what to do; Sync then
+  skips its last publish (the next sync publishes what landed). The bar shows "trying again (try 2 of 3)" meanwhile.
 
 ## The robot
 
@@ -165,4 +173,5 @@ On start the app asks the public repository's releases once. When a newer app re
 See the session note for what was exercised live and what only in tests. In short: the Drive adapter has been run live once
 (2026-10-22: a first sync of four logs, a second that wrote nothing, a tag update in place, a second library that downloaded
 them and matched every sha-256), and Drive answered one request with a 403 rate limit, which the adapter now waits out; the
-robot pull has not touched a roboRIO; the Windows and Linux installers were built but not launched.
+stall handling (streamed upload chunks with their length, a resume from part way through a chunk) is tested against a
+local HTTP server, not yet against Google; the robot pull has not touched a roboRIO; the Windows and Linux installers were built but not launched.
