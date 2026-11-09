@@ -56,7 +56,14 @@ export interface Finding {
   /** The numbers behind the finding. Keys are plain-English labels. */
   evidence: Record<string, number | string>
   /** The judged number against its threshold (first), plus context numbers. See Problem.measured. */
-  measured?: { label: string; value: number; unit: string; threshold?: number }[]
+  measured?: {
+    label: string
+    value: number
+    unit: string
+    threshold?: number
+    /** What the number is, in a few words for the finding's closed row, when the label beside a line would be needed (a percentage of something). */
+    short?: string
+  }[]
   plot?: Plot
   /** What it probably means, the possible causes (this log's likely ones first) and the next step. */
   meaning: string

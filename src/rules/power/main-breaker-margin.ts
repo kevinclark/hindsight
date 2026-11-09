@@ -40,7 +40,7 @@ export default rule({
     { id: 'busy-mechanism', cause: 'A big mechanism running hard for long stretches (a flywheel spun up all match, an intake stalled)', look: 'Power tab: which group carries the most current in the minute before the peak (this finding names it)' },
     { id: 'warm-breaker', cause: 'A breaker that is already warm, worn, or has loose lugs trips sooner than its curve', look: 'the main breaker\'s lugs (tight? discoloured?); whether it has tripped before (replace one that has)' },
   ],
-  nextStep: 'Set a sustained supply limit on the drive and the biggest mechanisms (a lower limit after about 1 s), and keep the total they can draw for a whole match under the steady current in the evidence.',
+  nextStep: 'Set a sustained supply limit (a lower limit after about 1 s) on the drive and the biggest mechanisms.',
   incident: 'Main-breaker trips while being pushed are a known FRC failure (Chief Delphi threads on main-breaker trips, 2024 and 2026).',
   sources: [
     { ...GAME_MANUAL_2026, says: 'Rule R609: the robot has a single main 120 A surface-mount circuit breaker (Cooper Bussmann CB185-120 or the listed equivalents); R612 allows only one 120 A breaker.' },
@@ -103,9 +103,9 @@ export default rule({
         'total current, RMS over the minute before (A)': round(rms60, 0),
         'carried most of it': top && topPercent !== undefined ? `${top.name} (${topPercent} % of the current)` : 'unknown',
       },
-      measured: [{ label: 'main breaker heat, fast edge', value: fastPercent, unit: '%', threshold: 100 }],
+      measured: [{ label: 'main breaker heat, fast edge', value: fastPercent, unit: '%', threshold: 100, short: 'of a fast trip' }],
       nextStep: top && topPercent !== undefined
-        ? `${top.name} carried ${topPercent} % of the current in the minute before: give it a sustained supply limit (a lower limit after about 1 s), and keep the total the robot can draw for a whole match under the steady current in the evidence.`
+        ? `Give ${top.name} a sustained supply limit (a lower limit after about 1 s): it carried ${topPercent} % of the current in the minute before.`
         : undefined,
       plot: peakPlot(match, t, top?.name),
     }

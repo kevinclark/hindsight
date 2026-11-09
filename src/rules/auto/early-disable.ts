@@ -37,7 +37,7 @@ export default rule({
     { id: 'field', cause: 'The field or a referee disabled the robot', look: 'ask the head referee or FTA why; the field log for this match' },
     { id: 'new-auto', cause: 'The auto had not run before on this build: new or changed code ran in a match for the first time', look: 'the evidence below (earlier runs of this auto and their builds); git log between those builds and this one' },
   ],
-  nextStep: 'Ask the drive team why they disabled it, then check what happened in the seconds before: tilt, a mechanism out of position, a stuck path.',
+  nextStep: 'Ask the drive team why they disabled it, then check the seconds before for tilt, a stuck mechanism or a stuck path.',
   incident: 'One 2026 match: disabled at 282.7 s with 7.4 s of auto left after the hood hit the trench',
   sources: [
     { ...GAME_MANUAL_2026, says: 'Section 5.9.1: the A-Stop button disables a robot for the rest of auto, and the stack light blinks when a robot is disabled after an A-Stop press; the E-Stop is a separate button.' },
@@ -92,7 +92,7 @@ export default rule({
         message: `Disabled in auto ${match.whenAt(a.end - 0.001)} with ${secs(timeLeft)} of auto left`,
         at: a.end - 0.001,
         likely,
-        nextStep: wedged ? `The robot tilted ${tilt.toFixed(0)}° in the 3 s before the disable: watch the video for what it hit, and add a guard in code near that spot.` : undefined,
+        nextStep: wedged ? `Watch the video at this moment: it tilted ${tilt.toFixed(0)}° in the 3 s before. Add a guard in code near that spot.` : undefined,
         // Context only: how much auto was left when it was disabled ("× the line" would read as how bad it was).
         measured: [{ label: 'left in auto when disabled', value: round(timeLeft, 1), unit: 's' }],
         evidence: {

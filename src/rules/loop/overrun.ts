@@ -74,7 +74,7 @@ export default rule({
         [`slow steps over ${SLOW_STEP_MS} ms (console)`]: slowest ? describeSteps(steps) : undefined,
       },
       nextStep: slowest ? startWith(slowest) : undefined,
-      measured: [{ label: `${worst.name} loops over 20 ms`, value: round(100 * worst.share, 1), unit: '%', threshold: 10 }],
+      measured: [{ label: `${worst.name} loops over 20 ms`, value: round(100 * worst.share, 1), unit: '%', threshold: 10, short: `of ${worst.name} loops over 20 ms` }],
       plot: {
         signals: [loop], unit: 'ms', line: { value: 20, label: '20 ms' },
         from: worst.window[0]?.start, to: worst.window[0]?.end,
