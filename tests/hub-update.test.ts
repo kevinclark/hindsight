@@ -19,10 +19,13 @@ describe('update banner', () => {
     ]))
     expect(u).toEqual({ version: '0.2.0', url: 'https://example.com/0.2.0' })
   })
-  it('says nothing when up to date, when GitHub refuses, or when it cannot be reached', async () => {
+  it('says nothing when up to date', async () => {
     expect(await checkForUpdate('0.2.0', releases([{ tag_name: 'v0.2.0', html_url: 'x' }]))).toBeNull()
-    expect(await checkForUpdate('0.1.0', async () => new Response('rate limited', { status: 403 }))).toBeNull()
-    expect(await checkForUpdate('0.1.0', async () => { throw new TypeError('offline') })).toBeNull()
+  })
+  it('throws, rather than saying "nothing newer", when GitHub refuses, cannot be reached or sends nonsense', async () => {
+    await expect(checkForUpdate('0.1.0', async () => new Response('rate limited', { status: 403 }))).rejects.toThrow('GitHub answered 403')
+    await expect(checkForUpdate('0.1.0', async () => { throw new TypeError('offline') })).rejects.toThrow('could not be reached (offline)')
+    await expect(checkForUpdate('0.1.0', async () => new Response('<html>', { status: 200 }))).rejects.toThrow('could not read')
   })
 })
 

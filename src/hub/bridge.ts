@@ -5,7 +5,7 @@
 import type { Entry } from './catalog.ts'
 import type { IngestPlan, IngestReport } from './ingest.ts'
 import type { FetchReport, SyncPlan, SyncReport } from './sync.ts'
-import type { Update } from './update.ts'
+import type { UpdateState } from './update-state.ts'
 import type { RedescribeReport } from './redescribe.ts'
 import type { TagField, TagTarget } from './types.ts'
 import type { Fetched, TbaGetOptions } from '../tba/source.ts'
@@ -154,7 +154,13 @@ export interface HubApi {
   addFromRobot(address: string): Promise<RobotResult>
   /** Reveal the job log (`jobs.log`: what each job did, with times) in Finder or Explorer. */
   showJobLog(): Promise<void>
-  updateInfo(): Promise<Update | null>
+  /** The update chip's state (electron/updater.ts); changes arrive through `onUpdateState`. */
+  updateState(): Promise<UpdateState>
+  /** Check for a newer release now; false when it didn't start (a check or download under way, or an update ready). */
+  updateCheck(): Promise<boolean>
+  /** Install the downloaded update and relaunch: `started`; `busy` (a job's name) when a job runs and `force` is false; `preparing` while macOS is still unpacking it. */
+  updateRestart(force: boolean): Promise<{ busy?: string; preparing?: boolean; started?: boolean }>
+  onUpdateState(callback: (s: UpdateState) => void): () => void
 
   // ---- .hoot files (ADR 13): their own job runner, so a sync running doesn't block the Devices tab ----
   /** The .hoot files attached to a library robot log, and what this computer holds and can read them with. */

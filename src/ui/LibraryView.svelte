@@ -139,11 +139,9 @@
       if (!pullFailed || stopPressed) return
     }
   }
-  let update = $state<{ version: string; url: string } | null>(null)
 
   onMount(() => {
     void refresh().catch((e) => { problem = String(e) })
-    void api?.updateInfo().then((u) => { update = u })
     // A job already running (the page was reloaded, or something else started it) gets the same bar.
     void api?.codePlan().then((p) => { codePlan = p; codeText = p.sources.join(', ') }).catch(() => {})
     void api?.team().then((t) => { teamBox = t.team; savedTeam = t.team; setAppHasKey(!!t.tbaKey) }).catch(() => {})

@@ -25,6 +25,7 @@
   import SnapshotView from './ui/SnapshotView.svelte'
   import ForesightView from './ui/ForesightView.svelte'
   import NowView from './ui/NowView.svelte'
+  import UpdateChip from './ui/UpdateChip.svelte'
   import { todaySignal } from './ui/today-signal.svelte.ts'
   import type { Place } from './now/now.ts'
   import { dateText } from './session/day.ts'
@@ -119,9 +120,6 @@
   const activeTool = $derived(TOOLS.find((t) => t.id === mode))
   if (hub()) document.getElementById('app')?.classList.add('wide')
   if (readOnly) document.getElementById('app')?.classList.add('phone')
-  // The desktop app asks GitHub once on start whether a newer release is out.
-  let update = $state<{ version: string; url: string } | null>(null)
-  void hub()?.updateInfo().then((u) => { update = u })
   void loadTeam()
   void loadTba()
   let sessionView = $state<{ addFiles(files: File[], opts?: { select?: boolean }): Promise<void>; showSummaries(list: MatchSummary[], olderRead?: Record<string, { version: string; at: number }>): void }>()
@@ -197,6 +195,8 @@
   // (Match review folds them; no loaded session holding this match means nothing folds). A match joined from several
   // logs is listed under its first log's name, with every piece in `pieces` (summary.ts joinPieces).
   let sessions = $state.raw<Session[]>([])
+  // What's new after an update is shown only on a computer that has logs (a fresh install has nothing to compare with).
+  const hasLogs = $derived((hub() ? todaySig.libraryLogs.some((r) => !r.stub) : false) || sessions.length > 0 || analyses.length > 0)
   const standing = $derived.by(() => {
     if (!current) return new Set<string>()
     const name = current.match.fileName
@@ -698,10 +698,10 @@
   {#if readOnly}<p class="tag">What the team's laptops found and marked at this event, and any team log from the Library.</p>{:else if !(mode === 'review' && current) && !(mode === 'session' && sessionShown)}<p class="tag">Reads your robot's logs and code, says what went wrong and who should act, and checks the robot before each match.{' '}{#if hub()}Your logs and triage notes leave this computer only for your team's Drive folder, once you sign in.{:else}Your logs never leave this computer.{/if}</p>{/if}
 </header>
 
-{#if update}<p class="update screen-only">Hindsight {update.version} is out: <a href={update.url} target="_blank" rel="noreferrer">download</a></p>{/if}
 <nav class="modes" class:screen-only={reportable} aria-label="Mode">
   {#each MODES as m (m.id)}<button class:active={mode === m.id} data-label={m.label} aria-current={mode === m.id ? 'page' : undefined} onclick={() => (mode = m.id)}>{m.label}</button>{/each}
   {#if !readOnly}<Menu label={activeTool ? `Tools: ${activeTool.label}` : 'Tools'} current={!!activeTool} tab items={TOOLS.map((t) => ({ id: t.id, label: t.label, hint: t.hint, onselect: () => (t.id === 'powermap' ? openPowerMap() : (mode = t.id)) }))} />{/if}
+  {#if hub() && !readOnly}<UpdateChip {hasLogs} />{/if}
 </nav>
 {#if readOnly}
   <p class="phone-line screen-only" role="status" data-phone-fresh>{#if !todaySig.external?.key && phoneEvents.length > 1}<label>Event <select value={phoneKey} onchange={(e) => choosePhoneEvent((e.currentTarget as HTMLSelectElement).value)}>{#each phoneEvents as k (k)}<option value={k}>{eventLabel(k, phoneEventInfo)}</option>{/each}</select></label>{:else}{phoneKey ? eventLabel(phoneKey, phoneEventInfo) : 'No event yet'}{/if}{fresh?.read ? ` · checked ${fresh.read}` : ''}{fresh?.pushed ? ` · a laptop last shared at ${fresh.pushed}` : ''}</p>
@@ -901,7 +901,6 @@
   .top.compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1.25rem; }
   .top.compact .modes { margin-bottom: 0.5rem; }
   header h1 { margin: 0; font-size: 1.5rem; }
-  .update { margin: 0 0 0.5rem; padding: 0.3rem 0.75rem; border: 1px solid var(--focus); border-radius: 6px; }
   .tag { margin: 0.1rem 0 1rem; color: var(--muted); }
   .drop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.9rem 1rem; border: 1.5px dashed var(--border); border-radius: 8px; }
   .drop.compact { padding: 0.25rem 0.75rem; gap: 0.25rem 0.75rem; }

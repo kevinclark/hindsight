@@ -23,6 +23,7 @@ vi.mock('electron', () => ({
   app: { getVersion: () => '0.1.0', getPath: () => h.dir, isPackaged: false, on: () => {} },
   ipcMain: { handle: (channel: string, fn: (...args: unknown[]) => unknown) => { h.handlers.set(channel, fn) } },
   dialog: {},
+  autoUpdater: { on: () => {} },
 }))
 vi.mock('../electron/describer.ts', () => ({ Describer: class { describe = async () => null; stop() {} } }))
 vi.mock('../electron/settings.ts', () => ({
