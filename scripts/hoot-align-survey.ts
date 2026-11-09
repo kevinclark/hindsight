@@ -4,7 +4,7 @@
  *
  *   node --experimental-strip-types scripts/hoot-align-survey.ts <library folder> <cache folder> [owlet folder]
  *
- * The owlet folder defaults to AdvantageScope's cache (it must hold an owlet whose CTRE licence the user accepted).
+ * The owlet folder defaults to AdvantageScope's cache (the owlet there is used as it is).
  * Prints one line per file: bus, edges in each file, edges matched, offset, spread. Reads only; the cache folder gets the
  * reduced readings (reused on the next run).
  */

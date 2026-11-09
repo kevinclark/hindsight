@@ -276,6 +276,8 @@
    * are about robot logs (robot, event, battery), which these have none of. Never in `all`, `filtered` or what the Session view takes.
    */
   const hootRows = $derived(picked ? [] : (snapshot?.hootOnly ?? []).filter((e) => !e.record.stub))
+  /** Hoot-only boots a picked filter hides: said in the summary, so they don't look lost. */
+  const hootHidden = $derived(picked ? (snapshot?.hootOnly ?? []).filter((e) => !e.record.stub).length : 0)
   const hootPaths = $derived(new Set(hootRows.map((e) => e.record.path)))
   const bytes = $derived(filtered.reduce((n, e) => n + e.record.size, 0))
   const local = $derived(filtered.filter((e) => e.local))
@@ -336,12 +338,13 @@
   async function openHoot(e: Entry) {
     if (!api) return
     const path = e.record.path
+    if (hootBusy !== null) return
+    hootBusy = path
     hootClear(path)
     try {
       const s = await api.hootFor(path)
       const mine = s.files.filter((f) => f.path === path)
       if (mine.some((f) => f.held && f.compliancy !== null && !f.owlet)) { hootAsk = { ...hootAsk, [path]: { ...s, files: mine } }; return }
-      hootBusy = path
       const bytes = await api.hootLog(path)
       onOpenMatch([hootAsFile(e, api, bytes)])
     } catch (err) {
@@ -579,8 +582,8 @@
   </aside>{/if}
 
   <section class="list">
-    {#if all.length}<div class="summary" role="status">
-      <strong>{filtered.length}</strong> log{filtered.length === 1 ? '' : 's'} · {size(bytes)} · <strong>{local.length}</strong> on this computer{filtered.length - local.length ? ` (${filtered.length - local.length} not)` : ''}{attachments ? ` · ${attachments} DS or hoot files attached` : ''}
+    {#if all.length || hootRows.length}<div class="summary" role="status">
+      <strong>{filtered.length}</strong> log{filtered.length === 1 ? '' : 's'} · {size(bytes)} · <strong>{local.length}</strong> on this computer{filtered.length - local.length ? ` (${filtered.length - local.length} not)` : ''}{attachments ? ` · ${attachments} DS or hoot files attached` : ''}{hootRows.length ? ` · ${hootRows.length} .hoot only` : ''}{hootHidden ? ` · ${hootHidden} .hoot-only file${hootHidden === 1 ? '' : 's'} hidden while a filter is picked` : ''}
       {#if fetchable.length}<button class="primary" onclick={download} disabled={driveBusy}>Download {fetchable.length} file{fetchable.length === 1 ? '' : 's'} ({size(fetchable.reduce((n, r) => n + r.size, 0))})</button>{/if}
       <button class="primary" onclick={openInSession} disabled={local.length === 0}>Open in Session view</button>
     </div>{/if}

@@ -81,6 +81,13 @@ describe('reducing a .hoot with mode, FMS and two Talons', () => {
     expect(r.mode).toEqual([])
     expect(r.fms).toEqual([])
   }, 20_000)
+  it('keeps no current grid for a bus with no Talon (a roboRIO .hoot): a grid of zeros would be megabytes of cache', async () => {
+    const h = hoot()
+    delete h.signals['TalonFX-11/SupplyCurrent']
+    delete h.signals['TalonFX-12/SupplyCurrent']
+    const r = await read(h)
+    expect(r.totalAmps).toEqual({ t: [], a: [] })
+  }, 20_000)
 
   it('end to end (what hub:hootLog does): the synthetic log opens as one run, auto first, practice, no rule read', async () => {
     const r = await read(hoot({ 'DS:IsFMSAttached': { type: 'boolean', t: [0], v: [false] } }))
@@ -138,7 +145,7 @@ describe('the synthetic log and the "Phoenix hoot" format', () => {
     expect(r.noRules).toBe(REASON)
     expect(r.findings.map((f) => f.rule)).toEqual(['meta/not-checked'])
     expect(r.findings[0].title).toBe(`No rule read this log: ${REASON}`)
-    expect(r.findings[0].nextStep).toBe("The Devices tab shows each CTRE device's voltage, current, temperature and faults.")
+    expect(r.findings[0].nextStep).toBe("Open the .hoot from the desktop app's Library: its Devices tab shows each CTRE device's voltage, current, temperature and faults.")
     expect(r.skipped).toHaveLength(RULES.length)
     expect(new Set(r.skipped.map((s) => s.reason))).toEqual(new Set([REASON]))
     expect(r.crashed).toEqual([])
@@ -169,7 +176,7 @@ describe('choosing the profile for a log made from a .hoot', () => {
     expect(profile.signals.enabled).toBe('RobotEnable')
     expect(profile.signals.totalCurrent).toBe('Phoenix6/TotalSupplyCurrent')
     expect(profile.motorGroups).toEqual([])
-    expect(choice.note).toBe('Read as a Phoenix .hoot: no rule reads it yet; the Devices tab shows each device.')
+    expect(choice.note).toBe("Read as a Phoenix .hoot: no rule reads it yet. Opened from the desktop app's Library, its Devices tab shows each CTRE device.")
     expect(choice.note).not.toContain('Add a profile')
   })
 
@@ -256,6 +263,10 @@ describe('the Devices tab on a log that is itself a .hoot', () => {
       'This log is the .hoot itself.',
       'Another file on this bus starts 30 s after this one ends: ABC_2026-03-14_20-16-30.hoot.',
     ])
+  })
+  it('says minutes past two minutes, and "before" when the next file started before this one ended', () => {
+    expect(hootOwnNotes(r, 'ABC_2026-03-14_20-14-20.hoot', ['ABC_2026-03-14_21-20-00.hoot'])[1]).toBe('Another file on this bus starts 64 min after this one ends: ABC_2026-03-14_21-20-00.hoot.')
+    expect(hootOwnNotes(r, 'ABC_2026-03-14_20-14-20.hoot', ['ABC_2026-03-14_20-15-00.hoot'])[1]).toBe('Another file on this bus starts 60 s before this one ends: ABC_2026-03-14_20-15-00.hoot.')
   })
   it('has nothing to add when no later file is on the bus that day', () => {
     expect(hootOwnNotes(r, 'ABC_2026-03-14_20-14-20.hoot', ['ABC_2026-03-13_20-20-00.hoot', 'ABC_2026-03-15_20-20-00.hoot'])).toEqual(['This log is the .hoot itself.'])

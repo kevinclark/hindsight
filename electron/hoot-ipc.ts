@@ -39,8 +39,9 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
   /** The .hoot files of a robot log (library path) or of a hoot-only entry (its record's path: the record and its twins), each with what this computer holds and can read it with. */
   async function filesFor(lib: LocalLibrary, logPath: string): Promise<(HootFile & { sha256: string })[]> {
     if (!checkPath(logPath).startsWith('logs/')) throw new Error('not a log path')
-    const entry = lib.catalog.entries().find((e) => e.record.path === logPath)
-    const only = entry ? undefined : lib.catalog.hootOnly().find((e) => e.record.path === logPath)
+    const entries = lib.catalog.entries()
+    const entry = entries.find((e) => e.record.path === logPath)
+    const only = entry ? undefined : lib.catalog.hootOnly(entries).find((e) => e.record.path === logPath)
     const records = entry ? entry.attached.hoot : only ? [only.record, ...only.attached.hoot] : []
     return Promise.all(records.map(async (r) => {
       const name = r.path.split('/').pop()!
@@ -80,8 +81,9 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
         progress(i, files.length, f.name, { file: { done: 0, total: f.size } })
         try {
           const r = await readOne(lib, f, owlet, signal, log, (p) => progress(i, files.length, f.name, { file: { done: Math.round((p / 100) * f.size), total: f.size } }))
+          // totalAmps is for hub:hootLog's synthetic log only: on a long file it is ~100k points the tab never draws.
           const { cached: _, ...reading } = r
-          report.readings.push(reading)
+          report.readings.push({ ...reading, totalAmps: { t: [], a: [] } })
         } catch (e) {
           const why = e instanceof Error ? e.message : String(e)
           log(`${f.name}: ${why}`)

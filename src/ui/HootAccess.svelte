@@ -8,13 +8,12 @@
 -->
 <script lang="ts">
   import type { HootFile } from '../hoot/types.ts'
+  import CtreTerms from './CtreTerms.svelte'
 
   /** `files`: the .hoot files that are on this computer and would be read. `busy`: a job is running (the button waits). */
   let { files, canDownload, busy, onGetOwlet }: {
     files: HootFile[]; canDownload: boolean; busy: boolean; onGetOwlet: (compliancy: number) => void
   } = $props()
-  // Not imported from src/hoot/owlet.ts: that file is main-process only (`node:` imports). The same address is its LICENSE_URL.
-  const LICENSE_URL = 'https://raw.githubusercontent.com/CrossTheRoadElec/Phoenix-Releases/refs/heads/master/CTRE_LICENSE.txt'
   /** Formats these files need an owlet for and this computer has none. */
   const missing = $derived([...new Set(files.filter((f) => !f.owlet && f.compliancy !== null).map((f) => f.compliancy!))])
 </script>
@@ -23,7 +22,7 @@
   <div class="get">
     <p>Reading {files.filter((f) => f.compliancy === c).length === 1 ? 'this .hoot' : 'these .hoot files'} needs CTRE's converter, owlet (format {c}), and none is on this computer.</p>
     {#if canDownload}
-      <p><button class="button" disabled={busy} onclick={() => onGetOwlet(c)}>Get CTRE's converter</button>{' '}About 4 MB from CTRE's own server. Downloading it means agreeing to <a href={LICENSE_URL} target="_blank" rel="noreferrer">CTRE's licence</a>, between you and CTRE.</p>
+      <p><button class="button" disabled={busy} onclick={() => onGetOwlet(c)}>Get CTRE's converter</button>{' '}About 4 MB from CTRE's own server. <CtreTerms /></p>
     {:else}
       <p>CTRE has no owlet for this kind of computer.</p>
     {/if}

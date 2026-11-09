@@ -89,7 +89,7 @@ const RULES_NOT_RUN = 'the rules about specific motors, devices, cameras and mec
 const MISFIT_TEXT = `So ${RULES_NOT_RUN}`
 
 
-const HOOT_NOTE = 'Read as a Phoenix .hoot: no rule reads it yet; the Devices tab shows each device.'
+const HOOT_NOTE = "Read as a Phoenix .hoot: no rule reads it yet. Opened from the desktop app's Library, its Devices tab shows each CTRE device."
 const HOOT_FMS_NOTE = 'This .hoot says a field (FMS) was attached at some point. Hindsight has not been checked against a .hoot from a field match, so this log is read as practice: every run counts.'
 
 /**

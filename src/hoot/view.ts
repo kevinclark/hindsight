@@ -82,16 +82,16 @@ export const crossesGap = (gaps: { from: number; to: number }[], a: number, b: n
 
 const dayOf = (ms: number) => Math.floor(ms / 86_400_000)
 
+/** Seconds as a reader counts them: whole seconds under two minutes, else whole minutes. */
+const duration = (s: number) => (s < 120 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`)
+
 /**
  * What the Devices tab says about a .hoot that is itself the opened log (a hoot-only entry), in place of any lining up: that
  * it is the log when it shares the opened file's name time ("This log is the .hoot itself."), and the nearest other .hoot on
  * the same bus whose name time is later the same day, with how long after this one's end it starts (its name time minus this
- * name time plus the reading's `end`; whole seconds; no threshold, a negative number says the next file started first).
+ * name time plus the reading's `end`; whole seconds or minutes; no threshold; "before" when the next file started before this one ended).
  * `others`: the file names of every other .hoot in the library.
  */
-/** Seconds as a reader counts them: whole seconds under two minutes, else whole minutes. */
-const afterWords = (s: number) => (Math.abs(s) < 120 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`)
-
 export function hootOwnNotes(reading: Pick<HootReading, 'file' | 'bus' | 'end'>, opened: string, others: string[]): string[] {
   const at = namedTime(reading.file)
   const notes: string[] = []
@@ -101,6 +101,9 @@ export function hootOwnNotes(reading: Pick<HootReading, 'file' | 'bus' | 'end'>,
     .filter((name) => name !== reading.file && hootName(name)?.hardwareId === reading.bus)
     .flatMap((name) => { const t = namedTime(name); return t !== null && t > at && dayOf(t) === dayOf(at) ? [{ name, t }] : [] })
     .sort((a, b) => a.t - b.t)[0]
-  if (next) notes.push(`Another file on this bus starts ${afterWords((next.t - (at + reading.end * 1000)) / 1000)} after this one ends: ${next.name}.`)
+  if (next) {
+    const gap = (next.t - (at + reading.end * 1000)) / 1000
+    notes.push(`Another file on this bus starts ${duration(Math.abs(gap))} ${gap < 0 ? 'before' : 'after'} this one ends: ${next.name}.`)
+  }
   return notes
 }

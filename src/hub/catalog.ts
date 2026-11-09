@@ -163,8 +163,8 @@ export class Catalog {
    * are in `attached.hoot`. A name with no time is its own group; different times are never stitched. Kept apart from
    * `entries()`: every reader of that list assumes a robot log (src/hub/bridge.ts `hootOnly`).
    */
-  hootOnly(): Entry[] {
-    const taken = new Set(this.entries().flatMap((e) => e.attached.hoot.map((r) => r.sha256)))
+  hootOnly(entries: Entry[] = this.entries()): Entry[] {
+    const taken = new Set(entries.flatMap((e) => e.attached.hoot.map((r) => r.sha256)))
     const groups = new Map<string, LogRecord[]>()
     for (const r of this.all()) {
       if (r.kind !== 'hoot' || taken.has(r.sha256)) continue

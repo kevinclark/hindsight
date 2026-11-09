@@ -39,9 +39,10 @@ export interface LogFormat {
 }
 
 /**
- * What a log made from a Phoenix .hoot (src/hoot/synthetic.ts, or AdvantageScope's export of one) holds: the robot's enable,
- * whether it was in autonomous, and the Talons' summed supply current. Every other source is empty, and with no FMS key
- * every such log has practice semantics.
+ * What a log made from a Phoenix .hoot holds: the robot's enable, and (only in the one src/hoot/synthetic.ts writes) whether
+ * it was in autonomous and the Talons' summed supply current. A .wpilog AdvantageScope exported from a .hoot has
+ * `RobotEnable` too, so it is read the same way. Every other source is empty, and with no FMS key every such log has
+ * practice semantics.
  */
 const HOOT_SIGNALS = {
   ...(Object.fromEntries(Object.entries(DATALOGMANAGER_SIGNALS).map(([name, source]) => [name, Array.isArray(source) ? [] : ''])) as unknown as SignalSources),

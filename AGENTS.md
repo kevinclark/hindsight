@@ -160,7 +160,7 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
   in `LibrarySnapshot.hootOnly`, never in `entries` (seven readers assume a robot log). The Library opens one in Match review
   through `hub:hootLog`: owlet's reading as a synthetic .wpilog (`src/hoot/synthetic.ts`) read as the "Phoenix hoot" log
   format (marker `RobotEnable`, `runsNoRules`: no rule, no consolidator, no `others`, no Session summary: `summaryOf` throws).
-- `DS:IsFMSAttached` has no real case: 0 of our .hoot files carry it (checked only with a fake owlet); a log that says FMS
+- `DS:IsFMSAttached` has no real case: 0 of our .hoot files have it true (checked only with a fake owlet); a log that says FMS
   was attached is still read as practice, with a note. Don't build field semantics on it before a real field .hoot is read.
 
 ## Gradle plugin (`companion/gradle-plugin/`)

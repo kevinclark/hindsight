@@ -103,7 +103,7 @@ function notCheckedFinding(skipped: SkippedRule[], noRules?: string): Finding {
       title: `No rule read this log: ${noRules}`,
       meaning: 'This log was made from a Phoenix .hoot file, which no rule reads, so the silence says nothing about this run.',
       causes: [{ id: 'hoot', cause: "Hindsight's rules read AdvantageKit, DogLog and WPILib logs, not .hoot files", look: 'open the robot log of the same run, if there is one' }],
-      nextStep: "The Devices tab shows each CTRE device's voltage, current, temperature and faults.",
+      nextStep: "Open the .hoot from the desktop app's Library: its Devices tab shows each CTRE device's voltage, current, temperature and faults.",
       evidence: Object.fromEntries(skipped.map((s) => [s.rule, s.reason])),
     }
   }

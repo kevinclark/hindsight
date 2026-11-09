@@ -36,8 +36,10 @@ export function reduceExport(bytes: Uint8Array, about: Pick<HootReading, 'file' 
 /**
  * The sum of every TalonFX's supply current on the 0.02 s grid (DT) from `start` to `end`: at each grid time each device's
  * last record at or before it; 0 A before its first record and inside its gaps (`gapsIn`, the same rule the strips break on).
+ * Empty with no Talon (a roboRIO bus): a grid of zeros is ~6 MB of cache on a 2,000 s file.
  */
 export function totalSupplyCurrent(log: WpilogFile, talons: string[], start: number, end: number): { t: number[]; a: number[] } {
+  if (talons.length === 0) return { t: [], a: [] }
   const grid = makeGrid(start, end, DT)
   const sums = new Float64Array(grid.length)
   for (const name of talons) {

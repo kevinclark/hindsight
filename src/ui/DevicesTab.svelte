@@ -16,6 +16,7 @@
   import { size } from './job-bar.ts'
   import JobBar from './JobBar.svelte'
   import HootAccess from './HootAccess.svelte'
+  import CtreTerms from './CtreTerms.svelte'
   import Plot from './Plot.svelte'
   import type { PlotModel } from './plot-data.ts'
 
@@ -194,7 +195,7 @@
     {#if report}
       {#each report.problems as p (p.file)}
         <p class="problem">{p.file}: {p.why}
-          {#if p.reget && status.canDownload}{@const f = held.find((h) => h.name === p.file)}{#if f?.compliancy != null}<button class="button" disabled={busy} onclick={() => getOwlet(f.compliancy!)}>Get CTRE's converter again</button>{/if}{/if}</p>
+          {#if p.reget && status.canDownload}{@const f = held.find((h) => h.name === p.file)}{#if f?.compliancy != null}<button class="button" disabled={busy} onclick={() => getOwlet(f.compliancy!)}>Get CTRE's converter again</button>{' '}<CtreTerms />{/if}{/if}</p>
       {/each}
       {#each views as { r, a, w, rows, scale, spans } (r.file)}
         <h3>{busLabel(r.bus)} <span class="meta">{r.file} · owlet {r.owlet}</span></h3>

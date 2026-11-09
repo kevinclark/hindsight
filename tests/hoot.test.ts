@@ -20,8 +20,8 @@ const series = (t: number[], v: number[]) => ({ name: 'x', t: Float64Array.from(
 
 describe('lining a .hoot up with its robot log', () => {
   // The shape measured on a real pair: ten edges each, the log 11.60-11.70 s later.
-  const hoot = edgesOf([{ t: 0.4, on: false }, { t: 13.777, on: true }, { t: 40.313, on: false }, { t: 246.085, on: true }, { t: 261.523, on: false }, { t: 385.0, on: true }, { t: 386.532, on: false }])
-  const log = edgesOf([{ t: 17.1, on: false }, { t: 25.474, on: true }, { t: 51.916, on: false }, { t: 257.732, on: true }, { t: 273.131, on: false }, { t: 396.65, on: true }, { t: 398.156, on: false }])
+  const hoot = edgesOf([{ t: 0.4, on: false }, { t: 12.5, on: true }, { t: 41.0, on: false }, { t: 240.0, on: true }, { t: 255.5, on: false }, { t: 385.0, on: true }, { t: 386.5, on: false }])
+  const log = edgesOf([{ t: 17.1, on: false }, { t: 24.12, on: true }, { t: 52.66, on: false }, { t: 251.68, on: true }, { t: 267.14, on: false }, { t: 396.65, on: true }, { t: 398.13, on: false }])
 
   it('finds the offset from the enable edges and says how well they agree', () => {
     const a = align(hoot, log)
@@ -135,7 +135,7 @@ describe('reading a .hoot through (a fake) owlet', () => {
   const brownout: FakeHoot = {
     compliancy: 19,
     signals: {
-      RobotEnable: { type: 'boolean', t: [0.4, 13.777, 40.313], v: [false, true, false] },
+      RobotEnable: { type: 'boolean', t: [0.4, 12.5, 41.0], v: [false, true, false] },
       'TalonFX-11/SupplyVoltage': { type: 'double', t: [1, 20, 20.1, 30], v: [12.5, 11.9, 6.9, 12.1] },
       'TalonFX-11/SupplyCurrent': { type: 'double', t: [1, 20.05], v: [0, 85] },
       'TalonFX-11/DeviceTemp': { type: 'double', t: [1, 30], v: [25, 31] },
