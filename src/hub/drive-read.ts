@@ -2,8 +2,13 @@
  * The read half of the Drive client: list, stat and ranged read over fetch, with the retries, back-off and token refresh
  * every Drive call needs. The phone uses it alone (scope drive.readonly, nothing written); DriveAdapter extends it with
  * the writes. It sends GET and nothing else, and no `node:` module is imported here, so a phone build can bundle it.
+ *
+ * Never silent (transfer-watch.ts): every request, its answer and its body are watched, so nothing moving for the stall
+ * time aborts it, and Stop aborts it at once. A stalled or dropped ranged read asks again for the rest from the next byte
+ * (never from the start); after TRIES stalls (or RETRIES dropped connections) with no byte moving, LinkLost says why.
  */
-import { SignInAgain, checkPath, type FileInfo } from './adapter.ts'
+import { LinkLost, SignInAgain, Stopped, checkPath, stopIfAsked, type FileInfo, type TransferWatch } from './adapter.ts'
+import { STALL_MS, Stalled, TRIES, atWords, secsWords, watchdog, type Watchdog } from './transfer-watch.ts'
 
 export const API = 'https://www.googleapis.com/drive/v3'
 export const FOLDER = 'application/vnd.google-apps.folder'
@@ -19,6 +24,83 @@ export interface DriveOptions {
   token(refresh?: boolean): Promise<string>
   fetch?: typeof fetch
   sleep?(ms: number): Promise<void>
+  /** Nothing moving for this long is a stall (default STALL_MS; tests make it short). */
+  stallMs?: number
+}
+
+/** A request's watch, and what only the adapter's own calls ask for. */
+export interface RequestWatch extends TransferWatch {
+  /** A ranged read of bytes `[start, end)` of a file of `size`: a stall or dropped connection mid-body asks for the rest from the next byte. */
+  range?: { start: number; end: number; size: number }
+  /** An upload body, handed to the connection in pieces as it takes them, so a stalled upload shows (fetch can't count bytes sent). */
+  upload?: Uint8Array
+  /** No retry here after a stall, a dropped connection or a 5xx: the caller asks Drive what it kept (an upload chunk). */
+  once?: boolean
+}
+
+/** Pieces an upload body is handed over in: each one taken is data moving. */
+const PIECE = 256 << 10
+const NULL_BODY = new Set([101, 103, 204, 205, 304])
+const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** Failures since bytes last moved, by kind: a stall is tried TRIES times in all, a dropped connection or a 5xx RETRIES. */
+export class Tries {
+  private stalls = 0
+  private others = 0
+  moved(): void { this.stalls = 0; this.others = 0 }
+  /** Counts a failure; `{ n, of }` is this try's number and the limit for its kind. */
+  count(stalled: boolean): { n: number; of: number } { return stalled ? { n: ++this.stalls, of: TRIES } : { n: ++this.others, of: RETRIES } }
+}
+
+/** One fetch with its answer read whole, under a watchdog: nothing moving for the stall time throws Stalled, Stop throws Stopped. */
+async function send(doFetch: typeof fetch, url: string, init: RequestInit, more: RequestWatch, stallMs: number, got: { status: number; headers: Headers; parts: Uint8Array[]; n: number }): Promise<void> {
+  const ctl = new AbortController()
+  let why: Error | null = null
+  const dog = watchdog({ stallMs, cancelled: more.cancelled, onStop: () => { why = new Stopped(); ctl.abort(why) }, onStall: () => { why = new Stalled('stalled'); ctl.abort(why) } })
+  try {
+    const upload = more.upload?.length ? { body: pieces(more.upload, dog, more.onBytes), duplex: 'half' } : {}
+    const res = await doFetch(url, { ...init, ...upload, signal: ctl.signal } as RequestInit)
+    got.status = res.status
+    got.headers = res.headers
+    dog.alive()
+    const reader = res.body?.getReader()
+    for (let r = await reader?.read(); r && !r.done; r = await reader!.read()) {
+      dog.alive()
+      got.parts.push(r.value)
+      got.n += r.value.length
+      if (res.ok && !more.upload) more.onBytes?.(got.n)
+    }
+  } catch (e) {
+    throw why ?? e // our own abort, whatever fetch made of it
+  } finally { dog.done() }
+}
+
+/**
+ * An upload body as a stream the connection pulls from: each piece taken is data moving. The last piece taken leaves
+ * what is still in the connection's buffers to drain unseen, so Drive's answer is allowed as long again as the hand-over
+ * took (measured: the buffers held ~1.5 MB of a 4 MiB body, under half, so the drain takes no longer than the hand-over).
+ */
+function pieces(bytes: Uint8Array, dog: Watchdog, onBytes?: (n: number) => void): ReadableStream<Uint8Array> {
+  let at = 0
+  const began = Date.now()
+  return new ReadableStream<Uint8Array>({
+    pull(c) {
+      if (at >= bytes.length) return c.close()
+      const piece = bytes.slice(at, at + PIECE)
+      at += piece.length
+      dog.alive(at >= bytes.length ? Date.now() - began : 0)
+      onBytes?.(at)
+      c.enqueue(piece)
+    },
+  }, { highWaterMark: 0 })
+}
+
+const concat = (parts: Uint8Array[]): Uint8Array => {
+  if (parts.length === 1) return parts[0]
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let at = 0
+  for (const p of parts) { out.set(p, at); at += p.length }
+  return out
 }
 
 export interface DriveFile { id: string; name: string; mimeType: string; size?: string; modifiedTime?: string; md5Checksum?: string; sha256Checksum?: string }
@@ -40,6 +122,7 @@ export class DriveReader {
   protected readonly opts: DriveOptions
   protected readonly fetch: typeof fetch
   protected readonly sleep: (ms: number) => Promise<void>
+  protected readonly stallMs: number
   /** path → folder id. */
   protected folders = new Map<string, string>()
   /** Logs are never rewritten, so a log's file is remembered by path (a manifest changes, so it is looked up each time). */
@@ -51,6 +134,7 @@ export class DriveReader {
     this.opts = opts
     this.fetch = opts.fetch ?? globalThis.fetch
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
+    this.stallMs = opts.stallMs ?? STALL_MS
     this.folders.set('', opts.rootId)
   }
 
@@ -77,15 +161,15 @@ export class DriveReader {
   }
 
   /** Bytes `[start, end)` of a file, by a Range GET. */
-  async read(path: string, start: number, end: number): Promise<Uint8Array> {
+  async read(path: string, start: number, end: number, watch: TransferWatch = {}): Promise<Uint8Array> {
     const f = await this.find(path)
     if (!f) throw new Error(`${path} not found`)
-    return this.fetchRange(f, start, end)
+    return this.fetchRange(f, start, end, watch)
   }
 
-  protected async fetchRange(f: DriveFile, start: number, end: number): Promise<Uint8Array> {
+  protected async fetchRange(f: DriveFile, start: number, end: number, watch: TransferWatch = {}): Promise<Uint8Array> {
     this.calls.download++
-    const res = await this.request(`${API}/files/${f.id}?alt=media&supportsAllDrives=true`, { headers: { Range: `bytes=${start}-${end - 1}` } })
+    const res = await this.request(`${API}/files/${f.id}?alt=media&supportsAllDrives=true`, {}, [], { ...watch, range: { start, end, size: Number(f.size ?? 0) } })
     return new Uint8Array(await res.arrayBuffer())
   }
 
@@ -148,24 +232,55 @@ export class DriveReader {
     return isReadOnlyRequest(method, url)
   }
 
-  /** One authorised request with retries; throws DriveError for a refusal, SignInAgain when the token can't be renewed. */
-  protected async request(url: string, init: RequestInit = {}, okStatuses: number[] = []): Promise<Response> {
+  /**
+   * One authorised request with retries; throws DriveError for a refusal, SignInAgain when the token can't be renewed,
+   * Stopped on Stop, and LinkLost when stalls or dropped connections used up their tries with no byte moving.
+   */
+  protected async request(url: string, init: RequestInit = {}, okStatuses: number[] = [], more: RequestWatch = {}): Promise<Response> {
     const method = (init.method ?? 'GET').toUpperCase()
     if (!this.allows(method, url)) throw new Error(`Hindsight never sends ${method} ${url.split('?')[0]} to Drive`)
     // Creating a folder or a copy is not repeated after a lost answer (the first may have worked): the caller looks first next time.
-    const retryNetwork = method !== 'POST' || url.includes('uploadType=resumable')
+    const retryNetwork = !more.once && (method !== 'POST' || url.includes('uploadType=resumable'))
+    const range = more.range
+    // A ranged read's bytes so far, across tries: a retry asks only for the rest.
+    const kept: Uint8Array[] = []
+    let have = 0
+    const tries = new Tries()
     let refreshed = false
     for (let attempt = 0; ; attempt++) {
+      stopIfAsked(more.cancelled)
+      if (range && range.start + have >= range.end) return new Response(concat(kept) as unknown as BodyInit, { status: 206 })
       const token = await this.opts.token(refreshed)
-      let res: Response
+      const headers = { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}`, ...(range ? { Range: `bytes=${range.start + have}-${range.end - 1}` } : {}) }
+      const got = { status: 0, headers: new Headers(), parts: [] as Uint8Array[], n: 0 }
+      const keep = () => {
+        if (!range || (got.status !== 206 && !(got.status === 200 && range.start + have === 0))) return false
+        kept.push(...got.parts); have += got.n
+        return true
+      }
+      const onBytes = more.onBytes
       try {
-        res = await this.fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` } })
+        await send(this.fetch, url, { ...init, headers }, { ...more, onBytes: range ? (n) => onBytes?.(have + n) : onBytes }, this.stallMs, got)
       } catch (e) {
-        if (!retryNetwork || attempt >= RETRIES - 1) throw e
+        if (e instanceof Stopped) throw e
+        if (keep() && got.n > 0) tries.moved()
+        const stalled = e instanceof Stalled
+        const at = range ? `, ${atWords(range.start + have, range.size)}` : ''
+        const words = stalled ? `${got.status ? 'no data' : 'no answer'} from Google Drive for ${secsWords(this.stallMs)}${at}` : `lost the connection to Google Drive (${msg(e)})${at}`
+        if (!retryNetwork) throw stalled ? new Stalled(words) : e
+        const { n, of } = tries.count(stalled)
+        more.log?.(`${stalled ? 'stall' : 'link lost'} (try ${n} of ${of}): ${words}`)
+        if (n >= of) throw new LinkLost(`${words}; tried ${n} time${n === 1 ? '' : 's'}`, e)
+        more.onStep?.(`${stalled ? 'Google Drive stopped sending' : 'Lost the connection to Google Drive'}; trying again (try ${n + 1} of ${of})`)
         await this.sleep(2 ** attempt * 500)
         continue
       }
-      if (res.ok || okStatuses.includes(res.status)) return res
+      const res = new Response((got.n || !NULL_BODY.has(got.status) ? concat(got.parts) : null) as unknown as BodyInit, { status: got.status, headers: got.headers })
+      if (res.ok || okStatuses.includes(res.status)) {
+        if (!range) return res
+        if (!keep()) throw new DriveError(got.status, `Google Drive answered ${got.status} to a request for bytes ${range.start + have}-${range.end - 1}`)
+        return new Response(concat(kept).subarray(0, range.end - range.start) as unknown as BodyInit, { status: 206 })
+      }
       if (res.status === 401 && !refreshed) { refreshed = true; continue }
       const limited = res.status === 429 || (res.status === 403 && (await isRateLimit(res)))
       if (limited && attempt < RATE_RETRIES - 1) { await this.sleep(Math.min(2 ** attempt, 30) * 1000 + Math.random() * 250); continue }

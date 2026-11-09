@@ -17,7 +17,7 @@
  * Nothing is deleted or overwritten on either side.
  */
 import { createHash } from 'node:crypto'
-import { ManifestConflict, SignInAgain, Stopped, readText, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
+import { LinkLost, ManifestConflict, SignInAgain, Stopped, readText, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
 import { fileMeter, type ProgressFn } from './jobs.ts'
 import type { LocalLibrary } from './library-store.ts'
 import { fileSource } from './local-adapter.ts'
@@ -181,14 +181,16 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   let done = 0
   let inARow = 0
   const meter = fileMeter(options.onProgress, todo.map((r) => r.size))
+  let lostLink = false
   for (const r of todo) {
-    const { at, end } = meter.start(done, todo.length, r.names[0], r.size)
+    // An upload comes over the network from its first byte; a copy inside Drive moves no bytes here.
+    const { at, step: fileStep, end } = meter.start(done, todo.length, r.names[0], r.size, !(r.sourceId && team.copyInto))
     done++
     if (options.cancelled?.()) { report.stopped = true; break }
     const there = remote.get(r.path)
     if (there) { end(); report.failed.push({ path: r.path, reason: `the team store has a different file at this path (${there.size} bytes, or other checksums); left alone and not published` }); continue }
     try {
-      const { info, how } = await putLog(lib, team, r, { onProgress: at, cancelled: options.cancelled }).finally(end)
+      const { info, how } = await putLog(lib, team, r, { onProgress: at, cancelled: options.cancelled, onStep: fileStep }).finally(end)
       report.uploaded.push({ path: r.path, size: info.size, how })
       remote.set(r.path, info)
       inARow = 0
@@ -199,6 +201,13 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
       if (e instanceof SignInAgain) throw e
       // Stop part way through a file: nothing of it was left on the team store, and it is not a failure.
       if (e instanceof Stopped) { report.stopped = true; break }
+      // The link to Drive is gone (stalled or dropped through every try): the next log would meet the same wait, so the
+      // sync ends here with the words; nothing of this log was left on the team store, and it is not a failed log.
+      if (e instanceof LinkLost) {
+        lostLink = true
+        report.problems.push(`Stopped at log ${done} of ${todo.length} (${r.names[0]}): ${e.reason}. ${report.uploaded.length} log${report.uploaded.length === 1 ? '' : 's'} went up this sync and will be shared by the next one. Sync again to continue from here.`)
+        break
+      }
       const reason = e instanceof Error ? e.message : String(e)
       report.failed.push({ path: r.path, reason })
       if (++inARow === FAILURES_IN_A_ROW) {
@@ -210,9 +219,12 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
   }
   report.notTried = todo.length - report.uploaded.length - report.failed.length
 
-  // 4. Publish what is left: a log's record only when its file is there; aliases and tags always.
-  step('Telling the team which logs are up')
-  await publish()
+  // 4. Publish what is left: a log's record only when its file is there; aliases and tags always. Not after a lost link (it
+  // would wait out the same stall); the next sync publishes what landed.
+  if (!lostLink) {
+    step('Telling the team which logs are up')
+    await publish()
+  }
   report.published = publishedLines.length
 
   await lib.reload()
@@ -273,7 +285,7 @@ async function syncHistory(lib: LocalLibrary, team: StorageAdapter, report: Sync
  * record's numbers: writeNew proved the sent bytes against the record's sha-256, and the shape of Drive's
  * upload-completion answer has not been read live (a missing size would read as 0 and un-publish a good upload).
  */
-async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord, watch: Pick<WriteOptions, 'onProgress' | 'cancelled'>): Promise<{ info: FileInfo; how: SyncReport['uploaded'][number]['how'] }> {
+async function putLog(lib: LocalLibrary, team: StorageAdapter, r: LogRecord, watch: Pick<WriteOptions, 'onProgress' | 'cancelled' | 'onStep'>): Promise<{ info: FileInfo; how: SyncReport['uploaded'][number]['how'] }> {
   if (r.sourceId && team.copyInto) {
     const copy = await team.copyInto(r.sourceId, r.path)
     if (!isThere(copy, r)) throw new Error(`the copy inside Drive is not the library's file (${copy.size} bytes, or other checksums); left there and not published`)
@@ -309,18 +321,25 @@ export async function fetchLogs(lib: LocalLibrary, team: StorageAdapter, records
   let skipped = 0
   const meter = fileMeter(options.onProgress, records.map((r) => r.size))
   for (const r of [...records].sort(matchesFirst)) {
-    const { at, end } = meter.start(done, records.length, r.names[0], r.size)
+    const { at, step, end } = meter.start(done, records.length, r.names[0], r.size, true)
     done++
     if (options.cancelled?.()) { report.stopped = true; break }
     if (await lib.store.stat(r.path)) { end(); skipped++; continue }
     try {
       const CHUNK = 8 << 20
-      await lib.store.writeNew(r.path, { size: r.size, read: (a, b) => team.read(r.path, a, Math.min(b, a + CHUNK)).then((x) => x) }, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}), onProgress: at, cancelled: options.cancelled }).finally(end)
+      // Bytes count as they arrive from Drive (not per piece), so a slow link shows moving and a quiet one shows as quiet.
+      const watch = { cancelled: options.cancelled, onStep: step }
+      await lib.store.writeNew(r.path, { size: r.size, read: (a, b) => team.read(r.path, a, Math.min(b, a + CHUNK), { ...watch, onBytes: (n) => at(a + n) }) }, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}), onProgress: at, cancelled: options.cancelled }).finally(end)
       report.fetched.push(r.path)
       inARow = 0
     } catch (e) {
       // Stop part way through a file: its temp file is gone, and it is not a failure.
       if (e instanceof Stopped) { report.stopped = true; break }
+      // The link to Drive is gone: the next log would meet the same wait. Its temp file is gone; it is not a failed log.
+      if (e instanceof LinkLost) {
+        report.problems.push(`Stopped at log ${done} of ${records.length} (${r.names[0]}): ${e.reason}. The ${report.fetched.length} log${report.fetched.length === 1 ? '' : 's'} that came down are kept. Download again to continue from here.`)
+        break
+      }
       const reason = e instanceof Error ? e.message : String(e)
       report.failed.push({ path: r.path, reason })
       if (++inARow === FAILURES_IN_A_ROW) {
