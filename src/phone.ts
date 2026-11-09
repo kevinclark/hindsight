@@ -16,6 +16,9 @@ export const keptLogs = () => new LogKeep(indexedDbKeepStore(), { capBytes: keep
 /** Sign out: forget the copies of the team's files and the kept logs on this phone. */
 export async function forgetPhoneData(): Promise<void> {
   await clearIndexedDbCache()
+  // Through the hub when there is one, so a log still being stored is waited for, not left behind.
+  const hub = (globalThis as unknown as { hindsightPhone?: BrowserHub }).hindsightPhone
+  if (hub) await hub.clearKept()
   await keptLogs().clear()
 }
 import { VERSION } from './version.ts'

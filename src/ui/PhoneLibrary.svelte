@@ -69,7 +69,7 @@
 
 <section class="phone-library">
   <p class="meta">Every robot log your team's laptops have shared. Opening one downloads it to this phone (the size is on the button) and shows its full Match review. The ones you opened last stay on this phone (reopening needs no download) until Sign out.</p>
-  <p class="keep"><label>Keep up to <select value={cap} onchange={(e) => chooseCap(Number((e.currentTarget as HTMLSelectElement).value))}>
+  <p class="keep"><label>Keep opened logs: <select value={cap} onchange={(e) => chooseCap(Number((e.currentTarget as HTMLSelectElement).value))}>
     {#each KEEP_CHOICES as c (c.bytes)}<option value={c.bytes}>{c.label}</option>{/each}
   </select></label> <span class="meta">{mb(keptBytes)} MB kept</span>{#if keptBytes > 0}{' '}<button class="link" onclick={clearKept}>Clear</button>{/if}</p>
   {#if problem}<p class="problem" role="alert">{problem} <button class="link" onclick={list}>Try again</button></p>{/if}

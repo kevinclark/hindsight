@@ -1,6 +1,6 @@
-// Logs the phone keeps after opening them: by sha-256, up to a byte cap, the least recently opened dropped first; a log
-// above the size limit is never kept; reopening a kept log reads no Drive bytes; a kept copy that fails its sha-256 is
-// dropped and downloaded again; Sign out empties it. Invented data only.
+// Logs the phone keeps after opening them: by sha-256, up to a byte cap the person sets, the least recently opened dropped
+// first; a log bigger than the cap is never kept; reopening a kept log reads no Drive bytes; a kept copy that fails its
+// sha-256 is dropped and downloaded again; Sign out and Clear empty it, even mid-write. Invented data only.
 import { describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { LogKeep, memoryKeepStore } from '../src/hub/log-keep.ts'
@@ -94,7 +94,7 @@ describe('the phone keep on IndexedDB', () => {
     const { indexedDbKeepStore } = await import('../src/hub/log-keep.ts')
     const { forgetPhoneData, keptLogs } = await import('../src/phone.ts')
     const { indexedDbCache } = await import('../src/hub/phone-cache.ts')
-    const store = indexedDbKeepStore('hindsight-logs', 1000) // 1000-byte pieces: a 3000-byte log is 3 of them
+    const store = indexedDbKeepStore('hindsight-logs', 1000) // 1000-byte pieces: a 3500-byte log is 4 of them
     const a = bytes(3500, 9)
     await store.write({ sha256: sha(a), size: a.length, usedAt: 1 }, a)
     expect(await store.read(sha(a))).toEqual(a)
@@ -153,5 +153,68 @@ describe('the keep size setting', () => {
     expect(keepCap(store)).toBe(2 * 2 ** 30)
     m.set('hindsight.phone.keepBytes', '12345')
     expect(keepCap(store)).toBe(2 ** 30)
+  })
+})
+
+describe('the IndexedDB keep, more', () => {
+  it('removing one log leaves another intact; a missing piece reads as not kept; version 1 stores are replaced', async () => {
+    const { IDBFactory, IDBKeyRange } = await import('fake-indexeddb')
+    const factory = new IDBFactory()
+    Object.assign(globalThis, { indexedDB: factory, IDBKeyRange })
+    // A version 1 database (one Blob per log) as the earlier build left it.
+    await new Promise<void>((resolve) => { const r = factory.open('old-keep', 1); r.onupgradeneeded = () => { r.result.createObjectStore('meta', { keyPath: 'sha256' }); r.result.createObjectStore('bytes') }; r.onsuccess = () => { r.result.close(); resolve() } })
+    const { indexedDbKeepStore } = await import('../src/hub/log-keep.ts')
+    const store = indexedDbKeepStore('old-keep', 1000)
+    const a = bytes(3500, 1), b = bytes(2500, 2)
+    await store.write({ sha256: sha(a), size: a.length, usedAt: 1 }, a)
+    await store.write({ sha256: sha(b), size: b.length, usedAt: 2 }, b)
+    const names = await new Promise<string[]>((resolve) => { const r = factory.open('old-keep'); r.onsuccess = () => { const n = [...r.result.objectStoreNames]; r.result.close(); resolve(n) } })
+    expect(names.sort()).toEqual(['meta', 'pieces'])
+    await store.remove(sha(a))
+    expect(await store.read(sha(b))).toEqual(b)
+    expect(await store.read(sha(a))).toBeNull()
+    await new Promise<void>((resolve) => { const r = factory.open('old-keep'); r.onsuccess = () => { const t = r.result.transaction('pieces', 'readwrite'); t.objectStore('pieces').delete(`${sha(b)}#000001`); t.oncomplete = () => { r.result.close(); resolve() } } })
+    expect(await store.read(sha(b))).toBeNull()
+  })
+})
+
+describe('the hub and its keep writes', () => {
+  // A store whose writes take a while, as an 80-piece IndexedDB write does.
+  function slowKeep() {
+    const inner = memoryKeepStore()
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const store = { ...inner, write: async (m: Parameters<typeof inner.write>[0], b: Uint8Array) => { await gate; return inner.write(m, b) } }
+    return { keep: new LogKeep(store, { capBytes: 100_000 }), release }
+  }
+  const rec = (content: Uint8Array, name: string): LogRecord => ({ type: 'log', kind: 'wpilog', sha256: sha(content), size: content.length, path: `logs/2098-2099/2099-03-05/${name}`, names: [name] }) as unknown as LogRecord
+  const entryOf = (content: Uint8Array, name: string): Pick<Entry, 'record' | 'attached'> => ({ record: rec(content, name), attached: { dslog: [], dsevents: [], hoot: [] } })
+  const hubOf = (keep: LogKeep, files: Map<string, Uint8Array>) => new BrowserHub({ store: { list: async () => [], stat: async () => null, read: async () => new Uint8Array(0) }, cache: memoryCache(), version: 't', keep, media: { downloadWhole: async (p: string) => files.get(p)! } })
+
+  it('Clear during a keep write leaves nothing kept', async () => {
+    const q = bytes(1000, 1)
+    const e = entryOf(q, 'q.wpilog')
+    const { keep, release } = slowKeep()
+    const hub = hubOf(keep, new Map([[e.record.path, q]]))
+    await hub.openLog(e)
+    const cleared = hub.clearKept()
+    release()
+    await cleared
+    expect(await hub.keptLogs()).toEqual(new Set())
+  })
+
+  it('a second open waits for the first log to be stored, and the list counts it', async () => {
+    const q = bytes(1000, 2), r = bytes(1000, 3)
+    const e1 = entryOf(q, 'q.wpilog'), e2 = entryOf(r, 'r.wpilog')
+    const { keep, release } = slowKeep()
+    const hub = hubOf(keep, new Map([[e1.record.path, q], [e2.record.path, r]]))
+    await hub.openLog(e1)
+    let second = false
+    const opening = hub.openLog(e2).then(() => { second = true })
+    await new Promise((res) => setTimeout(res, 10))
+    expect(second).toBe(false)
+    release()
+    await opening
+    expect(await hub.keptLogs()).toEqual(new Set([sha(q), sha(r)]))
   })
 })

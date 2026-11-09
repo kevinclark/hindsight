@@ -5,11 +5,11 @@ const MB = 2 ** 20
 const GB = 2 ** 30
 
 export const KEEP_CHOICES = [
-  { bytes: 0, label: 'Nothing' },
-  { bytes: 500 * MB, label: '500 MB' },
-  { bytes: GB, label: '1 GB' },
-  { bytes: 2 * GB, label: '2 GB' },
-  { bytes: 5 * GB, label: '5 GB' },
+  { bytes: 0, label: 'None' },
+  { bytes: 500 * MB, label: 'Up to 500 MB' },
+  { bytes: GB, label: 'Up to 1 GB' },
+  { bytes: 2 * GB, label: 'Up to 2 GB' },
+  { bytes: 5 * GB, label: 'Up to 5 GB' },
 ] as const
 export const KEEP_DEFAULT = GB
 
@@ -17,8 +17,10 @@ type KeyStore = Pick<Storage, 'getItem' | 'setItem'>
 
 export function keepCap(store: KeyStore): number {
   try {
-    const n = Number(store.getItem(KEY))
-    return KEEP_CHOICES.some((c) => c.bytes === n) && store.getItem(KEY) !== null ? n : KEEP_DEFAULT
+    const raw = store.getItem(KEY)
+    if (raw === null || raw.trim() === '') return KEEP_DEFAULT
+    const n = Number(raw)
+    return KEEP_CHOICES.some((c) => c.bytes === n) ? n : KEEP_DEFAULT
   } catch { return KEEP_DEFAULT }
 }
 

@@ -44,6 +44,11 @@ export class BrowserHub {
   private readonly store: ReadStore
   private readonly media: BrowserHubOptions['media']
   private readonly keep: LogKeep | undefined
+  /**
+   * The keep's writes, one after another. Every keep operation and the next open wait for it, so Clear or Sign out never
+   * races a write (a cleared log came back), the cap holds, and the log being stored is let go before the next downloads.
+   */
+  private pending: Promise<void> = Promise.resolve()
   private readonly cache: TextCache
   private readonly version: string
   private readonly now: () => number
@@ -145,6 +150,7 @@ export class BrowserHub {
   /** A log and its DS logs, each read from the keep or downloaded whole, and checked against the sha-256 the manifest gives; a download within the keep's limits is kept for the next open. */
   async openLog(entry: Pick<Entry, 'record' | 'attached'>, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal; log?(line: string): void } = {}): Promise<OpenedFile[]> {
     if (!this.media) throw new Error('This phone cannot open logs.')
+    if (this.keep) { opts.log?.('waiting for the last log to be stored'); await this.pending }
     const records = [entry.record, ...entry.attached.dslog, ...entry.attached.dsevents]
     const total = records.reduce((n, r) => n + r.size, 0)
     const out: OpenedFile[] = []
@@ -158,8 +164,9 @@ export class BrowserHub {
         bytes = await this.media.downloadWhole(r.path, { signal: opts.signal, onProgress: (got) => opts.onProgress?.(before + got, total), log: opts.log })
         opts.log?.(`${baseName(r.path)}: checking sha-256`)
         if ((await sha256Hex(bytes)) !== r.sha256) throw new Error(`${baseName(r.path)} on the team Drive is not the log the team's list names (its checksum differs).`)
-        // Not awaited: Match review need not wait for the storage write (put swallows its own failures).
-        void this.keep?.put(r.sha256, bytes)
+        // Not awaited here: Match review need not wait for the storage write (put swallows its own failures).
+        const keep = this.keep, sha = r.sha256, kept = bytes
+        if (keep) this.pending = this.pending.then(() => keep.put(sha, kept))
       }
       opts.onProgress?.(before + r.size, total)
       out.push({ name: baseName(r.path), bytes })
@@ -169,14 +176,14 @@ export class BrowserHub {
   }
 
   /** How many bytes of logs are kept on this phone. */
-  async keptBytes(): Promise<number> { return (await this.keep?.used()) ?? 0 }
+  async keptBytes(): Promise<number> { await this.pending; return (await this.keep?.used()) ?? 0 }
   /** A new size for the kept logs: the least recently opened go at once until the rest fit. */
-  async setKeepCap(bytes: number): Promise<void> { await this.keep?.setCap(bytes) }
+  async setKeepCap(bytes: number): Promise<void> { await this.pending; await this.keep?.setCap(bytes) }
   /** Forget every kept log. */
-  async clearKept(): Promise<void> { await this.keep?.clear() }
+  async clearKept(): Promise<void> { await this.pending; await this.keep?.clear() }
 
   /** The sha-256 of every log kept on this phone (the Library marks them). */
-  async keptLogs(): Promise<Set<string>> { return new Set((await this.keep?.kept()) ?? []) }
+  async keptLogs(): Promise<Set<string>> { await this.pending; return new Set((await this.keep?.kept()) ?? []) }
 
   /** A listing of `events` or `history`, which also moves the freshness marks. */
   private async listed(prefix: 'events' | 'history'): Promise<FileInfo[]> {
