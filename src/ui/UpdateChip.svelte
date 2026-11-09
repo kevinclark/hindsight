@@ -133,6 +133,8 @@
         {:else if st.kind === 'manual'}
           <p>Hindsight {st.next} is out. This copy can't update itself: download the new version, open it, and drag Hindsight into Applications to replace this one.</p>
           <p class="row"><a class="link-button" href={st.url} target="_blank" rel="noreferrer">Download</a></p>
+        {:else if st.kind === 'waiting'}
+          <p>Hindsight {st.next} is out. It downloads when {st.job.charAt(0).toLowerCase() + st.job.slice(1)} finishes: your work comes first.</p>
         {:else if st.kind === 'checking'}
           <p>Checking for a newer Hindsight…</p>
         {:else if st.kind === 'dev'}

@@ -13,6 +13,8 @@ export type UpdateState =
   | { kind: 'ready'; version: string; next: string }
   | { kind: 'failed'; version: string; checkedAt: number | null; since: number; reason: string }
   | { kind: 'manual'; version: string; next: string; url: string; checkedAt: number }
+  /** A newer release is out, and its download waits for the user's own job (a pull, a Sync…) to finish. */
+  | { kind: 'waiting'; version: string; next: string; job: string }
 
 export type UpdateEvent =
   | { type: 'checking' } | { type: 'none' } | { type: 'available'; next: string }
@@ -21,6 +23,8 @@ export type UpdateEvent =
   | { type: 'manual'; next: string; url: string }
   /** macOS's Squirrel couldn't fetch or unpack what was downloaded: the update will not install. */
   | { type: 'install-failed'; reason: string }
+  /** The user's job `job` runs: the download of `next` waits (or stops, to start again after). */
+  | { type: 'wait'; next: string; job: string }
 
 /** A check every four hours: releases ship up to ten a day. */
 export const CHECK_EVERY_MS = 4 * 60 * 60 * 1000
@@ -63,11 +67,14 @@ export function step(s: UpdateState, e: UpdateEvent, now: number): UpdateState {
       if (s.kind === 'manual') return s
       return {
         kind: 'failed', version: s.version, reason: e.reason,
-        checkedAt: s.kind === 'downloading' ? null : s.checkedAt,
+        checkedAt: s.kind === 'downloading' || s.kind === 'waiting' ? null : s.checkedAt,
         since: s.kind === 'failed' ? s.since : now,
       }
     case 'install-failed':
       return s
+    case 'wait':
+      if (s.kind === 'manual') return s
+      return s.kind === 'waiting' && s.next === e.next && s.job === e.job ? s : { kind: 'waiting', version: s.version, next: e.next, job: e.job }
     case 'manual':
       return { kind: 'manual', version: s.version, next: e.next, url: e.url, checkedAt: now }
   }
@@ -98,6 +105,10 @@ export function chip(s: UpdateState, now: number, whatsNewVersion: string | null
       return { text: `${s.next} ready · Restart to update`, action: 'restart', accent: true, title: `Hindsight ${s.next} is downloaded. Restart now, or it installs the next time you quit.` }
     case 'failed':
       return { text: `${X} · couldn't update since ${clock(s.since)} · Retry`, action: 'retry', accent: false, title: `Hindsight ${X} could not check for or download an update since ${clock(s.since)}; select this to try again.` }
+    case 'waiting': {
+      const job = s.job.charAt(0).toLowerCase() + s.job.slice(1)
+      return { text: `${s.next} waits for ${job}`, action: null, accent: false, title: `Hindsight ${s.next} downloads when ${job} finishes; your work comes first.` }
+    }
     case 'manual':
       return { text: `${s.next} is out · Download`, action: 'download', accent: false, title: `Hindsight ${s.next} is out; this copy is ${X} and cannot update itself, so download the new one.` }
   }

@@ -23,7 +23,8 @@ export interface AutoUpdaterLike {
   forceDevUpdateConfig?: boolean
   updateConfigPath?: string | null
   on(event: string, listener: (arg: any) => void): unknown
-  checkForUpdates(): Promise<{ cancellationToken?: { cancel(): void }; downloadPromise?: Promise<unknown> | null } | null>
+  checkForUpdates(): Promise<{ isUpdateAvailable?: boolean; cancellationToken?: { cancel(): void }; downloadPromise?: Promise<unknown> | null } | null>
+  downloadUpdate(cancellationToken?: { cancel(): void }): Promise<unknown>
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
 }
 
@@ -151,7 +152,8 @@ export class Updater {
 
   private autoUpdater(): Promise<AutoUpdaterLike> {
     return (this.auto ??= this.env.loadAutoUpdater().then((au) => {
-      au.autoDownload = true
+      // The updater decides when to download: never while the user's own job runs (US-19).
+      au.autoDownload = false
       au.autoInstallOnAppQuit = true
       if (this.feed) {
         // A dev run reads its feed from dev-app-update.yml; this one sits in the run's own data folder and downloads into a cache
@@ -163,7 +165,11 @@ export class Updater {
       }
       au.on('checking-for-update', () => this.dispatch({ type: 'checking' }))
       au.on('update-not-available', () => this.dispatch({ type: 'none' }))
-      au.on('update-available', (info: { version: string }) => { this.staged = false; this.dispatch({ type: 'available', next: info.version }) })
+      au.on('update-available', (info: { version: string }) => {
+        this.staged = false
+        const job = this.deps.runningJob()
+        this.dispatch(job ? { type: 'wait', next: info.version, job } : { type: 'available', next: info.version })
+      })
       au.on('download-progress', (p: { transferred: number; total: number; bytesPerSecond: number }) => this.dispatch({ type: 'progress', transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond }))
       au.on('update-downloaded', (info: { version: string }) => this.dispatch({ type: 'downloaded', next: info.version }))
       au.on('error', (e: unknown) => {
@@ -183,11 +189,13 @@ export class Updater {
       const result = await au.checkForUpdates()
       // null: electron-updater isn't active here (a Linux copy not run as an AppImage) and said nothing.
       if (!result) { if (this.state.kind === 'checking') this.dispatch({ type: 'error', reason: "this copy can't update itself" }); return }
+      // 'update-available' already chose: downloading (nothing of the user's runs) or waiting (it starts after, from tick()).
+      if (!result.isUpdateAvailable || this.state.kind !== 'downloading') return
       const token = result.cancellationToken
       this.cancelDownload = token ? () => token.cancel() : null
       // A failed download rejects this promise and also emits 'error', which is what the chip hears; without this catch the
       // rejection is unhandled.
-      result.downloadPromise?.catch(() => {})
+      au.downloadUpdate(token).catch(() => {})
     } catch (e) { this.dispatch({ type: 'error', reason: reasonOf(e) }) }
   }
 
@@ -200,6 +208,17 @@ export class Updater {
     if (now - this.lastTick > STALL_MS) this.awakeAt = now
     this.lastTick = now
     const s = this.state
+    const job = this.deps.runningJob()
+    // The user's own work comes first (US-19): a download in progress stops (at most one update's changed blocks, ~5 MB,
+    // are fetched again) and waits; a waiting one starts with a fresh check once nothing of the user's runs.
+    if (s.kind === 'downloading' && job) {
+      this.gaveUp = true
+      this.cancelDownload?.()
+      this.cancelDownload = null
+      this.dispatch({ type: 'wait', next: s.next, job })
+      return
+    }
+    if (s.kind === 'waiting') { if (!job) this.check(); return }
     if (s.kind !== 'downloading' || now - Math.max(s.lastDataAt, this.awakeAt) < STALL_ABORT_MS) return
     const mb = (n: number) => Math.round(n / 1e6)
     this.gaveUp = true
@@ -247,5 +266,6 @@ export class Updater {
     // A staged update stays offered, but an error now is still worth a line.
     else if (e.type === 'error' && after.kind === 'ready') log(`update: error while ${after.next} is staged: ${e.reason}`)
     else if (e.type === 'manual' && after.kind === 'manual') log(`update: ${after.next} is out (manual download)`)
+    else if (e.type === 'wait' && after.kind === 'waiting' && after !== before) log(`update: ${after.next} waits for ${after.job}`)
   }
 }
