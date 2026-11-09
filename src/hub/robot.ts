@@ -16,17 +16,15 @@ import { join } from 'node:path'
 import { Nt4Client, isFieldLocked, nt4Url, type SocketLike } from '../foresight/nt4-client.ts'
 import { GUARD_CONTROL_DATA } from '../foresight/keys.ts'
 import { LinkLost, Stopped } from './adapter.ts'
+import { STALL_MS, Stalled, TRIES, atWords, secsWords, watchdog } from './transfer-watch.ts'
 import type { SourceFile, Watch } from './ingest.ts'
 import { kindOf } from './types.ts'
 export { notReached } from './robot-reach.ts'
+export { STALL_MS, Stalled, TRIES }
 
 export const ROBOT_LOG_ROOTS = ['/home/lvuser/logs', '/U/logs']
 export const USB_PARENT = '/media'
 export const RECENT_MS = 30_000
-/** No bytes from the robot for this long fails a download (and a listing that does not answer): a quiet link never errors by itself. */
-export const STALL_MS = 15_000
-/** A file is tried this many times in all (the first and two reconnect-and-resume) before the pull stops. */
-export const TRIES = 3
 /** The roboRIO answers ssh keepalives; three missed, 5 s apart, and a dead link is noticed in about 15 s. */
 export const KEEPALIVE = { keepaliveInterval: 5000, keepaliveCountMax: 3 } as const
 export const CONNECT_MS = 10_000
@@ -45,11 +43,6 @@ export interface RobotFs {
    */
   download(remote: string, local: string, watch?: Watch, size?: number): Promise<void>
   close(): void
-}
-
-/** The robot stopped answering: no data for the stall time, or the connection closed. */
-export class Stalled extends Error {
-  constructor(message: string) { super(message) }
 }
 
 export type Idle = { ok: true } | { ok: false; reason: string }
@@ -148,8 +141,6 @@ export interface RobotOptions {
   log?: (line: string) => void
 }
 
-const mb = (n: number) => (n / 2 ** 20).toFixed(1)
-const secsWords = (ms: number) => `${+(ms / 1000).toFixed(1)} s`
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /**
@@ -203,39 +194,32 @@ export async function connectRobotFs(address: string, options: RobotOptions = {}
   /** One go at the file from byte `start`: resolves when the stream ended and the local file is closed. */
   const transfer = (remote: string, local: string, start: number, watch: Watch, size: number | undefined, high: { v: number }) => new Promise<void>((resolve, reject) => {
     const c = conn
-    if (c.dead || !c.sftp) return reject(new Stalled(`the connection to the robot closed (${c.dead ?? 'not open'}), at ${mb(start)}${size ? ` of ${mb(size)}` : ''} MB`))
+    if (c.dead || !c.sftp) return reject(new Stalled(`the connection to the robot closed (${c.dead ?? 'not open'}), ${atWords(start, size)}`))
     const read = c.sftp.createReadStream(remote, start > 0 ? { start } : undefined)
     const write = createWriteStream(local, { flags: start > 0 ? 'a' : 'w' })
     let got = start
     // Bytes are reported only past what an earlier try already reported, so the bar never dips and the step words ("Reconnected; resuming") stay until new bytes arrive.
-    let lastData = Date.now()
     let failure: Error | null = null
     let stopped = false
-    const where = () => `at ${mb(got)}${size ? ` of ${mb(size)}` : ''} MB`
     const teardown = () => { read.destroy(); write.destroy() }
-    const fail = (e: Error) => { if (failure || stopped) return; failure = e; teardown() }
+    const fail = (e: Error) => { if (failure || stopped) return; failure = e; dog.done(); teardown() }
     // Stop is looked for on every piece and a few times a second, so a link that stalls mid-file still stops.
-    const stopIfAsked = () => { if (!stopped && !failure && watch.cancelled?.()) { stopped = true; teardown() } }
-    const onDead = (why: string) => fail(new Stalled(`the connection to the robot closed (${why}), ${where()}`))
+    const dog = watchdog({ stallMs, cancelled: watch.cancelled, onStop: () => { if (!failure) { stopped = true; teardown() } }, onStall: () => fail(new Stalled(`no data from the robot for ${secsWords(stallMs)}, ${atWords(got, size)}`)) })
+    const onDead = (why: string) => fail(new Stalled(`the connection to the robot closed (${why}), ${atWords(got, size)}`))
     c.watchers.add(onDead)
-    const timer = setInterval(() => {
-      stopIfAsked()
-      if (!failure && !stopped && Date.now() - lastData >= stallMs) fail(new Stalled(`no data from the robot for ${secsWords(stallMs)}, ${where()}`))
-    }, Math.max(10, Math.min(250, stallMs / 4)))
     read.on('data', (chunk: Buffer) => {
-      stopIfAsked()
+      dog.alive()
       if (stopped || failure) return
-      lastData = Date.now()
       got += chunk.length
       if (got > high.v) { high.v = got; watch.onProgress?.(got, 0) } // the total is the listing's size, which the caller has
     })
-    write.on('drain', () => { lastData = Date.now() })
+    write.on('drain', () => dog.alive())
     // A refused or missing file is not a bad link (SFTP status 2, 3): it fails this file as it always did.
-    read.on('error', (e: Error & { code?: unknown }) => fail(e.code === 2 || e.code === 3 ? Object.assign(e, { permanent: true }) : new Stalled(`${msg(e)}, ${where()}`)))
+    read.on('error', (e: Error & { code?: unknown }) => fail(e.code === 2 || e.code === 3 ? Object.assign(e, { permanent: true }) : new Stalled(`${msg(e)}, ${atWords(got, size)}`)))
     write.on('error', (e) => fail(Object.assign(e, { permanent: true })))
     // Settled only once the file is closed, so the caller can remove it (Windows keeps a folder with an open file in it).
     write.on('close', () => {
-      clearInterval(timer)
+      dog.done()
       c.watchers.delete(onDead)
       if (stopped) reject(new Stopped()); else if (failure) reject(failure); else resolve()
     })
@@ -247,10 +231,9 @@ export async function connectRobotFs(address: string, options: RobotOptions = {}
       if (cancelled?.()) return reject(new Stopped())
       const c = conn
       if (c.dead || !c.sftp) return reject(new Stalled(`the connection to the robot closed (${c.dead ?? 'not open'}) before listing ${dir}`))
-      const cleanup = () => { clearTimeout(timer); clearInterval(poll); c.watchers.delete(onDead) }
-      const poll = setInterval(() => { if (cancelled?.()) { cleanup(); reject(new Stopped()) } }, 100)
+      const cleanup = () => { dog.done(); c.watchers.delete(onDead) }
+      const dog = watchdog({ stallMs, cancelled, onStop: () => { cleanup(); reject(new Stopped()) }, onStall: () => { cleanup(); reject(new Stalled(`no answer from the robot for ${secsWords(stallMs)} listing ${dir}`)) } })
       const onDead = (why: string) => { cleanup(); reject(new Stalled(`the connection to the robot closed (${why}) while listing ${dir}`)) }
-      const timer = setTimeout(() => { cleanup(); reject(new Stalled(`no answer from the robot for ${secsWords(stallMs)} listing ${dir}`)) }, stallMs)
       c.watchers.add(onDead)
       c.sftp.readdir(dir, (e, entries) => { cleanup(); if (e) reject(e); else resolve(entries.map((x) => ({ name: x.filename, size: x.attrs.size, mtimeMs: x.attrs.mtime * 1000, isDir: x.attrs.isDirectory() }))) })
     }),
@@ -273,7 +256,7 @@ export async function connectRobotFs(address: string, options: RobotOptions = {}
             continue
           }
           note(watch, `reconnected; resume ${remote} at offset ${have}`)
-          watch.onStep?.(`Reconnected; resuming at ${mb(have)} MB (try ${attempt} of ${tries})`)
+          watch.onStep?.(`Reconnected; resuming ${atWords(have)} (try ${attempt} of ${tries})`)
         }
         try { await transfer(remote, local, have, watch, size, high); return } catch (e) {
           if (e instanceof Stopped || (e as { permanent?: boolean }).permanent) throw e

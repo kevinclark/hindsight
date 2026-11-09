@@ -115,7 +115,8 @@ export async function ingest(lib: LocalLibrary, files: SourceFile[], options: In
       if (e instanceof LinkLost) {
         finished(`link lost: ${e.reason}`)
         report.stopped = true
-        report.lostLink = `Stopped at file ${index + 1} of ${logs.length} (${file.name}): ${e.reason}. ${report.added.length + report.already.length} of the robot's ${logs.length} logs are in the library (${report.added.length} added this pull). Pull again to continue from here.`
+        const [whose, again] = file.from === 'robot' ? ["the robot's", 'Pull again'] : ["the folder's", 'Add the folder again']
+        report.lostLink = `Stopped at file ${index + 1} of ${logs.length} (${file.name}): ${e.reason}. ${report.added.length + report.already.length} of ${whose} ${logs.length} logs are in the library (${report.added.length} added this ${file.from === 'robot' ? 'pull' : 'time'}). ${again} to continue from here.`
         break
       }
       const reason = e instanceof Error ? e.message : String(e)
