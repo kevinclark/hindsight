@@ -71,6 +71,12 @@ export const FORESIGHT_RULES: Rule[] = [
 ]
 
 /**
+ * Foresight's on-check rules: graded over the robot's enabled runs since its code started, while it runs (`onCheck`).
+ * They are match rules too (in RULES).
+ */
+export const ONCHECK_RULES: Rule[] = RULES.filter((r) => r.onCheck)
+
+/**
  * Experimental rules (ADR 14): read data no robot log has confirmed yet (today: the .hoot). Never in RULES: they run on
  * their own (`withExperimental`) into the report's experimental tier, so nothing counts them and no summary reads them.
  */

@@ -32,6 +32,7 @@ export default rule({
   judges: 'fault',
   who: ['pit'],
   needsEnabled: true,
+  onCheck: true, // Foresight grades it during the pit on-check run, while the robot is enabled
   meaning: 'Two motors that turn one roller ran at different speeds for a while: one of them is no longer driving the roller, so the other does all the work and the mechanism runs weaker and hotter.',
   causes: [
     { id: 'came-free', cause: 'One motor came free of the roller: a loose or broken pulley, gear, set screw, key or coupling on its shaft', look: 'the motor that ran free (faster, carrying less current): hold the roller and turn that motor\'s shaft by hand' },

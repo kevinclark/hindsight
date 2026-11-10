@@ -150,6 +150,12 @@ interface About {
    */
   foresightOnly?: boolean
   /**
+   * An on-check rule: Foresight also grades it over the robot's enabled runs since its code started, while it runs (the
+   * pit on-check: the students drive each mechanism by hand). It reads `match.enabled` as on a match log, and runs on
+   * match logs as usual. Never a verdict of GO while the robot is enabled (src/foresight/engine.ts).
+   */
+  onCheck?: boolean
+  /**
    * The rule judges only enabled time. A match log where the robot was never enabled gives it nothing to look at, so it
    * is listed as not checked instead of counting as quiet. A Foresight view (it has a pit stretch) is never skipped;
    * whether the rule reads that stretch is its own business (the CAN rules do, through watched()). Leave it off a rule
@@ -246,7 +252,7 @@ export function link(definition: Link): Link {
  * A parent is a finding that names a group of findings: "25 CAN devices dropped within 0.25 s". The app lists the
  * group under it (nothing is deleted), and it adds nothing to any count. Parents live in parents.ts.
  */
-export interface Parent extends Omit<About, 'severity' | 'judges' | 'needsProfile' | 'foresightOnly' | 'needsEnabled' | 'averagesOverTime' | 'sources' | 'thresholds'> {
+export interface Parent extends Omit<About, 'severity' | 'judges' | 'needsProfile' | 'foresightOnly' | 'onCheck' | 'needsEnabled' | 'averagesOverTime' | 'sources' | 'thresholds'> {
   /** The rule whose findings it groups. */
   over: string
   /** True when this finding belongs in the same group as the first (earliest) one. */
