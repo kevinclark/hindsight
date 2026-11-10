@@ -9,6 +9,7 @@
  */
 import { LinkLost, SignInAgain, Stopped, checkPath, stopIfAsked, type FileInfo, type TransferWatch } from './adapter.ts'
 import { STALL_MS, Stalled, TRIES, atWords, backoff, secsWords, tripwire, within, type Watchdog } from './transfer-watch.ts'
+import { readAhead } from './read-ahead.ts'
 
 export const API = 'https://www.googleapis.com/drive/v3'
 export const FOLDER = 'application/vnd.google-apps.folder'
@@ -178,8 +179,9 @@ export class DriveReader {
   /**
    * A whole file (the phone opening a log), into one buffer of its size, in slices of PIECE_READ bytes, each by the same
    * watched, resumable ranged read as `read`: a stall or a dropped connection asks for the rest of that slice from the next
-   * byte; `signal` stops it (Stopped); progress counts the bytes in. Slices keep the peak near one copy of the file (one
-   * ranged read of the whole file is buffered several times over on its way through `request`).
+   * byte; `signal` stops it (Stopped); progress counts the bytes in. The next slice is asked for once the one before starts
+   * arriving (readAhead), so the bar doesn't pause between slices. Slices keep the peak near one copy of the file plus a
+   * slice or two (one ranged read of the whole file is buffered several times over on its way through `request`).
    */
   async downloadWhole(path: string, opts: { onProgress?(got: number, total: number): void; signal?: AbortSignal; log?(line: string): void } = {}): Promise<Uint8Array> {
     opts.signal?.throwIfAborted()
@@ -188,14 +190,17 @@ export class DriveReader {
     const total = Number(f.size ?? 0)
     const out = new Uint8Array(total)
     const cancelled = () => opts.signal?.aborted ?? false
-    for (let at = 0; at < total; at += PIECE_READ) {
-      const end = Math.min(at + PIECE_READ, total)
-      opts.log?.(`bytes ${at}-${end - 1} of ${total}: asking`)
-      const part = await this.fetchRange(f, at, end, { cancelled, onBytes: (n) => opts.onProgress?.(at + n, total), log: opts.log, onStep: opts.log })
-      opts.log?.(`bytes ${at}-${end - 1}: got ${part.length}`)
-      if (part.length !== end - at) throw new Error(`${path}: got ${at + part.length} of ${total} bytes`)
-      out.set(part, at)
-    }
+    const slices = readAhead(total, (a, b, watch) => this.fetchRange(f, a, b, watch), { cancelled, onBytes: (n) => opts.onProgress?.(n, total), log: opts.log, onStep: opts.log })
+    try {
+      for (let at = 0; at < total; at += PIECE_READ) {
+        const end = Math.min(at + PIECE_READ, total)
+        opts.log?.(`bytes ${at}-${end - 1} of ${total}: waiting`)
+        const part = await slices.read(at, end)
+        opts.log?.(`bytes ${at}-${end - 1}: got ${part.length}`)
+        if (part.length !== end - at) throw new Error(`${path}: got ${at + part.length} of ${total} bytes`)
+        out.set(part, at)
+      }
+    } finally { slices.close() }
     return out
   }
 

@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { AlreadyExists, ChecksumMismatch, LinkLost, ManifestConflict, SignInAgain, Stopped, checkPath, extendsManifest, isOwnAppendPath, stopIfAsked, type ByteSource, type FileInfo, type StorageAdapter, type TransferWatch, type WriteOptions } from './adapter.ts'
 import { API, FIELDS, FOLDER, DriveError, DriveReader, Tries, isReadOnlyRequest, infoOf, splitPath, type DriveFile, type DriveOptions } from './drive-read.ts'
 import { Stalled, atWords, backoff, secsWords } from './transfer-watch.ts'
+import { readAhead } from './read-ahead.ts'
 
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
 /** A multiple of 256 KiB, as Drive requires for all but the last chunk. */
@@ -93,12 +94,16 @@ export class DriveAdapter extends DriveReader implements StorageAdapter {
     return (await this.children(folderId)).map((f) => ({ id: f.id, name: f.name, isFolder: f.mimeType === FOLDER, size: Number(f.size ?? 0), modifiedTime: f.modifiedTime ? Date.parse(f.modifiedTime) : null, sha256: f.sha256Checksum, md5: f.md5Checksum }))
   }
 
-  /** The bytes of a file by id, into a sink in ranges (a download to disk); `watch.onBytes` counts the whole file's bytes. */
+  /**
+   * The bytes of a file by id, into a sink in ranges (a download to disk), the next range asked for once the one before
+   * starts arriving (readAhead); `watch.onBytes` counts the whole file's bytes.
+   */
   async download(fileId: string, size: number, sink: (chunk: Uint8Array) => Promise<void>, watch: TransferWatch = {}): Promise<void> {
-    for (let at = 0; at < size; at += CHUNK) {
-      const end = Math.min(size, at + CHUNK)
-      await sink(await this.fetchRange({ id: fileId, name: '', mimeType: '', size: String(size) }, at, end, { ...watch, onBytes: (n) => watch.onBytes?.(at + n) }))
-    }
+    const f = { id: fileId, name: '', mimeType: '', size: String(size) }
+    const ranges = readAhead(size, (a, b, w) => this.fetchRange(f, a, b, w), watch)
+    try {
+      for (let at = 0; at < size; at += CHUNK) await sink(await ranges.read(at, Math.min(size, at + CHUNK)))
+    } finally { ranges.close() }
   }
 
   /** Copy a file by id into the library at `path`, inside Drive (nothing is uploaded). */

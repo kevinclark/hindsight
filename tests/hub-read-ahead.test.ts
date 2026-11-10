@@ -14,6 +14,9 @@ import { MemoryAdapter } from '../src/hub/memory-adapter.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { fetchLogs } from '../src/hub/sync.ts'
 import { readAhead } from '../src/hub/read-ahead.ts'
+import { DriveReader, PIECE_READ } from '../src/hub/drive-read.ts'
+import { DriveAdapter } from '../src/hub/drive-adapter.ts'
+import { FakeDrive } from './helpers/fake-drive.ts'
 
 const CLOCK = Date.UTC(2026, 9, 17, 19, 0, 0)
 const MiB = 1 << 20
@@ -126,5 +129,63 @@ describe('readAhead on its own', () => {
     await source.read(0, 100)
     expect(() => source.read(200, 300)).toThrow(/front to back/)
     expect(() => source.read(100, 150)).toThrow(/front to back/)
+  })
+})
+
+describe('Adding from a Drive folder and the phone opening a log read one range ahead too', () => {
+  /** A Drive whose media answers wait, send one byte, wait, then the rest: counts ranges in flight and any asked early. */
+  function slowDrive(content: Uint8Array) {
+    const drive = new FakeDrive()
+    const folder = drive.addFolder('root', 'logs')
+    const id = drive.addFile(folder, 'big.wpilog', content)
+    let inFlight = 0
+    const seen = { most: 0, ranges: [] as number[], early: [] as number[] }
+    const arriving = new Set<number>()
+    const f: typeof fetch = async (url, init) => {
+      const range = new Headers(init?.headers as Record<string, string>).get('range')
+      if (!range) return drive.fetch(url, init)
+      const start = Number(/bytes=(\d+)-/.exec(range)![1])
+      seen.ranges.push(start)
+      if (start > 0 && !arriving.has(start - PIECE_READ)) seen.early.push(start)
+      seen.most = Math.max(seen.most, ++inFlight)
+      const body = new Uint8Array(await (await drive.fetch(url, init)).arrayBuffer())
+      await wait(5)
+      let sent = 0
+      return new Response(new ReadableStream<Uint8Array>({
+        async pull(c) {
+          if (sent === 0) { arriving.add(start); c.enqueue(body.slice(0, 1)); sent = 1; return }
+          await wait(20)
+          c.enqueue(body.slice(1)); c.close(); inFlight--
+        },
+      }), { status: 206, headers: { 'content-range': `bytes ${start}-${start + body.length - 1}/${content.length}` } })
+    }
+    return { id, f, seen }
+  }
+  const content = pattern(2 * PIECE_READ + 12345)
+
+  it('the phone: the next slice is asked for once the one before starts arriving, two at most, the file whole', async () => {
+    const { f, seen } = slowDrive(content)
+    const reader = new DriveReader({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async () => {} })
+    const progress: number[] = []
+    const got = await reader.downloadWhole('logs/big.wpilog', { onProgress: (n) => progress.push(n) })
+    expect(sha(got)).toBe(sha(content))
+    expect([seen.most, seen.ranges, seen.early]).toEqual([2, [0, PIECE_READ, 2 * PIECE_READ], []])
+    expect(progress).toEqual([...progress].sort((a, b) => a - b))
+    expect(progress.at(-1)).toBe(content.length)
+  })
+
+  it('a Drive folder: the next range is asked for once the one before starts arriving, two at most, written in order', async () => {
+    const { id, f, seen } = slowDrive(content)
+    const drive = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async () => {} })
+    const parts: Uint8Array[] = []
+    const progress: number[] = []
+    await drive.download(id, content.length, async (chunk) => { parts.push(chunk) }, { onBytes: (n) => progress.push(n) })
+    const whole = new Uint8Array(content.length)
+    let at = 0
+    for (const p of parts) { whole.set(p, at); at += p.length }
+    expect([at, sha(whole)]).toEqual([content.length, sha(content)])
+    expect([seen.most, seen.ranges, seen.early]).toEqual([2, [0, PIECE_READ, 2 * PIECE_READ], []])
+    expect(progress).toEqual([...progress].sort((a, b) => a - b))
+    expect(progress.at(-1)).toBe(content.length)
   })
 })
