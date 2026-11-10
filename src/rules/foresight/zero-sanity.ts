@@ -56,6 +56,11 @@ export default rule({
       const encoderRotations = match.signal(zero.absolute).median(recent) / (zero.absoluteUnit === 'radians' ? 2 * Math.PI : 1)
       const motor = match.signal(zero.motor)
       const motorRotations = motor.median(recent)
+      // A reading first logged just now (seconds after start-up) has no value in the window yet.
+      if (!Number.isFinite(encoderRotations) || !Number.isFinite(motorRotations)) {
+        match.checkedOnlyPart(`${zero.mechanism} not checked: no reading yet in the last ${AVERAGE_SECONDS} s`)
+        continue
+      }
 
       // Being moved by hand: the two signals are sampled at different moments, so skip until it is still.
       const travelDegrees = (motor.highest(recent).value - motor.lowest(recent).value) * 360

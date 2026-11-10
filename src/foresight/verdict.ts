@@ -48,15 +48,15 @@ export function proofText(rule: string, proven: Record<string, Proof> = PROVEN):
 }
 
 /**
- * `unproven`: checks that stay amber this time although proven, with why (e.g. rest voltage just after a drive, a
- * situation the backtest never covered).
+ * `unproven`: checks that stay amber this time although proven, with why (e.g. a snapshot check, a situation the
+ * backtest never covered). `context`: checks whose findings are context here (grey), whatever their severity.
  */
-export function verdictFor(report: Report, proven: Record<string, Proof> = PROVEN, unproven: Record<string, string> = {}): Verdict {
+export function verdictFor(report: Report, proven: Record<string, Proof> = PROVEN, unproven: Record<string, string> = {}, context: ReadonlySet<string> = new Set()): Verdict {
   const all: VerdictItem[] = report.findings
     .filter((f) => f.rule !== 'meta/not-checked')
     .map((finding) => {
       const red = earnsRed(proven[finding.rule]) && !unproven[finding.rule]
-      const level: Level = finding.severity === 'info' ? 'grey' : red ? 'red' : 'amber'
+      const level: Level = finding.severity === 'info' || context.has(finding.rule) ? 'grey' : red ? 'red' : 'amber'
       const proof = level === 'grey' ? 'context' : unproven[finding.rule] ?? proofText(finding.rule, proven)
       return { finding, level, proof, action: finding.nextStep, explains: [] as VerdictItem[] }
     })

@@ -24,9 +24,9 @@ export interface ReplayStep {
  * One check a second from `from` (default: a second after code start) to the log's end. Code start is the first record
  * after 0 (live.ts: the metadata's time, or the first value). Before `from` nothing is checked, so nothing is kept past
  * its seconds there either: start before the enables that matter. `keys`: null for every signal in the log instead of the
- * subscribed ones.
+ * subscribed ones. `settle`: each check's start-up settle, as engine.ts takes it.
  */
-export function* replayLive(log: WpilogFile, profile: RobotProfile, choice: ProfileChoice | undefined, opts: { from?: number; keys?: Iterable<string> | null } = {}): Generator<ReplayStep> {
+export function* replayLive(log: WpilogFile, profile: RobotProfile, choice: ProfileChoice | undefined, opts: { from?: number; keys?: Iterable<string> | null; settle?: (rule: string) => number } = {}): Generator<ReplayStep> {
   const keys = opts.keys === undefined ? [...foresightKeysIn(log, profile), ...Object.values(DATALOGMANAGER_SIGNALS).flat()] : opts.keys
   const full = RecordStore.fromWpilog(log, keys)
   const records = [...full.entries.values()].flatMap((e) => e.t.map((t, i) => ({ e, t, payload: e.payload[i] })))
@@ -41,7 +41,7 @@ export function* replayLive(log: WpilogFile, profile: RobotProfile, choice: Prof
     while (k < records.length && records[k].t <= at) { const r = records[k++]; store.add(r.e.name, r.e.type, r.t, r.payload) }
     store.prune()
     const t0 = performance.now()
-    const result = evaluateForesight({ store, codeStart, now: store.latest, lastPassingSha: null, profile, choice })
+    const result = evaluateForesight({ store, codeStart, now: store.latest, lastPassingSha: null, profile, choice, settle: opts.settle })
     yield { now: store.latest, result, ms: performance.now() - t0 }
   }
 }

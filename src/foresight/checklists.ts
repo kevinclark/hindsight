@@ -19,7 +19,7 @@ import { buildBoard, inScope, mechanismOf, robotOf, scopeOf, type Board, type Bo
 import { NEXT_EVENT } from '../board/points.ts'
 import type { CodeChangeFlag } from '../board/freeze.ts'
 import { FORESIGHT_RULES, makerOf } from '../rules/index.ts'
-import { ONCHECKS } from './onchecks.ts'
+import { ONCHECKS, ON_RUN_CHECKS } from './onchecks.ts'
 import { SNAPSHOT_RULES } from './snapshot-checks.ts'
 import { goWithWord, rowTitle } from '../board/words.ts'
 import { sessionWithMarks } from '../triage/track-record.ts'
@@ -315,10 +315,12 @@ export function practiceChecklist(lines: MarkedLine[], uncovered: VerdictItem[] 
   const first = PRACTICE_FIRST.flatMap((g) => g.lines.map((name) => ({ group: g.group, line: counted.find((l) => l.line === name) })).filter((x): x is { group: string; line: MarkedLine } => !!x.line))
   const named = new Set(first.map((x) => x.line))
   const rest = counted.filter((l) => !named.has(l)).map((line) => ({ group: 'The rest', line }))
-  const extra = uncovered.map((i) => ({
-    group: 'Not on the checklist',
-    line: { section: '', line: `${makerOf(i.finding.rule)?.title ?? i.finding.title} (no checklist line)`, state: i.level === 'red' ? 'red' : 'amber', detail: i.finding.title } as MarkedLine,
-  }))
+  // A failing on-check finding has its line in the On checks block (ON_RUN_CHECKS), shown above: named by that line here.
+  const extra = uncovered.map((i) => {
+    const onRun = ON_RUN_CHECKS.find((l) => l.rules?.includes(i.finding.rule))
+    const name = onRun ? onRun.line : `${makerOf(i.finding.rule)?.title ?? i.finding.title} (no checklist line)`
+    return { group: onRun ? 'On checks' : 'Not on the checklist', line: { section: '', line: name, state: i.level === 'red' ? 'red' : 'amber', detail: i.finding.title } as MarkedLine }
+  })
   const items = [...first, ...rest, ...extra].map((x): PracticeItem => ({ ...x, done: x.line.state === 'ok' }))
   const left = items.filter((i) => !i.done)
   const actions: string[] = []

@@ -356,7 +356,7 @@
     {#if notConnected && robotNotFound}<p>Robot not found: is the cable in? This is not a failed check.</p>{/if}
     <p>{notConnected ? 'Tether it (USB or Ethernet), robot on, Driver Station connected, then Connect.' : shownWhy}</p>
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
-    {#if result?.state === 'settling'}<p class="small">Nothing is judged until {SETTLE_SECONDS} s after the robot code starts: start-up camera and time-sync alerts clear in that time.</p>{/if}
+    {#if checked && checked.verdict.notChecked.some((s) => s.reason.startsWith('start-up settling'))}<p class="small">Camera, alert and controller checks start {SETTLE_SECONDS} s or less after the robot code starts (start-up camera and time-sync alerts clear in that time); the rest are judged from the first second.</p>{/if}
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
   </section>
 

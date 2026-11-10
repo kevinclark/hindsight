@@ -33,7 +33,7 @@ export interface OncheckLine {
 }
 
 export const ONCHECKS: OncheckLine[] = [
-  { section: 'Battery', line: 'Fresh battery installed', rules: ['power/rest-voltage', 'battery/identity', 'battery/gauge-capacity'], note: 'the team installs at 13.0 V on the PDH (13.3 V on the gauge); Foresight flags under 12.5 V at rest, measured at another moment' },
+  { section: 'Battery', line: 'Fresh battery installed', rules: ['power/rest-voltage', 'battery/identity', 'battery/gauge-capacity'], note: 'the team installs at 13.0 V on the PDH (13.3 V on the gauge); Foresight shows the battery in now under 12.5 V at rest as context, never red: pit checks run on a practice battery and a fresh one goes in at the queue' },
   { section: 'Controllers', line: 'Controllers plugged into the DS and working', rules: ['foresight/controllers'], note: 'plugged in on the right ports; whether they work is by eye' },
   { section: 'Controllers', line: 'Backup controller', byEye: true },
   { section: 'Software', line: 'All cameras on and detecting AprilTags', rules: ['vision/stale', 'vision/time-sync', 'foresight/camera-sees-tag'], assisted: ['foresight/camera-sees-tag'], note: 'connected, time-synced and each saw a tag' },
@@ -60,12 +60,13 @@ export const ONCHECKS: OncheckLine[] = [
  * `onCheck` rules); the rest is by eye (no fault case in the logs yet for an automatic line).
  */
 export const ON_RUN_CHECKS: OncheckLine[] = [
+  // Foresight's graded line first, so it is on screen on a phone without scrolling past the by-eye lines.
+  { section: 'On checks', line: 'Motors on one shaft turn together', rules: ['mech/pair-decoupled'], note: 'Foresight\'s line, not on the team\'s list: each coupled pair (the kicker\'s two motors) within 4 % of each other on every enabled run since the robot code started; amber, never NO-GO, until it has caught a fault outside the logs it was set on' },
   { section: 'On checks', line: 'Swerve steers and drives straight', byEye: true },
   { section: 'On checks', line: 'Intake deploys', byEye: true },
   { section: 'On checks', line: 'Hopper walls actuate', byEye: true },
   { section: 'On checks', line: 'Spindexer feeds', byEye: true },
   { section: 'On checks', line: 'Hood, turret, flywheel spin freely', byEye: true },
-  { section: 'On checks', line: 'Motors on one shaft turn together', rules: ['mech/pair-decoupled'], note: 'Foresight\'s line, not on the team\'s list: each coupled pair (the kicker\'s two motors) within 4 % of each other on every enabled run since the robot code started; amber, never NO-GO, until it has caught a fault outside the logs it was set on' },
 ]
 
 /** Every check that asks a person to do something (its grey findings are a step, not context). */
@@ -145,7 +146,8 @@ function markLines(lines: OncheckLine[], current: { verdict: Verdict; report: Re
     if (skippedStep) return { ...l, state: 'not checked', detail: `${skippedStep.rule}: ${skippedStep.reason}` }
     const context = items.find((i) => i.level === 'grey')
     if (context && items.every((i) => i.level === 'grey') && rules.every((r) => r === context.finding.rule)) return { ...l, state: 'context', detail: context.finding.title }
-    return { ...l, state: 'ok', detail: l.note ?? 'OK' }
+    // A line whose check left a context note (the battery in now) shows it in place of its note.
+    return { ...l, state: 'ok', detail: context?.finding.title ?? l.note ?? 'OK' }
   })
 }
 

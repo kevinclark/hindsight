@@ -8,7 +8,8 @@ import { RecordStore } from '../src/foresight/records.ts'
 import type { ForesightResult } from '../src/foresight/engine.ts'
 import { replayLive } from '../src/foresight/replay.ts'
 import { allItems } from '../src/foresight/verdict.ts'
-import { markOnRun } from '../src/foresight/onchecks.ts'
+import { markOnchecks, markOnRun } from '../src/foresight/onchecks.ts'
+import { practiceChecklist, uncoveredItems } from '../src/foresight/checklists.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 import { foresightKeys } from '../src/foresight/keys.ts'
 import { profileKeys } from '../src/profiles/choose.ts'
@@ -80,8 +81,8 @@ describe('Foresight grades the on-check run while the robot is enabled', () => {
     expect(during?.state).toBe('enabled')
     expect(pairItem(during)?.level).toBe('amber')
     expect(pairItem(during)?.finding.title).toMatch(/Kicker leader and Kicker follower ran more than 4 % apart for 1\.2 s/)
-    for (const r of results.values()) {
-      expect(r.state).not.toBe('checked') // enabled throughout: only the on checks
+    for (const [now, r] of results) {
+      if (now > 20) expect(r.state).not.toBe('checked') // enabled from 20 s on: only the on checks
       expect(r.onchecks?.verdict.verdict).not.toBe('GO')
     }
   })
@@ -109,6 +110,10 @@ describe('Foresight grades the on-check run while the robot is enabled', () => {
     if (r?.state !== 'checked') return
     const item = allItems(r.verdict).find((i) => i.finding.rule === 'mech/pair-decoupled')
     expect(item?.level).toBe('amber')
+    // The practice list never reads "Ready to drive" over it, and names it by its On checks line.
+    const practice = practiceChecklist(markOnchecks(r), uncoveredItems(r.verdict))
+    expect(practice.ready).toBe(false)
+    expect(practice.items.find((i) => i.line.detail === item?.finding.title)).toMatchObject({ group: 'On checks', line: { line: 'Motors on one shaft turn together', state: 'amber' } })
   })
 
   it('before any enable the on checks find nothing and the pair rule is listed as not checked', () => {
