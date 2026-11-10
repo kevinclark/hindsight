@@ -4,6 +4,7 @@
   import { powerReport, whatIfAt } from '../power/power-report.ts'
   import { buildPowerGrid, DT } from '../power/battery-model.ts'
   import { bandText, buildDrag } from '../power/drag.ts'
+  import { buildHeadroom, headroomMissing, headroomVerdicts } from '../power/headroom.ts'
   import { buildBreakdown, hasStates } from '../power/breakdown.ts'
   import { buildSagSpans, type Load } from '../power/sag-spans.ts'
   import { FLEET_REFERENCE } from '../power/fleet-reference.ts'
@@ -22,6 +23,13 @@
   const drag = $derived(buildDrag(m).filter((d) => d.bands.length))
   /** Motors with steady-speed bands, grouped by motor group in profile order, leader beside follower. */
   const dragGroups = $derived([...new Set(drag.map((d) => d.group))].map((group) => ({ group, motors: drag.filter((d) => d.group === group) })))
+
+  /** Groups that ran at all: a never-enabled log has none, and the section says so instead of a table of blanks. */
+  const headroom = $derived(buildHeadroom(m).filter((h) => h.runningSeconds > 0))
+  const headroomWhyNot = $derived(headroomMissing(m))
+  const verdicts = $derived(headroomVerdicts(headroom))
+  const share = (x: number | null) => (x === null ? '—' : `${Math.round(100 * x)} %`)
+  const ratio = (x: number) => `${Math.round(100 * x)} %`
 
   const sagSpans = $derived(buildSagSpans(m))
   const stretches = $derived(sagSpans?.mode === 'stretches')
@@ -180,6 +188,38 @@
     </table>
   {/if}
 
+  {#if headroom.length}
+    <h3>Headroom: how much more each mechanism had</h3>
+    {#if verdicts.length}
+      <ul class="says">
+        {#each verdicts as v (v.group + v.kind)}
+          <li><strong>{v.kind[0].toUpperCase() + v.kind.slice(1)}.</strong> {v.says} <span class="try">{v.tryThis}</span></li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="note">Nothing ran at top speed with torque to spare, and no setpoint asked for more than the battery had.</p>
+    {/if}
+    <table class="headroom">
+      <thead><tr><th>Group</th><th>Ran (s)</th><th>At stator limit</th><th>At supply cap</th><th>Share of top speed: typical / high</th><th>Within 10 % of top</th><th>Current there</th></tr></thead>
+      <tbody>
+        {#each headroom as h (h.group)}
+          <tr>
+            <th scope="row">{h.group}</th><td>{h.runningSeconds.toFixed(0)}</td><td>{share(h.atStator)}</td><td>{share(h.atSupply)}</td>
+            <td>{h.topSpeed ? `${ratio(h.topSpeed.p50)} / ${ratio(h.topSpeed.p90)}` : '—'}</td><td>{h.topSpeed ? ratio(h.topSpeed.nearTop) : '—'}</td><td>{h.ampsNearTop === null || !h.topSpeed || h.topSpeed.nearTop < 0.01 ? '—' : `${Math.round(h.ampsNearTop)} A`}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+    {#each headroom.filter((h) => h.setpoint && h.setpoint.seconds > 0) as h (h.group)}
+      {@const sp = h.setpoint!}
+      <p class="sp">{h.group} setpoint: needs {sp.needsVolts.toFixed(1)} V (median); held {sp.seconds.toFixed(0)} s; the battery was under that {ratio(sp.pastTop)} of it{#if sp.shortWhenPastTop !== null}, and the wheel was under 95 % of the setpoint {ratio(sp.shortWhenPastTop)} of that time{/if}{#if sp.shortOtherwise !== null}, {ratio(sp.shortOtherwise)} the rest{/if}.</p>
+    {/each}
+    <p class="note">Shares are of the time a motor ran: enabled, on CAN, drawing 5 A or driven with 1 V or more. A limit share is the time at 93 % of the limit or more; the supply cap is what the motor is held to after a second (its lower limit, Phoenix's 40 A if the code sets none). "—" in a limit column: no such limit, or the profile doesn't know it. Top speed is the speed the motor could reach on the battery voltage of that moment, from a fit of this log's applied volts against speed and current, so no gear ratio is needed; typical is the median, high the 90th percentile; "—" where the motor logs no speed or the fit can't be trusted. A setpoint counts once the wheel reached it or after 1.5 s at it. A mechanism told to run at full voltage sits near top speed by design. Verdicts need 30 s of running.</p>
+  {:else if headroomWhyNot}
+    <h3>Headroom: how much more each mechanism had</h3>
+    <p class="note">{headroomWhyNot}</p>
+  {/if}
+
   {#if dragGroups.length}
     <h3>Current at steady speed</h3>
     <table class="drag">
@@ -252,7 +292,7 @@
   .note { font-size: 0.85rem; color: var(--muted); max-width: 75ch; }
   table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
   /* A wide table scrolls inside itself on a phone instead of widening the page (as LimitsTab does). */
-  table.breakdown, table.sags { display: block; overflow-x: auto; max-width: 100%; }
+  table.breakdown, table.sags, table.headroom { display: block; overflow-x: auto; max-width: 100%; }
   th, td { text-align: left; padding: 0.2rem 1rem 0.2rem 0; vertical-align: top; }
   thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   tbody th { font-weight: normal; }
@@ -272,6 +312,11 @@
   /* Controls at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, minimum). */
   .tog { min-width: 24px; min-height: 24px; padding: 0; margin: 0 0.25rem 0 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; }
   .tog-gap { display: inline-block; width: 24px; margin-right: 0.25rem; }
+  .says { padding-left: 1.25rem; max-width: 75ch; font-size: 0.9rem; }
+  .says li { margin: 0 0 0.4rem; }
+  .says .try { color: var(--muted); }
+  .headroom td, .headroom th { white-space: nowrap; }
+  p.sp { font-size: 0.85rem; max-width: 75ch; margin: 0.5rem 0 0; }
   .warn-box { border-left: 3px solid var(--warning); padding: 0.25rem 0.75rem; font-size: 0.85rem; max-width: 75ch; }
   .slider { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; margin: 0.5rem 0; font-size: 0.9rem; }
   .slider label { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 24px; }

@@ -86,6 +86,7 @@ const robot: RobotProfile = {
         canId: swerveCanIds[m].drive,
         supplyCurrent: `/Swerve/${m} Module/DriveSupplyCurrentAmps`,
         statorCurrent: `/Swerve/${m} Module/DriveStatorCurrentAmps`,
+        appliedVolts: `/Swerve/${m} Module/DriveAppliedVolts`,
         connected: `/Swerve/${m} Module/DriveConnected`,
         temperature: `/Swerve/${m} Module/DriveTempC`,
         updating: `/Swerve/${m} Module/DriveStatorCurrentAmps`,
@@ -99,6 +100,7 @@ const robot: RobotProfile = {
         canId: swerveCanIds[m].steer,
         supplyCurrent: `/Swerve/${m} Module/TurnSupplyCurrentAmps`,
         statorCurrent: `/Swerve/${m} Module/TurnStatorCurrentAmps`,
+        appliedVolts: `/Swerve/${m} Module/TurnAppliedVolts`,
         connected: `/Swerve/${m} Module/TurnConnected`,
         temperature: `/Swerve/${m} Module/TurnTempC`,
         updating: `/Swerve/${m} Module/TurnStatorCurrentAmps`,
@@ -115,6 +117,7 @@ const robot: RobotProfile = {
           supplyCurrent: '/Drum/Flywheel/Leader/SupplyCurrentAmps',
           statorCurrent: '/Drum/Flywheel/Leader/StatorCurrentAmps',
           velocity: '/Drum/Flywheel/Leader/VelocityRotPerSec',
+          appliedVolts: '/Drum/Flywheel/Leader/Voltage',
           connected: '/Drum/Flywheel/Leader/Connected',
           temperature: '/Drum/Flywheel/Leader/TempC',
           // No `updating`: at rest every flywheel signal sits unchanged for minutes (stator current too).
@@ -126,6 +129,7 @@ const robot: RobotProfile = {
           supplyCurrent: `/Drum/Flywheel/Follower ${i}/SupplyCurrentAmps`,
           statorCurrent: `/Drum/Flywheel/Follower ${i}/StatorCurrentAmps`,
           velocity: `/Drum/Flywheel/Follower ${i}/VelocityRotPerSec`,
+          appliedVolts: `/Drum/Flywheel/Follower ${i}/Voltage`,
           connected: `/Drum/Flywheel/Follower ${i}/Connected`,
           temperature: `/Drum/Flywheel/Follower ${i}/TempC`,
         })),
@@ -142,6 +146,7 @@ const robot: RobotProfile = {
         canId: 14, // HoodIO.java:51
         supplyCurrent: '/Drum/Hood/SupplyCurrentAmps',
         statorCurrent: '/Drum/Hood/StatorCurrentAmps',
+        appliedVolts: '/Drum/Hood/Voltage',
         connected: '/Drum/Hood/Connected',
         temperature: '/Drum/Hood/TempC',
         updating: '/Drum/Hood/StatorCurrentAmps',
@@ -155,6 +160,7 @@ const robot: RobotProfile = {
         canId: 8, // Robot.java:74
         supplyCurrent: '/Intake/Pivot/SupplyCurrentAmps',
         statorCurrent: '/Intake/Pivot/StatorCurrentAmps',
+        appliedVolts: '/Intake/Pivot/Voltage',
         connected: '/Intake/Pivot/Connected',
         temperature: '/Intake/Pivot/TempC',
         updating: '/Intake/Pivot/StatorCurrentAmps',
@@ -167,14 +173,15 @@ const robot: RobotProfile = {
       // Leader 9 (Robot.java:76), follower 10 (SlapdownSubsystem.java:86).
       // The two rollers name their temperature and velocity differently in the log.
       motors: [
-        { m: 'Leader', canId: 9, temp: 'TemperatureCelsius', velocity: 'VelocityRotsPerSec' },
-        { m: 'Follower', canId: 10, temp: 'TempC', velocity: 'VelocityRotPerSec' },
-      ].map(({ m, canId, temp, velocity }) => ({
+        { m: 'Leader', canId: 9, temp: 'TemperatureCelsius', velocity: 'VelocityRotsPerSec', volts: 'AppliedVoltage' },
+        { m: 'Follower', canId: 10, temp: 'TempC', velocity: 'VelocityRotPerSec', volts: 'Voltage' },
+      ].map(({ m, canId, temp, velocity, volts }) => ({
         name: `Intake roller ${m.toLowerCase()}`,
         canId,
         supplyCurrent: `/Intake/Roller ${m}/SupplyCurrentAmps`,
         statorCurrent: `/Intake/Roller ${m}/StatorCurrentAmps`,
         velocity: `/Intake/Roller ${m}/${velocity}`,
+        appliedVolts: `/Intake/Roller ${m}/${volts}`,
         connected: `/Intake/Roller ${m}/Connected`,
         temperature: `/Intake/Roller ${m}/${temp}`,
         updating: `/Intake/Roller ${m}/StatorCurrentAmps`,
@@ -193,6 +200,7 @@ const robot: RobotProfile = {
         canId: m.canId,
         supplyCurrent: `${m.prefix}SupplyCurrentAmp`,
         statorCurrent: `${m.prefix}StatorCurrentAmp`,
+        appliedVolts: `${m.prefix}Voltage`,
         connected: `${m.prefix}Connected`,
         temperature: `${m.prefix}TempC`,
         updating: `${m.prefix}StatorCurrentAmp`,
