@@ -14,6 +14,7 @@ import { PARENTS, RULES, type Report } from '../rules/index.ts'
 import type { Finding, Plot } from '../rules/types.ts'
 import { powerReport } from '../power/power-report.ts'
 import { buildPowerGrid } from '../power/battery-model.ts'
+import { buildBreakdown } from '../power/breakdown.ts'
 import type { IssueEvent } from '../triage/history.ts'
 import { boardEntry, ruleSources, type ExportBoard } from './board-export.ts'
 
@@ -80,7 +81,24 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
       secondsUnder7: power.secondsUnder7, chargeAh: power.chargeAh, resistanceOhms: power.resistanceOhms,
       model: power.fit && { form: 'V = V0 − k·Q − R0·I (no RC term)', ...power.fit },
       modelNoChange: power.modelNoChange, ocvCurve: power.ocv, sags: power.sags, whatIfs: power.whatIfs, whatIfGroup: power.whatIfGroup,
+      // Energy, running time and current per motor group, and per robot state (added with the Power tab's table; no schema bump).
+      breakdown: breakdownJson(match),
     },
+  }
+}
+
+/** Wh, running seconds and current per motor group and robot state; null when the match has no power grid. Rounded for size. */
+function breakdownJson(match: Match) {
+  const b = buildBreakdown(match)
+  if (!b) return null
+  const r = (x: number | null, d: number) => (x === null ? null : +x.toFixed(d))
+  const stats = (x: { wh: number; runningSeconds: number | null; p50: number | null; p90: number | null; p99: number | null; peak: number | null }) => ({
+    wh: r(x.wh, 3), runningSeconds: r(x.runningSeconds, 2), p50Amps: r(x.p50, 1), p90Amps: r(x.p90, 1), p99Amps: r(x.p99, 1), peakAmps: r(x.peak, 1),
+  })
+  return {
+    note: `Wh = supply current × battery voltage over enabled time; running = above ${b.runningAmps} A (assumed); other loads ${b.otherLoadsAmps} A (assumed).`,
+    totalWh: r(b.totalWh, 3), enabledSeconds: r(b.enabledSeconds, 2), stateNote: b.stateNote,
+    rows: b.rows.map((row) => ({ name: row.name, ...stats(row), states: row.states.map((s) => ({ state: s.name, ...stats(s) })) })),
   }
 }
 

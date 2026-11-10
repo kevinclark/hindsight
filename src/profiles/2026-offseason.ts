@@ -48,6 +48,10 @@ const robot: RobotProfile = {
     odometryPose: '/RealOutputs/Odometry/Robot',
 
     autoChoice: '/NetworkInputs/SmartDashboard/Autos',
+
+    // For views only (no stateMachine here: that would switch on mech/stuck-state and the state-exit rules). Superstructure.java:67-68
+    // at cb68b20: @AutoLogOutput(key = "Superstructure/State").
+    robotState: '/RealOutputs/Superstructure/State',
   },
 
   // FRC8033BatteryTracker (kevinclark/8033-battery-tracker). Outputs are under /RealOutputs; the gauge is logged

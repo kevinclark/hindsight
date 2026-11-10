@@ -7,6 +7,7 @@ import { analyzeFiles } from '../src/analyze.ts'
 import { buildBreakdown, type Breakdown } from '../src/power/breakdown.ts'
 import { buildPowerGrid, DT } from '../src/power/battery-model.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
+import { profileKeys } from '../src/profiles/choose.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
 import { TEAM, teamPath } from './helpers/team-logs.ts'
 import { haveLogs } from './helpers/load.ts'
@@ -126,6 +127,14 @@ describe('buildBreakdown on a synthetic log: energy and running time', () => {
   })
 })
 
+describe('the view-only state key', () => {
+  it('is set on the 2026 offseason profile, which has no stateMachine, and is not in the fit/coverage key list', () => {
+    expect(offseason2026.signals.robotState).toBe(STATE_KEY)
+    expect(offseason2026.stateMachine).toBeUndefined()
+    expect(profileKeys(offseason2026)).not.toContain(STATE_KEY)
+  })
+})
+
 describe('buildBreakdown on a synthetic log: by robot state', () => {
   const STATES: [number, string][] = [[4, 'INTAKE'], [8, 'SCORE'], [11, 'INTAKE']]
   it('holds the last state value: a sample takes the state at or before it; before the first value is "No state logged"', () => {
@@ -152,8 +161,8 @@ describe('buildBreakdown on a synthetic log: by robot state', () => {
     expect(f.states.map((s) => s.name).sort()).toEqual(['LONG', 'Other states'])
     expect(stateRow(b, 'Flywheel', 'Other states').runningSeconds).toBeCloseTo(0.9, 1)
     expect(stateRow(b, 'Flywheel', 'Other states').p50).toBe(10)
-    // A group that was running under 1 s in a state is judged by its own running, not the match's
-    expect(row(b, 'Drive').states).toEqual([]) // Drive never ran: every state is under 1 s, nothing to show
+    // A group that never ran has every state under 1 s: one "Other states" row, so its states still add up to the group
+    expect(row(b, 'Drive').states.map((s) => s.name)).toEqual(['Other states'])
   })
   it('has no state rows and says why when the profile has no state key', () => {
     const b = buildBreakdown(synthetic({ profile: noState(), state: STATES }))!

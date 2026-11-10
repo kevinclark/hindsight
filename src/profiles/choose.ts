@@ -41,7 +41,8 @@ export const PROFILE_FIT_MIN = 0.6
  * such log, and Driver Station log sources (not in the robot log). Alert groups are folders of signals, not signals.
  */
 export function profileKeys(profile: RobotProfile): string[] {
-  const { alertGroups: _, ...signals } = profile.signals
+  // robotState is for views (the Power tab's energy by state): it must not change a profile's fit or coverage
+  const { alertGroups: _, robotState: _state, ...signals } = profile.signals
   const robotSignals = Object.entries(signals).filter(([name]) => !NAMES_SAME_ON_EVERY_ROBOT.has(name as never))
   const keys = [
     ...profile.motorGroups.flatMap((g) => g.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.velocity, m.connected, m.temperature])),
