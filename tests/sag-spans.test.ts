@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
 import { buildPowerGrid, DT, type PowerGrid } from '../src/power/battery-model.ts'
 import { powerReport } from '../src/power/power-report.ts'
-import { buildSagSpans, sagSpansUncapped, LOOK_BEFORE_S, MERGE_GAP_S, MIN_SPAN_S, SPAN_CAP } from '../src/power/sag-spans.ts'
+import { buildSagSpans, LOOK_BEFORE_S, MERGE_GAP_S, MIN_SPAN_S, SPAN_CAP } from '../src/power/sag-spans.ts'
 import { buildFindingsJson } from '../src/report/findings-json.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import type { RobotProfile } from '../src/profiles/types.ts'
@@ -17,7 +17,7 @@ import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 
 const STATE_KEY = '/RealOutputs/Superstructure/State'
 
-type Opts = { brownout?: number; state?: [number, string][]; profile?: RobotProfile }
+type Opts = { brownout?: number; brownoutType?: string; state?: [number, string][]; profile?: RobotProfile }
 
 /** A 40 s log: battery 12 V, enabled 2-12 s (grid samples 100-599), brownout setting `brownout` V when given. */
 function analysisOf(o: Opts = {}) {
@@ -31,7 +31,7 @@ function analysisOf(o: Opts = {}) {
     series('/Drum/Flywheel/Leader/SupplyCurrentAmps', () => 10),
     series('/Drum/Flywheel/Leader/Connected', () => true, 'boolean'),
   ]
-  if (o.brownout !== undefined) entries.push(series('/SystemStats/BrownoutVoltage', () => o.brownout!))
+  if (o.brownout !== undefined) entries.push(series('/SystemStats/BrownoutVoltage', () => o.brownout!, o.brownoutType ?? 'double'))
   if (o.state) entries.push({ name: STATE_KEY, type: 'string', records: o.state })
   return analyzeFiles([{ name: 'synthetic.wpilog', bytes: writeWpilog(entries) }], o.profile ?? offseason2026).analyses[0]
 }
@@ -173,7 +173,8 @@ describe('buildSagSpans: order, cap, counts and state', () => {
     expect(lows).toEqual([...lows].sort((a, b) => a - b))
     expect(lows[0]).toBeCloseTo(6.0, 9)
     expect(lows[7]).toBeCloseTo(6.35, 9) // the two shallowest, 6.4 and 6.45, are cut
-    expect(sagSpansUncapped(match)!.spans).toHaveLength(10)
+    expect(r.allSpans).toHaveLength(10)
+    expect(r.allSpans.map((s) => s.start)).toEqual(expect.arrayContaining(r.spans.map((s) => s.start)))
   })
   it('gives the state at the span\'s start, holding the last value; null before the first value', () => {
     const { match, g } = quiet({ state: [[3, 'A'], [6, 'B'], [9, 'C']] })
@@ -252,8 +253,8 @@ describe('the Power tab and the plot', () => {
     const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
     const html = render(PowerTab, { props: { analysis } }).body
     expect(html).toContain('The 8 deepest sags under 7 V, and what was drawing')
-    expect(html).toContain('10 stretches under 7 V, 1.0 s in all; the 8 deepest:')
-    for (const col of ['When', 'Length', 'Lowest', 'State', 'At lowest', 'During', 'Before']) expect(html).toMatch(new RegExp(`<th[^>]*>${col}</th>`))
+    expect(html).toContain('10 stretches under 7 V, 1.0 s under it in all; the 8 deepest:')
+    for (const col of ['When', 'Length', 'Lowest', 'State', 'Total at lowest', 'At lowest', 'During', 'Before']) expect(html).toMatch(new RegExp(`<th[^>]*>${col}</th>`))
     expect(html).toMatch(/<rect[^>]*class="span/)
   })
   it('in fallback mode keeps the old heading and says why, with markers and no shaded spans', async () => {
@@ -288,6 +289,120 @@ describe('the Power tab and the plot', () => {
   })
 })
 
+describe('review fixes: time under the line, merging, lowest point, wording, plot, totals', () => {
+  it('1. Length and "in all" count only samples under the line; the full stretch is kept beside it', () => {
+    const { match, g } = quiet()
+    dip(g, 200, 3); dip(g, 200 + 3 + 12, 3) // 6 samples under, stretch of 18 samples
+    const r = buildSagSpans(match)!
+    expect(r.spans[0].seconds).toBeCloseTo(18 * DT, 9)
+    expect(r.spans[0].secondsUnder).toBeCloseTo(6 * DT, 9)
+    expect(r.secondsUnderLine).toBeCloseTo(6 * DT, 9)
+  })
+  it('1. the table shows time under the line, with "over N.NN s" when the stretch is longer; the note says X s under it', async () => {
+    const analysis = analysisOf({ brownout: 6 })
+    const g = buildPowerGrid(analysis.match)!
+    dip(g, 200, 3); dip(g, 215, 3); dip(g, 400, 5)
+    const { render } = await import('svelte/server')
+    const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
+    const html = render(PowerTab, { props: { analysis } }).body
+    expect(html).toContain('0.12 s')
+    expect(html).toContain('over 0.36 s')
+    expect(html).toContain('0.10 s') // the plain one: nothing to add under it
+    expect(html.match(/over \d/g)).toHaveLength(1)
+  })
+  it('1. the export carries seconds and secondsUnder per span', () => {
+    const analysis = analysisOf({ brownout: 6 })
+    const g = buildPowerGrid(analysis.match)!
+    dip(g, 200, 3); dip(g, 215, 3)
+    const sp = (buildFindingsJson(analysis.match, analysis.report) as { power: { sagSpans: { secondsUnderLine: number; spans: { seconds: number; secondsUnder: number }[] } } }).power.sagSpans
+    expect(sp.spans[0]).toMatchObject({ seconds: 0.36, secondsUnder: 0.12 })
+    expect(sp.secondsUnderLine).toBe(0.12)
+  })
+  it('2. never merges across a disabled sample, even 1 sample (0.02 s) apart', () => {
+    const { match, g } = quiet()
+    dip(g, 300, 5); dip(g, 306, 5)
+    g.enabled[305] = 0
+    const r = buildSagSpans(match)!
+    expect(r.totalSpans).toBe(2)
+  })
+  it('2. still merges runs with an enabled, above-the-line gap', () => {
+    const { match, g } = quiet()
+    dip(g, 300, 5); dip(g, 306, 5)
+    expect(buildSagSpans(match)!.totalSpans).toBe(1)
+  })
+  it('3. the lowest point comes only from samples under the line: a 0 V or NaN sample in a merged gap is not it', () => {
+    const { match, g } = quiet()
+    dip(g, 300, 3, 6.5); dip(g, 303, 3, 0); dip(g, 306, 3, 6.4)
+    const s = buildSagSpans(match)!.spans[0]
+    expect(s.lowestVolts).toBeCloseTo(6.4, 9)
+    const b = quiet()
+    dip(b.g, 300, 3, 6.5); dip(b.g, 303, 3, NaN); dip(b.g, 306, 3, 6.4)
+    expect(buildSagSpans(b.match)!.spans[0].lowestVolts).toBeCloseTo(6.4, 9)
+  })
+  it('4. the never-under fallback says it never stayed under L V for 0.04 s while enabled', () => {
+    const { match, g } = quiet()
+    g.volts.fill(9, 0, 500); dip(g, 300, 1, 6.5) // one sample under: dropped
+    redo(match)
+    expect(buildSagSpans(match)!.reason).toBe('This match never stayed under 7 V for 0.04 s while enabled, so these are its lowest points.')
+  })
+  it('5. the line is rounded in the reason and the export (a float brownout 6.3)', () => {
+    const analysis = analysisOf({ brownout: 6.3, brownoutType: 'float' })
+    const g = buildPowerGrid(analysis.match)!
+    g.volts.fill(9, 0, 500)
+    redo(analysis.match)
+    const r = buildSagSpans(analysis.match)!
+    expect(r.reason).toContain('under 7.3 V for')
+    const j = (buildFindingsJson(analysis.match, analysis.report) as { power: { sagSpans: { line: number } } }).power.sagSpans
+    expect(j.line).toBe(7.3)
+  })
+  it('6. the cached result carries every stretch, and the plot shades all of them with a key', async () => {
+    const analysis = analysisOf({ brownout: 6 })
+    const g = buildPowerGrid(analysis.match)!
+    for (let k = 0; k < 10; k++) dip(g, 150 + 40 * k, 5, 6 + 0.05 * ((k * 3) % 10))
+    const r = buildSagSpans(analysis.match)!
+    expect(r.spans).toHaveLength(8)
+    expect(r.allSpans).toHaveLength(10)
+    const { render } = await import('svelte/server')
+    const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
+    const html = render(PowerTab, { props: { analysis } }).body
+    expect(html.match(/<rect[^>]*class="span/g)).toHaveLength(10)
+    expect(html).toContain('shaded: under 7 V')
+  })
+  it('7. each stretch carries the total current at its lowest sample, and the tables show it', async () => {
+    const analysis = analysisOf({ brownout: 6 })
+    const g = buildPowerGrid(analysis.match)!
+    dip(g, 300, 10, 6.8); g.volts[304] = 6.1; g.amps[304] = 234
+    const r = buildSagSpans(analysis.match)!
+    expect(r.spans[0].totalAmpsAtLowest).toBe(234)
+    const { render } = await import('svelte/server')
+    const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
+    expect(render(PowerTab, { props: { analysis } }).body).toContain('234 A')
+  })
+  it('7. the fallback table has the column too', async () => {
+    const analysis = analysisOf()
+    const g = buildPowerGrid(analysis.match)!
+    dip(g, 300, 5, 5.0); g.amps[302] = 321
+    redo(analysis.match)
+    const { render } = await import('svelte/server')
+    const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
+    const html = render(PowerTab, { props: { analysis } }).body
+    expect(html).toMatch(/<th[^>]*>Total at lowest<\/th>/)
+    const s = buildSagSpans(analysis.match)!.spans[0]
+    expect(s.totalAmpsAtLowest).toBe(powerReport(analysis.match)!.sags[0].totalAmps)
+  })
+  it('8. one span reads "The deepest sag"; an empty state shows a dash', async () => {
+    const analysis = analysisOf({ brownout: 6, state: [[0, '']] })
+    const g = buildPowerGrid(analysis.match)!
+    dip(g, 300, 5)
+    const { render } = await import('svelte/server')
+    const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
+    const html = render(PowerTab, { props: { analysis } }).body
+    expect(html).toContain('The deepest sag under 7 V, and what was drawing')
+    expect(html).not.toMatch(/The 1 deepest/)
+    expect(html).toMatch(/<td>—<\/td>/)
+  })
+})
+
 // ---- the team's 2026 event logs ----
 const DIR = teamPath(TEAM.event2026)
 const have = existsSync(DIR) && haveLogs
@@ -297,14 +412,15 @@ describe.skipIf(!have)('sag stretches in the 8 logs of the team\'s 2026 event, a
   const files = have ? readdirSync(DIR).sort().filter((f) => f.endsWith('.wpilog')) : []
   const rows = files.map((f) => {
     const m = analyzeFiles([{ name: f, bytes: new Uint8Array(readFileSync(`${DIR}/${f}`)) }]).analyses[0].match
-    const all = sagSpansUncapped(m)
+    const all = buildSagSpans(m)
     const shown = buildSagSpans(m)
     const top = (l: { group: string }[] | null | undefined) => l?.[0]?.group ?? null
-    const spans = all?.spans ?? []
+    const spans = all?.mode === 'stretches' ? all.allSpans : []
     return {
       line: all?.line, total: spans.length, shown: shown?.spans.length ?? 0, mode: shown?.mode,
       beforeNeLowest: spans.filter((s) => top(s.before) !== top(s.atLowest)).length,
       beforeNeDuring: spans.filter((s) => top(s.before) !== top(s.during)).length,
+      under: all?.mode === 'stretches' ? all.secondsUnderLine : 0, kpi: powerReport(m)?.secondsUnder7 ?? NaN,
     }
   })
   const sum = (k: 'total' | 'shown' | 'beforeNeLowest' | 'beforeNeDuring') => rows.reduce((s, r) => s + r[k], 0)
@@ -312,7 +428,11 @@ describe.skipIf(!have)('sag stretches in the 8 logs of the team\'s 2026 event, a
     expect(files).toHaveLength(8)
     console.log(['log | line | spans before cap | shown | top group before != at lowest | before != during',
       ...rows.map((r, i) => `${i} | ${r.line} | ${r.total} | ${r.shown} | ${r.beforeNeLowest} | ${r.beforeNeDuring}`),
+      ...rows.map((r, i) => `log ${i}: secondsUnderLine ${r.under.toFixed(2)} vs KPI secondsUnder7 ${r.kpi.toFixed(2)}`),
       `all | | ${sum('total')} | ${sum('shown')} | ${sum('beforeNeLowest')} | ${sum('beforeNeDuring')}`].join('\n'))
+  })
+  it('secondsUnderLine equals the Time under 7 V KPI within one sample in every log', () => {
+    rows.forEach((r, i) => { if (r.under > 0) expect(Math.abs(r.under - r.kpi), `log ${i}`).toBeLessThanOrEqual(DT + 1e-9) })
   })
   it('uses the 7.0 V line in every log', () => rows.forEach((r, i) => expect(r.line, `log ${i}`).toBe(7)))
   it('finds 53 spans in all before the cap (within 2)', () => expect(Math.abs(sum('total') - 53)).toBeLessThanOrEqual(2))
