@@ -13,6 +13,7 @@ import type { ProgressMore } from '../src/hub/jobs.ts'
 import { MemoryAdapter } from '../src/hub/memory-adapter.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { fetchLogs } from '../src/hub/sync.ts'
+import { readAhead } from '../src/hub/read-ahead.ts'
 
 const CLOCK = Date.UTC(2026, 9, 17, 19, 0, 0)
 const MiB = 1 << 20
@@ -36,19 +37,29 @@ async function teamWith(bytes: Uint8Array): Promise<MemoryAdapter> {
 const withRead = (team: StorageAdapter, read: StorageAdapter['read']): StorageAdapter => Object.assign(Object.create(team), { read })
 
 describe('Download reads one range ahead', () => {
-  it('asks for the next range while the one before is still arriving, and never more than two at once', async () => {
+  it('asks for the next range once the one before starts arriving, and never more than two at once', async () => {
     const bytes = pattern(17 * MiB)
     const team = await teamWith(bytes)
     let inFlight = 0
     let most = 0
+    const starts: number[] = []
+    const arriving = new Set<number>()
+    const early: number[] = [] // ranges asked for before the one before them had a byte
     const slow = withRead(team, async (path, start, end, watch) => {
+      starts.push(start)
+      if (start > 0 && !arriving.has(start - 4 * MiB)) early.push(start)
       most = Math.max(most, ++inFlight)
-      try { await wait(20); return await team.read(path, start, end) } finally { inFlight-- }
+      try {
+        await wait(5); arriving.add(start); watch?.onBytes?.(1) // the first byte arrives, then the rest
+        await wait(20); return await team.read(path, start, end)
+      } finally { inFlight-- }
     })
     const lib = await LocalLibrary.open(join(work, 'mb'), 'mb')
     const report = await fetchLogs(lib, slow, [record(bytes)])
     expect(report.fetched).toEqual([PATH])
     expect(most).toBe(2)
+    expect(starts).toEqual([0, 4, 8, 12, 16].map((n) => n * MiB))
+    expect(early).toEqual([])
     expect(sha(new Uint8Array(await lib.store.read(PATH, 0, bytes.length)))).toBe(sha(bytes))
   })
 
@@ -69,12 +80,12 @@ describe('Download reads one range ahead', () => {
     expect(done.some((n) => n % (4 * MiB) !== 0)).toBe(true) // bytes count as they arrive, not only per piece
   })
 
-  it('a range read ahead that nothing took is told to stop once the log fails, and its bytes no longer move the bar', async () => {
+  it('a range read ahead that nothing took is told to stop once the log fails, and its bytes and words no longer reach the bar', async () => {
     const bytes = pattern(13 * MiB)
     const team = await teamWith(bytes)
     let held: TransferWatch | undefined
     const flaky = withRead(team, async (path, start, end, watch) => {
-      if (start === 4 * MiB) throw new LinkLost('no data from Google Drive for 15 s')
+      if (start === 4 * MiB) { watch?.onBytes?.(1); await wait(5); throw new LinkLost('no data from Google Drive for 15 s') }
       if (start === 8 * MiB) { held = watch; return new Promise<Uint8Array>(() => {}) } // never answers
       return team.read(path, start, end)
     })
@@ -86,7 +97,34 @@ describe('Download reads one range ahead', () => {
     expect(held?.cancelled?.()).toBe(true)
     const before = events
     held?.onBytes?.(MiB)
+    held?.onStep?.('Google Drive stopped sending; trying again (try 2 of 3)')
     expect(events).toBe(before)
     expect(await readdir(join(lib.root, 'logs/2026-2027/2026-10-17'))).toEqual([])
+  })
+})
+
+describe('readAhead on its own', () => {
+  it('a range that reports fewer bytes than before (a retry from its next byte) never takes the total back', async () => {
+    const totals: number[] = []
+    let watch: TransferWatch | undefined
+    const source = readAhead(100, async (_s, e, w) => { watch = w; w.onBytes?.(60); w.onBytes?.(40); return new Uint8Array(e) }, { onBytes: (n) => totals.push(n) })
+    await source.read(0, 100)
+    expect(totals).toEqual([60, 100])
+    expect(watch).toBeDefined()
+  })
+
+  it('after Stop, bytes still arriving on a range no longer move the total', async () => {
+    let stop = false
+    const totals: number[] = []
+    const source = readAhead(100, async (_s, e, w) => { w.onBytes?.(30); stop = true; w.onBytes?.(60); return new Uint8Array(e) }, { cancelled: () => stop, onBytes: (n) => totals.push(n) })
+    await source.read(0, 100)
+    expect(totals).toEqual([30])
+  })
+
+  it('refuses a read out of order or of another size, rather than leave a range in flight that nothing will take', async () => {
+    const source = readAhead(300, async (s, e) => new Uint8Array(e - s))
+    await source.read(0, 100)
+    expect(() => source.read(200, 300)).toThrow(/front to back/)
+    expect(() => source.read(100, 150)).toThrow(/front to back/)
   })
 })
