@@ -220,6 +220,20 @@ describe('tags and facets', () => {
     expect(Object.fromEntries(counts.matchType)).toEqual({ Elimination: 1, Qualification: 0 }) // robot B narrows it; Qualification stays listed
     expect(Object.fromEntries(counts.robot)).toEqual({ 'Robot A': 1, 'Robot B': 0 })
   })
+  it('lists events and practice places by when the team first logged there, oldest first, with no place last', () => {
+    const entries = Catalog.from([[
+      log({ sha256: 'p1', playedAt: at(2026, 9, 20), onField: true, event: 'Event B 2026' }),
+      log({ sha256: 'p2', playedAt: at(2026, 3, 1), onField: true, event: 'Event C 2026' }),
+      log({ sha256: 'p3', playedAt: at(2026, 3, 2), onField: true, event: 'Event C 2026' }),
+      log({ sha256: 'p4', playedAt: at(2026, 3, 3), onField: true, event: 'Event C 2026' }),
+      log({ sha256: 'p5', playedAt: null }),
+      log({ sha256: 'p6', playedAt: at(2026, 10, 30), onField: true, event: 'Event A 2026' }),
+    ].map(serializeRecord).join('')]).entries()
+    const places = (sel = {}) => facetCounts(entries, sel, robotLabels(entries)).place.map(([v]) => v)
+    expect(places()).toEqual(['Event C 2026', 'Event B 2026', 'Event A 2026', 'No place'])
+    // A pick in another facet leaves the order alone, and a picked place it empties stays where it was.
+    expect(places({ schoolYear: ['2026-2027'], place: ['Event C 2026'] })).toEqual(['Event C 2026', 'Event B 2026', 'Event A 2026'])
+  })
   it('labels a count "+N" only beside a pick in the same facet', () => {
     const selection = { robot: ['Robot B'] }
     expect(countLabel(selection, 'robot', 'Robot A', 3)).toBe('+3') // would join the list: picks within a facet are OR

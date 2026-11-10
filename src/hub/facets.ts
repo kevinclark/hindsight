@@ -140,10 +140,30 @@ export function facetCounts(entries: Entry[], selection: Selection, labels: Robo
     }
     // Picked values stay listed even at zero, so they can be unpicked.
     for (const v of selection[f] ?? []) if (!counts.has(v)) counts.set(v, 0)
-    const order = f === 'robot' ? robotOrder(counts, labels) : (a: [string, number], b: [string, number]) => b[1] - a[1] || a[0].localeCompare(b[0])
-    out[f] = [...counts].sort(f === 'schoolYear' ? (a, b) => b[0].localeCompare(a[0]) : order)
+    const order = f === 'robot' ? robotOrder(counts, labels)
+      : f === 'place' ? placeOrder(entries, labels, places)
+      : f === 'schoolYear' ? (a: Count, b: Count) => b[0].localeCompare(a[0])
+      : (a: Count, b: Count) => b[1] - a[1] || a[0].localeCompare(b[0])
+    out[f] = [...counts].sort(order)
   }
   return out
+}
+
+type Count = [value: string, count: number]
+
+/**
+ * The place facet's order: by the first log at each event or practice place over the whole library (not the filtered
+ * list, so a pick elsewhere never reorders it), oldest first like the log list; places with no dated log, and "No place", last.
+ */
+function placeOrder(entries: Entry[], labels: RobotLabels, places?: Places): (a: Count, b: Count) => number {
+  const first = new Map<string, number>()
+  for (const e of entries) {
+    const v = facetValues(e, labels, places).place
+    const t = e.record.playedAt ?? Infinity
+    if (t < (first.get(v) ?? Infinity)) first.set(v, t)
+  }
+  const when = (v: string) => first.get(v) ?? Infinity
+  return (a, b) => Number(a[0] === UNKNOWN.place) - Number(b[0] === UNKNOWN.place) || when(a[0]) - when(b[0]) || a[0].localeCompare(b[0])
 }
 
 /** The robot facet's order: robots by their counted logs (biggest first), and within one robot its plain name first, then by count. */
