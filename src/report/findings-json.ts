@@ -112,7 +112,8 @@ function breakdownJson(match: Match) {
     wh: r(x.wh, 3), runningSeconds: r(x.runningSeconds, 2), p50Amps: r(x.p50, 1), p90Amps: r(x.p90, 1), p99Amps: r(x.p99, 1), peakAmps: r(x.peak, 1),
   })
   return {
-    note: `Wh = supply current × battery voltage over enabled time; running = above ${b.runningAmps} A (assumed); other loads ${b.otherLoadsAmps} A (assumed).`,
+    note: `Wh = supply current × battery voltage over enabled time; running = above ${b.runningAmps} A (assumed)${b.measured ? '; the one row is a measured total.' : `; other loads ${b.otherLoadsAmps} A (assumed).`}`,
+    measured: b.measured,
     totalWh: r(b.totalWh, 3), enabledSeconds: r(b.enabledSeconds, 2), stateNote: b.stateNote,
     rows: b.rows.map((row) => ({ name: row.name, ...stats(row), states: row.states.map((s) => ({ state: s.name, ...stats(s) })) })),
   }

@@ -53,6 +53,11 @@ export interface Breakdown {
   measured: boolean
 }
 
+/** A group has states worth opening: a state row besides the fold and "No state logged" that ran. */
+export function hasStates(r: { states: { name: string; runningSeconds: number | null }[] }): boolean {
+  return r.states.some((s) => s.name !== OTHER_STATES && s.name !== NO_STATE && (s.runningSeconds ?? 0) > 0)
+}
+
 /** One row's samples as they are gathered. */
 class Acc {
   wh = 0
