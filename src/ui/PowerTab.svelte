@@ -197,7 +197,7 @@
         {/each}
       </ul>
     {:else}
-      <p class="note">Nothing here ran out of power or speed, and no setpoint asked for more than the battery had.</p>
+      <p class="note">Nothing ran at top speed with torque to spare, and no setpoint asked for more than the battery had.</p>
     {/if}
     <table class="headroom">
       <thead><tr><th>Group</th><th>Ran (s)</th><th>At stator limit</th><th>At supply cap</th><th>Share of top speed: typical / high</th><th>Within 10 % of top</th><th>Current there</th></tr></thead>

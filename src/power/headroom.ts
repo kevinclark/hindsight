@@ -322,7 +322,6 @@ function combine(group: string, motors: MotorHeadroom[]): Omit<GroupHeadroom, 's
 }
 
 /** A verdict fires at or above these (see headroomVerdicts). */
-export const SUPPLY_SHARE = 0.25
 export const PAST_TOP_SHARE = 0.1
 /** The wheel fell short this often while the battery was under the setpoint, and twice as often as the rest. */
 export const SHORT_FLOOR = 0.3
@@ -335,7 +334,7 @@ export const VERDICT_MIN_SECONDS = 30
 
 export interface HeadroomVerdict {
   group: string
-  kind: 'out of power' | 'battery under the setpoint' | 'at top speed'
+  kind: 'battery under the setpoint' | 'at top speed'
   says: string
   tryThis: string
 }
@@ -344,27 +343,21 @@ const pc = (x: number) => `${Math.round(100 * x)} %`
 
 /**
  * What the numbers say, in words, with what to try. Each verdict was first seen on 8033's 2026 offseason robot, in
- * its 14 MTTD 2026 match logs (pit logs read 0-5 % on all three):
- *  - out of power: the drive at its 40 A supply cap 38-50 % of the time it ran. A ratio change can't add power.
+ * its 14 MTTD 2026 match logs:
  *  - battery under the setpoint: the drum's setpoint needs 5.9-6.9 V; the battery sagged under that in 0-19 % of its
  *    holding time, and the wheel fell short of it then far more often than the rest of the time. It is a battery
  *    reading (no log has a setpoint past top speed on a rested battery), so the advice is the battery.
  *  - at top speed: the intake rollers within 10 % of top speed 44-69 % of the time they ran, at 5-11 A against a
  *    20 A stator limit. Drive motors (ours, and one public log each of 2151, 2204, 3467, 4322, 5414) reached at most
  *    29 %, at 14-31 A.
- * No log in hand has a stator-limit verdict: the share is shown with no words until a case is seen.
+ * The limit shares get no words. No log in hand has a stator-limit case, and the drive sat at its 40 A supply cap
+ * 30-50 % of the time in every one of 19 match logs: a line that fires every match says nothing, and no outside log
+ * has limits to say what share means trouble (Kevin, 2026-11-10: the number only).
  */
 export function headroomVerdicts(groups: GroupHeadroom[]): HeadroomVerdict[] {
   const out: HeadroomVerdict[] = []
   for (const g of groups) {
     if (g.runningSeconds < VERDICT_MIN_SECONDS) continue
-    if (g.atSupply !== null && g.atSupply >= SUPPLY_SHARE) {
-      out.push({
-        group: g.group, kind: 'out of power',
-        says: `${g.group}: at its ${g.supplyLimitA} A supply cap ${pc(g.atSupply)} of the time it ran.`,
-        tryThis: 'Check the batteries it ran on and whether the supply limit is the one you meant. A different gear ratio won\'t add power.',
-      })
-    }
     const sp = g.setpoint
     if (sp && sp.pastTop >= PAST_TOP_SHARE && sp.shortWhenPastTop !== null && sp.shortWhenPastTop >= SHORT_FLOOR
       && sp.shortOtherwise !== null && sp.shortWhenPastTop >= 2 * sp.shortOtherwise) {

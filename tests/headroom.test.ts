@@ -8,7 +8,7 @@ import { openWpilog } from '../src/readers/wpilog.ts'
 import { motorsFromLog } from '../src/builder/motors.ts'
 import {
   buildHeadroom, headroomLimits, headroomVerdicts, motorHeadroom, setpointHeadroom, speedFit,
-  LIGHT_AMPS, NEAR_TOP_SHARE, PAST_TOP_SHARE, SHORT_FLOOR, SUPPLY_SHARE, VERDICT_MIN_SECONDS, type GroupHeadroom,
+  LIGHT_AMPS, NEAR_TOP_SHARE, PAST_TOP_SHARE, SHORT_FLOOR, VERDICT_MIN_SECONDS, type GroupHeadroom,
 } from '../src/power/headroom.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import type { MotorGroup } from '../src/profiles/types.ts'
@@ -155,9 +155,8 @@ const group = (over: Partial<GroupHeadroom>): GroupHeadroom => ({
 })
 
 describe('headroomVerdicts', () => {
-  it('says out of power at the supply-cap share, not under it', () => {
-    expect(headroomVerdicts([group({ atSupply: SUPPLY_SHARE, supplyLimitA: 40 })])[0]).toMatchObject({ kind: 'out of power' })
-    expect(headroomVerdicts([group({ atSupply: SUPPLY_SHARE - 0.01, supplyLimitA: 40 })])).toEqual([])
+  it('gives the limit shares no words, however high', () => {
+    expect(headroomVerdicts([group({ atSupply: 0.9, supplyLimitA: 40, atStator: 0.9, statorLimitA: 60 })])).toEqual([])
   })
   it('says the battery was under the setpoint only with a real shortfall, twice the rest', () => {
     const sp = { seconds: 30, needsVolts: 6.8, pastTop: PAST_TOP_SHARE, shortWhenPastTop: 0.6, shortOtherwise: 0.1 }
@@ -174,7 +173,8 @@ describe('headroomVerdicts', () => {
     expect(headroomVerdicts([group({ topSpeed: { ...top, nearTop: NEAR_TOP_SHARE - 0.01 }, ampsNearTop: 8, busNearTop: 9, statorLimitA: 20 })])).toEqual([])
   })
   it('says nothing about a group that ran under 30 s', () => {
-    expect(headroomVerdicts([group({ runningSeconds: VERDICT_MIN_SECONDS - 1, atSupply: 0.9, supplyLimitA: 40 })])).toEqual([])
+    const top = { p50: 0.9, p90: 0.99, nearTop: 0.9 }
+    expect(headroomVerdicts([group({ runningSeconds: VERDICT_MIN_SECONDS - 1, topSpeed: top, ampsNearTop: 5, busNearTop: 9 })])).toEqual([])
   })
 })
 
@@ -229,11 +229,11 @@ describe('buildHeadroom on a synthetic log', () => {
 
 const LOG_B = teamPath(TEAM.logB)
 describe.skipIf(!existsSync(LOG_B))('headroom on the team\'s 2026 log B', () => {
-  it('reads the drive out of power and the intake rollers at top speed', () => {
+  it('reads the drive at its supply cap a quarter of the time or more, and the intake rollers at top speed', () => {
     const match = analyzeFiles([{ name: 'logB.wpilog', bytes: new Uint8Array(readFileSync(LOG_B)) }]).analyses[0].match
     const h = buildHeadroom(match)
-    expect(h.find((g) => g.group === 'Drive')!.atSupply).toBeGreaterThan(SUPPLY_SHARE)
+    expect(h.find((g) => g.group === 'Drive')!.atSupply).toBeGreaterThan(0.25)
     expect(h.find((g) => g.group === 'Intake rollers')!.topSpeed!.nearTop).toBeGreaterThan(NEAR_TOP_SHARE)
-    expect(headroomVerdicts(h).map((v) => `${v.group}: ${v.kind}`)).toEqual(expect.arrayContaining(['Drive: out of power', 'Intake rollers: at top speed']))
+    expect(headroomVerdicts(h).map((v) => `${v.group}: ${v.kind}`)).toEqual(['Intake rollers: at top speed'])
   })
 })
