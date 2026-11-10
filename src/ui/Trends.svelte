@@ -43,6 +43,7 @@
   <tbody>
     {#each rows as row (row.metric.key)}
       {@const w = row.worstIndex}
+      {@const low = row.lowestIndex}
       <tr>
         <th scope="row" class="metric">{row.metric.label} <span class="muted">({row.metric.unit})</span>{#if row.metric.sub}<div class="muted sub">{row.metric.sub}</div>{/if}</th>
         <td class="verdict">
@@ -58,7 +59,7 @@
                 {@const v = row.values[i]}
                 {#if v !== null}
                   {#if mixed(row) && row.past[i]}<circle class="ring" cx={p.x(i)} cy={p.y(v)} r="4" />{/if}
-                  <circle cx={p.x(i)} cy={p.y(v)} r={i === w ? 3 : 2.2} fill={i === w && row.past[i] ? 'var(--warning)' : colour(m)}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
+                  <circle cx={p.x(i)} cy={p.y(v)} r={i === w || i === low ? 3 : 2.2} fill={i === w && row.past[i] ? 'var(--warning)' : colour(m)}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
                 {/if}
               {/each}
             </svg>
@@ -67,7 +68,7 @@
           {/if}
         </td>
         <td class="num" data-label="Latest">{row.latest !== null ? fmt(row, row.latest) : row.n > 0 ? 'not logged' : ''}</td>
-        <td class="worst" data-label={`Worst ${unit}`}>{#if w !== null}{row.worstWord === 'highest' ? 'highest: ' : ''}{#if onOpen}<button class="link" title={`Open ${trendLabelLong(matches[w], w)} in Match review`} onclick={() => onOpen(matches[w])}>{row.labels[w]}</button>{:else}<span title={trendLabelLong(matches[w], w)}>{row.labels[w]}</span>{/if} {fmt(row, row.values[w]!)}{/if}</td>
+        <td class="worst" data-label={`Worst ${unit}`}>{#if w !== null}{row.worstWord === 'highest' ? 'highest: ' : ''}{#if onOpen}<button class="link" title={`Open ${trendLabelLong(matches[w], w)} in Match review`} onclick={() => onOpen(matches[w])}>{row.labels[w]}</button>{:else}<span title={trendLabelLong(matches[w], w)}>{row.labels[w]}</span>{/if} {fmt(row, row.values[w]!)}{#if low !== null}<div class="muted">lowest: {#if onOpen}<button class="link" title={`Open ${trendLabelLong(matches[low], low)} in Match review`} onclick={() => onOpen(matches[low])}>{row.labels[low]}</button>{:else}<span title={trendLabelLong(matches[low], low)}>{row.labels[low]}</span>{/if} {fmt(row, row.values[low]!)}</div>{/if}{/if}</td>
         <td class="todo" data-label="What to do">
           {#if row.next.source === 'rule' || row.next.source === 'match'}
             <q>{row.next.text}</q> <span class="muted rule">{row.next.ruleId}</span>

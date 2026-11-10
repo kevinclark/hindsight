@@ -4,10 +4,12 @@
  */
 import { RULES } from '../rules/index.ts'
 import { shortMatchLabel } from '../ui/match-label.ts'
+import type { MotorDrag } from '../power/drag.ts'
 import type { MatchMetrics, MatchSummary } from './summary.ts'
 
 export interface TrendMetric {
-  key: keyof MatchMetrics
+  /** A MatchMetrics field, or `drag:<motor name>` for a motor's current at a steady speed (unique per row). */
+  key: keyof MatchMetrics | `drag:${string}`
   label: string
   unit: string
   digits: number
@@ -60,6 +62,8 @@ export interface TrendRow {
   worstIndex: number | null
   /** 'worst' for a row with a line; 'highest' for one without. */
   worstWord: 'worst' | 'highest'
+  /** Index of the lowest value, set only on a row that marks both ends of its spread (a motor's current at a steady speed: a dead follower reads low) and only where it differs from the highest. */
+  lowestIndex: number | null
   latest: number | null
   /** The last match is strictly the worst, and something is past the line (or the row has no line). */
   latestIsWorst: boolean
@@ -74,6 +78,9 @@ export interface TrendRow {
   /** Smaller sorts first. */
   sortKey: number
 }
+
+/** A motor's drag rows are shown only with this many matches that have its band. */
+export const MIN_DRAG_CELLS = 3
 
 const format = (v: number, digits: number) => v.toFixed(digits)
 
@@ -121,7 +128,7 @@ export function trendRows(matches: MatchSummary[], unit: 'match' | 'log' = 'matc
   const labels = matches.map((m, i) => trendLabel(m, i))
   const rows = TREND_METRICS.map((metric): TrendRow => {
     const values = matches.map((m) => {
-      const v = m.metrics[metric.key]
+      const v = m.metrics[metric.key as keyof MatchMetrics]
       return typeof v === 'number' && Number.isFinite(v) ? v : null
     })
     const lines = matches.map((m) => lineFor(metric, m))
@@ -189,8 +196,57 @@ export function trendRows(matches: MatchSummary[], unit: 'match' | 'log' = 'matc
     // line, absent. Kevin, 2026-10-20.
     const tier = n === 0 ? 3 : !hasLine ? 2 : pastCount > 0 ? 0 : 1
     const sortKey = tier * 1000 - (tier === 0 ? (metric.key === 'minVolts' ? 999 : Math.min(pastRatio ?? 0, 998)) : 0)
-    return { metric, values, lines, line, lineVaries, labels, n, total, past, pastCount, worstIndex, worstWord, latest, latestIsWorst, verdict, verdict2, next, pastRatio, sortKey }
+    return { metric, values, lines, line, lineVaries, labels, n, total, past, pastCount, worstIndex, worstWord, lowestIndex: null, latest, latestIsWorst, verdict, verdict2, next, pastRatio, sortKey }
   })
   // Stable: equal keys keep the metric order above.
-  return rows.map((r, i) => ({ r, i })).sort((a, b) => a.r.sortKey - b.r.sortKey || a.i - b.i).map((x) => x.r)
+  const sorted = rows.map((r, i) => ({ r, i })).sort((a, b) => a.r.sortKey - b.r.sortKey || a.i - b.i).map((x) => x.r)
+  return [...sorted, ...dragRows(matches, labels, units)]
+}
+
+const bandText = (lo: number, hi: number, unit?: string) => {
+  const d = hi < 10 ? 1 : 0
+  return `${lo.toFixed(d)}–${hi.toFixed(d)}${unit ? ` ${unit}` : ''}`
+}
+
+/**
+ * One row per motor: its median stator current at a steady speed, in the speed band present in the most matches
+ * (a tie: the band with the most seconds in all), one cell per match, empty where the match lacks that band. No line:
+ * nothing says what the number should be, only that a mechanism that drags draws more than it did before. The highest
+ * and the lowest cell are both marked (a dead follower reads low). A motor with fewer than MIN_DRAG_CELLS cells has no row.
+ * Motors in profile order (first seen), so a leader and its followers sit together.
+ */
+function dragRows(matches: MatchSummary[], labels: string[], units: string): TrendRow[] {
+  const motors: { motor: string; group: string; unit?: string }[] = []
+  for (const mt of matches) for (const d of mt.metrics.drag ?? []) if (!motors.some((x) => x.motor === d.motor)) motors.push({ motor: d.motor, group: d.group, unit: d.unit })
+  const rows: TrendRow[] = []
+  for (const mo of motors) {
+    const mine = matches.map((mt): MotorDrag | undefined => mt.metrics.drag?.find((d) => d.motor === mo.motor))
+    const tally = new Map<number, { matches: number; seconds: number; lo: number; hi: number }>()
+    for (const d of mine) for (const b of d?.bands ?? []) {
+      const t = tally.get(b.band) ?? { matches: 0, seconds: 0, lo: b.lo, hi: b.hi }
+      t.matches++; t.seconds += b.seconds
+      tally.set(b.band, t)
+    }
+    const best = [...tally].sort((a, b) => b[1].matches - a[1].matches || b[1].seconds - a[1].seconds || a[0] - b[0])[0]
+    if (!best || best[1].matches < MIN_DRAG_CELLS) continue
+    const [band, t] = best
+    const values = mine.map((d) => d?.bands.find((b) => b.band === band)?.amps ?? null)
+    const filled = values.map((v, i) => ({ v, i })).filter((x): x is { v: number; i: number } => x.v !== null)
+    // Highest and lowest over the filled cells only; the first of equals.
+    const high = filled.reduce((a, b) => (b.v > a.v ? b : a))
+    const low = filled.reduce((a, b) => (b.v < a.v ? b : a))
+    const metric: TrendMetric = {
+      key: `drag:${mo.motor}`, label: `${mo.motor}: current at steady speed`, unit: 'A', digits: 1,
+      sub: `at ${bandText(t.lo, t.hi, mo.unit)}`,
+    }
+    rows.push({
+      metric, values, lines: matches.map(() => null), line: null, lineVaries: false, labels,
+      n: filled.length, total: matches.length, past: matches.map(() => false), pastCount: 0,
+      worstIndex: high.i, worstWord: 'highest', lowestIndex: low.i === high.i || low.v === high.v ? null : low.i,
+      latest: filled[filled.length - 1].v, latestIsWorst: false,
+      verdict: `No line: ${format(low.v, 1)} to ${format(high.v, 1)} A in ${filled.length} of ${matches.length} ${units}`, verdict2: '',
+      next: { text: 'No rule for this number', source: 'no-rule', ruleId: null }, pastRatio: null, sortKey: 4000,
+    })
+  }
+  return rows
 }

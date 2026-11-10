@@ -3,6 +3,7 @@
   import type { Analysis } from '../analyze.ts'
   import { powerReport, whatIfAt } from '../power/power-report.ts'
   import { buildPowerGrid, DT } from '../power/battery-model.ts'
+  import { buildDrag } from '../power/drag.ts'
   import { FLEET_REFERENCE } from '../power/fleet-reference.ts'
   import { downsample } from '../report/findings-json.ts'
   import Plot from './Plot.svelte'
@@ -14,6 +15,10 @@
   const m = $derived(analysis.match)
   const p = $derived(powerReport(m))
   const g = $derived(buildPowerGrid(m))
+  const drag = $derived(buildDrag(m).filter((d) => d.bands.length))
+  /** Motors with steady-speed bands, grouped by motor group in profile order, leader beside follower. */
+  const dragGroups = $derived([...new Set(drag.map((d) => d.group))].map((group) => ({ group, motors: drag.filter((d) => d.group === group) })))
+  const band = (b: { lo: number; hi: number }, unit?: string) => `${b.lo.toFixed(b.hi < 10 ? 1 : 0)}–${b.hi.toFixed(b.hi < 10 ? 1 : 0)}${unit ? ` ${unit}` : ''}`
 
   let cap = $state(40)
   let mode = $state<'clip' | 'defer'>('defer')
@@ -83,6 +88,26 @@
     </tbody>
   </table>
 
+  {#if dragGroups.length}
+    <h3>Current at steady speed</h3>
+    <table class="drag">
+      <thead><tr><th>Motor</th><th>Speed band</th><th>Stator current</th><th>Steady seconds</th></tr></thead>
+      <tbody>
+        {#each dragGroups as dg (dg.group)}
+          <tr class="group"><th colspan="4" scope="colgroup">{dg.group}</th></tr>
+          {#each dg.motors as d (d.motor)}
+            {#each d.bands as b, bi (b.band)}
+              <tr>
+                <td>{#if bi === 0}{d.motor}{/if}</td><td>{band(b, d.unit)}</td><td>{b.amps.toFixed(1)} A</td><td>{b.seconds.toFixed(1)} s</td>
+              </tr>
+            {/each}
+          {/each}
+        {/each}
+      </tbody>
+    </table>
+    <p class="note">Median motor (stator) current while the motor is on CAN, the robot is enabled and the speed holds within 2 % over 0.2 s; speeds are grouped in bands 25 % wide, and a band needs 2 s. A mechanism that drags (a tight belt, a bent shaft) draws more at the same speed than it did in its own earlier matches: Session, Trends compares them. A motor off CAN or not turning leaves no row.</p>
+  {/if}
+
   <h3>Battery: estimated open-circuit voltage against charge drawn</h3>
   {#if ocvPlot}<Plot model={ocvPlot} height={170} xLabel="Ah" />{/if}
   <p class="note">V + R·I with R = {p.resistanceOhms ? (p.resistanceOhms * 1000).toFixed(1) : '—'} mΩ, median per 0.25 Ah while enabled. A healthy battery stays high as charge is drawn; a weak one falls away. The reference is two batteries from one weekend until battery history exists.</p>
@@ -133,6 +158,7 @@
   th, td { text-align: left; padding: 0.2rem 1rem 0.2rem 0; vertical-align: top; }
   thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   tbody th { font-weight: normal; }
+  tr.group th { color: var(--muted); font-size: 0.75rem; padding-top: 0.5rem; }
   .hl { background: var(--hover); }
   .warn-box { border-left: 3px solid var(--warning); padding: 0.25rem 0.75rem; font-size: 0.85rem; max-width: 75ch; }
   .slider { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; margin: 0.5rem 0; font-size: 0.9rem; }

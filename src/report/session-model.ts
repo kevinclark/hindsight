@@ -80,9 +80,11 @@ export interface ReportFinding {
   wrongIn: string[]
 }
 
-export interface TrendPoint { /** The file name: unique even when two matches share a label (a replay). */ id: string; match: string; value: number; x: number; y: number; letter: string; worst: boolean }
+export interface TrendPoint { /** The file name: unique even when two matches share a label (a replay). */ id: string; match: string; value: number; x: number; y: number; letter: string; worst: boolean; /** The row's lowest cell, marked beside the highest in a row with no line (a motor's current at a steady speed). */ lowest?: boolean }
 export interface TrendPanel {
   key: string; label: string; unit: string
+  /** The speed band a motor's current row compares ("at 18–23 rot/s"); absent on the other rows. */
+  sub?: string
   /** The Session view's verdict for this number ("Under 7 V in 8 of 8 matches"). */
   verdict: string
   /** y of the rule's line, when it has one. */
@@ -262,7 +264,7 @@ export function trendsModel(matches: MatchSummary[], typedBatteries: Record<stri
   // The rows, verdicts and order are the Session view's (trendRows): the printed numbers cannot disagree with the screen.
   const panels = trendRows(matches, unit).map((row): TrendPanel => {
     const metric = row.metric
-    const base = { key: metric.key, label: metric.label, unit: metric.unit, verdict: row.verdict }
+    const base = { key: metric.key, label: metric.label, unit: metric.unit, verdict: row.verdict, ...(metric.key.startsWith('drag:') && metric.sub ? { sub: metric.sub } : {}) }
     const w = row.worstIndex
     const nums = row.values.filter((v): v is number => v !== null)
     if (nums.length === 0) return { ...base, lineY: null, points: [], range: 'not in these logs' }
@@ -271,7 +273,7 @@ export function trendsModel(matches: MatchSummary[], typedBatteries: Record<stri
     const x = (i: number) => pad + (matches.length === 1 ? (width - 2 * pad) / 2 : (i * (width - 2 * pad)) / (matches.length - 1))
     const y = (v: number) => height - pad - ((v - lo) / (hi - lo)) * (height - 2 * pad)
     const points: TrendPoint[] = []
-    row.values.forEach((v, i) => { if (v !== null) points.push({ id: matches[i].fileName, match: matchLabel(matches[i]), value: v, x: x(i), y: y(v), letter: battery(matches[i]) ? letter(ids.indexOf(battery(matches[i]))) : '', worst: i === w }) })
+    row.values.forEach((v, i) => { if (v !== null) points.push({ id: matches[i].fileName, match: matchLabel(matches[i]), value: v, x: x(i), y: y(v), letter: battery(matches[i]) ? letter(ids.indexOf(battery(matches[i]))) : '', worst: i === w, ...(i === row.lowestIndex ? { lowest: true } : {}) }) })
     return {
       ...base, lineY: row.line !== null ? y(row.line) : null, points,
       range: `${Math.min(...nums).toFixed(metric.digits)}–${Math.max(...nums).toFixed(metric.digits)}`,

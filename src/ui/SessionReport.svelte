@@ -57,16 +57,16 @@
 
   <section class="trends">
     <h2>Per {t.unit}: verdict, one scale per number</h2>
-    <p class="small">{t.unit === 'match' ? 'Matches' : 'Logs'} left to right: {t.order.join(', ')}.{t.batteries.length ? ' Letters mark the battery: ' : ''}{#each t.batteries as b (b.letter)}<span class="bk"><strong>{b.letter}</strong> = {b.id}</span>{/each}{#if t.batteries.length && t.anyUnlabelled}<span class="bk">no letter = no battery ID</span>{/if}{#if !t.batteries.length}{' '}No battery IDs in these logs.{/if} Dashed line: the rule's line. Large dot: the worst {t.unit}.</p>
+    <p class="small">{t.unit === 'match' ? 'Matches' : 'Logs'} left to right: {t.order.join(', ')}.{t.batteries.length ? ' Letters mark the battery: ' : ''}{#each t.batteries as b (b.letter)}<span class="bk"><strong>{b.letter}</strong> = {b.id}</span>{/each}{#if t.batteries.length && t.anyUnlabelled}<span class="bk">no letter = no battery ID</span>{/if}{#if !t.batteries.length}{' '}No battery IDs in these logs.{/if} Dashed line: the rule's line. Large dot: the worst {t.unit}; in a motor's current row, the highest and the lowest.</p>
     <div class="multiples">
       {#each t.panels as p (p.key)}
         <figure>
-          <figcaption>{p.label} <span>({p.unit})</span></figcaption>
+          <figcaption>{p.label} <span>({p.unit}){p.sub ? ` ${p.sub}` : ''}</span></figcaption>
           {#if p.points.length}
             <svg viewBox={`0 0 ${t.width} ${t.height}`} role="img" aria-label={`${p.label} per ${t.unit}`}>
               {#if p.lineY !== null}<line class="ref" x1={t.pad} x2={t.width - t.pad} y1={p.lineY} y2={p.lineY} />{/if}
               {#each p.points as pt (pt.id)}
-                <circle cx={pt.x} cy={pt.y} r={pt.worst ? 3.6 : 2.6} class={pt.worst ? 'pt worst' : 'pt'} />
+                <circle cx={pt.x} cy={pt.y} r={pt.worst || pt.lowest ? 3.6 : 2.6} class={pt.worst || pt.lowest ? 'pt worst' : 'pt'} />
                 {#if pt.letter}<text x={pt.x + 4.5} y={pt.y - 3.5} class={`lt ${crowded ? 'small' : ''}`}>{pt.letter}</text>{/if}
               {/each}
             </svg>
