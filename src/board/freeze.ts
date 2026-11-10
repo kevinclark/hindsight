@@ -15,7 +15,7 @@ import { qualFromStored, type Timeline } from './points.ts'
 
 export const FREEZE_BANNER = 'Playoffs: analysis first. Code changed since the last match is flagged.'
 /** The board's wording says where the flag shows. */
-export const BOARD_BANNER = "Playoffs: analysis first. Code changed since the last match is flagged on Foresight's queue checklist."
+export const BOARD_BANNER = "Playoffs: analysis first. Code changed since the last match is flagged on Foresight's pre-match checklist."
 
 
 export type CutOffSetting = { kind: 'alliance-selection' } | { kind: 'off' } | { kind: 'after'; match: string; qual: number }

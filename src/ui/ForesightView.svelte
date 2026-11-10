@@ -1,6 +1,6 @@
 <!--
   Foresight: the pre-match go/no-go, live from the robot over a tether in the pit or the queue (the team's onchecks).
-  One engine, two checklists chosen by the mode line (ADR 9). In the queue (event mode) a do-confirm list of systems, each
+  One engine, two checklists chosen by the mode line (ADR 9). At the pit check before each match (event mode) a do-confirm list of systems, each
   Go, Go with deferral or No-go, under one word (NO-GO, NOT CHECKED, GO WITH n DEFERRALS, GO); at the start of practice a
   read-do list ending "Ready to drive" or "n left", with no Go verdict. Then the findings worst first, each with the one
   thing to do before the robot goes on the field. Big enough to read at arm's length in a noisy queue.
@@ -59,7 +59,7 @@
     history: HistoryEvent[]; onPitCheck: (event: PitCheckEvent) => void; sessions?: Session[]
     /** Whether today is an event day by the outside signals, and the clock (App.svelte makes one, Now shares it). */
     signal: TodaySignal
-    /** Writes board lines (App.svelte writeBoard): the queue checklist's ticks. Without it ticks stay on this page. */
+    /** Writes board lines (App.svelte writeBoard): the pre-match checklist's ticks. Without it ticks stay on this page. */
     onBoard?: (build: (device: string, history: HistoryEvent[]) => HistoryEvent[]) => void
   } = $props()
   // A code check's "not a real problem" line beside its fix: from the marks in the history (no open logs fire code checks).
@@ -166,7 +166,7 @@
       : status?.state === 'connected' ? 'reading the robot…'
       : 'not connected',
   )
-  // The checklist the mode line chooses (ADR 3, 9): event mode is the queue's, practice the start-up one.
+  // The checklist the mode line chooses (ADR 3, 9): event mode is the pre-match one, practice the start-up one.
   const queueMode = $derived(today.mode === 'event')
   const profile = $derived(checked?.match.profile ?? status?.profile ?? undefined)
   const robotId = $derived(profile ? profileId(profile) : null)

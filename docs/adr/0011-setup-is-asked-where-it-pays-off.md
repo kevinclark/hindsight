@@ -34,7 +34,7 @@ match number is a new input the board's due points must honour without being tak
   one-match schedule would make it the event's last qualification, so "the end of the event" and "before playoffs"
   would name it and match deferrals would end once its log was in. With a typed number the timeline has a next match
   and nothing else (no last qualification, gaps or playoffs). It goes stale, and the field asks again, once a log of
-  that match or a later one is in, or a playoff log is (`activeTyped`). The board, the queue sheet, Foresight's queue
+  that match or a later one is in, or a playoff log is (`activeTyped`). The board, the queue sheet, Foresight's pre-match
   checklist and Now all name it. With a schedule it is ignored.
 - `src/ui/NextMatchFields.svelte` (on the board and on Now) offers the number, or the read key with the team number when
   none is set; the key is never shown back. Once a number is typed the fields fold to one line.

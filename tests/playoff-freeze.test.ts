@@ -148,7 +148,7 @@ describe('the code change flag', () => {
   })
 })
 
-describe('the queue checklist with the flag', () => {
+describe('the pre-match checklist with the flag', () => {
   const base = { verdict: null, why: 'test not connected', profile, deferrals: [], deferralNote: null }
   it('carries the banner and the flag, and changes neither the word, the kind nor a row', () => {
     const plain = queueChecklist(base)

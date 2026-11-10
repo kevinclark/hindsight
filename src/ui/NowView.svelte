@@ -1,6 +1,6 @@
 <!--
   Now (ADR 10): the screen the app opens on. What to do at this moment, each task one button: on an event day the next match
-  and the tasks before it (pull the last log, triage, the queue check); on a practice day the start-of-practice check, today's
+  and the tasks before it (pull the last log, triage, the pre-match check); on a practice day the start-of-practice check, today's
   runs and what is still open; with no logs, the ways to get one. The words come from src/now/now.ts (pure); this file reads the
   sessions, the board, the schedule and the library, and does what a button says. It never probes the robot: a pull is the
   only time it talks to one, and only when the button is pressed.
@@ -265,7 +265,7 @@
     <p class="meta">Also: {#each view.also as a, i (a.text)}{#if i}{' · '}{/if}<button type="button" class="link" onclick={() => link(a)}>{a.text}</button>{/each}</p>
   {/if}
   {#if view.modeLine}
-    <ModeLine text={today.line} mode={today.mode} byHand={today.byHand} onChange={(m) => chooseMode(today.sessionId, m)} hint="Changes whether Hindsight treats today as an event day (matches, the queue check) or as practice (runs, the start-of-practice check). Each log is judged from its own field data." />
+    <ModeLine text={today.line} mode={today.mode} byHand={today.byHand} onChange={(m) => chooseMode(today.sessionId, m)} hint="Changes whether Hindsight treats today as an event day (matches, the pre-match check) or as practice (runs, the start-of-practice check). Each log is judged from its own field data." />
   {/if}
   <!-- Once, by a lead: hidden when every step that applies is done; after the tasks, so it never pushes the first task down. -->
   {#if build !== 'phone'}<SetupCard onOpenLibrary={() => onGo('library')} />{/if}

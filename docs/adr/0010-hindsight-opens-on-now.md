@@ -12,7 +12,7 @@ laptop (a welcome, a setup checklist) reaches only whoever set it up.
 ## Decision
 
 The app opens on **Now**: on an event day, the next match and the time left, then the tasks for this moment in order
-(pull the last match's log, triage before the next match, the queue check), each one button; on a practice day, the
+(pull the last match's log, triage before the next match, the pre-match check), each one button; on a practice day, the
 start-of-practice check, today's runs and what is still open; with no logs, the ways to get one and one line per job.
 The tool tabs stay, behind it. A welcome and a setup checklist survive as Now's no-logs state and a setup card that
 never blocks a first result.

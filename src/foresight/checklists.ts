@@ -2,7 +2,7 @@
  * Foresight's two checklists (ADR 9), both read off the one engine (verdict.ts / onchecks.ts): nothing here judges a
  * signal, it only groups what the engine found.
  *
- * The queue checklist (event mode, do-confirm): the robot's systems, most critical first, each Go, Go with deferral or
+ * The pre-match checklist (event mode, do-confirm; run at the pit check before each match): the robot's systems, most critical first, each Go, Go with deferral or
  * No-go. A live red the board has deferred reads Go with deferral and names its workaround, never hidden (ADR 4: every
  * issue can be deferred); every other open deferral for the robot is listed too, seen live or not (the pre-match check
  * reads all open deferrals together). The overall word is NO-GO if any system is No-go, NOT CHECKED as before, GO WITH
@@ -129,7 +129,7 @@ export function openDeferrals(board: Board, profile: RobotProfile, carriedFrom?:
     .map((i) => ({ key: i.key, system: systemOf(i.rule, i.about, profile), title: rowTitle(i), workaround: i.deferral.workaround, until: i.deferral.point.until, ...(carriedFrom !== undefined ? { carriedFrom } : {}) }))
 }
 
-// ---- the queue checklist ----
+// ---- the pre-match checklist ----
 
 export type SystemWord = 'Go' | 'Go with deferral' | 'No-go' | 'Not checked' | 'Check by hand'
 

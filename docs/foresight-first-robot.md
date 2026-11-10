@@ -5,8 +5,8 @@ roboRIO. This run checks the parts only a real robot can: that the page connects
 publishes what Foresight reads under `/AdvantageKit`, and that the robot's clock and start time come through.
 
 **Where:** the pit, robot on its cart, tethered by USB (or Ethernet) to the **onchecks laptop**, the laptop the team
-runs onchecks from. Never the drive (DS) laptop: it only controls the robot at the field. Later it runs in the queue too,
-as part of the team's onchecks; this first run is in the pit. **Never on the field.** Nothing here moves the robot or
+runs onchecks from. Never the drive (DS) laptop: it only controls the robot at the field. At events it runs at the team's
+pit check before each match (ADR 9 as amended); this first run is in the pit too. **Never on the field.** Nothing here moves the robot or
 writes to it: Foresight only subscribes.
 
 ## Before you start

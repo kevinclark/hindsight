@@ -24,9 +24,9 @@ As built (slice 16):
   such as `Q40`, or `off`; the latest line for the event wins). By default it has passed once the team has played its last
   scheduled qualification (the schedule's "before playoffs" gap); with no schedule, once an on-field playoff log exists.
   "After Q40" has passed once the team has played Q40. Any on-field playoff log passes it unless it is off.
-- Once passed, the board and Foresight's queue checklist say: "Playoffs: analysis first. Code changed since the last match
+- Once passed, the board and Foresight's pre-match checklist say: "Playoffs: analysis first. Code changed since the last match
   is flagged."
-- The queue checklist adds an amber line, never a block and never a change to the word, when the robot's commit or its
+- The pre-match checklist adds an amber line, never a block and never a change to the word, when the robot's commit or its
   uncommitted-changes flag differs from the team's last on-field match log's; with the code folder (or GitHub) linked it
   lists the files that differ.
 - A red issue's deferral points are as before. For any other issue the first suggestion is "the end of the event", the
