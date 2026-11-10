@@ -27,7 +27,7 @@ const FOLLOWER_AMPS = '/Indexer/KickerFollowerStatorCurrentAmp'
 
 /** Enabled 20 to 60 s; every signal logged every 20 ms from 20 to 60 s, its value a function of time. */
 function kickerLog(leader: (t: number) => number, follower: (t: number) => number, leaderAmps: (t: number) => number = () => 5,
-  followerAmps: (t: number) => number = () => 5, opts: { skip?: (t: number) => boolean; enabled?: FixtureEntry } = {}) {
+  followerAmps: (t: number) => number = () => 5, opts: { skip?: (t: number) => boolean; skipFollower?: (t: number) => boolean; enabled?: FixtureEntry; noCurrents?: boolean; extra?: FixtureEntry[] } = {}) {
   const every20ms = (name: string, value: (t: number) => number): FixtureEntry => {
     const records: [number, number][] = []
     for (let i = 0; i <= 2000; i++) { const t = 20 + i * 0.02; if (!opts.skip?.(t)) records.push([t, value(t)]) }
@@ -36,7 +36,10 @@ function kickerLog(leader: (t: number) => number, follower: (t: number) => numbe
   const entries: FixtureEntry[] = [
     opts.enabled ?? { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [20, true], [60, false]] },
     { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[10, 12.5], [70, 12.5]] },
-    every20ms(LEADER, leader), every20ms(FOLLOWER, follower), every20ms(LEADER_AMPS, leaderAmps), every20ms(FOLLOWER_AMPS, followerAmps),
+    every20ms(LEADER, leader),
+    { ...every20ms(FOLLOWER, follower), records: every20ms(FOLLOWER, follower).records.filter(([t]) => !opts.skipFollower?.(t)) },
+    ...(opts.noCurrents ? [] : [every20ms(LEADER_AMPS, leaderAmps), every20ms(FOLLOWER_AMPS, followerAmps)]),
+    ...(opts.extra ?? []),
   ]
   return analyzeFiles([{ name: 'synthetic.wpilog', bytes: writeWpilog(entries) }], offseason2026).analyses[0].report
 }
@@ -99,6 +102,24 @@ describe('mech/pair-decoupled', () => {
     const short = kickerLog(leaderFast(30.5, 1.2), bursts, (t) => (t >= 30.5 && t < 31.7 ? 1 : 5))
     expect(short.findings.some((f) => f.rule === 'mech/motor-running-free')).toBe(false)
     expect(decoupled(short)?.explainedBy).toBeUndefined()
+  })
+  it('says not checked, not OK, when the pair never ran 0.5 s unbroken', () => {
+    const blips = (t: number) => (t >= 30 && t < 30.3 ? 12 : 0)
+    const report = kickerLog(blips, blips)
+    expect(decoupled(report)).toBeUndefined()
+    expect(report.skipped.find((s) => s.rule === 'mech/pair-decoupled')?.reason).toMatch(/Kicker ran at most 0\.\d s at a time while enabled \(needs 0\.5 s to judge\)/)
+  })
+  it('does not read a follower frozen at its last speed (no record for over 0.1 s) as apart', () => {
+    // The follower stops logging at 30.5 s while the leader runs 12.5 % fast: the held 12 rot/s is stale.
+    expect(decoupled(kickerLog(leaderFast(30.5, 2), bursts, undefined, undefined, { skipFollower: (t) => t >= 30.5 && t < 33 }))).toBeUndefined()
+  })
+  it('does not compare while either motor reads disconnected', () => {
+    const off: FixtureEntry = { name: '/Indexer/KickerFollowerConnected', type: 'boolean', records: [[20, true], [30.4, false], [33, true]] }
+    expect(decoupled(kickerLog(leaderFast(30.5, 1.2), bursts, undefined, undefined, { extra: [off] }))).toBeUndefined()
+  })
+  it('still judges a pair with no current logged, and then says which ran free is unclear', () => {
+    const f = decoupled(kickerLog(leaderFast(30.5, 1.2), bursts, undefined, undefined, { noCurrents: true }))
+    expect(f?.evidence['ran free']).toMatch(/^unclear/)
   })
   it('judges only enabled time', () => {
     const enabledLate: FixtureEntry = { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [40, true], [60, false]] }
