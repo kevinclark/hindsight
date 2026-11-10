@@ -55,7 +55,7 @@ describe('the 2026 profile\'s CAN bus', () => {
   it('the event profile\'s bus is read from its own motors, so a motor changed there can\'t leave the bus behind', () => {
     const [eventBus] = offseason2026Event.canBuses ?? []
     const eventMotors = offseason2026Event.motorGroups.flatMap((g) => g.motors).filter((m) => m.connected)
-    expect(offseason2026Event.motorGroups.length).toBeGreaterThan(offseason2026.motorGroups.length)
+    expect(offseason2026Event.motorGroups.length).toBe(offseason2026.motorGroups.length) // the event code's Kicker group split already lives in the base profile
     expect(eventBus.name).toBe('CANivore')
     expect(eventBus.members).not.toBe(bus.members) // its own list, not the one inherited from the base profile
     expect(eventBus.members.slice(0, eventMotors.length).map((m) => m.key)).toEqual(eventMotors.map((m) => m.connected))
