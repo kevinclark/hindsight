@@ -28,13 +28,14 @@ import { coupledPairKeys, foresightKeys, RECENT_SECONDS, recentKeys } from './ke
 import type { Interval, NumberSeries } from '../match/series.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { KEEP_SECONDS, type RecordStore } from './records.ts'
-import { verdictFor, type Verdict } from './verdict.ts'
+import { SETTLING, verdictFor, type Verdict } from './verdict.ts'
 import { PROVEN } from './proven.ts'
 import { addSnapshotChecks, joinWatched, SNAPSHOT_PROOF, SNAPSHOT_RULES, type CodeSettings, type SnapshotInput } from './snapshot-checks.ts'
 import { MatchView } from '../rules/view.ts'
 import { hootLine, type HootLine } from '../match/companion.ts'
 
 export const SETTLE_SECONDS = 30
+export { SETTLING }
 /**
  * Each check's start-up settle (s after robot code start) where it isn't 0, from the on-check backtest's first 90 s of
  * 36 pit logs of one event with no settle at all (docs/measurements.md): the camera and alert checks flagged start-up
@@ -49,8 +50,6 @@ export const SETTLE_BY_RULE: Record<string, number> = {
   // Context only, but a heading change in the boot seconds is no drift (a field log read 162.53° there, 1.12° after).
   'foresight/gyro-still-drift': SETTLE_SECONDS,
 }
-/** How a check still settling is listed as not checked (checklists.ts reads it to say "settling", not "check by hand"). */
-export const SETTLING = 'start-up settling'
 /** What each settling check is about, for the verdict's words. */
 const SETTLE_WORDS: Record<string, string> = {
   'vision/stale': 'cameras', 'vision/time-sync': 'cameras', 'foresight/camera-sees-tag': 'cameras', 'alerts/passthrough': 'alerts',

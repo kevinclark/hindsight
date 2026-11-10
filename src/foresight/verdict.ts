@@ -14,6 +14,9 @@ import { explainerOf } from '../report/finding-tree.ts'
 
 export type Level = 'red' | 'amber' | 'grey'
 
+/** How a check still in its start-up settle is listed as not checked (engine.ts; checklists.ts says "settling" for it). */
+export const SETTLING = 'start-up settling'
+
 export interface VerdictItem {
   finding: Finding
   level: Level

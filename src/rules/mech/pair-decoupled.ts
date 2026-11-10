@@ -17,7 +17,7 @@
  * the kicker while enabled never passed 0.14 s apart on the field or 0.10 s in the pit (21 more never ran it while
  * enabled); the six with a kicker motor come free ran 1.16 to 12.5 s (two pit runs 1.42 and 1.53 s, four matches 4.7 to
  * 12.5 s).
- * Why: 2026: a kicker leader came free of its roller in a match. A pit run before the next match showed it (1.1 and 1.4 s
+ * Why: 2026: a kicker leader came free of its roller in a match. A pit run before the next match showed it (1.2 and 1.4 s
  * apart, the leader carrying 18 % of the pair's current), and nothing flagged it, so the next match played with it.
  */
 import { median, plural, round, rule, secs } from '../rule.ts'

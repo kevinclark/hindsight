@@ -96,6 +96,7 @@ describe('Foresight live status', () => {
     vi.advanceTimersByTime(1000)
     const graded = last().result?.state === 'checked' ? last().result!.onchecks : null
     expect(graded).not.toBeNull()
+    expect(last().lastOnchecksAt).toBe(Date.now())
     vi.advanceTimersByTime(STALE_MS + 1000)
     expect(last().result).toBeNull()
     expect(last().lastOnchecks?.end).toBe(graded!.end)

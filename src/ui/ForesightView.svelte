@@ -276,6 +276,7 @@
   const onRunFrom = $derived(result?.onchecks ?? status?.lastOnchecks ?? null)
   const onRunLast = $derived(!result && !!status?.lastOnchecks)
   const onRun = $derived(onRunFrom ? markOnRun(onRunFrom) : null)
+  const lastGradedAt = $derived(status?.lastOnchecksAt ? new Date(status.lastOnchecksAt).toLocaleTimeString() : '—')
   const ON_RUN_MARK = { ok: 'OK', red: 'Fix', amber: 'Look at', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye' } as const
   // Problems no check can see yet (rules/wanted.ts): grey context, never in the verdict.
   const wanted = $derived(wantedLines(checked))
@@ -365,7 +366,7 @@
 
   {#if onRun}
     <section class="onchecks onrun" aria-label="On checks">
-      <h3>On checks{result?.state === 'enabled' ? ': graded as the robot runs' : onRunLast ? `: as last graded, at robot time ${fmt(onRunFrom?.end ?? null)}, before the robot stopped sending` : ''}</h3>
+      <h3>On checks{result?.state === 'enabled' ? ': graded as the robot runs' : onRunLast ? `: as last graded, at ${lastGradedAt}; no data from the robot since` : ''}</h3>
       <ul>
         {#each onRun as l (l.line)}<li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{ON_RUN_MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.state === 'by eye' ? 'check by eye as it runs' : l.detail}</span></li>{/each}
       </ul>

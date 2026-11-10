@@ -11,17 +11,16 @@
  * The practice-start checklist (practice mode, read-do): the lines of the team's pit checklist in a fixed order, each
  * done or left, ending "Ready to drive" or "n left: …". It has no Go verdict at all.
  */
-import type { Verdict, VerdictItem } from './verdict.ts'
+import { SETTLING, type Verdict, type VerdictItem } from './verdict.ts'
 import type { MarkedLine } from './onchecks.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { profileId } from '../profiles/index.ts'
 import { buildBoard, inScope, mechanismOf, robotOf, scopeOf, type Board, type BoardIssue } from '../board/model.ts'
 import { NEXT_EVENT } from '../board/points.ts'
 import type { CodeChangeFlag } from '../board/freeze.ts'
-import { FORESIGHT_RULES, makerOf } from '../rules/index.ts'
+import { FORESIGHT_RULES, makerOf, ruleById } from '../rules/index.ts'
 import { ONCHECKS, ON_RUN_CHECKS } from './onchecks.ts'
 import { SNAPSHOT_RULES } from './snapshot-checks.ts'
-import { SETTLING } from './engine.ts'
 import { goWithWord, rowTitle } from '../board/words.ts'
 import { sessionWithMarks } from '../triage/track-record.ts'
 import { boardKey, boardState, triage, type HistoryEvent } from '../triage/history.ts'
@@ -202,7 +201,8 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     const seen = new Set(reds.filter(deferred).map((i) => i.finding.key))
     const deferrals = open.filter((d) => d.system === system).map((d) => ({ ...d, seenNow: seen.has(d.key) }))
     // A check still in its start-up settle (engine.ts) leaves its system unjudged for now: "Not checked", never "Check by hand".
-    const settling = !!verdict && verdict.notChecked.some((s) => s.reason.startsWith(SETTLING) && systemOf(s.rule, null, profile) === system)
+    // Not a context-only check (gyro drift): it can never move the verdict, so it never holds a system back.
+    const settling = !!verdict && verdict.notChecked.some((s) => s.reason.startsWith(SETTLING) && ruleById(s.rule)?.severity !== 'info' && systemOf(s.rule, null, profile) === system)
     const unjudged = !verdict || settling || blind.some((s) => systemOf(s.rule, null, profile) === system)
     const mine_rules = ALL_RULES.filter((r) => systemOf(r, null, profile) === system)
     // One meaning of "ran", the box's own ("n of 26 checks not fully run"): a check that ran only in part did not.

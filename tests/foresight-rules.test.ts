@@ -117,6 +117,8 @@ describe('Foresight checks on a robot in the pit', () => {
     const rows = queueChecklist({ verdict: early.verdict, why: '', profile: offseason2026, deferrals: [], deferralNote: null }).rows
     expect(rows.find((r) => r.system === 'Comms')).toMatchObject({ word: 'Not checked', text: 'Not checked: start-up settling' })
     expect(rows.find((r) => r.system === 'Vision')?.word).toBe('Not checked')
+    // A context-only check settling (gyro drift, Drivetrain) never holds its system back: the on-blocks step stays.
+    expect(rows.find((r) => r.system === 'Drivetrain')?.word).toBe('Check by hand')
   })
 
   it('a red static check reads NO-GO before the settle ends', () => {
