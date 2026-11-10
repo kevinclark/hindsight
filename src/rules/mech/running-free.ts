@@ -54,7 +54,7 @@ export default rule({
     { ...CTRE_FOLLOWER_API, says: 'A Follower control request makes a Talon mirror another Talon\'s output, so a healthy follower turns with its leader; a motor that outruns its partners on little current is not driving the same load.' },
   ],
   thresholds: [
-    { name: 'time free', value: '2 s or more in one stretch', basis: 'measured', how: 'One 2026 robot, 14 match logs of one event: 4 episodes, longest stretches 4.7–12.5 s, none in the other 10. 131 library logs from 3 robots compared, none fired.' },
+    { name: 'time free', value: '2 s or more in one stretch', basis: 'measured', how: 'One 2026 robot, 14 match logs of one event: 4 episodes, longest stretches 4.7–12.5 s, none in the other 10. 121 library logs from 3 robots had every same-loop group compared; none fired.' },
     { name: 'faster than the others', value: 'more than 4 % above their median speed', basis: 'judgment', how: 'Chosen: healthy pairs passed 4 % only for moments (0.1–0.5 s at a stretch); the free motor ran 15–17 % faster.' },
     { name: 'carrying less', value: 'under half the others\' median stator current', basis: 'judgment', how: 'Chosen: the free motor drew 2–4 A against 18–24 A.' },
     { name: 'no records', value: 'none on velocity and none on stator current for over 0.5 s', basis: 'judgment', how: 'Chosen: no real log exercises it.' },
