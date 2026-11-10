@@ -83,7 +83,7 @@ export interface HootReadReport {
 /** The readings of a log's .hoot files already in the cache (Match review's experimental checks, ADR 14). */
 export interface HootCached {
   readings: HootReading[]
-  /** Held files owlet can read that have no cached reading yet: the Devices tab reads them. */
+  /** Held files with no cached reading yet (owlet may not be on this computer yet): the Devices tab reads them or offers owlet. */
   unread: number
   /** Files of this log on the team Drive and not on this computer: the Devices tab downloads them. */
   away: number

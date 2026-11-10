@@ -17,7 +17,7 @@
   import type { CauseMarks } from '../board/debug.ts'
   import type { Change } from '../board/writes.ts'
   import DebugWorkspace from './DebugWorkspace.svelte'
-  import { unlocks, unlockFix, unlockWords, type Unlock } from '../coverage/unlock.ts'
+  import { unlocks, unlockFix, unlockKey, unlockWords, type Unlock } from '../coverage/unlock.ts'
   import type { HootCached } from '../hoot/types.ts'
 
   let { analysis, issues, wrong = new Map(), real = new Map(), sure = () => null, standing = new Set<string>(), onMark, debug, hoot, onDevices }: {
@@ -104,7 +104,7 @@
   const busWords = (bus: string) => (bus.toLowerCase() === 'rio' ? "roboRIO's CAN bus" : `CANivore ${bus.slice(0, 4)}…${bus.slice(-4)}`)
   const sources = $derived(['robot log', ...analysis.match.ds.map((d) => d.fileName), ...analysis.match.dsEvents.map((d) => d.fileName), ...(analysis.match.hoot ?? []).map((h) => `.hoot (${busWords(h.reading.bus)})`)])
   // A .hoot on this computer (or the Drive) not read yet: the one unlock a click does now.
-  const hootWaiting = $derived(!!hoot && (hoot.unread > 0 || hoot.away > 0) && !(analysis.match.hoot?.length))
+  const hootWaiting = $derived(!!hoot && (hoot.unread > 0 || hoot.away > 0))
   const isHootUnlock = (u: Unlock) => u.kind === 'file' && u.file === '.hoot'
   function fixFor(u: Unlock): string {
     if (!isHootUnlock(u)) return unlockFix(u)
@@ -142,7 +142,7 @@
 {#if !analysis.report.noRules}
   <p class="sources" data-sources>
     Read: {sources.join(', ')}.
-    {#if hootWaiting}{' '}<span data-unlock-now>This log's .hoot isn't read yet: {#if onDevices}<button class="link" onclick={onDevices}>read it in the Devices tab</button>{:else}the Devices tab reads it{/if} to check device faults (experimental, not counted).</span>
+    {#if hootWaiting}{' '}<span data-unlock-now>{analysis.match.hoot?.length ? 'Another of this log\'s .hoot files' : 'This log\'s .hoot'} isn't read yet: {#if onDevices}<button class="link" onclick={onDevices}>read it in the Devices tab</button>{:else}the Devices tab reads it{/if} to check device faults (experimental, not counted).</span>
     {:else if unlocked.groups.length}{' '}{unlocked.groups.length} kind{unlocked.groups.length === 1 ? '' : 's'} of missing data would check more: see Not checked.{/if}
   </p>
 {/if}
@@ -233,7 +233,7 @@
     <p>All {analysis.report.skipped.length} rules: {analysis.report.noRules}.</p>
   {:else}
     <p class="hint">These rules couldn't run (or only partly) on this log, so silence from them means nothing. Grouped by what would let them run.</p>
-    {#each unlocked.groups as g (g.unlock.kind + ('file' in g.unlock ? g.unlock.file : '') + ('faster' in g.unlock ? 'f' : ''))}
+    {#each unlocked.groups as g (unlockKey(g.unlock))}
       <div class="unlock" data-unlock>
         <p class="needs"><strong>{unlockWords(g.unlock)}</strong>: {fixFor(g.unlock)}</p>
         {@render rows(g.rules)}

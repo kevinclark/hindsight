@@ -16,6 +16,10 @@ import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 const file = (f: string) => ({ unlock: { kind: 'file', file: f } })
 
 describe('placePart', () => {
+  it('reads auto/early-disable\'s and auto/none-at-enable\'s cut-log reasons as situational', () => {
+    for (const t of ['the log ends during auto: the rest of auto is not in it', 'the log starts mid-auto: the auto start is not in it', 'the auto chooser was first logged after auto started']) expect(placePart(t)).toHaveProperty('situational')
+  })
+
   it('places a file only another log has, from onlyIn()', () => {
     expect(placePart(`missing Brownout (${onlyIn('dslog:brownout')})`)).toEqual(file('.dslog'))
     expect(placePart(`missing USB drops (${onlyIn('dsevents:usbDropouts')})`)).toEqual(file('.dsevents'))
@@ -27,8 +31,8 @@ describe('placePart', () => {
 
   it('places can/device-fault\'s "no .hoot" as a .hoot, but not a reason about a .hoot it did read', () => {
     expect(placePart(NO_HOOT)).toEqual(file('.hoot'))
-    expect(placePart('ABC_2026-03-14_20-14-20.hoot: not lined up with this log (the .hoot never saw the robot enabled)')).toHaveProperty('other')
-    expect(placePart('the .hoot files read hold no CTRE device (rio_2026-03-14_20-14-20.hoot)')).toHaveProperty('other')
+    expect(placePart('ABC_2026-03-14_09-41-07.hoot: not lined up with this log (the .hoot never saw the robot enabled)')).toHaveProperty('other')
+    expect(placePart('the .hoot files read hold no CTRE device (rio_2026-03-14_09-41-07.hoot)')).toHaveProperty('other')
   })
 
   it('places every kind of profile gap as the profile', () => {

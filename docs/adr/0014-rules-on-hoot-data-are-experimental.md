@@ -19,7 +19,8 @@ code doesn't log, a key the robot profile lacks. Each match listed these as raw 
    (or logs faster), the robot profile, the Hindsight companion; or nothing (the match didn't happen that way), or
    "another reason" when the text is not one we know. Match review groups its Not checked list this way, per match;
    the Session view adds the same grouping across the session, counting partly checked rules too. The grouping is read
-   from the reason text, so it works on every summary an older Hindsight saved.
+   from the reason text, so it works on every summary an older Hindsight saved. The .hoot group shows per match only:
+   session summaries hold no experimental rule, so the Session view never lists it. Revisit when .hoot logging is back on.
 2. **Rules on .hoot data are experimental** (Kevin, 2026-11-09: "apply the rules speculatively and indicate they're as
    such in the ui"; "Let's not automate verification yet. Let's mark them as experimental and we can confirm later").
    An experimental rule sets `experimental` and is not in `RULES`: it runs on its own list (`EXPERIMENTAL_RULES`) into
@@ -55,6 +56,5 @@ doesn't keep. Not built. Rules on a hoot-only log: one file of 9 s, no fault, no
 
 ## Consequences
 
-A team with .hoot logging off sees "Needs this match's .hoot (experimental, not counted)" in every match's Not checked
-list, which is the advice to turn it on. The Devices tab is still the way to read a .hoot the first time. How students
+A team with .hoot logging off sees "A .hoot (experimental, not counted)" in every match's Not checked list, which is the advice to turn it on. The Devices tab is still the way to read a .hoot the first time. How students
 read "experimental" is untested.

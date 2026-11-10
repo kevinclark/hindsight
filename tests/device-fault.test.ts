@@ -19,11 +19,11 @@ const log = writeWpilog([
 const open = () => analyzeFiles([{ name: 'test.wpilog', bytes: log }], offseason2026).analyses[0]
 
 const device = (over: Partial<HootDevice> = {}): HootDevice => ({
-  name: 'TalonFX-11', t: [28, 30, 32], volts: [12, 7.4, 11.9], amps: [5, 80, 6], temp: null, gaps: [], faults: [], resets: [], ...over,
+  name: 'TalonFX-12', t: [28, 30, 32], volts: [12, 7.4, 11.9], amps: [5, 80, 6], temp: null, gaps: [], faults: [], resets: [], ...over,
 })
 // The .hoot's clock runs 12 s behind the robot log's: robot-log time = hoot time + 12.
 const reading = (devices: HootDevice[], enable = [{ t: 0, on: false }, { t: 8, on: true }, { t: 23, on: false }, { t: 28, on: true }, { t: 58, on: false }]): HootReading => ({
-  file: 'ABC_2026-03-14_20-14-20.hoot', bus: 'ABC', start: 0, end: 60, enable, mode: [], fms: [], totalAmps: { t: [], a: [] }, devices, cutShort: null, owlet: '26.3.0-C19',
+  file: 'ABC_2026-03-14_09-41-07.hoot', bus: 'ABC', start: 0, end: 60, enable, mode: [], fms: [], totalAmps: { t: [], a: [] }, devices, cutShort: null, owlet: '26.3.0-C19',
 })
 
 describe('can/device-fault (experimental)', () => {
@@ -38,7 +38,7 @@ describe('can/device-fault (experimental)', () => {
   it('names the device from the profile and places a fault on the robot log\'s clock (hoot 30 s + offset 12 s = 42 s) and reports it only in the tier', () => {
     const a = open()
     const before = a.report
-    const report = attachHoot(a.match, before, [reading([device({ faults: [{ name: 'BridgeBrownout', on: 30, off: 30.26 }] })])])
+    const report = attachHoot(a.match, before, [reading([device({ faults: [{ name: 'BridgeBrownout', on: 30, off: 30.6 }] })])])
     expect(report.findings).toBe(before.findings)
     expect(report.skipped).toBe(before.skipped)
     expect(report.experimentalSkipped).toEqual([])
@@ -46,10 +46,10 @@ describe('can/device-fault (experimental)', () => {
     const f = report.experimental![0]
     expect(f.rule).toBe('can/device-fault')
     expect(f.time).toBeCloseTo(42, 6)
-    expect(f.title).toBe('Indexer (TalonFX-11) raised bridge brownout while enabled')
-    expect(f.about).toBe('Indexer (TalonFX-11): bridge brownout')
-    expect(f.evidence['longest (s)']).toBe(0.26)
-    expect(f.evidence['read from']).toMatch(/Phoenix \.hoot \(ABC_2026-03-14_20-14-20\.hoot\)/)
+    expect(f.title).toBe('Kicker leader (TalonFX-12) raised bridge brownout while enabled')
+    expect(f.about).toBe('Kicker leader (TalonFX-12): bridge brownout')
+    expect(f.evidence['longest (s)']).toBe(0.6)
+    expect(f.evidence['read from']).toMatch(/Phoenix \.hoot \(ABC_2026-03-14_09-41-07\.hoot\)/)
     expect(report.findings.some((x) => x.rule === 'can/device-fault')).toBe(false)
   })
 
@@ -64,12 +64,12 @@ describe('can/device-fault (experimental)', () => {
     const a = open()
     const faults = [{ name: 'Undervoltage', on: 30, off: 31 }, { name: 'Undervoltage', on: 40, off: 40.5 }, { name: 'BridgeBrownout', on: 41, off: null }]
     const report = attachHoot(a.match, a.report, [reading([device({ faults })])])
-    expect(report.experimental!.map((f) => f.title)).toEqual(['Indexer (TalonFX-11) raised undervoltage 2 times while enabled', 'Indexer (TalonFX-11) raised bridge brownout while enabled'])
+    expect(report.experimental!.map((f) => f.title)).toEqual(['Kicker leader (TalonFX-12) raised undervoltage 2 times while enabled', 'Kicker leader (TalonFX-12) raised bridge brownout while enabled'])
   })
 
   it('a .hoot with no CTRE device (a roboRIO bus file) is not "checked"', () => {
     const a = open()
-    const report = attachHoot(a.match, a.report, [{ ...reading([]), file: 'rio_2026-03-14_20-14-20.hoot' }])
+    const report = attachHoot(a.match, a.report, [{ ...reading([]), file: 'rio_2026-03-14_09-41-07.hoot' }])
     expect(report.experimentalSkipped?.[0].reason).toMatch(/hold no CTRE device/)
   })
 

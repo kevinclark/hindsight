@@ -54,7 +54,7 @@ export default rule({
     { ...CTRE_FAULTS, says: 'A fault reports the device\'s current status and clears once the problem is gone; a sticky fault stays until cleared.' },
   ],
   thresholds: [
-    { name: 'faults reported', value: 'any health fault turning on while enabled', basis: 'judgment', how: 'The device\'s own flag, as CTRE defines it; limit faults (normal operation) are not read.' },
+    { name: 'faults reported', value: 'any health fault turning on while enabled', basis: 'judgment', how: 'The device\'s own flag, as CTRE defines it; limit faults (normal operation) are not read; a fault already on at the enable is not reported (no case of one in our files).' },
   ],
 
   check(match) {

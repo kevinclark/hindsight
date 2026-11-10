@@ -107,7 +107,7 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
       const owlet = owletFor(f.compliancy!)
       const r = owlet ? await cachedHoot({ cacheDir: hootCache(), sha256: f.sha256, owlet }) : null
       if (r) out.readings.push({ ...r, totalAmps: { t: [], a: [] } })
-      else if (owlet) out.unread++
+      else out.unread++ // no reading yet, or no owlet on this computer: the Devices tab reads it or offers owlet
     }
     return out
   })

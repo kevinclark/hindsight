@@ -20,7 +20,7 @@
   import Plot from './Plot.svelte'
   import type { PlotModel } from './plot-data.ts'
 
-  let { analysis, logPath, onReadings }: { analysis: Analysis; logPath: string; onReadings?: (readings: HootReading[]) => void } = $props()
+  let { analysis, logPath, onReadings }: { analysis: Analysis; logPath: string; onReadings?: (fileName: string, readings: HootReading[]) => void } = $props()
   const api = hub()!
   const m = $derived(analysis.match)
 
@@ -66,9 +66,13 @@
 
   async function read(path = logPath, mine = pass) {
     problem = ''
+    // The log this read is for, taken now: the tab may be gone (another match open) by the time owlet answers.
+    const fileName = m.fileName
     try {
       const r = await api.readHoots(path)
-      if (mine === pass) { report = r; if (!isHoot) onReadings?.(r.readings) }
+      // Handed up even if this tab moved on: they belong to `fileName`, which is where the app keeps them.
+      if (!isHoot) onReadings?.(fileName, r.readings)
+      if (mine === pass) report = r
     } catch (e) {
       if (mine !== pass) return
       if (/Another job is running/.test(words(e))) { waiting = true; problem = 'Waiting for the .hoot job that is running to finish…' } else problem = words(e)

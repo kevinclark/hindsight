@@ -528,11 +528,16 @@
     if (changed) analyses = next
   })
   const keepReadings = (fileName: string, readings: HootReading[]) => { hootReadings = new Map(hootReadings).set(fileName, readings) }
+  // The open log's name: a primitive, so replacing `analyses` (an attach, a power-map rerun) doesn't fetch the cache again.
+  const openName = $derived(current?.match.fileName)
   // The open library log's .hoot as this computer holds it: readings already cached are attached at once (no owlet run, no job).
   let hootHere = $state<HootCached | undefined>(undefined)
+  // Bumped when the Devices tab has read a .hoot: the cache then answers what is still unread.
+  let hootTick = $state(0)
   $effect(() => {
+    void hootTick
     const path = devicesPath
-    const name = current?.match.fileName
+    const name = openName
     hootHere = undefined
     if (!path || !name || /\.hoot$/i.test(path)) return
     let stale = false
@@ -643,6 +648,7 @@
     fileLocations.clear()
     inputs = []
     analyses = []
+    hootReadings = new Map()
     problems = []
     lastLoad = null
   }
@@ -870,7 +876,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} hoot={hootHere} onDevices={devicesPath ? () => (tab = 'devices') : undefined} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} onReadings={(r) => { keepReadings(current!.match.fileName, r); if (hootHere) hootHere = { ...hootHere, unread: 0 } }} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} hoot={hootHere} onDevices={devicesPath ? () => (tab = 'devices') : undefined} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} onReadings={(name, r) => { keepReadings(name, r); hootTick++ }} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>

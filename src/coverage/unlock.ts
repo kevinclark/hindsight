@@ -39,6 +39,9 @@ const SITUATIONAL: RegExp[] = [
   /^it never (?:moved|turned) while enabled$/,
   /^charge past [\d.]+ Ah: no healthy battery/,
   /^no battery voltage logged in the \d+ s before auto \(the log started too late\)$/,
+  /^the log ends during auto: /,
+  /^the log starts mid-auto: /,
+  /^the auto chooser was first logged after auto started/,
 ]
 
 /** A file the rule asks for: onlyIn()'s "load this match's .dsevents", ds-log-truncated's "no .dslog loaded". A part that only names a file it read (".hoot: not lined up") is not one. */
