@@ -9,6 +9,11 @@ export interface Motor {
   supplyCurrent?: string
   statorCurrent?: string
   velocity?: string
+  /**
+   * The voltage the controller applied to the motor (Phoenix MotorVoltage, AdvantageKit's AppliedVolts), never the
+   * requested one. With velocity and stator current, Power -> Headroom fits how close the motor ran to its top speed.
+   */
+  appliedVolts?: string
   connected?: string
   /** The controller's temperature (°C), e.g. a TalonFX's DeviceTemp. */
   temperature?: string
