@@ -253,7 +253,7 @@
   thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   tbody th { font-weight: normal; }
   tr.group th { color: var(--muted); font-size: 0.75rem; padding-top: 0.5rem; }
-  .sags td small { display: block; color: var(--muted); font-size: 0.75rem; }
+  .sags td small { display: block; color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
   .hl { background: var(--hover); }
   .breakdown td, .breakdown th { white-space: nowrap; vertical-align: middle; }
   .breakdown td.wh { font-variant-numeric: tabular-nums; }
