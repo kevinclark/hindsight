@@ -8,7 +8,7 @@
  * It samples the page every 0.5 s and, the first time the On checks block marks a line amber while the robot is still
  * enabled, screenshots it at the window's width and again at 390 px (the phone app mounts the same pages), recording
  * whether the page is wider than the screen there (scrollWidth vs innerWidth). Then it lets the replay run to the log's
- * end (its length over the speed) and screenshots the last state. Prints JSON: each distinct verdict, each distinct On checks reading, the moments shot.
+ * end (its length over the speed) and screenshots the last state, and the On checks block once the robot stops sending. Prints JSON: each distinct verdict, each distinct On checks reading, the moments shot.
  */
 import { spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -47,7 +47,7 @@ const evalIn = async (sessionId: string, expression: string) => (await send('Run
 const bytes = new Uint8Array(readFileSync(logPath))
 const replayLog = openWpilog(bytes)
 /** Wall seconds the replay takes, plus a margin for connecting. */
-const budget = (replayLog.lastTime - Math.max(0, replayLog.firstTime)) / speed + 15
+const budget = (replayLog.lastTime - Math.max(0, replayLog.firstTime)) / speed + 40
 const server = await startReplayServer({ bytes, pit: true, speed })
 const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
 const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
@@ -61,7 +61,7 @@ await evalIn(sessionId, `[...document.querySelectorAll('.connect button')].find(
 
 const read = `({ verdict: document.querySelector('.verdict .big')?.innerText ?? '', why: document.querySelector('.verdict p:nth-child(2)')?.innerText ?? '',
   onRun: [...document.querySelectorAll('.onrun .oc')].map(li => li.innerText.replace(/\\s+/g, ' ')),
-  amber: !!document.querySelector('.onrun .oc.amber'), status: document.querySelector('.status')?.innerText ?? '' })`
+  amber: !!document.querySelector('.onrun .oc.amber'), status: [...document.querySelectorAll('.connect .status')].map((e) => e.innerText).join(' | ') })`
 async function shot(name: string, width: number | null) {
   if (width) await send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 2, mobile: true }, sessionId)
   await sleep(400)
@@ -86,7 +86,9 @@ while (Date.now() - started < budget * 1000) {
     shots.push({ t: (Date.now() - started) / 1000, why: s.why, pair, ...(await shot('oncheck-enabled-1000', null)) })
     shots.push(await shot('oncheck-enabled-390', 390))
   }
-  if (/closed|No data from the robot/i.test(s.status)) break
+  // The replay ended (a pit run powered off): the last grade should stay, headed as the last.
+  if (/No data from the robot/i.test(s.status)) { await sleep(1500); shots.push({ heading: await evalIn(sessionId, `document.querySelector('.onrun h3')?.innerText ?? ''`), ...(await shot('oncheck-stopped-1000', null)) }); break }
+  if (/closed/i.test(s.status)) break
 }
 shots.push(await shot('oncheck-end-1000', null))
 shots.push(await shot('oncheck-end-390', 390))
