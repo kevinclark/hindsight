@@ -5,6 +5,7 @@
 import { RULES } from '../rules/index.ts'
 import { shortMatchLabel } from '../ui/match-label.ts'
 import { bandText, type MotorDrag } from '../power/drag.ts'
+import { MOST_BELOW_HEALTHY } from '../rules/power/battery-health.ts'
 import type { MatchMetrics, MatchSummary } from './summary.ts'
 
 export interface TrendMetric {
@@ -33,6 +34,7 @@ export const TREND_METRICS: TrendMetric[] = [
   { key: 'minVolts', label: 'Lowest voltage', unit: 'V', digits: 2, line: DEFAULT_BROWNOUT + MARGIN_VOLTS, bad: 'below', rule: 'power/margin' },
   { key: 'secondsUnder7', label: 'Time under 7 V', unit: 's', digits: 1 },
   { key: 'chargeAh', label: 'Charge drawn', unit: 'Ah', digits: 2 },
+  { key: 'belowHealthyVolts', label: 'Below a healthy battery', unit: 'V', digits: 2, line: MOST_BELOW_HEALTHY, bad: 'above', rule: 'power/battery-collapse', sub: 'Estimated open-circuit voltage against a healthy battery at the same charge drawn, worst point.' },
   { key: 'resistanceMilliohms', label: 'Battery + wiring', unit: 'mΩ', digits: 1, line: 20, bad: 'above', rule: 'power/wiring-resistance' },
   { key: 'followerSecondsOff', label: 'Follower more than 15 % off its leader', unit: 's', digits: 1, line: 1, bad: 'above', rule: 'mech/follower-mismatch', atLinePasses: true, sub: 'Steady-speed check only; a follower that isn\'t turning shows in the rule\'s row, not here.' },
   { key: 'loopOverrunPct', label: 'Auto loops over 20 ms', unit: '%', digits: 1, line: 10, bad: 'above', rule: 'loop/overrun', sub: 'Auto only here; the rule also counts teleop.' },

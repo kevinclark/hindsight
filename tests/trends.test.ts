@@ -97,7 +97,7 @@ describe('trendRows order', () => {
       m(1, { minVolts: 6.5, secondsUnder7: 3, chargeAh: 5, resistanceMilliohms: 11, followerSecondsOff: 2.5, loopOverrunPct: 26.7, visionOutlierPct: 43.5 }),
       m(2, { minVolts: 5.69, secondsUnder7: 12, chargeAh: 6, resistanceMilliohms: 10, followerSecondsOff: 1.2, loopOverrunPct: 12, visionOutlierPct: 8 }),
     ])
-    expect(rs.map((r) => r.metric.key)).toEqual(['minVolts', 'visionOutlierPct', 'loopOverrunPct', 'followerSecondsOff', 'resistanceMilliohms', 'secondsUnder7', 'chargeAh'])
+    expect(rs.map((r) => r.metric.key)).toEqual(['minVolts', 'visionOutlierPct', 'loopOverrunPct', 'followerSecondsOff', 'resistanceMilliohms', 'secondsUnder7', 'chargeAh', 'belowHealthyVolts'])
     expect(row(rs, 'visionOutlierPct').pastRatio).toBeCloseTo(8.7)
     expect(row(rs, 'minVolts').pastRatio).toBeCloseTo(7 / 5.69)
   })
@@ -183,8 +183,8 @@ describe.skipIf(!have)('trendRows on the 8 logs of the team\'s 2026 event', () =
   })
   it('adds a current-at-steady-speed row per motor: the rollers\' band holds 8 cells, the dead follower reads low and the dragging pair high', () => {
     const drag = rows.filter((r) => String(r.metric.key).startsWith('drag:'))
-    // Four flywheel motors and two rollers, in profile order, after the seven others
-    expect(rows.slice(7)).toEqual(drag)
+    // Four flywheel motors and two rollers, in profile order, after the eight others
+    expect(rows.slice(8)).toEqual(drag)
     expect(drag.map((r) => r.metric.key)).toEqual(['drag:Flywheel/Flywheel leader', 'drag:Flywheel/Flywheel follower 16', 'drag:Flywheel/Flywheel follower 17', 'drag:Flywheel/Flywheel follower 18', 'drag:Intake rollers/Intake roller leader', 'drag:Intake rollers/Intake roller follower'])
     const leader = drag[4], follower = drag[5]
     expect(leader.metric.sub).toBe('at 23–28 rot/s')
@@ -211,10 +211,10 @@ describe('trendRows: current at steady speed', () => {
   it('puts one row per motor after the existing rows, leader and follower adjacent, keyed drag:<motor>', () => {
     const ms = [1, 2, 3].map((n) => withDrag(n, [mo('Roller leader', 'Rollers', [band(13, 5 + n)]), mo('Roller follower', 'Rollers', [band(13, 6 + n)]), mo('Other', 'X', [band(5, 2)])]))
     const rows = trendRows(ms)
-    expect(rows.slice(0, 7).map((r) => r.metric.key)).not.toContain('drag:Rollers/Roller leader')
-    expect(rows.slice(7).map((r) => r.metric.key)).toEqual(['drag:Rollers/Roller leader', 'drag:Rollers/Roller follower', 'drag:X/Other'])
+    expect(rows.slice(0, 8).map((r) => r.metric.key)).not.toContain('drag:Rollers/Roller leader')
+    expect(rows.slice(8).map((r) => r.metric.key)).toEqual(['drag:Rollers/Roller leader', 'drag:Rollers/Roller follower', 'drag:X/Other'])
     expect(new Set(rows.map((r) => r.metric.key)).size).toBe(rows.length)
-    const r = rows[7]
+    const r = rows[8]
     expect(r.metric).toMatchObject({ label: 'Roller leader: current at steady speed', unit: 'A', sub: 'at 18–23 rot/s' })
     expect(r.values).toEqual([6, 7, 8])
     expect(r.line).toBeNull()

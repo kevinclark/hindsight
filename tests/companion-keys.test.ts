@@ -35,6 +35,8 @@ describe('companion key list', () => {
 
   it('has every battery key the 2026 profile reads', () => {
     for (const [field, candidates] of Object.entries(offseason2026.battery)) {
+      // The gauge's battery name is the robot code's own metadata key, not the companion library's.
+      if (field === 'gaugeName') continue
       expect(keysOf(candidates).some((key) => listed.has(key)), field).toBe(true)
     }
   })

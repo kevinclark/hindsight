@@ -15,14 +15,16 @@ export const MOST_BELOW_HEALTHY = 1.5
 export const LAST_REFERENCE_AH = FLEET_REFERENCE[FLEET_REFERENCE.length - 1].ah
 
 /**
- * The point where this battery's estimated open-circuit voltage was furthest below a healthy battery's at the same
- * charge drawn (only where there is a healthy battery to compare with).
+ * This battery's estimated open-circuit voltage against a healthy battery's at the same charge drawn, from one curve:
+ * `worst`, the point furthest below (only where there is a healthy battery to compare with; null with no point), and
+ * `pastCurve`, whether the match drew more charge than the healthy curve covers (the rest went unchecked).
  */
-export function furthestBelowHealthy(grid: PowerGrid, resistanceOhms: number) {
-  const compared = ocvCurve(grid, resistanceOhms, 0.5)
+export function compareWithHealthy(grid: PowerGrid, resistanceOhms: number) {
+  const curve = ocvCurve(grid, resistanceOhms, 0.5)
+  const compared = curve
     .filter((p) => p.ah <= LAST_REFERENCE_AH)
     .map((p) => ({ ...p, healthy: fleetVoltageAt(p.ah), below: fleetVoltageAt(p.ah) - p.volts }))
-  return compared.sort((a, b) => b.below - a.below)[0] ?? null
+  return { worst: compared.sort((a, b) => b.below - a.below)[0] ?? null, pastCurve: curve.some((p) => p.ah > LAST_REFERENCE_AH) }
 }
 
 /**
@@ -32,7 +34,7 @@ export function furthestBelowHealthy(grid: PowerGrid, resistanceOhms: number) {
  */
 export function batteryHealth(match: MatchView, power: { report: PowerReport; grid: PowerGrid } | null) {
   const ohms = power?.report.resistanceOhms ?? null
-  const worst = power && ohms !== null ? furthestBelowHealthy(power.grid, ohms) : null
+  const worst = power && ohms !== null ? compareWithHealthy(power.grid, ohms).worst : null
   const most = match.profile.power.healthyResistanceMaxOhms
   return {
     /** Battery + wiring resistance (mΩ), or null when there were too few current steps to measure it. */

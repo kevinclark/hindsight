@@ -17,6 +17,7 @@ import { has, matchSeconds, matchTimeLeft, matchWhen, matchWhenAt, num, phaseAt,
 import { indexAt, makeGrid, median, percentile, resample, type Interval, type NumberSeries, type ValueSeries } from '../match/series.ts'
 import type { BatteryKeys, CurrentLimits, ResolvedProfile } from '../profiles/types.ts'
 import { connectedFlags } from '../profiles/connected.ts'
+import { batteryAt, type BatteryName } from '../match/battery-id.ts'
 import { otherLogOf } from '../profiles/sources.ts'
 import { deviceFlagKeys } from '../profiles/formats.ts'
 import { powerReport, type PowerReport } from '../power/power-report.ts'
@@ -579,6 +580,11 @@ export class MatchView {
   /** The signal, or null when the log doesn't have it: for extra evidence a rule can do without. */
   signalIfLogged(name: string, label = words(name)): Signal | null {
     return this.has(name) ? this.signal(name, label) : null
+  }
+
+  /** Which battery was in the robot at `t`: the tracker's ID, else the gauge's own name (src/match/battery-id.ts). */
+  batteryAt(t: number): BatteryName | null {
+    return batteryAt(this.raw, t)
   }
 
   /** A battery tracker key picked for this match; stops the rule when the profile has none. */

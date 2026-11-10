@@ -9,11 +9,14 @@ import type { HistoryEvent } from '../triage/history.ts'
 import type { CodeFolder } from '../code/limit-lines.ts'
 import { has, num, values, type Match } from '../match/match.ts'
 import { heldAt } from '../match/series.ts'
+import { batteryAt } from '../match/battery-id.ts'
 import { isUncommitted } from '../match/git-dirty.ts'
 import { MatchView } from '../rules/view.ts'
 import { worstFollowerSecondsOff } from '../rules/mech/follower-trace.ts'
 import { powerReport } from '../power/power-report.ts'
 import { buildDrag, type MotorDrag } from '../power/drag.ts'
+import { buildPowerGrid } from '../power/battery-model.ts'
+import { compareWithHealthy } from '../rules/power/battery-health.ts'
 import { RULES, type Report } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
@@ -120,6 +123,16 @@ export interface MatchMetrics {
    * saved before it shows as before; Session -> Trends compares one band across matches.
    */
   drag?: MotorDrag[]
+  /**
+   * How far the battery's estimated open-circuit voltage fell below a healthy battery's at the same charge drawn, at its
+   * worst point (power/battery-collapse's number, V, unrounded so the line is judged as the rule judges it; negative:
+   * above), and at what charge (Ah). Null when the log can't be compared (no voltage, currents or resistance); absent in a
+   * summary saved before Hindsight kept it, like `drag`.
+   */
+  belowHealthyVolts?: number | null
+  belowHealthyAh?: number | null
+  /** The match drew more charge than the healthy curve covers, so it was compared only up to the curve's end. */
+  pastHealthyCurve?: boolean
 }
 
 /**
@@ -179,14 +192,11 @@ export function summarizeMatch(match: Match, report: Report, fileSize: number, t
       findings: findings.map((f) => toSummaryFinding(f, rule.nextStep)),
     }
   }
-  const idKey = has(match, match.profile.battery.id) ? match.profile.battery.id : null
-  const ids = idKey ? values<string>(match, idKey) : null
-  const atStart = ids && match.matchStart !== null ? heldAt(ids, match.matchStart) : undefined
   return {
     fileName: match.fileName, fileSize, ...when,
     powerMap: { at: powerMapInstant(match), stamp: powerMapStamp(match.powerMap) },
     event: match.event, matchLabel: match.matchLabel, matchType: matchTypeOf(match), onField: match.fms,
-    batteryId: atStart || null,
+    batteryId: match.matchStart === null ? null : batteryAt(match, match.matchStart)?.id ?? null,
     build: { sha: match.build.sha.slice(0, 7), branch: match.build.branch, uncommitted: isUncommitted(match.build.dirty) },
     rules, metrics: metrics(match), timing, problems: [],
     robot: robotOf(match),
@@ -265,6 +275,9 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
       brownoutVolts: lowest?.metrics.brownoutVolts ?? null,
       loopOverrunPct: pick('loopOverrunPct', (xs) => Math.max(...xs)),
       visionOutlierPct: pick('visionOutlierPct', (xs) => Math.max(...xs)),
+      // Each piece counts charge from its own start, so only the first piece is compared at the right charge drawn; the
+      // rest of the match went uncompared.
+      ...(first.metrics.belowHealthyVolts !== undefined ? { belowHealthyVolts: first.metrics.belowHealthyVolts, belowHealthyAh: first.metrics.belowHealthyAh, pastHealthyCurve: true } : {}),
       ...(pieces.some((p) => p.metrics.drag?.length) ? { drag: joinDrag(pieces.map((p) => p.metrics.drag ?? [])) } : {}),
     },
     timing: { parseMs: sum(pieces.map((p) => p.timing.parseMs)), rulesMs: sum(pieces.map((p) => p.timing.rulesMs)) },
@@ -319,7 +332,15 @@ function metrics(match: Match): MatchMetrics {
     loopOverrunPct: loopOverrun(match),
     visionOutlierPct: visionOutliers(match),
     ...(drag.some((d) => d.bands.length) ? { drag } : {}),
+    ...belowHealthy(match, p?.resistanceOhms ?? null),
   }
+}
+
+/** power/battery-collapse's comparison with a healthy battery, as numbers (src/rules/power/battery-health.ts). */
+function belowHealthy(match: Match, ohms: number | null): Pick<MatchMetrics, 'belowHealthyVolts' | 'belowHealthyAh' | 'pastHealthyCurve'> {
+  const grid = buildPowerGrid(match)
+  const { worst, pastCurve } = grid && ohms !== null ? compareWithHealthy(grid, ohms) : { worst: null, pastCurve: false }
+  return worst ? { belowHealthyVolts: worst.below, belowHealthyAh: worst.ah, pastHealthyCurve: pastCurve } : { belowHealthyVolts: null, belowHealthyAh: null, pastHealthyCurve: false }
 }
 
 /** Seconds the worst follower ran more than 15 % off its leader: mech/follower-mismatch's own trace code. */

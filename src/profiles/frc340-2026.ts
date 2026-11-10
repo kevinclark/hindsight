@@ -53,7 +53,7 @@ const base: Omit<RobotProfile, 'name' | 'code' | 'motorGroups' | 'whatIfGroup'> 
     gyroRoll: `${T}/swerve/api/state/roll`,
     odometryPose: `${T}/swerve/api/state/pose`,
   },
-  battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [] },
+  battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [], gaugeName: [] },
   // The same assumptions as any profile: nothing in the log measures them.
   power: { otherLoadsAmps: 3, restVoltageMin: 12.5, marginVolts: 1.0, healthyResistanceMaxOhms: 0.020 },
   otherDevices: [],
