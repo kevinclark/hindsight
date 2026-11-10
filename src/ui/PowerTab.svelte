@@ -12,6 +12,8 @@
   import type { PlotModel } from './plot-data.ts'
   import { matchWhen } from '../match/match.ts'
   import BreakersStrip from './BreakersStrip.svelte'
+  import { copyText } from './copy.ts'
+  import { powerSummaryText } from '../power/summary-text.ts'
 
   let { analysis }: { analysis: Analysis } = $props()
   const m = $derived(analysis.match)
@@ -40,6 +42,13 @@
   const a0 = (x: number | null) => (x === null ? '—' : x.toFixed(1))
   const spread = (r: { p50: number | null; p90: number | null; p99: number | null }) => (r.p50 === null ? '—' : `${a0(r.p50)} / ${a0(r.p90)} / ${a0(r.p99)}`)
   const secs = (x: number | null) => (x === null ? '—' : x.toFixed(1))
+
+  let copied = $state<'' | 'yes' | 'no'>('')
+  async function copySummary() {
+    const text = powerSummaryText(m)
+    copied = text !== null && (await copyText(text)) ? 'yes' : 'no'
+    setTimeout(() => (copied = ''), 3000)
+  }
 
   let cap = $state(40)
   let mode = $state<'clip' | 'defer'>('defer')
@@ -88,6 +97,10 @@
     <div><dt>Charge drawn</dt><dd>{p.chargeAh.toFixed(2)} Ah</dd><dd class="sub">{g?.currentFrom ? 'measured total' : `motors + ${m.profile.power.otherLoadsAmps} A other (assumed)`}</dd></div>
     <div><dt>Battery + wiring</dt><dd>{p.resistanceOhms ? (p.resistanceOhms * 1000).toFixed(1) : '—'} mΩ</dd><dd class="sub">from current steps</dd></div>
   </dl>
+  <p class="copy">
+    <button type="button" onclick={copySummary}>Copy summary</button>
+    <span class="note" role="status" aria-live="polite">{#if copied === 'yes'}Copied: paste it into Slack.{:else if copied === 'no'}Couldn't copy: the browser would not allow it.{/if}</span>
+  </p>
 
   {#if breakdown}
     <h3>Where the power went</h3>
@@ -224,6 +237,10 @@
   .kpis dd.sub { font-size: 0.75rem; color: var(--muted); }
   .bad { color: var(--error); }
   .warn { color: var(--warning); }
+  /* Controls at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, minimum). */
+  .copy { display: flex; align-items: center; gap: 0.75rem; margin: 0 0 0.5rem; }
+  .copy button { min-height: 24px; min-width: 24px; }
+  .copy .note { margin: 0; }
   h3 { font-size: 1rem; margin: 1.5rem 0 0.25rem; }
   .note { font-size: 0.85rem; color: var(--muted); max-width: 75ch; }
   table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }

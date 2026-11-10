@@ -1,3 +1,23 @@
-export async function copyText(_text: string): Promise<boolean> {
-  return false
+/**
+ * Put text on the clipboard: the browser's clipboard first, then a hidden textarea selected and copied for a page the
+ * browser won't give the clipboard to (opened from a file, or without focus). True when either worked. Shared by the
+ * fix preview's Copy and the Power tab's Copy summary.
+ */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return copyBySelection(text)
+  }
+}
+
+function copyBySelection(text: string): boolean {
+  const box = document.createElement('textarea')
+  box.value = text
+  box.setAttribute('readonly', '')
+  box.style.cssText = 'position:fixed;left:-9999px;top:0'
+  document.body.appendChild(box)
+  box.select()
+  try { return document.execCommand('copy') } catch { return false } finally { box.remove() }
 }

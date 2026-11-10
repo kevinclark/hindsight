@@ -95,13 +95,16 @@ describe('powerSummaryText on a synthetic match', () => {
     expect(h).toBeGreaterThan(0)
     const rows = L.slice(h + 1, L.length - 1)
     expect(rows).toHaveLength(b.rows.length)
+    // Cells by the header's column ends, so a blank cell stays a blank cell
+    const hd = L[h]
+    const ends = ['Wh', 'Share', 'P90 A', 'Peak A'].map((w) => hd.indexOf(w) + w.length)
     b.rows.forEach((r, i) => {
       expect(rows[i].startsWith(r.name), r.name).toBe(true)
-      const cells = rows[i].slice(r.name.length).trim().split(/\s{2,}/)
-      expect(cells[0]).toBe(r.wh.toFixed(1))
-      expect(cells[1]).toBe(`${((100 * r.wh) / b.totalWh).toFixed(0)} %`)
-      expect(cells[2]).toBe(r.p90 === null ? undefined : r.p90.toFixed(1))
-      expect(cells[3] ?? cells[2]).toBe(r.peak === null ? undefined : r.peak.toFixed(1))
+      const cell = (k: number) => rows[i].slice(k === 0 ? r.name.length : ends[k - 1], ends[k]).trim()
+      expect(cell(0)).toBe(r.wh.toFixed(1))
+      expect(cell(1)).toBe(`${((100 * r.wh) / b.totalWh).toFixed(0)} %`)
+      expect(cell(2)).toBe(r.p90 === null ? '' : r.p90.toFixed(1))
+      expect(cell(3)).toBe(r.peak === null ? '' : r.peak.toFixed(1))
     })
   })
   it('leaves a field blank where the row has none: the other-loads row has no P90 or peak', () => {

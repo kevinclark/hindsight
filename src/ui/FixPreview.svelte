@@ -8,6 +8,7 @@
   import type { CodeFinding } from '../code/check/rule.ts'
   import { patchFileName } from '../code/check/fix-patch.ts'
   import { downloadText } from './download.ts'
+  import { copyText } from './copy.ts'
 
   let { finding, sure = null, sameLine = false }: {
     finding: Pick<CodeFinding, 'rule'> & { fix?: { patch: string; doesNotFix: string } }
@@ -28,23 +29,8 @@
 
   let copied = $state<'' | 'yes' | 'no'>('')
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(patch)
-      copied = 'yes'
-    } catch {
-      copied = copyBySelection(patch) ? 'yes' : 'no'
-    }
+    copied = (await copyText(patch)) ? 'yes' : 'no'
     setTimeout(() => (copied = ''), 3000)
-  }
-  /** For a page the browser won't give the clipboard to (opened from a file, or without focus): select a hidden copy and copy it. */
-  function copyBySelection(text: string): boolean {
-    const box = document.createElement('textarea')
-    box.value = text
-    box.setAttribute('readonly', '')
-    box.style.cssText = 'position:fixed;left:-9999px;top:0'
-    document.body.appendChild(box)
-    box.select()
-    try { return document.execCommand('copy') } catch { return false } finally { box.remove() }
   }
   const save = () => downloadText(fileName, patch, 'text/x-diff')
 </script>

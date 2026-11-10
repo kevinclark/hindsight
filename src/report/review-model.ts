@@ -4,6 +4,7 @@
  */
 
 import type { Analysis } from '../analyze.ts'
+import type { Match } from '../match/match.ts'
 import { isUncommitted } from '../match/git-dirty.ts'
 import { makerOf } from '../rules/index.ts'
 import type { Finding, Severity } from '../rules/types.ts'
@@ -95,8 +96,8 @@ export function buildLine(b: { sha: string; branch: string; dirty: string }): Bu
 }
 
 /** "2026-10-18", from the robot's clock when it was set; empty when it never was. */
-export function matchDate(analysis: Analysis): string {
-  const m = analysis.match
+export function matchDate(analysis: Analysis): string { return matchDateOf(analysis.match) }
+export function matchDateOf(m: Match): string {
   const t = m.epochOffset !== null && m.matchStart !== null ? (m.epochOffset + m.matchStart) * 1000 : null
   if (t === null) return ''
   const d = new Date(t)
