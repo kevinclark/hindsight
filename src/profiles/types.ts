@@ -191,6 +191,11 @@ export interface SignalKeys {
   canivoreUsbDisconnects: string
   canivoreTxFails: string
   usbPortDisabled: string
+  /**
+   * The robot's main state, for views only (the Power tab's energy by state): no rule reads it, and it is not in the
+   * profile's fit or coverage lists. A profile with a stateMachine needs no copy: its `state` is read instead.
+   */
+  robotState?: string
 }
 
 /** The battery tracker's signals, each a key once a match has picked one ('' when the profile has none). */
@@ -207,7 +212,7 @@ export interface BatteryKeys {
 export type BatterySources = { [K in keyof BatteryKeys]: Source }
 
 /** The signals as a profile or a log type writes them: each single signal's Source (the lists stay lists). */
-export type SignalSources = { [K in keyof SignalKeys]: SignalKeys[K] extends string ? Source : SignalKeys[K] }
+export type SignalSources = { [K in keyof SignalKeys]: Exclude<SignalKeys[K], undefined> extends string ? Source : SignalKeys[K] }
 
 /**
  * A robot profile, as written: every signal and battery key a Source. A match's profile has one key each

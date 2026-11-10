@@ -14,6 +14,8 @@ import { PARENTS, RULES, type Report } from '../rules/index.ts'
 import type { Finding, Plot } from '../rules/types.ts'
 import { powerReport } from '../power/power-report.ts'
 import { buildPowerGrid } from '../power/battery-model.ts'
+import { buildBreakdown } from '../power/breakdown.ts'
+import { buildSagSpans } from '../power/sag-spans.ts'
 import type { IssueEvent } from '../triage/history.ts'
 import { boardEntry, ruleSources, type ExportBoard } from './board-export.ts'
 
@@ -79,8 +81,41 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
       minVolts: power.minVolts, minAt: power.minAt, brownoutVolts: power.brownoutVolts, marginVolts: power.marginVolts,
       secondsUnder7: power.secondsUnder7, chargeAh: power.chargeAh, resistanceOhms: power.resistanceOhms,
       model: power.fit && { form: 'V = V0 − k·Q − R0·I (no RC term)', ...power.fit },
-      modelNoChange: power.modelNoChange, ocvCurve: power.ocv, sags: power.sags, whatIfs: power.whatIfs, whatIfGroup: power.whatIfGroup,
+      modelNoChange: power.modelNoChange, ocvCurve: power.ocv, sags: power.sags, sagSpans: sagSpansJson(match), whatIfs: power.whatIfs, whatIfGroup: power.whatIfGroup,
+      // Energy, running time and current per motor group, and per robot state (added with the Power tab's table; no schema bump).
+      breakdown: breakdownJson(match),
     },
+  }
+}
+
+/** Sags as stretches under the margin line (added with the Power tab's stretches; no schema bump). `line` is null with no brownout setting. */
+function sagSpansJson(match: Match) {
+  const r = buildSagSpans(match)
+  if (!r) return null
+  const round = (x: number, d: number) => +x.toFixed(d)
+  const load = (l: { group: string; amps: number }[] | null) => l && l.map((x) => ({ group: x.group, amps: round(x.amps, 1) }))
+  return {
+    line: Number.isFinite(r.line) ? round(r.line, 2) : null, mode: r.mode, reason: r.reason, totalSpans: r.totalSpans, secondsUnderLine: round(r.secondsUnderLine, 2),
+    spans: r.spans.map((s) => ({
+      start: round(s.start, 2), end: round(s.end, 2), seconds: round(s.seconds, 2), secondsUnder: round(s.secondsUnder, 2), totalAmpsAtLowest: round(s.totalAmpsAtLowest, 0), lowestVolts: round(s.lowestVolts, 2), lowestAt: round(s.lowestAt, 2),
+      stateAtStart: s.stateAtStart, atLowest: load(s.atLowest), during: load(s.during), before: load(s.before),
+    })),
+  }
+}
+
+/** Wh, running seconds and current per motor group and robot state; null when the match has no power grid. Rounded for size. */
+function breakdownJson(match: Match) {
+  const b = buildBreakdown(match)
+  if (!b) return null
+  const r = (x: number | null, d: number) => (x === null ? null : +x.toFixed(d))
+  const stats = (x: { wh: number; runningSeconds: number | null; p50: number | null; p90: number | null; p99: number | null; peak: number | null }) => ({
+    wh: r(x.wh, 3), runningSeconds: r(x.runningSeconds, 2), p50Amps: r(x.p50, 1), p90Amps: r(x.p90, 1), p99Amps: r(x.p99, 1), peakAmps: r(x.peak, 1),
+  })
+  return {
+    note: `Wh = supply current × battery voltage over enabled time; running = above ${b.runningAmps} A (assumed)${b.measured ? '; the one row is a measured total.' : `; other loads ${b.otherLoadsAmps} A (assumed).`}`,
+    measured: b.measured,
+    totalWh: r(b.totalWh, 3), enabledSeconds: r(b.enabledSeconds, 2), stateNote: b.stateNote,
+    rows: b.rows.map((row) => ({ name: row.name, ...stats(row), states: row.states.map((s) => ({ state: s.name, ...stats(s) })) })),
   }
 }
 

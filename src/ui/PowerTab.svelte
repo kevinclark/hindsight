@@ -1,15 +1,19 @@
-<!-- The brownout view: margin, the loads at each sag, the battery's open-circuit voltage against charge, and what-ifs. -->
+<!-- The brownout view: margin, sags as stretches under the margin line and the loads at each, the battery's open-circuit voltage against charge, and what-ifs. -->
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import { powerReport, whatIfAt } from '../power/power-report.ts'
   import { buildPowerGrid, DT } from '../power/battery-model.ts'
   import { bandText, buildDrag } from '../power/drag.ts'
+  import { buildBreakdown, hasStates } from '../power/breakdown.ts'
+  import { buildSagSpans, type Load } from '../power/sag-spans.ts'
   import { FLEET_REFERENCE } from '../power/fleet-reference.ts'
   import { downsample } from '../report/findings-json.ts'
   import Plot from './Plot.svelte'
   import type { PlotModel } from './plot-data.ts'
   import { matchWhen } from '../match/match.ts'
   import BreakersStrip from './BreakersStrip.svelte'
+  import { copyText } from './copy.ts'
+  import { powerSummaryText } from '../power/summary-text.ts'
 
   let { analysis }: { analysis: Analysis } = $props()
   const m = $derived(analysis.match)
@@ -18,6 +22,36 @@
   const drag = $derived(buildDrag(m).filter((d) => d.bands.length))
   /** Motors with steady-speed bands, grouped by motor group in profile order, leader beside follower. */
   const dragGroups = $derived([...new Set(drag.map((d) => d.group))].map((group) => ({ group, motors: drag.filter((d) => d.group === group) })))
+
+  const sagSpans = $derived(buildSagSpans(m))
+  const stretches = $derived(sagSpans?.mode === 'stretches')
+  const lineText = $derived(sagSpans && Number.isFinite(sagSpans.line) ? `${+sagSpans.line.toFixed(2)}` : '')
+  /** The biggest group with its current; the next two in a smaller line under it. */
+  const top1 = (l: Load[] | null) => (l && l.length ? `${l[0].group} ${l[0].amps.toFixed(0)} A` : '—')
+  /** "2:32 into the match" on one line, "(teleop; robot time 428.2 s)" small under it, so the column stays narrow on a phone. */
+  const when = (t: number) => { const w = matchWhen(m, t); const i = w.indexOf(' ('); return i < 0 ? { head: w, tail: '' } : { head: w.slice(0, i), tail: w.slice(i + 1) } }
+  const rest2 = (l: Load[] | null) => (l && l.length > 1 ? l.slice(1).map((x) => `${x.group} ${x.amps.toFixed(0)} A`).join(' · ') : '')
+
+  const breakdown = $derived(buildBreakdown(m))
+  const maxWh = $derived(Math.max(1e-9, ...(breakdown?.rows.map((r) => r.wh) ?? [0])))
+  /** The groups whose state rows are open (collapsed by default). */
+  let open = $state<string[]>([])
+  const toggle = (name: string) => { open = open.includes(name) ? open.filter((x) => x !== name) : [...open, name] }
+  const anyToggle = $derived(!!breakdown?.rows.some(hasStates))
+  const wh1 = (x: number) => x.toFixed(1)
+  const pct = (x: number, total: number) => (total > 0 ? `${((100 * x) / total).toFixed(0)} %` : '—')
+  const a0 = (x: number | null) => (x === null ? '—' : x.toFixed(1))
+  const spread = (r: { p50: number | null; p90: number | null; p99: number | null }) => (r.p50 === null ? '—' : `${a0(r.p50)} / ${a0(r.p90)} / ${a0(r.p99)}`)
+  const secs = (x: number | null) => (x === null ? '—' : x.toFixed(1))
+
+  let copied = $state<'' | 'yes' | 'no'>('')
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  async function copySummary() {
+    const text = powerSummaryText(m)
+    copied = text !== null && (await copyText(text)) ? 'yes' : 'no'
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => (copied = ''), 3000)
+  }
 
   let cap = $state(40)
   let mode = $state<'clip' | 'defer'>('defer')
@@ -37,7 +71,10 @@
   const voltagePlot = $derived<PlotModel | null>(g && p ? {
     from, to, unit: 'V', series: [gridSeries('Battery voltage', g.volts)],
     threshold: Number.isFinite(p.brownoutVolts) ? { value: p.brownoutVolts, label: `brownout ${p.brownoutVolts} V` } : undefined,
-    markers: p.sags.map((s) => ({ t: s.t, label: '' })), matchStart: m.matchStart,
+    // Every stretch under the margin line shades as a span (not only the table's deepest 8); the lowest-points fallback keeps one marker per point.
+    spans: stretches ? sagSpans!.allSpans.map((x) => ({ from: x.start, to: x.end })) : undefined,
+    spanLabel: stretches ? `shaded: under ${lineText} V` : undefined,
+    markers: stretches ? undefined : p.sags.map((s) => ({ t: s.t, label: '' })), matchStart: m.matchStart,
   } : null)
   const currentPlot = $derived<PlotModel | null>(g ? {
     from, to, unit: 'A', matchStart: m.matchStart, series: [gridSeries(g.currentFrom ? 'Total current (measured)' : 'Total current (motors + other)', g.amps), ...g.groups.filter((x) => x.name === m.profile.whatIfGroup).map((x) => gridSeries(`${x.name}`, x.amps))],
@@ -64,6 +101,42 @@
     <div><dt>Charge drawn</dt><dd>{p.chargeAh.toFixed(2)} Ah</dd><dd class="sub">{g?.currentFrom ? 'measured total' : `motors + ${m.profile.power.otherLoadsAmps} A other (assumed)`}</dd></div>
     <div><dt>Battery + wiring</dt><dd>{p.resistanceOhms ? (p.resistanceOhms * 1000).toFixed(1) : '—'} mΩ</dd><dd class="sub">from current steps</dd></div>
   </dl>
+  <p class="copy">
+    <button type="button" onclick={copySummary}>Copy summary</button>
+    <span class="note" role="status" aria-live="polite">{#if copied === 'yes'}Copied: paste it into Slack.{:else if copied === 'no'}Couldn't copy: the browser would not allow it.{/if}</span>
+  </p>
+
+  {#if breakdown && breakdown.enabledSeconds === 0}
+    <h3>Where the power went</h3>
+    <p class="note">The robot was never enabled in this log, so there is no energy to split.</p>
+  {:else if breakdown}
+    <h3>Where the power went</h3>
+    <table class="breakdown">
+      <thead><tr><th>Group</th><th>Energy (Wh)</th><th>Share</th><th>Running (s)</th><th>P50 / P90 / P99 (A)</th><th>Peak (A)</th></tr></thead>
+      <tbody>
+        {#each breakdown.rows as r (r.name)}
+          <tr class="grp">
+            <th scope="row">
+              {#if hasStates(r)}<button type="button" class="tog" aria-expanded={open.includes(r.name)} aria-label="States of {r.name}" onclick={() => toggle(r.name)}>{open.includes(r.name) ? '▾' : '▸'}</button>{:else}<span class="tog-gap"></span>{/if}{r.name}
+            </th>
+            <td class="wh"><span class="track"><span class="bar" aria-hidden="true" style:width="{(5 * r.wh) / maxWh}rem"></span></span><span class="num">{wh1(r.wh)}</span></td>
+            <td>{pct(r.wh, breakdown.totalWh)}</td><td>{secs(r.runningSeconds)}</td><td>{spread(r)}</td><td>{a0(r.peak)}</td>
+          </tr>
+          {#if open.includes(r.name)}
+            {#each r.states as s (s.name)}
+              <tr class="state">
+                <th scope="row" class="ind">{s.name}</th>
+                <td class="wh"><span class="track"><span class="bar sub" aria-hidden="true" style:width="{(5 * s.wh) / maxWh}rem"></span></span><span class="num">{wh1(s.wh)}</span></td>
+                <td>{pct(s.wh, breakdown.totalWh)}</td><td>{secs(s.runningSeconds)}</td><td>{spread(s)}</td><td>{a0(s.peak)}</td>
+              </tr>
+            {/each}
+          {/if}
+        {/each}
+      </tbody>
+    </table>
+    <p class="note">Energy is supply current × battery voltage while enabled ({breakdown.enabledSeconds.toFixed(0)} s, {wh1(breakdown.totalWh)} Wh in all). A group's currents are its motors added together (Drive's P90 is all its motors at once, not one motor against a per-motor limit). Share is the share of the whole match's energy, state rows too. A group is running above {breakdown.runningAmps} A (an assumed line). {#if breakdown.measured}The whole-robot row is a measured total; the log has no motor currents.{:else}Everything not on a motor controller is {breakdown.otherLoadsAmps} A, assumed.{/if}
+      {#if breakdown.stateNote}{breakdown.stateNote}{:else if anyToggle}Open a group to see the robot states it drew in; states with under 1 s of running are folded into "Other states".{/if}</p>
+  {/if}
 
   <h3>Voltage and current over the match</h3>
   {#if voltagePlot}<Plot model={voltagePlot} height={150} />{/if}
@@ -74,18 +147,38 @@
     <p class="note">Total current is the sum of motor supply currents plus {m.profile.power.otherLoadsAmps} A for everything else. <code>/SystemStats/BatteryCurrent</code> is only the roboRIO's own draw (~0.5 A), so it isn't used.</p>
   {/if}
 
-  <h3>The {p.sags.length} deepest sags, and what was drawing</h3>
-  <table class="sags">
-    <thead><tr><th>When</th><th>Voltage</th><th>Total</th><th>Top loads</th></tr></thead>
-    <tbody>
-      {#each p.sags as s (s.t)}
-        <tr>
-          <td>{matchWhen(m, s.t)}</td><td>{s.volts.toFixed(2)} V</td><td>{s.totalAmps.toFixed(0)} A</td>
-          <td>{s.loads.slice(0, 3).map((l) => `${l.group} ${l.amps.toFixed(0)} A`).join(' · ')}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  {#if sagSpans && stretches}
+    <h3>{sagSpans.spans.length === 1 ? 'The deepest sag' : `The ${sagSpans.spans.length} deepest sags`} under {lineText} V, and what was drawing</h3>
+    {#if sagSpans.totalSpans > sagSpans.spans.length}
+      <p class="note">{sagSpans.totalSpans} stretches under {lineText} V, {sagSpans.secondsUnderLine.toFixed(1)} s under it in all; the {sagSpans.spans.length} deepest:</p>
+    {/if}
+    <table class="sags">
+      <thead><tr><th>When</th><th>Length</th><th>Lowest</th><th>State</th><th>Total at lowest</th><th>At lowest</th><th>During</th><th>Before</th></tr></thead>
+      <tbody>
+        {#each sagSpans.spans as s (s.start)}
+          <tr>
+            <td class="moment">{when(s.start).head}<small>{when(s.start).tail}</small></td><td>{s.secondsUnder.toFixed(2)} s{#if s.seconds - s.secondsUnder >= 0.05 - 1e-9}<small>over {s.seconds.toFixed(2)} s</small>{/if}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
+            <td>{s.totalAmpsAtLowest.toFixed(0)} A</td><td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.during)}<small>{rest2(s.during)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+    <p class="note">A stretch is enabled time with the battery under {lineText} V (the brownout setting plus the {m.profile.power.marginVolts} V margin this robot wants), runs under 0.04 s dropped and runs within 0.25 s of each other joined. "During" is the mean over the stretch, "Before" the mean over the half second ahead of it; each shows the biggest motor group, then the next two.</p>
+  {:else if sagSpans}
+    <h3>The {sagSpans.spans.length} deepest sags, and what was drawing</h3>
+    <p class="note">{sagSpans.reason}</p>
+    <table class="sags">
+      <thead><tr><th>When</th><th>Lowest</th><th>State</th><th>Total at lowest</th><th>At lowest</th><th>Before</th></tr></thead>
+      <tbody>
+        {#each sagSpans.spans as s (s.lowestAt)}
+          <tr>
+            <td class="moment">{when(s.lowestAt).head}<small>{when(s.lowestAt).tail}</small></td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
+            <td>{s.totalAmpsAtLowest.toFixed(0)} A</td><td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
 
   {#if dragGroups.length}
     <h3>Current at steady speed</h3>
@@ -151,14 +244,34 @@
   .kpis dd.sub { font-size: 0.75rem; color: var(--muted); }
   .bad { color: var(--error); }
   .warn { color: var(--warning); }
+  /* Controls at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, minimum). */
+  .copy { display: flex; align-items: center; gap: 0.75rem; margin: 0 0 0.5rem; }
+  .copy button { min-height: 24px; min-width: 24px; }
+  .copy .note { margin: 0; }
   h3 { font-size: 1rem; margin: 1.5rem 0 0.25rem; }
   .note { font-size: 0.85rem; color: var(--muted); max-width: 75ch; }
   table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  /* A wide table scrolls inside itself on a phone instead of widening the page (as LimitsTab does). */
+  table.breakdown, table.sags { display: block; overflow-x: auto; max-width: 100%; }
   th, td { text-align: left; padding: 0.2rem 1rem 0.2rem 0; vertical-align: top; }
   thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   tbody th { font-weight: normal; }
   tr.group th { color: var(--muted); font-size: 0.75rem; padding-top: 0.5rem; }
+  .sags td.moment { white-space: nowrap; }
+  .sags td small { display: block; color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
   .hl { background: var(--hover); }
+  .breakdown td, .breakdown th { white-space: nowrap; vertical-align: middle; }
+  .breakdown td.wh { font-variant-numeric: tabular-nums; }
+  .breakdown tr.grp th { font-weight: normal; }
+  .breakdown th.ind { padding-left: 2rem; color: var(--muted); }
+  .breakdown tr.state td { color: var(--muted); }
+  /* A fixed-width track holds each bar, so every Wh number starts at the same x (Tufte: aligned columns compare). */
+  .track { display: inline-block; width: 5rem; margin-right: 0.5rem; vertical-align: middle; }
+  .bar { display: inline-block; height: 0.6rem; background: var(--series-1, var(--focus)); vertical-align: middle; }
+  .bar.sub { opacity: 0.6; }
+  /* Controls at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, minimum). */
+  .tog { min-width: 24px; min-height: 24px; padding: 0; margin: 0 0.25rem 0 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; }
+  .tog-gap { display: inline-block; width: 24px; margin-right: 0.25rem; }
   .warn-box { border-left: 3px solid var(--warning); padding: 0.25rem 0.75rem; font-size: 0.85rem; max-width: 75ch; }
   .slider { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; margin: 0.5rem 0; font-size: 0.9rem; }
   .slider label { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 24px; }

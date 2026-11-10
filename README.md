@@ -85,13 +85,14 @@ Only an experimental device-fault check (not counted) reads `.hoot` data, and on
   it says which board type the log claims from the channel count: 24 = REV PDH, 16 = CTRE PDP). The robot profile
   names the board (`powerDistribution`): a warning when it is one that can report (REV PDH, CTRE PDP), context when it
   is a CTRE PDP 2.0, which has no current telemetry, or when the board is unknown.
-- **Power** tab: lowest voltage and margin to the brownout setting, the loads at the deepest sags, the battery's
+- **Power** tab: lowest voltage and margin to the brownout setting, where the power went (energy, running time and
+  current per motor group, and per robot state), the deepest sags as stretches under the margin line (how long, the robot's state as each began, and which motors were drawing at the lowest point, during it and just before), the battery's
   estimated open-circuit voltage against charge drawn, and flywheel current-cap what-ifs with the model's error.
 - **Logging** tab: which signals the checks need that this log is missing, as a to-do list. See
   [Logging what the checks need](#logging-what-the-checks-need).
 - **Download for Claude** saves `<log>.findings.json` (schema `hindsight.findings/2`: each finding has robot time,
   match time, meaning, ranked causes and next step): findings, evidence, summary
-  statistics, short data windows and the fitted battery model. It never includes `/RadioStatus/*`, which carries a
+  statistics, short data windows, the fitted battery model, the power breakdown (`power.breakdown`) and the sags as stretches under the margin line (`power.sagSpans`). It never includes `/RadioStatus/*`, which carries a
   hashed Wi-Fi key. Before it saves, a list says what is inside (counts of findings, data windows, notes and cause states;
   no names) with Save and Cancel; the file leaves the laptop only if you upload it. It also carries each rule's public sources
   and thresholds (`rules`), and, for an issue the team recorded something on, a `board` block (priority, status, deferral and
