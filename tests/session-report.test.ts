@@ -114,7 +114,7 @@ describe('session trends', () => {
     const band = { band: 13, lo: 1.25 ** 13, hi: 1.25 ** 14, seconds: 5 }
     const ms = [5.9, 1.0, 9.1, 6.5].map((amps, i) => match(i + 1, [], { metrics: { ...METRICS, drag: [{ motor: 'Follower', group: 'G', unit: 'rot/s', bands: [{ ...band, amps }] }] } } as never))
     const t = trendsModel(ms)
-    const p = t.panels.find((x) => x.key === 'drag:Follower')!
+    const p = t.panels.find((x) => x.key === 'drag:G/Follower')!
     expect(p).toMatchObject({ label: 'Follower: current at steady speed', unit: 'A', sub: 'at 18–23 rot/s', range: '1.0–9.1' })
     expect(p.points.filter((x) => x.worst).map((x) => x.value)).toEqual([9.1])
     expect(p.points.filter((x) => x.lowest).map((x) => x.value)).toEqual([1.0])

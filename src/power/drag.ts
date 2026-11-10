@@ -3,7 +3,7 @@
  * or a bent shaft draws more current at the same speed than the motor did in its own earlier matches.
  *
  * Only samples where the motor is on CAN (its Connected flag true at t-0.1, t and t+0.1 s: a controller that dropped
- * off CAN holds its last readings), the robot is enabled at those three instants too, and the speed is steady (|v| changes by at most 2 % over
+ * off CAN holds its last readings), the robot is enabled at those three instants too, the speed keeps one sign across them (a reversal is not steady), and the speed is steady (|v| changes by at most 2 % over
  * the 0.2 s around t). Bands are powers of 1.25 of the motor's own velocity unit, so they need no unit; a band
  * with under 2 s of steady running is dropped. No rule, no threshold: Session -> Trends compares a band across matches.
  */
@@ -43,9 +43,19 @@ export interface MotorDrag {
 export const bandOf = (speed: number): number => Math.floor(Math.log(speed) / Math.log(BAND_RATIO) + 1e-9)
 export const bandEdges = (band: number): { lo: number; hi: number } => ({ lo: BAND_RATIO ** band, hi: BAND_RATIO ** (band + 1) })
 
-/** The unit a velocity signal's name carries ("VelocityRotPerSec", "VelocityRotsPerSec"), else undefined. */
-function unitOf(key: string): string | undefined {
-  return /Rots?PerSec/.test(key) ? 'rot/s' : undefined
+/** The unit a velocity signal's name carries ("VelocityRotPerSec", "...RadiansPerSecond", "...MetersPerSec", "...Rpm"), else undefined. */
+export function unitOf(key: string): string | undefined {
+  if (/Rot(ation)?s?PerSec(ond)?/i.test(key)) return 'rot/s'
+  if (/Rad(ian)?s?PerSec(ond)?/i.test(key)) return 'rad/s'
+  if (/Meters?PerSec(ond)?/i.test(key)) return 'm/s'
+  if (/rpm/i.test(key)) return 'rpm'
+  return undefined
+}
+
+/** A band's edges in words: "18–23 rot/s"; with no unit known, "36–44 (the log's own speed unit)". One place for the Trends sub line and the Power tab. */
+export function bandText(lo: number, hi: number, unit?: string): string {
+  const d = hi < 10 ? 1 : 0
+  return `${lo.toFixed(d)}–${hi.toFixed(d)} ${unit ?? "(the log's own speed unit)"}`
 }
 
 /**
@@ -61,6 +71,8 @@ export function dragBands(velocity: ArrayLike<number>, stator: ArrayLike<number>
     const v = Math.abs(velocity[i])
     const a = Math.abs(velocity[i - HALF_WINDOW]), b = Math.abs(velocity[i + HALF_WINDOW])
     const amps = Math.abs(stator[i])
+    const before = velocity[i - HALF_WINDOW], now = velocity[i], after = velocity[i + HALF_WINDOW]
+    if (!((before > 0 && now > 0 && after > 0) || (before < 0 && now < 0 && after < 0))) continue
     if (!(v > MIN_SPEED) || !Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(amps)) continue
     if (Math.abs(b - a) > STEADY_SHARE * v) continue
     const band = bandOf(v)
@@ -85,7 +97,12 @@ export function buildDrag(match: Match): MotorDrag[] {
       for (const motor of group.motors) {
         if (!motor.statorCurrent || !motor.velocity || !motor.connected) continue
         if (!has(match, motor.statorCurrent) || !has(match, motor.velocity) || !has(match, motor.connected)) continue
-        const stator = num(match, motor.statorCurrent), velocity = num(match, motor.velocity), flag = num(match, motor.connected)
+        let stator, velocity, flag
+        try {
+          stator = num(match, motor.statorCurrent); velocity = num(match, motor.velocity); flag = num(match, motor.connected)
+        } catch {
+          continue // a signal that isn't a number or a boolean: no way to read it, so this motor has no drag
+        }
         if (!stator || !velocity || !flag) continue
         const connected = Uint8Array.from(resample(flag, grid.t), (x) => (x === 0 ? 0 : 1))
         out.push({ motor: motor.name, group: group.name, unit: unitOf(motor.velocity), bands: dragBands(resample(velocity, grid.t), resample(stator, grid.t), connected, grid.enabled) })

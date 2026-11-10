@@ -3,7 +3,7 @@
   import type { Analysis } from '../analyze.ts'
   import { powerReport, whatIfAt } from '../power/power-report.ts'
   import { buildPowerGrid, DT } from '../power/battery-model.ts'
-  import { buildDrag } from '../power/drag.ts'
+  import { bandText, buildDrag } from '../power/drag.ts'
   import { FLEET_REFERENCE } from '../power/fleet-reference.ts'
   import { downsample } from '../report/findings-json.ts'
   import Plot from './Plot.svelte'
@@ -18,7 +18,6 @@
   const drag = $derived(buildDrag(m).filter((d) => d.bands.length))
   /** Motors with steady-speed bands, grouped by motor group in profile order, leader beside follower. */
   const dragGroups = $derived([...new Set(drag.map((d) => d.group))].map((group) => ({ group, motors: drag.filter((d) => d.group === group) })))
-  const band = (b: { lo: number; hi: number }, unit?: string) => `${b.lo.toFixed(b.hi < 10 ? 1 : 0)}–${b.hi.toFixed(b.hi < 10 ? 1 : 0)}${unit ? ` ${unit}` : ''}`
 
   let cap = $state(40)
   let mode = $state<'clip' | 'defer'>('defer')
@@ -95,10 +94,10 @@
       <tbody>
         {#each dragGroups as dg (dg.group)}
           <tr class="group"><th colspan="4" scope="colgroup">{dg.group}</th></tr>
-          {#each dg.motors as d (d.motor)}
+          {#each dg.motors as d (d.group + '/' + d.motor)}
             {#each d.bands as b, bi (b.band)}
               <tr>
-                <td>{#if bi === 0}{d.motor}{/if}</td><td>{band(b, d.unit)}</td><td>{b.amps.toFixed(1)} A</td><td>{b.seconds.toFixed(1)} s</td>
+                <td>{#if bi === 0}{d.motor}{/if}</td><td>{bandText(b.lo, b.hi, d.unit)}</td><td>{b.amps.toFixed(1)} A</td><td>{b.seconds.toFixed(1)} s</td>
               </tr>
             {/each}
           {/each}

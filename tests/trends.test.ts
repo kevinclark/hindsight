@@ -185,14 +185,13 @@ describe.skipIf(!have)('trendRows on the 8 logs of the team\'s 2026 event', () =
     const drag = rows.filter((r) => String(r.metric.key).startsWith('drag:'))
     // Four flywheel motors and two rollers, in profile order, after the seven others
     expect(rows.slice(7)).toEqual(drag)
-    expect(drag.map((r) => r.metric.key)).toEqual(['drag:Flywheel leader', 'drag:Flywheel follower 16', 'drag:Flywheel follower 17', 'drag:Flywheel follower 18', 'drag:Intake roller leader', 'drag:Intake roller follower'])
+    expect(drag.map((r) => r.metric.key)).toEqual(['drag:Flywheel/Flywheel leader', 'drag:Flywheel/Flywheel follower 16', 'drag:Flywheel/Flywheel follower 17', 'drag:Flywheel/Flywheel follower 18', 'drag:Intake rollers/Intake roller leader', 'drag:Intake rollers/Intake roller follower'])
     const leader = drag[4], follower = drag[5]
     expect(leader.metric.sub).toBe('at 23–28 rot/s')
     expect([leader.n, follower.n]).toEqual([8, 8])
-    // The follower that was off CAN for most of one match is the row's low end; the last match is its high end.
     expect(follower.worstIndex).toBe(7)
     expect(follower.lowestIndex).toBe(5)
-    expect(leader.worstIndex).toBe(5) // that leader carried the dead follower's share
+    expect(leader.worstIndex).toBe(5)
     expect(leader.lowestIndex).toBe(6)
     // Every row that is shown has 3 or more cells
     expect(drag.every((r) => r.n >= 3)).toBe(true)
@@ -212,8 +211,8 @@ describe('trendRows: current at steady speed', () => {
   it('puts one row per motor after the existing rows, leader and follower adjacent, keyed drag:<motor>', () => {
     const ms = [1, 2, 3].map((n) => withDrag(n, [mo('Roller leader', 'Rollers', [band(13, 5 + n)]), mo('Roller follower', 'Rollers', [band(13, 6 + n)]), mo('Other', 'X', [band(5, 2)])]))
     const rows = trendRows(ms)
-    expect(rows.slice(0, 7).map((r) => r.metric.key)).not.toContain('drag:Roller leader')
-    expect(rows.slice(7).map((r) => r.metric.key)).toEqual(['drag:Roller leader', 'drag:Roller follower', 'drag:Other'])
+    expect(rows.slice(0, 7).map((r) => r.metric.key)).not.toContain('drag:Rollers/Roller leader')
+    expect(rows.slice(7).map((r) => r.metric.key)).toEqual(['drag:Rollers/Roller leader', 'drag:Rollers/Roller follower', 'drag:X/Other'])
     expect(new Set(rows.map((r) => r.metric.key)).size).toBe(rows.length)
     const r = rows[7]
     expect(r.metric).toMatchObject({ label: 'Roller leader: current at steady speed', unit: 'A', sub: 'at 18–23 rot/s' })
@@ -239,9 +238,34 @@ describe('trendRows: current at steady speed', () => {
     expect(r.worstIndex).toBe(3)
     expect(r.worstWord).toBe('highest')
     expect(r.lowestIndex).toBe(1)
-    expect(r.latest).toBe(6.5)
+    expect(r.latest).toBeNull() // the last match has no steady run in the band
     expect(r.n).toBe(4)
     expect(r.verdict).toBe('No line: 1.0 to 9.1 A in 4 of 6 matches')
+  })
+  it('keeps two same-named motors in different groups as separate rows', () => {
+    const ms = [1, 2, 3].map((n) => withDrag(n, [mo('M', 'G1', [band(13, n)]), mo('M', 'G2', [band(13, 10 + n)])]))
+    const rows = dragRowsOf(trendRows(ms))
+    expect(rows.map((r) => r.metric.key)).toEqual(['drag:G1/M', 'drag:G2/M'])
+    expect(rows.map((r) => r.values)).toEqual([[1, 2, 3], [11, 12, 13]])
+  })
+  it('skips a summary whose drag is not an array (a malformed event line), without throwing', () => {
+    const a = (amps: number) => [mo('M', 'G', [band(13, amps)])]
+    const ms = [withDrag(1, a(5)), withDrag(2, a(6)), withDrag(3, a(7)), withDrag(4, null as never), withDrag(5, { motor: 'M' } as never)]
+    const rows = dragRowsOf(trendRows(ms))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].values).toEqual([5, 6, 7, null, null])
+  })
+  it('says "the log\'s own speed unit" in the band line when the motor\'s unit is unknown, and "no steady run" for an empty latest cell in Trends.svelte', async () => {
+    const noUnit = (amps: number | null) => [{ motor: 'M', group: 'G', bands: amps === null ? [] : [band(16, amps)] }]
+    const ms = [5, 6, 7, null].map((v) => withDrag(1, noUnit(v) as never))
+    ms.forEach((x, i) => { (x as { fileName: string }).fileName = `q${i + 1}.wpilog` })
+    const r = dragRowsOf(trendRows(ms))[0]
+    expect(r.metric.sub).toBe("at 36–44 (the log's own speed unit)")
+    const { render } = await import('svelte/server')
+    const { default: Trends } = await import('../src/ui/Trends.svelte')
+    const html = render(Trends, { props: { matches: ms, typedBatteries: {} } }).body
+    expect(html).toContain('no steady run')
+    expect(html).not.toContain('not logged')
   })
   it('shows a motor only with 3 or more filled cells', () => {
     const a = (amps: number) => [mo('M', 'G', [band(13, amps)])]

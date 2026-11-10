@@ -280,15 +280,18 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
 }
 
 /**
- * One match recorded in several logs: per motor and band, the seconds added and the amps the seconds-weighted mean of
- * the pieces' medians (a median of medians would weigh a 2 s piece like a 60 s one; the pieces' samples are gone).
+ * One match recorded in several logs: per motor (by group and name) and band, the seconds added and the amps the
+ * seconds-weighted mean of the pieces' medians (a median of medians would weigh a 2 s piece like a 60 s one; the
+ * pieces' samples are gone). A band under 2 s in every piece is lost even when the pieces together pass 2 s: bands
+ * under 2 s are never stored.
  */
 export function joinDrag(pieces: MotorDrag[][]): MotorDrag[] {
   const motors = new Map<string, MotorDrag & { sums: Map<number, { band: MotorDrag['bands'][number]; ampSeconds: number; seconds: number }> }>()
   for (const piece of pieces) {
     for (const d of piece) {
-      let m = motors.get(d.motor)
-      if (!m) motors.set(d.motor, (m = { motor: d.motor, group: d.group, ...(d.unit ? { unit: d.unit } : {}), bands: [], sums: new Map() }))
+      const id = `${d.group}/${d.motor}`
+      let m = motors.get(id)
+      if (!m) motors.set(id, (m = { motor: d.motor, group: d.group, ...(d.unit ? { unit: d.unit } : {}), bands: [], sums: new Map() }))
       for (const b of d.bands) {
         const sum = m.sums.get(b.band) ?? { band: b, ampSeconds: 0, seconds: 0 }
         sum.ampSeconds += b.amps * b.seconds

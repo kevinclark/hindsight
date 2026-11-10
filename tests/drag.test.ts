@@ -3,12 +3,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
-import { bandEdges, bandOf, buildDrag, dragBands } from '../src/power/drag.ts'
+import { bandEdges, bandOf, bandText, buildDrag, dragBands, unitOf } from '../src/power/drag.ts'
 import { joinDrag } from '../src/session/summary.ts'
 import { TEAM, teamPath } from './helpers/team-logs.ts'
-import { analyzeFixture, haveLogs } from './helpers/load.ts'
+import { haveLogs } from './helpers/load.ts'
+import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
+import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 
-const FIXTURE = 'flywheel-spinups'
 const N = 1000 // 20 s at 0.02 s
 const flat = (x: number, n = N) => new Float64Array(n).fill(x)
 const ones = (n = N) => flat(1, n)
@@ -54,8 +55,10 @@ describe('dragBands on synthetic series', () => {
     expect(base).toBeCloseTo(full, 6)
     expect(at(20, 20.4)).toBeCloseTo(full, 6)
     expect(at(20, 20.5)).toBeLessThan(full)
-    // Sign does not matter: -20 then +20 is the same speed
-    expect(at(-20, 20)).toBeCloseTo(full, 6)
+    // A reversal is not steady, even at the same speed: the 10 samples whose window holds the sign change are lost
+    expect(at(-20, 20)).toBeLessThan(full)
+    // A steady negative speed still counts, on |v|
+    expect(dragBands(flat(-20), flat(-6), ones(), ones())[0]).toMatchObject({ amps: 6, seconds: (N - 10) * 0.02 })
     // Below 1 in the motor's unit is standing still
     expect(dragBands(flat(0.9), flat(5), ones(), ones())).toEqual([])
     expect(dragBands(flat(1.01), flat(5), ones(), ones())).toHaveLength(1)
@@ -82,7 +85,32 @@ describe('dragBands on synthetic series', () => {
   })
 })
 
+describe('unitOf and bandText', () => {
+  it('reads the unit from the signal name', () => {
+    expect(unitOf('/X/VelocityRotPerSec')).toBe('rot/s')
+    expect(unitOf('/X/VelocityRotsPerSec')).toBe('rot/s')
+    expect(unitOf('/X/RotationsPerSecond')).toBe('rot/s')
+    expect(unitOf('/X/RadiansPerSecond')).toBe('rad/s')
+    expect(unitOf('/X/VelocityRadPerSec')).toBe('rad/s')
+    expect(unitOf('/X/MetersPerSecond')).toBe('m/s')
+    expect(unitOf('/X/SpeedRPM')).toBe('rpm')
+    expect(unitOf('/X/Velocity')).toBeUndefined()
+  })
+  it('writes a band in words, and says so when the unit is unknown', () => {
+    expect(bandText(bandEdges(13).lo, bandEdges(13).hi, 'rot/s')).toBe('18–23 rot/s')
+    expect(bandText(bandEdges(3).lo, bandEdges(3).hi, 'm/s')).toBe('2.0–2.4 m/s')
+    expect(bandText(bandEdges(16).lo, bandEdges(16).hi)).toBe("36–44 (the log's own speed unit)")
+  })
+})
+
 describe('joinDrag: one match in several logs', () => {
+  it('keeps two motors with one name in different groups apart', () => {
+    const b = (amps: number) => ({ band: 3, lo: 1.25 ** 3, hi: 1.25 ** 4, amps, seconds: 4 })
+    const j = joinDrag([[{ motor: 'M', group: 'G1', bands: [b(1)] }, { motor: 'M', group: 'G2', bands: [b(9)] }], [{ motor: 'M', group: 'G2', bands: [b(9)] }]])
+    expect(j.map((x) => `${x.group}/${x.motor}`)).toEqual(['G1/M', 'G2/M'])
+    expect(j[0].bands[0]).toMatchObject({ amps: 1, seconds: 4 })
+    expect(j[1].bands[0]).toMatchObject({ amps: 9, seconds: 8 })
+  })
   const b = (band: number, amps: number, seconds: number) => ({ band, lo: 1.25 ** band, hi: 1.25 ** (band + 1), amps, seconds })
   it('adds the seconds per motor and band, and weighs each piece\'s median by its seconds', () => {
     const j = joinDrag([
@@ -98,13 +126,56 @@ describe('joinDrag: one match in several logs', () => {
   })
 })
 
-describe('buildDrag on a match', () => {
-  it('is cached under power:drag and returns the same object; a fixture without velocity signals gives bands only for motors that log them', () => {
-    const match = analyzeFixture(FIXTURE).analyses[0].match
-    const a = buildDrag(match)
-    expect(buildDrag(match)).toBe(a)
+/** A 40 s log (enabled 2-38 s) with two motors of the 2026 offseason profile: the roller leader and the flywheel leader, both turning steadily. */
+function synthetic(flywheelConnected: 'boolean' | 'string') {
+  const t = Array.from({ length: 41 }, (_, i) => i)
+  const series = (name: string, v: (i: number) => number | boolean | string, type = 'double'): FixtureEntry => ({ name, type, records: t.map((i) => [i, v(i)]) })
+  const entries: FixtureEntry[] = [
+    series('/DriverStation/Enabled', (i) => i >= 2 && i < 38, 'boolean'),
+    series('/SystemStats/BatteryVoltage', () => 12),
+    series('/Intake/Roller Leader/VelocityRotsPerSec', () => 20),
+    series('/Intake/Roller Leader/StatorCurrentAmps', () => 6),
+    series('/Intake/Roller Leader/SupplyCurrentAmps', () => 3),
+    series('/Intake/Roller Leader/Connected', () => true, 'boolean'),
+    series('/Drum/Flywheel/Leader/VelocityRotPerSec', () => 40),
+    series('/Drum/Flywheel/Leader/StatorCurrentAmps', () => 20),
+    series('/Drum/Flywheel/Leader/SupplyCurrentAmps', () => 10),
+    flywheelConnected === 'boolean' ? series('/Drum/Flywheel/Leader/Connected', () => true, 'boolean') : series('/Drum/Flywheel/Leader/Connected', () => 'yes', 'string'),
+  ]
+  return analyzeFiles([{ name: 'synthetic.wpilog', bytes: writeWpilog(entries) }], offseason2026).analyses[0]
+}
+
+describe('buildDrag on a synthetic log', () => {
+  it('reads each motor with all three signals, and is cached under power:drag', () => {
+    const { match } = synthetic('boolean')
+    const d = buildDrag(match)
+    expect(d.map((x) => x.motor)).toEqual(['Flywheel leader', 'Intake roller leader'])
+    expect(d[1]).toMatchObject({ group: 'Intake rollers', unit: 'rot/s' })
+    expect(d[1].bands).toHaveLength(1)
+    expect(d[1].bands[0]).toMatchObject({ band: bandOf(20), amps: 6 })
+    expect(d[1].bands[0].seconds).toBeGreaterThan(30)
+    expect(buildDrag(match)).toBe(d)
     expect(match.cache.has('power:drag')).toBe(true)
-    for (const d of a) expect(d.bands.every((x) => x.seconds >= 2)).toBe(true)
+  })
+  it('skips a motor whose Connected key is a string-typed signal, and does not throw', () => {
+    const { match } = synthetic('string')
+    let d: ReturnType<typeof buildDrag> = []
+    expect(() => { d = buildDrag(match) }).not.toThrow()
+    expect(d.map((x) => x.motor)).toEqual(['Intake roller leader'])
+  })
+})
+
+describe('the Power tab\'s table, from a synthetic log (no team logs)', () => {
+  it('renders "Current at steady speed" with a motor row, its group, band and amps', async () => {
+    const analysis = synthetic('boolean')
+    const { render } = await import('svelte/server')
+    const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
+    const html = render(PowerTab, { props: { analysis } }).body
+    expect(html).toContain('Current at steady speed')
+    expect(html).toContain('Intake rollers')
+    expect(html).toContain('Intake roller leader')
+    expect(html).toContain('18–23 rot/s')
+    expect(html).toContain('6.0 A')
   })
 })
 
@@ -112,8 +183,8 @@ const DIR = teamPath(TEAM.event2026)
 const have = existsSync(DIR) && haveLogs
 if (!have) console.warn('SKIPPED the 2026 event part of drag.test.ts: list its folder (event2026) in tests/helpers/team-logs.ts')
 
-// The reference: the 2026 event's 8 logs, oldest first (practice, then the qualification matches in the order played), median
-// stator A / seconds per band, enabled and on CAN on both sides of the +-0.1 s window, steady, bands at powers of 1.25.
+// The reference: the 2026 event's 8 logs in file-name order, median stator A / seconds per band, enabled and on CAN on
+// both sides of the +-0.1 s window, steady, bands at powers of 1.25.
 // Rounded to 0.1 A and 1 s.
 const REFERENCE: Record<string, [number, number][]> = {
   'leader 18': [[5.0, 13], [5.7, 3], [6.1, 9], [4.9, 7], [5.8, 9], [8.6, 8], [4.4, 9], [8.2, 6]],
@@ -123,7 +194,7 @@ const REFERENCE: Record<string, [number, number][]> = {
 }
 
 describe.skipIf(!have)('drag on the 8 logs of the team\'s 2026 event', () => {
-  // The files sorted by name come out oldest first on this event (date-stamped names); a log is named here only by its place.
+  // A log is named here only by its place in the sorted list.
   const files = have ? readdirSync(DIR).sort().filter((f) => f.endsWith('.wpilog')) : []
   const drags = have ? files.map((f) => buildDrag(analyzeFiles([{ name: f, bytes: new Uint8Array(readFileSync(`${DIR}/${f}`)) }]).analyses[0].match)) : []
   const cell = (i: number, who: 'leader' | 'follower', band: 13 | 14) =>

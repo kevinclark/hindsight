@@ -4,11 +4,11 @@
  */
 import { RULES } from '../rules/index.ts'
 import { shortMatchLabel } from '../ui/match-label.ts'
-import type { MotorDrag } from '../power/drag.ts'
+import { bandText, type MotorDrag } from '../power/drag.ts'
 import type { MatchMetrics, MatchSummary } from './summary.ts'
 
 export interface TrendMetric {
-  /** A MatchMetrics field, or `drag:<motor name>` for a motor's current at a steady speed (unique per row). */
+  /** A MatchMetrics field, or `drag:<group>/<motor name>` for a motor's current at a steady speed (unique per row). */
   key: keyof MatchMetrics | `drag:${string}`
   label: string
   unit: string
@@ -203,11 +203,6 @@ export function trendRows(matches: MatchSummary[], unit: 'match' | 'log' = 'matc
   return [...sorted, ...dragRows(matches, labels, units)]
 }
 
-const bandText = (lo: number, hi: number, unit?: string) => {
-  const d = hi < 10 ? 1 : 0
-  return `${lo.toFixed(d)}–${hi.toFixed(d)}${unit ? ` ${unit}` : ''}`
-}
-
 /**
  * One row per motor: its median stator current at a steady speed, in the speed band present in the most matches
  * (a tie: the band with the most seconds in all), one cell per match, empty where the match lacks that band. No line:
@@ -216,11 +211,12 @@ const bandText = (lo: number, hi: number, unit?: string) => {
  * Motors in profile order (first seen), so a leader and its followers sit together.
  */
 function dragRows(matches: MatchSummary[], labels: string[], units: string): TrendRow[] {
+  const dragOf = (mt: MatchSummary): MotorDrag[] => (Array.isArray(mt.metrics.drag) ? mt.metrics.drag : [])
   const motors: { motor: string; group: string; unit?: string }[] = []
-  for (const mt of matches) for (const d of mt.metrics.drag ?? []) if (!motors.some((x) => x.motor === d.motor)) motors.push({ motor: d.motor, group: d.group, unit: d.unit })
+  for (const mt of matches) for (const d of dragOf(mt)) if (!motors.some((x) => x.motor === d.motor && x.group === d.group)) motors.push({ motor: d.motor, group: d.group, unit: d.unit })
   const rows: TrendRow[] = []
   for (const mo of motors) {
-    const mine = matches.map((mt): MotorDrag | undefined => mt.metrics.drag?.find((d) => d.motor === mo.motor))
+    const mine = matches.map((mt): MotorDrag | undefined => dragOf(mt).find((d) => d.motor === mo.motor && d.group === mo.group))
     const tally = new Map<number, { matches: number; seconds: number; lo: number; hi: number }>()
     for (const d of mine) for (const b of d?.bands ?? []) {
       const t = tally.get(b.band) ?? { matches: 0, seconds: 0, lo: b.lo, hi: b.hi }
@@ -236,14 +232,14 @@ function dragRows(matches: MatchSummary[], labels: string[], units: string): Tre
     const high = filled.reduce((a, b) => (b.v > a.v ? b : a))
     const low = filled.reduce((a, b) => (b.v < a.v ? b : a))
     const metric: TrendMetric = {
-      key: `drag:${mo.motor}`, label: `${mo.motor}: current at steady speed`, unit: 'A', digits: 1,
+      key: `drag:${mo.group}/${mo.motor}`, label: `${mo.motor}: current at steady speed`, unit: 'A', digits: 1,
       sub: `at ${bandText(t.lo, t.hi, mo.unit)}`,
     }
     rows.push({
       metric, values, lines: matches.map(() => null), line: null, lineVaries: false, labels,
       n: filled.length, total: matches.length, past: matches.map(() => false), pastCount: 0,
       worstIndex: high.i, worstWord: 'highest', lowestIndex: low.i === high.i || low.v === high.v ? null : low.i,
-      latest: filled[filled.length - 1].v, latestIsWorst: false,
+      latest: values[values.length - 1], latestIsWorst: false,
       verdict: `No line: ${format(low.v, 1)} to ${format(high.v, 1)} A in ${filled.length} of ${matches.length} ${units}`, verdict2: '',
       next: { text: 'No rule for this number', source: 'no-rule', ruleId: null }, pastRatio: null, sortKey: 4000,
     })
