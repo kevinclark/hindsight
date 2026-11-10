@@ -4,7 +4,7 @@
   import { powerReport, whatIfAt } from '../power/power-report.ts'
   import { buildPowerGrid, DT } from '../power/battery-model.ts'
   import { bandText, buildDrag } from '../power/drag.ts'
-  import { buildBreakdown, OTHER_STATES } from '../power/breakdown.ts'
+  import { buildBreakdown, hasStates } from '../power/breakdown.ts'
   import { buildSagSpans, type Load } from '../power/sag-spans.ts'
   import { FLEET_REFERENCE } from '../power/fleet-reference.ts'
   import { downsample } from '../report/findings-json.ts'
@@ -35,8 +35,7 @@
   /** The groups whose state rows are open (collapsed by default). */
   let open = $state<string[]>([])
   const toggle = (name: string) => { open = open.includes(name) ? open.filter((x) => x !== name) : [...open, name] }
-  /** A group whose only state row is the fold of tiny ones has nothing to open. */
-  const hasStates = (r: { states: { name: string }[] }) => r.states.some((s) => s.name !== OTHER_STATES)
+  const anyToggle = $derived(!!breakdown?.rows.some(hasStates))
   const wh1 = (x: number) => x.toFixed(1)
   const pct = (x: number, total: number) => (total > 0 ? `${((100 * x) / total).toFixed(0)} %` : '—')
   const a0 = (x: number | null) => (x === null ? '—' : x.toFixed(1))
@@ -68,8 +67,9 @@
   const voltagePlot = $derived<PlotModel | null>(g && p ? {
     from, to, unit: 'V', series: [gridSeries('Battery voltage', g.volts)],
     threshold: Number.isFinite(p.brownoutVolts) ? { value: p.brownoutVolts, label: `brownout ${p.brownoutVolts} V` } : undefined,
-    // Stretches under the margin line shade as spans; the lowest-points fallback keeps one marker per point.
-    spans: stretches ? sagSpans!.spans.map((x) => ({ from: x.start, to: x.end })) : undefined,
+    // Every stretch under the margin line shades as a span (not only the table's deepest 8); the lowest-points fallback keeps one marker per point.
+    spans: stretches ? sagSpans!.allSpans.map((x) => ({ from: x.start, to: x.end })) : undefined,
+    spanLabel: stretches ? `shaded: under ${lineText} V` : undefined,
     markers: stretches ? undefined : p.sags.map((s) => ({ t: s.t, label: '' })), matchStart: m.matchStart,
   } : null)
   const currentPlot = $derived<PlotModel | null>(g ? {
@@ -102,7 +102,10 @@
     <span class="note" role="status" aria-live="polite">{#if copied === 'yes'}Copied: paste it into Slack.{:else if copied === 'no'}Couldn't copy: the browser would not allow it.{/if}</span>
   </p>
 
-  {#if breakdown}
+  {#if breakdown && breakdown.enabledSeconds === 0}
+    <h3>Where the power went</h3>
+    <p class="note">The robot was never enabled in this log, so there is no energy to split.</p>
+  {:else if breakdown}
     <h3>Where the power went</h3>
     <table class="breakdown">
       <thead><tr><th>Group</th><th>Energy (Wh)</th><th>Share</th><th>Running (s)</th><th>P50 / P90 / P99 (A)</th><th>Peak (A)</th></tr></thead>
@@ -112,14 +115,14 @@
             <th scope="row">
               {#if hasStates(r)}<button type="button" class="tog" aria-expanded={open.includes(r.name)} aria-label="States of {r.name}" onclick={() => toggle(r.name)}>{open.includes(r.name) ? '▾' : '▸'}</button>{:else}<span class="tog-gap"></span>{/if}{r.name}
             </th>
-            <td><span class="bar" aria-hidden="true" style:width="{(5 * r.wh) / maxWh}rem"></span>{wh1(r.wh)}</td>
+            <td class="wh"><span class="track"><span class="bar" aria-hidden="true" style:width="{(5 * r.wh) / maxWh}rem"></span></span><span class="num">{wh1(r.wh)}</span></td>
             <td>{pct(r.wh, breakdown.totalWh)}</td><td>{secs(r.runningSeconds)}</td><td>{spread(r)}</td><td>{a0(r.peak)}</td>
           </tr>
           {#if open.includes(r.name)}
             {#each r.states as s (s.name)}
               <tr class="state">
                 <th scope="row" class="ind">{s.name}</th>
-                <td><span class="bar sub" aria-hidden="true" style:width="{(5 * s.wh) / maxWh}rem"></span>{wh1(s.wh)}</td>
+                <td class="wh"><span class="track"><span class="bar sub" aria-hidden="true" style:width="{(5 * s.wh) / maxWh}rem"></span></span><span class="num">{wh1(s.wh)}</span></td>
                 <td>{pct(s.wh, breakdown.totalWh)}</td><td>{secs(s.runningSeconds)}</td><td>{spread(s)}</td><td>{a0(s.peak)}</td>
               </tr>
             {/each}
@@ -127,8 +130,8 @@
         {/each}
       </tbody>
     </table>
-    <p class="note">Energy is supply current × battery voltage while enabled ({breakdown.enabledSeconds.toFixed(0)} s, {wh1(breakdown.totalWh)} Wh in all). A group is running above {breakdown.runningAmps} A (an assumed line). {#if breakdown.measured}The whole-robot row is a measured total; the log has no motor currents.{:else}Everything not on a motor controller is {breakdown.otherLoadsAmps} A, assumed.{/if}
-      {#if breakdown.stateNote}{breakdown.stateNote}{:else}Open a group to see the robot states it drew in; states with under 1 s of running are folded into "Other states".{/if}</p>
+    <p class="note">Energy is supply current × battery voltage while enabled ({breakdown.enabledSeconds.toFixed(0)} s, {wh1(breakdown.totalWh)} Wh in all). A group's currents are its motors added together (Drive's P90 is all its motors at once, not one motor against a per-motor limit). Share is the share of the whole match's energy, state rows too. A group is running above {breakdown.runningAmps} A (an assumed line). {#if breakdown.measured}The whole-robot row is a measured total; the log has no motor currents.{:else}Everything not on a motor controller is {breakdown.otherLoadsAmps} A, assumed.{/if}
+      {#if breakdown.stateNote}{breakdown.stateNote}{:else if anyToggle}Open a group to see the robot states it drew in; states with under 1 s of running are folded into "Other states".{/if}</p>
   {/if}
 
   <h3>Voltage and current over the match</h3>
@@ -141,17 +144,17 @@
   {/if}
 
   {#if sagSpans && stretches}
-    <h3>The {sagSpans.spans.length} deepest sags under {lineText} V, and what was drawing</h3>
+    <h3>{sagSpans.spans.length === 1 ? 'The deepest sag' : `The ${sagSpans.spans.length} deepest sags`} under {lineText} V, and what was drawing</h3>
     {#if sagSpans.totalSpans > sagSpans.spans.length}
-      <p class="note">{sagSpans.totalSpans} stretches under {lineText} V, {sagSpans.secondsUnderLine.toFixed(1)} s in all; the {sagSpans.spans.length} deepest:</p>
+      <p class="note">{sagSpans.totalSpans} stretches under {lineText} V, {sagSpans.secondsUnderLine.toFixed(1)} s under it in all; the {sagSpans.spans.length} deepest:</p>
     {/if}
     <table class="sags">
-      <thead><tr><th>When</th><th>Length</th><th>Lowest</th><th>State</th><th>At lowest</th><th>During</th><th>Before</th></tr></thead>
+      <thead><tr><th>When</th><th>Length</th><th>Lowest</th><th>State</th><th>Total at lowest</th><th>At lowest</th><th>During</th><th>Before</th></tr></thead>
       <tbody>
         {#each sagSpans.spans as s (s.start)}
           <tr>
-            <td>{matchWhen(m, s.start)}</td><td>{s.seconds.toFixed(2)} s</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart ?? '—'}</td>
-            <td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.during)}<small>{rest2(s.during)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
+            <td>{matchWhen(m, s.start)}</td><td>{s.secondsUnder.toFixed(2)} s{#if s.seconds - s.secondsUnder >= 0.05 - 1e-9}<small>over {s.seconds.toFixed(2)} s</small>{/if}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
+            <td>{s.totalAmpsAtLowest.toFixed(0)} A</td><td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.during)}<small>{rest2(s.during)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
           </tr>
         {/each}
       </tbody>
@@ -161,12 +164,12 @@
     <h3>The {sagSpans.spans.length} deepest sags, and what was drawing</h3>
     <p class="note">{sagSpans.reason}</p>
     <table class="sags">
-      <thead><tr><th>When</th><th>Lowest</th><th>State</th><th>At lowest</th><th>Before</th></tr></thead>
+      <thead><tr><th>When</th><th>Lowest</th><th>State</th><th>Total at lowest</th><th>At lowest</th><th>Before</th></tr></thead>
       <tbody>
         {#each sagSpans.spans as s (s.lowestAt)}
           <tr>
-            <td>{matchWhen(m, s.lowestAt)}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart ?? '—'}</td>
-            <td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
+            <td>{matchWhen(m, s.lowestAt)}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
+            <td>{s.totalAmpsAtLowest.toFixed(0)} A</td><td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
           </tr>
         {/each}
       </tbody>
@@ -250,11 +253,14 @@
   tr.group th { color: var(--muted); font-size: 0.75rem; padding-top: 0.5rem; }
   .sags td small { display: block; color: var(--muted); font-size: 0.75rem; }
   .hl { background: var(--hover); }
-  .breakdown td, .breakdown th { white-space: nowrap; }
+  .breakdown td, .breakdown th { white-space: nowrap; vertical-align: middle; }
+  .breakdown td.wh { font-variant-numeric: tabular-nums; }
   .breakdown tr.grp th { font-weight: normal; }
   .breakdown th.ind { padding-left: 2rem; color: var(--muted); }
   .breakdown tr.state td { color: var(--muted); }
-  .bar { display: inline-block; height: 0.6rem; background: var(--series-1, var(--focus)); margin-right: 0.5rem; vertical-align: baseline; }
+  /* A fixed-width track holds each bar, so every Wh number starts at the same x (Tufte: aligned columns compare). */
+  .track { display: inline-block; width: 5rem; margin-right: 0.5rem; vertical-align: middle; }
+  .bar { display: inline-block; height: 0.6rem; background: var(--series-1, var(--focus)); vertical-align: middle; }
   .bar.sub { opacity: 0.6; }
   /* Controls at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, minimum). */
   .tog { min-width: 24px; min-height: 24px; padding: 0; margin: 0 0.25rem 0 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; }

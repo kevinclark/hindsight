@@ -95,9 +95,9 @@ function sagSpansJson(match: Match) {
   const round = (x: number, d: number) => +x.toFixed(d)
   const load = (l: { group: string; amps: number }[] | null) => l && l.map((x) => ({ group: x.group, amps: round(x.amps, 1) }))
   return {
-    line: Number.isFinite(r.line) ? r.line : null, mode: r.mode, reason: r.reason, totalSpans: r.totalSpans, secondsUnderLine: round(r.secondsUnderLine, 2),
+    line: Number.isFinite(r.line) ? round(r.line, 2) : null, mode: r.mode, reason: r.reason, totalSpans: r.totalSpans, secondsUnderLine: round(r.secondsUnderLine, 2),
     spans: r.spans.map((s) => ({
-      start: round(s.start, 2), end: round(s.end, 2), seconds: round(s.seconds, 2), lowestVolts: round(s.lowestVolts, 2), lowestAt: round(s.lowestAt, 2),
+      start: round(s.start, 2), end: round(s.end, 2), seconds: round(s.seconds, 2), secondsUnder: round(s.secondsUnder, 2), totalAmpsAtLowest: round(s.totalAmpsAtLowest, 0), lowestVolts: round(s.lowestVolts, 2), lowestAt: round(s.lowestAt, 2),
       stateAtStart: s.stateAtStart, atLowest: load(s.atLowest), during: load(s.during), before: load(s.before),
     })),
   }
@@ -112,7 +112,8 @@ function breakdownJson(match: Match) {
     wh: r(x.wh, 3), runningSeconds: r(x.runningSeconds, 2), p50Amps: r(x.p50, 1), p90Amps: r(x.p90, 1), p99Amps: r(x.p99, 1), peakAmps: r(x.peak, 1),
   })
   return {
-    note: `Wh = supply current × battery voltage over enabled time; running = above ${b.runningAmps} A (assumed); other loads ${b.otherLoadsAmps} A (assumed).`,
+    note: `Wh = supply current × battery voltage over enabled time; running = above ${b.runningAmps} A (assumed)${b.measured ? '; the one row is a measured total.' : `; other loads ${b.otherLoadsAmps} A (assumed).`}`,
+    measured: b.measured,
     totalWh: r(b.totalWh, 3), enabledSeconds: r(b.enabledSeconds, 2), stateNote: b.stateNote,
     rows: b.rows.map((row) => ({ name: row.name, ...stats(row), states: row.states.map((s) => ({ state: s.name, ...stats(s) })) })),
   }
