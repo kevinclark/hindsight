@@ -181,7 +181,112 @@ describe.skipIf(!have)('trendRows on the 8 logs of the team\'s 2026 event', () =
       if (mt.rules['mech/follower-mismatch'].status !== 'fired') expect(row(rows, 'followerSecondsOff').values[i]!).toBeLessThan(1)
     })
   })
+  it('adds a current-at-steady-speed row per motor: the rollers\' band holds 8 cells, the dead follower reads low and the dragging pair high', () => {
+    const drag = rows.filter((r) => String(r.metric.key).startsWith('drag:'))
+    // Four flywheel motors and two rollers, in profile order, after the seven others
+    expect(rows.slice(7)).toEqual(drag)
+    expect(drag.map((r) => r.metric.key)).toEqual(['drag:Flywheel/Flywheel leader', 'drag:Flywheel/Flywheel follower 16', 'drag:Flywheel/Flywheel follower 17', 'drag:Flywheel/Flywheel follower 18', 'drag:Intake rollers/Intake roller leader', 'drag:Intake rollers/Intake roller follower'])
+    const leader = drag[4], follower = drag[5]
+    expect(leader.metric.sub).toBe('at 23–28 rot/s')
+    expect([leader.n, follower.n]).toEqual([8, 8])
+    expect(follower.worstIndex).toBe(7)
+    expect(follower.lowestIndex).toBe(5)
+    expect(leader.worstIndex).toBe(5)
+    expect(leader.lowestIndex).toBe(6)
+    // Every row that is shown has 3 or more cells
+    expect(drag.every((r) => r.n >= 3)).toBe(true)
+  })
   it('draws the line from each log\'s brownout setting: 6.0 V + 1.0 V = 7 V', () => {
     expect(row(rows, 'minVolts').lines).toEqual(Array(8).fill(7))
+  })
+})
+
+// A motor's current at a steady speed: one row per motor, after the others (src/session/trends.ts dragRows).
+describe('trendRows: current at steady speed', () => {
+  const band = (b: number, amps: number, seconds = 5) => ({ band: b, lo: 1.25 ** b, hi: 1.25 ** (b + 1), amps, seconds })
+  const mo = (motor: string, group: string, bands: ReturnType<typeof band>[]) => ({ motor, group, unit: 'rot/s', bands })
+  const withDrag = (n: number, drag: ReturnType<typeof mo>[]) => m(n, {}, { metrics: { ...BLANK, drag } } as never)
+  const dragRowsOf = (rows: TrendRow[]) => rows.filter((r) => String(r.metric.key).startsWith('drag:'))
+
+  it('puts one row per motor after the existing rows, leader and follower adjacent, keyed drag:<motor>', () => {
+    const ms = [1, 2, 3].map((n) => withDrag(n, [mo('Roller leader', 'Rollers', [band(13, 5 + n)]), mo('Roller follower', 'Rollers', [band(13, 6 + n)]), mo('Other', 'X', [band(5, 2)])]))
+    const rows = trendRows(ms)
+    expect(rows.slice(0, 7).map((r) => r.metric.key)).not.toContain('drag:Rollers/Roller leader')
+    expect(rows.slice(7).map((r) => r.metric.key)).toEqual(['drag:Rollers/Roller leader', 'drag:Rollers/Roller follower', 'drag:X/Other'])
+    expect(new Set(rows.map((r) => r.metric.key)).size).toBe(rows.length)
+    const r = rows[7]
+    expect(r.metric).toMatchObject({ label: 'Roller leader: current at steady speed', unit: 'A', sub: 'at 18–23 rot/s' })
+    expect(r.values).toEqual([6, 7, 8])
+    expect(r.line).toBeNull()
+    expect(r.pastCount).toBe(0)
+  })
+  it('compares the band present in the most matches, ties to the band with the most seconds', () => {
+    const a = (bands: ReturnType<typeof band>[]) => [mo('M', 'G', bands)]
+    // band 13 in 3 matches, band 14 in 2: band 13
+    let rows = dragRowsOf(trendRows([withDrag(1, a([band(13, 5), band(14, 8)])), withDrag(2, a([band(13, 6), band(14, 9)])), withDrag(3, a([band(13, 7)])), withDrag(4, a([]))]))
+    expect(rows[0].values).toEqual([5, 6, 7, null])
+    // 3 matches each: the band with more seconds wins
+    rows = dragRowsOf(trendRows([1, 2, 3, 4, 5, 6].map((n) => withDrag(n, a(n <= 3 ? [band(13, n, 4)] : [band(14, 20 + n, 9)])))))
+    expect(rows[0].values).toEqual([null, null, null, 24, 25, 26])
+    expect(rows[0].metric.sub).toBe('at 23–28 rot/s')
+  })
+  it('marks both the highest and the lowest cell, and computes worst, latest and the verdict range over filled cells only', () => {
+    const a = (amps: number | null) => [mo('F', 'G', amps === null ? [] : [band(13, amps)])]
+    const ms = [withDrag(1, a(5.9)), withDrag(2, a(1.0)), withDrag(3, a(null)), withDrag(4, a(9.1)), withDrag(5, a(6.5)), withDrag(6, a(null))]
+    const r = dragRowsOf(trendRows(ms))[0]
+    expect(r.values).toEqual([5.9, 1.0, null, 9.1, 6.5, null])
+    expect(r.worstIndex).toBe(3)
+    expect(r.worstWord).toBe('highest')
+    expect(r.lowestIndex).toBe(1)
+    expect(r.latest).toBeNull() // the last match has no steady run in the band
+    expect(r.n).toBe(4)
+    expect(r.verdict).toBe('No line: 1.0 to 9.1 A in 4 of 6 matches')
+  })
+  it('keeps two same-named motors in different groups as separate rows', () => {
+    const ms = [1, 2, 3].map((n) => withDrag(n, [mo('M', 'G1', [band(13, n)]), mo('M', 'G2', [band(13, 10 + n)])]))
+    const rows = dragRowsOf(trendRows(ms))
+    expect(rows.map((r) => r.metric.key)).toEqual(['drag:G1/M', 'drag:G2/M'])
+    expect(rows.map((r) => r.values)).toEqual([[1, 2, 3], [11, 12, 13]])
+  })
+  it('skips a summary whose drag is not an array (a malformed event line), without throwing', () => {
+    const a = (amps: number) => [mo('M', 'G', [band(13, amps)])]
+    const ms = [withDrag(1, a(5)), withDrag(2, a(6)), withDrag(3, a(7)), withDrag(4, null as never), withDrag(5, { motor: 'M' } as never)]
+    const rows = dragRowsOf(trendRows(ms))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].values).toEqual([5, 6, 7, null, null])
+  })
+  it('says "the log\'s own speed unit" in the band line when the motor\'s unit is unknown, and "no steady run" for an empty latest cell in Trends.svelte', async () => {
+    const noUnit = (amps: number | null) => [{ motor: 'M', group: 'G', bands: amps === null ? [] : [band(16, amps)] }]
+    const ms = [5, 6, 7, null].map((v) => withDrag(1, noUnit(v) as never))
+    ms.forEach((x, i) => { (x as { fileName: string }).fileName = `q${i + 1}.wpilog` })
+    const r = dragRowsOf(trendRows(ms))[0]
+    expect(r.metric.sub).toBe("at 36–44 (the log's own speed unit)")
+    const { render } = await import('svelte/server')
+    const { default: Trends } = await import('../src/ui/Trends.svelte')
+    const html = render(Trends, { props: { matches: ms, typedBatteries: {} } }).body
+    expect(html).toContain('no steady run')
+    expect(html).not.toContain('not logged')
+  })
+  it('shows a motor only with 3 or more filled cells', () => {
+    const a = (amps: number) => [mo('M', 'G', [band(13, amps)])]
+    expect(dragRowsOf(trendRows([withDrag(1, a(5)), withDrag(2, a(6))]))).toHaveLength(0)
+    expect(dragRowsOf(trendRows([withDrag(1, a(5)), withDrag(2, a(6)), withDrag(3, a(7))]))).toHaveLength(1)
+    // 3 matches that have the motor, but never the same band: no band reaches 3
+    expect(dragRowsOf(trendRows([withDrag(1, [mo('M', 'G', [band(12, 5)])]), withDrag(2, [mo('M', 'G', [band(13, 5)])]), withDrag(3, [mo('M', 'G', [band(14, 5)])])]))).toHaveLength(0)
+  })
+  it('renders the rows in Trends.svelte: the band under the label, and the lowest cell beside the highest', async () => {
+    const a = (amps: number) => [mo('F', 'G', [band(13, amps)])]
+    const ms = [withDrag(1, a(5.9)), withDrag(2, a(1.0)), withDrag(3, a(9.1)), withDrag(4, a(6.5))]
+    const { render } = await import('svelte/server')
+    const { default: Trends } = await import('../src/ui/Trends.svelte')
+    const html = render(Trends, { props: { matches: ms, typedBatteries: {} } }).body
+    expect(html).toContain('F: current at steady speed')
+    expect(html).toContain('at 18–23 rot/s')
+    expect(html).toContain('highest: ')
+    expect(html).toMatch(/lowest: [\s\S]*Q2[\s\S]*1\.0 A/)
+    expect(html).toMatch(/Q3[\s\S]*9\.1 A/)
+  })
+  it('has no drag rows for matches saved without drag', () => {
+    expect(dragRowsOf(trendRows([m(1, {}), m(2, {}), m(3, {})]))).toHaveLength(0)
   })
 })

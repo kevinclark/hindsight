@@ -13,6 +13,7 @@ import { isUncommitted } from '../match/git-dirty.ts'
 import { MatchView } from '../rules/view.ts'
 import { worstFollowerSecondsOff } from '../rules/mech/follower-trace.ts'
 import { powerReport } from '../power/power-report.ts'
+import { buildDrag, type MotorDrag } from '../power/drag.ts'
 import { RULES, type Report } from '../rules/index.ts'
 import type { Finding } from '../rules/types.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
@@ -114,6 +115,11 @@ export interface MatchMetrics {
   loopOverrunPct: number | null
   /** Share of accepted vision poses more than 0.5 m from odometry, worst camera, %. */
   visionOutlierPct: number | null
+  /**
+   * Each motor's median stator current at a steady speed, per speed band (src/power/drag.ts). Optional, so a summary
+   * saved before it shows as before; Session -> Trends compares one band across matches.
+   */
+  drag?: MotorDrag[]
 }
 
 /**
@@ -259,6 +265,7 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
       brownoutVolts: lowest?.metrics.brownoutVolts ?? null,
       loopOverrunPct: pick('loopOverrunPct', (xs) => Math.max(...xs)),
       visionOutlierPct: pick('visionOutlierPct', (xs) => Math.max(...xs)),
+      ...(pieces.some((p) => p.metrics.drag?.length) ? { drag: joinDrag(pieces.map((p) => p.metrics.drag ?? [])) } : {}),
     },
     timing: { parseMs: sum(pieces.map((p) => p.timing.parseMs)), rulesMs: sum(pieces.map((p) => p.timing.rulesMs)) },
     problems: pieces.flatMap((p) => p.problems),
@@ -272,8 +279,36 @@ export function joinPieces(pieces: MatchSummary[]): MatchSummary {
   }
 }
 
+/**
+ * One match recorded in several logs: per motor (by group and name) and band, the seconds added and the amps the
+ * seconds-weighted mean of the pieces' medians (a median of medians would weigh a 2 s piece like a 60 s one; the
+ * pieces' samples are gone). A band under 2 s in every piece is lost even when the pieces together pass 2 s: bands
+ * under 2 s are never stored.
+ */
+export function joinDrag(pieces: MotorDrag[][]): MotorDrag[] {
+  const motors = new Map<string, MotorDrag & { sums: Map<number, { band: MotorDrag['bands'][number]; ampSeconds: number; seconds: number }> }>()
+  for (const piece of pieces) {
+    for (const d of piece) {
+      const id = `${d.group}/${d.motor}`
+      let m = motors.get(id)
+      if (!m) motors.set(id, (m = { motor: d.motor, group: d.group, ...(d.unit ? { unit: d.unit } : {}), bands: [], sums: new Map() }))
+      for (const b of d.bands) {
+        const sum = m.sums.get(b.band) ?? { band: b, ampSeconds: 0, seconds: 0 }
+        sum.ampSeconds += b.amps * b.seconds
+        sum.seconds += b.seconds
+        m.sums.set(b.band, sum)
+      }
+    }
+  }
+  return [...motors.values()].map(({ sums, ...m }) => ({
+    ...m,
+    bands: [...sums.values()].sort((a, b) => a.band.band - b.band.band).map((x) => ({ ...x.band, amps: x.ampSeconds / x.seconds, seconds: x.seconds })),
+  }))
+}
+
 function metrics(match: Match): MatchMetrics {
   const p = powerReport(match)
+  const drag = buildDrag(match)
   return {
     minVolts: p && Number.isFinite(p.minVolts) ? p.minVolts : null,
     secondsUnder7: p ? p.secondsUnder7 : null,
@@ -283,6 +318,7 @@ function metrics(match: Match): MatchMetrics {
     brownoutVolts: p && Number.isFinite(p.brownoutVolts) ? p.brownoutVolts : null,
     loopOverrunPct: loopOverrun(match),
     visionOutlierPct: visionOutliers(match),
+    ...(drag.some((d) => d.bands.length) ? { drag } : {}),
   }
 }
 

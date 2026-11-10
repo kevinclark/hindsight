@@ -110,6 +110,16 @@ describe('session trends', () => {
     expect(volts.lineY!).toBeGreaterThan(volts.points[0].y)
     expect(t.panels.find((p) => p.key === 'visionOutlierPct')).toMatchObject({ points: [], range: 'not in these logs', verdict: 'not in these logs' })
   })
+  it('a motor\'s current row prints with its band, and marks the highest and the lowest cell', () => {
+    const band = { band: 13, lo: 1.25 ** 13, hi: 1.25 ** 14, seconds: 5 }
+    const ms = [5.9, 1.0, 9.1, 6.5].map((amps, i) => match(i + 1, [], { metrics: { ...METRICS, drag: [{ motor: 'Follower', group: 'G', unit: 'rot/s', bands: [{ ...band, amps }] }] } } as never))
+    const t = trendsModel(ms)
+    const p = t.panels.find((x) => x.key === 'drag:G/Follower')!
+    expect(p).toMatchObject({ label: 'Follower: current at steady speed', unit: 'A', sub: 'at 18–23 rot/s', range: '1.0–9.1' })
+    expect(p.points.filter((x) => x.worst).map((x) => x.value)).toEqual([9.1])
+    expect(p.points.filter((x) => x.lowest).map((x) => x.value)).toEqual([1.0])
+    expect(t.panels.map((x) => x.key)).toEqual(trendRows(ms).map((r) => r.metric.key))
+  })
   it('batteries get a letter each, so identity never rests on colour; matches with none get no letter', () => {
     const t = trendsModel([match(1, [], { batteryId: 'B-17' }), match(2, [], { batteryId: 'B-02' }), match(3, [], { batteryId: 'B-17' }), match(4, [])], { 'q4.wpilog': '' })
     expect(t.batteries).toEqual([{ letter: 'A', id: 'B-17' }, { letter: 'B', id: 'B-02' }])
