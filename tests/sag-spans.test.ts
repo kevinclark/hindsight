@@ -318,6 +318,12 @@ describe('review fixes: time under the line, merging, lowest point, wording, plo
     expect(sp.spans[0]).toMatchObject({ seconds: 0.36, secondsUnder: 0.12 })
     expect(sp.secondsUnderLine).toBe(0.12)
   })
+  it('1. at a 7 V line with no run shorter than 0.04 s, secondsUnderLine equals the KPI', () => {
+    const { match, g } = quiet()
+    dip(g, 200, 3); dip(g, 215, 3); dip(g, 400, 5)
+    redo(match)
+    expect(buildSagSpans(match)!.secondsUnderLine).toBeCloseTo(powerReport(match)!.secondsUnder7, 9)
+  })
   it('2. never merges across a disabled sample, even 1 sample (0.02 s) apart', () => {
     const { match, g } = quiet()
     dip(g, 300, 5); dip(g, 306, 5)
@@ -399,7 +405,7 @@ describe('review fixes: time under the line, merging, lowest point, wording, plo
     const html = render(PowerTab, { props: { analysis } }).body
     expect(html).toContain('The deepest sag under 7 V, and what was drawing')
     expect(html).not.toMatch(/The 1 deepest/)
-    expect(html).toMatch(/<td>—<\/td>/)
+    expect(html).toMatch(/<td[^>]*>—<\/td>/)
   })
 })
 
@@ -431,8 +437,20 @@ describe.skipIf(!have)('sag stretches in the 8 logs of the team\'s 2026 event, a
       ...rows.map((r, i) => `log ${i}: secondsUnderLine ${r.under.toFixed(2)} vs KPI secondsUnder7 ${r.kpi.toFixed(2)}`),
       `all | | ${sum('total')} | ${sum('shown')} | ${sum('beforeNeLowest')} | ${sum('beforeNeDuring')}`].join('\n'))
   })
-  it('secondsUnderLine equals the Time under 7 V KPI within one sample in every log', () => {
-    rows.forEach((r, i) => { if (r.under > 0) expect(Math.abs(r.under - r.kpi), `log ${i}`).toBeLessThanOrEqual(DT + 1e-9) })
+  it('secondsUnderLine plus the under-7 V time outside every stretch (runs shorter than 0.04 s, dropped by design) is the Time under 7 V KPI, in every log', () => {
+    const per = files.map((f) => {
+      const m = analyzeFiles([{ name: f, bytes: new Uint8Array(readFileSync(`${DIR}/${f}`)) }]).analyses[0].match
+      const g = buildPowerGrid(m)!
+      const r = buildSagSpans(m)!
+      let outside = 0
+      for (let i = 0; i < g.t.length; i++) {
+        const u = g.enabled[i] === 1 && Number.isFinite(g.volts[i]) && g.volts[i] > 0 && g.volts[i] < 7
+        if (u && !r.allSpans.some((x) => g.t[i] >= x.start - 1e-9 && g.t[i] < x.end - 1e-9)) outside++
+      }
+      return { under: r.secondsUnderLine, outside: outside * DT, kpi: powerReport(m)!.secondsUnder7 }
+    })
+    per.forEach((r, i) => expect(r.under + r.outside, `log ${i}`).toBeCloseTo(r.kpi, 6))
+    per.forEach((r, i) => expect(r.under, `log ${i}`).toBeLessThanOrEqual(r.kpi + 1e-9))
   })
   it('uses the 7.0 V line in every log', () => rows.forEach((r, i) => expect(r.line, `log ${i}`).toBe(7)))
   it('finds 53 spans in all before the cap (within 2)', () => expect(Math.abs(sum('total') - 53)).toBeLessThanOrEqual(2))

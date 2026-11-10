@@ -29,10 +29,14 @@ export interface SagSpan {
   start: number
   /** Robot time just past the last sample under the line (start + seconds), s. */
   end: number
-  /** Length of the stretch, from its first sample to its last; 0 for a point in the fallback. */
+  /** Length of the stretch, from its first sample to its last (merged gaps included); 0 for a point in the fallback. */
   seconds: number
+  /** Time within the stretch spent under the line (the samples that pass the under test); 0 in the fallback. */
+  secondsUnder: number
   lowestVolts: number
   lowestAt: number
+  /** Total current (g.amps, A) at the lowest sample. */
+  totalAmpsAtLowest: number
   /** The robot state at `start` (hold-last); null when there is no state signal or no value yet. */
   stateAtStart: string | null
   atLowest: Load[]
@@ -51,8 +55,11 @@ export interface SagSpans {
   reason: string | null
   /** Deepest first, at most SPAN_CAP. */
   spans: SagSpan[]
+  /** Every stretch, deepest first, with no cap (empty in the fallback); the plot shades all of them. */
+  allSpans: SagSpan[]
   /** Counts before the cap (0 in the fallback, which has no stretches). */
   totalSpans: number
+  /** Time under the line while enabled: the sum of every stretch's `secondsUnder`. */
   secondsUnderLine: number
 }
 
@@ -69,36 +76,28 @@ export function buildSagSpans(match: Match): SagSpans | null {
   return out
 }
 
-/** The line, and every stretch under it, deepest first, with no cap and no fallback. Null without a power grid. */
-export function sagSpansUncapped(match: Match): { line: number; spans: SagSpan[] } | null {
-  const g = buildPowerGrid(match)
-  const p = powerReport(match)
-  if (!g || !p) return null
-  const line = p.brownoutVolts + match.profile.power.marginVolts
-  return { line, spans: Number.isFinite(line) ? findSpans(match, g, line) : [] }
-}
-
 function compute(match: Match): SagSpans | null {
   const g = buildPowerGrid(match)
   const p = powerReport(match)
   if (!g || !p) return null
-  const { line, spans } = sagSpansUncapped(match)!
+  const line = p.brownoutVolts + match.profile.power.marginVolts
+  const spans = Number.isFinite(line) ? findSpans(match, g, line) : []
   if (spans.length) {
     return {
-      line, mode: 'stretches', reason: null, spans: spans.slice(0, SPAN_CAP),
-      totalSpans: spans.length, secondsUnderLine: spans.reduce((s, x) => s + x.seconds, 0),
+      line, mode: 'stretches', reason: null, spans: spans.slice(0, SPAN_CAP), allSpans: spans,
+      totalSpans: spans.length, secondsUnderLine: spans.reduce((s, x) => s + x.secondsUnder, 0),
     }
   }
   const state = stateReader(match)
   const reason = Number.isFinite(line)
-    ? `This match never went under ${line} V while enabled, so these are its lowest points.`
+    ? `This match never stayed under ${+line.toFixed(2)} V for ${MIN_SPAN_S} s while enabled, so these are its lowest points.`
     : 'This log has no brownout setting, so there is no line to measure stretches against; these are the lowest points.'
   return {
-    line, mode: 'lowest-points', reason, totalSpans: 0, secondsUnderLine: 0,
+    line, mode: 'lowest-points', reason, allSpans: [], totalSpans: 0, secondsUnderLine: 0,
     spans: p.sags.map((s) => {
       const i = Math.max(0, Math.min(g.t.length - 1, Math.round((s.t - g.t[0]) / DT)))
       return {
-        start: s.t, end: s.t, seconds: 0, lowestVolts: s.volts, lowestAt: s.t, stateAtStart: state(s.t),
+        start: s.t, end: s.t, seconds: 0, secondsUnder: 0, lowestVolts: s.volts, lowestAt: s.t, totalAmpsAtLowest: s.totalAmps, stateAtStart: state(s.t),
         atLowest: s.loads.slice(0, 3).map((l) => ({ group: l.group, amps: l.amps })), during: null, before: meanTop(g, Math.max(0, i - LOOK_BEFORE_SAMPLES), i),
       }
     }),
@@ -107,10 +106,11 @@ function compute(match: Match): SagSpans | null {
 
 function findSpans(match: Match, g: PowerGrid, line: number): SagSpan[] {
   // Runs of enabled samples with a finite voltage above 0 and under the line, as [first, past-last) sample indexes.
+  const isUnder = (i: number) => g.enabled[i] === 1 && Number.isFinite(g.volts[i]) && g.volts[i] > 0 && g.volts[i] < line
   let runs: [number, number][] = []
   let from = -1
   for (let i = 0; i <= g.t.length; i++) {
-    const under = i < g.t.length && g.enabled[i] === 1 && Number.isFinite(g.volts[i]) && g.volts[i] > 0 && g.volts[i] < line
+    const under = i < g.t.length && isUnder(i)
     if (under && from < 0) from = i
     if (!under && from >= 0) { runs.push([from, i]); from = -1 }
   }
@@ -118,21 +118,34 @@ function findSpans(match: Match, g: PowerGrid, line: number): SagSpan[] {
   const merged: [number, number][] = []
   for (const r of runs) {
     const last = merged[merged.length - 1]
-    if (last && r[0] - last[1] <= MERGE_GAP_SAMPLES) last[1] = r[1]
+    // Joined only across enabled time: a disabled sample between two runs keeps them apart.
+    if (last && r[0] - last[1] <= MERGE_GAP_SAMPLES && enabledBetween(g, last[1], r[0])) last[1] = r[1]
     else merged.push([r[0], r[1]])
   }
 
   const state = stateReader(match)
   const spans = merged.map(([a, b]): SagSpan => {
     let low = a
-    for (let i = a; i < b; i++) if (g.volts[i] < g.volts[low] || !(g.volts[low] < line)) low = i
+    let under = 0
+    // The lowest point is taken only from samples that pass the under test (the first sample of a run always does).
+    for (let i = a; i < b; i++) {
+      if (!isUnder(i)) continue
+      under++
+      if (!isUnder(low) || g.volts[i] < g.volts[low]) low = i
+    }
     return {
-      start: g.t[a], end: g.t[a] + (b - a) * DT, seconds: (b - a) * DT,
-      lowestVolts: g.volts[low], lowestAt: g.t[low], stateAtStart: state(g.t[a]),
+      start: g.t[a], end: g.t[a] + (b - a) * DT, seconds: (b - a) * DT, secondsUnder: under * DT,
+      lowestVolts: g.volts[low], lowestAt: g.t[low], totalAmpsAtLowest: g.amps[low], stateAtStart: state(g.t[a]),
       atLowest: meanTop(g, low, low + 1), during: meanTop(g, a, b), before: meanTop(g, Math.max(0, a - LOOK_BEFORE_SAMPLES), a),
     }
   })
   return spans.sort((x, y) => x.lowestVolts - y.lowestVolts || x.start - y.start)
+}
+
+/** True when every sample in [a, b) is enabled. */
+function enabledBetween(g: PowerGrid, a: number, b: number): boolean {
+  for (let i = a; i < b; i++) if (g.enabled[i] !== 1) return false
+  return true
 }
 
 /** The top 3 motor groups by mean supply current over samples [a, b), amps above 1 only. */

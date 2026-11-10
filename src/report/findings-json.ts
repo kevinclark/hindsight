@@ -95,9 +95,9 @@ function sagSpansJson(match: Match) {
   const round = (x: number, d: number) => +x.toFixed(d)
   const load = (l: { group: string; amps: number }[] | null) => l && l.map((x) => ({ group: x.group, amps: round(x.amps, 1) }))
   return {
-    line: Number.isFinite(r.line) ? r.line : null, mode: r.mode, reason: r.reason, totalSpans: r.totalSpans, secondsUnderLine: round(r.secondsUnderLine, 2),
+    line: Number.isFinite(r.line) ? round(r.line, 2) : null, mode: r.mode, reason: r.reason, totalSpans: r.totalSpans, secondsUnderLine: round(r.secondsUnderLine, 2),
     spans: r.spans.map((s) => ({
-      start: round(s.start, 2), end: round(s.end, 2), seconds: round(s.seconds, 2), lowestVolts: round(s.lowestVolts, 2), lowestAt: round(s.lowestAt, 2),
+      start: round(s.start, 2), end: round(s.end, 2), seconds: round(s.seconds, 2), secondsUnder: round(s.secondsUnder, 2), totalAmpsAtLowest: round(s.totalAmpsAtLowest, 0), lowestVolts: round(s.lowestVolts, 2), lowestAt: round(s.lowestAt, 2),
       stateAtStart: s.stateAtStart, atLowest: load(s.atLowest), during: load(s.during), before: load(s.before),
     })),
   }

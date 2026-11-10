@@ -58,8 +58,9 @@
   const voltagePlot = $derived<PlotModel | null>(g && p ? {
     from, to, unit: 'V', series: [gridSeries('Battery voltage', g.volts)],
     threshold: Number.isFinite(p.brownoutVolts) ? { value: p.brownoutVolts, label: `brownout ${p.brownoutVolts} V` } : undefined,
-    // Stretches under the margin line shade as spans; the lowest-points fallback keeps one marker per point.
-    spans: stretches ? sagSpans!.spans.map((x) => ({ from: x.start, to: x.end })) : undefined,
+    // Every stretch under the margin line shades as a span (not only the table's deepest 8); the lowest-points fallback keeps one marker per point.
+    spans: stretches ? sagSpans!.allSpans.map((x) => ({ from: x.start, to: x.end })) : undefined,
+    spanLabel: stretches ? `shaded: under ${lineText} V` : undefined,
     markers: stretches ? undefined : p.sags.map((s) => ({ t: s.t, label: '' })), matchStart: m.matchStart,
   } : null)
   const currentPlot = $derived<PlotModel | null>(g ? {
@@ -130,17 +131,17 @@
   {/if}
 
   {#if sagSpans && stretches}
-    <h3>The {sagSpans.spans.length} deepest sags under {lineText} V, and what was drawing</h3>
+    <h3>{sagSpans.spans.length === 1 ? 'The deepest sag' : `The ${sagSpans.spans.length} deepest sags`} under {lineText} V, and what was drawing</h3>
     {#if sagSpans.totalSpans > sagSpans.spans.length}
-      <p class="note">{sagSpans.totalSpans} stretches under {lineText} V, {sagSpans.secondsUnderLine.toFixed(1)} s in all; the {sagSpans.spans.length} deepest:</p>
+      <p class="note">{sagSpans.totalSpans} stretches under {lineText} V, {sagSpans.secondsUnderLine.toFixed(1)} s under it in all; the {sagSpans.spans.length} deepest:</p>
     {/if}
     <table class="sags">
-      <thead><tr><th>When</th><th>Length</th><th>Lowest</th><th>State</th><th>At lowest</th><th>During</th><th>Before</th></tr></thead>
+      <thead><tr><th>When</th><th>Length</th><th>Lowest</th><th>State</th><th>Total at lowest</th><th>At lowest</th><th>During</th><th>Before</th></tr></thead>
       <tbody>
         {#each sagSpans.spans as s (s.start)}
           <tr>
-            <td>{matchWhen(m, s.start)}</td><td>{s.seconds.toFixed(2)} s</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart ?? '—'}</td>
-            <td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.during)}<small>{rest2(s.during)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
+            <td>{matchWhen(m, s.start)}</td><td>{s.secondsUnder.toFixed(2)} s{#if s.seconds - s.secondsUnder >= 0.05 - 1e-9}<small>over {s.seconds.toFixed(2)} s</small>{/if}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
+            <td>{s.totalAmpsAtLowest.toFixed(0)} A</td><td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.during)}<small>{rest2(s.during)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
           </tr>
         {/each}
       </tbody>
@@ -150,12 +151,12 @@
     <h3>The {sagSpans.spans.length} deepest sags, and what was drawing</h3>
     <p class="note">{sagSpans.reason}</p>
     <table class="sags">
-      <thead><tr><th>When</th><th>Lowest</th><th>State</th><th>At lowest</th><th>Before</th></tr></thead>
+      <thead><tr><th>When</th><th>Lowest</th><th>State</th><th>Total at lowest</th><th>At lowest</th><th>Before</th></tr></thead>
       <tbody>
         {#each sagSpans.spans as s (s.lowestAt)}
           <tr>
-            <td>{matchWhen(m, s.lowestAt)}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart ?? '—'}</td>
-            <td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
+            <td>{matchWhen(m, s.lowestAt)}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
+            <td>{s.totalAmpsAtLowest.toFixed(0)} A</td><td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
           </tr>
         {/each}
       </tbody>

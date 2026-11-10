@@ -16,6 +16,8 @@ export interface PlotModel {
   markers?: { t: number; label: string }[]
   /** Time ranges shaded behind the lines (e.g. stretches under a line). */
   spans?: { from: number; to: number }[]
+  /** What the shading means, shown as a key under the plot. */
+  spanLabel?: string
   /** Robot time of the start of the match: when set, the time axis is labelled in match time. */
   matchStart?: number | null
 }
