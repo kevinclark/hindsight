@@ -44,23 +44,25 @@ describe.skipIf(!haveLogs)('Foresight live, replaying logs A, B and C in pit mod
     expect(warnings(last)).toContain('build/dirty')
   })
 
-  it('B: power/rest-voltage fires, 12.43–12.48 V', async () => {
+  it('B: power/rest-voltage shows 12.43–12.48 V as context (grey), never amber or red', async () => {
     const { last } = await run(LOGS.b, { pit: true, speed: 20, until: checkedPast(11.76 + SETTLE_SECONDS + 15) })
-    expect(warnings(last)).toEqual(['power/rest-voltage'])
-    const f = last.result?.state === 'checked' ? last.result.verdict.items[0].finding : null
+    expect(warnings(last)).toEqual([])
+    expect(levels(last, 'grey')).toContain('power/rest-voltage')
+    const f = last.result?.state === 'checked' ? last.result.verdict.items.find((i) => i.finding.rule === 'power/rest-voltage')!.finding : null
     expect(f?.measured?.[0].value).toBeGreaterThanOrEqual(12.43)
     expect(f?.measured?.[0].value).toBeLessThanOrEqual(12.48)
   })
 
-  it('A: nothing amber or red from settle to the first enable; no finding at all before settle', async () => {
+  it('A: nothing amber or red from code start to the first enable; never GO while checks still settle', async () => {
     const { updates } = await run(LOGS.a, { pit: true, speed: 60, until: (s) => s.result?.state === 'enabled', maxMs: 30_000 })
     const checked = updates.filter((s) => s.result?.state === 'checked')
     expect(checked.length).toBeGreaterThan(10)
     expect(checked.flatMap(warnings)).toEqual([])
-    // Before settle the result is a countdown, never findings, so no camera alert from start-up can show.
-    const early = updates.filter((s) => s.robotTime !== null && s.robotTime < 11.88 + SETTLE_SECONDS)
-    expect(early.length).toBeGreaterThan(0)
-    expect(early.every((s) => s.result === null || s.result.state === 'settling')).toBe(true)
+    // Before the camera and alert checks' settle the static checks are judged, but no start-up camera alert can show
+    // and the verdict never reads GO (engine.ts SETTLE_BY_RULE).
+    const early = updates.filter((s) => s.robotTime !== null && s.robotTime < 11.88 + SETTLE_SECONDS - 1)
+    expect(early.some((s) => s.result?.state === 'checked')).toBe(true)
+    expect(early.every((s) => s.result?.state !== 'checked' || s.result.verdict.verdict !== 'GO')).toBe(true)
     expect(updates.at(-1)!.result?.state).toBe('enabled') // reached the first enable at 270 s
   }, 40_000)
 
@@ -94,7 +96,8 @@ describe.skipIf(!haveLogs)('Foresight field guard, replaying logs A, B and C as 
       // Nothing from after the attach reached the store (values later in the same frame are dropped too).
       expect(live!.store.latest).toBeGreaterThan(attach - 1)
       expect(live!.store.latest).toBeLessThanOrEqual(attach)
-      expect(updates.some((s) => s.result?.state === 'checked')).toBe(false)
+      // Static checks are judged before the attach (from the first second), but never on anything after it.
+      expect(updates.every((s) => s.result?.state !== 'checked' || s.result.end <= attach)).toBe(true)
       expect(isFieldLocked()).toBe(true)
       // The server sees the socket close, and a new attempt is refused without connecting.
       const framesBefore = server.received.length
