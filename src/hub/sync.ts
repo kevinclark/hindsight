@@ -19,6 +19,7 @@
 import { createHash } from 'node:crypto'
 import { LinkLost, ManifestConflict, SignInAgain, Stopped, readText, type FileInfo, type StorageAdapter, type WriteOptions } from './adapter.ts'
 import { fileMeter, type ProgressFn } from './jobs.ts'
+import { readAhead } from './read-ahead.ts'
 import type { LocalLibrary } from './library-store.ts'
 import { fileSource } from './local-adapter.ts'
 import type { LogRecord } from './types.ts'
@@ -335,10 +336,10 @@ export async function fetchLogs(lib: LocalLibrary, team: StorageAdapter, records
     if (options.cancelled?.()) { report.stopped = true; break }
     if (await lib.store.stat(r.path)) { end(); skipped++; continue }
     try {
-      const CHUNK = 8 << 20
-      // Bytes count as they arrive from Drive (not per piece), so a slow link shows moving and a quiet one shows as quiet.
-      const watch = { cancelled: options.cancelled, onStep: step }
-      await lib.store.writeNew(r.path, { size: r.size, read: (a, b) => team.read(r.path, a, Math.min(b, a + CHUNK), { ...watch, onBytes: (n) => at(a + n) }) }, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}), onProgress: at, cancelled: options.cancelled }).finally(end)
+      // Bytes count as they arrive from Drive (not per piece), so a slow link shows moving and a quiet one shows as quiet;
+      // the next range is on its way while this one is written, so the bar does not pause at every piece.
+      const source = readAhead(r.size, (a, b, watch) => team.read(r.path, a, b, watch), { cancelled: options.cancelled, onStep: step, onBytes: at })
+      await lib.store.writeNew(r.path, source, { sha256: r.sha256, ...(r.modifiedTime ? { modifiedTime: r.modifiedTime } : {}), cancelled: options.cancelled }).finally(() => { source.close(); end() })
       report.fetched.push(r.path)
       inARow = 0
     } catch (e) {
