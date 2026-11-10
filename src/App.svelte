@@ -46,7 +46,8 @@
   import { ANALYZER_HASH, eventLines, eventLogNames, latestEventSession } from './hub/event-publish.ts'
   import { analyzerHashOf, analyzerId, serializeEventLine } from './hub/event-file.ts'
   import { sessionEvent } from './board/event.ts'
-  import { matchVideoKey, videoUrl } from './tba/video.ts'
+  import { libraryEventLogs, matchVideoKey, videoUrl } from './tba/video.ts'
+  import { identifyEvents, type ResolvedEvent } from './tba/identify.ts'
   import { newerVersion } from './hub/catalog.ts'
   import { SUMMARY_SHAPE, summaryMapStale, type MatchSummary } from './session/summary.ts'
   import { setPublishNote } from './ui/event-share.svelte.ts'
@@ -518,20 +519,28 @@
   const videoName = $derived(current?.match.fileName)
   const videoLabel = $derived(current?.match.fms ? current.match.matchLabel : '')
   const videoAuto = $derived(current && current.match.epochOffset !== null && current.match.matchStart !== null ? current.match.epochOffset + current.match.matchStart : null)
-  const videoSessionId = $derived(videoName && videoLabel ? sessionHolding(videoName)?.id : undefined)
+  // Where the event comes from: the loaded session that holds the log, else (opened from the Library) its library record's neighbours.
+  const videoSource = $derived.by(() => {
+    if (!videoName || !videoLabel) return undefined
+    const held = sessionHolding(videoName)
+    return held ? `session:${held.id}` : (() => { const l = libraryEventLogs(todaySig.libraryLogs, videoName); return l ? `library:${l.sha}` : undefined })()
+  })
   const videoHasGetter = $derived(tbaGetter() !== null)
   $effect(() => { void videoName; videoKey = null })
   $effect(() => {
-    const [name, label, auto, sid, team] = [videoName, videoLabel, videoAuto, videoSessionId, tbaTeam()]
+    const [name, label, auto, sid, team] = [videoName, videoLabel, videoAuto, videoSource, tbaTeam()]
     const get = tbaGetter()
     if (!name || !sid || !videoHasGetter || !get || team === null) return
     const own = untrack(() => sessionHolding(name))
-    if (!own) return
+    const lib = own ? null : untrack(() => libraryEventLogs(todaySig.libraryLogs, name))
+    if (!own && !lib) return
     let stale = false
     void (async () => {
-      const ev = await sessionEvent(own, team, get).catch(() => null)
-      if (!ev?.event || ev.event.by === 'date' || stale) return
-      const key = await matchVideoKey(get, team, ev.event.key, ev.event.end, label, auto)
+      let event: ResolvedEvent | null = null
+      if (own) event = (await sessionEvent(own, team, get).catch(() => null))?.event ?? null
+      else if (lib) event = (await identifyEvents(lib.logs, team, get).catch(() => null))?.byFile.get(lib.sha) ?? null
+      if (!event || event.by === 'date' || stale) return
+      const key = await matchVideoKey(get, team, event.key, event.end, label, auto)
       if (!stale) videoKey = key
     })()
     return () => { stale = true }

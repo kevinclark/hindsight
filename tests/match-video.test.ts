@@ -1,6 +1,8 @@
 // The match video link (src/tba/video.ts). Team 9999, event 2099test and the 11-character video keys are invented.
 import { describe, expect, it } from 'vitest'
-import { matchVideoKey, pickMatch, startedInAuto, videoUrl, watchUrl, youtubeKey, type TbaMatchFull } from '../src/tba/video.ts'
+import { matchVideoKey, pickMatch, libraryEventLogs, startedInAuto, videoUrl, watchUrl, youtubeKey, type TbaMatchFull } from '../src/tba/video.ts'
+import { EVENT_GAP } from '../src/tba/identify.ts'
+import type { LogRecord } from '../src/hub/types.ts'
 import { createTba, isTbaPath, memoryStore, ttlOf } from '../src/tba/source.ts'
 
 const A = 'aaaaaaaaaaa', B = 'bbbbbbbbbbb', C = 'ccccccccccc'
@@ -121,5 +123,34 @@ describe('the client allows the full match list, and only that', () => {
     const got = await createTba({ key: 'k'.repeat(64), store: memoryStore(), fetch })(path)
     expect(got.data).toHaveLength(MATCHES.length)
     expect(calls).toEqual([`https://www.thebluealliance.com/api/v3${path}`])
+  })
+})
+
+describe('a log opened from the Library, with no loaded session', () => {
+  const T0 = Date.parse('2099-03-05T18:00:00Z')
+  const rec = (sha: string, names: string[], over: Partial<LogRecord> = {}) => ({
+    type: 'log', sha256: sha, names, playedAt: T0, onField: true, matchType: 2, matchNumber: 5, stub: false, kind: 'wpilog', event: '', ...over,
+  }) as unknown as LogRecord
+  it('is found by any of its names and offered with the on-field logs near it, as TBA lookups', () => {
+    const records = [rec('s1', ['a.wpilog', 'a-again.wpilog']), rec('s2', ['b.wpilog'], { playedAt: T0 + 60e3, matchNumber: 12 })]
+    const got = libraryEventLogs(records, 'a-again.wpilog')!
+    expect(got.sha).toBe('s1')
+    expect(got.logs).toEqual([
+      { fileName: 's1', playedAt: T0, onField: true, event: '', matchLabel: 'Qualification 5' },
+      { fileName: 's2', playedAt: T0 + 60e3, onField: true, event: '', matchLabel: 'Qualification 12' },
+    ])
+  })
+  it('a window edge: just inside EVENT_GAP is in, exactly EVENT_GAP out, either side', () => {
+    const records = [rec('s1', ['a']), rec('in', ['b'], { playedAt: T0 + EVENT_GAP - 1 }), rec('out', ['c'], { playedAt: T0 + EVENT_GAP }), rec('before', ['d'], { playedAt: T0 - EVENT_GAP })]
+    expect(libraryEventLogs(records, 'a')!.logs.map((l) => l.fileName)).toEqual(['s1', 'in'])
+  })
+  it('stubs, off-field logs, non-wpilog files and undated logs are left out; an elimination has no label', () => {
+    const records = [rec('s1', ['a'], { matchType: 3 }), rec('stub', ['b'], { stub: true }), rec('pit', ['c'], { onField: false }), rec('dsl', ['d'], { kind: 'dslog' } as never), rec('undated', ['e'], { playedAt: null } as never)]
+    const got = libraryEventLogs(records, 'a')!
+    expect(got.logs).toEqual([{ fileName: 's1', playedAt: T0, onField: true, event: '', matchLabel: '' }])
+  })
+  it('no link when the open log is unknown, a stub, off the field or undated', () => {
+    expect(libraryEventLogs([rec('s1', ['a'])], 'zzz')).toBeNull()
+    for (const over of [{ stub: true }, { onField: false }, { playedAt: null }, { kind: 'dslog' }]) expect(libraryEventLogs([rec('s1', ['a'], over as never)], 'a')).toBeNull()
   })
 })

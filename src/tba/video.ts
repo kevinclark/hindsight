@@ -10,6 +10,8 @@
  */
 import { teamMatchesFull, type TbaMatchFull } from './api.ts'
 import type { TbaGet } from './source.ts'
+import { EVENT_GAP, type EventLog } from './identify.ts'
+import type { LogRecord } from '../hub/types.ts'
 
 export type { TbaMatchFull }
 
@@ -56,3 +58,19 @@ export function watchUrl(key: string | null, f: { matchTime: number | null; run?
 /** Whether `matchTime` counts from the start of auto: a restart piece's matchStart is its first enable, not an auto start. */
 export const startedInAuto = (m: { matchStart: number | null; auto: { start: number }[] }): boolean =>
   m.matchStart !== null && m.auto.some((a) => a.start === m.matchStart)
+
+/**
+ * For a log opened from the Library with no loaded session: its record (found by any of its names) and the on-field robot logs
+ * played within EVENT_GAP of it, shaped for `identifyEvents` the way the Library does (file name = sha-256, no event name, a
+ * "Qualification N" label for FMS type 2). Null when the log is not a dated, on-field, non-stub robot log.
+ */
+export function libraryEventLogs(records: LogRecord[], name: string): { sha: string; logs: EventLog[] } | null {
+  const usable = (r: LogRecord) => r.kind === 'wpilog' && !r.stub && r.onField && r.playedAt !== null
+  const open = records.find((r) => r.names.includes(name))
+  if (!open || !usable(open)) return null
+  const logs = records.filter((r) => usable(r) && Math.abs(r.playedAt! - open.playedAt!) < EVENT_GAP).map((r) => ({
+    fileName: r.sha256, playedAt: r.playedAt, onField: r.onField, event: '',
+    matchLabel: r.matchType === 2 && r.matchNumber ? `Qualification ${r.matchNumber}` : '',
+  }))
+  return { sha: open.sha256, logs }
+}
