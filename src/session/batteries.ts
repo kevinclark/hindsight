@@ -45,7 +45,7 @@ export function batteryTable(matches: MatchSummary[], typedBatteries: Record<str
   matches.forEach((m, i) => {
     const b = name(m)
     if (!b) return
-    const volts = typeof m.metrics.belowHealthyVolts === 'number' ? m.metrics.belowHealthyVolts : null
+    const volts = typeof m.metrics.belowHealthyVolts === 'number' && Number.isFinite(m.metrics.belowHealthyVolts) ? m.metrics.belowHealthyVolts : null
     const entry: BatteryMatch = {
       summary: m, label: trendLabel(m, i), longLabel: trendLabelLong(m, i),
       volts, ah: m.metrics.belowHealthyAh ?? null, past: volts !== null && volts > MOST_BELOW_HEALTHY, partly: m.metrics.pastHealthyCurve === true,
@@ -62,12 +62,24 @@ export function batteryTable(matches: MatchSummary[], typedBatteries: Record<str
   return { rows, unnamed: matches.filter((m) => !name(m)).length, line: MOST_BELOW_HEALTHY, curveEndAh: LAST_REFERENCE_AH }
 }
 
-/** The verdict words for one battery. */
+/**
+ * The verdict words for one battery. "Within" only for matches compared over all the charge they drew: a match that drew
+ * more than the healthy curve covers is not judged past its end, so it says how far below it was there, no verdict.
+ */
 export function batteryVerdict(row: BatteryRow, line: number): string {
-  if (row.measured === 0) return 'Not measured: these logs have no battery voltage and motor currents to compare with.'
-  const of = `${row.measured} ${row.measured === 1 ? 'match' : 'matches'}`
-  if (row.pastCount > 0) return `More than ${line} V below a healthy battery in ${row.pastCount} of ${of}: capacity-test it before it plays again.`
-  const partly = row.matches.filter((m) => m.partly && m.volts !== null).length
-  const upTo = partly === 0 ? '' : partly === row.measured ? `, compared only up to ${LAST_REFERENCE_AH} Ah` : `, ${partly} compared only up to ${LAST_REFERENCE_AH} Ah`
-  return `Within ${line} V of a healthy battery in ${row.measured === 1 ? 'its' : 'all'} ${of}${upTo}.`
+  if (row.measured === 0) {
+    return row.matches.every((m) => m.summary.metrics.belowHealthyVolts === undefined)
+      ? 'Not compared yet: read these logs again to compare this battery with a healthy one.'
+      : 'Not measured: these logs have too little battery voltage, motor current or current change to compare with a healthy battery.'
+  }
+  const count = (n: number) => `${n} ${n === 1 ? 'match' : 'matches'}`
+  if (row.pastCount > 0) return `More than ${line} V below a healthy battery in ${row.pastCount} of ${count(row.measured)}: capacity-test it before it plays again.`
+  const measured = row.matches.filter((m) => m.volts !== null)
+  const partly = measured.filter((m) => m.partly)
+  const full = measured.length - partly.length
+  const all = (n: number) => (n === 1 ? 'its 1 match' : n === 2 ? 'both matches' : `all ${n} matches`)
+  if (partly.length === 0) return `Within ${line} V of a healthy battery in ${all(full)}.`
+  const worstPartly = partly.reduce((a, m) => (m.volts! > a.volts! ? m : a))
+  const notJudged = `Not judged past ${LAST_REFERENCE_AH} Ah in ${partly.length === measured.length ? all(partly.length) : count(partly.length)} (it drew more): up to ${worstPartly.volts!.toFixed(2)} V below a healthy battery there`
+  return full === 0 ? `${notJudged}.` : `${notJudged}; within ${line} V in the other ${count(full)}.`
 }

@@ -582,12 +582,12 @@ export class MatchView {
     return this.has(name) ? this.signal(name, label) : null
   }
 
-  /** A battery tracker key picked for this match; stops the rule when the profile has none. */
   /** Which battery was in the robot at `t`: the tracker's ID, else the gauge's own name (src/match/battery-id.ts). */
   batteryAt(t: number): BatteryName | null {
     return batteryAt(this.raw, t)
   }
 
+  /** A battery tracker key picked for this match; stops the rule when the profile has none. */
   batteryKey(field: keyof BatteryKeys): string {
     const key = this.profile.battery[field]
     if (!key) throw new MissingSignal('a battery tracker key (the robot profile has none)')

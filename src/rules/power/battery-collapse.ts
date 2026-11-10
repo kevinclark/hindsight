@@ -9,7 +9,7 @@
  */
 import { rule, round, volts } from '../rule.ts'
 import { CD_BATTERY_ACCEPTANCE, CD_BATTERY_CBA_LINE, MK_ES17_12 } from '../sources.ts'
-import { batteryHealth, chargedPastHealthyCurve, LAST_REFERENCE_AH, MOST_BELOW_HEALTHY, restBeforeAuto } from './battery-health.ts'
+import { batteryHealth, compareWithHealthy, LAST_REFERENCE_AH, MOST_BELOW_HEALTHY, restBeforeAuto } from './battery-health.ts'
 
 export default rule({
   id: 'power/battery-collapse',
@@ -39,7 +39,7 @@ export default rule({
     const power = match.power()
     const ohms = power.report.resistanceOhms
     if (ohms === null) return match.couldNotCheck('too few current steps to measure resistance')
-    if (chargedPastHealthyCurve(power.grid, ohms)) {
+    if (compareWithHealthy(power.grid, ohms).pastCurve) {
       match.checkedOnlyPart(`charge past ${LAST_REFERENCE_AH} Ah: no healthy battery to compare with there`)
     }
     const health = batteryHealth(match, power)
