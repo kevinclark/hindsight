@@ -74,6 +74,14 @@ export const LINKS: Link[] = [
     when: (dropout, mismatch) => dropout.about === mismatch.evidence['stopped follower'] && dropBeganWhileStopped(dropout, mismatch),
     why: 'the follower was off CAN, so it could not turn with its leader',
   }),
+  // One 2026 robot, two matches: a kicker motor ran free of its belt, so the follower-mismatch steady-speed check named
+  // the loaded motor as the one off the leader. A stopped follower (the other branch of the mismatch) is not this.
+  link({
+    cause: 'mech/motor-running-free',
+    explains: 'mech/follower-mismatch',
+    when: (free, mismatch) => free.about === mismatch.about && !mismatch.evidence['stopped follower'],
+    why: 'one motor of the group ran free of the mechanism, so the others no longer matched its speed',
+  }),
   // One 2026 match: two Back_Right camera alerts came on at the moment the camera dropped out.
   link({
     cause: 'vision/stale',

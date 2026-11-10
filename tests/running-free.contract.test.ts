@@ -18,15 +18,19 @@ const motor = (i: number, withVelocity = true): Motor => ({
 })
 const limits = { supplyA: 40, supplyEnabled: true, statorA: 60, statorEnabled: true, where: 'BeltIO.java:1' }
 
-function robot(count = 2, velocityOnFirstOnly = false): RobotProfile {
-  const motors = Array.from({ length: count }, (_, i) => motor(i, !velocityOnFirstOnly || i === 0))
+function robot(count = 2, velocityOnFirstOnly = false, withConnected = true, noVelocity: number[] = []): RobotProfile {
+  const motors = Array.from({ length: count }, (_, i) => {
+    const m = motor(i, (!velocityOnFirstOnly || i === 0) && !noVelocity.includes(i))
+    if (!withConnected) delete m.connected
+    return m
+  })
   return { ...offseason2026, name: 'Test robot', codebase: 'TestBot', motorGroups: [{ name: 'Belt', sameLoop: true, motors, limits }], otherDevices: [], canBuses: undefined, stateMachine: undefined }
 }
 
 /** A value per 20 ms from 10 s to 40 s, from a function of time. */
-const every20ms = (name: string, value: (t: number) => number | boolean, type: 'double' | 'boolean' = 'double'): FixtureEntry => {
+const every20ms = (name: string, value: (t: number) => number | boolean, type: 'double' | 'boolean' = 'double', until = 40.001): FixtureEntry => {
   const records: [number, number | boolean][] = []
-  for (let t = 10; t <= 40.001; t += 0.02) records.push([Math.round(t * 100) / 100, value(t)])
+  for (let t = 10; t <= until; t += 0.02) records.push([Math.round(t * 100) / 100, value(t)])
   return { name, type, records }
 }
 
@@ -36,18 +40,26 @@ interface Motion {
   amps?: (i: number, t: number) => number
   connected?: (i: number, t: number) => boolean
   enabled?: [number, number][]
+  /** Motor index -> time only its velocity records stop (stator keeps logging). */
+  stopVelocity?: Record<number, number>
+  /** Motor index -> time its velocity and stator records stop. */
+  stopRecords?: Record<number, number>
+  /** Motor indexes whose velocity key is left out of the log (and the profile). */
+  noVelocity?: number[]
+  withConnected?: boolean
 }
 
-function run(m: Motion = {}, count = 2, profile = robot(count)) {
+function run(m: Motion = {}, count = 2, profile = robot(count, false, m.withConnected ?? true, m.noVelocity ?? [])) {
   const entries: FixtureEntry[] = [
     { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], ...(m.enabled ?? [[10, 40]]).flatMap(([a, b]) => [[a, true], [b, false]] as [number, boolean][])] },
     { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
     { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 12.5], [60, 12.4]] },
   ]
   for (let i = 0; i < count; i++) {
-    entries.push(every20ms(`/Belt/${i}/Velocity`, (t) => (m.speed ?? (() => 12))(i, t)))
-    entries.push(every20ms(`/Belt/${i}/StatorAmps`, (t) => (m.amps ?? (() => 20))(i, t)))
-    entries.push(every20ms(`/Belt/${i}/Connected`, (t) => (m.connected ?? (() => true))(i, t), 'boolean'))
+    const until = m.stopRecords?.[i] ?? 40.001
+    if (!m.noVelocity?.includes(i)) entries.push(every20ms(`/Belt/${i}/Velocity`, (t) => (m.speed ?? (() => 12))(i, t), 'double', m.stopVelocity?.[i] ?? until))
+    entries.push(every20ms(`/Belt/${i}/StatorAmps`, (t) => (m.amps ?? (() => 20))(i, t), 'double', until))
+    if (m.withConnected !== false) entries.push(every20ms(`/Belt/${i}/Connected`, (t) => (m.connected ?? (() => true))(i, t), 'boolean'))
   }
   const match = buildMatch('t.wpilog', openWpilog(writeWpilog(entries)), profile)
   const report = runRules(match, [runningFree])
@@ -158,4 +170,57 @@ test('[RF-10] the 2026 offseason profile has a Kicker group on one loop, and the
   for (const g of [kicker, feed]) expect(g.limits).toMatchObject({ supplyA: 40, supplyEnabled: true, statorA: 60, statorEnabled: true, where: 'IndexerIO.java:170' })
   expect(group(offseason2026Event, 'Kicker').limits).toMatchObject({ supplyA: 30, where: 'IndexerIO.java:196-199' })
   expect(group(offseason2026Event, 'Indexer').limits).toMatchObject({ supplyA: 40, where: 'IndexerIO.java:170-173' })
+})
+
+test('[RF-02] the line is 2.0 s in whole 20 ms moments: 100 moments fire, 99 do not', () => {
+  // Moments at 20.00 s to 21.98 s are 100 grid moments (2.00 s); one fewer is 1.98 s.
+  expect(run(freeFor(1, 20, 2.0)).findings).toHaveLength(1)
+  expect(run(freeFor(1, 20, 1.98)).findings).toEqual([])
+})
+
+test('[RF-03] a follower turning the opposite way (an Opposed follower) is compared by speed, not sign', () => {
+  const m = freeFor(1, 20, 3)
+  const { findings } = run({ ...m, speed: (i, t) => (i === 1 ? -m.speed!(i, t) : m.speed!(i, t)) })
+  expect(findings).toHaveLength(1)
+  expect(findings[0].evidence['free motor']).toBe('Belt 1')
+  expect(findings[0].evidence['free motor: median speed']).toBeCloseTo(13.2, 1)
+})
+
+test('[RF-07] a three-motor group with one free motor fires naming it', () => {
+  const { findings } = run(freeFor(1, 20, 3), 3)
+  expect(findings.map((f) => f.evidence['free motor'])).toEqual(['Belt 1'])
+})
+
+test('[RF-07] known limit: two free motors in a three-motor group are silent (the median of two is the larger)', () => {
+  const m: Motion = {
+    speed: (i, t) => (i < 2 && t >= 20 && t < 24 ? 13.2 : 12),
+    amps: (i, t) => (i < 2 && t >= 20 && t < 24 ? 3 : 20),
+  }
+  expect(run(m, 3).findings).toEqual([])
+})
+
+test('[RF-06] a motor with no Connected flag counts all its enabled time and is not a not-checked line', () => {
+  const { findings, skipped } = run({ ...freeFor(1, 20, 3), withConnected: false })
+  expect(findings).toHaveLength(1)
+  expect(skipped).toBeUndefined()
+})
+
+test('[RF-11] a motor with no record on velocity and stator current for over 0.5 s is not compared, so held values do not fire', () => {
+  // Motor 1 stops logging at 20 s on its free values (13.2 rot/s, 3 A) and has no Connected flag to say it is gone.
+  const m: Motion = { speed: (i, t) => (i === 1 && t >= 19 ? 13.2 : 12), amps: (i, t) => (i === 1 && t >= 19 ? 3 : 20), stopRecords: { 1: 20 }, withConnected: false }
+  expect(run(m).findings).toEqual([])
+  // The same values still logged are a finding.
+  expect(run({ ...m, stopRecords: undefined }).findings).toHaveLength(1)
+})
+
+test('[RF-11] one kind of record is enough: velocity quiet for over 0.5 s with stator current still logging is compared', () => {
+  const m: Motion = { speed: (i, t) => (i === 1 && t >= 19 ? 13.2 : 12), amps: (i, t) => (i === 1 && t >= 19 ? 3 : 20), stopVelocity: { 1: 20 }, withConnected: false }
+  expect(run(m).findings).toHaveLength(1)
+})
+
+test('[RF-09] the plot uses the motors the check used: a third motor with no velocity key does not stop the finding', () => {
+  const { findings } = run({ ...freeFor(1, 20, 3), noVelocity: [2] }, 3)
+  expect(findings).toHaveLength(1)
+  expect(findings[0].evidence['free motor']).toBe('Belt 1')
+  expect(findings[0].plot?.lines.length).toBe(2)
 })

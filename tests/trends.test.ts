@@ -183,9 +183,10 @@ describe.skipIf(!have)('trendRows on the 8 logs of the team\'s 2026 event', () =
   })
   it('adds a current-at-steady-speed row per motor: the rollers\' band holds 8 cells, the dead follower reads low and the dragging pair high', () => {
     const drag = rows.filter((r) => String(r.metric.key).startsWith('drag:'))
-    // Four flywheel motors and two rollers, in profile order, after the eight others
+    // Four flywheel motors and two rollers, then the indexer feed motor and the two kickers (they have velocity keys
+    // since the kickers got their own group, so they get rows too: wanted), in profile order, after the eight others
     expect(rows.slice(8)).toEqual(drag)
-    expect(drag.map((r) => r.metric.key)).toEqual(['drag:Flywheel/Flywheel leader', 'drag:Flywheel/Flywheel follower 16', 'drag:Flywheel/Flywheel follower 17', 'drag:Flywheel/Flywheel follower 18', 'drag:Intake rollers/Intake roller leader', 'drag:Intake rollers/Intake roller follower'])
+    expect(drag.map((r) => r.metric.key)).toEqual(['drag:Flywheel/Flywheel leader', 'drag:Flywheel/Flywheel follower 16', 'drag:Flywheel/Flywheel follower 17', 'drag:Flywheel/Flywheel follower 18', 'drag:Intake rollers/Intake roller leader', 'drag:Intake rollers/Intake roller follower', 'drag:Indexer/Indexer', 'drag:Kicker/Kicker leader', 'drag:Kicker/Kicker follower'])
     const leader = drag[4], follower = drag[5]
     expect(leader.metric.sub).toBe('at 23–28 rot/s')
     expect([leader.n, follower.n]).toEqual([8, 8])

@@ -41,11 +41,13 @@ Terms used below:
   and the key; a fault is kept however short the run (ADR 8). Kind: compatibility.
 
 ### Behaviour: when it fires
-- **RF-02** It fires when one motor's longest stretch is 2 s or more: one finding for the group, dated at the start of
+- **RF-02** It fires when one motor's longest stretch is 2 s or more (counted in whole 20 ms moments: 100 fire, 99
+  do not): one finding for the group, dated at the start of
   that stretch. Why: the free motor is the physical fault; one line per group keeps a four-motor group from repeating
   it. Kind: behaviour.
 - **RF-03** The finding names the free motor, the leader included: the free motor is judged against the median of the
-  others, never against the first motor of the group. Why: the leader runs free as well as a follower can (a pulley
+  others, never against the first motor of the group. Speeds are compared as sizes, so an Opposed follower (negative
+  velocity, the production case) compares like any other. Why: the leader runs free as well as a follower can (a pulley
   on the leader loose on its shaft), and the group's first motor is not special to the mechanism. Kind: behaviour.
 - **RF-04** A stretch under 2 s does not fire; stretches are not added together. Why: a healthy pair can run apart for
   a moment at a spin-up; the longest healthy stretch measured was 0.5 s (rollers) and 0.1 s (kicker), the faults
@@ -56,7 +58,14 @@ Terms used below:
   motor at or under 5, or the robot disabled. Two stretches of 1.5 s split by one such moment do not fire. Why: the
   held value of a dropped controller or a disabled motor is not a motor running free. Kind: failure mode.
 - **RF-07** In a group of more than two motors, one free motor fires and is named; the others' medians are taken
-  over every other motor of the group. Why: the 2026 flywheel group has four motors. Kind: behaviour.
+  over every other motor of the group. Why: the 2026 flywheel group has four motors. Known limit: two free motors in
+  a three-motor group are silent (the median of two others is the larger one, so neither is faster than it). Kind:
+  behaviour.
+- **RF-11** A moment is not comparable when any motor of the group has had no record on its velocity **and** none on
+  its stator current for more than 0.5 s. A motor with either kind of record inside the last 0.5 s counts as current.
+  Why: AdvantageKit logs only on change, so a controller that stopped reporting leaves its last values in the log;
+  with no Connected flag to say so, those held values would read as a motor running free. Kind: failure mode. No real
+  log exercises it.
 - **RF-08** A group with no comparable moment at all is not checked: `match.couldNotCheck('the motors never
   all ran above 5 together while enabled and connected')` (the report prefixes the group name), and no finding. A group with fewer than two motors that
   have velocity and stator current in the profile and the log is not checked either (`MissingSignal`). Why: a quiet
@@ -69,7 +78,8 @@ Terms used below:
   medians over the same stretch. The evidence, in this order: `free motor`, `longest free stretch (s)`, `total free
   seconds` (all that motor's stretches), `stretch from (s)`, `stretch to (s)`, `free motor: median speed`, `free
   motor: median stator current (A)`, `others: median speed`, `others: median stator current (A)`. `measured` is the
-  longest stretch (s, threshold 2) then how much faster (%). Why: the numbers are the student's proof that the motor
+  longest stretch (s, threshold 2) then how much faster (%). The plot is the velocity of the motors the check used (a
+  motor of the group without a velocity key is left out of the comparison and the plot alike). Why: the numbers are the student's proof that the motor
   was not loaded. Kind: behaviour.
 
 ### Behaviour: the 2026 offseason profile
