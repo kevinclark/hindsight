@@ -4,7 +4,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { analyzeFiles } from '../src/analyze.ts'
-import { buildBreakdown, type Breakdown } from '../src/power/breakdown.ts'
+import { buildFindingsJson } from '../src/report/findings-json.ts'
+import { openWpilog, readNumbers } from '../src/readers/wpilog.ts'
+import { buildBreakdown, hasStates, type Breakdown } from '../src/power/breakdown.ts'
 import { buildPowerGrid, DT } from '../src/power/battery-model.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { profileKeys } from '../src/profiles/choose.ts'
@@ -267,16 +269,156 @@ describe.skipIf(!have)('the breakdown on the 8 logs of the team\'s 2026 event', 
   })
 })
 
+describe('a group row has a state toggle only when it has a state worth opening', () => {
+  it('has one for a group with a real state, not for one with only the fold or "No state logged"', () => {
+    const b = buildBreakdown(synthetic({ state: [[0, 'INTAKE'], [6, 'SCORE']] }))!
+    expect(hasStates(row(b, 'Flywheel'))).toBe(true)
+    expect(hasStates(row(b, 'Drive'))).toBe(false) // never ran: only "Other states"
+  })
+  it('has none for a group that never ran when the state is first logged after the robot is enabled', () => {
+    const b = buildBreakdown(synthetic({ state: [[5, 'INTAKE']] }))!
+    const drive = row(b, 'Drive')
+    expect(drive.states.map((s) => s.name)).toContain('No state logged')
+    expect(hasStates(drive)).toBe(false)
+    expect(hasStates(row(b, 'Flywheel'))).toBe(true)
+  })
+})
+
+describe('the expanded rows (the component cannot be opened in a server render, so this tests the rows model it lists)', () => {
+  it('lists, for an opened group, its state rows largest energy first, adding up to the group', () => {
+    const b = buildBreakdown(synthetic({ state: [[0, 'INTAKE'], [6, 'SCORE']] }))!
+    const f = row(b, 'Flywheel')
+    expect(f.states.map((s) => s.name)).toEqual(['INTAKE', 'SCORE'].sort((x, y) => stateRow(b, 'Flywheel', y).wh - stateRow(b, 'Flywheel', x).wh))
+    expect(f.states.reduce((s, x) => s + x.wh, 0)).toBeCloseTo(f.wh, 9)
+    expect(stateRow(b, 'Flywheel', 'INTAKE').runningSeconds).toBeCloseTo(4, 1) // enabled 2-6
+    expect(stateRow(b, 'Flywheel', 'SCORE').runningSeconds).toBeCloseTo(6, 1) // 6-12
+  })
+})
+
 describe('the Power tab\'s "Where the power went" table', () => {
-  it('renders the group rows, the note and the state toggle, with leading spaces kept', async () => {
-    const analysis = analysisOf({ state: [[0, 'INTAKE'], [6, 'SCORE']] })
+  const renderTab = async (analysis: ReturnType<typeof analysisOf>) => {
     const { render } = await import('svelte/server')
     const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
-    const html = render(PowerTab, { props: { analysis } }).body
+    return render(PowerTab, { props: { analysis } }).body
+  }
+  it('renders the group rows, the note and the state toggle, and the note\'s sentences are joined with single spaces', async () => {
+    const html = await renderTab(analysisOf({ state: [[0, 'INTAKE'], [6, 'SCORE']] }))
     expect(html).toContain('Where the power went')
     expect(html).toContain('Flywheel')
     expect(html).toContain('Other loads (assumed 3 A)')
     expect(html).toMatch(/<button[^>]*aria-expanded="false"/)
     expect(html.indexOf('Where the power went')).toBeLessThan(html.indexOf('Voltage and current over the match'))
+    const note = html.slice(html.indexOf('Energy is supply current'), html.indexOf('</p>', html.indexOf('Energy is supply current'))).replace(/<!--.*?-->/g, '')
+    expect(note).toContain('while enabled (10 s, 0.')
+    expect(note).toContain(' Wh in all). A group\'s currents are its motors added together (Drive\'s P90 is all its motors at once, not one motor against a per-motor limit). Share is the share of the whole match\'s energy, state rows too. A group is running above 1 A (an assumed line). Everything not on a motor controller is 3 A, assumed. Open a group')
+    expect(note).not.toMatch(/ {2,}|\n/)
+  })
+  it('says the currents are each group\'s motors added together, and that Share is of the whole match\'s energy, state rows too', async () => {
+    const html = (await renderTab(analysisOf({ state: [[0, 'INTAKE']] }))).replace(/<!--.*?-->/g, '')
+    expect(html).toContain('motors added together')
+    expect(html).toMatch(/Share is the share of the whole match.s energy, state rows too/)
+  })
+  it('puts every Wh number after a fixed-width track that holds the bar, so numbers start at one x', async () => {
+    const html = await renderTab(analysisOf({ state: [[0, 'INTAKE']] }))
+    const cells = [...html.matchAll(/<td class="wh[^"]*">(.*?)<\/td>/g)].map((m) => m[1])
+    expect(cells.length).toBeGreaterThanOrEqual(3)
+    for (const c of cells) expect(c).toMatch(/^<span class="track[^"]*"><span class="bar[^"]*"[^>]*><\/span><\/span><span class="num[^"]*">[\d.]+<\/span>$/)
+    const css = readFileSync(new URL('../src/ui/PowerTab.svelte', import.meta.url), 'utf8')
+    expect(css).toMatch(/\.track\s*\{[^}]*display:\s*inline-block[^}]*width:\s*5rem/)
+    expect(css).toMatch(/\.breakdown td, \.breakdown th\s*\{[^}]*vertical-align:\s*middle/)
+  })
+  it('shows one line instead of a table of 0.0 Wh rows when the robot was never enabled', async () => {
+    const html = await renderTab(analysisOf({ enabled: [50, 60] }))
+    expect(html).toContain('The robot was never enabled in this log, so there is no energy to split.')
+    expect(html).not.toMatch(/<table class="breakdown/)
+    expect(html).not.toContain('Open a group')
+  })
+  it('says "Open a group" only when a row has a toggle', async () => {
+    expect(await renderTab(analysisOf({ state: [[0, 'INTAKE']] }))).toContain('Open a group')
+    expect(await renderTab(analysisOf())).not.toContain('Open a group') // no state signal in the log: no toggles
+  })
+})
+
+describe('findings.json power.breakdown', () => {
+  const json = (match: ReturnType<typeof synthetic>, a = analysisOf({ state: [[0, 'INTAKE'], [6, 'SCORE']] })) => {
+    void match
+    return buildFindingsJson(a.match, a.report) as unknown as { power: { breakdown: any } }
+  }
+  it('has the totals, rounded, one row per group with its states, and measured false', () => {
+    const bd = json(synthetic()).power.breakdown
+    expect(bd.measured).toBe(false)
+    expect(bd.enabledSeconds).toBeCloseTo(10, 1)
+    expect(Number.isInteger(bd.totalWh * 1000)).toBe(true) // 3 decimals
+    const fly = bd.rows.find((r: any) => r.name === 'Flywheel')
+    expect(Object.keys(fly).sort()).toEqual(['name', 'p50Amps', 'p90Amps', 'p99Amps', 'peakAmps', 'runningSeconds', 'states', 'wh'])
+    expect(fly.wh).toBe(+(fly.wh).toFixed(3))
+    expect(fly.p50Amps).toBe(10)
+    expect(fly.states.map((s: any) => s.state).sort()).toEqual(['INTAKE', 'SCORE'])
+    expect(Object.keys(fly.states[0]).sort()).toEqual(['p50Amps', 'p90Amps', 'p99Amps', 'peakAmps', 'runningSeconds', 'state', 'wh'])
+    const other = bd.rows.find((r: any) => r.name.startsWith('Other loads'))
+    expect(other).toMatchObject({ runningSeconds: null, p50Amps: null, peakAmps: null, states: [] })
+    expect(bd.note).toContain('other loads 3 A (assumed)')
+  })
+  it('on the measured-total path says measured and drops the "other loads" clause', () => {
+    const a = analysisOf()
+    const g = buildPowerGrid(a.match)!
+    g.currentFrom = 'a measured total'
+    g.amps.fill(40)
+    const bd = json(a.match, a).power.breakdown
+    expect(bd.measured).toBe(true)
+    expect(bd.rows.map((r: any) => r.name)).toEqual(['Whole robot (measured)'])
+    expect(bd.note).not.toContain('other loads')
+  })
+})
+
+describe.skipIf(!have)('the breakdown against a recomputation straight from the raw records (team logs, no grid or breakdown internals)', () => {
+  const files = have ? readdirSync(DIR).sort().filter((f) => f.endsWith('.wpilog')) : []
+  it('gives each group\'s Wh within 1 % on every log (printed: the worst error per log)', () => {
+    const lines = ['log | worst group Wh error']
+    files.forEach((f, i) => {
+      const bytes = new Uint8Array(readFileSync(`${DIR}/${f}`))
+      const a = analyzeFiles([{ name: f, bytes }]).analyses[0]
+      const b = buildBreakdown(a.match)!
+      const profile = a.match.profile
+      const log = openWpilog(bytes)
+      const en = readNumbers(log, '/DriverStation/Enabled')!
+      const volts = readNumbers(log, '/SystemStats/BatteryVoltage')!
+      // hold-last value of a series at time x; `before` ahead of its first record
+      const at = (s: { t: ArrayLike<number>; v: ArrayLike<number> }, cur: { k: number }, x: number, before: number) => {
+        while (cur.k + 1 < s.t.length && s.t[cur.k + 1] <= x) cur.k++
+        return cur.k < 0 ? before : s.v[cur.k]
+      }
+      const t0 = en.t[0]
+      const t1 = volts.t[volts.t.length - 1]
+      const n = Math.floor((t1 - t0) / 0.02)
+      const cEn = { k: -1 }, cV = { k: -1 }
+      const motors = profile.motorGroups.flatMap((gr) => gr.motors.filter((m) => m.supplyCurrent).map((m) => {
+        const cur = readNumbers(log, m.supplyCurrent!)
+        const con = m.connected ? readNumbers(log, m.connected) : null
+        return cur && { group: gr.name, cur, con, kc: { k: -1 }, kn: { k: -1 } }
+      })).filter((m): m is NonNullable<typeof m> => !!m)
+      const wh = new Map<string, number>()
+      for (let k = 0; k < n; k++) {
+        const x = t0 + k * 0.02
+        const e = at(en, cEn, x, 0)
+        const v = at(volts, cV, x, NaN)
+        for (const m of motors) {
+          const amps = at(m.cur, m.kc, x, NaN)
+          const on = m.con ? at(m.con, m.kn, x, NaN) : NaN
+          if (!(e > 0.5) || on === 0 || !Number.isFinite(v) || !Number.isFinite(amps)) continue
+          wh.set(m.group, (wh.get(m.group) ?? 0) + Math.max(0, amps) * v * 0.02 / 3600)
+        }
+      }
+      let worst = 0
+      for (const [group, mine] of wh) {
+        const r = b.rows.find((x) => x.name === group)!
+        const err = mine === 0 ? Math.abs(r.wh) : Math.abs(r.wh - mine) / mine
+        worst = Math.max(worst, err)
+        expect(err, `log ${i} ${group}: breakdown ${r.wh.toFixed(3)} Wh, raw ${mine.toFixed(3)} Wh`).toBeLessThan(0.01)
+      }
+      expect(wh.size, `log ${i} groups with current`).toBeGreaterThan(0)
+      lines.push(`${i} | ${(worst * 100).toFixed(4)} %`)
+    })
+    console.log(lines.join('\n'))
   })
 })
