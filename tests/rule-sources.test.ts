@@ -6,8 +6,8 @@ import * as catalog from '../src/rules/sources.ts'
 const registered = [...new Map([...RULES, ...FORESIGHT_RULES].map((r) => [r.id, r])).values()]
 
 describe('rule sources', () => {
-  it('registers 46 rules', () => {
-    expect(registered).toHaveLength(46)
+  it('registers 47 rules', () => {
+    expect(registered).toHaveLength(47)
   })
 
   it.each(registered.map((r) => [r.id, r] as const))('%s cites at least one https source and says what it says', (_id, rule) => {

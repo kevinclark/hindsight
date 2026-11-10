@@ -29,6 +29,7 @@ import restVoltage from './power/rest-voltage.ts'
 import wiringResistance from './power/wiring-resistance.ts'
 import followerMismatch from './mech/follower-mismatch.ts'
 import motorRunningFree from './mech/running-free.ts'
+import pairDecoupled from './mech/pair-decoupled.ts'
 import stall from './mech/stall.ts'
 import slip from './mech/slip.ts'
 import impact from './collision/impact.ts'
@@ -55,7 +56,7 @@ import deviceFault from './can/device-fault.ts'
 
 export const RULES: Rule[] = [
   brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, noneAtEnable, stuckState, tilt, zeroNotCompleted, deviceDropout, inputDisconnected, busDropout, deviceRebooted, dsLogTruncated,
-  limitNotApplied, mainBreakerMargin, pdpBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, motorRunningFree, slip, stall, impact, overrun,
+  limitNotApplied, mainBreakerMargin, pdpBreakerMargin, margin, restVoltage, wiringResistance, pdNotReporting, followerMismatch, motorRunningFree, pairDecoupled, slip, stall, impact, overrun,
   visionOutliers, visionStale, visionTimeSync, dirty, identity, gaugeCapacity, passthrough, usbDropout,
 ]
 
