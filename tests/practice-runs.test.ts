@@ -117,16 +117,16 @@ describe('a run under 10 s is checked for faults only', () => {
 
 describe('every rule says what it judges', () => {
   const all = [...new Map([...RULES, ...FORESIGHT_RULES].map((r) => [r.id, r])).values()]
-  it('all 45 rules choose, 24 faults and 21 performance', () => {
-    expect(all.length).toBe(45)
+  it('all 46 rules choose, 25 faults and 21 performance', () => {
+    expect(all.length).toBe(46)
     expect(all.every((r) => r.judges === 'fault' || r.judges === 'performance')).toBe(true)
-    expect(all.filter((r) => r.judges === 'fault').length).toBe(24)
+    expect(all.filter((r) => r.judges === 'fault').length).toBe(25)
   })
   it('the faults are the ones where something broke, disconnected, restarted or was disabled', () => {
     expect(all.filter((r) => r.judges === 'fault').map((r) => r.id).sort()).toEqual([
       'alerts/passthrough', 'auto/early-disable', 'can/bus-dropout', 'can/device-dropout', 'can/device-rebooted', 'can/input-disconnected',
       'can/usb-dropout', 'collision/tilt', 'comms/ds-log-truncated', 'comms/emergency-stop', 'comms/loss', 'foresight/controllers', 'foresight/log-usb-stick',
-      'foresight/sticky-faults', 'foresight/values-updating', 'loop/restart-mid-match', 'mech/slip', 'mech/stall', 'mech/stuck-state', 'mech/zero-not-completed',
+      'foresight/sticky-faults', 'foresight/values-updating', 'loop/restart-mid-match', 'mech/motor-running-free', 'mech/slip', 'mech/stall', 'mech/stuck-state', 'mech/zero-not-completed',
       'power/brownout', 'power/limit-not-applied', 'power/pd-not-reporting', 'vision/stale',
     ])
   })
