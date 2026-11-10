@@ -137,6 +137,53 @@ describe('powerSummaryText: the two fallbacks of the sag line', () => {
   })
 })
 
+describe('powerSummaryText: the under-line line says what it counts', () => {
+  const under = (m: ReturnType<typeof dipped>) => lines(powerSummaryText(m)!).find((x) => x.startsWith('Under ') || x.startsWith('Time under'))!
+  it('labels stretches mode "Under 7 V (stretches ≥ 0.04 s)" so it is not read as the tab\'s KPI', () => {
+    const l = under(dipped())
+    expect(l).toMatch(/^Under 7 V \(stretches ≥ 0\.04 s\)\s+\d+\.\d s, 1 sag$/)
+  })
+  it('says "only dips shorter than 0.04 s" when the lowest point is under the line but no stretch lasted', () => {
+    const m = analysisOf({ brownout: 6 }).match
+    buildPowerGrid(m)!.volts[300] = 6.5
+    redo(m)
+    expect(buildSagSpans(m)!.mode).toBe('lowest-points')
+    expect(powerReport(m)!.minVolts).toBeLessThan(7)
+    const l = under(m)
+    expect(l).toContain('only dips shorter than 0.04 s')
+    expect(l).not.toContain('never under')
+  })
+  it('with no brownout setting, prints the tab\'s own "Time under 7 V" figure', () => {
+    const m = analysisOf().match
+    const l = under(m)
+    expect(l).toMatch(/^Time under 7 V\s+/)
+    expect(l).toContain(`${powerReport(m)!.secondsUnder7.toFixed(1)} s`)
+    expect(l).not.toContain('no brownout setting')
+  })
+})
+
+describe('powerSummaryText: floats are rounded and the margin uses the tab\'s ≥', () => {
+  const m = analysisOf({ brownout: 6.300000190734863 }).match
+  const text = powerSummaryText(m)!
+  it('prints the setting and the line to two decimals at most', () => {
+    expect(text).not.toMatch(/\d\.\d{3,}/)
+    expect(text).toContain('setting 6.3 V')
+    expect(text).toContain('Under 7.3 V')
+  })
+  it('writes "want ≥", not ">="', () => {
+    expect(text).toContain('want ≥ ')
+    expect(text).not.toContain('>=')
+  })
+})
+
+describe('summary-text keeps a small import closure', () => {
+  it('does not import the review model (matchDateOf lives in src/report/match-date.ts)', () => {
+    expect(readFileSync('src/power/summary-text.ts', 'utf8')).not.toMatch(/review-model/)
+    expect(readFileSync('src/report/review-model.ts', 'utf8')).toMatch(/match-date\.ts/)
+    expect(existsSync('src/report/match-date.ts')).toBe(true)
+  })
+})
+
 describe('powerSummaryText: nothing to show', () => {
   it('is null for a log with no motor supply currents, so no power grid', () => {
     const m = analysisOf({ noCurrents: true }).match
@@ -149,8 +196,9 @@ describe('copyText: the clipboard, then the select-and-copy fallback (the one Fi
   afterEach(() => vi.unstubAllGlobals())
   const fakeDoc = (exec: () => boolean) => {
     const box = { value: '', style: { cssText: '' }, setAttribute: vi.fn(), select: vi.fn(), remove: vi.fn() }
-    const doc = { createElement: vi.fn(() => box), body: { appendChild: vi.fn() }, execCommand: vi.fn(exec) }
-    return { box, doc }
+    const before = { focus: vi.fn() }
+    const doc = { createElement: vi.fn(() => box), body: { appendChild: vi.fn() }, execCommand: vi.fn(exec), activeElement: before }
+    return { box, doc, before }
   }
   it('uses the clipboard when it works', async () => {
     const writeText = vi.fn(async () => {})
@@ -174,6 +222,22 @@ describe('copyText: the clipboard, then the select-and-copy fallback (the one Fi
     vi.stubGlobal('document', doc)
     expect(await copyText('hello')).toBe(false)
     expect(box.remove).toHaveBeenCalled()
+  })
+  it('gives focus back to the element that had it, after a copy and after a failed one', async () => {
+    for (const exec of [() => true, () => { throw new Error('no') }]) {
+      const { doc, before } = fakeDoc(exec)
+      vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => { throw new Error('denied') }) } })
+      vi.stubGlobal('document', doc)
+      await copyText('hello')
+      expect(before.focus).toHaveBeenCalledTimes(1)
+    }
+  })
+  it('does not touch focus when the clipboard worked', async () => {
+    const { doc, before } = fakeDoc(() => true)
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } })
+    vi.stubGlobal('document', doc)
+    await copyText('hello')
+    expect(before.focus).not.toHaveBeenCalled()
   })
 })
 
@@ -199,6 +263,20 @@ describe.skipIf(!have)('the summary on the 8 logs of the team\'s 2026 event pars
         expect(rows[k].slice(r.name.length).trim().split(/\s{2,}/)[0], `log ${i} ${r.name}`).toBe(r.wh.toFixed(1))
       })
       expect(L.find((l) => l.startsWith('Energy')), `log ${i} total`).toContain(`${b.totalWh.toFixed(1)} Wh`)
+    })
+  })
+  it('puts slice 3\'s time under the line on the sag line, never above the tab\'s KPI', () => {
+    matches.forEach((m, i) => {
+      const sag = buildSagSpans(m)!
+      const kpi = powerReport(m)!.secondsUnder7
+      const l = lines(powerSummaryText(m)!).find((x) => x.startsWith('Under ') || x.startsWith('Time under'))!
+      if (sag.mode === 'stretches') {
+        expect(l, `log ${i}`).toContain('(stretches ≥ 0.04 s)')
+        expect(l, `log ${i}`).toContain(`${sag.secondsUnderLine.toFixed(1)} s, ${sag.totalSpans} ${sag.totalSpans === 1 ? 'sag' : 'sags'}`)
+        expect(sag.secondsUnderLine, `log ${i}`).toBeLessThanOrEqual(kpi + 1e-9)
+      } else {
+        expect(l, `log ${i}`).not.toContain('never under 7 V') // none of these logs is a clean one unless its minimum is above the line
+      }
     })
   })
 })

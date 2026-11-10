@@ -28,9 +28,11 @@
   })))
 
   let copied = $state<'' | 'yes' | 'no'>('')
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   async function copy() {
     copied = (await copyText(patch)) ? 'yes' : 'no'
-    setTimeout(() => (copied = ''), 3000)
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => (copied = ''), 3000)
   }
   const save = () => downloadText(fileName, patch, 'text/x-diff')
 </script>

@@ -43,10 +43,12 @@
   const secs = (x: number | null) => (x === null ? '—' : x.toFixed(1))
 
   let copied = $state<'' | 'yes' | 'no'>('')
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   async function copySummary() {
     const text = powerSummaryText(m)
     copied = text !== null && (await copyText(text)) ? 'yes' : 'no'
-    setTimeout(() => (copied = ''), 3000)
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => (copied = ''), 3000)
   }
 
   let cap = $state(40)

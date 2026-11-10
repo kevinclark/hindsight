@@ -16,6 +16,7 @@ import type { CardModel, Tone } from './card.ts'
 import { descendants, nest, partitionStanding, severityWords, withParents, type FindingNode } from './finding-tree.ts'
 import { cardTitle, rowHeadline, shortTitle } from './titles.ts'
 import { stripRepoPaths } from './repo-paths.ts'
+import { matchDateOf } from './match-date.ts'
 import { playedAt as summaryPlayedAt } from '../session/summary.ts'
 
 export { cardTitle, shortTitle } from './titles.ts'
@@ -97,13 +98,6 @@ export function buildLine(b: { sha: string; branch: string; dirty: string }): Bu
 
 /** "2026-10-18", from the robot's clock when it was set; empty when it never was. */
 export function matchDate(analysis: Analysis): string { return matchDateOf(analysis.match) }
-export function matchDateOf(m: Match): string {
-  const t = m.epochOffset !== null && m.matchStart !== null ? (m.epochOffset + m.matchStart) * 1000 : null
-  if (t === null) return ''
-  const d = new Date(t)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
 
 /** Pass the analysis as the team's marks show it (track-record.ts withMarks) and this match's wrong marks. */
 export function reviewModel(analysis: Analysis, issues: Map<string, IssueEvent>, standingKeys: Set<string> = new Set(), wrong: Map<string, IssueEvent> = new Map()): ReviewModel {

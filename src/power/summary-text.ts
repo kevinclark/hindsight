@@ -6,17 +6,17 @@
 
 import { matchWhen, type Match } from '../match/match.ts'
 import { robotName } from '../profiles/choose.ts'
-import { matchDateOf } from '../report/review-model.ts'
+import { matchDateOf } from '../report/match-date.ts'
 import { buildPowerGrid } from './battery-model.ts'
 import { buildBreakdown } from './breakdown.ts'
 import { powerReport } from './power-report.ts'
-import { buildSagSpans } from './sag-spans.ts'
+import { buildSagSpans, MIN_SPAN_S } from './sag-spans.ts'
 
 const FENCE = '```'
 const f2 = (x: number) => (Number.isFinite(x) ? x.toFixed(2) : '—')
 const a1 = (x: number | null) => (x === null ? '' : x.toFixed(1))
 const pct = (x: number, total: number) => (total > 0 ? `${((100 * x) / total).toFixed(0)} %` : '—')
-const LABEL = 26
+const LABEL = 32
 
 export function powerSummaryText(match: Match): string | null {
   const p = powerReport(match)
@@ -30,9 +30,14 @@ export function powerSummaryText(match: Match): string | null {
   const head = [robotName(match.profile.name, match.profileChoice), ...(match.event ? [match.event] : []), match.matchLabel || 'Match', ...(date ? [date] : [])].join(' · ')
 
   const line = Number.isFinite(sag.line) ? `${+sag.line.toFixed(2)}` : ''
-  const sagText = sag.mode === 'stretches'
+  // The tab's KPI counts every sample under 7 V; the stretches drop dips shorter than MIN_SPAN_S, so say which this is.
+  const MIN = `${MIN_SPAN_S}`
+  const underLabel = !line ? 'Time under 7 V' : sag.mode === 'stretches' ? `Under ${line} V (stretches ≥ ${MIN} s)` : `Under ${line} V`
+  const underText = sag.mode === 'stretches'
     ? `${sag.secondsUnderLine.toFixed(1)} s, ${sag.totalSpans} ${sag.totalSpans === 1 ? 'sag' : 'sags'}`
-    : line ? `never under ${line} V` : 'no brownout setting'
+    : !line ? `${p.secondsUnder7.toFixed(1)} s`
+    : p.minVolts < sag.line ? `only dips shorter than ${MIN} s`
+    : `never under ${line} V`
   const kv = (k: string, v: string) => `${k.padEnd(LABEL)}${v}`
 
   const w = Math.max(5, ...b.rows.map((r) => r.name.length)) + 2
@@ -44,9 +49,9 @@ export function powerSummaryText(match: Match): string | null {
     head,
     kv('Lowest voltage (enabled)', `${f2(p.minVolts)} V at ${matchWhen(match, p.minAt)}`),
     kv('Margin to brownout', Number.isFinite(p.brownoutVolts)
-      ? `${f2(p.marginVolts)} V (setting ${p.brownoutVolts} V; want >= ${match.profile.power.marginVolts} V)`
+      ? `${f2(p.marginVolts)} V (setting ${+p.brownoutVolts.toFixed(2)} V; want ≥ ${+match.profile.power.marginVolts.toFixed(2)} V)`
       : 'no brownout setting'),
-    kv(line ? `Under ${line} V` : 'Under the sag line', sagText),
+    kv(underLabel, underText),
     kv('Charge drawn', `${p.chargeAh.toFixed(2)} Ah`),
     kv('Energy', `${b.totalWh.toFixed(1)} Wh`),
     '',
