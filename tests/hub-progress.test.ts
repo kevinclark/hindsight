@@ -253,7 +253,7 @@ describe('Stop between pieces of a download from the team', () => {
     const pieces: number[] = []
     let stop = false
     const report = await fetchLogs(lib, team, [r], { cancelled: () => stop, onProgress: (_d, _t, _c, more) => { const n = more?.file?.done ?? 0; if (n > 0) { pieces.push(n); stop = true } } })
-    expect(pieces).toEqual([4 * MiB])
+    expect(pieces[0]).toBe(4 * MiB) // the range read ahead may land too: its bytes did arrive, but are never written
     expect([report.stopped, report.fetched.length, report.failed.length]).toEqual([true, 0, 0])
     expect(await readdir(join(lib.root, 'logs/2026-2027/2026-10-17'))).toEqual([])
   })
