@@ -28,6 +28,8 @@
   const lineText = $derived(sagSpans && Number.isFinite(sagSpans.line) ? `${+sagSpans.line.toFixed(2)}` : '')
   /** The biggest group with its current; the next two in a smaller line under it. */
   const top1 = (l: Load[] | null) => (l && l.length ? `${l[0].group} ${l[0].amps.toFixed(0)} A` : '—')
+  /** "2:32 into the match" on one line, "(teleop; robot time 428.2 s)" small under it, so the column stays narrow on a phone. */
+  const when = (t: number) => { const w = matchWhen(m, t); const i = w.indexOf(' ('); return i < 0 ? { head: w, tail: '' } : { head: w.slice(0, i), tail: w.slice(i + 1) } }
   const rest2 = (l: Load[] | null) => (l && l.length > 1 ? l.slice(1).map((x) => `${x.group} ${x.amps.toFixed(0)} A`).join(' · ') : '')
 
   const breakdown = $derived(buildBreakdown(m))
@@ -155,7 +157,7 @@
       <tbody>
         {#each sagSpans.spans as s (s.start)}
           <tr>
-            <td>{matchWhen(m, s.start)}</td><td>{s.secondsUnder.toFixed(2)} s{#if s.seconds - s.secondsUnder >= 0.05 - 1e-9}<small>over {s.seconds.toFixed(2)} s</small>{/if}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
+            <td class="moment">{when(s.start).head}<small>{when(s.start).tail}</small></td><td>{s.secondsUnder.toFixed(2)} s{#if s.seconds - s.secondsUnder >= 0.05 - 1e-9}<small>over {s.seconds.toFixed(2)} s</small>{/if}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
             <td>{s.totalAmpsAtLowest.toFixed(0)} A</td><td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.during)}<small>{rest2(s.during)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
           </tr>
         {/each}
@@ -170,7 +172,7 @@
       <tbody>
         {#each sagSpans.spans as s (s.lowestAt)}
           <tr>
-            <td>{matchWhen(m, s.lowestAt)}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
+            <td class="moment">{when(s.lowestAt).head}<small>{when(s.lowestAt).tail}</small></td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart || '—'}</td>
             <td>{s.totalAmpsAtLowest.toFixed(0)} A</td><td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
           </tr>
         {/each}
@@ -249,10 +251,13 @@
   h3 { font-size: 1rem; margin: 1.5rem 0 0.25rem; }
   .note { font-size: 0.85rem; color: var(--muted); max-width: 75ch; }
   table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  /* A wide table scrolls inside itself on a phone instead of widening the page (as LimitsTab does). */
+  table.breakdown, table.sags { display: block; overflow-x: auto; max-width: 100%; }
   th, td { text-align: left; padding: 0.2rem 1rem 0.2rem 0; vertical-align: top; }
   thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   tbody th { font-weight: normal; }
   tr.group th { color: var(--muted); font-size: 0.75rem; padding-top: 0.5rem; }
+  .sags td.moment { white-space: nowrap; }
   .sags td small { display: block; color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
   .hl { background: var(--hover); }
   .breakdown td, .breakdown th { white-space: nowrap; vertical-align: middle; }
