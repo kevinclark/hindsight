@@ -116,6 +116,35 @@ enable, "after" = 10 s after the last disable to the end of the log):
   `camera-sees-tag` passes a camera on its raw result showing one tag (or on a pose), not on the pose alone. Before
   any match no camera saw a tag: 0 of 62,681 results across the three field stretches.
 
+## Foresight on-check backtest (2026-11-10)
+
+`node --experimental-strip-types scripts/foresight-oncheck-backtest.ts --json <out> <log>`, one process per log, on all
+51 logs of one 2026 event of 8033's (listed in the untracked `~/.hindsight/team-logs.json`, `pitEvent2026`). Each pit
+log (the field never attached: 36; 15 matches excluded) is replayed the way `live.ts` reads a robot
+(`src/foresight/replay.ts`: the subscribed signals in time order, prune and a check every second).
+
+- **`mech/pair-decoupled` on the pit runs:** 16 of 36 were enabled. It went amber on the two with a kicker motor come
+  free, each during its enable (80 s and 76.8 s after code start, within a check of the stretch reaching 0.5 s); the one
+  that came back together reads amber with "together again for … s after". 13 read OK at the end, 1 enabled run never
+  ran the kicker and 20 never enabled: "not checked". No healthy run flagged.
+- **Over every log with the kicker's keys** (the 758-log library plus these 51; 59 with the keys): it fires on exactly
+  the six with a motor come free (two pit runs 1.42 and 1.53 s, four matches 4.7–12.5 s); in the matches it sits under
+  `mech/motor-running-free` (links.ts). The 32 healthy logs that ran the kicker while enabled never passed 0.14 s on the
+  field or 0.10 s in the pit; the 0.5 s line was chosen after seeing the faults.
+- **Start-up settles** (`SETTLE_BY_RULE`), from the first 90 s of the 36 pit logs with no settle at all: camera and alert
+  checks flagged start-up drop-outs on 17 logs (`vision/time-sync` from 14.5–20.2 s); `foresight/controllers` a missing
+  controller on 9, 3 of which cleared by themselves (the last at 25.4 s); `foresight/values-updating` nothing (an earlier
+  replay saw it amber at 7–11 s on 3: kept a 20 s settle); `foresight/zero-sanity` a false "NaN° off" on 36 of 36 at
+  1–6 s, a bug (a position first logged at that second), fixed. With the settles, the first 90 s flag nothing the old
+  30 s settle didn't. `foresight/gyro-still-drift` (grey) waits 30 s: from the first second, one field log's first
+  check read 162.53° of boot heading change.
+- **The field backtest** (`foresight-backtest.ts`, the 74 logs above plus the public ones, 31 judged), main 60bf1c8
+  against this change: every amber and red identical except `power/rest-voltage`, now context (grey) on 7 logs.
+- **ms per check** (median, live-like replay, main 60bf1c8 → this change): 8.6 → 8.8, 18.5 → 20.2, 12.2 → 12.0 on three
+  pit runs of 2–5 min, 133.7 → 142.2 on a 20-min one. Over the 36 pit logs (run before the last change, which only cuts
+  long sessions) the median check took 62 ms; the 90th
+  percentile was at most 669 ms (a 35-min never-enabled boot).
+
 ## Foresight live (2026-10-19)
 
 - **Engine:** 1–26 ms per check in Node on the M5 Max (66 signals, the stretch growing to 345 s). With the 105 signals
