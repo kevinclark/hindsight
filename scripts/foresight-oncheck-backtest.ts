@@ -62,12 +62,6 @@ for (const file of files) {
   results.push(result)
   const fms = num(match, match.profile.signals.fmsAttached)
   if (fms && Array.from(fms.v).some((v) => v > 0.5)) { result.excluded = 'the field attached: a match, not a pit run'; continue }
-  const steps: ReplayStep[] = []
-  for (const step of replayLive(log, profile, choice, noSettle ? { settle: () => 0 } : {})) {
-    if (step.now - match.logStart > firstSeconds) break
-    steps.push(step)
-  }
-  if (!steps.length) { result.excluded = 'no records'; continue }
   const start = match.logStart
   const rel = (t: number) => round(t - start)
   const enabledAt = (t: number) => match.enabled.some((iv) => t >= iv.start && t <= iv.end)
@@ -79,12 +73,20 @@ for (const file of files) {
     if (f) { f.last = rel(t); f.title = title } else into[key] = { first: rel(t), enabled: enabledAt(t), last: rel(t), atEnd: false, title }
   }
   const onFires: Record<string, Fire> = {}
-  for (const s of steps) {
-    for (const i of allItems(s.result.onchecks.verdict)) if (i.level !== 'grey') note(onFires, i.finding.rule, i.finding.title, s.now)
-    if (s.result.state !== 'checked') continue
-    for (const i of allItems(s.result.verdict)) if (i.level !== 'grey' && !ONCHECK_RULES.some((r) => r.id === i.finding.rule)) note(flagged, `${i.finding.rule} · ${i.finding.about ?? ''}`, i.finding.title, s.now)
+  // Each check is read as it comes and dropped: a 35-minute boot is ~2,000 checks, each holding a whole match model.
+  const ms: number[] = []
+  let last: ReplayStep | null = null
+  let firstChecked: { at: number; verdict: string } | null = null
+  for (const step of replayLive(log, profile, choice, noSettle ? { settle: () => 0 } : {})) {
+    if (step.now - match.logStart > firstSeconds) break
+    last = step
+    ms.push(step.ms)
+    for (const i of allItems(step.result.onchecks.verdict)) if (i.level !== 'grey') note(onFires, i.finding.rule, i.finding.title, step.now)
+    if (step.result.state !== 'checked') continue
+    firstChecked ??= { at: rel(step.now), verdict: step.result.verdict.verdict }
+    for (const i of allItems(step.result.verdict)) if (i.level !== 'grey' && !ONCHECK_RULES.some((r) => r.id === i.finding.rule)) note(flagged, `${i.finding.rule} · ${i.finding.about ?? ''}`, i.finding.title, step.now)
   }
-  const last = steps[steps.length - 1]
+  if (!last) { result.excluded = 'no records'; continue }
   const endItems = last.result.state === 'checked' ? allItems(last.result.verdict) : []
   for (const [key, f] of Object.entries(flagged)) f.atEnd = endItems.some((i) => `${i.finding.rule} · ${i.finding.about ?? ''}` === key && i.level !== 'grey')
   const endLines = markOnRun(last.result.onchecks)
@@ -96,10 +98,9 @@ for (const file of files) {
   }
   result.onCheck = onCheck
   result.flagged = flagged
-  const firstChecked = steps.find((s) => s.result.state === 'checked')
-  result.firstVerdict = firstChecked && firstChecked.result.state === 'checked' ? { at: rel(firstChecked.now), verdict: firstChecked.result.verdict.verdict } : null
+  result.firstVerdict = firstChecked
   result.endVerdict = last.result.state === 'checked' ? `${last.result.verdict.verdict}: ${last.result.verdict.reason}` : `${last.result.state}: ${last.result.reason}`
-  const ms = steps.map((s) => s.ms).sort((a, b) => a - b)
+  ms.sort((a, b) => a - b)
   const q = (p: number) => round(ms[Math.min(ms.length - 1, Math.floor(p * ms.length))])
   result.ms = { checks: ms.length, median: q(0.5), p90: q(0.9), max: round(ms[ms.length - 1]) }
   console.error(`${name}: ${ms.length} checks, ${Object.values(onFires).length} on-check fires, ${Object.keys(flagged).length} others flagged`)
