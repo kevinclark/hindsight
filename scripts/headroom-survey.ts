@@ -8,15 +8,18 @@ import { makeGrid, resample } from '../src/match/series.ts'
 import { DT } from '../src/power/battery-model.ts'
 import { motorHeadroom } from '../src/power/headroom.ts'
 import { openWpilog, readNumbers } from '../src/readers/wpilog.ts'
+import { formatOf } from '../src/profiles/formats.ts'
+import { keysOf } from '../src/profiles/sources.ts'
 
 const files = (p: string): string[] => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(join(p, f))) : p.endsWith('.wpilog') ? [p] : [])
-const BUS = ['/SystemStats/BatteryVoltage', 'NT:/SystemStats/BatteryVoltage', 'DS:batteryVoltage', '/PowerDistribution/Voltage']
-const ENABLED = ['/DriverStation/Enabled', 'DS:enabled', 'NT:/DriverStation/Enabled']
 const pct = (x: number | null | undefined) => (x === null || x === undefined ? '  –' : `${Math.round(100 * x)}%`.padStart(4))
 for (const f of process.argv.slice(2).flatMap(files)) {
   let log
   try { log = openWpilog(new Uint8Array(readFileSync(f))) } catch { console.log(`\n== ${f}: not a readable .wpilog`); continue }
-  const busKey = BUS.find((k) => log.entries.has(k)), enKey = ENABLED.find((k) => log.entries.has(k))
+  // The log format's own keys (AdvantageKit, DataLogManager, DogLog), as the app reads them.
+  const sig = formatOf(log)?.signals
+  const first = (source: unknown) => (source ? keysOf(source as Parameters<typeof keysOf>[0]).find((k) => log!.entries.has(k)) : undefined)
+  const busKey = first(sig?.batteryVoltage), enKey = first(sig?.enabled)
   const found = motorsFromLog(log).motors.filter((m) => m.appliedVolts && m.velocity && (m.statorCurrent ?? m.current))
   console.log(`\n== ${f.split('/').slice(-2).join('/')}  bus ${busKey ?? 'none'}  enabled ${enKey ?? 'none'}  motors with V+v+I: ${found.length}`)
   if (!busKey || !enKey || !found.length) continue

@@ -146,7 +146,8 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
       velocity: pick(/Velocity|Speed/, NUMERIC, /Target|Setpoint|Goal|Desired|Reference|Requested|Command/),
       // Only the voltage itself after the motor's name (`AppliedVolts`, `Voltage`): `Requested Voltage`, `SupplyVoltage`
       // or a tuning `FeedVoltage` is not what the motor got.
-      appliedVolts: pick(/^(Applied|Motor|Output)?Volt(s|age)?$/, NUMERIC),
+      // A named one (`AppliedVolts`) before a bare `Voltage`: pick takes the shortest key, which would prefer the bare one.
+      appliedVolts: pick(/^(Applied|Motor|Output)Volt(s|age)?$/, NUMERIC) ?? pick(/^Volt(s|age)?$/, NUMERIC),
       connected: pick(/Connected$/, new Set(['boolean'])),
       temperature: pick(/Temp/, NUMERIC),
       element: s.element && { of: path.slice(0, path.lastIndexOf('[')), ...s.element },

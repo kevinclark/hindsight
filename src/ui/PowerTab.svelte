@@ -4,7 +4,7 @@
   import { powerReport, whatIfAt } from '../power/power-report.ts'
   import { buildPowerGrid, DT } from '../power/battery-model.ts'
   import { bandText, buildDrag } from '../power/drag.ts'
-  import { buildHeadroom, headroomVerdicts } from '../power/headroom.ts'
+  import { buildHeadroom, headroomMissing, headroomVerdicts } from '../power/headroom.ts'
   import { buildBreakdown, hasStates } from '../power/breakdown.ts'
   import { buildSagSpans, type Load } from '../power/sag-spans.ts'
   import { FLEET_REFERENCE } from '../power/fleet-reference.ts'
@@ -24,7 +24,9 @@
   /** Motors with steady-speed bands, grouped by motor group in profile order, leader beside follower. */
   const dragGroups = $derived([...new Set(drag.map((d) => d.group))].map((group) => ({ group, motors: drag.filter((d) => d.group === group) })))
 
-  const headroom = $derived(buildHeadroom(m))
+  /** Groups that ran at all: a never-enabled log has none, and the section says so instead of a table of blanks. */
+  const headroom = $derived(buildHeadroom(m).filter((h) => h.runningSeconds > 0))
+  const headroomWhyNot = $derived(headroomMissing(m))
   const verdicts = $derived(headroomVerdicts(headroom))
   const share = (x: number | null) => (x === null ? '—' : `${Math.round(100 * x)} %`)
   const ratio = (x: number) => `${Math.round(100 * x)} %`
@@ -195,10 +197,10 @@
         {/each}
       </ul>
     {:else}
-      <p class="note">Nothing here ran out of power, speed or setpoint.</p>
+      <p class="note">Nothing here ran out of power or speed, and no setpoint asked for more than the battery had.</p>
     {/if}
     <table class="headroom">
-      <thead><tr><th>Group</th><th>Ran (s)</th><th>At stator limit</th><th>At supply limit</th><th>Speed / top speed, P50 / P90</th><th>Within 10 % of top</th><th>Current there</th></tr></thead>
+      <thead><tr><th>Group</th><th>Ran (s)</th><th>At stator limit</th><th>At supply cap</th><th>Share of top speed: typical / high</th><th>Within 10 % of top</th><th>Current there</th></tr></thead>
       <tbody>
         {#each headroom as h (h.group)}
           <tr>
@@ -210,9 +212,12 @@
     </table>
     {#each headroom.filter((h) => h.setpoint && h.setpoint.seconds > 0) as h (h.group)}
       {@const sp = h.setpoint!}
-      <p class="sp">{h.group} setpoint: held {sp.seconds.toFixed(0)} s; at or past top speed for the battery {ratio(sp.pastTop)} of it{#if sp.shortWhenPastTop !== null}; under 95 % of the setpoint {ratio(sp.shortWhenPastTop)} of that time{/if}{#if sp.shortOtherwise !== null}, {ratio(sp.shortOtherwise)} the rest{/if}.</p>
+      <p class="sp">{h.group} setpoint: needs {sp.needsVolts.toFixed(1)} V (median); held {sp.seconds.toFixed(0)} s; the battery was under that {ratio(sp.pastTop)} of it{#if sp.shortWhenPastTop !== null}, and the wheel was under 95 % of the setpoint {ratio(sp.shortWhenPastTop)} of that time{/if}{#if sp.shortOtherwise !== null}, {ratio(sp.shortOtherwise)} the rest{/if}.</p>
     {/each}
-    <p class="note">Shares are of the time a motor ran: enabled, on CAN, drawing 5 A or driven with 1 V or more. A limit share is at 93 % of the profile's limit or more ("—": no limit enabled in the profile). Top speed is the speed the motor could reach on the battery voltage of that moment: from a fit of this log's applied volts against speed and current, so no gear ratio is needed; "—" where the fit can't be trusted. A setpoint counts only once the wheel first reached it. A mechanism told to run at full voltage sits near top speed by design.</p>
+    <p class="note">Shares are of the time a motor ran: enabled, on CAN, drawing 5 A or driven with 1 V or more. A limit share is the time at 93 % of the limit or more; the supply cap is what the motor is held to after a second (its lower limit, Phoenix's 40 A if the code sets none). "—" in a limit column: no such limit, or the profile doesn't know it. Top speed is the speed the motor could reach on the battery voltage of that moment, from a fit of this log's applied volts against speed and current, so no gear ratio is needed; typical is the median, high the 90th percentile; "—" where the motor logs no speed or the fit can't be trusted. A setpoint counts once the wheel reached it or after 1.5 s at it. A mechanism told to run at full voltage sits near top speed by design. Verdicts need 30 s of running.</p>
+  {:else if headroomWhyNot}
+    <h3>Headroom: how much more each mechanism had</h3>
+    <p class="note">{headroomWhyNot}</p>
   {/if}
 
   {#if dragGroups.length}
