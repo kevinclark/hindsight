@@ -46,6 +46,8 @@
   import { ANALYZER_HASH, eventLines, eventLogNames, latestEventSession } from './hub/event-publish.ts'
   import { analyzerHashOf, analyzerId, serializeEventLine } from './hub/event-file.ts'
   import { sessionEvent } from './board/event.ts'
+  import { libraryEventLogs, matchVideoKey, videoUrl } from './tba/video.ts'
+  import { identifyEvents, type ResolvedEvent } from './tba/identify.ts'
   import { newerVersion } from './hub/catalog.ts'
   import { SUMMARY_SHAPE, summaryMapStale, type MatchSummary } from './session/summary.ts'
   import { setPublishNote } from './ui/event-share.svelte.ts'
@@ -199,10 +201,12 @@
   let sessions = $state.raw<Session[]>([])
   // What's new after an update is shown only on a computer that has logs (a fresh install has nothing to compare with).
   const hasLogs = $derived((hub() ? todaySig.libraryLogs.some((r) => !r.stub) : false) || sessions.length > 0 || analyses.length > 0)
+  /** The session whose matches hold this log (as a match or one of its pieces), pit runs not counted. */
+  const sessionHolding = (name: string) => sessions.find((s) => s.matches.some((m) => m.fileName === name || m.pieces?.includes(name)))
   const standing = $derived.by(() => {
     if (!current) return new Set<string>()
     const name = current.match.fileName
-    const own = sessions.find((s) => s.matches.some((m) => m.fileName === name || m.pieces?.includes(name)))
+    const own = sessionHolding(name)
     return own ? standingKeys(own) : new Set<string>()
   })
 
@@ -508,6 +512,39 @@
     const path = hub()?.pathForFile(f)
     if (path) fileLocations.set(f.name, { file: path })
   }
+  // The open match's video on The Blue Alliance, when it has one: the session's event (the one the board uses) and the log's own match
+  // (src/tba/video.ts). Nothing shows while it is being found, or when anything is missing. The lookup is keyed on primitives, so a
+  // `sessions` reassignment or a replaced analysis of the same log neither re-asks nor blanks the link.
+  let videoKey = $state<string | null>(null)
+  const videoName = $derived(current?.match.fileName)
+  const videoLabel = $derived(current?.match.fms ? current.match.matchLabel : '')
+  const videoAuto = $derived(current && current.match.epochOffset !== null && current.match.matchStart !== null ? current.match.epochOffset + current.match.matchStart : null)
+  // Where the event comes from: the loaded session that holds the log, else (opened from the Library) its library record's neighbours.
+  const videoSource = $derived.by(() => {
+    if (!videoName || !videoLabel) return undefined
+    const held = sessionHolding(videoName)
+    return held ? `session:${held.id}` : (() => { const l = libraryEventLogs(todaySig.libraryLogs, videoName); return l ? `library:${l.sha}` : undefined })()
+  })
+  const videoHasGetter = $derived(tbaGetter() !== null)
+  $effect(() => { void videoName; videoKey = null })
+  $effect(() => {
+    const [name, label, auto, sid, team] = [videoName, videoLabel, videoAuto, videoSource, tbaTeam()]
+    const get = tbaGetter()
+    if (!name || !sid || !videoHasGetter || !get || team === null) return
+    const own = untrack(() => sessionHolding(name))
+    const lib = own ? null : untrack(() => libraryEventLogs(todaySig.libraryLogs, name))
+    if (!own && !lib) return
+    let stale = false
+    void (async () => {
+      let event: ResolvedEvent | null = null
+      if (own) event = (await sessionEvent(own, team, get).catch(() => null))?.event ?? null
+      else if (lib) event = (await identifyEvents(lib.logs, team, get).catch(() => null))?.byFile.get(lib.sha) ?? null
+      if (!event || event.by === 'date' || stale) return
+      const key = await matchVideoKey(get, team, event.key, event.end, label, auto)
+      if (!stale) videoKey = key
+    })()
+    return () => { stale = true }
+  })
   const ascopeTarget = $derived(current ? fileLocations.get(current.match.fileName) : undefined)
   // The Devices tab reads a log's .hoot files through the desktop app, so it shows for library logs there (ADR 13).
   const devicesPath = $derived(!readOnly && hub() && ascopeTarget && 'library' in ascopeTarget ? ascopeTarget.library : null)
@@ -829,6 +866,7 @@
     <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
     <span class="actions">
       {#if busy}<span class="busy">Reading…</span>{/if}
+      {#if videoKey}<a class="button choose" href={videoUrl(videoKey)} target="_blank" rel="noreferrer" title="Opens the match video on YouTube, from its start">Match video</a>{/if}
       {#if ascopeTarget}
         <button class="button choose" title="Open this log in AdvantageScope" disabled={ascopeBusy} onclick={openInAdvantageScope}>Open in AdvantageScope</button>
       {/if}
@@ -876,7 +914,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} hoot={hootHere} onDevices={devicesPath ? () => (tab = 'devices') : undefined} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} onReadings={(name, r) => { keepReadings(name, r); hootTick++ }} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {videoKey} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} hoot={hootHere} onDevices={devicesPath ? () => (tab = 'devices') : undefined} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} onReadings={(name, r) => { keepReadings(name, r); hootTick++ }} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>

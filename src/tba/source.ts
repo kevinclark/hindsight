@@ -25,11 +25,13 @@ export class TbaError extends Error {
   constructor(message: string, status: number | null = null) { super(message); this.name = 'TbaError'; this.status = status }
 }
 
-/** The only three calls Hindsight makes. The desktop app's main process refuses any other path from the page. */
+/** The only four calls Hindsight makes. The desktop app's main process refuses any other path from the page. */
 const PATHS = [
   /^\/team\/frc\d{1,5}\/events\/\d{4}\/simple$/,
   /^\/event\/\d{4}[a-z0-9]{1,20}$/,
   /^\/team\/frc\d{1,5}\/event\/\d{4}[a-z0-9]{1,20}\/matches\/simple$/,
+  // The full list, for the videos on each match (src/tba/video.ts).
+  /^\/team\/frc\d{1,5}\/event\/\d{4}[a-z0-9]{1,20}\/matches$/,
 ]
 export const isTbaPath = (p: unknown): p is string => typeof p === 'string' && PATHS.some((r) => r.test(p))
 
@@ -41,9 +43,12 @@ export const isTbaPath = (p: unknown): p is string => typeof p === 'string' && P
  */
 const MINUTE = 60e3
 export const ttlOf = (path: string, fetchedAt: number, eventEnd?: string): number => {
-  if (!path.endsWith('/matches/simple')) return 24 * 60 * MINUTE
+  const full = path.endsWith('/matches')
+  if (!full && !path.endsWith('/matches/simple')) return 24 * 60 * MINUTE
   const end = eventEnd ? Date.parse(`${eventEnd}T00:00:00Z`) : NaN
-  return Number.isFinite(end) && fetchedAt > end + 2.5 * 86400e3 ? 30 * 24 * 60 * MINUTE : 10 * MINUTE
+  if (!Number.isFinite(end) || fetchedAt <= end + 2.5 * 86400e3) return 10 * MINUTE
+  // The full list carries videos, which post days to weeks after an event: asked again every 6 hours until 30 days after it.
+  return full && fetchedAt <= end + 30 * 86400e3 ? 6 * 60 * MINUTE : 30 * 24 * 60 * MINUTE
 }
 
 export function createTba(opts: { key: string; store: TbaStore; fetch?: typeof fetch; now?: () => number }): TbaGet {

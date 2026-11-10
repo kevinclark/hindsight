@@ -192,7 +192,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
     const saved = await saveSettings({ nexusKey: checked ?? undefined })
     return { nexusKey: !!saved.nexusKey }
   })
-  /** The Blue Alliance, asked from here so the key never reaches the page. Only the three reads in src/tba/source.ts. */
+  /** The Blue Alliance, asked from here so the key never reaches the page. Only the four reads in src/tba/source.ts. */
   const tbaStore = fileTbaStore()
   let tba: { key: string; get: TbaGet } | null = null
   ipcMain.handle('hub:tba', async (_e, path: string, opts?: { eventEnd?: string }) => {

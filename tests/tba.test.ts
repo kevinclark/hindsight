@@ -43,10 +43,11 @@ function fakeFetch(calls: string[] = [], opts: { status?: number; down?: boolean
 }
 
 describe('the client', () => {
-  it('asks for only the three reads', () => {
+  it('asks for only the four reads', () => {
     expect(isTbaPath('/team/frc9999/events/2099/simple')).toBe(true)
     expect(isTbaPath('/event/2099test')).toBe(true)
     expect(isTbaPath('/team/frc9999/event/2099test/matches/simple')).toBe(true)
+    expect(isTbaPath('/team/frc9999/event/2099test/matches')).toBe(true)
     for (const bad of ['/events/2099', '/team/frc9999', '/event/2099test/teams', '/team/frc9999/events/2099/simple?x=1', 'https://example.com', 5]) expect(isTbaPath(bad)).toBe(false)
   })
   it('caches every answer with its fetch time and serves a fresh copy without asking again', async () => {
