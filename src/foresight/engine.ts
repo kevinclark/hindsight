@@ -50,6 +50,13 @@ export const SETTLE_BY_RULE: Record<string, number> = {
   // Context only, but a heading change in the boot seconds is no drift (a field log read 162.53° there, 1.12° after).
   'foresight/gyro-still-drift': SETTLE_SECONDS,
 }
+/**
+ * The settling checks that read back to their stretch's start (drop-outs, alerts and tags seen over the whole stretch;
+ * the heading over up to 20 s from it), so their stretch starts after the settle for good. The other two read only the
+ * last seconds (controllers now, readings over 5 s): once settled they share the static checks' stretch, so a long
+ * session builds two stretches, not four (a 20-min pit log: 214 ms per check against 144 ms).
+ */
+const COUNTS_FROM_SETTLE = new Set(['vision/stale', 'vision/time-sync', 'alerts/passthrough', 'foresight/camera-sees-tag', 'foresight/gyro-still-drift'])
 /** What each settling check is about, for the verdict's words. */
 const SETTLE_WORDS: Record<string, string> = {
   'vision/stale': 'cameras', 'vision/time-sync': 'cameras', 'foresight/camera-sees-tag': 'cameras', 'alerts/passthrough': 'alerts',
@@ -132,12 +139,14 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   const waiting = rules.filter((r) => now < input.codeStart + settleOf(r.id))
   // Checks that start their stretch at the same moment share it. After KEEP_SECONDS the oldest records are gone: check
   // only what is still known, and say so.
-  const startOf = (r: Rule) => Math.max(input.codeStart + settleOf(r.id), afterDrive, store.prunedTo)
+  const startOf = (r: Rule) => Math.max(COUNTS_FROM_SETTLE.has(r.id) ? input.codeStart + settleOf(r.id) : input.codeStart, afterDrive, store.prunedTo)
   const byStart = new Map<number, Rule[]>()
   for (const r of rules.filter((x) => !waiting.includes(x))) byStart.set(startOf(r), [...(byStart.get(startOf(r)) ?? []), r])
   const stretches = [...byStart].sort((a, b) => a[0] - b[0]).map(([start, group]) => {
     const words = store.prunedTo >= start ? `in the last ${Math.round(KEEP_SECONDS / 60)} min` : lastEnable ? 'since the robot was last driven' : start > input.codeStart ? 'since start-up settled' : 'since the robot code started'
-    const match = buildMatch('foresight', openWpilog(store.windowLog(start, now)), picked.profile, picked.choice)
+    // A stretch from code start is the probe's own window: read it again rather than write it again.
+    const log = start === input.codeStart ? probeLog : openWpilog(store.windowLog(start, now))
+    const match = buildMatch('foresight', log, picked.profile, picked.choice)
     match.foresight = { start, end: now, lastPassingSha: input.lastPassingSha, words }
     return { start, words, match, report: runRules(match, group) }
   })
