@@ -233,6 +233,11 @@ M5 Max (147 ms per log); the page never stopped responding for more than about 0
   wiring resistance, seconds a follower ran more than 15 % off its leader, auto loop overruns, vision outliers. Each
   row says the verdict ("Under 7 V in 8 of 8 matches"), draws a sparkline (the line as a hairline, one amber dot on the
   worst match), and quotes the rule's own next step. Dots are coloured by battery ID when there are any (logged, or typed in).
+  One row is how far the battery fell below a healthy battery at the same charge drawn (`power/battery-collapse`'s number).
+- **Batteries**: each named battery's matches with that number, worst battery first, and a verdict (past the rule's
+  1.5 V line in N matches: capacity-test it). A battery is named by the profile's tracker ID key, or by the name its fuel
+  gauge reports (`battery.gaugeName`, e.g. `/RealMetadata/BFG Name`), or typed in. To follow one battery across events,
+  filter the Library to it and open its matches here.
 - **Download for Claude** saves `<session>.session-findings.json` (grid, confidence, per-match numbers, the board records and the rules' sources), after listing what is inside.
 
 Not used in the session view: Driver Station logs (match review only).

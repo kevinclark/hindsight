@@ -50,7 +50,8 @@ over 138–345 s of disabled robot on the field. 91 s for all 11 on the M5 Max.
 | `foresight/zero-sanity` | 3 | none | — | amber: no real fire on our logs yet |
 | `vision/stale` (drop-outs only while disabled) | 3 | none | — | amber: no real fire on our logs yet |
 | `alerts/passthrough` | 8 | one public 2026 log (QM36): "limelight name … is invalid" and "Vision Camera 0 Disconnected" | the Limelight-name alert is an always-on config nag: **false** | amber |
-| `battery/identity`, `battery/gauge-capacity` | 0 | no log has the battery tracker's keys yet | — | amber |
+| `battery/identity` | 15 (2026-11-10) | one 2026 event, 20 logs that log the gauge's battery name (`gaugeName`): 5 name a battery, 15 log it blank (the gauge not answering), 0 from logs before the code logged it (not checked) | blank name means no gauge reading: **true** by construction | amber |
+| `battery/gauge-capacity` | 0 | no log has the battery tracker's gauge keys yet | — | amber |
 | `foresight/commit-matches` | 0 | needs a passing pit check on record | — | amber |
 | `foresight/log-usb-stick` (2026-10-20) | 0 | no log has the companion library's `/Hindsight/LogDrive/*` keys yet (none of the three 2026 logs) | — | amber |
 | `foresight/gyro-still-drift` | 3 | context only (grey): no line | — | grey |

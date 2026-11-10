@@ -152,7 +152,7 @@ function otherSlots(p: RobotProfile): CoverageKey[] {
 const BATTERY_WORDS: Record<keyof RobotProfile['battery'], string> = {
   id: 'battery ID', idSource: 'battery ID source', gaugeValid: 'battery gauge valid flag',
   effectiveCapacityAh: 'battery effective capacity', ratedCapacityAh: 'battery rated capacity',
-  remainingChargePct: 'battery remaining charge', numCycles: 'battery charge cycles',
+  remainingChargePct: 'battery remaining charge', numCycles: 'battery charge cycles', gaugeName: 'battery name from its fuel gauge',
 }
 
 function batterySlots(battery: RobotProfile['battery']): CoverageKey[] {

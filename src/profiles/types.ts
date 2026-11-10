@@ -207,6 +207,11 @@ export interface BatteryKeys {
   ratedCapacityAh: string
   remainingChargePct: string
   numCycles: string
+  /**
+   * The name the battery's fuel gauge reports for the battery it sits on, when the robot code logs it (for example once
+   * at start-up as AdvantageKit metadata). Names the battery when the tracker's `id` is not logged.
+   */
+  gaugeName: string
 }
 
 export type BatterySources = { [K in keyof BatteryKeys]: Source }

@@ -7,10 +7,9 @@
  * Why: One 2026 match's battery matched two healthy ones for the first ~3.5 Ah, then collapsed: ~8 V at 6.25 Ah where a
  * healthy battery reads ~10.4 V. It was fully charged (12.66 V) and the wiring was fine (11 mΩ). It was weak.
  */
-import { ocvCurve } from '../../power/battery-model.ts'
 import { rule, round, volts } from '../rule.ts'
 import { CD_BATTERY_ACCEPTANCE, CD_BATTERY_CBA_LINE, MK_ES17_12 } from '../sources.ts'
-import { batteryHealth, LAST_REFERENCE_AH, MOST_BELOW_HEALTHY, restBeforeAuto } from './battery-health.ts'
+import { batteryHealth, chargedPastHealthyCurve, LAST_REFERENCE_AH, MOST_BELOW_HEALTHY, restBeforeAuto } from './battery-health.ts'
 
 export default rule({
   id: 'power/battery-collapse',
@@ -40,7 +39,7 @@ export default rule({
     const power = match.power()
     const ohms = power.report.resistanceOhms
     if (ohms === null) return match.couldNotCheck('too few current steps to measure resistance')
-    if (ocvCurve(power.grid, ohms, 0.5).some((p) => p.ah > LAST_REFERENCE_AH)) {
+    if (chargedPastHealthyCurve(power.grid, ohms)) {
       match.checkedOnlyPart(`charge past ${LAST_REFERENCE_AH} Ah: no healthy battery to compare with there`)
     }
     const health = batteryHealth(match, power)

@@ -1,8 +1,9 @@
 /**
  * Do we know which battery was in the robot?
  *
- * Checks: the FRC8033BatteryTracker keys (Battery/Id, Battery/IdSource) at the start of the match. Fires when the ID
- * is unknown, or came from the dashboard because the fuel gauge wasn't reporting.
+ * Checks: the FRC8033BatteryTracker keys (Battery/Id, Battery/IdSource) at the start of the match, or, for a robot that
+ * logs only its fuel gauge's battery name (the profile's battery.gaugeName), that name. Fires when the ID is unknown,
+ * or came from the dashboard because the fuel gauge wasn't reporting.
  * Why: One 2026 match browned out on a weak battery and nobody could say which one.
  */
 import { rule } from '../rule.ts'
@@ -29,6 +30,16 @@ export default rule({
 
   check(match) {
     const at = match.autoStart ?? Infinity
+    // A robot that logs only its gauge's own battery name (no tracker ID): the gauge named the battery, or nothing did.
+    const { id: idKey, gaugeName } = match.profile.battery
+    if (!(idKey && match.has(idKey)) && gaugeName && match.has(gaugeName)) {
+      if (match.batteryAt(at)) return
+      return {
+        message: 'Battery ID unknown for this match', at: match.autoStart, likely: ['gauge-unplugged'],
+        ruledOut: { code: 'the code logs the gauge\'s battery name (it was blank)' } as Record<string, string>,
+        evidence: { 'battery id': '(none)', 'id source': 'the fuel gauge\'s battery name (blank)' },
+      }
+    }
     const id = match.text(match.batteryKey('id')).at(at)
     const source = match.text(match.batteryKey('idSource')).at(at) || 'none'
     if (id && (source === 'gauge' || source === 'gauge-cached')) return

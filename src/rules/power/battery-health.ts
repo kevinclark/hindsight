@@ -25,6 +25,11 @@ export function furthestBelowHealthy(grid: PowerGrid, resistanceOhms: number) {
   return compared.sort((a, b) => b.below - a.below)[0] ?? null
 }
 
+/** True when the match drew more charge than the healthy curve covers (the rule then checks only part of it). */
+export function chargedPastHealthyCurve(grid: PowerGrid, resistanceOhms: number): boolean {
+  return ocvCurve(grid, resistanceOhms, 0.5).some((p) => p.ah > LAST_REFERENCE_AH)
+}
+
 /**
  * What the power model says about the battery and its wiring. `power` is match.power() or match.powerIfLogged():
  * each rule decides whether it needs the motor currents. With no measured resistance, every field is null or false

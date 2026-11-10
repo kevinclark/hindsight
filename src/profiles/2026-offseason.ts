@@ -64,6 +64,9 @@ const robot: RobotProfile = {
     ratedCapacityAh: ['/BatteryGauge/RatedCapacityAh', '/RealOutputs/BatteryGauge/RatedCapacityAh'],
     remainingChargePct: ['/BatteryGauge/RemainingChargePct', '/RealOutputs/BatteryGauge/RemainingChargePct'],
     numCycles: ['/BatteryGauge/NumCycles', '/RealOutputs/BatteryGauge/NumCycles'],
+    // The robot's own fuel-gauge code (from ee681a7) writes the gauge's battery name once at start-up as metadata; the
+    // tracker library's keys above are not in its logs.
+    gaugeName: ['/RealMetadata/BFG Name'],
   },
 
   power: {
