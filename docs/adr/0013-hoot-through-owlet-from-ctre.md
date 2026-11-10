@@ -35,6 +35,7 @@ this Agreement", an agreement "between you" and CTRE.
 5. No `.hoot` parser of our own, ever: only owlet reads the format.
 6. What owlet exports is reduced to what the Devices tab draws and cached per `.hoot` (`<userData>/hoot-cache`), never in
    the library, which Sync uploads. The first build is a view: no rule, finding, phone card or event line reads it.
+   (Superseded by ADR 14: experimental rules read it, in a tier of their own; phone cards and event lines still don't.)
 
 The robot snapshot tool (`tools/robot-snapshot.py`) stays as it is: it runs the owlet in AdvantageScope's cache in place
 and never downloads one.

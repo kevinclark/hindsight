@@ -222,7 +222,7 @@ function hootContext(match: Match): HootLine | null {
 interface Reason { rule: string; partly: boolean; parts: string[] }
 
 /** A skip reason split into its parts, each without the motor/camera name in front ("Left: missing /X" → "missing /X"). */
-function parts(reason: string): string[] {
+export function parts(reason: string): string[] {
   return reason.replace(/^partly checked; /, '').split('; ').map((p) => p.replace(/^[^/:;]+: (?=missing |\S.* (?:is|are) logged about )/, ''))
 }
 
@@ -296,8 +296,8 @@ function unlistedLines(lines: CoverageLine[], reasons: Reason[]): CoverageLine[]
 }
 
 /** The empty profile slot a reason names, in words, or null. */
-function gapIn(part: string): string | null {
-  const none = /^the robot profile (?:names|maps|lists) no (.+)$/.exec(part)?.[1]
+export function gapIn(part: string): string | null {
+  const none = /^the robot profile (?:names|maps|lists|pairs) no (.+)$/.exec(part)?.[1]
   if (none) return none
   const whys = `not in the robot profile|${NO_KEY}|the robot profile has none|the robot profile names no [^)]*`
   return new RegExp(`^missing (.+) \\((?:${whys})\\)$`).exec(part)?.[1] ?? null

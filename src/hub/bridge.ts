@@ -12,7 +12,7 @@ import type { Fetched, TbaGetOptions } from '../tba/source.ts'
 import type { NexusEvent } from '../nexus/source.ts'
 import type { ShareStatus } from './live-share.ts'
 import type { BrowserHub } from './browser-hub.ts'
-import type { HootReadReport, HootStatus } from '../hoot/types.ts'
+import type { HootCached, HootReadReport, HootStatus } from '../hoot/types.ts'
 export type { ShareStatus } from './live-share.ts'
 
 import type { JobProgress } from './jobs.ts'
@@ -169,6 +169,8 @@ export interface HubApi {
   getOwlet(compliancy: number): Promise<{ version: string; compliancy: number }>
   /** Read the log's held .hoot files through owlet (cached after the first read). */
   readHoots(logPath: string): Promise<HootReadReport>
+  /** The readings of the log's .hoot files already in the cache: no owlet run, no job. */
+  hootCached(logPath: string): Promise<HootCached>
   /** A hoot-only entry's `.hoot` (library path of its record) read through owlet and returned as a synthetic .wpilog (src/hoot/synthetic.ts). Throws a sentence for the user. */
   hootLog(path: string): Promise<Uint8Array>
   hootCancel(): Promise<void>

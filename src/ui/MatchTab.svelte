@@ -6,7 +6,7 @@
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import FindingRow from './FindingRow.svelte'
-  import { makerOf } from '../rules/index.ts'
+  import { makerOf, ruleById } from '../rules/index.ts'
   import type { Audience, Finding } from '../rules/types.ts'
   import type { IssueEvent, IssueStatus } from '../triage/history.ts'
   import { findingStatus, playedAt } from '../report/review-model.ts'
@@ -17,8 +17,10 @@
   import type { CauseMarks } from '../board/debug.ts'
   import type { Change } from '../board/writes.ts'
   import DebugWorkspace from './DebugWorkspace.svelte'
+  import { unlocks, unlockFix, unlockWords, type Unlock } from '../coverage/unlock.ts'
+  import type { HootCached } from '../hoot/types.ts'
 
-  let { analysis, issues, wrong = new Map(), real = new Map(), sure = () => null, standing = new Set<string>(), onMark, debug }: {
+  let { analysis, issues, wrong = new Map(), real = new Map(), sure = () => null, standing = new Set<string>(), onMark, debug, hoot, onDevices }: {
     /** As the team's marks show it (track-record.ts withMarks): a red another match's wrong mark demotes is amber. */
     analysis: Analysis
     issues: Map<string, IssueEvent>
@@ -34,6 +36,10 @@
     onMark?: (finding: Finding, status: IssueStatus, note: string) => void
     /** The debug workspace's record (ADR 3): what the team found per cause, and how to write it. Without it a finding has no "Debug this". */
     debug?: { marks: (finding: Finding) => CauseMarks; write: (finding: Finding, changes: Change[]) => void; role: BoardRole | null; setRole: (role: BoardRole) => void }
+    /** Desktop app, a library log: this log's .hoot files as this computer holds them (cached readings, unread, on the Drive). Absent elsewhere. */
+    hoot?: HootCached
+    /** Opens the Devices tab (it reads or downloads the .hoot). */
+    onDevices?: () => void
   } = $props()
 
   // The finding being debugged: the workspace takes the place of the list until the student goes back.
@@ -89,6 +95,22 @@
   // A rule that couldn't run says nothing about whether an issue is gone.
   const notRun = $derived(new Set(analysis.report.skipped.map((s) => s.rule)))
   const count = (s: string) => active.filter((f) => f.severity === s).length
+  // The experimental tier (ADR 14): findings no robot log has confirmed yet, drawn apart and counted nowhere.
+  const experimental = $derived(analysis.report.experimental ?? [])
+  const experimentalWhy = (f: Finding) => ruleById(f.rule)?.experimental ?? 'not yet confirmed'
+  // What would let the rules that didn't run, run (src/coverage/unlock.ts), the experimental tier's included.
+  const unlocked = $derived(unlocks(analysis.report.skipped, analysis.report.experimentalSkipped))
+  // The files this match was read from.
+  const busWords = (bus: string) => (bus.toLowerCase() === 'rio' ? "roboRIO's CAN bus" : `CANivore ${bus.slice(0, 4)}…${bus.slice(-4)}`)
+  const sources = $derived(['robot log', ...analysis.match.ds.map((d) => d.fileName), ...analysis.match.dsEvents.map((d) => d.fileName), ...(analysis.match.hoot ?? []).map((h) => `.hoot (${busWords(h.reading.bus)})`)])
+  // A .hoot on this computer (or the Drive) not read yet: the one unlock a click does now.
+  const hootWaiting = $derived(!!hoot && (hoot.unread > 0 || hoot.away > 0) && !(analysis.match.hoot?.length))
+  const isHootUnlock = (u: Unlock) => u.kind === 'file' && u.file === '.hoot'
+  function fixFor(u: Unlock): string {
+    if (!isHootUnlock(u)) return unlockFix(u)
+    if (hootWaiting) return `This log's .hoot is ${hoot!.unread > 0 ? 'on this computer' : 'on the team Drive'}: the Devices tab ${hoot!.unread > 0 ? 'reads' : 'downloads'} it.`
+    return hoot ? unlockFix(u) : 'The desktop app reads .hoot files: open this log from its Library.'
+  }
   const red = (id: Audience | 'all') => forAudience(id).filter((f) => f.severity === 'error' && (!status(f) || status(f) === 'came back')).length
 
   function readSavedAudience(): Audience | 'all' {
@@ -117,6 +139,13 @@
   <span class="e">{count('error')} errors</span> · <span class="w">{count('warning')} warnings</span> · {count('info')} info ·
   {known.length - falseAlarms} known{#if falseAlarms}{' · '}{falseAlarms} not a real problem{/if} · {analysis.report.skipped.length} rules not checked
 </p>
+{#if !analysis.report.noRules}
+  <p class="sources" data-sources>
+    Read: {sources.join(', ')}.
+    {#if hootWaiting}{' '}<span data-unlock-now>This log's .hoot isn't read yet: {#if onDevices}<button class="link" onclick={onDevices}>read it in the Devices tab</button>{:else}the Devices tab reads it{/if} to check device faults (experimental, not counted).</span>
+    {:else if unlocked.groups.length}{' '}{unlocked.groups.length} kind{unlocked.groups.length === 1 ? '' : 's'} of missing data would check more: see Not checked.{/if}
+  </p>
+{/if}
 
 {#if analysis.report.crashed.length}
   <div class="crashed" role="alert">
@@ -128,7 +157,7 @@
 {#if active.length === 0 && analysis.report.noRules}
   <p>No rule read this log: {analysis.report.noRules}.</p>
 {:else if active.length === 0}
-  <p>No new findings{audience === 'all' ? '' : ' for this group'}. Every rule not listed under "Not checked" looked and found nothing new.</p>
+  <p>No new findings{audience === 'all' ? '' : ' for this group'}. Every rule not listed under "Not checked" looked and found nothing new.{#if experimental.length}{' '}{experimental.length} experimental finding{experimental.length === 1 ? '' : 's'} below (from the .hoot, not counted).{/if}</p>
 {:else if mainTree.length}
   <ul class="findings">
     {#each mainTree as n (n.finding.key + n.finding.time)}
@@ -162,6 +191,18 @@
   </ul>
 {/if}
 
+{#if experimental.length}
+  <section class="experimental" data-experimental-tier>
+    <h3>Experimental: from the .hoot ({experimental.length})</h3>
+    <p class="hint">Read from the CTRE devices' own log. Not yet confirmed against robot logs, so not counted, never red, and not on the board or the phone.</p>
+    <ul class="findings">
+      {#each experimental as f (f.key + f.time)}
+        <FindingRow finding={f} {analysis} experimental={experimentalWhy(f)} />
+      {/each}
+    </ul>
+  </section>
+{/if}
+
 {#if known.length}
   <details class="known-section">
     <summary><h3>{falseAlarms ? 'Known issues and false alarms' : 'Known issues'} seen this match ({known.length})</h3></summary>
@@ -186,22 +227,43 @@
 
 <section class="not-checked">
   <h3>Not checked</h3>
-  {#if analysis.report.skipped.length === 0}
+  {#if analysis.report.skipped.length === 0 && !unlocked.groups.length}
     <p>Every rule ran.</p>
   {:else if analysis.report.noRules}
     <p>All {analysis.report.skipped.length} rules: {analysis.report.noRules}.</p>
   {:else}
-    <p class="hint">These rules couldn't run (or only partly) on this log, so silence from them means nothing.</p>
-    <table>
-      <tbody>
-        {#each analysis.report.skipped as s (s.rule)}
-          <tr><th scope="row"><code>{s.rule}</code></th><td>{s.reason}</td></tr>
-        {/each}
-      </tbody>
-    </table>
+    <p class="hint">These rules couldn't run (or only partly) on this log, so silence from them means nothing. Grouped by what would let them run.</p>
+    {#each unlocked.groups as g (g.unlock.kind + ('file' in g.unlock ? g.unlock.file : '') + ('faster' in g.unlock ? 'f' : ''))}
+      <div class="unlock" data-unlock>
+        <p class="needs"><strong>{unlockWords(g.unlock)}</strong>: {fixFor(g.unlock)}</p>
+        {@render rows(g.rules)}
+      </div>
+    {/each}
+    {#if unlocked.other.length}
+      <div class="unlock" data-unlock-other>
+        <p class="needs"><strong>Not checked for another reason</strong></p>
+        {@render rows(unlocked.other)}
+      </div>
+    {/if}
+    {#if unlocked.situational.length}
+      <details class="unlock">
+        <summary>Couldn't run in this log; nothing to add would change that ({unlocked.situational.length})</summary>
+        {@render rows(unlocked.situational)}
+      </details>
+    {/if}
   {/if}
 </section>
 {/if}
+
+{#snippet rows(list: { rule: string; partly: boolean; parts: string[] }[])}
+  <table>
+    <tbody>
+      {#each list as r (r.rule)}
+        <tr><th scope="row"><code>{r.rule}</code></th><td>{ruleById(r.rule)?.title ?? ''}{r.partly ? ' (partly checked)' : ''}: {r.parts.join('; ')}</td></tr>
+      {/each}
+    </tbody>
+  </table>
+{/snippet}
 
 <style>
   .counts { color: var(--muted); margin: 0 0 0.35rem; }
@@ -224,6 +286,12 @@
   table { border-collapse: collapse; font-size: 0.85rem; }
   th { text-align: left; font-weight: normal; padding: 0.15rem 1rem 0.15rem 0; vertical-align: top; white-space: nowrap; }
   td { color: var(--muted); overflow-wrap: anywhere; }
+  .sources { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.5rem; }
+  .sources .link { background: none; border: none; padding: 0; color: var(--link, var(--fg)); text-decoration: underline; cursor: pointer; font: inherit; }
+  .experimental { margin-top: 1.5rem; }
+  .unlock { margin: 0.5rem 0 0.75rem; }
+  .unlock .needs { margin: 0 0 0.2rem; font-size: 0.9rem; }
+  .unlock summary { cursor: pointer; font-size: 0.9rem; min-height: 24px; }
   .crashed { border: 1px solid var(--error); padding: 0.5rem 0.75rem; margin-bottom: 1rem; }
   @media (max-width: 640px) { th { white-space: normal; } }
 </style>

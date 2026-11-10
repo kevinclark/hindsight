@@ -79,3 +79,12 @@ export interface HootReadReport {
   /** `reget`: owlet could not even start (a damaged copy): getting it again may fix it. */
   problems: { file: string; why: string; reget?: boolean }[]
 }
+
+/** The readings of a log's .hoot files already in the cache (Match review's experimental checks, ADR 14). */
+export interface HootCached {
+  readings: HootReading[]
+  /** Held files owlet can read that have no cached reading yet: the Devices tab reads them. */
+  unread: number
+  /** Files of this log on the team Drive and not on this computer: the Devices tab downloads them. */
+  away: number
+}

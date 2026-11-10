@@ -30,6 +30,7 @@
   import Trends from './Trends.svelte'
   import { shortMatchLabel } from './match-label.ts'
   import { loggingChanges, neverLogged, type StateRun } from '../coverage/coverage.ts'
+  import { sessionUnlocks, unlockFix, unlockWords } from '../coverage/unlock.ts'
   import { STATE_ICON, STATE_WORDS } from '../coverage/words.ts'
   import SessionReport from './SessionReport.svelte'
   import { buildCard } from '../report/card.ts'
@@ -222,6 +223,7 @@
   // Practice is judged by run (ADR 8): the runs in the session's logs, and the logs the Trends leave out (never enabled, or only runs under 10 s).
   const practice = $derived(!!session && modeOf(session) === 'practice')
   const unitWord = (isPractice: boolean, many: boolean) => (isPractice ? (many ? 'logs' : 'log') : many ? 'matches' : 'match')
+  const unlockRows = $derived(session ? sessionUnlocks(session.matches) : [])
   const trendInfo = $derived(session ? trendSet(session) : null)
   const leftOutText = $derived(practice && session ? leftOutLine(runsSummary(session.matches)) : '')
   // Pit runs: logs not on the field, on an event's days. Not matches: they have their own grid and are in no count above.
@@ -709,6 +711,16 @@
     </table>
   </div>
   <p class="hint">Rules that fired in the most {practice ? 'logs' : 'matches'} come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that {practice ? 'log' : 'match'}; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a {practice ? 'log' : 'match'} to open it in Match review.</p>
+
+  {#if unlockRows.length}
+    <h3>What would check more</h3>
+    <p class="hint">Rules that didn't run (or ran only partly) in these {practice ? 'logs' : 'matches'}, by what would let them run. The robot code and profile are the team's to change; a missing file can be added.</p>
+    <ul class="changes" data-unlocks>
+      {#each unlockRows as u (u.key)}
+        <li><strong>{unlockWords(u.unlock)}</strong>: missing in {u.matches} of {session.matches.length} {unitWord(practice, session.matches.length !== 1)} · {u.rules.map((r) => `${r.title} (${r.notChecked} not checked${r.partly ? `, partly in ${r.partly}` : ''})`).join('; ')}. {unlockFix(u.unlock)}</li>
+      {/each}
+    </ul>
+  {/if}
 
   {#if pitRuns.length}
     <h3>Pit runs on this event's days</h3>

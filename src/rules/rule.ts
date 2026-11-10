@@ -164,6 +164,14 @@ interface About {
    * that averages over seconds, never for one that looks for a peak.
    */
   averagesOverTime?: boolean
+  /**
+   * An experimental rule (ADR 14): why its findings aren't trusted yet, in a few words ("from the .hoot: not yet confirmed
+   * against robot logs"). It is not in RULES: it runs on its own list (EXPERIMENTAL_RULES, rules/index.ts), its findings go
+   * to `Report.experimental` and its not-checked reasons to `Report.experimentalSkipped`, so nothing counts them, nothing
+   * puts them on the board or the phone, and no summary reads them. Leaving the tier is a later decision of a person,
+   * made from a backtest, never automatic.
+   */
+  experimental?: string
 }
 
 /** One public page a rule cites. Shown with the finding as "Further reading". */
