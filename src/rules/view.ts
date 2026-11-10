@@ -285,6 +285,16 @@ export interface GroupView {
   limits: CurrentLimits
   /** True when the motors follow one control loop and should spin at the same speed. */
   sameLoop: boolean
+  /** Two motors of the group on one shaft (the profile's `coupledPairs`): they should turn together. */
+  coupledPairs: CoupledPairView[]
+}
+
+/** A coupled pair (profile `coupledPairs`): the mechanism's name, where the code couples them, and the two motors. */
+export interface CoupledPairView {
+  name: string
+  where: string
+  leader: MotorView
+  follower: MotorView
 }
 
 /** Anything with a Connected flag: motors, encoders, the gyro. */

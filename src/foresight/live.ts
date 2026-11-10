@@ -20,7 +20,7 @@ import type { RobotProfile } from '../profiles/types.ts'
 import type { Snapshot } from '../snapshot/snapshot.ts'
 import type { CodeSettings } from './snapshot-checks.ts'
 import { RecordStore } from './records.ts'
-import { evaluateForesight, type ForesightResult } from './engine.ts'
+import { evaluateForesight, type ForesightResult, type OncheckResult } from './engine.ts'
 import { FORESIGHT_PREFIXES, foresightKeys, keyFor, METADATA_KEYS, topicFor, wpilogType } from './keys.ts'
 import { isFieldLocked, Nt4Client, nt4Url, type SocketLike, type TopicValue } from './nt4-client.ts'
 
@@ -46,6 +46,13 @@ export interface LiveStatus {
   profile: RobotProfile | null
   subscribed: string[]
   result: ForesightResult | null
+  /**
+   * The last on-check grading (engine.ts OncheckResult), kept when the result is withdrawn: a pit run is often ended by
+   * powering the robot off while still enabled (3 of 11 at one event), and its grade must stay on the page then.
+   */
+  lastOnchecks: OncheckResult | null
+  /** When that grade was made, on the laptop's clock (ms since the epoch). */
+  lastOnchecksAt: number | null
 }
 
 export interface LiveOptions {
@@ -83,7 +90,7 @@ export class ForesightLive {
     const url = nt4Url(options.address)
     this.status = {
       state: 'connecting', message: `Connecting to ${url}…`, url, topicsAnnounced: 0, valuesReceived: 0,
-      robotTime: null, codeStart: null, codeStartFrom: null, profile: null, subscribed: [], result: null,
+      robotTime: null, codeStart: null, codeStartFrom: null, profile: null, subscribed: [], result: null, lastOnchecks: null, lastOnchecksAt: null,
     }
     this.client = new Nt4Client(url, {
       onOpen: () => this.opened(),
@@ -195,6 +202,8 @@ export class ForesightLive {
     this.status.message = this.connectedMessage
     try {
       this.status.result = evaluateForesight({ store: this.store, codeStart, now: this.store.latest, lastPassingSha: this.options.lastPassingSha, profile: this.status.profile ?? undefined, choice: this.profileChoice, snapshot: { snapshot: this.snapshot, codeStartWallMs, codeStartFrom: this.status.codeStartFrom }, codeSettings: this.codeSettings ?? undefined })
+      this.status.lastOnchecks = this.status.result.onchecks
+      this.status.lastOnchecksAt = Date.now()
     } catch (error) {
       this.status.result = null // never leave an earlier verdict up
       this.status.message = `The check failed: ${error instanceof Error ? error.message : String(error)}`

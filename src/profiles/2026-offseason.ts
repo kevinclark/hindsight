@@ -221,6 +221,8 @@ const robot: RobotProfile = {
       ].map(indexerMotor),
       // The same configuration as the indexer feed motor (IndexerIO.java:170).
       limits: { supplyA: 40, supplyEnabled: true, statorA: 60, statorEnabled: true, where: 'IndexerIO.java:170' },
+      // The follower copies the leader, turning the opposite way, on one kicker roller (IndexerIO.java:96-97, Opposed).
+      coupledPairs: [{ name: 'Kicker', leader: 'Kicker leader', follower: 'Kicker follower', where: 'IndexerIO.java:96-97' }],
     },
   ],
 

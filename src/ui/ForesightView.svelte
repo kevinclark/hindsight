@@ -9,16 +9,16 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte'
   import { ForesightLive, type LiveStatus } from '../foresight/live.ts'
-  import { SETTLE_SECONDS } from '../foresight/engine.ts'
+  import { SETTLE_SECONDS, SETTLING } from '../foresight/engine.ts'
   import { FIELD_MESSAGE, isFieldLocked } from '../foresight/nt4-client.ts'
   import { lastPassingSha, triage, type HistoryEvent, type PitCheckEvent } from '../triage/history.ts'
   import { howSure, trackRecord } from '../triage/track-record.ts'
-  import { FORESIGHT_RULES } from '../rules/index.ts'
+  import { FORESIGHT_RULES, ONCHECK_RULES } from '../rules/index.ts'
   import { mapRobotIds, profileId, robotKey } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { isUncommitted } from '../match/git-dirty.ts'
   import { downloadText } from './download.ts'
-  import { ASSISTED_RULES, checklistLines, groupSteps, markOnchecks, wantedLines } from '../foresight/onchecks.ts'
+  import { ASSISTED_RULES, checklistLines, groupSteps, markOnchecks, markOnRun, wantedLines } from '../foresight/onchecks.ts'
   import { boardFor, deferralSession, openDeferrals, isCarried, practiceChecklist, queueChecklist, sessionEventName, tickAt, ticksFor, tickKey, uncoveredItems, type System, type Tick } from '../foresight/checklists.ts'
   import { robotAddresses, USB_ADDRESS } from '../foresight/addresses.ts'
   import { hub } from '../hub/bridge.ts'
@@ -271,6 +271,13 @@
   type ReadingItem = { level: string; rule: string; title: string; explains?: ReadingItem[] }
   const readingItem = (i: VerdictItem): ReadingItem => ({ level: i.level, rule: i.finding.rule, title: i.finding.title, ...(i.explains.length ? { explains: i.explains.map(readingItem) } : {}) })
   const onchecks = $derived(checklistLines(checked))
+  // Checklist section 8, graded over every enabled run since code start, shown while the robot runs and after (engine.ts).
+  // When the robot stops sending (powered off while enabled, a pulled tether), the last grade stays, said to be the last.
+  const onRunFrom = $derived(result?.onchecks ?? status?.lastOnchecks ?? null)
+  const onRunLast = $derived(!result && !!status?.lastOnchecks)
+  const onRun = $derived(onRunFrom ? markOnRun(onRunFrom) : null)
+  const lastGradedAt = $derived(status?.lastOnchecksAt ? new Date(status.lastOnchecksAt).toLocaleTimeString() : '—')
+  const ON_RUN_MARK = { ok: 'OK', red: 'Fix', amber: 'Look at', 'to do': 'Do', context: 'Context', 'not checked': 'Not checked', 'by eye': 'By eye' } as const
   // Problems no check can see yet (rules/wanted.ts): grey context, never in the verdict.
   const wanted = $derived(wantedLines(checked))
   // Only red and amber items decide GO/NO-GO; grey ones (context, or a step for a person) sit in their own short list.
@@ -280,7 +287,7 @@
   // In practice the camera step is on its checklist line ("Left: do", with the cameras named), so it is not listed again.
   const stepItems = $derived(checked && queue ? groupSteps(checked.verdict.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule))) : [])
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
-  const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
+  const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length + ONCHECK_RULES.length
   // Reds the board has deferred, by finding key (queue mode): worded as deferred wherever they are listed.
   const deferredBy = $derived<Record<string, string>>(Object.fromEntries((queue?.deferrals ?? []).map((d) => [d.key, d.workaround || 'none written'])))
   const deferredLine = (i: VerdictItem): string | null => (i.level === 'red' ? deferredBy[i.finding.key] ?? null : null)
@@ -353,9 +360,18 @@
     {#if notConnected && robotNotFound}<p>Robot not found: is the cable in? This is not a failed check.</p>{/if}
     <p>{notConnected ? 'Tether it (USB or Ethernet), robot on, Driver Station connected, then Connect.' : shownWhy}</p>
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
-    {#if result?.state === 'settling'}<p class="small">Nothing is judged until {SETTLE_SECONDS} s after the robot code starts: start-up camera and time-sync alerts clear in that time.</p>{/if}
+    {#if checked && checked.verdict.notChecked.some((s) => s.reason.startsWith(SETTLING))}<p class="small">Camera, alert and controller checks start {SETTLE_SECONDS} s or less after the robot code starts (start-up camera and time-sync alerts clear in that time); the rest are judged from the first second.</p>{/if}
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
   </section>
+
+  {#if onRun}
+    <section class="onchecks onrun" aria-label="On checks">
+      <h3>On checks{result?.state === 'enabled' ? ': graded as the robot runs' : onRunLast ? `: as last graded, at ${lastGradedAt}; no data from the robot since` : ''}</h3>
+      <ul>
+        {#each onRun as l (l.line)}<li class={`oc ${l.state.replace(' ', '-')}`}><span class="mark">{ON_RUN_MARK[l.state]}</span><span class="line">{l.line}</span><span class="detail-text">{l.state === 'by eye' ? 'check by eye as it runs' : l.detail}</span></li>{/each}
+      </ul>
+    </section>
+  {/if}
 
   <BreakersStrip profile={breakerRobot} />
 
@@ -478,6 +494,7 @@
   dd { margin: 0; overflow-wrap: anywhere; }
   .notchecked, .readings { margin-top: 1rem; font-size: 0.85rem; }
   .onchecks { margin-top: 1rem; }
+  .onrun h3 { font-size: 1rem; margin: 0 0 0.25rem; }
   .onchecks ul { list-style: none; margin: 0; padding: 0; }
   .oc { display: grid; grid-template-columns: 6.5rem minmax(10rem, 1fr) 2fr; gap: 0.15rem 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
   .oc .mark { font-weight: 700; font-size: 0.8rem; }

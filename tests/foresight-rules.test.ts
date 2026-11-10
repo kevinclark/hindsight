@@ -8,13 +8,14 @@ import { chooseProfile, profileKeys } from '../src/profiles/choose.ts'
 import { PROFILES } from '../src/profiles/index.ts'
 import { openWpilog, readNumbers, readRaw } from '../src/readers/wpilog.ts'
 import { RecordStore } from '../src/foresight/records.ts'
-import { evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/foresight/engine.ts'
+import { CONTEXT_RULES, evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/foresight/engine.ts'
 import { foresightKeys, foresightKeysIn, LOG_DRIVE_KEYS, RECENT_SECONDS } from '../src/foresight/keys.ts'
 import { PROVEN } from '../src/foresight/proven.ts'
 import { FORESIGHT_RULES } from '../src/rules/index.ts'
 import { COMPANION_NOT_USB } from '../src/rules/links.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
 import { markOnchecks } from '../src/foresight/onchecks.ts'
+import { queueChecklist } from '../src/foresight/checklists.ts'
 import { KEEP_SECONDS } from '../src/foresight/records.ts'
 import { photonTargetCount } from '../src/readers/photon.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
@@ -95,11 +96,35 @@ describe('Foresight checks on a robot in the pit', () => {
     expect(r.report.crashed).toEqual([])
   })
 
-  it('says nothing before settle (a countdown) and checks only after it', () => {
+  it('judges the static checks from the first second; camera, alert and controller checks wait their settle, and nothing reads GO until they ran', () => {
     const store = RecordStore.fromWpilog(openWpilog(writeWpilog(healthy())), null)
-    const r = evaluateForesight({ store, codeStart: START, now: START + SETTLE_SECONDS - 1, lastPassingSha: null, profile: offseason2026 })
-    expect(r).toMatchObject({ state: 'settling' })
-    expect(r.state === 'settling' && r.secondsLeft).toBeCloseTo(1)
+    const at = (now: number) => {
+      const r = evaluateForesight({ store, codeStart: START, now, lastPassingSha: null, profile: offseason2026 })
+      if (r.state !== 'checked') throw new Error(r.state)
+      return r
+    }
+    const early = at(START + 5)
+    const waiting = early.report.skipped.filter((s) => s.reason.startsWith('start-up settling')).map((s) => s.rule).sort()
+    expect(waiting).toEqual(['alerts/passthrough', 'foresight/camera-sees-tag', 'foresight/controllers', 'foresight/gyro-still-drift', 'foresight/values-updating', 'vision/stale', 'vision/time-sync'])
+    expect(early.report.skipped.find((s) => s.rule === 'vision/stale')?.reason).toBe('start-up settling: checked from 30 s after the robot code starts (25 s left)')
+    expect(early.start).toBe(START) // the static checks' stretch starts at code start
+    expect(early.verdict.verdict).toBe('NOT CHECKED')
+    expect(early.verdict.reason).toBe('start-up settling: 7 checks (device readings, controllers, cameras, alerts, gyro) start within 25 s; nothing found so far')
+    // Values-updating from 20 s; the rest from 30 s, then GO.
+    expect(at(START + 21).report.skipped.filter((s) => s.reason.startsWith('start-up settling')).map((s) => s.rule).sort()).toEqual(['alerts/passthrough', 'foresight/camera-sees-tag', 'foresight/controllers', 'foresight/gyro-still-drift', 'vision/stale', 'vision/time-sync'])
+    expect(at(START + SETTLE_SECONDS).verdict.verdict).toBe('GO')
+    // The queue checklist says the settling systems are not checked yet, never "Check by hand" (no tick asked for).
+    const rows = queueChecklist({ verdict: early.verdict, why: '', profile: offseason2026, deferrals: [], deferralNote: null }).rows
+    expect(rows.find((r) => r.system === 'Comms')).toMatchObject({ word: 'Not checked', text: 'Not checked: start-up settling' })
+    expect(rows.find((r) => r.system === 'Vision')?.word).toBe('Not checked')
+    // A context-only check settling (gyro drift, Drivetrain) never holds its system back: the on-blocks step stays.
+    expect(rows.find((r) => r.system === 'Drivetrain')?.word).toBe('Check by hand')
+  })
+
+  it('a red static check reads NO-GO before the settle ends', () => {
+    const store = RecordStore.fromWpilog(openWpilog(robot([{ name: '/RealMetadata/GitDirty', type: 'string', records: steady('Uncommitted changes') }])), null)
+    const r = evaluateForesight({ store, codeStart: START, now: START + 5, lastPassingSha: null, profile: offseason2026 })
+    expect(r.state === 'checked' && r.verdict.verdict).toBe('NO-GO')
   })
 
   it('a controller missing on port 1', () => {
@@ -122,6 +147,16 @@ describe('Foresight checks on a robot in the pit', () => {
     expect(flagged(r)).toEqual(['foresight/zero-sanity'])
     expect(r.verdict.items[0].finding.measured?.[0].value).toBeGreaterThan(90)
     expect(r.report.skipped.find((s) => s.rule === 'foresight/zero-sanity')?.reason).toMatch(/Hood not checked/)
+  })
+
+  it('positions whose first value arrives just now (the first seconds after start-up) are not checked, never a NaN° finding', () => {
+    // The check's last-2 s window ends just before now, so a reading first logged at now has no value in it yet.
+    const r = check([
+      { name: '/Intake/Pivot/PositionRotations', type: 'double', records: [[NOW, 0.3677]] },
+      { name: '/Intake/CANcoder/CancoderPositionRotations', type: 'struct:Rotation2d', records: [[NOW, 0.6536 * 2 * Math.PI]] },
+    ])
+    expect(flagged(r)).toEqual([])
+    expect(r.report.skipped.find((s) => s.rule === 'foresight/zero-sanity')?.reason).toMatch(/Intake pivot not checked: no reading yet/)
   })
 
   it('a zero within 2° is fine', () => {
@@ -170,8 +205,11 @@ describe('Foresight checks on a robot in the pit', () => {
       { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[START, 12.7], [95, 12.3]] },
       { name: '/RealMetadata/GitDirty', type: 'string', records: steady('Uncommitted changes') },
     ], 'fb5f9b7f5d5e37af18d560948055f297bac53f7a')
-    expect(flagged(r).sort()).toEqual(['build/dirty', 'foresight/commit-matches', 'power/rest-voltage'])
+    expect(flagged(r).sort()).toEqual(['build/dirty', 'foresight/commit-matches'])
     expect(rules(r, 'amber')).toEqual(['foresight/commit-matches']) // never judged on a log yet: stays amber
+    // The battery in now is context, never NO-GO: pit checks run on a practice battery.
+    expect(r.verdict.items.find((i) => i.finding.rule === 'power/rest-voltage')).toMatchObject({ level: 'grey', proof: 'context' })
+    expect(r.verdict.items.find((i) => i.finding.rule === 'power/rest-voltage')?.finding.title).toBe('Battery in now rests at 12.30 V: a match battery wants 12.5 V or more')
   })
 
   it('enabled now: no verdict; after a disable it waits 10 s, then checks from there', () => {
@@ -186,16 +224,21 @@ describe('Foresight checks on a robot in the pit', () => {
     expect(r.start).toBe(48)
   })
 
-  it('after a drive, low rest voltage stays amber (the backtest only proved it before any enable)', () => {
+  it('rest voltage that could not be read never makes the verdict NOT CHECKED (context is never blind)', () => {
+    const report = { findings: [], skipped: [{ rule: 'power/rest-voltage', reason: 'no battery voltage logged' }], crashed: [] }
+    expect(verdictFor(report, PROVEN).verdict).toBe('NOT CHECKED')
+    expect(verdictFor(report, PROVEN, {}, CONTEXT_RULES).verdict).toBe('GO')
+  })
+
+  it('low rest voltage is context (grey) before and after a drive, and never makes NO-GO', () => {
     const r = check([
       { name: '/DriverStation/Enabled', type: 'boolean', records: [[START, false], [60, true], [70, false]] },
       { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[START, 12.7], [60, 11], [70, 12.2]] },
     ])
-    const item = r.verdict.items.find((i) => i.finding.rule === 'power/rest-voltage')!
-    expect(item.level).toBe('amber')
-    expect(item.proof).toMatch(/driven 30 s ago/)
+    expect(r.verdict.items.find((i) => i.finding.rule === 'power/rest-voltage')!.level).toBe('grey')
     const before = check([{ name: '/SystemStats/BatteryVoltage', type: 'double', records: [[START, 12.2]] }])
-    expect(before.verdict.items.find((i) => i.finding.rule === 'power/rest-voltage')!.level).toBe('red')
+    expect(before.verdict.items.find((i) => i.finding.rule === 'power/rest-voltage')!.level).toBe('grey')
+    expect(before.verdict.verdict).toBe('GO')
   })
 
   it('a device already off when the stretch starts: no claim about the battery it has no data for', () => {
@@ -611,7 +654,7 @@ describe('Foresight over the companion\'s device readings', () => {
 
   it('reports whether hoot is recording, as context only', () => {
     const r = check([{ name: '/Hindsight/Hoot/Recording', type: 'boolean', records: perSecond(true) }, { name: '/Hindsight/Hoot/Status', type: 'string', records: steady('ok') }])
-    expect(r.hoot).toMatchObject({ state: 'whole', text: expect.stringMatching(/^Phoenix hoot was recording since start-up settled/) })
+    expect(r.hoot).toMatchObject({ state: 'whole', text: expect.stringMatching(/^Phoenix hoot was recording since the robot code started/) })
     expect(r.verdict.verdict).toBe('GO')
   })
 })

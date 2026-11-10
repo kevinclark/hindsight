@@ -361,7 +361,14 @@ function motorView(m: ProfileMotor, group: string, view: MatchView): MotorView {
 
 /** A profile motor group (a leader and its followers) as a rule sees it. */
 export function motorGroup(g: ProfileGroup, view: MatchView): GroupView {
-  return { name: g.name, motors: g.motors.map((m) => motorView(m, g.name, view)), limits: g.limits, sameLoop: !!g.sameLoop }
+  const motors = g.motors.map((m) => motorView(m, g.name, view))
+  const named = (name: string) => {
+    const m = motors.find((x) => x.name === name)
+    if (!m) throw new Error(`motor group "${g.name}" names "${name}" in coupledPairs, but has no motor of that name`)
+    return m
+  }
+  const coupledPairs = (g.coupledPairs ?? []).map((p) => ({ name: p.name, where: p.where, leader: named(p.leader), follower: named(p.follower) }))
+  return { name: g.name, motors, limits: g.limits, sameLoop: !!g.sameLoop, coupledPairs }
 }
 
 /** The things a rule checks, each with its name and a call to the rule's check. */

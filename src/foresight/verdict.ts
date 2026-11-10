@@ -14,6 +14,9 @@ import { explainerOf } from '../report/finding-tree.ts'
 
 export type Level = 'red' | 'amber' | 'grey'
 
+/** How a check still in its start-up settle is listed as not checked (engine.ts; checklists.ts says "settling" for it). */
+export const SETTLING = 'start-up settling'
+
 export interface VerdictItem {
   finding: Finding
   level: Level
@@ -48,15 +51,15 @@ export function proofText(rule: string, proven: Record<string, Proof> = PROVEN):
 }
 
 /**
- * `unproven`: checks that stay amber this time although proven, with why (e.g. rest voltage just after a drive, a
- * situation the backtest never covered).
+ * `unproven`: checks that stay amber this time although proven, with why (e.g. a snapshot check, a situation the
+ * backtest never covered). `context`: checks whose findings are context here (grey), whatever their severity.
  */
-export function verdictFor(report: Report, proven: Record<string, Proof> = PROVEN, unproven: Record<string, string> = {}): Verdict {
+export function verdictFor(report: Report, proven: Record<string, Proof> = PROVEN, unproven: Record<string, string> = {}, context: ReadonlySet<string> = new Set()): Verdict {
   const all: VerdictItem[] = report.findings
     .filter((f) => f.rule !== 'meta/not-checked')
     .map((finding) => {
       const red = earnsRed(proven[finding.rule]) && !unproven[finding.rule]
-      const level: Level = finding.severity === 'info' ? 'grey' : red ? 'red' : 'amber'
+      const level: Level = finding.severity === 'info' || context.has(finding.rule) ? 'grey' : red ? 'red' : 'amber'
       const proof = level === 'grey' ? 'context' : unproven[finding.rule] ?? proofText(finding.rule, proven)
       return { finding, level, proof, action: finding.nextStep, explains: [] as VerdictItem[] }
     })
@@ -72,7 +75,7 @@ export function verdictFor(report: Report, proven: Record<string, Proof> = PROVE
   const items = all.filter((item) => !parents.get(item))
   const reds = items.filter((i) => i.level === 'red')
   const ambers = items.filter((i) => i.level === 'amber')
-  const blind = [...report.skipped.filter((s) => !s.reason.startsWith('partly')), ...report.crashed].filter((s) => earnsRed(proven[s.rule]))
+  const blind = [...report.skipped.filter((s) => !s.reason.startsWith('partly')), ...report.crashed].filter((s) => earnsRed(proven[s.rule]) && !context.has(s.rule))
   const base = { items, notChecked: report.skipped, crashed: report.crashed, blind }
   if (reds.length) return { ...base, verdict: 'NO-GO', reason: `${reds.length} to fix before the robot goes on the field` }
   if (blind.length) return { ...base, verdict: 'NOT CHECKED', reason: `could not check ${blind.map((s) => `${s.rule} (${s.reason})`).join('; ')}` }

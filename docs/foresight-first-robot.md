@@ -33,14 +33,15 @@ writes to it: Foresight only subscribes.
    library's 4 log-drive keys, which the robot code doesn't log yet), plus WPILib's `/FMSInfo/FMSControlData` for the field guard. Note both numbers. *Values received* should climb every second.
 4. **Check the clock.** *Robot time* should read `… s · code started at … s (from the metadata)`. Note whether it says
    *from the metadata* or *from the first value*, and whether the code-start time looks right (just after a reboot
-   the 2026 logs started at 11.8–12.2 s). From the metadata, a robot already on for 30 s skips the countdown.
+   the 2026 logs started at 11.8–12.2 s). From the metadata, a robot already on for 30 s skips the settle.
 5. **Compare three live values with the Driver Station:**
    - *Battery now* against the DS battery voltage (within 0.05 V);
    - *Controllers*: ports 0 and 1 both name a controller (unplug one: within a couple of seconds a "Controller
      missing" item appears; plug it back and it clears);
    - *Code*: the GitSHA and branch match what was deployed.
-6. **Wait for the verdict.** Until 30 s after the robot code started it shows a countdown, then GO, NO-GO or NOT
-   CHECKED with the findings. Note the verdict and any items. Two items say **Do: Hold an AprilTag up to Back_Left**
+6. **Wait for the verdict.** From the first second it judges build, devices, zeros, temperatures and the battery; until
+   30 s after the robot code started it reads NOT CHECKED ("start-up settling", the camera, alert, controller and gyro
+   checks still waiting), then GO, NO-GO or NOT CHECKED with the findings. Note the verdict and any items. Two items say **Do: Hold an AprilTag up to Back_Left**
    (and Back_Right): that is the next step, not a fault, and it never changes the verdict.
 7. **Show each camera a tag.** Hold the tag 0.5–2 m in front of Back_Left for a couple of seconds, then Back_Right.
    Each "Hold an AprilTag up to …" item should clear within a second or two of the camera seeing it, and the

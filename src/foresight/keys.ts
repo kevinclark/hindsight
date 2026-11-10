@@ -75,6 +75,8 @@ export function foresightKeys(profile: RobotProfile): string[] {
     ...profile.otherDevices.flatMap((d) => [d.connected, d.updating]),
     ...profile.cameras.flatMap((c) => [c.connected, c.stale, c.acceptedPose, c.result]),
     ...Object.values(LOG_DRIVE_KEYS),
+    // The on-check rules (mech/pair-decoupled): each coupled pair's speeds and stator currents.
+    ...coupledPairKeys(profile).flatMap((p) => [...p.velocity, ...p.stator]),
   ]
   const fp = profile.foresight
   if (fp) {
@@ -83,6 +85,15 @@ export function foresightKeys(profile: RobotProfile): string[] {
     for (const z of fp.zeroChecks) if (!('notCheckable' in z)) keys.push(z.absolute, z.motor)
   }
   return [...new Set(keys.filter((k): k is string => typeof k === 'string' && k !== ''))]
+}
+
+/** Each coupled pair's leader and follower keys (profile `coupledPairs`), for the on-check rules. A key the profile lacks is ''. */
+export function coupledPairKeys(profile: RobotProfile): { name: string; velocity: [string, string]; stator: [string, string] }[] {
+  return profile.motorGroups.flatMap((g) => (g.coupledPairs ?? []).map((p) => {
+    const motor = (name: string) => g.motors.find((m) => m.name === name)
+    const [leader, follower] = [motor(p.leader), motor(p.follower)]
+    return { name: p.name, velocity: [leader?.velocity ?? '', follower?.velocity ?? ''], stator: [leader?.statorCurrent ?? '', follower?.statorCurrent ?? ''] }
+  }))
 }
 
 /** How long the fast "updating" readings are kept: foresight/values-updating needs 5 s, its plot 10 s. */

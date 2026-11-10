@@ -358,9 +358,17 @@ commit, reseat a controller).
 - **Never on the field.** The moment `/DriverStation/FMSAttached` (or WPILib's `/FMSInfo/FMSControlData`) says the
   field is attached it disconnects, shows "On the field: close Foresight.", and won't connect again until the page is
   reloaded. If the robot publishes neither, it disconnects: it can't tell where it is.
-- **Settle:** nothing is judged until 30 s after the robot code started (start-up camera and time-sync alerts clear in
-  12.5–18.9 s in the 2026 logs). A robot already on for 30 s gets a verdict at once.
-- **Checks:** `power/rest-voltage`, `can/device-dropout`, `foresight/values-updating` (a connected device's readings
+- **Settle:** build, devices, zeros, temperatures and the battery are judged from the first second; camera, time-sync,
+  alert, controller and gyro checks wait 30 s after the robot code started (start-up camera and time-sync alerts clear in
+  12.5–18.9 s in the 2026 logs), device readings 20 s. Until they have run the verdict is NOT CHECKED, never GO (a red
+  is NO-GO at once). A robot already on for 30 s gets a full verdict at once.
+- **On checks:** while the robot is enabled (the pit on-check: each mechanism driven by hand) Foresight grades the
+  `onCheck` rules over every enabled run since the code started, shown under "On checks" (checklist section 8) and
+  never GO; today `mech/pair-decoupled` (two motors on one shaft more than 4 % apart for 0.5 s). The last grade stays
+  on the page when the robot is powered off mid-run.
+- **Battery:** `power/rest-voltage` is context in Foresight, never NO-GO: pit checks run on a practice battery and a
+  fresh one goes in at the queue, after the last moment Foresight can see the robot.
+- **Checks:** `power/rest-voltage` (context), `can/device-dropout`, `foresight/values-updating` (a connected device's readings
   frozen 5 s while others change), `foresight/controllers`, `foresight/zero-sanity`, `foresight/motor-temperature`
   (above 60 °C), `build/dirty`, `vision/stale` (drop-outs only, while disabled), `vision/time-sync`, the battery
   tracker's two, `foresight/commit-matches` (code changed since the last GO, kept in `hindsight-history.jsonl`),

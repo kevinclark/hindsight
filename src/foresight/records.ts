@@ -8,6 +8,10 @@
  */
 import { entryNameFor, readRaw, type WpilogFile } from '../readers/wpilog.ts'
 import { writeRecords, type RecordEntry } from '../readers/wpilog-writer.ts'
+import type { Interval } from '../match/series.ts'
+
+/** Is t inside one of these intervals (start and end included)? */
+const within = (list: Interval[], t: number) => list.some((iv) => t >= iv.start && t <= iv.end)
 
 /** Records older than this many seconds are dropped (the last one before the cut is kept as the held value). */
 export const KEEP_SECONDS = 15 * 60
@@ -23,6 +27,13 @@ export class RecordStore {
    * written for that long only, so they don't slow every check (src/foresight/keys.ts, recentKeys).
    */
   readonly recent = new Map<string, number>()
+  /**
+   * Stretches (key → intervals) in which a `recent` key's records are kept past its seconds, so a check can still read
+   * them minutes later: the stator currents of a coupled pair while it ran (engine.ts sets these each check, for the
+   * on-check rules). Outside them the key keeps only its last seconds, so between two kept stretches its value reads as
+   * held from the earlier one: read it only inside them.
+   */
+  readonly keepDuring = new Map<string, Interval[]>()
 
   /** Add one record. Records that arrive out of order are put in place. */
   add(name: string, type: string, t: number, payload: Uint8Array): void {
@@ -44,19 +55,30 @@ export class RecordStore {
   /** Drop records older than KEEP_SECONDS before the latest, keeping each signal's held value. */
   prune(): void {
     const cut = this.latest - KEEP_SECONDS
+    // Kept stretches older than anything still kept go too, or the list grows with every burst of a long session.
+    for (const [key, spans] of this.keepDuring) this.keepDuring.set(key, spans.filter((iv) => iv.end >= cut))
     for (const e of this.entries.values()) {
       const recent = this.recent.get(e.name)
       const at = recent === undefined ? cut : this.latest - recent
       let k = 0
       while (k + 1 < e.t.length && e.t[k + 1] <= at) k++
-      if (k > 0) { e.t.splice(0, k); e.payload.splice(0, k); if (recent === undefined) this.prunedTo = Math.max(this.prunedTo, cut) }
+      if (k === 0) continue
+      const keep = recent === undefined ? undefined : this.keepDuring.get(e.name)
+      if (keep?.length) {
+        // Records before the held one go, unless they fall in a kept stretch.
+        const kept = e.t.map((_, i) => i).filter((i) => i >= k || within(keep, e.t[i]))
+        e.t = kept.map((i) => e.t[i]); e.payload = kept.map((i) => e.payload[i])
+        continue
+      }
+      e.t.splice(0, k); e.payload.splice(0, k)
+      if (recent === undefined) this.prunedTo = Math.max(this.prunedTo, cut)
     }
   }
 
   /**
    * The stretch [from, to] as a .wpilog (see the top of this file). A `recent` key starts at max(from, to − its
-   * seconds). Callers pass to = latest: after a prune, an earlier `to` could hold a recent key's value from before
-   * the cut.
+   * seconds), after its records from `from` on that fall in a kept stretch (`keepDuring`). Callers pass to = latest:
+   * after a prune, an earlier `to` could hold a recent key's value from before the cut.
    */
   windowLog(from: number, to: number): Uint8Array {
     const out: RecordEntry[] = []
@@ -70,8 +92,12 @@ export class RecordStore {
       let hi = e.t.length
       while (lo < hi) { const mid = (lo + hi) >> 1; if (e.t[mid] <= start) lo = mid + 1; else hi = mid }
       const held = lo - 1
+      const keep = recent === undefined ? undefined : this.keepDuring.get(e.name)
+      if (keep?.length) {
+        for (let i = 0; i < lo; i++) if (e.t[i] >= from && e.t[i] < start && within(keep, e.t[i])) { t.push(e.t[i]); payload.push(e.payload[i]) }
+      }
+      if (held >= 0) { t.push(start); payload.push(e.payload[held]) }
       for (let i = lo; i < e.t.length && e.t[i] <= to; i++) { t.push(e.t[i]); payload.push(e.payload[i]) }
-      if (held >= 0) { t.unshift(start); payload.unshift(e.payload[held]) }
       out.push({ name: e.name, type: e.type, metadata: e.metadata, t, payload })
     }
     return writeRecords(out)

@@ -45,8 +45,14 @@ export default rule({
     }
     if (rest >= LOWEST_REST_VOLTAGE) return
 
+    // In Foresight it is context, never NO-GO (engine.ts CONTEXT_RULES): the battery on the robot in the pit may be a
+    // practice one, with a fresh one put in at the queue.
+    const message = inMatchLog
+      ? `Battery rested at ${volts(rest)} ${when} (want ${LOWEST_REST_VOLTAGE} V or more)`
+      : `Battery in now rests at ${volts(rest)}: a match battery wants ${LOWEST_REST_VOLTAGE} V or more`
     return {
-      message: `Battery rested at ${volts(rest)} ${when} (want ${LOWEST_REST_VOLTAGE} V or more)`,
+      message,
+      nextStep: inMatchLog ? undefined : `If this is the battery for the match, change it for one reading ${LOWEST_REST_VOLTAGE} V or more at rest; a practice battery for the pit check is fine.`,
       at,
       evidence: {
         [`rest voltage, 2 s ${inMatchLog ? 'before auto' : 'up to now'} (V)`]: round(rest),
