@@ -18,7 +18,7 @@
   import { openPowerMap } from './power-map-bridge.svelte.ts'
   import { powerMapInstant } from '../analyze.ts'
   import { mapRobotIds, robotKey } from '../profiles/index.ts'
-  import { watchUrl } from '../tba/video.ts'
+  import { startedInAuto, watchUrl } from '../tba/video.ts'
 
   let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug, experimental, videoKey = null }: {
     /** The match's YouTube video id, or null (src/tba/video.ts). */
@@ -74,7 +74,7 @@
   // Every row starts closed except one that came back after a fix; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
   let open = $state(!nested && issue?.status === 'fixed' && !fixedLater && !wrong?.has(finding.key))
-  const watch = $derived(watchUrl(videoKey, finding))
+  const watch = $derived(startedInAuto(analysis.match) ? watchUrl(videoKey, finding) : null)
   const who = $derived(rule ? rule.who.map((a) => WHO[a]).join(', ') : '')
 
   async function mark(status: IssueStatus) {

@@ -1,6 +1,6 @@
 // The match video link (src/tba/video.ts). Team 9999, event 2099test and the 11-character video keys are invented.
 import { describe, expect, it } from 'vitest'
-import { matchVideoKey, pickMatch, videoUrl, watchUrl, type TbaMatchFull } from '../src/tba/video.ts'
+import { matchVideoKey, pickMatch, startedInAuto, videoUrl, watchUrl, youtubeKey, type TbaMatchFull } from '../src/tba/video.ts'
 import { createTba, isTbaPath, memoryStore, ttlOf } from '../src/tba/source.ts'
 
 const A = 'aaaaaaaaaaa', B = 'bbbbbbbbbbb', C = 'ccccccccccc'
@@ -13,25 +13,36 @@ const MATCHES: TbaMatchFull[] = [
   { key: '2099test_qm33', comp_level: 'qm', set_number: 1, match_number: 33, actual_time: 4_020_000, videos: [yt('short')] },
   { key: '2099test_qm40', comp_level: 'qm', set_number: 1, match_number: 40, actual_time: 4_025_000 },
   { key: '2099test_sf1m1', comp_level: 'sf', set_number: 1, match_number: 1, actual_time: 5_000_000, videos: [yt(A)] },
+  { key: '2099test_f1m1', comp_level: 'f', set_number: 1, match_number: 1, actual_time: 5_200_000, videos: [yt(C)] },
   { key: '2099test_sf2m1', comp_level: 'sf', set_number: 2, match_number: 1, actual_time: 5_100_000, videos: [yt(B)] },
 ]
 
 describe('which TBA match, and its video', () => {
   it('a qualification joins on its number', () => {
-    expect(pickMatch(MATCHES, 'Qualification', 26, null)?.key).toBe('2099test_qm26')
-    expect(pickMatch(MATCHES, 'Qualification', 27, null)).toBeNull()
+    expect(pickMatch(MATCHES, 'Qualification', 26, null, '2099test')?.key).toBe('2099test_qm26')
+    expect(pickMatch(MATCHES, 'Qualification', 27, null, '2099test')).toBeNull()
   })
-  it('an elimination joins on the nearest actual_time, inside 180 s only', () => {
-    expect(pickMatch(MATCHES, 'Elimination', 3, 5_000_179)?.key).toBe('2099test_sf1m1')
-    expect(pickMatch(MATCHES, 'Elimination', 3, 5_100_000 - 100)?.key).toBe('2099test_sf2m1')
-    expect(pickMatch(MATCHES, 'Elimination', 3, 5_000_181)).toBeNull()
-    expect(pickMatch(MATCHES, 'Elimination', 3, null)).toBeNull()
+  it('an elimination joins by number: 1-13 are sf{N}m1, 14 up are f1m{N-13}', () => {
+    expect(pickMatch(MATCHES, 'Elimination', 1, null, '2099test')?.key).toBe('2099test_sf1m1')
+    expect(pickMatch(MATCHES, 'Elimination', 2, null, '2099test')?.key).toBe('2099test_sf2m1')
+    expect(pickMatch(MATCHES, 'Elimination', 14, null, '2099test')?.key).toBe('2099test_f1m1')
+    expect(pickMatch(MATCHES, 'Elimination', 3, null, '2099test')).toBeNull() // not in the team's list
   })
-  it('an elimination never joins a qualification that is close in time', () => {
-    expect(pickMatch(MATCHES, 'Elimination', 3, 4_000_000)).toBeNull()
+  it('an elimination also agrees in time when both times are known, inside 180 s only', () => {
+    expect(pickMatch(MATCHES, 'Elimination', 1, 5_000_180, '2099test')?.key).toBe('2099test_sf1m1')
+    expect(pickMatch(MATCHES, 'Elimination', 1, 5_000_181, '2099test')).toBeNull()
+    expect(pickMatch(MATCHES, 'Elimination', 1, 5_000_000 - 181, '2099test')).toBeNull()
+  })
+  it('a match with no actual_time still links', () => {
+    const noTime = MATCHES.map((m) => (m.key.endsWith('sf1m1') ? { ...m, actual_time: null } : m))
+    expect(pickMatch(noTime, 'Elimination', 1, 5_000_000, '2099test')?.key).toBe('2099test_sf1m1')
+  })
+  it('before 2023 the playoffs were numbered differently: no link', () => {
+    const old = MATCHES.map((m) => ({ ...m, key: m.key.replace('2099', '2022') }))
+    expect(pickMatch(old, 'Elimination', 1, null, '2022test')).toBeNull()
   })
   it('practice and anything else: no match', () => {
-    expect(pickMatch(MATCHES, 'Practice' as never, 5, 4_000_000)).toBeNull()
+    expect(pickMatch(MATCHES, 'Practice' as never, 5, 4_000_000, '2099test')).toBeNull()
   })
 })
 
@@ -50,12 +61,23 @@ describe('the video key', () => {
     for (const k of ['a b cccccc', 'aaaaaaaaaa"', 'aaaaaaaaaaaa', 'aaaaaaaaaa/', '']) expect(await key('Qualification 1', null, bad(k))).toBeNull()
     expect(await key('Qualification 1', null, bad('a_b-cD3fGh9'))).toBe('a_b-cD3fGh9')
   })
-  it('an elimination is found by time', async () => {
-    expect(await key('Elimination 7', 5_100_050)).toBe(B)
-    expect(await key('Elimination 7', 5_500_000)).toBeNull()
+  it('an elimination is found by number', async () => {
+    expect(await key('Elimination 2', 5_100_050)).toBe(B)
+    expect(await key('Elimination 2', 5_500_000)).toBeNull()
+  })
+  it('a bad first YouTube entry does not hide a good second one', () => {
+    expect(youtubeKey({ key: 'q', comp_level: 'qm', match_number: 1, videos: [yt('bad'), yt(C)] })).toBe(C)
   })
   it('a failed lookup gives no link, not an error', async () => {
     expect(await matchVideoKey(async () => { throw new Error('x') }, 9999, '2099test', undefined, 'Qualification 5', null)).toBeNull()
+  })
+})
+
+describe('a finding link needs the match to have started in auto', () => {
+  it('only when a robot auto interval starts at matchStart', () => {
+    expect(startedInAuto({ matchStart: 12.5, auto: [{ start: 12.5 }] })).toBe(true)
+    expect(startedInAuto({ matchStart: 40, auto: [{ start: 12.5 }] })).toBe(false) // a restart piece
+    expect(startedInAuto({ matchStart: null, auto: [] })).toBe(false)
   })
 })
 
@@ -80,11 +102,18 @@ describe('the client allows the full match list, and only that', () => {
     expect(isTbaPath('/team/frc9999/event/2099test/matches/simple')).toBe(true)
     for (const bad of ['/team/frc9999/event/2099test/matches/keys', '/team/frc9999/event/2099test/matches?x=1', '/team/frc9999/event/2099test/matches/', '/team/frc9999/event/2099test/teams', '/event/2099test/matches']) expect(isTbaPath(bad)).toBe(false)
   })
-  it('keeps the list as long as the simple one', () => {
+  it('keeps the list 10 minutes while it may be running', () => {
     const day = 86400e3, end = Date.parse('2099-03-07T00:00:00Z')
-    expect(ttlOf(path, end + 3 * day, '2099-03-07')).toBe(30 * day)
     expect(ttlOf(path, end + 1 * day, '2099-03-07')).toBe(10 * 60e3)
     expect(ttlOf(path, 0)).toBe(10 * 60e3)
+  })
+  it('the full list is kept 10 min to end + 2.5 days, 6 h to end + 30 days, then 30 days; the simple one is unchanged', () => {
+    const day = 86400e3, end = Date.parse('2099-03-07T00:00:00Z')
+    expect(ttlOf(path, end + 2 * day, '2099-03-07')).toBe(10 * 60e3)
+    expect(ttlOf(path, end + 3 * day, '2099-03-07')).toBe(6 * 3600e3)
+    expect(ttlOf(path, end + 29 * day, '2099-03-07')).toBe(6 * 3600e3)
+    expect(ttlOf(path, end + 31 * day, '2099-03-07')).toBe(30 * day)
+    expect(ttlOf(`${path}/simple`, end + 3 * day, '2099-03-07')).toBe(30 * day)
   })
   it('createTba asks for it', async () => {
     const calls: string[] = []

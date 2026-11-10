@@ -200,10 +200,12 @@
   let sessions = $state.raw<Session[]>([])
   // What's new after an update is shown only on a computer that has logs (a fresh install has nothing to compare with).
   const hasLogs = $derived((hub() ? todaySig.libraryLogs.some((r) => !r.stub) : false) || sessions.length > 0 || analyses.length > 0)
+  /** The session whose matches hold this log (as a match or one of its pieces), pit runs not counted. */
+  const sessionHolding = (name: string) => sessions.find((s) => s.matches.some((m) => m.fileName === name || m.pieces?.includes(name)))
   const standing = $derived.by(() => {
     if (!current) return new Set<string>()
     const name = current.match.fileName
-    const own = sessions.find((s) => s.matches.some((m) => m.fileName === name || m.pieces?.includes(name)))
+    const own = sessionHolding(name)
     return own ? standingKeys(own) : new Set<string>()
   })
 
@@ -510,19 +512,26 @@
     if (path) fileLocations.set(f.name, { file: path })
   }
   // The open match's video on The Blue Alliance, when it has one: the session's event (the one the board uses) and the log's own match
-  // (src/tba/video.ts). Nothing shows while it is being found, or when anything is missing.
+  // (src/tba/video.ts). Nothing shows while it is being found, or when anything is missing. The lookup is keyed on primitives, so a
+  // `sessions` reassignment or a replaced analysis of the same log neither re-asks nor blanks the link.
   let videoKey = $state<string | null>(null)
+  const videoName = $derived(current?.match.fileName)
+  const videoLabel = $derived(current?.match.fms ? current.match.matchLabel : '')
+  const videoAuto = $derived(current && current.match.epochOffset !== null && current.match.matchStart !== null ? current.match.epochOffset + current.match.matchStart : null)
+  const videoSessionId = $derived(videoName && videoLabel ? sessionHolding(videoName)?.id : undefined)
+  const videoHasGetter = $derived(tbaGetter() !== null)
+  $effect(() => { void videoName; videoKey = null })
   $effect(() => {
-    const a = current, found = tbaGetter(), team = tbaTeam()
-    const own = a && a.match.fms ? sessions.find((s) => s.matches.some((m) => m.fileName === a.match.fileName || m.pieces?.includes(a.match.fileName))) : undefined
-    videoKey = null
-    if (!a || !own || !found || team === null) return
-    const label = a.match.matchLabel, auto = a.match.epochOffset !== null && a.match.matchStart !== null ? a.match.epochOffset + a.match.matchStart : null
+    const [name, label, auto, sid, team] = [videoName, videoLabel, videoAuto, videoSessionId, tbaTeam()]
+    const get = tbaGetter()
+    if (!name || !sid || !videoHasGetter || !get || team === null) return
+    const own = untrack(() => sessionHolding(name))
+    if (!own) return
     let stale = false
     void (async () => {
-      const ev = await sessionEvent(own, team, found).catch(() => null)
-      if (!ev?.event || stale) return
-      const key = await matchVideoKey(found, team, ev.event.key, ev.event.end, label, auto)
+      const ev = await sessionEvent(own, team, get).catch(() => null)
+      if (!ev?.event || ev.event.by === 'date' || stale) return
+      const key = await matchVideoKey(get, team, ev.event.key, ev.event.end, label, auto)
       if (!stale) videoKey = key
     })()
     return () => { stale = true }
