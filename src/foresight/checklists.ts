@@ -21,6 +21,7 @@ import type { CodeChangeFlag } from '../board/freeze.ts'
 import { FORESIGHT_RULES, makerOf } from '../rules/index.ts'
 import { ONCHECKS, ON_RUN_CHECKS } from './onchecks.ts'
 import { SNAPSHOT_RULES } from './snapshot-checks.ts'
+import { SETTLING } from './engine.ts'
 import { goWithWord, rowTitle } from '../board/words.ts'
 import { sessionWithMarks } from '../triage/track-record.ts'
 import { boardKey, boardState, triage, type HistoryEvent } from '../triage/history.ts'
@@ -200,7 +201,9 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     const fix = reds.filter((i) => !deferred(i))
     const seen = new Set(reds.filter(deferred).map((i) => i.finding.key))
     const deferrals = open.filter((d) => d.system === system).map((d) => ({ ...d, seenNow: seen.has(d.key) }))
-    const unjudged = !verdict || blind.some((s) => systemOf(s.rule, null, profile) === system)
+    // A check still in its start-up settle (engine.ts) leaves its system unjudged for now: "Not checked", never "Check by hand".
+    const settling = !!verdict && verdict.notChecked.some((s) => s.reason.startsWith(SETTLING) && systemOf(s.rule, null, profile) === system)
+    const unjudged = !verdict || settling || blind.some((s) => systemOf(s.rule, null, profile) === system)
     const mine_rules = ALL_RULES.filter((r) => systemOf(r, null, profile) === system)
     // One meaning of "ran", the box's own ("n of 26 checks not fully run"): a check that ran only in part did not.
     const notRan = verdict ? new Set([...verdict.notChecked, ...verdict.crashed].map((x) => x.rule)) : null
@@ -216,7 +219,7 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     const text = word === 'No-go' ? `No-go: ${fix.map((i) => i.finding.title).join('; ')}`
       : word === 'Go with deferral' ? `Go with deferral: ${deferrals.map((d) => `${d.title} · workaround: ${d.workaround || 'none written'}`).join('; ')}`
       : word === 'Check by hand' ? `Check by hand: ${step ?? 'none of its checks ran; a person checks it'}`
-      : word === 'Not checked' ? (verdict ? 'Not checked: a check for this system could not read its signals' : 'Not checked') : 'Go'
+      : word === 'Not checked' ? (settling ? `Not checked: ${SETTLING}` : verdict ? 'Not checked: a check for this system could not read its signals' : 'Not checked') : 'Go'
     const tagStep = system === 'Vision' && !!verdict && verdict.items.some((i) => i.level === 'grey' && i.finding.rule === 'foresight/camera-sees-tag')
     return { system, word, fix, look: mine.filter((i) => i.level === 'amber'), deferrals, ran, note: tagStep ? 'tag not seen yet' : null, step, text }
   }).sort((a, b) => WORD_RANK[a.word] - WORD_RANK[b.word] || SYSTEMS.indexOf(a.system) - SYSTEMS.indexOf(b.system))

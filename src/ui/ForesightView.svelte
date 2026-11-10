@@ -9,11 +9,11 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte'
   import { ForesightLive, type LiveStatus } from '../foresight/live.ts'
-  import { SETTLE_SECONDS } from '../foresight/engine.ts'
+  import { SETTLE_SECONDS, SETTLING } from '../foresight/engine.ts'
   import { FIELD_MESSAGE, isFieldLocked } from '../foresight/nt4-client.ts'
   import { lastPassingSha, triage, type HistoryEvent, type PitCheckEvent } from '../triage/history.ts'
   import { howSure, trackRecord } from '../triage/track-record.ts'
-  import { FORESIGHT_RULES } from '../rules/index.ts'
+  import { FORESIGHT_RULES, ONCHECK_RULES } from '../rules/index.ts'
   import { mapRobotIds, profileId, robotKey } from '../profiles/index.ts'
   import { num, values } from '../match/match.ts'
   import { isUncommitted } from '../match/git-dirty.ts'
@@ -286,7 +286,7 @@
   // In practice the camera step is on its checklist line ("Left: do", with the cameras named), so it is not listed again.
   const stepItems = $derived(checked && queue ? groupSteps(checked.verdict.items.filter((i) => i.level === 'grey' && ASSISTED_RULES.has(i.finding.rule))) : [])
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
-  const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length
+  const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length + ONCHECK_RULES.length
   // Reds the board has deferred, by finding key (queue mode): worded as deferred wherever they are listed.
   const deferredBy = $derived<Record<string, string>>(Object.fromEntries((queue?.deferrals ?? []).map((d) => [d.key, d.workaround || 'none written'])))
   const deferredLine = (i: VerdictItem): string | null => (i.level === 'red' ? deferredBy[i.finding.key] ?? null : null)
@@ -359,7 +359,7 @@
     {#if notConnected && robotNotFound}<p>Robot not found: is the cable in? This is not a failed check.</p>{/if}
     <p>{notConnected ? 'Tether it (USB or Ethernet), robot on, Driver Station connected, then Connect.' : shownWhy}</p>
     {#if unrun}<p class="unrun">{unrun}</p>{/if}
-    {#if checked && checked.verdict.notChecked.some((s) => s.reason.startsWith('start-up settling'))}<p class="small">Camera, alert and controller checks start {SETTLE_SECONDS} s or less after the robot code starts (start-up camera and time-sync alerts clear in that time); the rest are judged from the first second.</p>{/if}
+    {#if checked && checked.verdict.notChecked.some((s) => s.reason.startsWith(SETTLING))}<p class="small">Camera, alert and controller checks start {SETTLE_SECONDS} s or less after the robot code starts (start-up camera and time-sync alerts clear in that time); the rest are judged from the first second.</p>{/if}
     {#if checked?.hoot}<p class="small">{checked.hoot.text}</p>{/if}
   </section>
 

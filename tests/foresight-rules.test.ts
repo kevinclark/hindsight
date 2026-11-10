@@ -8,13 +8,14 @@ import { chooseProfile, profileKeys } from '../src/profiles/choose.ts'
 import { PROFILES } from '../src/profiles/index.ts'
 import { openWpilog, readNumbers, readRaw } from '../src/readers/wpilog.ts'
 import { RecordStore } from '../src/foresight/records.ts'
-import { evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/foresight/engine.ts'
+import { CONTEXT_RULES, evaluateForesight, SETTLE_SECONDS, type ForesightResult } from '../src/foresight/engine.ts'
 import { foresightKeys, foresightKeysIn, LOG_DRIVE_KEYS, RECENT_SECONDS } from '../src/foresight/keys.ts'
 import { PROVEN } from '../src/foresight/proven.ts'
 import { FORESIGHT_RULES } from '../src/rules/index.ts'
 import { COMPANION_NOT_USB } from '../src/rules/links.ts'
 import { verdictFor } from '../src/foresight/verdict.ts'
 import { markOnchecks } from '../src/foresight/onchecks.ts'
+import { queueChecklist } from '../src/foresight/checklists.ts'
 import { KEEP_SECONDS } from '../src/foresight/records.ts'
 import { photonTargetCount } from '../src/readers/photon.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
@@ -104,14 +105,18 @@ describe('Foresight checks on a robot in the pit', () => {
     }
     const early = at(START + 5)
     const waiting = early.report.skipped.filter((s) => s.reason.startsWith('start-up settling')).map((s) => s.rule).sort()
-    expect(waiting).toEqual(['alerts/passthrough', 'foresight/camera-sees-tag', 'foresight/controllers', 'foresight/values-updating', 'vision/stale', 'vision/time-sync'])
+    expect(waiting).toEqual(['alerts/passthrough', 'foresight/camera-sees-tag', 'foresight/controllers', 'foresight/gyro-still-drift', 'foresight/values-updating', 'vision/stale', 'vision/time-sync'])
     expect(early.report.skipped.find((s) => s.rule === 'vision/stale')?.reason).toBe('start-up settling: checked from 30 s after the robot code starts (25 s left)')
     expect(early.start).toBe(START) // the static checks' stretch starts at code start
     expect(early.verdict.verdict).toBe('NOT CHECKED')
-    expect(early.verdict.reason).toMatch(/^start-up settling: 6 checks \(cameras, alerts, controllers\) start within 25 s; nothing found so far$/)
+    expect(early.verdict.reason).toBe('start-up settling: 7 checks (device readings, controllers, cameras, alerts, gyro) start within 25 s; nothing found so far')
     // Values-updating from 20 s; the rest from 30 s, then GO.
-    expect(at(START + 21).report.skipped.filter((s) => s.reason.startsWith('start-up settling')).map((s) => s.rule).sort()).toEqual(['alerts/passthrough', 'foresight/camera-sees-tag', 'foresight/controllers', 'vision/stale', 'vision/time-sync'])
+    expect(at(START + 21).report.skipped.filter((s) => s.reason.startsWith('start-up settling')).map((s) => s.rule).sort()).toEqual(['alerts/passthrough', 'foresight/camera-sees-tag', 'foresight/controllers', 'foresight/gyro-still-drift', 'vision/stale', 'vision/time-sync'])
     expect(at(START + SETTLE_SECONDS).verdict.verdict).toBe('GO')
+    // The queue checklist says the settling systems are not checked yet, never "Check by hand" (no tick asked for).
+    const rows = queueChecklist({ verdict: early.verdict, why: '', profile: offseason2026, deferrals: [], deferralNote: null }).rows
+    expect(rows.find((r) => r.system === 'Comms')).toMatchObject({ word: 'Not checked', text: 'Not checked: start-up settling' })
+    expect(rows.find((r) => r.system === 'Vision')?.word).toBe('Not checked')
   })
 
   it('a red static check reads NO-GO before the settle ends', () => {
@@ -215,6 +220,12 @@ describe('Foresight checks on a robot in the pit', () => {
   it('an enable that ended just before settle still gets its recovery wait', () => {
     const r = check([{ name: '/DriverStation/Enabled', type: 'boolean', records: [[START, false], [30, true], [38, false]] }])
     expect(r.start).toBe(48)
+  })
+
+  it('rest voltage that could not be read never makes the verdict NOT CHECKED (context is never blind)', () => {
+    const report = { findings: [], skipped: [{ rule: 'power/rest-voltage', reason: 'no battery voltage logged' }], crashed: [] }
+    expect(verdictFor(report, PROVEN).verdict).toBe('NOT CHECKED')
+    expect(verdictFor(report, PROVEN, {}, CONTEXT_RULES).verdict).toBe('GO')
   })
 
   it('low rest voltage is context (grey) before and after a drive, and never makes NO-GO', () => {

@@ -55,6 +55,8 @@ export class RecordStore {
   /** Drop records older than KEEP_SECONDS before the latest, keeping each signal's held value. */
   prune(): void {
     const cut = this.latest - KEEP_SECONDS
+    // Kept stretches older than anything still kept go too, or the list grows with every burst of a long session.
+    for (const [key, spans] of this.keepDuring) this.keepDuring.set(key, spans.filter((iv) => iv.end >= cut))
     for (const e of this.entries.values()) {
       const recent = this.recent.get(e.name)
       const at = recent === undefined ? cut : this.latest - recent

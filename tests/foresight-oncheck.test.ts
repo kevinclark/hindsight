@@ -3,8 +3,8 @@
 // time order, prune() and a check every second. The real cases are in foresight-oncheck-real.test.ts.
 import { describe, expect, it } from 'vitest'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
-import { openWpilog } from '../src/readers/wpilog.ts'
-import { RecordStore } from '../src/foresight/records.ts'
+import { openWpilog, readNumbers } from '../src/readers/wpilog.ts'
+import { KEEP_SECONDS, RecordStore } from '../src/foresight/records.ts'
 import type { ForesightResult } from '../src/foresight/engine.ts'
 import { replayLive } from '../src/foresight/replay.ts'
 import { allItems } from '../src/foresight/verdict.ts'
@@ -140,16 +140,31 @@ describe('the On checks lines (checklist section 8)', () => {
 })
 
 describe('RecordStore keeps a fast key\'s records inside its kept stretches', () => {
-  it('prune and windowLog keep them past the key\'s seconds, and drop the rest', () => {
-    const store = new RecordStore()
-    const p = new Uint8Array(8)
-    for (let t = 0; t <= 100; t += 1) store.add('/fast', 'double', t, p)
-    store.recent.set('/fast', 30)
-    store.keepDuring.set('/fast', [{ start: 20, end: 22 }])
-    store.prune()
-    expect(store.entries.get('/fast')!.t).toEqual([20, 21, 22, ...Array.from({ length: 31 }, (_, i) => 70 + i)])
-    const window = openWpilog(store.windowLog(0, 100))
-    const raw = [...window.entries.values()].find((e) => e.name === '/fast')
-    expect(raw).toBeDefined()
+  const store = () => {
+    const st = new RecordStore()
+    for (let t = 0; t <= 100; t += 1) st.add('/fast', 'double', t, new Uint8Array(new Float64Array([t]).buffer))
+    st.recent.set('/fast', 30)
+    st.keepDuring.set('/fast', [{ start: 20, end: 22 }])
+    return st
+  }
+  it('prune keeps them past the key\'s seconds and drops the rest', () => {
+    const st = store()
+    st.prune()
+    expect(st.entries.get('/fast')!.t).toEqual([20, 21, 22, ...Array.from({ length: 31 }, (_, i) => 70 + i)])
+  })
+  it('windowLog writes the kept records, then the held value at the key\'s start, then the rest', () => {
+    const st = store()
+    st.prune()
+    const series = readNumbers(openWpilog(st.windowLog(10, 100)), '/fast')!
+    expect(Array.from(series.t)).toEqual([20, 21, 22, ...Array.from({ length: 31 }, (_, i) => 70 + i)])
+    expect(Array.from(series.v).slice(0, 4)).toEqual([20, 21, 22, 70])
+    // From a later start, kept records before it are left out.
+    expect(Array.from(readNumbers(openWpilog(st.windowLog(21.5, 100)), '/fast')!.t).slice(0, 2)).toEqual([22, 70])
+  })
+  it('drops kept stretches once they are older than everything else it keeps', () => {
+    const st = store()
+    st.add('/fast', 'double', 20 + KEEP_SECONDS + 5, new Uint8Array(new Float64Array([0]).buffer))
+    st.prune()
+    expect(st.keepDuring.get('/fast')).toEqual([])
   })
 })

@@ -46,6 +46,15 @@ export const VALUES_SETTLE_SECONDS = 20
 export const SETTLE_BY_RULE: Record<string, number> = {
   'vision/stale': SETTLE_SECONDS, 'vision/time-sync': SETTLE_SECONDS, 'alerts/passthrough': SETTLE_SECONDS, 'foresight/camera-sees-tag': SETTLE_SECONDS,
   'foresight/controllers': SETTLE_SECONDS, 'foresight/values-updating': VALUES_SETTLE_SECONDS,
+  // Context only, but a heading change in the boot seconds is no drift (a field log read 162.53° there, 1.12° after).
+  'foresight/gyro-still-drift': SETTLE_SECONDS,
+}
+/** How a check still settling is listed as not checked (checklists.ts reads it to say "settling", not "check by hand"). */
+export const SETTLING = 'start-up settling'
+/** What each settling check is about, for the verdict's words. */
+const SETTLE_WORDS: Record<string, string> = {
+  'vision/stale': 'cameras', 'vision/time-sync': 'cameras', 'foresight/camera-sees-tag': 'cameras', 'alerts/passthrough': 'alerts',
+  'foresight/controllers': 'controllers', 'foresight/values-updating': 'device readings', 'foresight/gyro-still-drift': 'gyro',
 }
 /**
  * Context in Foresight, never NO-GO: the battery's rest voltage. Pit checks run on a practice battery and a fresh one goes
@@ -137,7 +146,7 @@ export function evaluateForesight(input: ForesightInput): ForesightResult {
   const first = stretches[0] ?? { start: now, words: 'now', match: probe, report: { findings: [], skipped: [], crashed: [] } }
   const { start, words, match } = first
   const report = joinStretches(stretches.map((x) => x.report), rules)
-  for (const r of waiting) report.skipped.push({ rule: r.id, reason: `start-up settling: checked from ${settleOf(r.id)} s after the robot code starts (${Math.ceil(input.codeStart + settleOf(r.id) - now)} s left)` })
+  for (const r of waiting) report.skipped.push({ rule: r.id, reason: `${SETTLING}: checked from ${settleOf(r.id)} s after the robot code starts (${Math.ceil(input.codeStart + settleOf(r.id) - now)} s left)` })
   joinOnchecks(report, onchecks.report)
   const snapshotUsed = addSnapshotChecks(report, input.snapshot, picked.profile, SETTLE_SECONDS, input.codeSettings, match.build)
   const snapshot = input.snapshot?.snapshot
@@ -165,7 +174,8 @@ function joinStretches(reports: Report[], rules: Rule[]): Report {
 function settled(verdict: Verdict, waiting: Rule[], left: (rule: string) => number): Verdict {
   if (verdict.verdict !== 'GO' || !waiting.length) return verdict
   const longest = Math.ceil(Math.max(...waiting.map((r) => left(r.id))))
-  return { ...verdict, verdict: 'NOT CHECKED', reason: `start-up settling: ${waiting.length} check${waiting.length === 1 ? '' : 's'} (cameras, alerts, controllers) start within ${longest} s; ${verdict.reason} so far` }
+  const about = [...new Set(waiting.map((r) => SETTLE_WORDS[r.id] ?? r.id))].join(', ')
+  return { ...verdict, verdict: 'NOT CHECKED', reason: `${SETTLING}: ${waiting.length} check${waiting.length === 1 ? '' : 's'} (${about}) start within ${longest} s; ${verdict.reason} so far` }
 }
 
 /**

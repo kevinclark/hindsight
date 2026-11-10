@@ -72,7 +72,7 @@ export function verdictFor(report: Report, proven: Record<string, Proof> = PROVE
   const items = all.filter((item) => !parents.get(item))
   const reds = items.filter((i) => i.level === 'red')
   const ambers = items.filter((i) => i.level === 'amber')
-  const blind = [...report.skipped.filter((s) => !s.reason.startsWith('partly')), ...report.crashed].filter((s) => earnsRed(proven[s.rule]))
+  const blind = [...report.skipped.filter((s) => !s.reason.startsWith('partly')), ...report.crashed].filter((s) => earnsRed(proven[s.rule]) && !context.has(s.rule))
   const base = { items, notChecked: report.skipped, crashed: report.crashed, blind }
   if (reds.length) return { ...base, verdict: 'NO-GO', reason: `${reds.length} to fix before the robot goes on the field` }
   if (blind.length) return { ...base, verdict: 'NOT CHECKED', reason: `could not check ${blind.map((s) => `${s.rule} (${s.reason})`).join('; ')}` }
