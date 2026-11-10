@@ -18,8 +18,11 @@
   import { openPowerMap } from './power-map-bridge.svelte.ts'
   import { powerMapInstant } from '../analyze.ts'
   import { mapRobotIds, robotKey } from '../profiles/index.ts'
+  import { watchUrl } from '../tba/video.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug, experimental }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug, experimental, videoKey = null }: {
+    /** The match's YouTube video id, or null (src/tba/video.ts). */
+    videoKey?: string | null
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -71,6 +74,7 @@
   // Every row starts closed except one that came back after a fix; the reader can open or close any row after that.
   // svelte-ignore state_referenced_locally
   let open = $state(!nested && issue?.status === 'fixed' && !fixedLater && !wrong?.has(finding.key))
+  const watch = $derived(watchUrl(videoKey, finding))
   const who = $derived(rule ? rule.who.map((a) => WHO[a]).join(', ') : '')
 
   async function mark(status: IssueStatus) {
@@ -119,6 +123,7 @@
     </summary>
     <div class="body">
       <p class="sentence">{finding.title}</p>
+      {#if watch}<p class="issue-note"><a href={watch} target="_blank" rel="noreferrer" title="Opens a few seconds before this moment">Watch video</a></p>{/if}
       {#if experimental}<p class="issue-note" data-experimental>Experimental: {experimental}. Not counted, never red, not on the board or the phone.</p>{/if}
       {#if finding.run && analysis.match.runs.length > 1}<p class="issue-note" data-run>Run {finding.run} of {analysis.match.runs.length}{finding.when ? `: ${finding.when}` : ''}</p>{/if}
       {#if wrongMark}
@@ -197,7 +202,7 @@
       <summary>Explains {under.length} more ({severityWords(under)})</summary>
       <ul>
         {#each flat as { node: c, via } (c.finding.key + c.finding.time)}
-          <FindingRow finding={c.finding} nested {via} {analysis} {issues} {wrong} {real} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} {onDebug} />
+          <FindingRow {videoKey} finding={c.finding} nested {via} {analysis} {issues} {wrong} {real} {sure} {statusOf} issue={issues?.get(c.finding.key)} fixedLater={statusOf?.(c.finding) === 'fixed later'} {onMark} {onDebug} />
         {/each}
       </ul>
     </details>

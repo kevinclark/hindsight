@@ -46,6 +46,7 @@
   import { ANALYZER_HASH, eventLines, eventLogNames, latestEventSession } from './hub/event-publish.ts'
   import { analyzerHashOf, analyzerId, serializeEventLine } from './hub/event-file.ts'
   import { sessionEvent } from './board/event.ts'
+  import { matchVideoKey, videoUrl } from './tba/video.ts'
   import { newerVersion } from './hub/catalog.ts'
   import { SUMMARY_SHAPE, summaryMapStale, type MatchSummary } from './session/summary.ts'
   import { setPublishNote } from './ui/event-share.svelte.ts'
@@ -508,6 +509,24 @@
     const path = hub()?.pathForFile(f)
     if (path) fileLocations.set(f.name, { file: path })
   }
+  // The open match's video on The Blue Alliance, when it has one: the session's event (the one the board uses) and the log's own match
+  // (src/tba/video.ts). Nothing shows while it is being found, or when anything is missing.
+  let videoKey = $state<string | null>(null)
+  $effect(() => {
+    const a = current, found = tbaGetter(), team = tbaTeam()
+    const own = a && a.match.fms ? sessions.find((s) => s.matches.some((m) => m.fileName === a.match.fileName || m.pieces?.includes(a.match.fileName))) : undefined
+    videoKey = null
+    if (!a || !own || !found || team === null) return
+    const label = a.match.matchLabel, auto = a.match.epochOffset !== null && a.match.matchStart !== null ? a.match.epochOffset + a.match.matchStart : null
+    let stale = false
+    void (async () => {
+      const ev = await sessionEvent(own, team, found).catch(() => null)
+      if (!ev?.event || stale) return
+      const key = await matchVideoKey(found, team, ev.event.key, ev.event.end, label, auto)
+      if (!stale) videoKey = key
+    })()
+    return () => { stale = true }
+  })
   const ascopeTarget = $derived(current ? fileLocations.get(current.match.fileName) : undefined)
   // The Devices tab reads a log's .hoot files through the desktop app, so it shows for library logs there (ADR 13).
   const devicesPath = $derived(!readOnly && hub() && ascopeTarget && 'library' in ascopeTarget ? ascopeTarget.library : null)
@@ -829,6 +848,7 @@
     <h2>{current.match.event ? `${current.match.event} ` : ''}{current.match.matchLabel || 'Match'}</h2>
     <span class="actions">
       {#if busy}<span class="busy">Reading…</span>{/if}
+      {#if videoKey}<a class="button choose" href={videoUrl(videoKey)} target="_blank" rel="noreferrer" title="Opens the match video on YouTube, from its start">Match video</a>{/if}
       {#if ascopeTarget}
         <button class="button choose" title="Open this log in AdvantageScope" disabled={ascopeBusy} onclick={openInAdvantageScope}>Open in AdvantageScope</button>
       {/if}
@@ -876,7 +896,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} hoot={hootHere} onDevices={devicesPath ? () => (tab = 'devices') : undefined} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} onReadings={(name, r) => { keepReadings(name, r); hootTick++ }} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {videoKey} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} hoot={hootHere} onDevices={devicesPath ? () => (tab = 'devices') : undefined} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} onReadings={(name, r) => { keepReadings(name, r); hootTick++ }} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>

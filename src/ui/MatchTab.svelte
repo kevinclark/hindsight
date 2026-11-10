@@ -20,7 +20,9 @@
   import { unlocks, unlockFix, unlockKey, unlockWords, type Unlock } from '../coverage/unlock.ts'
   import type { HootCached } from '../hoot/types.ts'
 
-  let { analysis, issues, wrong = new Map(), real = new Map(), sure = () => null, standing = new Set<string>(), onMark, debug, hoot, onDevices }: {
+  let { analysis, issues, wrong = new Map(), real = new Map(), sure = () => null, standing = new Set<string>(), onMark, debug, hoot, onDevices, videoKey = null }: {
+    /** The match's YouTube video id on The Blue Alliance (src/tba/video.ts), or null: each finding with a match time then links to it. */
+    videoKey?: string | null
     /** As the team's marks show it (track-record.ts withMarks): a red another match's wrong mark demotes is amber. */
     analysis: Analysis
     issues: Map<string, IssueEvent>
@@ -161,7 +163,7 @@
 {:else if mainTree.length}
   <ul class="findings">
     {#each mainTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} onDebug={debug ? open : undefined} />
+      <FindingRow {videoKey} finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} onDebug={debug ? open : undefined} />
     {/each}
   </ul>
 {/if}
@@ -177,7 +179,7 @@
     </summary>
     <ul class="findings">
       {#each standingTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} {onMark} onDebug={debug ? open : undefined} />
+        <FindingRow {videoKey} finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} {onMark} onDebug={debug ? open : undefined} />
       {/each}
     </ul>
   </details>
@@ -186,7 +188,7 @@
 {#if infoTree.length}
   <ul class="findings">
     {#each infoTree as n (n.finding.key + n.finding.time)}
-      <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} onDebug={debug ? open : undefined} />
+      <FindingRow {videoKey} finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} {issues} {wrong} {real} {sure} statusOf={status} showNext={n.finding === firstError} {onMark} onDebug={debug ? open : undefined} />
     {/each}
   </ul>
 {/if}
@@ -197,7 +199,7 @@
     <p class="hint">Read from the CTRE devices' own log. Not yet confirmed against robot logs, so not counted, never red, and not on the board or the phone.</p>
     <ul class="findings">
       {#each experimental as f (f.key + f.time)}
-        <FindingRow finding={f} {analysis} experimental={experimentalWhy(f)} />
+        <FindingRow {videoKey} finding={f} {analysis} experimental={experimentalWhy(f)} />
       {/each}
     </ul>
   </section>
@@ -208,7 +210,7 @@
     <summary><h3>{falseAlarms ? 'Known issues and false alarms' : 'Known issues'} seen this match ({known.length})</h3></summary>
     <ul class="findings">
       {#each knownTree as n (n.finding.key + n.finding.time)}
-        <FindingRow finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} {wrong} {real} {sure} statusOf={status} {onMark} onDebug={debug ? open : undefined} />
+        <FindingRow {videoKey} finding={n.finding} explains={n.children} note={n.note} {analysis} issue={issues.get(n.finding.key)} fixedLater={status(n.finding) === 'fixed later'} {issues} {wrong} {real} {sure} statusOf={status} {onMark} onDebug={debug ? open : undefined} />
       {/each}
     </ul>
   </details>
