@@ -89,6 +89,17 @@ describe('mech/pair-decoupled', () => {
     expect(decoupled(report)).toBeUndefined()
     expect(report.skipped.find((s) => s.rule === 'mech/pair-decoupled')?.reason).toMatch(/Kicker never ran/)
   })
+  it('sits under mech/motor-running-free when both see the same motor run free (one problem, one item)', () => {
+    // 3 s apart, the leader on a fifth of the follower's current: both rules fire (running-free needs 2 s).
+    const report = kickerLog(leaderFast(45, 2.9), bursts, (t) => (t >= 45 && t < 47.9 ? 1 : 5), (t) => (t >= 45 && t < 47.9 ? 5 : 5))
+    const free = report.findings.find((f) => f.rule === 'mech/motor-running-free')
+    expect(free?.about).toBe('Kicker')
+    expect(decoupled(report)?.explainedBy).toMatchObject({ rule: 'mech/motor-running-free', why: 'the same motor ran free of the mechanism' })
+    // A pit-run length (1.2 s): only the pair rule, standing on its own.
+    const short = kickerLog(leaderFast(30.5, 1.2), bursts, (t) => (t >= 30.5 && t < 31.7 ? 1 : 5))
+    expect(short.findings.some((f) => f.rule === 'mech/motor-running-free')).toBe(false)
+    expect(decoupled(short)?.explainedBy).toBeUndefined()
+  })
   it('judges only enabled time', () => {
     const enabledLate: FixtureEntry = { name: '/DriverStation/Enabled', type: 'boolean', records: [[10, false], [40, true], [60, false]] }
     const report = kickerLog(leaderFast(30.5, 1.2), bursts, undefined, undefined, { enabled: enabledLate })
