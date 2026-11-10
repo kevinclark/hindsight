@@ -56,7 +56,7 @@ the robot's `/AdvantageKit` NetworkTables; on another robot it never shows a ver
 The desktop app reads them with CTRE's converter, owlet (CTRE's software under CTRE's licence: one already on the
 computer, such as AdvantageScope's, or downloaded from CTRE when you ask), and Match review's Devices tab shows each
 CTRE device's voltage, current, temperature and faults. A `.hoot` with no robot log opens from the Library on its own.
-No rule reads `.hoot` data yet, so a robot that logs only `.hoot` still needs step 2 for the checks.
+Only an experimental device-fault check (not counted) reads `.hoot` data, and only beside a robot log, so a robot that logs only `.hoot` still needs step 2 for the checks.
 
 ## Use it
 

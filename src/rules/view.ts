@@ -23,6 +23,7 @@ import { powerReport, type PowerReport } from '../power/power-report.ts'
 import { buildCurrentGrid, buildPowerGrid, type PowerGrid } from '../power/battery-model.ts'
 import type { PowerMap } from '../power/power-map.ts'
 import type { Pose2d } from '../readers/wpilog.ts'
+import type { HootAttachment } from '../hoot/attach.ts'
 import { photonTargetCount } from '../readers/photon.ts'
 import { profileDevices, twinsOf, watchedIn, watchedName, type DeviceField, type ProfileDevice, type WatchedEntry } from '../match/companion.ts'
 
@@ -590,6 +591,11 @@ export class MatchView {
   /** Times every `dt` seconds across the match, for comparing signals sample by sample. */
   grid(dt = 0.02): Float64Array {
     return this.autoStart === null || this.matchEnd === null ? new Float64Array(0) : makeGrid(this.autoStart, this.matchEnd, dt)
+  }
+
+  /** The .hoot files attached to this match, each with how it lines up with this log (src/hoot/attach.ts); empty when none was read. */
+  hootFiles(): HootAttachment[] {
+    return this.raw.hoot ?? []
   }
 
   /**

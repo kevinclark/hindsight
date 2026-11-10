@@ -17,7 +17,7 @@ const CHANNELS = [
   'info', 'library', 'addFromFolder', 'cancel', 'runningJob', 'redescribe', 'lastJob', 'codePlan', 'team', 'setTeam', 'tba', 'setNexusKey', 'nexus', 'linkCode', 'setTag', 'history', 'appendHistory', 'readLog', 'openInAdvantageScope',
   'driveStatus', 'driveSignIn', 'driveSignOut', 'setGoogleClient', 'driveFolders', 'setTeamFolder', 'driveIngestPlan', 'addFromDrive',
   'syncPlan', 'sync', 'fetchLogs', 'addFromRobot', 'showJobLog', 'updateState', 'updateCheck', 'updateRestart', 'appendEvent', 'publishedLogs', 'shareStatus', 'shareNow',
-  'hootFor', 'getOwlet', 'readHoots', 'hootLog', 'hootCancel', 'hootRunning',
+  'hootFor', 'getOwlet', 'readHoots', 'hootCached', 'hootLog', 'hootCancel', 'hootRunning',
 ] as const
 
 contextBridge.exposeInMainWorld('hub', {

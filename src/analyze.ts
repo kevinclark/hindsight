@@ -10,7 +10,7 @@ import { readDsevents, type DseventsFile } from './readers/dsevents.ts'
 import { parseHistory, type HistoryEvent } from './triage/history.ts'
 import { powerMapAt, powerMapStamp } from './power/power-map.ts'
 import { attachDsevents, attachDslog, buildMatch, dseventsOverlap, dslogOverlap, type Match } from './match/match.ts'
-import { CONSOLIDATORS, RULES, runRules, type Report } from './rules/index.ts'
+import { CONSOLIDATORS, RULES, runRules, withExperimental, type Report } from './rules/index.ts'
 import { rerunRules } from './rules/run.ts'
 import { PROFILES, mapRobotIds } from './profiles/index.ts'
 import { chooseProfile } from './profiles/choose.ts'
@@ -115,7 +115,7 @@ function runAll({ analyses, problems, history }: AnalyzeResult, given: HistoryEv
   for (const a of analyses) a.match.others = reads(a.match) ? analyses.map((x) => x.match).filter((m) => m !== a.match && reads(m)) : []
   for (const a of analyses) {
     const started = performance.now()
-    a.report = runRules(a.match, RULES, CONSOLIDATORS)
+    a.report = withExperimental(a.match, runRules(a.match, RULES, CONSOLIDATORS))
     a.timing.rulesMs = performance.now() - started
   }
   // Oldest match first (by the robot's wall clock when known, else by file name).

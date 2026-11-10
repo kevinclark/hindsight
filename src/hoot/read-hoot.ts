@@ -33,9 +33,14 @@ export interface ReadHootOptions {
 export const cacheName = (sha256: string, owlet: Pick<FoundOwlet, 'version' | 'compliancy'>) =>
   `${sha256}-${owlet.version}-C${owlet.compliancy}-${SIGNAL_SET}-r${READING_VERSION}.json`
 
+/** The reading this owlet made of this .hoot before, from the cache, or null: never runs owlet. */
+export async function cachedHoot(o: Pick<ReadHootOptions, 'cacheDir' | 'sha256' | 'owlet'>): Promise<HootReading | null> {
+  return readFile(join(o.cacheDir, cacheName(o.sha256, o.owlet)), 'utf8').then((t) => JSON.parse(t) as HootReading, () => null)
+}
+
 export async function readHoot(o: ReadHootOptions): Promise<HootReading & { cached: boolean }> {
   const cached = join(o.cacheDir, cacheName(o.sha256, o.owlet))
-  const kept = await readFile(cached, 'utf8').then((t) => JSON.parse(t) as HootReading, () => null)
+  const kept = await cachedHoot(o)
   if (kept) return { ...kept, cached: true }
 
   const size = (await stat(o.hootPath)).size

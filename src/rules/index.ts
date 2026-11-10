@@ -50,6 +50,7 @@ import motorTemperature from './foresight/motor-temperature.ts'
 import valuesUpdating from './foresight/values-updating.ts'
 import cameraSeesTag from './foresight/camera-sees-tag.ts'
 import logUsbStick from './foresight/log-usb-stick.ts'
+import deviceFault from './can/device-fault.ts'
 
 export const RULES: Rule[] = [
   brownout, batteryCollapse, restartMidMatch, emergencyStop, commsLoss, earlyDisable, noneAtEnable, stuckState, tilt, zeroNotCompleted, deviceDropout, inputDisconnected, busDropout, deviceRebooted, dsLogTruncated,
@@ -67,6 +68,29 @@ export const FORESIGHT_RULES: Rule[] = [
   identity, gaugeCapacity, commitMatches, logUsbStick, passthrough, cameraSeesTag, gyroStillDrift,
 ]
 
+/**
+ * Experimental rules (ADR 14): read data no robot log has confirmed yet (today: the .hoot). Never in RULES: they run on
+ * their own (`withExperimental`) into the report's experimental tier, so nothing counts them and no summary reads them.
+ */
+export const EXPERIMENTAL_RULES: Rule[] = [deviceFault]
+
+/**
+ * The report with the experimental rules' answers for this match: their findings in `experimental`, their not-checked
+ * reasons in `experimentalSkipped`, their crashes with the others. Everything else is the same objects. A log no rule
+ * reads (formats.ts `runsNoRules`) is left as it is.
+ */
+export function withExperimental(match: Match, report: Report): Report {
+  if (report.noRules) return report
+  const ids = new Set(EXPERIMENTAL_RULES.map((r) => r.id))
+  const tier = run(match, EXPERIMENTAL_RULES)
+  return {
+    ...report,
+    crashed: [...report.crashed.filter((c) => !ids.has(c.rule)), ...tier.crashed],
+    experimental: tier.findings.filter((f) => f.rule !== 'meta/not-checked'),
+    experimentalSkipped: tier.skipped,
+  }
+}
+
 export type { Report, SkippedRule } from './run.ts'
 import { LINKS } from './links.ts'
 import { PARENTS } from './parents.ts'
@@ -81,7 +105,7 @@ export function runRules(match: Match, rules: Rule[] = RULES, consolidators: Con
 }
 
 export function ruleById(id: string): Rule | undefined {
-  return RULES.find((r) => r.id === id) ?? FORESIGHT_RULES.find((r) => r.id === id)
+  return RULES.find((r) => r.id === id) ?? FORESIGHT_RULES.find((r) => r.id === id) ?? EXPERIMENTAL_RULES.find((r) => r.id === id)
 }
 
 /** The rule or parent behind a finding (for its title, who acts and why it exists). */

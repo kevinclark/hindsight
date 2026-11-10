@@ -5,6 +5,8 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { analyzeFilesWithCode, withPowerMaps, type Analysis, type InputFile } from './analyze.ts'
+  import { attachHoot } from './hoot/attach.ts'
+  import type { HootCached, HootReading } from './hoot/types.ts'
   import { isUncommitted } from './match/git-dirty.ts'
   import { hasPin } from './profiles/pin.ts'
   import { buildFindingsJson, findingsFileName } from './report/findings-json.ts'
@@ -510,6 +512,42 @@
   // The Devices tab reads a log's .hoot files through the desktop app, so it shows for library logs there (ADR 13).
   const devicesPath = $derived(!readOnly && hub() && ascopeTarget && 'library' in ascopeTarget ? ascopeTarget.library : null)
   $effect(() => { if (tab === 'devices' && !devicesPath) tab = 'match' })
+  // .hoot readings by robot-log file name (desktop app, library logs only). Every analysis pass builds new Matches, so
+  // the readings are attached again whenever the list changes (src/hoot/attach.ts, ADR 14). Only the experimental tier reads them.
+  let hootReadings = $state<Map<string, HootReading[]>>(new Map())
+  const attachedFiles = (a: Analysis) => (a.match.hoot ?? []).map((h) => h.reading.file).join('|')
+  $effect(() => {
+    const readings = hootReadings
+    let changed = false
+    const next = analyses.map((a) => {
+      const r = readings.get(a.match.fileName)
+      if (!r || a.report.noRules || attachedFiles(a) === r.map((x) => x.file).join('|')) return a
+      changed = true
+      return { ...a, report: attachHoot(a.match, a.report, r) }
+    })
+    if (changed) analyses = next
+  })
+  const keepReadings = (fileName: string, readings: HootReading[]) => { hootReadings = new Map(hootReadings).set(fileName, readings) }
+  // The open log's name: a primitive, so replacing `analyses` (an attach, a power-map rerun) doesn't fetch the cache again.
+  const openName = $derived(current?.match.fileName)
+  // The open library log's .hoot as this computer holds it: readings already cached are attached at once (no owlet run, no job).
+  let hootHere = $state<HootCached | undefined>(undefined)
+  // Bumped when the Devices tab has read a .hoot: the cache then answers what is still unread.
+  let hootTick = $state(0)
+  $effect(() => {
+    void hootTick
+    const path = devicesPath
+    const name = openName
+    hootHere = undefined
+    if (!path || !name || /\.hoot$/i.test(path)) return
+    let stale = false
+    void hub()!.hootCached(path).then((c) => {
+      if (stale) return
+      hootHere = c
+      if (c.readings.length) keepReadings(name, c.readings)
+    }).catch(() => {})
+    return () => { stale = true }
+  })
   let ascopeBusy = $state(false)
   let ascopeError = $state('')
   $effect(() => { current?.match.fileName; ascopeError = '' })
@@ -610,6 +648,7 @@
     fileLocations.clear()
     inputs = []
     analyses = []
+    hootReadings = new Map()
     problems = []
     lastLoad = null
   }
@@ -837,7 +876,7 @@
   </div>
 
   <main>
-    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
+    {#if tab === 'match'}<MatchTab analysis={shownCurrent ?? current} {issues} wrong={wrongNow} real={realNow} {sure} {standing} onMark={readOnly ? undefined : mark} debug={readOnly ? undefined : debug} hoot={hootHere} onDevices={devicesPath ? () => (tab = 'devices') : undefined} />{:else if tab === 'power'}<PowerTab analysis={current} />{:else if tab === 'devices' && devicesPath}<DevicesTab analysis={current} logPath={devicesPath} onReadings={(name, r) => { keepReadings(name, r); hootTick++ }} />{:else if tab === 'limits'}<LimitsTab analysis={current} />{:else}<LoggingTab analysis={current} />{/if}
   </main>
 
   <footer>
@@ -850,7 +889,7 @@
   <section class="empty">
     <h2>How to use it</h2>
     <ol>
-      <li>Get the match's log off the robot with AdvantageScope ("Download Logs"). Phoenix <code>.hoot</code> files: add them to the Library in the desktop app (they come with the robot's logs, or from a folder). Match review reads them with CTRE's converter and shows each device in the Devices tab; rules don't read <code>.hoot</code> data yet.</li>
+      <li>Get the match's log off the robot with AdvantageScope ("Download Logs"). Phoenix <code>.hoot</code> files: add them to the Library in the desktop app (they come with the robot's logs, or from a folder). Match review reads them with CTRE's converter and shows each device in the Devices tab; an experimental check (not counted) reports each device's own faults.</li>
       <li>Drop the <code>.wpilog</code> here. Add the Driver Station's <code>.dslog</code> and <code>.dsevents</code> for the same match if you have them (on the DS laptop in <code>C:\Users\Public\Documents\FRC\Log Files</code>).</li>
       <li>Read the <strong>Match</strong> tab worst first: red cost or nearly cost a match, amber is a margin eroding, grey is context.</li>
       <li>Open the <strong>Power</strong> tab for brownouts and battery health.</li>

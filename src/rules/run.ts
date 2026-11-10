@@ -28,6 +28,13 @@ export interface Report {
   parents?: Finding[]
   /** Set when the log's type runs no rule at all (formats.ts `runsNoRules`): why. Every rule is then in `skipped` with this reason. */
   noRules?: string
+  /**
+   * What the experimental rules (ADR 14, rules/index.ts EXPERIMENTAL_RULES) found: kept out of `findings`, so no count,
+   * consolidator, board, phone, export or summary sees them. Only Match review draws them, as their own tier.
+   */
+  experimental?: Finding[]
+  /** The experimental rules that couldn't run (or only partly), and why: kept out of `skipped` for the same reason. */
+  experimentalSkipped?: SkippedRule[]
 }
 
 /**
@@ -45,6 +52,10 @@ export const MAX_PASSES = 10
 const ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
 /** Things only a fitting robot profile can name: rules over them don't run on a log the profile doesn't fit. */
 const ROBOT_ITEMS = ['motor', 'motorGroup', 'device', 'camera', 'mechanism']
+
+/** The skip reasons for a log no robot profile fits (coverage/unlock.ts places them as "the robot profile"). */
+export const NO_PROFILE_FITS = 'no robot profile fits this log'
+export const PROFILE_DOESNT_FIT = "the robot profile doesn't fit this log"
 
 /** Worst first: severity, then the rule's place in the list (things that cost the match first), then time. */
 export function worstFirst(rules: { id: string }[]): (a: Finding, b: Finding) => number {
@@ -69,8 +80,8 @@ export function runRules(match: Match, rules: Rule[], consolidators: Consolidato
     const watchedOnly = rule.forEach === 'device' && view.watchedDevices().some((w) => !w.profileFlag)
     if (misfit && !watchedOnly && (rule.needsProfile ?? ROBOT_ITEMS.includes(rule.forEach ?? 'match'))) {
       skipped.push({ rule: rule.id, reason: match.profileChoice.how === 'signals'
-        ? `no robot profile fits this log (the closest has ${misfit.present} of its ${misfit.total} signals in it)`
-        : `the robot profile doesn't fit this log (${misfit.present} of ${misfit.total} of its signals are in it)` })
+        ? `${NO_PROFILE_FITS} (the closest has ${misfit.present} of its ${misfit.total} signals in it)`
+        : `${PROFILE_DOESNT_FIT} (${misfit.present} of ${misfit.total} of its signals are in it)` })
       continue
     }
     try {
@@ -142,7 +153,11 @@ export function rerunRules(match: Match, report: Report, rules: Rule[], all: Rul
   if (skipped.length) findings.push(notCheckedFinding(skipped))
   findings.sort(worstFirst(all))
   const dropped = [...(report.droppedInShortRuns ?? []).filter((r) => !ids.has(r)), ...(part.droppedInShortRuns ?? [])]
-  return { findings, skipped, crashed, ...(dropped.length ? { droppedInShortRuns: dropped } : {}), ...(report.parents ? { parents: report.parents } : {}) }
+  return {
+    findings, skipped, crashed, ...(dropped.length ? { droppedInShortRuns: dropped } : {}), ...(report.parents ? { parents: report.parents } : {}),
+    // The experimental tier is no business of these rules: carried as it was.
+    ...(report.experimental ? { experimental: report.experimental } : {}), ...(report.experimentalSkipped ? { experimentalSkipped: report.experimentalSkipped } : {}),
+  }
 }
 
 /**
@@ -269,8 +284,9 @@ function parentOf(p: Parent, group: Finding[]): Finding {
 }
 
 /** Why a rule over things the log names (not the profile) had none to check. */
+export const NO_WATCHED_DEVICE = 'the robot code watches no CTRE device with the Hindsight companion (HindsightDevices.watch, companion/README.md)'
 const NO_ITEMS: Record<string, string> = {
-  watchedDevice: 'the robot code watches no CTRE device with the Hindsight companion (HindsightDevices.watch, companion/README.md)',
+  watchedDevice: NO_WATCHED_DEVICE,
 }
 
 /** Run one rule over each of its things. A thing whose signals are missing is noted, not fatal. */

@@ -19,7 +19,7 @@
   import { powerMapInstant } from '../analyze.ts'
   import { mapRobotIds, robotKey } from '../profiles/index.ts'
 
-  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug }: {
+  let { finding, analysis, issue, fixedLater = false, onMark, explains = [], note, nested = false, via, issues, wrong, sure, statusOf, showNext = false, real, onDebug, experimental }: {
     finding: Finding
     analysis: Analysis
     issue?: IssueEvent
@@ -48,6 +48,8 @@
     showNext?: boolean
     /** Opens the debug workspace for this finding (ADR 3), when the page can record what the team finds. */
     onDebug?: (finding: Finding) => void
+    /** An experimental rule's finding (ADR 14): why it isn't trusted yet. Drawn with no severity colour or icon; never given onMark or onDebug. */
+    experimental?: string
   } = $props()
   const under = $derived(explains.flatMap((c) => [c.finding, ...descendants(c)]))
   // One level under the headline, in tree order: a finding that hangs off another explained finding says so on its own line instead of opening a disclosure inside a disclosure.
@@ -96,10 +98,11 @@
   }
 </script>
 
-<li class={`finding ${finding.severity}`} class:known={issue?.status === 'known' || fixedLater || !!wrongMark}>
+<li class={`finding ${experimental ? 'experimental' : finding.severity}`} class:known={issue?.status === 'known' || fixedLater || !!wrongMark}>
   <details bind:open>
     <summary>
-      <span class="sev" title={LABEL[finding.severity]}><span aria-hidden="true">{ICON[finding.severity]}</span> {LABEL[finding.severity]}</span>
+      {#if experimental}<span class="sev" title={`Experimental: ${experimental}`}><span aria-hidden="true">◇</span> Experimental</span>
+      {:else}<span class="sev" title={LABEL[finding.severity]}><span aria-hidden="true">{ICON[finding.severity]}</span> {LABEL[finding.severity]}</span>{/if}
       <span class="title">
         {#if cameBack}<span class="badge back">Came back after a fix</span>{/if}
         {#if wrongMark}<span class="badge known-badge">Not a real problem</span>{:else if realMark}<span class="badge real-badge">Real problem</span>{/if}
@@ -116,6 +119,7 @@
     </summary>
     <div class="body">
       <p class="sentence">{finding.title}</p>
+      {#if experimental}<p class="issue-note" data-experimental>Experimental: {experimental}. Not counted, never red, not on the board or the phone.</p>{/if}
       {#if finding.run && analysis.match.runs.length > 1}<p class="issue-note" data-run>Run {finding.run} of {analysis.match.runs.length}{finding.when ? `: ${finding.when}` : ''}</p>{/if}
       {#if wrongMark}
         <p class="issue-note"><strong>Not a real problem</strong> on this match, marked {date(wrongMark.when)}: {wrongMark.note}</p>
@@ -211,7 +215,8 @@
   .sev { font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
   .error .sev { color: var(--error); }
   .warning .sev { color: var(--warning); }
-  .info .sev, .known .sev { color: var(--muted); }
+  .info .sev, .known .sev, .experimental .sev { color: var(--muted); }
+  .experimental { border: 1px dashed var(--border); border-radius: 4px; margin-bottom: 0.25rem; }
   .title { min-width: 0; overflow-wrap: anywhere; }
   .badge { font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.4rem; border-radius: 4px; margin-right: 0.35rem; white-space: nowrap; }
   .back { background: var(--error); color: var(--bg); }

@@ -155,7 +155,15 @@ npm run build && node --experimental-strip-types scripts/chrome-snapshot-check.t
 - The reduced reading is cached in `<userData>/hoot-cache`, never under `cache/` (on a case-insensitive disk that is
   Chromium's `Cache` folder) and never in the library (Sync uploads it). Change what `reduceExport` keeps: bump
   `READING_VERSION`.
-- Nothing from a `.hoot` enters `summary.ts`, rules or event lines yet; if it does, it joins `analyzerId`.
+- **Rules on .hoot data are experimental (ADR 14).** They are not in `RULES`: `EXPERIMENTAL_RULES` (rules/index.ts) run
+  through `withExperimental` into `Report.experimental` / `experimentalSkipped`, never `findings` or `skipped`, so no count,
+  consolidator, board, export, phone or summary sees them. Never move one into `RULES` or `findings` without Kevin's
+  decision from a backtest. A .hoot reaches a match only through `attachHoot` (src/hoot/attach.ts), which the app calls
+  again after every analysis pass (each pass builds new Matches); session summaries never read a .hoot, so nothing about
+  one joins `analyzerId` or a summary's key. Opening a match never runs owlet (`hub:hootCached` reads the cache only).
+- **Not-checked reasons are placed by text** (src/coverage/unlock.ts): a new `couldNotCheck` wording that names a file
+  must say "load this match's .X" (as `onlyIn` does) or it reads as "another reason"; `tests/unlock.test.ts` fails on any
+  real analysis's reason it can't place.
 - **A .hoot no robot log took is a hoot-only entry** (`Catalog.hootOnly()`, one per boot by name time, desktop only): it is
   in `LibrarySnapshot.hootOnly`, never in `entries` (seven readers assume a robot log). The Library opens one in Match review
   through `hub:hootLog`: owlet's reading as a synthetic .wpilog (`src/hoot/synthetic.ts`) read as the "Phoenix hoot" log

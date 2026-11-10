@@ -11,10 +11,10 @@ import { checkPath } from '../src/hub/adapter.ts'
 import type { LocalLibrary } from '../src/hub/library-store.ts'
 import { JobRunner, type JobProgress, type ProgressFn } from '../src/hub/jobs.ts'
 import { advantageScopeOwletFolder, compliancyOf, findOwlet, platformKey, busOf, OwletWontStart, type FoundOwlet } from '../src/hoot/owlet.ts'
-import { readHoot } from '../src/hoot/read-hoot.ts'
+import { cachedHoot, readHoot } from '../src/hoot/read-hoot.ts'
 import { hootWpilog } from '../src/hoot/synthetic.ts'
 import { downloadOwlet } from '../src/hoot/download.ts'
-import type { HootFile, HootReadReport, HootStatus } from '../src/hoot/types.ts'
+import type { HootCached, HootFile, HootReadReport, HootStatus } from '../src/hoot/types.ts'
 import type { JobLog } from './job-log.ts'
 
 /** Returns the name of the .hoot job running now (or null), for the update chip's Restart check. */
@@ -28,6 +28,8 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
   }
 
   const ownFolder = () => join(app.getPath('userData'), 'owlet')
+  // Not `cache/hoot`: on a case-insensitive disk (every Mac by default) that is inside Chromium's own Cache folder.
+  const hootCache = () => join(app.getPath('userData'), 'hoot-cache')
   // A test run points AdvantageScope's folder elsewhere (an empty folder hides Kevin's cache without touching it).
   const ascopeFolder = () => process.env.HINDSIGHT_ASCOPE_OWLET_DIR
     ?? advantageScopeOwletFolder(process.platform, { home: app.getPath('home'), appData: process.env.APPDATA, xdgConfig: process.env.XDG_CONFIG_HOME })
@@ -96,11 +98,24 @@ export function registerHoot(o: { open: () => Promise<LocalLibrary>; jobLog: Job
     })
   })
 
+  // Match review's experimental checks (ADR 14): the readings already in the cache, never an owlet run and never a job,
+  // so opening a match costs nothing new; `unread` counts the held, readable files with no cached reading yet.
+  ipcMain.handle('hub:hootCached', async (_e, logPath: string): Promise<HootCached> => {
+    const all = await filesFor(await o.open(), String(logPath))
+    const out: HootCached = { readings: [], unread: 0, away: all.filter((f) => !f.held).length }
+    for (const f of all.filter((x) => x.held && x.compliancy !== null)) {
+      const owlet = owletFor(f.compliancy!)
+      const r = owlet ? await cachedHoot({ cacheDir: hootCache(), sha256: f.sha256, owlet }) : null
+      if (r) out.readings.push({ ...r, totalAmps: { t: [], a: [] } })
+      else out.unread++ // no reading yet, or no owlet on this computer: the Devices tab reads it or offers owlet
+    }
+    return out
+  })
+
   /** One .hoot read through owlet (cached by its sha-256): shared by the Devices tab and `hub:hootLog`. */
   const readOne = (lib: LocalLibrary, f: HootFile & { sha256: string }, owlet: FoundOwlet, signal: AbortSignal, log: (line: string) => void, onPercent: (p: number) => void) => readHoot({
     owlet, argv: [owlet.path], hootPath: lib.store.at(f.path), fileName: f.name, sha256: f.sha256,
-    // Not `cache/hoot`: on a case-insensitive disk (every Mac by default) that is inside Chromium's own Cache folder.
-    cacheDir: join(app.getPath('userData'), 'hoot-cache'), tempRoot: app.getPath('temp'), signal, log: (l) => log(l), onPercent,
+    cacheDir: hootCache(), tempRoot: app.getPath('temp'), signal, log: (l) => log(l), onPercent,
   })
 
   // A hoot-only entry (no robot log took it) opened in Match review: its .hoot as a synthetic .wpilog (src/hoot/synthetic.ts).

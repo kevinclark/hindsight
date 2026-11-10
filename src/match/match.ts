@@ -23,6 +23,7 @@ import { median, valueAt, type Interval, type NumberSeries, type ValueSeries } f
 import { playedAt } from './played-at.ts'
 import { gameFor } from '../profiles/games.ts'
 import type { PowerMap } from '../power/power-map.ts'
+import type { HootAttachment } from '../hoot/attach.ts'
 
 /**
  * One run (ADR 8): a maximal stretch of enabled time whose disabled gaps are shorter than RUN_JOIN_SECONDS. `auto` is
@@ -106,6 +107,12 @@ export interface Match {
    * history before the rules run. Null: none entered, and the breaker rules judge against the first legal 40 A breaker to trip.
    */
   powerMap: PowerMap | null
+  /**
+   * The .hoot readings attached to this match (src/hoot/attach.ts `attachHoot`), each lined up with this log or not.
+   * Undefined when none was read. Only the experimental rules read it (ADR 14); a rebuilt Match has none until the app
+   * attaches its readings again.
+   */
+  hoot?: HootAttachment[]
 }
 
 /** The disabled stretch Foresight checks: from start-up settling (or the last disable) to now, in robot time. */

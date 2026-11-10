@@ -2,17 +2,17 @@
   The CTRE devices of a log, read from its .hoot files through CTRE's owlet (ADR 13): each device's supply voltage on one
   shared time axis and one shared voltage scale (Tufte's small multiples), its faults and restarts marked, its lowest
   voltage, peak current and temperature beside it. Grey for normal, colour only for a fault (ISA-101). A row opens to
-  its full plots (NN/g progressive disclosure). A view, not a judgement: nothing here becomes a finding.
+  its full plots (NN/g progressive disclosure). A view, not a judgement: the readings it makes are handed up (onReadings)
+  for the experimental tier in Match review (ADR 14); nothing here becomes a finding itself.
 -->
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import { hub, type Progress } from '../hub/bridge.ts'
   import { BIN_S, type HootReading, type HootReadReport, type HootStatus } from '../hoot/types.ts'
-  import { align, edgesOf, type Alignment } from '../hoot/align.ts'
+  import type { Alignment } from '../hoot/align.ts'
+  import { alignTo, logEnableEdges } from '../hoot/attach.ts'
   import { crossesGap, deviceRows, enabledSpans, hootOwnNotes, profileNames, type DeviceRow } from '../hoot/view.ts'
   import { matchWhen } from '../match/match.ts'
-  import { readNumbers } from '../readers/wpilog.ts'
-  import { changes } from '../hoot/reduce.ts'
   import { size } from './job-bar.ts'
   import JobBar from './JobBar.svelte'
   import HootAccess from './HootAccess.svelte'
@@ -20,7 +20,7 @@
   import Plot from './Plot.svelte'
   import type { PlotModel } from './plot-data.ts'
 
-  let { analysis, logPath }: { analysis: Analysis; logPath: string } = $props()
+  let { analysis, logPath, onReadings }: { analysis: Analysis; logPath: string; onReadings?: (fileName: string, readings: HootReading[]) => void } = $props()
   const api = hub()!
   const m = $derived(analysis.match)
 
@@ -66,8 +66,12 @@
 
   async function read(path = logPath, mine = pass) {
     problem = ''
+    // The log this read is for, taken now: the tab may be gone (another match open) by the time owlet answers.
+    const fileName = m.fileName
     try {
       const r = await api.readHoots(path)
+      // Handed up even if this tab moved on: they belong to `fileName`, which is where the app keeps them.
+      if (!isHoot) onReadings?.(fileName, r.readings)
       if (mine === pass) report = r
     } catch (e) {
       if (mine !== pass) return
@@ -98,15 +102,9 @@
     return () => { stale = true }
   })
 
-  // The robot log's own enables and disables, which each .hoot is lined up against.
-  const logEdges = $derived.by(() => {
-    const key = m.profile.signals.enabled
-    const s = key ? readNumbers(m.log, key) : null
-    return edgesOf(changes(s).map((c) => ({ t: c.t, on: c.v !== 0 })))
-  })
-  const alignments = $derived((report?.readings ?? []).map((r): Alignment => (isHoot ? { offset: 0, matched: 0, spread: 0 } : m.profile.signals.enabled
-    ? align(edgesOf(r.enable), logEdges, r.enable.some((e) => e.on))
-    : { offset: null, why: "this log's robot profile names no enabled signal to line up by" })))
+  // Each .hoot lined up with the robot log by the same helper Match review's experimental checks use (src/hoot/attach.ts).
+  const logEdges = $derived(logEnableEdges(m))
+  const alignments = $derived((report?.readings ?? []).map((r): Alignment => (isHoot ? { offset: 0, matched: 0, spread: 0 } : alignTo(m, r, logEdges))))
   const names = $derived(profileNames(m.profile, report?.readings ?? []))
   /** Each file's rows, window and scale, worked out once per reading rather than on every render. */
   const views = $derived((report?.readings ?? []).map((r, k) => {
