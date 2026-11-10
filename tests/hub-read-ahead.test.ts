@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { LogRecord } from '../src/hub/types.ts'
-import { LinkLost, bytesSource, type StorageAdapter, type TransferWatch } from '../src/hub/adapter.ts'
+import { LinkLost, Stopped, bytesSource, type StorageAdapter, type TransferWatch } from '../src/hub/adapter.ts'
 import type { ProgressMore } from '../src/hub/jobs.ts'
 import { MemoryAdapter } from '../src/hub/memory-adapter.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
@@ -17,6 +17,7 @@ import { readAhead } from '../src/hub/read-ahead.ts'
 import { DriveReader, PIECE_READ } from '../src/hub/drive-read.ts'
 import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { FakeDrive } from './helpers/fake-drive.ts'
+import { driveFolderFiles } from '../src/hub/drive-source.ts'
 
 const CLOCK = Date.UTC(2026, 9, 17, 19, 0, 0)
 const MiB = 1 << 20
@@ -124,6 +125,30 @@ describe('readAhead on its own', () => {
     expect(totals).toEqual([30])
   })
 
+  it('a range read ahead that fails before it is taken is asked again when taken: its words stay off the bar, nothing counts twice', async () => {
+    const tries: number[] = []
+    const steps: string[] = []
+    const totals: number[] = []
+    const source = readAhead(200, async (s, e, w) => {
+      tries.push(s)
+      if (s === 0) { w.onBytes?.(1); await wait(30); return new Uint8Array(e - s) }
+      if (tries.filter((t) => t === s).length === 1) { w.onBytes?.(10); w.onStep?.('Google Drive stopped sending; trying again'); throw new LinkLost('starved') }
+      w.onBytes?.(5); w.onBytes?.(e - s); return new Uint8Array(e - s)
+    }, { onBytes: (n) => totals.push(n), onStep: (words) => steps.push(words) })
+    await source.read(0, 100)
+    await wait(5)
+    expect((await source.read(100, 200)).length).toBe(100)
+    expect(tries).toEqual([0, 100, 100])
+    expect(steps).toEqual([])
+    expect(totals).toEqual([...totals].sort((a, b) => a - b))
+    expect(totals.at(-1)).toBe(200)
+  })
+
+  it('a range the reader is waiting on that fails fails the read', async () => {
+    const source = readAhead(100, async () => { throw new LinkLost('gone') })
+    await expect(source.read(0, 100)).rejects.toThrow(/gone/)
+  })
+
   it('refuses a read out of order or of another size, rather than leave a range in flight that nothing will take', async () => {
     const source = readAhead(300, async (s, e) => new Uint8Array(e - s))
     await source.read(0, 100)
@@ -187,5 +212,96 @@ describe('Adding from a Drive folder and the phone opening a log read one range 
     expect([seen.most, seen.ranges, seen.early]).toEqual([2, [0, PIECE_READ, 2 * PIECE_READ], []])
     expect(progress).toEqual([...progress].sort((a, b) => a - b))
     expect(progress.at(-1)).toBe(content.length)
+  })
+})
+
+describe('Stop and failure stop the range read ahead (Drive folder, phone)', () => {
+  const content = pattern(2 * PIECE_READ + 12345)
+  /** One byte, then the rest after `restMs`; records each media request's abort signal. */
+  function drive(restMs: number) {
+    const fake = new FakeDrive()
+    const folder = fake.addFolder('root', 'logs')
+    const id = fake.addFile(folder, 'big.wpilog', content)
+    const signals: AbortSignal[] = []
+    const f: typeof fetch = async (url, init) => {
+      const range = new Headers(init?.headers as Record<string, string>).get('range')
+      if (!range) return fake.fetch(url, init)
+      if (init?.signal) signals.push(init.signal)
+      const start = Number(/bytes=(\d+)-/.exec(range)![1])
+      const body = new Uint8Array(await (await fake.fetch(url, init)).arrayBuffer())
+      let sent = 0
+      return new Response(new ReadableStream<Uint8Array>({
+        async pull(c) {
+          if (sent === 0) { c.enqueue(body.slice(0, 1)); sent = 1; return }
+          await wait(restMs)
+          c.enqueue(body.slice(1)); c.close()
+        },
+      }), { status: 206, headers: { 'content-range': `bytes ${start}-${start + body.length - 1}/${content.length}` } })
+    }
+    return { id, f, signals }
+  }
+
+  it('the phone: Stop with the next slice in flight rejects Stopped and aborts both requests', async () => {
+    const { f, signals } = drive(5000)
+    const reader = new DriveReader({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async () => {} })
+    const stop = new AbortController()
+    const got = reader.downloadWhole('logs/big.wpilog', { signal: stop.signal })
+    while (signals.length < 2) await wait(5)
+    stop.abort()
+    await expect(got).rejects.toThrow(Stopped)
+    await wait(400)
+    expect(signals.map((s) => s.aborted)).toEqual([true, true])
+  })
+
+  it('the phone: a slice that fails for good stops the slice read ahead', async () => {
+    const fake = new FakeDrive()
+    fake.addFile(fake.addFolder('root', 'logs'), 'big.wpilog', content)
+    const signals: AbortSignal[] = []
+    const f: typeof fetch = async (url, init) => {
+      const range = new Headers(init?.headers as Record<string, string>).get('range')
+      if (!range) return fake.fetch(url, init)
+      const start = Number(/bytes=(\d+)-/.exec(range)![1])
+      if (start === 1) return new Response('gone', { status: 404 }) // slice 0 asked again from its next byte: refused
+      if (init?.signal) signals.push(init.signal)
+      let sent = false
+      return new Response(new ReadableStream<Uint8Array>({
+        async pull(c) {
+          if (!sent) { sent = true; c.enqueue(new Uint8Array(1)); return }
+          if (start === 0) { await wait(20); c.error(new Error('connection reset')); return }
+          await wait(5000)
+        },
+      }), { status: 206, headers: { 'content-range': `bytes ${start}-${start + PIECE_READ - 1}/${content.length}` } })
+    }
+    const reader = new DriveReader({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async () => {} })
+    await expect(reader.downloadWhole('logs/big.wpilog')).rejects.toThrow(/404/)
+    await wait(400)
+    expect(signals.length).toBe(2)
+    expect(signals[1].aborted).toBe(true)
+  })
+
+  it('a Drive folder: a sink that fails stops the range read ahead', async () => {
+    const { id, f, signals } = drive(50)
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async () => {} })
+    await expect(store.download(id, content.length, async () => { throw new Error('disk full') })).rejects.toThrow(/disk full/)
+    await wait(400)
+    expect(signals.length).toBe(2)
+    expect(signals[1].aborted).toBe(true)
+  })
+
+  it('a Drive folder: Stop part way leaves no temp file and stops both requests', async () => {
+    const { f, signals } = drive(5000)
+    const store = new DriveAdapter({ rootId: 'root', token: async () => 'good', fetch: f, sleep: async () => {} })
+    const temp = join(work, 'temp')
+    const { mkdir } = await import('node:fs/promises')
+    await mkdir(temp)
+    const [file] = (await driveFolderFiles(store, 'root', temp)).filter((x) => x.name === 'big.wpilog')
+    let stop = false
+    const opened = file.open({ cancelled: () => stop })
+    while (signals.length < 2) await wait(5)
+    stop = true
+    await expect(opened).rejects.toThrow(Stopped)
+    await wait(400)
+    expect(signals.map((s) => s.aborted)).toEqual([true, true])
+    expect(await readdir(temp)).toEqual([])
   })
 })

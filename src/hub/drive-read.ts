@@ -194,7 +194,6 @@ export class DriveReader {
     try {
       for (let at = 0; at < total; at += PIECE_READ) {
         const end = Math.min(at + PIECE_READ, total)
-        opts.log?.(`bytes ${at}-${end - 1} of ${total}: waiting`)
         const part = await slices.read(at, end)
         opts.log?.(`bytes ${at}-${end - 1}: got ${part.length}`)
         if (part.length !== end - at) throw new Error(`${path}: got ${at + part.length} of ${total} bytes`)
