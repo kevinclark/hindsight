@@ -86,6 +86,12 @@
       <text class="tick unit" x={4} y={11}>{model.unit}</text>
       <text class="tick unit" x={W - PAD.right} y={11} text-anchor="end">{axisText}</text>
     {/if}
+    {#each model.spans ?? [] as sp, i (i)}
+      {#if sp.to >= model.from && sp.from <= model.to}
+        {@const x0 = x(Math.max(model.from, sp.from))}
+        <rect class="span" x={x0} y={PAD.top} width={Math.max(1.5, x(Math.min(model.to, sp.to)) - x0)} height={height - PAD.top - PAD.bottom} />
+      {/if}
+    {/each}
     {#if model.threshold}
       <line class="threshold" x1={PAD.left} x2={W - PAD.right} y1={y(model.threshold.value)} y2={y(model.threshold.value)} />
     {/if}
@@ -118,6 +124,7 @@
   .grid { stroke: var(--grid); stroke-width: 1; }
   .tick { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
   .threshold { stroke: var(--error); stroke-dasharray: 4 3; stroke-width: 1; }
+  .span { fill: var(--span-fill, rgba(197, 34, 31, 0.12)); }
   .marker { stroke: var(--muted); stroke-width: 1; opacity: 0.25; }
   figcaption { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.8rem; color: var(--muted); padding-left: 44px; }
   .swatch { display: inline-block; width: 10px; height: 3px; margin-right: 5px; vertical-align: middle; }

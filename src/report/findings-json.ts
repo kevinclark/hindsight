@@ -15,6 +15,7 @@ import type { Finding, Plot } from '../rules/types.ts'
 import { powerReport } from '../power/power-report.ts'
 import { buildPowerGrid } from '../power/battery-model.ts'
 import { buildBreakdown } from '../power/breakdown.ts'
+import { buildSagSpans } from '../power/sag-spans.ts'
 import type { IssueEvent } from '../triage/history.ts'
 import { boardEntry, ruleSources, type ExportBoard } from './board-export.ts'
 
@@ -80,10 +81,25 @@ export function buildFindingsJson(match: Match, report: Report, issues: Map<stri
       minVolts: power.minVolts, minAt: power.minAt, brownoutVolts: power.brownoutVolts, marginVolts: power.marginVolts,
       secondsUnder7: power.secondsUnder7, chargeAh: power.chargeAh, resistanceOhms: power.resistanceOhms,
       model: power.fit && { form: 'V = V0 − k·Q − R0·I (no RC term)', ...power.fit },
-      modelNoChange: power.modelNoChange, ocvCurve: power.ocv, sags: power.sags, whatIfs: power.whatIfs, whatIfGroup: power.whatIfGroup,
+      modelNoChange: power.modelNoChange, ocvCurve: power.ocv, sags: power.sags, sagSpans: sagSpansJson(match), whatIfs: power.whatIfs, whatIfGroup: power.whatIfGroup,
       // Energy, running time and current per motor group, and per robot state (added with the Power tab's table; no schema bump).
       breakdown: breakdownJson(match),
     },
+  }
+}
+
+/** Sags as stretches under the margin line (added with the Power tab's stretches; no schema bump). `line` is null with no brownout setting. */
+function sagSpansJson(match: Match) {
+  const r = buildSagSpans(match)
+  if (!r) return null
+  const round = (x: number, d: number) => +x.toFixed(d)
+  const load = (l: { group: string; amps: number }[] | null) => l && l.map((x) => ({ group: x.group, amps: round(x.amps, 1) }))
+  return {
+    line: Number.isFinite(r.line) ? r.line : null, mode: r.mode, reason: r.reason, totalSpans: r.totalSpans, secondsUnderLine: round(r.secondsUnderLine, 2),
+    spans: r.spans.map((s) => ({
+      start: round(s.start, 2), end: round(s.end, 2), seconds: round(s.seconds, 2), lowestVolts: round(s.lowestVolts, 2), lowestAt: round(s.lowestAt, 2),
+      stateAtStart: s.stateAtStart, atLowest: load(s.atLowest), during: load(s.during), before: load(s.before),
+    })),
   }
 }
 

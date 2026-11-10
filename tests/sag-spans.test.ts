@@ -42,6 +42,8 @@ function quiet(o: Opts = {}) {
   for (const x of g.groups) x.amps.fill(0)
   return { match, g }
 }
+/** The analysis has already computed powerReport on the unchanged grid: drop it so it reads the changed one. */
+const redo = (m: { cache: Map<string, unknown> }) => m.cache.delete('power:report')
 const dip = (g: PowerGrid, from: number, n: number, v = 6.5) => g.volts.fill(v, from, from + n)
 const group = (g: PowerGrid, name: string) => g.groups.find((x) => x.name === name)!.amps
 const noState = (): RobotProfile => {
@@ -83,8 +85,8 @@ describe('buildSagSpans: finding the stretches', () => {
     const one = buildSagSpans(a.match)!
     expect(one.totalSpans).toBe(1)
     expect(one.spans[0].start).toBe(a.g.t[200])
-    expect(one.spans[0].end).toBeCloseTo(a.g.t[218] + DT, 9)
-    expect(one.spans[0].seconds).toBeCloseTo(0.38, 9) // the stretch, from its first sample to its last
+    expect(one.spans[0].end).toBeCloseTo(a.g.t[218], 9)
+    expect(one.spans[0].seconds).toBeCloseTo(0.36, 9) // the stretch, from its first sample to its last
     const b = quiet()
     dip(b.g, 200, 3); dip(b.g, 200 + 3 + 13, 3) // gap 13 samples = 0.26 s
     expect(buildSagSpans(b.match)!.totalSpans).toBe(2)
@@ -151,7 +153,7 @@ describe('buildSagSpans: what was drawing', () => {
   })
   it('clips the 0.5 s window at the start of the grid', () => {
     const { match, g } = quiet()
-    dip(g, 10, 5)
+    dip(g, 10, 5); g.enabled.fill(1, 0, 20) // enabled from the first sample
     group(g, 'Drive').fill(50, 0, 10)
     group(g, 'Flywheel').fill(8, 0, 5) // half the 10 samples before
     const s = buildSagSpans(match)!
@@ -208,6 +210,7 @@ describe('buildSagSpans: the two fallbacks to the lowest points', () => {
     const g = buildPowerGrid(match)!
     dip(g, 300, 5, 5.0); dip(g, 500, 5, 6.0)
     group(g, 'Drive').fill(70, 275, 300)
+    redo(match)
     const r = buildSagSpans(match)!
     const sags = powerReport(match)!.sags
     expect(r.mode).toBe('lowest-points')
@@ -223,6 +226,7 @@ describe('buildSagSpans: the two fallbacks to the lowest points', () => {
   it('when the match never goes under the line: the same points, and it says so', () => {
     const { match, g } = quiet()
     g.volts.fill(9, 0, 500); dip(g, 300, 5, 7.4)
+    redo(match)
     const r = buildSagSpans(match)!
     expect(r.line).toBe(7)
     expect(r.mode).toBe('lowest-points')
@@ -234,6 +238,7 @@ describe('buildSagSpans: the two fallbacks to the lowest points', () => {
     const match = analysisOf({ state: [[0, 'A'], [5, 'B']] }).match
     const g = buildPowerGrid(match)!
     dip(g, 400, 5, 5.0) // 8.0 s
+    redo(match)
     expect(buildSagSpans(match)!.spans[0].stateAtStart).toBe('B')
   })
 })
@@ -248,13 +253,14 @@ describe('the Power tab and the plot', () => {
     const html = render(PowerTab, { props: { analysis } }).body
     expect(html).toContain('The 8 deepest sags under 7 V, and what was drawing')
     expect(html).toContain('10 stretches under 7 V, 1.0 s in all; the 8 deepest:')
-    for (const col of ['When', 'Length', 'Lowest', 'State', 'At lowest', 'During', 'Before']) expect(html).toContain(`<th>${col}</th>`)
+    for (const col of ['When', 'Length', 'Lowest', 'State', 'At lowest', 'During', 'Before']) expect(html).toMatch(new RegExp(`<th[^>]*>${col}</th>`))
     expect(html).toMatch(/<rect[^>]*class="span/)
   })
   it('in fallback mode keeps the old heading and says why, with markers and no shaded spans', async () => {
     const analysis = analysisOf()
     const g = buildPowerGrid(analysis.match)!
     dip(g, 300, 5, 5.0)
+    redo(analysis.match)
     const { render } = await import('svelte/server')
     const { default: PowerTab } = await import('../src/ui/PowerTab.svelte')
     const html = render(PowerTab, { props: { analysis } }).body

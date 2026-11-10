@@ -14,6 +14,8 @@ export interface PlotModel {
   series: PlotSeries[]
   threshold?: { value: number; label: string }
   markers?: { t: number; label: string }[]
+  /** Time ranges shaded behind the lines (e.g. stretches under a line). */
+  spans?: { from: number; to: number }[]
   /** Robot time of the start of the match: when set, the time axis is labelled in match time. */
   matchStart?: number | null
 }

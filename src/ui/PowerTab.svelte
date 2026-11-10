@@ -1,10 +1,11 @@
-<!-- The brownout view: margin, the loads at each sag, the battery's open-circuit voltage against charge, and what-ifs. -->
+<!-- The brownout view: margin, sags as stretches under the margin line and the loads at each, the battery's open-circuit voltage against charge, and what-ifs. -->
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
   import { powerReport, whatIfAt } from '../power/power-report.ts'
   import { buildPowerGrid, DT } from '../power/battery-model.ts'
   import { bandText, buildDrag } from '../power/drag.ts'
   import { buildBreakdown, OTHER_STATES } from '../power/breakdown.ts'
+  import { buildSagSpans, type Load } from '../power/sag-spans.ts'
   import { FLEET_REFERENCE } from '../power/fleet-reference.ts'
   import { downsample } from '../report/findings-json.ts'
   import Plot from './Plot.svelte'
@@ -19,6 +20,13 @@
   const drag = $derived(buildDrag(m).filter((d) => d.bands.length))
   /** Motors with steady-speed bands, grouped by motor group in profile order, leader beside follower. */
   const dragGroups = $derived([...new Set(drag.map((d) => d.group))].map((group) => ({ group, motors: drag.filter((d) => d.group === group) })))
+
+  const sagSpans = $derived(buildSagSpans(m))
+  const stretches = $derived(sagSpans?.mode === 'stretches')
+  const lineText = $derived(sagSpans && Number.isFinite(sagSpans.line) ? `${+sagSpans.line.toFixed(2)}` : '')
+  /** The biggest group with its current; the next two in a smaller line under it. */
+  const top1 = (l: Load[] | null) => (l && l.length ? `${l[0].group} ${l[0].amps.toFixed(0)} A` : '—')
+  const rest2 = (l: Load[] | null) => (l && l.length > 1 ? l.slice(1).map((x) => `${x.group} ${x.amps.toFixed(0)} A`).join(' · ') : '')
 
   const breakdown = $derived(buildBreakdown(m))
   const maxWh = $derived(Math.max(1e-9, ...(breakdown?.rows.map((r) => r.wh) ?? [0])))
@@ -51,7 +59,9 @@
   const voltagePlot = $derived<PlotModel | null>(g && p ? {
     from, to, unit: 'V', series: [gridSeries('Battery voltage', g.volts)],
     threshold: Number.isFinite(p.brownoutVolts) ? { value: p.brownoutVolts, label: `brownout ${p.brownoutVolts} V` } : undefined,
-    markers: p.sags.map((s) => ({ t: s.t, label: '' })), matchStart: m.matchStart,
+    // Stretches under the margin line shade as spans; the lowest-points fallback keeps one marker per point.
+    spans: stretches ? sagSpans!.spans.map((x) => ({ from: x.start, to: x.end })) : undefined,
+    markers: stretches ? undefined : p.sags.map((s) => ({ t: s.t, label: '' })), matchStart: m.matchStart,
   } : null)
   const currentPlot = $derived<PlotModel | null>(g ? {
     from, to, unit: 'A', matchStart: m.matchStart, series: [gridSeries(g.currentFrom ? 'Total current (measured)' : 'Total current (motors + other)', g.amps), ...g.groups.filter((x) => x.name === m.profile.whatIfGroup).map((x) => gridSeries(`${x.name}`, x.amps))],
@@ -117,18 +127,38 @@
     <p class="note">Total current is the sum of motor supply currents plus {m.profile.power.otherLoadsAmps} A for everything else. <code>/SystemStats/BatteryCurrent</code> is only the roboRIO's own draw (~0.5 A), so it isn't used.</p>
   {/if}
 
-  <h3>The {p.sags.length} deepest sags, and what was drawing</h3>
-  <table class="sags">
-    <thead><tr><th>When</th><th>Voltage</th><th>Total</th><th>Top loads</th></tr></thead>
-    <tbody>
-      {#each p.sags as s (s.t)}
-        <tr>
-          <td>{matchWhen(m, s.t)}</td><td>{s.volts.toFixed(2)} V</td><td>{s.totalAmps.toFixed(0)} A</td>
-          <td>{s.loads.slice(0, 3).map((l) => `${l.group} ${l.amps.toFixed(0)} A`).join(' · ')}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  {#if sagSpans && stretches}
+    <h3>The {sagSpans.spans.length} deepest sags under {lineText} V, and what was drawing</h3>
+    {#if sagSpans.totalSpans > sagSpans.spans.length}
+      <p class="note">{sagSpans.totalSpans} stretches under {lineText} V, {sagSpans.secondsUnderLine.toFixed(1)} s in all; the {sagSpans.spans.length} deepest:</p>
+    {/if}
+    <table class="sags">
+      <thead><tr><th>When</th><th>Length</th><th>Lowest</th><th>State</th><th>At lowest</th><th>During</th><th>Before</th></tr></thead>
+      <tbody>
+        {#each sagSpans.spans as s (s.start)}
+          <tr>
+            <td>{matchWhen(m, s.start)}</td><td>{s.seconds.toFixed(2)} s</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart ?? '—'}</td>
+            <td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.during)}<small>{rest2(s.during)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+    <p class="note">A stretch is enabled time with the battery under {lineText} V (the brownout setting plus the {m.profile.power.marginVolts} V margin this robot wants), runs under 0.04 s dropped and runs within 0.25 s of each other joined. "During" is the mean over the stretch, "Before" the mean over the half second ahead of it; each shows the biggest motor group, then the next two.</p>
+  {:else if sagSpans}
+    <h3>The {sagSpans.spans.length} deepest sags, and what was drawing</h3>
+    <p class="note">{sagSpans.reason}</p>
+    <table class="sags">
+      <thead><tr><th>When</th><th>Lowest</th><th>State</th><th>At lowest</th><th>Before</th></tr></thead>
+      <tbody>
+        {#each sagSpans.spans as s (s.lowestAt)}
+          <tr>
+            <td>{matchWhen(m, s.lowestAt)}</td><td>{s.lowestVolts.toFixed(2)} V</td><td>{s.stateAtStart ?? '—'}</td>
+            <td>{top1(s.atLowest)}<small>{rest2(s.atLowest)}</small></td><td>{top1(s.before)}<small>{rest2(s.before)}</small></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
 
   {#if dragGroups.length}
     <h3>Current at steady speed</h3>
@@ -201,6 +231,7 @@
   thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   tbody th { font-weight: normal; }
   tr.group th { color: var(--muted); font-size: 0.75rem; padding-top: 0.5rem; }
+  .sags td small { display: block; color: var(--muted); font-size: 0.75rem; }
   .hl { background: var(--hover); }
   .breakdown td, .breakdown th { white-space: nowrap; }
   .breakdown tr.grp th { font-weight: normal; }
