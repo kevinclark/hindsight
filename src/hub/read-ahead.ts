@@ -12,11 +12,16 @@
  *
  * `onBytes` gets the bytes received so far across both ranges, as they arrive. Stop, or `close()` (the log failed or is
  * done), tells a range still in flight to stop, and nothing it reports counts any more.
+ *
+ * A range read ahead is not yet the reader's: its retry words stay off the bar, and if it fails before the reader takes
+ * it (a connection that sends one stream at a time can starve it while the range before it arrives), it is asked for
+ * again when taken, with the bytes it had still counted. Only a failure of the range the reader is waiting on fails the
+ * file.
  */
-import type { ByteSource, TransferWatch } from './adapter.ts'
+import { Stopped, type ByteSource, type TransferWatch } from './adapter.ts'
 
 export type RangeRead = (start: number, end: number, watch: TransferWatch) => Promise<Uint8Array>
-interface Range { got: number; bytes: Promise<Uint8Array> }
+interface Range { got: number; failed: boolean; bytes: Promise<Uint8Array> }
 
 export function readAhead(size: number, read: RangeRead, o: Omit<TransferWatch, 'onBytes'> & { onBytes?: (total: number) => void } = {}): ByteSource & { close(): void } {
   let closed = false
@@ -33,18 +38,21 @@ export function readAhead(size: number, read: RangeRead, o: Omit<TransferWatch, 
     o.onBytes?.(total)
     next()
   }
-  const begin = (i: number) => {
+  /** Ask for range `i`; `got` is what an earlier try of it counted already (asked again from its start, counted from there). */
+  const begin = (i: number, got = 0) => {
     const start = i * piece
     const end = Math.min(size, start + piece)
-    const r: Range = { got: 0, bytes: Promise.resolve(new Uint8Array()) }
+    const r: Range = { got, failed: false, bytes: Promise.resolve(new Uint8Array()) }
     ranges.set(i, r)
+    o.log?.(`bytes ${start}-${end - 1} of ${size}: asking${got ? ' again (the try read ahead failed)' : ''}`)
     r.bytes = read(start, end, {
       cancelled: quiet,
       onBytes: (n) => count(r, n),
-      onStep: (words) => { if (!quiet()) o.onStep?.(words) },
+      onStep: (words) => { if (!quiet() && i <= taken) o.onStep?.(words) },
       log: (line) => { if (!closed) o.log?.(line) },
     }).then((b) => { count(r, b.length); return b })
-    r.bytes.catch(() => {}) // a range read ahead fails when it is taken, or never if it is abandoned
+    // A range read ahead that fails is asked again when taken; one that fails once taken fails the reader's read.
+    r.bytes.catch((e) => { if (!(e instanceof Stopped)) r.failed = true })
   }
   /** Ask for the range after the one the reader has, once that one has started arriving. */
   const next = () => {
@@ -62,7 +70,8 @@ export function readAhead(size: number, read: RangeRead, o: Omit<TransferWatch, 
       if (!Number.isInteger(i) || i !== taken + 1 || end !== Math.min(size, start + piece)) throw new Error(`readAhead reads front to back in pieces of ${piece} bytes; asked for ${start}-${end}`)
       taken = i
       ranges.delete(i - 1)
-      if (!ranges.has(i)) begin(i)
+      const had = ranges.get(i)
+      if (!had || had.failed) begin(i, had?.got)
       next()
       return ranges.get(i)!.bytes
     },
