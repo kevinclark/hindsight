@@ -20,8 +20,11 @@ export interface WhatIfRow {
   words: string
 }
 
-export const SAME = 'same as no change (the cap changes nothing)'
-export const WITHIN = 'within model error'
+/** Every mode of the cap gives the no-change result. */
+export const SAME_ALL = 'same as no change (the cap changes nothing)'
+/** This mode alone gives the no-change result. */
+export const SAME = 'same as no change'
+export const WITHIN = 'lowest voltage within model error'
 const modeText = (mode: 'clip' | 'defer') => (mode === 'defer' ? 'slower spin-up' : 'dropped')
 /** Same as drawn: the replay sums currents again, so an unbinding cap differs from the model's own run by float dust. */
 const same = (a: Outcome, b: Outcome) => Math.abs(a.minVolts - b.minVolts) < 0.005 && Math.abs(a.secondsUnder7 - b.secondsUnder7) < 0.05
@@ -34,18 +37,20 @@ export function sagError(fit: { rmse: number; rmseLow: number }): number | null 
 
 export function whatIfRows(noChange: Outcome, whatIfs: WhatIf[], errorVolts: number | null): WhatIfRow[] {
   const within = (o: Outcome) => errorVolts !== null && Math.abs(o.minVolts - noChange.minVolts) < errorVolts
+  // A cap is one row only when every mode of it leaves the result unchanged; otherwise each mode keeps its own row.
+  const allSame = (cap: number) => whatIfs.filter((w) => w.capAmps === cap).every((w) => same(w, noChange))
   const rows: WhatIfRow[] = []
-  const done = new Set<string>()
+  const done = new Set<number>()
   for (const w of whatIfs) {
-    const key = `${w.capAmps}`
-    if (same(w, noChange)) {
-      // One row per cap when every mode of that cap leaves the result unchanged.
-      if (done.has(key)) continue
-      done.add(key)
-      rows.push({ label: `Model, cap ${w.capAmps} A`, minVolts: w.minVolts, secondsUnder7: w.secondsUnder7, sameAsNoChange: true, withinError: false, words: SAME })
+    if (allSame(w.capAmps)) {
+      if (done.has(w.capAmps)) continue
+      done.add(w.capAmps)
+      rows.push({ label: `Model, cap ${w.capAmps} A`, minVolts: w.minVolts, secondsUnder7: w.secondsUnder7, sameAsNoChange: true, withinError: false, words: SAME_ALL })
       continue
     }
-    rows.push({ label: `Model, cap ${w.capAmps} A (${modeText(w.mode)})`, minVolts: w.minVolts, secondsUnder7: w.secondsUnder7, sameAsNoChange: false, withinError: within(w), words: within(w) ? WITHIN : '' })
+    const label = `Model, cap ${w.capAmps} A (${modeText(w.mode)})`
+    if (same(w, noChange)) { rows.push({ label, minVolts: w.minVolts, secondsUnder7: w.secondsUnder7, sameAsNoChange: true, withinError: false, words: SAME }); continue }
+    rows.push({ label, minVolts: w.minVolts, secondsUnder7: w.secondsUnder7, sameAsNoChange: false, withinError: within(w), words: within(w) ? WITHIN : '' })
   }
   return rows
 }

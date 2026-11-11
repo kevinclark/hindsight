@@ -75,7 +75,7 @@
                   {@const sh = shape(m)}
                   {@const worstPast = i === w && row.past[i]}
                   {@const r = i === w || i === low ? 3 : 2.2}
-                  {#if sh && !worstPast}<polygon class="bat" points={outline(sh, p.x(i), p.y(v), r)}><title>{trendLabelLong(m, i)}: {fmt(row, v)} · battery {battery(m)}</title></polygon>
+                  {#if sh}<polygon class="bat" class:worst={worstPast} points={outline(sh, p.x(i), p.y(v), r)}><title>{trendLabelLong(m, i)}: {fmt(row, v)} · battery {battery(m)}</title></polygon>
                   {:else}<circle cx={p.x(i)} cy={p.y(v)} {r} fill={worstPast ? 'var(--warning)' : 'var(--muted)'}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>{/if}
                 {/if}
               {/each}
@@ -123,7 +123,8 @@
   .ring { fill: none; stroke: var(--warning); stroke-width: 1.2; }
   span.ring { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.2px solid var(--warning); margin-right: 4px; vertical-align: middle; }
   .key { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
-  .bat { fill: var(--fg); }
+  .bat { fill: var(--muted); }
+  .bat.worst { fill: var(--warning); }
   .mk { width: 10px; height: 10px; margin-right: 4px; vertical-align: middle; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
 

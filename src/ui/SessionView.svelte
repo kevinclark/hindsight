@@ -711,7 +711,7 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">Rules that fired in the most {practice ? 'logs' : 'matches'} come first. ● error · ▲ warning · (the worst finding the rule gave in that {practice ? 'log' : 'match'}; grey when the team marked it not a real problem there") · "·" quiet (nothing fired, or only grey info findings) · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a {practice ? 'log' : 'match'} to open it in Match review.</p>
+  <p class="hint">Rules that fired in the most {practice ? 'logs' : 'matches'} come first. ● error · ▲ warning (the worst finding the rule gave in that {practice ? 'log' : 'match'}; grey when the team marked it not a real problem there) · "·" quiet (nothing fired, or only grey info findings) · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a {practice ? 'log' : 'match'} to open it in Match review.</p>
 
   {#if unlockRows.length}
     <h3>What would check more</h3>
@@ -903,6 +903,8 @@
   .grid th[scope='row'], .grid thead th:first-child { text-align: left; }
   .grid .rulecell { font-weight: normal; }
   .grid .rulecell code { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); margin-left: 0.4em; }
+  /* On a phone the row label must leave room for cells: the title wraps, the id hides (its title is the same rule). */
+  @media (max-width: 640px) { .grid .rulecell { white-space: normal; min-width: 7rem; max-width: 9rem; } .grid .rulecell code { display: none; } }
   .grid thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   /* Severity colour, plus a different glyph and a word for greyscale and screen readers (WCAG 1.4.1). */
   .cell.fired { font-weight: 700; }

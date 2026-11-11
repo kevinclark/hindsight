@@ -17,7 +17,7 @@ describe('what-if rows against the model error', () => {
   })
   it('marks a change smaller than the sag error as within it, and a larger one not', () => {
     const rows = whatIfRows(none, [w(40, 'defer', 5.5, 12), w(30, 'defer', 6.5, 5)], 0.67)
-    expect(rows.map((r) => [r.withinError, r.words])).toEqual([[true, 'within model error'], [false, '']])
+    expect(rows.map((r) => [r.withinError, r.words])).toEqual([[true, 'lowest voltage within model error'], [false, '']])
   })
   it('marks nothing when there is no error to compare with', () => {
     expect(whatIfRows(none, [w(40, 'defer', 5.5, 12)], null)[0].withinError).toBe(false)
@@ -30,5 +30,11 @@ describe('what-if rows against the model error', () => {
     expect(sagError({ rmse: 0.61, rmseLow: 0.67 })).toBe(0.67)
     expect(sagError({ rmse: 0.61, rmseLow: NaN })).toBe(0.61)
     expect(sagError({ rmse: NaN, rmseLow: NaN })).toBeNull()
+  })
+  it('collapses a cap only when every mode of it is the same as no change', () => {
+    const rows = whatIfRows(none, [w(40, 'clip', 5.4, 13.1), w(40, 'defer', 5.9, 9)], 0.2)
+    expect(rows.map((r) => r.label)).toEqual(['Model, cap 40 A (dropped)', 'Model, cap 40 A (slower spin-up)'])
+    expect(rows[0]).toMatchObject({ sameAsNoChange: true, words: 'same as no change' })
+    expect(rows[1].sameAsNoChange).toBe(false)
   })
 })

@@ -268,14 +268,14 @@
         <tr><th scope="row">Logged</th><td>{f2(p.minVolts)} V</td><td>{p.secondsUnder7.toFixed(1)}</td><td></td></tr>
         <tr><th scope="row">Model, no change</th><td>{f2(p.modelNoChange.minVolts)} V</td><td>{p.modelNoChange.secondsUnder7.toFixed(1)}</td><td></td></tr>
         {#if sliderRow}
-          <tr class="hl" class:muted={sliderRow.withinError || sliderRow.sameAsNoChange}><th scope="row">{sliderRow.label}</th><td>{f2(sliderRow.minVolts)} V</td><td>{sliderRow.secondsUnder7.toFixed(1)}</td><td class="words">{sliderRow.words}</td></tr>
+          <tr class="hl" class:muted={sliderRow.sameAsNoChange}><th scope="row">{sliderRow.label}</th><td class:dim={sliderRow.withinError}>{f2(sliderRow.minVolts)} V</td><td>{sliderRow.secondsUnder7.toFixed(1)}</td><td class="words">{sliderRow.words}</td></tr>
         {/if}
         {#each tableRows as w (w.label)}
-          <tr class:muted={w.withinError || w.sameAsNoChange}><th scope="row">{w.label}</th><td>{f2(w.minVolts)} V</td><td>{w.secondsUnder7.toFixed(1)}</td><td class="words">{w.words}</td></tr>
+          <tr class:muted={w.sameAsNoChange}><th scope="row">{w.label}</th><td class:dim={w.withinError}>{f2(w.minVolts)} V</td><td>{w.secondsUnder7.toFixed(1)}</td><td class="words">{w.words}</td></tr>
         {/each}
       </tbody>
     </table>
-    <p class="note">Compare what-ifs with "Model, no change", not with "Logged": the model and the log disagree by the error above. Rows in grey change the lowest voltage by less than the sag error ({modelError === null ? '—' : f2(modelError)} V) or are the same as no change.</p>
+    <p class="note">Compare what-ifs with "Model, no change", not with "Logged": the model and the log disagree by the error above. A grey lowest voltage moved by less than the sag error ({modelError === null ? '—' : f2(modelError)} V); a grey row is the same as no change.</p>
   {:else if p.whatIfGroup}
     <p>Not enough enabled data to fit the battery model.</p>
   {/if}
@@ -287,7 +287,7 @@
   .kpis dd { margin: 0; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
   .kpis dd.sub { font-size: 0.75rem; color: var(--muted); }
   .bad { color: var(--error); }
-  tr.muted th, tr.muted td { color: var(--muted); font-weight: normal; }
+  tr.muted th, tr.muted td, td.dim { color: var(--muted); font-weight: normal; }
   td.words { font-size: 0.8rem; color: var(--muted); }
   .warn { color: var(--warning); }
   /* Controls at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, minimum). */

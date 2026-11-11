@@ -597,13 +597,13 @@
       <div class="day">
         <h3>{day}<span class="meta"> · {rows.length}</span></h3>
         {#if day !== 'No date'}
-          {@const head = dayHeader(wholeDays.get(day) ?? rows)}
+          {@const head = dayHead!}
           {#if 'fixed' in head}
             <span class="tagfield fixed">{head.fixed}</span>
           {:else}
-            <label class="tagfield">{head.label} <input list="places" value={dayPlace(rows)} placeholder={head.placeholder} onchange={(e) => tag(dayTarget(day), 'place', typed(e))} /></label>
+            <label class="tagfield">{head.label} <input list="places" value={dayPlace(rows.slice(-1))} placeholder={head.placeholder} onchange={(e) => tag(dayTarget(day), 'place', typed(e))} /></label>
           {/if}
-          <label class="tagfield">driver <input value={rows[0].tags.driver ?? ''} placeholder="for the day" onchange={(e) => tag(dayTarget(day), 'driver', typed(e))} /></label>
+          <label class="tagfield">driver <input value={rows[rows.length - 1].tags.driver ?? ''} placeholder="for the day" onchange={(e) => tag(dayTarget(day), 'driver', typed(e))} /></label>
         {/if}
       </div>
       </td></tr>
@@ -646,7 +646,7 @@
               <td class="kind">{logTypeWords(e.record)}</td>
               <td class="place" title={fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''}>{sameAsDay(fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? '') ? '' : fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
-              <td class="robotcell" title={v.robot === 'Unknown robot' ? '' : v.robot}>{v.robot === 'Unknown robot' ? '' : v.robot}{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}{#if code}<span class="meta">{' · '}<a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}</td>
+              <td class="robotcell"><span class="robotname" title={v.robot === 'Unknown robot' ? '' : v.robot}>{v.robot === 'Unknown robot' ? '' : v.robot}</span>{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}</td>
               <td class="num">{size(e.record.size)}</td>
               <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
               <td><button class="link" aria-expanded={!!expanded[e.record.sha256]} onclick={() => (expanded[e.record.sha256] = !expanded[e.record.sha256])}>{expanded[e.record.sha256] ? 'less' : 'more'}</button></td>
@@ -661,6 +661,7 @@
                   {#if e.attached.dslog.length}DS log: {e.attached.dslog.map((r) => r.names[0]).join(', ')}. {/if}
                   {#if e.attached.dsevents.length}DS events: {e.attached.dsevents.map((r) => r.names[0]).join(', ')}. {/if}
                   {#if e.attached.hoot.length}Hoot: {e.attached.hoot.map((r) => r.names[0]).join(', ')}. {/if}
+                  {#if code}Code: <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a>. {/if}
                   {#if e.record.roboRio}roboRIO {e.record.roboRio}. {/if}
                   {#if e.record.edition}Edition {e.record.edition}. {/if}
                   Date from {e.record.dateSource}. <code>{e.record.sha256.slice(0, 12)}</code>
@@ -754,7 +755,7 @@
   .time, .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .num { text-align: right; }
   .kind, .robotcell { white-space: nowrap; }
-  .robotcell { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
+  .robotname { display: inline-block; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
   .place { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name { max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .open { padding: 0; color: var(--fg); text-decoration-color: var(--border); }

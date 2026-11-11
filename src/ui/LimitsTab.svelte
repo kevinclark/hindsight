@@ -104,10 +104,10 @@
       <tbody>
         <tr><th scope="row">Logged</th><td>{f2(power.minVolts)} V</td><td>{f1(power.secondsUnder7)}</td><td></td></tr>
         <tr><th scope="row">Model, no change</th><td>{f2(power.modelNoChange.minVolts)} V</td><td>{f1(power.modelNoChange.secondsUnder7)}</td><td></td></tr>
-        {#if whatIfRowView}<tr class="hl" class:muted={whatIfRowView.withinError || whatIfRowView.sameAsNoChange}><th scope="row">{whatIfRowView.label}</th><td>{f2(whatIfRowView.minVolts)} V</td><td>{f1(whatIfRowView.secondsUnder7)}</td><td class="words">{whatIfRowView.words}</td></tr>{/if}
+        {#if whatIfRowView}<tr class="hl" class:muted={whatIfRowView.sameAsNoChange}><th scope="row">{whatIfRowView.label}</th><td class:dim={whatIfRowView.withinError}>{f2(whatIfRowView.minVolts)} V</td><td>{f1(whatIfRowView.secondsUnder7)}</td><td class="words">{whatIfRowView.words}</td></tr>{/if}
       </tbody>
     </table>
-    <p class="note">Model error: ±{f2(power.fit.rmse)} V overall, ±{f2(power.fit.rmseLow)} V in sags below 7.5 V. A change smaller than that is not a reliable prediction: a grey row moves the lowest voltage by less than the sag error, or is the same as no change.</p>
+    <p class="note">Model error: ±{f2(power.fit.rmse)} V overall, ±{f2(power.fit.rmseLow)} V in sags below 7.5 V. A change smaller than that is not a reliable prediction: a grey lowest voltage moved by less than the sag error; a grey row is the same as no change.</p>
   {:else}
     <p class="note">The battery model can't be fitted on this log.</p>
   {/if}
@@ -183,7 +183,7 @@
   tbody th { font-weight: normal; }
   .bad { color: var(--error); font-weight: 600; }
   .hl { background: var(--hover); }
-  tr.muted th, tr.muted td { color: var(--muted); font-weight: normal; }
+  tr.muted th, tr.muted td, td.dim { color: var(--muted); font-weight: normal; }
   td.words { font-size: 0.8rem; }
   .controls { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; font-size: 0.9rem; }
   input[type='range'] { width: 10rem; height: 24px; vertical-align: middle; }
