@@ -2,7 +2,7 @@
   Per-match trends as a verdict table (Tufte's sparkline table: word-sized graphics beside the numbers; NN/g "answer
   first"). One row per number, worst first: what is the verdict, the shape across matches, the latest value, the worst
   match, and what to do. Every verdict, order and worst match comes from trendRows (src/session/trends.ts), the same
-  model the printed report uses. Grey dots; the line is a hairline; one amber dot marks the worst match when it is past the line; in a row where
+  model the printed report uses. Grey points, a battery's by shape; the line is a hairline; one amber dot marks the worst match when it is past the line; in a row where
   only some matches are past the line, those dots also get an amber ring. No red, and no trend call: it flipped in
   4 of 5 metrics when one match was left out.
 -->
@@ -14,11 +14,24 @@
   // onOpen: open a match in Match review (the worst match is a link when it is given).
   let { matches, typedBatteries, onOpen, unit = 'match' }: { matches: MatchSummary[]; typedBatteries: Record<string, string>; labels?: string[]; onOpen?: (m: MatchSummary) => void; unit?: 'match' | 'log' } = $props()
 
-  // Five colours for batteries, used only when battery IDs exist (logged, or typed by hand).
-  const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
+  // A battery is told apart by shape, never by colour: red and amber already mean error and warning here (ISA-101: colour for
+  // the abnormal only). Five shapes, used only when battery IDs exist (logged, or typed by hand); no battery ID is a plain grey dot.
+  const SHAPES = ['square', 'diamond', 'down', 'cross', 'hex'] as const
+  const shapeOf = (i: number) => SHAPES[i % SHAPES.length]
+  // Points of a shape's outline around (x, y); r is its half-size. 'cross' is drawn as a plus (a polygon too).
+  function outline(shape: (typeof SHAPES)[number], x: number, y: number, r: number): string {
+    const k = r * 1.25
+    const pts: [number, number][] =
+      shape === 'square' ? [[-r, -r], [r, -r], [r, r], [-r, r]]
+      : shape === 'diamond' ? [[0, -k], [k, 0], [0, k], [-k, 0]]
+      : shape === 'down' ? [[-k, -r], [k, -r], [0, k]]
+      : shape === 'cross' ? [[-r / 3, -k], [r / 3, -k], [r / 3, -r / 3], [k, -r / 3], [k, r / 3], [r / 3, r / 3], [r / 3, k], [-r / 3, k], [-r / 3, r / 3], [-k, r / 3], [-k, -r / 3], [-r / 3, -r / 3]]
+      : [[-r, -k * 0.55], [0, -k], [r, -k * 0.55], [r, k * 0.55], [0, k], [-r, k * 0.55]]
+    return pts.map(([dx, dy]) => `${(x + dx).toFixed(2)},${(y + dy).toFixed(2)}`).join(' ')
+  }
   const battery = (m: MatchSummary) => m.batteryId ?? typedBatteries[m.fileName] ?? ''
   const batteries = $derived([...new Set(matches.map(battery).filter(Boolean))])
-  const colour = (m: MatchSummary) => (battery(m) ? COLORS[batteries.indexOf(battery(m)) % COLORS.length] : 'var(--muted)')
+  const shape = (m: MatchSummary) => (battery(m) ? shapeOf(batteries.indexOf(battery(m))) : null)
 
   const rows = $derived(trendRows(matches, unit))
 
@@ -59,7 +72,11 @@
                 {@const v = row.values[i]}
                 {#if v !== null}
                   {#if mixed(row) && row.past[i]}<circle class="ring" cx={p.x(i)} cy={p.y(v)} r="4" />{/if}
-                  <circle cx={p.x(i)} cy={p.y(v)} r={i === w || i === low ? 3 : 2.2} fill={i === w && row.past[i] ? 'var(--warning)' : colour(m)}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>
+                  {@const sh = shape(m)}
+                  {@const worstPast = i === w && row.past[i]}
+                  {@const r = i === w || i === low ? 3 : 2.2}
+                  {#if sh && !worstPast}<polygon class="bat" points={outline(sh, p.x(i), p.y(v), r)}><title>{trendLabelLong(m, i)}: {fmt(row, v)} · battery {battery(m)}</title></polygon>
+                  {:else}<circle cx={p.x(i)} cy={p.y(v)} {r} fill={worstPast ? 'var(--warning)' : 'var(--muted)'}><title>{trendLabelLong(m, i)}: {fmt(row, v)}{battery(m) ? ` · battery ${battery(m)}` : ''}</title></circle>{/if}
                 {/if}
               {/each}
             </svg>
@@ -81,9 +98,9 @@
   </tbody>
 </table>
 {#if batteries.length}
-  <p class="key">{#each batteries as b, i (b)}<span><span class="dot" style={`background:${COLORS[i % COLORS.length]}`}></span>{batteries.length > COLORS.length ? `${i + 1} ` : ''}{b}</span>{/each}<span><span class="dot" style="background:var(--muted)"></span>no battery ID</span><span><span class="dot" style="background:var(--warning)"></span>worst {unit} past the line</span><span><span class="ring"></span>past the line, where only some {unit === 'match' ? 'matches' : 'logs'} are</span></p>
+  <p class="key">{#each batteries as b, i (b)}<span><svg class="mk" viewBox="-6 -6 12 12" aria-hidden="true"><polygon class="bat" points={outline(shapeOf(i), 0, 0, 3.6)} /></svg>{batteries.length > SHAPES.length ? `${i + 1} ` : ''}{b}</span>{/each}<span><span class="dot" style="background:var(--muted)"></span>no battery ID</span><span><span class="dot" style="background:var(--warning)"></span>worst {unit} past the line</span><span><span class="ring"></span>past the line, where only some {unit === 'match' ? 'matches' : 'logs'} are</span></p>
 {:else}
-  <p class="key"><span><span class="dot" style="background:var(--warning)"></span>worst {unit} past the line</span><span><span class="ring"></span>past the line, where only some {unit === 'match' ? 'matches' : 'logs'} are</span><span>No battery IDs yet: type them in the list below to colour the points by battery.</span></p>
+  <p class="key"><span><span class="dot" style="background:var(--warning)"></span>worst {unit} past the line</span><span><span class="ring"></span>past the line, where only some {unit === 'match' ? 'matches' : 'logs'} are</span><span>No battery IDs yet: type them in the list below to mark the points by battery.</span></p>
 {/if}
 
 <style>
@@ -106,6 +123,8 @@
   .ring { fill: none; stroke: var(--warning); stroke-width: 1.2; }
   span.ring { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.2px solid var(--warning); margin-right: 4px; vertical-align: middle; }
   .key { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+  .bat { fill: var(--fg); }
+  .mk { width: 10px; height: 10px; margin-right: 4px; vertical-align: middle; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
 
   /* Under 640 px each row is a block: metric and verdict, then the sparkline, then the rest. */

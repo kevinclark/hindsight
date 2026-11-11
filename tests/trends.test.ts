@@ -287,6 +287,20 @@ describe('trendRows: current at steady speed', () => {
     expect(html).toMatch(/lowest: [\s\S]*Q2[\s\S]*1\.0 A/)
     expect(html).toMatch(/Q3[\s\S]*9\.1 A/)
   })
+  it('tells batteries apart by shape in Trends.svelte, never by the error and warning colours', async () => {
+    const a = (amps: number) => [mo('F', 'G', [band(13, amps)])]
+    const ms = [withDrag(1, a(5.9)), withDrag(2, a(1.0)), withDrag(3, a(9.1)), withDrag(4, a(6.5))]
+    const typed = { [ms[0].fileName]: 'bat-A', [ms[1].fileName]: 'bat-B', [ms[2].fileName]: 'bat-A', [ms[3].fileName]: 'bat-B' }
+    const { render } = await import('svelte/server')
+    const { default: Trends } = await import('../src/ui/Trends.svelte')
+    const html = render(Trends, { props: { matches: ms, typedBatteries: typed } }).body
+    expect(html).not.toMatch(/--series-\d/)
+    // two batteries, two different shapes (plus the key's two marks), both named in the key
+    const shapes = new Set([...html.matchAll(/<svg class="mk[^"]*"[^>]*><polygon class="bat[^"]*" points="([^"]+)"/g)].map((x) => x[1]))
+    expect(shapes.size).toBe(2)
+    expect(html).toContain('bat-A')
+    expect(html).toContain('bat-B')
+  })
   it('has no drag rows for matches saved without drag', () => {
     expect(dragRowsOf(trendRows([m(1, {}), m(2, {}), m(3, {})]))).toHaveLength(0)
   })

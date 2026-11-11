@@ -700,7 +700,7 @@
       <tbody>
         {#each gridRows as r (r.rule)}
           <tr>
-            <th scope="row"><code>{r.rule}</code></th>
+            <th scope="row" class="rulecell"><span class="ruletitle">{r.title}</span> <code>{r.rule}</code></th>
             {#each r.cells as c, i (i)}
               {#if c === 'fired'}{@const cell = r.gridCells[i]}{@const sev = cell.severity ?? 'error'}{@const markedNote = cell.marked ? ', marked not a real problem' : ''}<td class={`cell fired ${sev}`} class:filed={cell.marked} title={`${SEV_WORD[sev]}: fired${markedNote}`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}{markedNote}</span></td>
               {:else}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/if}
@@ -711,7 +711,7 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">Rules that fired in the most {practice ? 'logs' : 'matches'} come first. ● error · ▲ warning · ○ info (the worst finding the rule gave in that {practice ? 'log' : 'match'}; grey when the team marked it not a real problem there) · "·" quiet · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a {practice ? 'log' : 'match'} to open it in Match review.</p>
+  <p class="hint">Rules that fired in the most {practice ? 'logs' : 'matches'} come first. ● error · ▲ warning · (the worst finding the rule gave in that {practice ? 'log' : 'match'}; grey when the team marked it not a real problem there") · "·" quiet (nothing fired, or only grey info findings) · "–" not checked (signals missing, no robot profile fits the log, or the rule crashed). Click a {practice ? 'log' : 'match'} to open it in Match review.</p>
 
   {#if unlockRows.length}
     <h3>What would check more</h3>
@@ -733,7 +733,7 @@
         <tbody>
           {#each pitGrid as r (r.rule)}
             <tr>
-              <th scope="row"><code>{r.rule}</code></th>
+              <th scope="row" class="rulecell"><span class="ruletitle">{r.title}</span> <code>{r.rule}</code></th>
               {#each r.cells as c, i (i)}
                 {#if c === 'fired'}{@const cell = r.gridCells[i]}{@const sev = cell.severity ?? 'error'}<td class={`cell fired ${sev}`} title={`${SEV_WORD[sev]}: fired in the pit run`}><span aria-hidden="true">{SEV_ICON[sev]}</span><span class="sr">{SEV_WORD[sev]}</span></td>
                 {:else}<td class={`cell ${c.replace(/ /g, '-')}`} title={c}>{CELL[c]}</td>{/if}
@@ -893,13 +893,16 @@
   .back { color: var(--error); }
   .chip { justify-self: start; font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); height: fit-content; }
   .chip.once { border-style: dashed; }
-  .grid-wrap { overflow-x: auto; }
+  /* position: relative so the screen-reader words (.sr, absolute) belong to the scroller; otherwise they escape its clip and widen the page. */
+  .grid-wrap { overflow-x: auto; position: relative; }
   table { border-collapse: collapse; font-size: 0.8rem; }
   .changes { padding-left: 1.1rem; font-size: 0.85rem; }
   .changes li { margin-bottom: 0.3rem; overflow-wrap: anywhere; }
   .run { white-space: normal; }
   .grid th, .grid td { padding: 0.1rem 0.5rem; text-align: center; white-space: nowrap; }
   .grid th[scope='row'], .grid thead th:first-child { text-align: left; }
+  .grid .rulecell { font-weight: normal; }
+  .grid .rulecell code { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); margin-left: 0.4em; }
   .grid thead th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--border); }
   /* Severity colour, plus a different glyph and a word for greyscale and screen readers (WCAG 1.4.1). */
   .cell.fired { font-weight: 700; }

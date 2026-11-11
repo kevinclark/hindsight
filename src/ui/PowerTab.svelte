@@ -10,6 +10,7 @@
   import { FLEET_REFERENCE } from '../power/fleet-reference.ts'
   import { downsample } from '../report/findings-json.ts'
   import Plot from './Plot.svelte'
+  import { sagError, whatIfRow, whatIfRows } from '../power/whatif-rows.ts'
   import type { PlotModel } from './plot-data.ts'
   import { matchWhen } from '../match/match.ts'
   import BreakersStrip from './BreakersStrip.svelte'
@@ -64,6 +65,9 @@
   let cap = $state(40)
   let mode = $state<'clip' | 'defer'>('defer')
   const whatIf = $derived(whatIfAt(m, cap, mode))
+  const modelError = $derived(p?.fit ? sagError(p.fit) : null)
+  const sliderRow = $derived(whatIf && p?.modelNoChange ? whatIfRow(p.modelNoChange, whatIf, `Model, cap ${cap} A (${mode === 'defer' ? 'slower spin-up' : 'dropped'})`, modelError) : null)
+  const tableRows = $derived(p?.modelNoChange ? whatIfRows(p.modelNoChange, p.whatIfs.filter((w) => !(w.capAmps === cap && w.mode === mode)), modelError) : [])
 
   const from = $derived((m.matchStart ?? m.logStart) - 2)
   const to = $derived((m.matchEnd ?? m.logEnd) + 2)
@@ -259,19 +263,19 @@
       <label><input type="radio" bind:group={mode} value="clip" /> current dropped</label>
     </div>
     <table class="whatif">
-      <thead><tr><th></th><th>Minimum voltage</th><th>Seconds under 7 V</th></tr></thead>
+      <thead><tr><th></th><th>Minimum voltage</th><th>Seconds under 7 V</th><th></th></tr></thead>
       <tbody>
-        <tr><th scope="row">Logged</th><td>{f2(p.minVolts)} V</td><td>{p.secondsUnder7.toFixed(1)}</td></tr>
-        <tr><th scope="row">Model, no change</th><td>{f2(p.modelNoChange.minVolts)} V</td><td>{p.modelNoChange.secondsUnder7.toFixed(1)}</td></tr>
-        {#if whatIf}
-          <tr class="hl"><th scope="row">Model, cap {cap} A ({mode === 'defer' ? 'slower spin-up' : 'dropped'})</th><td>{f2(whatIf.minVolts)} V</td><td>{whatIf.secondsUnder7.toFixed(1)}</td></tr>
+        <tr><th scope="row">Logged</th><td>{f2(p.minVolts)} V</td><td>{p.secondsUnder7.toFixed(1)}</td><td></td></tr>
+        <tr><th scope="row">Model, no change</th><td>{f2(p.modelNoChange.minVolts)} V</td><td>{p.modelNoChange.secondsUnder7.toFixed(1)}</td><td></td></tr>
+        {#if sliderRow}
+          <tr class="hl" class:muted={sliderRow.withinError || sliderRow.sameAsNoChange}><th scope="row">{sliderRow.label}</th><td>{f2(sliderRow.minVolts)} V</td><td>{sliderRow.secondsUnder7.toFixed(1)}</td><td class="words">{sliderRow.words}</td></tr>
         {/if}
-        {#each p.whatIfs as w (w.capAmps + w.mode)}
-          <tr><th scope="row">Model, cap {w.capAmps} A ({w.mode === 'defer' ? 'slower spin-up' : 'dropped'})</th><td>{f2(w.minVolts)} V</td><td>{w.secondsUnder7.toFixed(1)}</td></tr>
+        {#each tableRows as w (w.label)}
+          <tr class:muted={w.withinError || w.sameAsNoChange}><th scope="row">{w.label}</th><td>{f2(w.minVolts)} V</td><td>{w.secondsUnder7.toFixed(1)}</td><td class="words">{w.words}</td></tr>
         {/each}
       </tbody>
     </table>
-    <p class="note">Compare what-ifs with "Model, no change", not with "Logged": the model and the log disagree by the error above.</p>
+    <p class="note">Compare what-ifs with "Model, no change", not with "Logged": the model and the log disagree by the error above. Rows in grey change the lowest voltage by less than the sag error ({modelError === null ? '—' : f2(modelError)} V) or are the same as no change.</p>
   {:else if p.whatIfGroup}
     <p>Not enough enabled data to fit the battery model.</p>
   {/if}
@@ -283,6 +287,8 @@
   .kpis dd { margin: 0; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
   .kpis dd.sub { font-size: 0.75rem; color: var(--muted); }
   .bad { color: var(--error); }
+  tr.muted th, tr.muted td { color: var(--muted); font-weight: normal; }
+  td.words { font-size: 0.8rem; color: var(--muted); }
   .warn { color: var(--warning); }
   /* Controls at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, minimum). */
   .copy { display: flex; align-items: center; gap: 0.75rem; margin: 0 0 0.5rem; }

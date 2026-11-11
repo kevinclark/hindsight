@@ -4,9 +4,10 @@
 -->
 <script lang="ts">
   import type { Analysis } from '../analyze.ts'
-  import { CATCH_UP_SECONDS, limitsReport, OVER_MARGIN_A, type GroupLimits, type LimitView } from '../limits/limits-report.ts'
+  import { CATCH_UP_SECONDS, limitsReport, overHeader, type GroupLimits, type LimitView } from '../limits/limits-report.ts'
   import { groupWhatIf, robotBudget } from '../limits/budget.ts'
   import { zeroingChecks } from '../limits/zeroing.ts'
+  import { sagError, whatIfRow } from '../power/whatif-rows.ts'
   import { powerReport } from '../power/power-report.ts'
   import { matchWhen } from '../match/match.ts'
 
@@ -19,6 +20,7 @@
   let whatIfGroup = $state('Flywheel')
   let whatIfCap = $state(40)
   const whatIf = $derived(groupWhatIf(analysis.match, whatIfGroup, whatIfCap))
+  const whatIfRowView = $derived(whatIf && power?.fit && power.modelNoChange ? whatIfRow(power.modelNoChange, whatIf, `Model, ${whatIfGroup} at ${whatIfCap} A`, sagError(power.fit)) : null)
   const budgetNow = $derived(robotBudget(analysis.match))
   const budgetWhatIf = $derived(robotBudget(analysis.match, { [whatIfGroup]: whatIfCap }))
 
@@ -72,12 +74,12 @@
     {#each [g.supply, g.stator] as l (l.kind)}
       {#if l.motors.length}
         <table>
-          <thead><tr><th>{l.kind} current</th><th>peak</th><th>p99</th><th>over {l.limitA ?? '—'}+{OVER_MARGIN_A} A</th><th>longest burst</th><th>in bursts &gt; {CATCH_UP_SECONDS} s</th><th>at the limit</th></tr></thead>
+          <thead><tr><th>{l.kind} current</th><th>peak</th><th>p99</th><th>{overHeader(l, g.verdict !== 'limits not known').text}</th><th>longest burst</th><th>in bursts &gt; {CATCH_UP_SECONDS} s</th><th>at the limit</th></tr></thead>
           <tbody>
             {#each l.motors as m (m.motor)}
               <tr>
                 <th scope="row">{m.motor}</th><td>{m.peak.toFixed(0)} A</td><td>{m.p99.toFixed(0)} A</td>
-                {#if g.verdict === 'limits not known'}<td>—</td><td>—</td><td>—</td><td>—</td>{:else}<td>{f2(m.secondsOver)} s</td>
+                {#if g.verdict === 'limits not known' || !overHeader(l, true).measured}<td>—</td><td>—</td><td>—</td><td>—</td>{:else}<td>{f2(m.secondsOver)} s</td>
                 <td class:bad={m.longestOver > CATCH_UP_SECONDS}>{f2(m.longestOver)} s</td>
                 <td class:bad={m.secondsOverSustained > 0}>{f2(m.secondsOverSustained)} s</td><td>{f1(m.secondsAtLimit)} s</td>{/if}
               </tr>
@@ -98,14 +100,14 @@
   </div>
   {#if whatIf && power?.fit && power.modelNoChange}
     <table>
-      <thead><tr><th></th><th>lowest voltage</th><th>seconds under 7 V</th></tr></thead>
+      <thead><tr><th></th><th>lowest voltage</th><th>seconds under 7 V</th><th></th></tr></thead>
       <tbody>
-        <tr><th scope="row">Logged</th><td>{f2(power.minVolts)} V</td><td>{f1(power.secondsUnder7)}</td></tr>
-        <tr><th scope="row">Model, no change</th><td>{f2(power.modelNoChange.minVolts)} V</td><td>{f1(power.modelNoChange.secondsUnder7)}</td></tr>
-        <tr class="hl"><th scope="row">Model, {whatIfGroup} at {whatIfCap} A</th><td>{f2(whatIf.minVolts)} V</td><td>{f1(whatIf.secondsUnder7)}</td></tr>
+        <tr><th scope="row">Logged</th><td>{f2(power.minVolts)} V</td><td>{f1(power.secondsUnder7)}</td><td></td></tr>
+        <tr><th scope="row">Model, no change</th><td>{f2(power.modelNoChange.minVolts)} V</td><td>{f1(power.modelNoChange.secondsUnder7)}</td><td></td></tr>
+        {#if whatIfRowView}<tr class="hl" class:muted={whatIfRowView.withinError || whatIfRowView.sameAsNoChange}><th scope="row">{whatIfRowView.label}</th><td>{f2(whatIfRowView.minVolts)} V</td><td>{f1(whatIfRowView.secondsUnder7)}</td><td class="words">{whatIfRowView.words}</td></tr>{/if}
       </tbody>
     </table>
-    <p class="note">Model error: ±{f2(power.fit.rmse)} V overall, ±{f2(power.fit.rmseLow)} V in sags below 7.5 V. A change smaller than that is not a reliable prediction.</p>
+    <p class="note">Model error: ±{f2(power.fit.rmse)} V overall, ±{f2(power.fit.rmseLow)} V in sags below 7.5 V. A change smaller than that is not a reliable prediction: a grey row moves the lowest voltage by less than the sag error, or is the same as no change.</p>
   {:else}
     <p class="note">The battery model can't be fitted on this log.</p>
   {/if}
@@ -181,6 +183,8 @@
   tbody th { font-weight: normal; }
   .bad { color: var(--error); font-weight: 600; }
   .hl { background: var(--hover); }
+  tr.muted th, tr.muted td { color: var(--muted); font-weight: normal; }
+  td.words { font-size: 0.8rem; }
   .controls { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; font-size: 0.9rem; }
   input[type='range'] { width: 10rem; height: 24px; vertical-align: middle; }
   select { min-height: 24px; }
