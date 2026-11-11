@@ -37,7 +37,7 @@ open from its Library. It only reads; it changes nothing on Drive and makes no m
 - **Google sign-in** asks for `drive.readonly`: Google words it as seeing all of your Drive files. The app reads only the
   team folder you choose (and, while you choose it, the names of the folders you browse): the files the laptops share
   there for the phone (each laptop's match summaries for every event it holds, and its triage marks), the laptops' lists of logs (for
-  the Library), and a log and its Driver Station logs when you open one. Sign-in happens in Apple's sign-in sheet; the app
+  the Library, and for Match review to find a match's log), and a log and its Driver Station logs when you open one. Sign-in happens in Apple's sign-in sheet; the app
   never sees your Google password.
 - **What stays on the phone:** the sign-in's refresh token in the iOS Keychain (kept for this device only: it does not move
   to a new phone); the team folder's id and name, the copies of the summaries, marks and lists it read (so it

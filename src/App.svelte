@@ -38,6 +38,8 @@
   import { teamEvents } from './tba/api.ts'
   import { summarizeLogWithCode } from './session/summary.ts'
   import type { OpenedFile } from './hub/browser-hub.ts'
+  import type { Entry } from './hub/catalog.ts'
+  import { mb, readHereLine, reviewTarget, sizeOf } from './ui/phone-library.ts'
   import { hub, phone, LibraryFile, readBeside } from './hub/bridge.ts'
   import { keepHistory } from './triage/keeper.ts'
   import SummaryReview from './ui/SummaryReview.svelte'
@@ -498,7 +500,78 @@
   let libraryOpened = $state(false)
   $effect(() => { if (mode === 'library') libraryOpened = true })
   // A summary from the board or Session: it takes the place of a log opened from the phone's Library.
-  function openSummary(m: MatchSummary) { if (readOnly) clearAll(); reviewing = m; mode = 'review' }
+  // Picking a match lets any log open go (one log in memory at a time) and any download in flight stop; a pick is also what
+  // lets a match the person sent back to its summary open its full review again.
+  function openSummary(m: MatchSummary) {
+    if (readOnly) { reviewOpening?.stop.abort(); clearAll() }
+    sentBack = null
+    reviewProblem = null
+    reviewing = m
+    mode = 'review'
+  }
+
+  // ---- The phone's Match review opens the log itself when the phone has it (kept: at once; else a button) ----
+  /** The Library's list and the logs kept on this phone, read when Match review is entered; null when a read failed (summary only, no error drawn). */
+  let phoneEntries = $state.raw<Entry[] | null>(null)
+  let phoneKept = $state.raw<Set<string>>(new Set())
+  let phoneListing = false
+  async function readPhoneLibrary() {
+    if (!phoneHub || phoneListing) return
+    phoneListing = true
+    try {
+      const [entries, kept] = await Promise.all([phoneHub.logs(), phoneHub.keptLogs()])
+      phoneEntries = entries
+      phoneKept = kept
+    } catch { phoneEntries = null } finally { phoneListing = false }
+  }
+  async function refreshPhoneKept() { try { phoneKept = (await phoneHub?.keptLogs()) ?? new Set() } catch { /* the marks stay as they were */ } }
+  $effect(() => { if (readOnly && mode === 'review') void readPhoneLibrary() })
+
+  /** Where the log in Match review was opened from: the Library's list, or Match review's own summary. */
+  let openedFrom = $state<'library' | 'review'>('library')
+  /** The match the person sent back to its summary (or whose open failed or was stopped): its full review does not open again until they pick it. */
+  let sentBack = $state<string | null>(null)
+  let reviewOpening = $state.raw<{ id: number; got: number; total: number; stop: AbortController } | null>(null)
+  let reviewProblem = $state<string | null>(null)
+  let reviewOpens = 0
+
+  const phoneEv = $derived(readOnly ? latestEventSession(sessions) : null)
+  const shownSummary = $derived(reviewing ?? phoneEv?.matches.at(-1) ?? null)
+  const summaryLog = $derived(readOnly ? reviewTarget(phoneEntries, phoneKept, shownSummary) : null)
+  const summaryName = (m: MatchSummary) => m.matchLabel || m.fileName
+
+  async function openFromReview(entry: Entry, m: MatchSummary) {
+    if (!phoneHub || reviewOpening) return
+    const stop = new AbortController()
+    const id = ++reviewOpens
+    clearAll()
+    reviewProblem = null
+    reviewOpening = { id, got: 0, total: sizeOf(entry), stop }
+    try {
+      const files = await phoneHub.openLog(entry, { signal: stop.signal, log: (line) => console.log(`Hindsight Match review: ${line}`), onProgress: (got, total) => { if (reviewOpening?.id === id) reviewOpening = { ...reviewOpening, got, total } } })
+      stop.signal.throwIfAborted() // another match was picked while the last bytes arrived
+      void refreshPhoneKept()
+      await openFromPhone(files, m)
+    } catch (e) {
+      sentBack = m.fileName
+      if (!stop.signal.aborted) reviewProblem = `Could not open ${summaryName(m)} (${e instanceof Error ? e.message : String(e)}).`
+    } finally { if (reviewOpening?.id === id) reviewOpening = null }
+  }
+  // A summary whose log is kept on this phone opens its full review by itself.
+  $effect(() => {
+    if (!readOnly || mode !== 'review' || current || busy || problems.length || reviewOpening) return
+    const m = shownSummary
+    if (m && summaryLog?.kept && sentBack !== m.fileName) { const entry = summaryLog.entry; untrack(() => void openFromReview(entry, m)) }
+  })
+  /** What SummaryReview draws for the full review: the button when the log is not kept, the progress line while it downloads. */
+  function fullFor(m: MatchSummary) {
+    const target = summaryLog && !summaryLog.kept ? summaryLog.entry : null
+    if (!target && !reviewOpening) return undefined
+    const onStop = () => { sentBack = m.fileName; reviewOpening?.stop.abort() }
+    return { size: target ? mb(sizeOf(target)) : '', onOpen: () => { if (target) void openFromReview(target, m) }, progress: reviewOpening, onStop, problem: reviewProblem }
+  }
+  function backToSummary() { sentBack = reviewing?.fileName ?? null; clearAll() }
+  const readHere = $derived(openedFrom === 'review' && reviewing && current ? readHereLine(reviewing, current.report.findings, !!codeFolder.current) : null)
 
   function saveHistory() {
     downloadText(HISTORY_FILE_NAME, serializeHistory(history), 'application/x-ndjson')
@@ -616,10 +689,11 @@
   }
 
   /** The phone's Library opened a log: its bytes as downloaded (never copied into a File), and only that log held. */
-  async function openFromPhone(files: OpenedFile[]) {
+  async function openFromPhone(files: OpenedFile[], from: 'library' | MatchSummary = 'library') {
     mode = 'review'
     tab = 'match'
-    reviewing = null
+    openedFrom = from === 'library' ? 'library' : 'review'
+    reviewing = from === 'library' ? null : from
     inputs = []
     busy = true
     const pass = ++passes
@@ -800,27 +874,31 @@
   <ForesightView signal={todaySig} {history} {sessions} onBoard={writeBoard} onPitCheck={(e: PitCheckEvent) => keep([...history, e], true)} />
   {#if unsaved}<p class="history screen-only">Changes were added to the team's history in this browser · <button class="link" onclick={saveHistory}>Save {HISTORY_FILE_NAME}</button></p>{/if}
 </div>{/if}
-{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{:else if phoneHub && libraryOpened}<div hidden={mode !== 'library'}><PhoneLibrary hub={phoneHub} onOpening={clearAll} onOpen={openFromPhone} /></div>{/if}
+{#if hub()}<div hidden={mode !== 'library'}><LibraryView onOpenSession={openInSession} onOpenMatch={openFromSession} onDraft={startDraft} onReview={() => (mode = 'review')} /></div>{:else if phoneHub && libraryOpened}<div hidden={mode !== 'library'}><PhoneLibrary hub={phoneHub} onOpening={clearAll} onOpen={(files) => openFromPhone(files)} /></div>{/if}
 <div hidden={mode !== 'session'}><SessionView bind:this={sessionView} {marks} {history} onBoard={readOnly ? undefined : writeBoard} {readOnly} onOpenSummary={readOnly ? openSummary : undefined} bind:summariesOut={summaries} onOpen={openFromSession} findLogs={findInLibrary} freshen={freshFromLibrary} linksFor={linksInLibrary} onDraft={draftFromCode} bind:hasSession={sessionShown} bind:sessionsOut={sessions} />{#if readOnly}<div class="screen-only phone-setup"><TbaFields /></div>{/if}</div>
 <div hidden={mode !== 'review'} class:screen-only={reportable}>
+{#snippet matchPicker(ev: NonNullable<typeof phoneEv>, active: string | undefined)}
+  <nav class="pick" aria-label="This event's matches">
+    {#each [...ev.matches].reverse() as m (m.fileName)}
+      {@const errors = Object.values(m.rules).reduce((n, r) => n + r.findings.filter((f) => f.severity === 'error').length, 0)}
+      <button type="button" class:active={active === m.fileName} aria-current={active === m.fileName ? 'true' : undefined} onclick={() => openSummary(m)}>{m.matchLabel ? m.matchLabel.replace(/^Qualification /, 'Q') : m.fileName}{#if errors}<small>{errors} error{errors === 1 ? '' : 's'}</small>{/if}</button>
+    {/each}
+  </nav>
+{/snippet}
 {#if readOnly && !current && !busy && !problems.length}
-  {@const ev = latestEventSession(sessions)}
-  {@const shownSummary = reviewing ?? ev?.matches.at(-1) ?? null}
-  {#if ev}
-    <nav class="pick" aria-label="This event's matches">
-      {#each [...ev.matches].reverse() as m (m.fileName)}
-        {@const errors = Object.values(m.rules).reduce((n, r) => n + r.findings.filter((f) => f.severity === 'error').length, 0)}
-        <button type="button" class:active={shownSummary?.fileName === m.fileName} aria-current={shownSummary?.fileName === m.fileName ? 'true' : undefined} onclick={() => openSummary(m)}>{m.matchLabel ? m.matchLabel.replace(/^Qualification /, 'Q') : m.fileName}{#if errors}<small>{errors} error{errors === 1 ? '' : 's'}</small>{/if}</button>
-      {/each}
-    </nav>
-  {:else}<p class="meta">No match summaries yet: a laptop publishes them when it adds a log.</p>{/if}
+  {#if phoneEv}{@render matchPicker(phoneEv, shownSummary?.fileName)}{:else}<p class="meta">No match summaries yet: a laptop publishes them when it adds a log.</p>{/if}
   {#if shownSummary}
     {@const ref = matchRef(shownSummary, shownSummary.playedAt)}
-    <SummaryReview summary={shownSummary} issues={marks.issues} wrong={wrongHere(ref, marks)} real={realHere(ref, marks)} laptop={phoneFrom.get(shownSummary.fileName)?.laptop ?? null} olderRead={phoneFrom.get(shownSummary.fileName)?.olderRead ?? null} mapStale={summaryMapStale(shownSummary, history)} />
+    <SummaryReview summary={shownSummary} issues={marks.issues} wrong={wrongHere(ref, marks)} real={realHere(ref, marks)} laptop={phoneFrom.get(shownSummary.fileName)?.laptop ?? null} olderRead={phoneFrom.get(shownSummary.fileName)?.olderRead ?? null} mapStale={summaryMapStale(shownSummary, history)} full={fullFor(shownSummary)} />
   {/if}
 {:else}
 {#if readOnly && (current || busy || problems.length)}
+  {#if openedFrom === 'review'}
+    {#if phoneEv}{@render matchPicker(phoneEv, reviewing?.fileName)}{/if}
+    <p class="phone-line" data-read-here>{#if busy}Reading on this phone…{:else if readHere}{readHere}{/if} · <button class="link" onclick={backToSummary}>Laptop's summary</button></p>
+  {:else}
   <p class="phone-line">Opened from the Library{#if busy}: reading…{/if} · <button class="link" onclick={() => { clearAll(); mode = 'library' }}>Back to the Library</button></p>
+  {/if}
 {/if}
 {#if !readOnly && (!current || dragging)}
 <section class="drop" class:compact={!!current} class:dragging aria-busy={busy}>

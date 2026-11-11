@@ -1,8 +1,9 @@
 # The iPhone app
 
 The phone shows what the team's laptops found and marked at the current event (or any earlier event a laptop published,
-picked on the event line), and opens any team log from its Library
-(downloaded whole; the most recent kept on the phone, 1 GB to start, set in the Library; iOS gives an app's storage an
+picked on the event line; Match review shows the laptop's summary, or, when the phone has that match's log in its Library,
+reads the whole log itself: at once if the phone kept it, else after a "Full review" button downloads it), and opens any team log
+from its Library (downloaded whole; the most recent kept on the phone, 1 GB to start, set in the Library; iOS gives an app's storage an
 undocumented limit and never asks, so the phone may keep less than the size chosen), read only, from the team's Google Drive folder (design: the phone pages in `src/phone.ts`, `src/hub/browser-hub.ts`; what it keeps and sends: `docs/privacy.md`).
 It is the same page as the laptop's, built for the phone (`phone.html`, `vite.phone.config.ts`) and run in a Capacitor 8
 WKWebView (`ios/`).

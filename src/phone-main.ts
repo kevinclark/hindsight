@@ -12,7 +12,7 @@ target.classList.add('phone')
 if (__PHONE_BUILD__ === 'measure') {
   await (await import('./phone/measure.ts')).runMeasure(target)
 } else if (__PHONE_BUILD__ === 'fixture') {
-  ;(await import('./phone-fixture.ts')).installFixture()
+  await (await import('./phone-fixture.ts')).installFixture()
   const { default: App } = await import('./App.svelte')
   mount(App, { target })
 } else {
