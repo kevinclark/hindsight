@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { noDriverStationName, robotFiles, skippedWords, type RobotEntry, type RobotFs } from '../src/hub/robot.ts'
+import { mb, sizeWords } from '../src/hub/transfer-watch.ts'
+import { mb as phoneMb } from '../src/ui/phone-library.ts'
 import { ingest } from '../src/hub/ingest.ts'
 import { LocalLibrary } from '../src/hub/library-store.ts'
 import { describeFile } from '../src/hub/describe-file.ts'
@@ -40,8 +42,13 @@ describe('the name of a log from a power-on with no Driver Station', () => {
     expect(noDriverStationName('x_akit_0123456789abcdef.wpilog')).toBe(false)
   })
   it('is worded with the count, the reason and the size', () => {
-    expect(skippedWords(3, 41_000_000)).toBe('Skipped 3 logs from power-ons with no Driver Station attached (the robot was never enabled), 41 MB.')
-    expect(skippedWords(1, 1_400_000)).toBe('Skipped 1 log from a power-on with no Driver Station attached (the robot was never enabled), 1.4 MB.')
+    expect(skippedWords(3, 41 * 2 ** 20)).toBe('Skipped 3 logs from power-ons with no Driver Station attached (the robot was never enabled), 41 MB.')
+    expect(skippedWords(1, 1.4 * 2 ** 20)).toBe('Skipped 1 log from a power-on with no Driver Station attached (the robot was never enabled), 1.4 MB.')
+  })
+  it('counts megabytes as the phone\'s buttons do (2^20 bytes), through the one formatter', () => {
+    for (const bytes of [0, 1_400_000, 9.99 * 2 ** 20, 10 * 2 ** 20, 41_000_000, 275 * 2 ** 20]) expect(sizeWords(bytes)).toBe(`${phoneMb(bytes)} MB`)
+    expect(phoneMb).toBe(mb)
+    expect(sizeWords(41_000_000)).toBe('39 MB') // 41 decimal MB is 39.1 MiB
   })
 })
 
@@ -75,7 +82,7 @@ describe('a robot pull', () => {
   })
 
   it('never marks a skipped file as seen, so a later forced pull still gets it', async () => {
-    const bytes = robotLog({ clockMs: Date.UTC(2026, 9, 17), seed: 'hex one' }) // never enabled
+    const bytes = robotLog({ clockMs: Date.UTC(2026, 9, 17), seed: 'hex one', neverEnabled: true }) // never enabled
     const lib = await LocalLibrary.open(await mkdtemp(join(tmpdir(), 'hindsight-skip-lib-')), 'machine-a')
     const seen = new Map<string, string>()
     const robot = fakeRobot([file(HEX, bytes.length)], { [`${DIR}/${HEX}`]: bytes })

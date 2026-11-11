@@ -21,7 +21,7 @@ export const UNKNOWN: Record<FacetId, string> = {
 }
 
 const MATCH_TYPES = ['Not a match', 'Practice match', 'Qualification', 'Elimination']
-const OFF_FIELD_TYPES: Record<OffFieldKind, string> = { 'on-check': 'On-check', 'not-enabled': 'Not enabled', unread: 'Off the field (not read)' }
+const OFF_FIELD_TYPES: Record<OffFieldKind, string> = { 'on-check': 'On-check', brief: 'Enabled under 1 s', 'not-enabled': 'Not enabled', unread: 'Off the field (not read)' }
 
 /** The log type facet's value: the match type on the field, and off it what the log's runs say (src/hub/log-kind.ts). */
 function logType(r: Pick<LogMeta, 'kind' | 'onField' | 'runs' | 'matchType'>): string {

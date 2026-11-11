@@ -20,17 +20,17 @@ let work: string
 beforeEach(async () => { work = await mkdtemp(join(tmpdir(), 'hindsight-held-')) })
 afterEach(() => rm(work, { recursive: true, force: true }))
 
-async function put(rel: string, seed: string, enabled?: [number, number], clock = CLOCK) {
+async function put(rel: string, seed: string, enabled?: [number, number], clock = CLOCK, idle = false) {
   const path = join(work, 'src', rel)
   await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, robotLog({ clockMs: clock, enabled, event: 'TEST', seed }))
+  await writeFile(path, robotLog({ clockMs: clock, enabled, neverEnabled: idle, event: 'TEST', seed }))
   await utimes(path, new Date(clock), new Date(clock))
 }
 async function library() {
   await put('played.wpilog', 'played', [20, 55])
   await put('brief.wpilog', 'brief', [20, 20.02], CLOCK + 3600e3) // enabled for 0.02 s: still uploads
-  await put('idle-one.wpilog', 'idle one', undefined, CLOCK + 7200e3)
-  await put('idle-two.wpilog', 'idle two', undefined, CLOCK + 10800e3)
+  await put('idle-one.wpilog', 'idle one', undefined, CLOCK + 7200e3, true)
+  await put('idle-two.wpilog', 'idle two', undefined, CLOCK + 10800e3, true)
   const lib = await LocalLibrary.open(join(work, 'lib'), 'ma')
   await ingest(lib, await localFolderFiles(join(work, 'src')), { describe: describeFile })
   return lib
@@ -45,6 +45,24 @@ describe('a log the robot was never enabled in', () => {
     const [r] = lib.catalog.all()
     const { runs: _runs, ...older } = r
     expect(neverEnabled(older as typeof r)).toBe(false)
+  })
+
+  it('is never a log that does not record Enabled at all (another team\'s robot): it uploads as before', async () => {
+    const lib = await library()
+    await put('other-team.wpilog', 'other team', undefined, CLOCK + 14400e3) // no Enabled signal in the log
+    await ingest(lib, await localFolderFiles(join(work, 'src')), { describe: describeFile })
+    const r = lib.catalog.all().find((x) => x.names[0] === 'other-team.wpilog')!
+    expect(r.runs).toBeUndefined()
+    expect(neverEnabled(r)).toBe(false)
+    const report = await syncWithTeam(lib, new MemoryAdapter())
+    expect(report.uploaded.map((u) => nameOf(lib, u.path))).toContain('other-team.wpilog')
+    expect(report.neverEnabled.count).toBe(2)
+  })
+
+  it('is never an on-field log: a match the robot sat dead through still uploads', () => {
+    const base = { kind: 'wpilog', runs: { count: 0, seconds: [] } } as unknown as Parameters<typeof neverEnabled>[0]
+    expect(neverEnabled({ ...base, onField: false })).toBe(true)
+    expect(neverEnabled({ ...base, onField: true })).toBe(false)
   })
 
   it('stays on this laptop by default: not uploaded, not published, counted and sized', async () => {
@@ -94,7 +112,7 @@ describe('a log the robot was never enabled in', () => {
   })
 
   it('is worded with the count, the size and where it stays', () => {
-    expect(notUploadedWords(2, 63_000_000)).toBe('Not uploaded: 2 logs the robot was never enabled in, 63 MB, kept on this laptop.')
-    expect(notUploadedWords(1, 2_500_000)).toBe('Not uploaded: 1 log the robot was never enabled in, 2.5 MB, kept on this laptop.')
+    expect(notUploadedWords(2, 63 * 2 ** 20)).toBe('Not uploaded: 2 logs the robot was never enabled in, 63 MB, kept on this laptop.')
+    expect(notUploadedWords(1, 2.5 * 2 ** 20)).toBe('Not uploaded: 1 log the robot was never enabled in, 2.5 MB, kept on this laptop.')
   })
 })

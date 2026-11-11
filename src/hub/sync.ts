@@ -53,8 +53,11 @@ export interface SyncReport {
   notTried: number
 }
 
-/** The robot was never enabled in this log (its record's runs say none; a record with no runs reading is not one). */
-export const neverEnabled = (r: LogRecord): boolean => r.runs?.count === 0
+/**
+ * The robot was never enabled in this log: its record's runs say none and it was not on the field (an on-field log with no
+ * enable is a match the robot sat dead through, and still goes up). A record with no runs reading is not one.
+ */
+export const neverEnabled = (r: LogRecord): boolean => !r.onField && r.runs?.count === 0
 
 /** The store holds this log: same size, and every checksum it reports agrees (a corrupted upload keeps its size). */
 function isThere(remote: FileInfo | undefined, r: LogRecord): boolean {
@@ -163,8 +166,10 @@ async function syncSteps(lib: LocalLibrary, team: StorageAdapter, options: SyncO
   const remote = new Map((await team.list('logs')).map((f) => [f.path, f]))
   const mine = lib.catalog.all().filter((r) => r.machine === lib.machine)
   const missing = mine.filter((r) => !isThere(remote.get(r.path), r))
-  const held = options.includeNeverEnabled ? [] : missing.filter(neverEnabled)
-  const todo = missing.filter((r) => !held.includes(r)).sort(matchesFirst)
+  const held: LogRecord[] = []
+  const todo: LogRecord[] = []
+  for (const r of missing) (!options.includeNeverEnabled && neverEnabled(r) ? held : todo).push(r)
+  todo.sort(matchesFirst)
   report.alreadyThere = mine.length - missing.length
   report.neverEnabled = { count: held.length, bytes: held.reduce((n, r) => n + r.size, 0) }
   // Publishing: each publish appends the newly eligible lines to what was last published, never a recomputed order

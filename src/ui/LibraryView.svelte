@@ -52,7 +52,7 @@
 
   let drive = $state<DriveStatus | null>(null)
   let picking = $state<null | 'team' | 'ingest'>(null)
-  let plan = $state<null | { kind: 'ingest'; folder: string; plan: IngestPlan } | { kind: 'sync'; plan: SyncPlan }>(null)
+  let plan = $state<null | { kind: 'ingest'; folder: string; plan: IngestPlan } | { kind: 'sync'; plan: SyncPlan; includeNeverEnabled?: boolean }>(null)
   let syncReport = $state.raw<SyncReport | null>(null)
   let fetchReport = $state.raw<FetchReport | null>(null)
   let clientId = $state('')
@@ -110,12 +110,12 @@
     plan = null
     if (!p) return
     if (p.kind === 'ingest') { const r = await work('Reading Drive folder', () => api!.addFromDrive(p.folder)); if (r) report = r }
-    else { const r = await work('Syncing', () => api!.sync()); if (r) syncReport = r }
+    else { const r = await work('Syncing', () => api!.sync(p.includeNeverEnabled ? { includeNeverEnabled: true } : undefined)); if (r) syncReport = r }
   }
-  /** The logs the robot was never enabled in, which a sync keeps on this laptop unless asked (ADR 15). */
-  async function uploadHeld() {
-    const r = await work('Syncing', () => api!.sync({ includeNeverEnabled: true }))
-    if (r) syncReport = r
+  /** The logs the robot was never enabled in, which a sync keeps on this laptop unless asked (ADR 15): shown with its bytes in the plan card first, like any upload. */
+  async function planHeld() {
+    const p = await work('Looking at the team folder', () => api!.syncPlan({ includeNeverEnabled: true }))
+    if (p) plan = { kind: 'sync', plan: p, includeNeverEnabled: true }
   }
   async function download() {
     const paths = fetchable.map((r) => r.path)
@@ -500,7 +500,7 @@
     <h2>{syncReport.stopped ? 'Stopped' : 'Synced'}: {syncReport.uploaded.length} uploaded · {syncReport.alreadyThere} already there · {syncReport.failed.length} failed{syncReport.stopped ? ` · ${syncReport.notTried} not tried` : ''}</h2>
     {#if syncReport.stopped}<p class="meta">You stopped the sync. What went up is shared; sync again to send the {syncReport.notTried} log{syncReport.notTried === 1 ? '' : 's'} left.</p>{/if}
     <p class="meta">{syncReport.manifests.length} teammate list{syncReport.manifests.length === 1 ? '' : 's'} brought in{syncReport.unrecorded.length ? ` · ${syncReport.unrecorded.length} file${syncReport.unrecorded.length === 1 ? '' : 's'} in the team folder that no list mentions` : ''}.</p>
-    {#if syncReport.neverEnabled.count}<p class="meta" data-not-uploaded>{notUploadedWords(syncReport.neverEnabled.count, syncReport.neverEnabled.bytes)}{' '}<button type="button" class="link" disabled={!!progress} onclick={uploadHeld}>Upload them too</button></p>{/if}
+    {#if syncReport.neverEnabled.count}<p class="meta" data-not-uploaded>{notUploadedWords(syncReport.neverEnabled.count, syncReport.neverEnabled.bytes)}{' '}<button type="button" class="link" disabled={!!progress} onclick={planHeld}>Upload them too</button></p>{/if}
     {#each syncReport.problems as p (p)}<p class="problem">{p}</p>{/each}
     {#if syncReport.failed.length}<details open><summary>Failed ({syncReport.failed.length})</summary><ul class="rows">{#each syncReport.failed as f (f.path)}<li><code>{f.path}</code> <span class="problem">{f.reason}</span></li>{/each}</ul></details>{/if}
     <button class="link" onclick={() => (syncReport = null)}>Dismiss</button>

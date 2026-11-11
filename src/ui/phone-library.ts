@@ -1,8 +1,9 @@
 /** What the phone's Library list shows (src/ui/PhoneLibrary.svelte): labels, the event filter, days. Pure, tested. */
 import type { Entry } from '../hub/catalog.ts'
-import { FACETS, FACET_LABELS, type Selection } from '../hub/facets.ts'
+import { FACETS, FACET_LABELS, type FacetId, type Selection } from '../hub/facets.ts'
 import { dayText } from '../hub/layout.ts'
 import { enabledSeconds, offFieldKind } from '../hub/log-kind.ts'
+import { mb } from '../hub/transfer-watch.ts'
 import type { LogRecord } from '../hub/types.ts'
 import type { MatchSummary } from '../session/summary.ts'
 
@@ -41,8 +42,8 @@ export function onThisPhone(entries: Entry[], kept: ReadonlySet<string>): Entry[
   return entries.filter((e) => [e.record, ...e.attached.dslog, ...e.attached.dsevents].every((r) => kept.has(r.sha256)))
 }
 
-/** Megabytes as the Library writes them: one decimal under 10 MB, none above. */
-export const mb = (n: number): string => (n >= 10 * 2 ** 20 ? (n / 2 ** 20).toFixed(0) : (n / 2 ** 20).toFixed(1))
+/** Megabytes as the Library writes them: one decimal under 10 MB, none above (the one formatter, src/hub/transfer-watch.ts). */
+export { mb }
 
 /** What opening an entry downloads: the log and its Driver Station logs. */
 export const sizeOf = (e: Entry): number => [e.record, ...e.attached.dslog, ...e.attached.dsevents].reduce((n, r) => n + r.size, 0)
@@ -98,14 +99,18 @@ export function readHereLine(summary: Pick<MatchSummary, 'rules' | 'codeFolder'>
   return `Read on this phone. The laptop's read found ${total} more (${gaps.map((g) => g.rule).join(', ')}).${code}`
 }
 
-/** A clock time in 12-hour English, "9:49 AM" (the same everywhere, so a range can share its AM/PM). */
-export function clock(ms: number): string {
+/** A clock time as this device writes it, "9:49 AM" (a 24-hour phone gets "09:49"). */
+export const clock = (ms: number): string => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+
+/** A day's heading, "Sun Nov 8" in the device's language, without the comma after the weekday; the year follows when it is not this year's. */
+export function dayHeading(ms: number, now: number = Date.now()): string {
   const d = new Date(ms)
-  return `${d.getHours() % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() < 12 ? 'AM' : 'PM'}`
+  const year = d.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' as const }
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', ...year }).replace(',', '')
 }
 
-/** A day's heading, "Sun Nov 8" (the browser's own short names, without the comma it puts after the weekday). */
-export const dayHeading = (ms: number): string => new Date(ms).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '')
+/** When a row's logs were played: each distinct time once, so two copies of one match at one time read "9:49 AM", not twice. */
+export const whenOf = (group: Entry[]): string => [...new Set(group.map((e) => rowParts(e).when).filter(Boolean))].join(', ')
 
 /** One log's row text: `label` (bold for a match), when it was played, and `extra` ("34 s enabled" on an on-check). */
 export interface RowParts { label: string; when: string; extra: string | null; bold: boolean; muted: boolean }
@@ -115,6 +120,7 @@ export function rowParts(e: Entry): RowParts {
   const when = r.playedAt === null ? '' : clock(r.playedAt)
   const kind = offFieldKind(r)
   if (kind === 'on-check') return { label: 'On-check', when, extra: `${Math.round(enabledSeconds(r))} s enabled`, bold: false, muted: true }
+  if (kind === 'brief') return { label: 'Enabled under 1 s', when, extra: null, bold: false, muted: true }
   if (kind === 'not-enabled') return { label: 'Not enabled', when, extra: null, bold: false, muted: true }
   if (kind === 'unread') return { label: 'Off the field', when, extra: null, bold: false, muted: true }
   return { label: logLabel(r), when, extra: null, bold: true, muted: false }
@@ -126,7 +132,7 @@ export interface RowItem { type: 'row'; entries: Entry[]; muted: boolean }
 export interface FoldItem { type: 'fold'; entries: Entry[]; text: string }
 export interface DayItems { day: string; heading: string; items: (RowItem | FoldItem)[] }
 
-/** The quiet logs: off the field, never enabled or not read (an on-check is a row). */
+/** The quiet logs: off the field, never enabled or not read (an on-check, or a brief enable, is a row). */
 const isQuiet = (e: Entry): boolean => { const k = offFieldKind(e.record); return k === 'not-enabled' || k === 'unread' }
 
 function foldText(group: Entry[]): string {
@@ -135,7 +141,7 @@ function foldText(group: Entry[]): string {
   const times = group.flatMap((e) => (e.record.playedAt === null ? [] : [e.record.playedAt]))
   if (times.length === 0) return parts.join(', ')
   const [a, b] = [clock(Math.min(...times)), clock(Math.max(...times))]
-  const range = a === b ? a : a.slice(-2) === b.slice(-2) ? `${a.slice(0, -3)}–${b}` : `${a}–${b}`
+  const range = a === b ? a : `${a}–${b}` // both in full: the device's own format decides where an AM/PM goes
   return `${parts.join(', ')} · ${range}`
 }
 
@@ -158,7 +164,7 @@ export function dayItems(entries: Entry[]): DayItems[] {
       const key = r.onField && r.matchNumber !== null ? `${r.event}|${r.matchType}|${r.matchNumber}` : null
       const same = key === null ? undefined : merged.get(key)
       if (same) { same.entries.push(e); continue }
-      const row: RowItem = { type: 'row', entries: [e], muted: parts(e).muted }
+      const row: RowItem = { type: 'row', entries: [e], muted: rowParts(e).muted }
       if (key !== null) merged.set(key, row)
       items.push(row)
     }
@@ -177,7 +183,6 @@ export function dayItems(entries: Entry[]): DayItems[] {
     }),
   }))
 }
-const parts = rowParts
 
 /** The facets' picks as one line over the list, "Qualification, On-check · 12 of 36 logs"; empty when nothing is picked. */
 export function activeLine(selection: Selection, shown: number, total: number): string {
@@ -185,3 +190,15 @@ export function activeLine(selection: Selection, shown: number, total: number): 
   return picks.length ? `${picks.join(', ')} · ${shown} of ${total} log${total === 1 ? '' : 's'}` : ''
 }
 export { FACET_LABELS }
+
+/**
+ * How the Filters sheet lays out the facets: Log type first, then the facets with a real choice (two or more values, or a
+ * pick to undo) as checkboxes; a facet with a single value in the shown logs is one line of text at the end, "Only one value:
+ * School year 2026-2027 · Season Off-season", since nothing can be filtered by it. A facet with no log at all is left out.
+ */
+export function sheetFacets(counts: Record<FacetId, [value: string, count: number][]>, selection: Selection): { multi: FacetId[]; single: { label: string; value: string }[] } {
+  const order = ['logType', ...FACETS.filter((f) => f !== 'logType')] as FacetId[]
+  const multi = order.filter((f) => counts[f].length > 1 || (selection[f]?.length ?? 0) > 0)
+  const single = order.filter((f) => !multi.includes(f) && counts[f].length === 1).map((f) => ({ label: FACET_LABELS[f], value: counts[f][0][0] }))
+  return { multi, single }
+}

@@ -69,7 +69,8 @@ function describeWpilog(name: string, bytes: Uint8Array): LogMeta {
     robot: robotIdentity(profile, choice, codeIdentity(log).codebase),
     build: match.build.sha ? { sha: match.build.sha.slice(0, 7), branch: match.build.branch } : null,
     stub: bytes.length < STUB_BYTES && match.enabled.length === 0,
-    runs: { count: match.runs.length, seconds: match.runs.map((r) => Math.round((r.end - r.start) * 10) / 10) },
+    // Only when the log records Enabled: a log without it (another team's robot) has no reading, never "0 runs" (ADR 15).
+    ...(num(match, match.profile.signals.enabled) ? { runs: { count: match.runs.length, seconds: match.runs.map((r) => Math.round((r.end - r.start) * 10) / 10) } } : {}),
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pullAddresses, robotAddresses, validTeam } from '../src/foresight/addresses.ts'
+import { pullAddresses, pullAgain, robotAddresses, validTeam } from '../src/foresight/addresses.ts'
 
 const values = (team: number | null) => robotAddresses(team).addresses.map((a) => a.value)
 
@@ -31,5 +31,14 @@ describe('pullAddresses', () => {
   })
   it('tries only USB without a team number', () => {
     expect(pullAddresses(null).map((a) => a.value)).toEqual(['172.22.11.2'])
+  })
+})
+
+describe('pulling again from the robot that answered', () => {
+  it('asks only that address, and every address when it is no longer one (the team number changed between the pulls)', () => {
+    expect(pullAgain(8033, '10.80.33.2').map((a) => a.value)).toEqual(['10.80.33.2'])
+    expect(pullAgain(8033, '10.1.2.2').map((a) => a.value)).toEqual(['10.80.33.2', '172.22.11.2', 'roborio-8033-frc.local'])
+    expect(pullAgain(null, '10.80.33.2').map((a) => a.value)).toEqual(['172.22.11.2'])
+    expect(pullAgain(8033).map((a) => a.value)).toEqual(pullAddresses(8033).map((a) => a.value))
   })
 })

@@ -4,8 +4,10 @@ import { writeDslog, writeDsevents, writeWpilog, type FixtureEntry } from './fix
 export interface RobotLogOptions {
   /** Wall clock at log time 0, ms. Omit for a robot whose clock was never set. */
   clockMs?: number
-  /** Log time the match is enabled for; omit for a log that was never enabled. */
+  /** Log time the match is enabled for; omit for a log that does not record Enabled at all (another team's robot). */
   enabled?: [start: number, end: number]
+  /** The log records Enabled, and it only ever reads false: a robot powered on and never enabled. */
+  neverEnabled?: boolean
   event?: string
   matchType?: number
   matchNumber?: number
@@ -29,6 +31,7 @@ export function robotLog(o: RobotLogOptions = {}): Uint8Array {
       { name: '/DriverStation/Autonomous', type: 'boolean', records: [[o.enabled[0] - 5, true], [o.enabled[1], false]] },
     )
   }
+  else if (o.neverEnabled) entries.push({ name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false]] })
   if (o.fms) entries.push({ name: '/DriverStation/FMSAttached', type: 'boolean', records: [[0, true]] })
   if (o.event) entries.push({ name: '/DriverStation/EventName', type: 'string', records: [[0, o.event]] })
   if (o.matchType !== undefined) entries.push({ name: '/DriverStation/MatchType', type: 'int64', records: [[0, o.matchType]] })

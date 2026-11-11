@@ -65,7 +65,7 @@ const SHAPES: Record<DescribableKey, (v: unknown) => boolean> = {
   robot: orNull((v) => isObject(v) && typeof v.name === 'string' && (v.profileId === null || typeof v.profileId === 'string') && (v.how === undefined || typeof v.how === 'string') && (v.fit === undefined || v.fit === null || finite(v.fit))),
   build: orNull((v) => isObject(v) && typeof v.sha === 'string' && typeof v.branch === 'string'),
   code: (v) => isCodeLink(v),
-  runs: (v) => isRunsReading(v),
+  runs: (v) => v === null || isRunsReading(v), // null: read again and the log records no Enabled signal (takes an earlier reading's runs away)
 }
 
 /**
@@ -114,8 +114,8 @@ export interface LogMeta {
   build: { sha: string; branch: string } | null
   /** Set by linking code, never by reading the log. */
   code?: CodeLink
-  /** Robot logs: the runs in the log, how many and each one's length in seconds (the FMS match is one run). Absent in readings made before runs. */
-  runs?: RunsReading
+  /** Robot logs: the runs in the log, how many and each one's length in seconds (the FMS match is one run). Absent in readings made before runs, and for a log that records no Enabled signal (null once read again). */
+  runs?: RunsReading | null
   /** Under 1 MB with no enabled time: a log the robot started and abandoned (akit_<hex>.wpilog on Drive today). */
   stub: boolean
   /** Hoot files: the part of the name before the timestamp ("rio", or a CANivore serial). */

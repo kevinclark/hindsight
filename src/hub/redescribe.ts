@@ -54,6 +54,8 @@ export async function redescribe(lib: LocalLibrary, options: RedescribeOptions):
       const read = await options.describe(lib.store.at(r.path), r.names[0] ?? r.path.split('/').pop()!)
       if (read.sha256 !== r.sha256) { report.failed.push({ path: r.path, reason: 'the file on disk is not the one the library recorded (its sha-256 differs)' }); continue }
       const meta = describable(read.meta)
+      // A log that records no Enabled signal has no runs reading; an earlier build's "0 runs" must not outlast this reading (the overlay only adds keys).
+      if (!('runs' in meta) && r.runs) meta.runs = null
       const same = Object.entries(meta).every(([k, v]) => isDeepStrictEqual(v, (r as unknown as Record<string, unknown>)[k]))
       // The whole reading, not only the differences: the catalog keeps the latest meta record per log, whole. A code link
       // is not something reading a log can find, so it is carried over from what the library shows now.

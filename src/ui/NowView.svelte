@@ -10,7 +10,7 @@
   import type { Progress } from '../hub/bridge.ts'
   import { untrack } from 'svelte'
   import { hub, phone, type RobotResult } from '../hub/bridge.ts'
-  import { pullAddresses } from '../foresight/addresses.ts'
+  import { pullAddresses, pullAgain } from '../foresight/addresses.ts'
   import { buildBoard } from '../board/model.ts'
   import { sessionWithMarks } from '../triage/track-record.ts'
   import { PROFILES } from '../profiles/index.ts'
@@ -150,7 +150,7 @@
     busy = 'pull'
     pulled = false
     stopPressed = false
-    const addresses = only ? pullAddresses(tbaTeam()).filter((a) => a.value === only) : pullAddresses(tbaTeam())
+    const addresses = pullAgain(tbaTeam(), only)
     const tried: string[] = []
     let reason = ''
     try {
@@ -179,6 +179,7 @@
     if (!api || busy) return
     failure = null
     note = ''
+    skippedLeft = null
     busy = 'folder'
     try {
       const r = await api.addFromFolder()

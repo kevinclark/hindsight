@@ -16,6 +16,13 @@ export function pullAddresses(team: number | null | undefined): RobotAddress[] {
   return ethernet ? [ethernet, usb, byName] : [usb]
 }
 
+/** The addresses a "Pull them too" asks: only the one that answered the first pull, or all of them when that one is no longer an address (the team number changed). */
+export function pullAgain(team: number | null | undefined, only?: string): RobotAddress[] {
+  const all = pullAddresses(team)
+  const same = only ? all.filter((a) => a.value === only) : []
+  return same.length ? same : all
+}
+
 export function robotAddresses(team: number | null | undefined): { addresses: RobotAddress[]; note: string | null } {
   if (!validTeam(team)) return { addresses: [USB_ADDRESS], note: "A team number (the Session view's Blue Alliance fields, or the app's team setting) adds the Ethernet and by-name addresses." }
   return {

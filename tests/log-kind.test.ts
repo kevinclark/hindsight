@@ -10,12 +10,16 @@ describe('offFieldKind', () => {
     expect(offFieldKind(rec({ runs: { count: 2, seconds: [0.4, 1] } }))).toBe('on-check')
     expect(offFieldKind(rec({ runs: { count: 1, seconds: [34.2] } }))).toBe('on-check')
   })
-  it('is not enabled when it has runs and none reaches a second (or has none)', () => {
+  it('is not enabled only when it has no run at all', () => {
     expect(offFieldKind(rec({ runs: { count: 0, seconds: [] } }))).toBe('not-enabled')
-    expect(offFieldKind(rec({ runs: { count: 2, seconds: [0.2, 0.99] } }))).toBe('not-enabled')
+  })
+  it('is brief when it was enabled but no run reaches a second', () => {
+    expect(offFieldKind(rec({ runs: { count: 2, seconds: [0.2, 0.99] } }))).toBe('brief')
+    expect(offFieldKind(rec({ runs: { count: 1, seconds: [0] } }))).toBe('brief')
   })
   it('is unread when the record has no runs', () => {
     expect(offFieldKind(rec({}))).toBe('unread')
+    expect(offFieldKind(rec({ runs: null }))).toBe('unread')
   })
   it('is null on the field, and for anything but a robot .wpilog', () => {
     expect(offFieldKind(rec({ onField: true, runs: { count: 1, seconds: [150] } }))).toBeNull()

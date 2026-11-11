@@ -73,7 +73,7 @@ describe('what a log says about itself', () => {
     expect(m.wall!.start).toBeLessThanOrEqual(clock + 20_000)
   })
   it('calls a tiny never-enabled log a stub, and a long never-enabled one not', () => {
-    expect(describeLog('akit_ab12.wpilog', robotLog({ seed: 's' })).stub).toBe(true)
+    expect(describeLog('akit_ab12.wpilog', robotLog({ seed: 's', neverEnabled: true })).stub).toBe(true)
     expect(describeLog('x.wpilog', robotLog({ enabled: [20, 55] })).stub).toBe(false)
   })
   it('files a hoot file by its name alone, without opening it', () => {
@@ -214,14 +214,14 @@ describe('tags and facets', () => {
     expect(names({ driver: ['Nobody'] })).toEqual([])
   })
 
-  it('names every log by its type: match types on the field, on-check / not enabled / not read off it', () => {
+  it('names every log by its type: match types on the field, on-check / enabled under 1 s / not enabled / not read off it', () => {
     const l = (sha256: string, over: Partial<LogRecord>) => log({ sha256, ...over })
     const entries = Catalog.from([[
       l('t1', { onField: true, matchType: 1, matchNumber: 1 }), l('t2', { onField: true, matchType: 2, matchNumber: 1 }), l('t3', { onField: true, matchType: 3, matchNumber: 1 }),
-      l('t4', { onField: true }), l('t5', { runs: { count: 1, seconds: [34] } }), l('t6', { runs: { count: 1, seconds: [0.3] } }), l('t7', {}),
+      l('t4', { onField: true }), l('t5', { runs: { count: 1, seconds: [34] } }), l('t6', { runs: { count: 1, seconds: [0.3] } }), l('t7', {}), l('t8', { runs: { count: 0, seconds: [] } }),
     ].map(serializeRecord).join('')]).entries()
     const types = Object.fromEntries(entries.map((e) => [e.record.sha256, facetValues(e, robotLabels(entries)).logType]))
-    expect(types).toEqual({ t1: 'Practice match', t2: 'Qualification', t3: 'Elimination', t4: 'Not a match', t5: 'On-check', t6: 'Not enabled', t7: 'Off the field (not read)' })
+    expect(types).toEqual({ t1: 'Practice match', t2: 'Qualification', t3: 'Elimination', t4: 'Not a match', t5: 'On-check', t6: 'Enabled under 1 s', t7: 'Off the field (not read)', t8: 'Not enabled' })
     expect(FACET_LABELS.logType).toBe('Log type')
     expect(FACETS).not.toContain('matchType')
   })

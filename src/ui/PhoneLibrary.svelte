@@ -4,10 +4,11 @@
 <script lang="ts">
   import type { BrowserHub, OpenedFile } from '../hub/browser-hub.ts'
   import type { Entry } from '../hub/catalog.ts'
-  import { FACETS, FACET_LABELS, UNKNOWN, countLabel, facetCounts, facetValues, filterEntries, robotLabels, type FacetId, type Selection } from '../hub/facets.ts'
+  import { FACET_LABELS, UNKNOWN, countLabel, facetCounts, facetValues, filterEntries, robotLabels, type FacetId, type Selection } from '../hub/facets.ts'
   import { eventPlaces } from '../hub/event-places.ts'
-  import { activeLine, dayItems, isLarge, mb, onThisPhone, rowParts, sizeOf } from './phone-library.ts'
+  import { activeLine, dayItems, isLarge, mb, onThisPhone, rowParts, sheetFacets, sizeOf, whenOf } from './phone-library.ts'
   import OpenProgress from './OpenProgress.svelte'
+  import { tick } from 'svelte'
   import { KEEP_CHOICES, keepCap, setKeepCap } from '../phone/keep-setting.ts'
 
   /** `onOpening`: before a download starts, so the log held now can be let go first (one log in memory at a time). */
@@ -26,9 +27,25 @@
     await refreshKept()
   }
   async function clearKept() { await hub.clearKept(); await refreshKept() }
+  /** The list could not be read: its line and its Try again (list again). */
   let problem = $state<string | null>(null)
+  /** An open failed: shown in the sticky slot the download progress uses, so it is seen wherever the list is scrolled, with a Try again for that same log. */
+  let openError = $state.raw<{ entry: Entry; why: string } | null>(null)
   let selection = $state<Selection>({})
   let sheetOpen = $state(false)
+  let filtersButton = $state<HTMLButtonElement>()
+  let sheetEl = $state<HTMLDivElement>()
+  /** The sheet is a modal dialog: focus goes into it, Escape closes it, the page behind keeps still, and focus returns to the button that opened it. */
+  $effect(() => {
+    if (!sheetOpen) return
+    const scrollBefore = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    void tick().then(() => sheetEl?.focus())
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); closeSheet() } }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = scrollBefore }
+  })
+  function closeSheet() { sheetOpen = false; void tick().then(() => filtersButton?.focus()) }
   let folds = $state<Record<string, boolean>>({})
   // Raw, and told apart by a number: a $state object would wrap `entry` in a proxy, so `opening.entry === entry` never
   // held, progress never showed, and the line never cleared (seen on the phone, 2026-11-09).
@@ -63,7 +80,11 @@
     const now = selection[f] ?? []
     selection = { ...selection, [f]: now.includes(value) ? now.filter((v) => v !== value) : [...now, value] }
   }
-  const foldKey = (day: string, i: number) => `${day}#${i}`
+  /** A fold is told apart by its first log, so it keeps its open state when the list above it changes. */
+  const foldKey = (entries: Entry[]) => entries[0].record.sha256
+  const sheet = $derived(sheetFacets(counts, selection))
+  /** The row's name in an error: "Q1", or "On-check at 9:49 AM" for a log with no match number. */
+  const rowName = (e: Entry) => { const p = rowParts(e); return p.bold || !p.when ? p.label : `${p.label} at ${p.when}` }
 
   /** Each step to the app's console (Xcode, `devicectl … launch --console`): a download that hangs shows where. */
   const say = (line: string) => console.log(`Hindsight Library: ${line}`)
@@ -74,6 +95,7 @@
     const id = ++opens
     opening = { id, entry, got: 0, total: sizeOf(entry), stop }
     problem = null
+    openError = null
     try {
       const files = await hub.openLog(entry, { signal: stop.signal, log: say, onProgress: (got, total) => { if (opening?.id === id) opening = { ...opening, got, total } } })
       say('downloaded; opening in Match review')
@@ -81,7 +103,7 @@
       onOpen(files)
     } catch (e) {
       say(`ended: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`)
-      if (!stop.signal.aborted) problem = `Could not open ${entry.record.names[0]} (${e instanceof Error ? e.message : String(e)}).`
+      if (!stop.signal.aborted) openError = { entry, why: e instanceof Error ? e.message : String(e) }
     } finally { if (opening?.id === id) opening = null }
   }
 </script>
@@ -90,6 +112,8 @@
   {#if problem}<p class="problem" role="alert">{problem} <button class="link" onclick={list}>Try again</button></p>{/if}
   {#if opening}
     <div class="sticky"><OpenProgress name={opening.entry.record.names[0]} got={opening.got} total={opening.total} onStop={() => { say('Stop pressed'); opening?.stop.abort() }} /></div>
+  {:else if openError}
+    <div class="sticky error"><p class="problem" role="alert">Couldn't open {rowName(openError.entry)}: {openError.why} <button class="link retry" onclick={() => open(openError!.entry)}>Try again</button></p></div>
   {/if}
   {#if entries === null}
     {#if !problem}<p class="meta">Reading the team's list of logs…</p>{/if}
@@ -97,7 +121,7 @@
     <p class="meta">No laptop has shared logs to the team Drive yet: they go up when a laptop syncs.</p>
   {:else}
     <div class="bar">
-      <button class="filters" aria-haspopup="dialog" onclick={() => (sheetOpen = true)}>Filters</button>
+      <button class="filters" bind:this={filtersButton} aria-haspopup="dialog" onclick={() => (sheetOpen = true)}>Filters</button>
       <label class="here"><input type="checkbox" bind:checked={onlyHere} /> Only on this phone</label>
     </div>
     {#if picks}<p class="picks"><span>{picks}</span> <button class="clear" onclick={() => (selection = {})}>Clear</button></p>{/if}
@@ -105,9 +129,9 @@
     {#each days as d (d.day)}
       <h3>{d.heading}</h3>
       <ul>
-        {#each d.items as item, i (item.type === 'fold' ? foldKey(d.day, i) : item.entries[0].record.sha256)}
+        {#each d.items as item (item.type === 'fold' ? `fold:${foldKey(item.entries)}` : item.entries[0].record.sha256)}
           {#if item.type === 'fold'}
-            {@const k = foldKey(d.day, i)}
+            {@const k = foldKey(item.entries)}
             <li class="fold"><button class="foldline" aria-expanded={!!folds[k]} onclick={() => (folds = { ...folds, [k]: !folds[k] })}>
               <span class="caret" aria-hidden="true">{folds[k] ? '▾' : '▸'}</span> {item.text}</button></li>
             {#if folds[k]}
@@ -133,7 +157,7 @@
     <span class="what">
       <span class="line">{#if p.bold}<strong>{p.label}</strong>{:else}<span class="label">{p.label}</span>{/if}{#if group.length > 1}{' · '}{group.length} logs{/if}
         {#if mixedEvents && placeOf(first) !== UNKNOWN.place}{' '}<span class="meta">{placeOf(first)}</span>{/if}</span>
-      <span class="meta">{group.map((e) => rowParts(e).when).filter(Boolean).join(', ')}{#if p.extra}{' · '}{p.extra}{/if}{#if first.record.robot}{' · '}{first.record.robot.name}{/if}{#if first.attached.dslog.length + first.attached.dsevents.length}{' · '}with DS log{/if}</span>
+      <span class="meta">{whenOf(group)}{#if p.extra}{' · '}{p.extra}{/if}{#if first.record.robot}{' · '}{first.record.robot.name}{/if}{#if first.attached.dslog.length + first.attached.dsevents.length}{' · '}with DS log{/if}</span>
       {#if group.some((e) => isLarge(sizeOf(e)))}<span class="meta large">Large: may not open on older phones.</span>{/if}
     </span>
     <span class="opens">
@@ -145,12 +169,12 @@
 {/snippet}
 
 {#if sheetOpen}
-  <div class="scrim" role="presentation" onclick={() => (sheetOpen = false)}></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="Filters">
+  <div class="scrim" role="presentation" onclick={closeSheet}></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Filters" tabindex="-1" bind:this={sheetEl}>
     <div class="sheet-head"><strong>Filters</strong> <span class="meta">{shown.length} of {base.length} logs</span>
       {#if picks}<button class="clear" onclick={() => (selection = {})}>Clear</button>{/if}
-      <button class="done" onclick={() => (sheetOpen = false)}>Done</button></div>
-    {#each FACETS as f (f)}
+      <button class="done" onclick={closeSheet}>Done</button></div>
+    {#each sheet.multi as f (f)}
       <fieldset>
         <legend>{FACET_LABELS[f]}</legend>
         {#each counts[f] as [value, n] (value)}
@@ -159,6 +183,7 @@
         {/each}
       </fieldset>
     {/each}
+    {#if sheet.single.length}<p class="meta only-one">Only one value: {sheet.single.map((x) => `${x.label} ${x.value}`).join(' · ')}</p>{/if}
   </div>
 {/if}
 
@@ -181,6 +206,11 @@
   .what { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
   .opens { display: flex; flex-direction: column; gap: 0.35rem; }
   .sticky { position: sticky; top: 0; z-index: 1; }
+  .sticky.error { background: var(--bg); padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
+  .sticky.error .problem { margin: 0; }
+  .retry { min-height: 44px; min-width: 44px; }
+  .sheet:focus { outline: none; }
+  .only-one { margin: 0.75rem 0 0; }
   .large { color: var(--warning); }
   button { font: inherit; color: var(--fg); background: none; border: 1px solid var(--focus); border-radius: 6px; padding: 0.3rem 0.7rem; white-space: nowrap; cursor: pointer; }
   button:disabled { border-color: var(--border); color: var(--muted); }

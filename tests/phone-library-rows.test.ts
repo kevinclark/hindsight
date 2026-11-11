@@ -5,9 +5,11 @@ import { Catalog, type Entry } from '../src/hub/catalog.ts'
 import { FACETS, facetCounts, filterEntries, robotLabels, type Selection } from '../src/hub/facets.ts'
 import { eventPlaces } from '../src/hub/event-places.ts'
 import { serializeRecord, type LogRecord } from '../src/hub/types.ts'
-import { activeLine, clock, dayHeading, dayItems, rowParts } from '../src/ui/phone-library.ts'
+import { activeLine, clock, dayHeading, dayItems, rowParts, sheetFacets, whenOf } from '../src/ui/phone-library.ts'
 import library from '../fixtures/phone/library.json'
 
+/** A clock time as this device writes it (the test must not assume English). */
+const t = (h: number, m: number, d = 8) => new Date(2099, 2, d, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 const at = (d: number, h: number, m: number) => new Date(2099, 2, d, h, m).getTime() // local time
 
 let n = 0
@@ -30,48 +32,58 @@ describe('dayItems', () => {
   it('makes rows of matches and on-checks, and folds the other off-field logs between two rows (a lone one stays a muted row)', () => {
     const es = newestFirst([
       match(8, 12, 0, 3), pit(8, 11, 50, []), pit(8, 11, 45, []), pit(8, 11, 40, [2]), // the newest quiet group: never folds
-      match(8, 11, 0, 2), pit(8, 10, 10, [34, 5]), pit(8, 9, 59), pit(8, 9, 53, [0.3]), pit(8, 9, 49, [0.1]), // an on-check, then 3 not-rows -> fold
+      match(8, 11, 0, 2), pit(8, 10, 10, [34, 5]), pit(8, 9, 59), pit(8, 9, 53, []), pit(8, 9, 49, [0.1]), // an on-check, an unread and a not-enabled log fold, a brief enable stays a row
       match(8, 9, 0, 1), pit(8, 8, 0, [0.1]), // lone, a muted row
       match(7, 17, 0, 9),
     ])
     expect(shape(es)).toEqual([
-      ['Q3', 'muted Not enabled', 'muted Not enabled', 'muted On-check', 'Q2', 'muted On-check', 'fold(3) 2 not enabled, 1 off the field · 9:49–9:59 AM', 'Q1', 'muted Not enabled'],
+      ['Q3', 'muted Not enabled', 'muted Not enabled', 'muted On-check', 'Q2', 'muted On-check', `fold(2) 1 not enabled, 1 off the field · ${t(9, 53)}–${t(9, 59)}`, 'muted Enabled under 1 s', 'Q1', 'muted Enabled under 1 s'],
       ['Q9'],
     ])
   })
   it('never folds the newest group, but folds an older one of the same size', () => {
     const es = newestFirst([pit(8, 12, 0, []), pit(8, 11, 50, []), match(8, 11, 0, 1), pit(8, 10, 0, []), pit(8, 9, 50, [])])
-    expect(shape(es)).toEqual([['muted Not enabled', 'muted Not enabled', 'Q1', 'fold(2) 2 not enabled · 9:50–10:00 AM']])
+    expect(shape(es)).toEqual([['muted Not enabled', 'muted Not enabled', 'Q1', `fold(2) 2 not enabled · ${t(9, 50)}–${t(10, 0)}`]])
   })
   it('counts every folded log (nothing is hidden without a count)', () => {
-    const es = newestFirst([pit(9, 10, 5, []), pit(9, 10, 0, []), match(8, 12, 0, 2), pit(8, 11, 0, []), pit(8, 10, 0), pit(8, 9, 0, [0.2]), match(8, 8, 0, 1)])
+    const es = newestFirst([pit(9, 10, 5, []), pit(9, 10, 0, []), match(8, 12, 0, 2), pit(8, 11, 0, []), pit(8, 10, 0), pit(8, 9, 0, []), match(8, 8, 0, 1)])
     const fold = dayItems(es)[1].items.find((i) => i.type === 'fold')!
     expect(fold.entries.length).toBe(3)
-    expect(fold.type === 'fold' && fold.text).toBe('2 not enabled, 1 off the field · 9:00–11:00 AM')
+    expect(fold.type === 'fold' && fold.text).toBe(`2 not enabled, 1 off the field · ${t(9, 0)}–${t(11, 0)}`)
   })
   it('merges two on-field logs of one match (same day, event, type, number) into one row, others stay apart', () => {
     const es = newestFirst([match(8, 11, 30, 1), match(8, 11, 0, 5), match(8, 9, 0, 1), match(8, 8, 0, 1, { event: 'OTHER' }), match(7, 9, 0, 1)])
     expect(shape(es)).toEqual([['Q1 x2', 'Q5', 'Q1'], ['Q1']])
     expect(dayItems(es)[0].items[0].entries.map((e) => e.record.playedAt)).toEqual([at(8, 11, 30), at(8, 9, 0)])
   })
-  it('heads the day like "Sun Nov 8"', () => {
-    expect(dayHeading(new Date(2026, 10, 8, 12).getTime())).toBe('Sun Nov 8')
-    expect(dayItems(newestFirst([match(8, 9, 0, 1)]))[0].heading).toBe('Sun Mar 8')
+  it('heads the day like "Sun Nov 8", and adds the year when it is not the current one', () => {
+    const noon = new Date(2026, 10, 8, 12).getTime()
+    expect(dayHeading(noon, new Date(2026, 10, 11).getTime())).toBe('Sun Nov 8')
+    expect(dayHeading(noon, new Date(2027, 0, 5).getTime())).toBe('Sun Nov 8, 2026')
+    expect(dayItems(newestFirst([match(8, 9, 0, 1)]))[0].heading).toBe('Sun Mar 8, 2099') // 2099 is not this year
+  })
+  it('prints a two-log match row\'s time once when both logs share it, and both when they differ', () => {
+    const same = dayItems(newestFirst([match(8, 9, 0, 1), match(8, 9, 0, 1)]))[0].items[0]
+    expect(whenOf(same.entries)).toBe(t(9, 0))
+    const differ = dayItems(newestFirst([match(8, 9, 0, 1), match(8, 9, 2, 1)]))[0].items[0]
+    expect(whenOf(differ.entries)).toBe(`${t(9, 2)}, ${t(9, 0)}`)
   })
 })
 
 describe('rowParts', () => {
   const parts = (r: LogRecord) => rowParts(entries([r])[0])
   it('words each kind of log', () => {
-    expect(parts(match(8, 9, 0, 7))).toMatchObject({ label: 'Q7', when: '9:00 AM', bold: true, muted: false })
+    expect(parts(match(8, 9, 0, 7))).toMatchObject({ label: 'Q7', when: t(9, 0), bold: true, muted: false })
     expect(parts(log({ onField: true, matchType: 1, matchNumber: 3 })).label).toBe('Practice 3')
     expect(parts(log({ onField: true, matchType: 3, matchNumber: 2 })).label).toBe('Playoff 2')
-    expect(parts(pit(8, 12, 58, [20.4, 13.6]))).toMatchObject({ label: 'On-check', when: '12:58 PM', extra: '34 s enabled', bold: false, muted: true })
-    expect(parts(pit(8, 9, 51, []))).toMatchObject({ label: 'Not enabled', when: '9:51 AM', extra: null, muted: true })
-    expect(parts(pit(8, 21, 5))).toMatchObject({ label: 'Off the field', when: '9:05 PM', extra: null, muted: true })
+    expect(parts(pit(8, 12, 58, [20.4, 13.6]))).toMatchObject({ label: 'On-check', when: t(12, 58), extra: '34 s enabled', bold: false, muted: true })
+    expect(parts(pit(8, 9, 51, []))).toMatchObject({ label: 'Not enabled', when: t(9, 51), extra: null, muted: true })
+    expect(parts(pit(8, 9, 52, [0.3]))).toMatchObject({ label: 'Enabled under 1 s', when: t(9, 52), extra: null, muted: true })
+    expect(parts(pit(8, 21, 5))).toMatchObject({ label: 'Off the field', when: t(21, 5), extra: null, muted: true })
   })
-  it('writes clock times in 12-hour English', () => {
-    expect([at(8, 0, 5), at(8, 12, 0), at(8, 13, 7)].map(clock)).toEqual(['12:05 AM', '12:00 PM', '1:07 PM'])
+  it('writes clock times as the device does', () => {
+    expect([at(8, 0, 5), at(8, 13, 7)].map(clock)).toEqual([t(0, 5), t(13, 7)])
+    expect(clock(at(8, 9, 0))).toBe(new Date(at(8, 9, 0)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
   })
 })
 
@@ -96,6 +108,15 @@ describe('the Filters sheet', () => {
     const counts = facetCounts(fixture, sel, labels, places)
     expect(counts.logType.map(([v]) => v)).toEqual(expect.arrayContaining(['Qualification', 'On-check', 'Not enabled']))
     expect(counts.logType.reduce((s, [, c]) => s + c, 0)).toBe(36)
+  })
+  it('puts Log type first, and a facet with one value in the shown logs on one line instead of a checkbox', () => {
+    const base = fixture.filter((e) => e.record.event === 'TEST') // a single event: the place facet has one value
+    const sheet = sheetFacets(facetCounts(base, {}, labels, eventPlaces(base, new Map())), {})
+    expect(sheet.multi[0]).toBe('logType')
+    expect(sheet.multi).not.toContain('place')
+    expect(sheet.single).toEqual(expect.arrayContaining([{ label: 'Event or practice place', value: 'TEST' }, { label: 'Robot', value: 'Unknown robot' }]))
+    expect(sheet.single.every((x) => !!x.value)).toBe(true)
+    expect(FACETS.length).toBe(7)
   })
   it('shows the active picks as one line with the shown and total counts', () => {
     expect(activeLine({ logType: ['Qualification', 'On-check'] }, 12, 36)).toBe('Qualification, On-check · 12 of 36 logs')

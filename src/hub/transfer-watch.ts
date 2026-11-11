@@ -62,13 +62,14 @@ export async function within<T>(p: Promise<T>, stallMs: number, cancelled?: () =
 /** The wait before try n + 1 after a stall or a dropped connection: 0.5, 1, 2, then 4 s at most. */
 export const backoff = (n: number) => Math.min(2 ** (n - 1), 8) * 500
 
-export const mbWords = (n: number) => (n / 2 ** 20).toFixed(1)
+const MIB = 2 ** 20
+/** Megabytes (2^20 bytes) with one decimal, for a progress line. */
+export const mbWords = (n: number) => (n / MIB).toFixed(1)
+/** Megabytes the Library's way: one decimal under 10 MB, none above. The phone's buttons and every line of words use this one. */
+export const mb = (n: number): string => (n >= 10 * MIB ? (n / MIB).toFixed(0) : mbWords(n))
 export const secsWords = (ms: number) => `${+(ms / 1000).toFixed(1)} s`
 /** "at 41.2 of 88.0 MB" (or "at 41.2 MB" when the size isn't known). */
 export const atWords = (got: number, size?: number) => `at ${mbWords(got)}${size ? ` of ${mbWords(size)}` : ''} MB`
 
-/** A size for a line of words: "41 MB", "1.4 MB" (decimal megabytes, as the file manager and the robot's USB stick count). */
-export const sizeWords = (bytes: number): string => {
-  const mb = bytes / 1e6
-  return `${mb >= 10 ? Math.round(mb) : Number(mb.toFixed(1))} MB`
-}
+/** A size for a line of words: "41 MB", "1.4 MB" (megabytes of 2^20 bytes, as the Library and the phone's buttons count). */
+export const sizeWords = (bytes: number): string => `${mb(bytes)} MB`
