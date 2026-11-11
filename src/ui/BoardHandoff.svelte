@@ -21,7 +21,7 @@
 <p class="sub">{board.tl.next ? `Next match ${next}` : 'No next match named yet (no schedule)'}{board.strip.minutesWord ? `, ${board.strip.minutesWord}` : ''}.{#if onRead}{' '}Read this whole screen, then say you have.{#if h.firstRead}{' '}No handoff has been read at this event yet, so nothing is marked new; reading this one starts the count.{/if}{/if}</p>
 
 {#snippet lines(i: BoardIssue)}
-  {#each h.causeLines.get(i.key) ?? [] as c (c.kind + c.cause + c.by)}
+  {#each h.causeLines.get(i.key) ?? [] as c, n (n)}
     <p class="causeline small"><span class="tag">{CAUSE_TAGS[c.kind]}</span>{' '}{c.cause}{#if c.by === 'logs'}{' '}<span class="tag">by Hindsight's evidence</span>{:else if c.role}{' '}<span class="chip">{c.role}</span>{/if}{#if c.text}<br /><span class="muted">{c.kind === 'ruled-out' && c.by === 'team' ? `Ruled out by ${c.text}` : c.text}</span>{/if}</p>
   {/each}
 {/snippet}

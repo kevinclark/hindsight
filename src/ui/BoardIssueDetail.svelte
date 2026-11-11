@@ -11,13 +11,15 @@
   // The board's own words for a log's severity (an error is a Red, a warning an Amber), so the detail does not say "error" where the board says "Red".
   const SEVERITY_WORD = { error: 'Red', warning: 'Amber', info: 'Info' } as const
   import { OWNER_ROLES } from '../board/role.ts'
-  import { changedLine, clockText, dueLine, ownerText, priorityIcon, priorityWord, rowTitle, statusLine, tags } from '../board/words.ts'
-  import type { Change } from '../board/writes.ts'
+  import { changedLine, devicesText, clockText, dueLine, ownerText, priorityIcon, priorityWord, rowTitle, statusLine, tags } from '../board/words.ts'
+  import { fieldChanges, type Change, type Fields } from '../board/writes.ts'
   import type { BoardRole } from '../triage/history.ts'
   import { CAUSE_TAGS, debugCauses, markText, readReverse } from '../board/debug.ts'
+  import BoardRow from './BoardRow.svelte'
 
   // `onChange` and `onDebug` absent: read only (the phone), so no note box, no actions and no Debug this.
-  let { issue, board, rate, role, onBack, onChange, onDebug }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; onBack: () => void; onChange?: (changes: Change[], note?: string) => void; onDebug?: () => void } = $props()
+  // A group row (model.ts BoardGroup) shows its members, each opened with `onOpen`, in place of one finding's text; its actions write to each open member.
+  let { issue, board, rate, role, backLabel = 'Board', onBack, onOpen, onChange, onDebug }: { issue: BoardIssue; board: Board; rate: RuleRate | undefined; role: BoardRole | null; backLabel?: string; onBack: () => void; onOpen?: (key: string) => void; onChange?: (changes: Change[], note?: string) => void; onDebug?: () => void } = $props()
 
   const maker = $derived(makerOf(issue.rule))
   const options = $derived(deferralOptions(board, issue))
@@ -38,6 +40,8 @@
   let note = $state('')
   let problem = $state('')
   let saved = $state('')
+  // Which of the plain fields the person used since the screen last read the board (a mixed group writes only those).
+  let touched = $state<Partial<Record<keyof Fields, boolean>>>({})
   let seen = ''
   $effect(() => {
     const sig = `${issue.key}|${issue.priority}|${issue.asked}|${issue.owner}|${issue.deferral?.when}`
@@ -48,14 +52,12 @@
     owner = issue.owner ?? ''
     deferTo = ''
     workaround = issue.deferral?.workaround ?? ''
+    touched = {}
   })
 
   function save() {
     problem = ''
-    const changes: Change[] = []
-    if (priority !== issue.priority) changes.push({ op: 'priority', value: priority === 'red' ? 'high' : priority === 'amber' ? 'medium' : 'low' })
-    if (issue.status !== 'deferred' && status !== issue.asked) changes.push({ op: 'status', value: status })
-    if (owner !== (issue.owner ?? '')) changes.push({ op: 'owner', value: owner })
+    const changes: Change[] = fieldChanges(issue, { priority, status, owner }, touched)
     if (deferTo === '__clear') changes.push({ op: 'defer', value: '' })
     else if (deferTo) {
       const pick = options.find((o) => o.id === deferTo)!
@@ -67,6 +69,7 @@
     }
     if (!changes.length) { saved = 'Nothing changed.'; return }
     onChange?.(changes)
+    touched = {}
     saved = `Saved as ${role}.`
   }
   function addNote() {
@@ -77,7 +80,7 @@
   }
 </script>
 
-<p class="crumbs"><button type="button" class="link" onclick={onBack}>← Board</button></p>
+<p class="crumbs"><button type="button" class="link" onclick={onBack}>← {backLabel}</button></p>
 <div class="hdr">
   <span class={`sev ${issue.grey ? 'grey' : issue.priority}`}><span aria-hidden="true">{priorityIcon(issue)}</span>{' '}{priorityWord(issue)}</span>
   <span class="mech">{issue.mechanism}</span>
@@ -85,14 +88,27 @@
   <span class="chip">{statusLine(issue)}</span>
   <span class="chip" class:none={!issue.owner}>{ownerText(issue)}</span>
   <span class="muted small">{dueLine(issue)}{dueLine(issue) ? ' · ' : ''}{changedLine(issue)}</span>
-  <span class="small hdr-rate">Not a real problem, for this rule: {rate?.text ?? 'no marks yet'}</span>
+  {#if !issue.group}<span class="small hdr-rate">Not a real problem, for this rule: {rate?.text ?? 'no marks yet'}</span>{/if}
 </div>
 {#if issue.deferral?.expired}<p class="note"><b>Deferral ended.</b> The workaround while it held: {issue.deferral.workaround || '(none written)'}</p>{/if}
 <div class="titlerow"><h3 class="screen">{rowTitle(issue)}</h3>{#if causes.length && onDebug}<button type="button" class="primary" data-debug-open onclick={onDebug}>Debug this</button>{/if}</div>
-<p class="muted small"><code>{issue.rule}</code> · seen in {issue.firedIn.length} match{issue.firedIn.length === 1 ? '' : 'es'}{issue.sightings.some((s) => s.kind === 'pit') ? ` and ${issue.sightings.filter((s) => s.kind === 'pit').length} pit run${issue.sightings.filter((s) => s.kind === 'pit').length === 1 ? '' : 's'}` : ''} · on {issue.robot || 'an unknown robot'}</p>
+{#if issue.group}<p class="muted small" data-group-head>{issue.group.members.length} issues from one event: {devicesText(issue.group.devices)}{issue.group.also ? ` ${issue.group.also}` : ''}. Each keeps its own marks and history.</p>{:else}<p class="muted small"><code>{issue.rule}</code> · seen in {issue.firedIn.length} match{issue.firedIn.length === 1 ? '' : 'es'}{issue.sightings.some((s) => s.kind === 'pit') ? ` and ${issue.sightings.filter((s) => s.kind === 'pit').length} pit run${issue.sightings.filter((s) => s.kind === 'pit').length === 1 ? '' : 's'}` : ''} · on {issue.robot || 'an unknown robot'}</p>{/if}
 
 <div class="cols">
   <div>
+    {#if issue.group}
+    <section class="panel">
+      <h4>What it means</h4>
+      <p>{issue.group.meaning}</p>
+      <h5>Next step</h5>
+      <p>{issue.nextStep}</p>
+    </section>
+    <section class="panel" data-group-members>
+      <h4>The issues in it ({issue.group.members.length})</h4>
+      <p class="hint">Open one for its evidence, its notes and its causes. A change below is saved on each open one.</p>
+      <ul class="rows">{#each issue.group.members as m (m.key)}<BoardRow issue={m} onOpen={(k) => onOpen?.(k)} />{/each}</ul>
+    </section>
+    {:else}
     <section class="panel">
       <h4>What it means</h4>
       <p>{maker?.meaning ?? issue.title}</p>
@@ -140,28 +156,30 @@
       </table>
       {#if issue.sightings.some((s) => s.kind === 'pit')}<p class="hint">A pit run is a sighting, not a match: it is not counted in the match totals.</p>{/if}
     </section>
-    <section class="panel">
+    {/if}
+    {#if !issue.group}<section class="panel">
       <h4>Notes</h4>
       {#if issue.notes.length}<ul class="notes">{#each issue.notes as n (n.when + n.text)}<li><b>{n.match ?? 'no match'}</b> · <span class="chip">{n.role}</span> {n.text}</li>{/each}</ul>{:else}<p class="muted">No notes yet.</p>{/if}
       {#if onChange}<div class="field"><label for="board-note">Add a note</label><textarea id="board-note" rows="2" bind:value={note} placeholder="What you tried, what you saw, what you ruled out."></textarea></div>
       <button type="button" disabled={!role || !note.trim()} onclick={addNote}>Add note{role ? ` as ${role}` : ''}</button>{/if}
-    </section>
+    </section>{/if}
   </div>
   {#if onChange}<div>
     <section class="panel noprint">
       <h4>Actions</h4>
       {#if !role}<p class="note">Choose your role on the board to make changes.</p>{:else}<p class="hint">You are acting as <b>{role}</b>.</p>{/if}
+      {#if issue.group}<p class="hint" data-fanout>Saved on each of the {issue.group.open.length} open issues in this group.{issue.group.mixed.owner || issue.group.mixed.status || issue.group.mixed.priority ? ' They differ now on what is marked mixed: what you save there replaces what each has.' : ''}</p>{/if}
       <fieldset class="field"><legend class="lab">Priority</legend>
-        {#each ['red', 'amber', 'low'] as p (p)}<label class="radio"><input type="radio" name="board-priority" value={p} checked={priority === p} onchange={() => (priority = p as Priority)} />{PRIORITY_ICON[p as Priority]}{' '}{PRIORITY_WORDS[p as Priority]}</label>{/each}
+        {#each ['red', 'amber', 'low'] as p (p)}<label class="radio"><input type="radio" name="board-priority" value={p} checked={priority === p} onchange={() => { priority = p as Priority; touched.priority = true }} />{PRIORITY_ICON[p as Priority]}{' '}{PRIORITY_WORDS[p as Priority]}</label>{/each}
       </fieldset>
       <div class="field"><label for="board-status">Status</label>
-        <select id="board-status" bind:value={status} disabled={issue.status === 'deferred'}>
+        <select id="board-status" bind:value={status} onchange={() => (touched.status = true)} disabled={issue.status === 'deferred'}>
           {#if issue.status === 'deferred'}<option value={status}>Deferred (workaround until {issue.deferral?.point.until})</option>{/if}
           {#each ['open', 'fixing', 'check'] as v (v)}{#if issue.status !== 'deferred'}<option value={v}>{STATUS_WORDS[v as 'open']}</option>{/if}{/each}
         </select>
         <span class="hint">{issue.status === 'deferred' ? 'Deferred: clear the deferral to change the status.' : 'Closed happens by itself: after a clean match that follows the fix.'}</span></div>
       <div class="field"><label for="board-owner">Owner</label>
-        <select id="board-owner" bind:value={owner}><option value="">No owner yet</option>{#each OWNER_ROLES as r (r)}<option value={r}>{r}</option>{/each}</select></div>
+        <select id="board-owner" bind:value={owner} onchange={() => (touched.owner = true)}><option value="">No owner yet</option>{#each OWNER_ROLES as r (r)}<option value={r}>{r}</option>{/each}</select></div>
       <div class="field"><label for="board-defer">Defer to</label>
         <select id="board-defer" bind:value={deferTo}>
           <option value="">{issue.status === 'deferred' ? 'Keep the deferral' : 'Not deferred'}</option>

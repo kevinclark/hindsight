@@ -26,6 +26,11 @@ fix everything at once.
 - Every issue can be deferred (amended 2026-10-24: no must-fix class for now; one may be added once real events show
   which problems a team must never carry). The pre-match check reads all open deferrals together.
 - The owner is a role (software, pit, drive). The board records who changed what.
+- One event, one row (amended 2026-11-11): issues whose latest sighting one parent (src/rules/parents.ts) explains in
+  the same log, directly or through another of them, are one group row, counted once everywhere a count is drawn. Each
+  stays its own issue with its own history; a change on the group (owner, status, priority, deferral, ticks) is one
+  board line per open member. Notes and cause marks stay per member. A member that came back after a fix, or whose
+  latest real sighting is elsewhere, is its own row.
 
 ## Why
 

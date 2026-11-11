@@ -22,7 +22,7 @@
   import { dateText } from '../session/day.ts'
   import type { Session } from '../session/session.ts'
   import type { HistoryEvent, Triage } from '../triage/history.ts'
-  import { eventSessionFor, nowState, stillSession, type NowAction, type NowLink, type Place } from '../now/now.ts'
+  import { eventSessionFor, nowState, stillOf, stillSession, type NowAction, type NowLink, type Place } from '../now/now.ts'
   import { notReached } from '../hub/robot-reach.ts'
   import { skippedWords } from '../hub/skip-words.ts'
   import ModeLine from './ModeLine.svelte'
@@ -76,7 +76,7 @@
     const s = stillSession(sessions, today.sessionId)
     if (!s) return null
     const b = buildBoard({ session: sessionWithMarks(s.session, marks), history, marks, schedule: null, profiles, now: new Date(clock) })
-    return { event: s.name, open: b.rows.length, red: b.rows.filter((i) => i.priority === 'red').length }
+    return stillOf(b, s.name)
   })
 
   const day = $derived(dateText(clock))

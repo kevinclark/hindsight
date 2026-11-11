@@ -4,7 +4,7 @@
  */
 import { makerOf } from '../rules/index.ts'
 import type { Board, BoardIssue } from './model.ts'
-import { isChecked, isGate } from './model.ts'
+import { isChecked, isGate, isRed, liveDeferrals } from './model.ts'
 import { queueVerdictText } from './words.ts'
 import { tickAt } from './ticks.ts'
 
@@ -50,8 +50,8 @@ export interface QueueSheet {
 export function queueSheet(board: Board): QueueSheet {
   const { tl, tickFor } = board
   const gate = board.rows.filter((i) => isGate(i, tl))
-  const deferrals = board.rows.filter((i) => i.status === 'deferred' && i.deferral && !i.deferral.expired)
-  const redsOpen = board.rows.filter((i) => i.priority === 'red' && !i.grey && i.status !== 'deferred').length
+  const deferrals = liveDeferrals(board.rows)
+  const redsOpen = board.rows.filter((i) => isRed(i) && i.status !== 'deferred').length
   const now = board.tl.now
   const toConfirm = gate.filter((i) => !isChecked(i, tickFor, now)).length
   const all: QueueLine[] = [
@@ -97,11 +97,24 @@ export interface Handoff {
   pitLines: Board['pitLines']
 }
 
+/** The cause lines with each group row's added under its key: its open members' lines in member order, each line once (24 devices often share one). */
+function withGroups(lines: Map<string, CauseLine[]>, rows: BoardIssue[]): Map<string, CauseLine[]> {
+  const id = (c: CauseLine) => JSON.stringify([c.kind, c.by, c.cause, c.text, c.role ?? ''])
+  for (const g of rows) {
+    if (!g.group) continue
+    const all = g.group.open.flatMap((m) => lines.get(m.key) ?? [])
+    lines.set(g.key, all.filter((c, n) => all.findIndex((x) => id(x) === id(c)) === n))
+  }
+  return lines
+}
+
 /** What the next shift needs: the reds due before the next match, the deferrals due, what was tried (including what was ruled out) and what is new since the last handoff read. */
 export function handoff(board: Board): Handoff {
   const redsDue = board.rows.filter((i) => isGate(i, board.tl))
-  const deferralsDue = board.rows.filter((i) => i.cls === 'due')
-  const focus = [...redsDue, ...deferralsDue, ...board.rows.filter((i) => i.status === 'check')].filter((i, n, a) => a.indexOf(i) === n)
+  const deferralsDue = liveDeferrals(board.rows).filter((i) => i.cls === 'due')
+  const rows = [...redsDue, ...deferralsDue, ...board.rows.filter((i) => i.status === 'check')].filter((i, n, a) => a.indexOf(i) === n)
+  // Notes and cause marks are per member: a group row brings its open members' (each named by its own title).
+  const focus = rows.flatMap((i) => (i.group ? i.group.open : [i])).filter((i, n, a) => a.findIndex((x) => x.key === i.key) === n)
   const nameOf = (issue: BoardIssue, id: string) => makerOf(issue.rule)?.causes.find((c) => c.id === id)?.cause ?? id
   const testText = (m: { test: string; text: string }) => [m.test, m.text].filter(Boolean).join(': ') || 'a test (none written)'
   // What was tried: the notes, and the tests recorded on causes (a ruled-out cause with its test, a confirmed one with its note).
@@ -120,5 +133,5 @@ export function handoff(board: Board): Handoff {
     ...Object.entries(issue.causeMarks).filter(([, m]) => m.state === 'confirmed').map(([id, m]): CauseLine => ({ kind: 'confirmed', by: 'team', cause: nameOf(issue, id), text: m.text, role: m.role })),
   ]]))
   const firstRead = board.handoff === null
-  return { redsDue, deferralsDue, tried, ruledOut, confirmed, causeLines, newSince: board.rows.filter((i) => i.isNew), firstRead, pitLines: board.pitLines }
+  return { redsDue, deferralsDue, tried, ruledOut, confirmed, causeLines: withGroups(causeLines, rows), newSince: board.rows.filter((i) => i.isNew), firstRead, pitLines: board.pitLines }
 }

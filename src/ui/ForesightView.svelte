@@ -289,7 +289,8 @@
   const contextItems = $derived(checked ? checked.verdict.items.filter((i) => i.level === 'grey' && !ASSISTED_RULES.has(i.finding.rule)) : [])
   const totalChecks = FORESIGHT_RULES.length + SNAPSHOT_RULES.length + ONCHECK_RULES.length
   // Reds the board has deferred, by finding key (queue mode): worded as deferred wherever they are listed.
-  const deferredBy = $derived<Record<string, string>>(Object.fromEntries((queue?.deferrals ?? []).map((d) => [d.key, d.workaround || 'none written'])))
+  // A group's deferral covers each of its members' keys.
+  const deferredBy = $derived<Record<string, string>>(Object.fromEntries((queue?.deferrals ?? []).flatMap((d) => [d.key, ...(d.members ?? [])].map((k) => [k, d.workaround || 'none written']))))
   const deferredLine = (i: VerdictItem): string | null => (i.level === 'red' ? deferredBy[i.finding.key] ?? null : null)
   const unrun = $derived(checked ? didNotRun(checked.verdict.notChecked.length + checked.verdict.crashed.length, totalChecks) : null)
   const snapshotWhy = $derived(checked && !checked.snapshotUsed ? checked.report.skipped.find((s) => s.rule === SNAPSHOT_RULES[0])?.reason ?? null : null)

@@ -15,7 +15,7 @@ import { SETTLING, type Verdict, type VerdictItem } from './verdict.ts'
 import type { MarkedLine } from './onchecks.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { profileId } from '../profiles/index.ts'
-import { buildBoard, inScope, mechanismOf, robotOf, scopeOf, type Board, type BoardIssue } from '../board/model.ts'
+import { buildBoard, inScope, liveDeferrals, mechanismOf, robotOf, scopeOf, type Board, type BoardIssue } from '../board/model.ts'
 import { NEXT_EVENT } from '../board/points.ts'
 import type { CodeChangeFlag } from '../board/freeze.ts'
 import { FORESIGHT_RULES, makerOf, ruleById } from '../rules/index.ts'
@@ -76,6 +76,8 @@ export interface OpenDeferral {
   until: string
   /** Set when the board is an earlier event's: the event it was made at. Only a deferral to the next event carries over. */
   carriedFrom?: string
+  /** A group (model.ts BoardGroup): its open members' keys, each deferred with it. */
+  members?: string[]
 }
 
 /** The event a session is, in words: The Blue Alliance's name, the field's, else its label. */
@@ -124,9 +126,10 @@ export function boardFor(session: Session, history: HistoryEvent[], profile: Rob
  */
 export function openDeferrals(board: Board, profile: RobotProfile, carriedFrom?: string): OpenDeferral[] {
   const robot = profileId(profile)
-  return board.issues
+  // The board's rows: a group the team deferred is one deferral, and its members' live findings count as deferred by it.
+  return liveDeferrals(board.rows)
     .filter((i): i is BoardIssue & { deferral: NonNullable<BoardIssue['deferral']> } => i.robot === robot && i.status === 'deferred' && !!i.deferral && !i.deferral.expired && (carriedFrom === undefined || i.deferral.point.pos === NEXT_EVENT))
-    .map((i) => ({ key: i.key, system: systemOf(i.rule, i.about, profile), title: rowTitle(i), workaround: i.deferral.workaround, until: i.deferral.point.until, ...(carriedFrom !== undefined ? { carriedFrom } : {}) }))
+    .map((i) => ({ key: i.key, system: systemOf(i.group ? i.group.parent : i.rule, i.about, profile), title: rowTitle(i), workaround: i.deferral.workaround, until: i.deferral.point.until, ...(i.group ? { members: i.group.open.map((m) => m.key) } : {}), ...(carriedFrom !== undefined ? { carriedFrom } : {}) }))
 }
 
 // ---- the pre-match checklist ----
@@ -193,13 +196,16 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
   const systemOfItem = (i: VerdictItem) => systemOf(i.finding.rule, i.finding.about, profile)
   // A proven check that could not run leaves its system unjudged, never Go.
   const blind = verdict?.blind ?? []
+  const liveReds = items.filter((i) => i.level === 'red').map((i) => i.finding.key)
   const rows: QueueRow[] = SYSTEMS.map((system) => {
     const mine = items.filter((i) => systemOfItem(i) === system)
     const reds = mine.filter((i) => i.level === 'red')
-    const deferred = (i: VerdictItem) => open.some((d) => d.key === i.finding.key)
+    const covers = (d: OpenDeferral, key: string) => d.key === key || !!d.members?.includes(key)
+    const deferred = (i: VerdictItem) => open.some((d) => covers(d, i.finding.key))
     const fix = reds.filter((i) => !deferred(i))
-    const seen = new Set(reds.filter(deferred).map((i) => i.finding.key))
-    const deferrals = open.filter((d) => d.system === system).map((d) => ({ ...d, seenNow: seen.has(d.key) }))
+    const seen = reds.filter(deferred).map((i) => i.finding.key)
+    // A group's deferral is listed under its own system, and under every system where a red it covers is live now.
+    const deferrals = open.filter((d) => d.system === system || (!!d.members && seen.some((k) => covers(d, k)))).map((d) => ({ ...d, seenNow: (d.members ? liveReds : seen).some((k) => covers(d, k)) }))
     // A check still in its start-up settle (engine.ts) leaves its system unjudged for now: "Not checked", never "Check by hand".
     // Not a context-only check (gyro drift): it can never move the verdict, so it never holds a system back.
     const settling = !!verdict && verdict.notChecked.some((s) => s.reason.startsWith(SETTLING) && ruleById(s.rule)?.severity !== 'info' && systemOf(s.rule, null, profile) === system)

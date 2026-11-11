@@ -9,7 +9,7 @@
   import type { RobotProfile } from '../profiles/types.ts'
   import type { ScheduledMatch } from '../tba/schedule.ts'
   import type { BoardRole, HistoryEvent, Triage } from '../triage/history.ts'
-  import { buildBoard, eventIdOf, ruleRates, HOLDS, PRIORITY_WORDS, RED_CAP, type BoardIssue } from '../board/model.ts'
+  import { boardCounts, buildBoard, eventIdOf, groupWords, isGate, isRed, ruleRates, HOLDS, PRIORITY_WORDS, RED_CAP, type BoardIssue } from '../board/model.ts'
   import { BOARD_BANNER, cutOffText, readCutOff } from '../board/freeze.ts'
   import { queueSheet, type QueueSheet } from '../board/sheets.ts'
   import { FAMILIES } from '../board/model.ts'
@@ -55,15 +55,21 @@
   $effect(() => { const t = setInterval(() => (now = new Date()), 30_000); return () => clearInterval(t) })
   const board = $derived(buildBoard({ session, history, marks, schedule, profiles, now, typedNext: typedNextFor(session) }))
   const rates = $derived(ruleRates(session, marks, history))
-  const issue = $derived(openKey ? board.issues.find((i) => i.key === openKey) : undefined)
+  const issue = $derived(openKey ? board.issues.find((i) => i.key === openKey) ?? board.groups.find((i) => i.key === openKey) : undefined)
+  // A member opened from its group's screen goes back to the group, not the board.
+  let groupKey = $state<string | null>(null)
+  const counts = $derived(boardCounts(board))
+  const gateWords = $derived(groupWords(board.rows.filter((i) => isGate(i, board.tl))))
   const sheet = $derived(queueSheet(board))
   const title = $derived(session.label)
   const next = $derived(board.strip.nextLabel ?? 'the next match')
 
   $effect(() => { printOut = view === 'queue' ? { sheet, title } : null; return () => { printOut = null } })
 
-  function open(key: string) { openKey = key; view = 'issue' }
-  const back = () => { view = 'board'; openKey = null }
+  function open(key: string) { groupKey = board.groups.some((g) => g.key === key) ? key : null; openKey = key; view = 'issue' }
+  function openMember(key: string) { openKey = key; view = 'issue' }
+  const back = () => { view = 'board'; openKey = null; groupKey = null }
+  const backFromIssue = () => (groupKey && openKey !== groupKey ? ((openKey = groupKey), (view = 'issue')) : back())
 
   function write(make: (who: Who, history: HistoryEvent[]) => HistoryEvent[]) {
     const r = role
@@ -72,7 +78,8 @@
   }
   const change = (i: BoardIssue, changes: Change[]) => write((who, h) => boardLines(h, who, new Date(), i, changes, atLatest(session)))
   const note = (kind: 'pit-change' | 'missed' | 'handoff-read' | 'cut-off', text: string) => write((who, h) => [noteLine(h, who, new Date(), kind, eventIdOf(session), board.tl.last?.label ?? '', text)])
-  const grey = (i: BoardIssue, what: 'close' | 'take') => change(i, what === 'close' ? greyClose() : greyTake(role!))
+  // A group takes no note (notes are per member): its take is the status and the owner.
+  const grey = (i: BoardIssue, what: 'close' | 'take') => change(i, what === 'close' ? greyClose() : greyTake(role!).filter((c) => !i.group || c.op !== 'note'))
 
   // The pit line for the latest match, editable.
   const pitNow = $derived(board.pitLines.find((p) => p.match === board.tl.last?.label)?.text ?? '')
@@ -95,8 +102,8 @@
   const pinned = $derived(board.visible.filter((i) => i.cls === 'due' || (i.due.pos <= board.tl.nextPos && i.status !== 'deferred' && !i.grey)))
   const SECT = $derived([['due', `Deferrals due before ${next}`], ['new', `New since the last handoff`], ['carried', 'Carried']] as const)
   const belowParts = $derived([
-    board.below.filter((i) => i.priority === 'red' && !i.grey).length && `${board.below.filter((i) => i.priority === 'red' && !i.grey).length} red over the cap of ${RED_CAP}`,
-    board.below.filter((i) => i.priority !== 'red' && !i.grey && i.status !== 'deferred').length && `${board.below.filter((i) => i.priority !== 'red' && !i.grey && i.status !== 'deferred').length} amber or low`,
+    board.below.filter(isRed).length && `${board.below.filter(isRed).length} red over the cap of ${RED_CAP}`,
+    board.below.filter((i) => !isRed(i) && !i.grey && i.status !== 'deferred').length && `${board.below.filter((i) => !isRed(i) && !i.grey && i.status !== 'deferred').length} amber or low`,
     board.below.filter((i) => i.status === 'deferred').length && `${board.below.filter((i) => i.status === 'deferred').length} deferred past ${next}`,
     board.below.filter((i) => i.grey).length && `${board.below.filter((i) => i.grey).length} grey`,
   ].filter(Boolean).join(' · '))
@@ -115,12 +122,13 @@
 
   {#if view === 'board'}
     <p class="gate" data-gate><b>{board.strip.gate}</b> {unit(board.strip.gate, 'red', 'reds')} {board.strip.over ? 'open · the event is over' : `due before ${next}`}</p>
+    {#if gateWords}<p class="sub" data-gate-groups>{gateWords[0].toUpperCase()}{gateWords.slice(1)}.</p>{/if}
     <div class="sub strip" data-strip>
       {#if board.strip.minutesWord}<span>{board.strip.minutesWord}</span>{/if}
       <span><b>{board.strip.deferralsDue}</b> {unit(board.strip.deferralsDue, 'deferral', 'deferrals')} due</span>
       {#if board.cutOff.passed}<span><b>{board.strip.reconfirm}</b> {unit(board.strip.reconfirm, 'deferral', 'deferrals')} to re-confirm <button type="button" class="help" aria-label="After the cut-off, check that each open deferral's workaround still holds before the next match. Tick it on its row: the tick says who and when, and counts for 90 minutes." title="After the cut-off, check that each open deferral's workaround still holds before the next match. Tick it on its row: the tick says who and when, and counts for 90 minutes.">?</button></span>{/if}
       <span><b>{board.strip.noOwner}</b> with no owner</span>
-      <span><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all{redsNote}</span>
+      <span data-reds><b>{board.strip.reds}</b> {unit(board.strip.reds, 'red', 'reds')} in all{redsNote}{counts.groupWords && counts.groupWords !== gateWords ? `, ${counts.groupWords}` : ''}</span>
       {#if board.strip.nextGap}<span>Next gap: <strong>{board.strip.nextGap}</strong></span>{/if}
       <details class="cutoff" data-cutoff>
       <summary>{#if board.cutOff.passed}<span class="freeze" data-freeze>{BOARD_BANNER}</span>{' '}<span class="muted">· cut-off {board.cutOff.words}, passed{onWrite ? ' · change' : ''}</span>{:else}Playoff cut-off: {board.cutOff.words}{#if onWrite}{' '}<span class="muted">· change</span>{/if}{/if}</summary>
@@ -171,7 +179,7 @@
     {#if board.closed.length}
       <details class="closed">
         <summary>{board.closed.length} closed (a clean match came after the fix)</summary>
-        <ul class="notes">{#each board.closed as i (i.key)}<li><span class="mech">{i.mechanism}</span> · {i.ruleTitle}<br /><span class="small muted">closed after {i.closedAt} (derived)</span></li>{/each}</ul>
+        <ul class="notes">{#each board.closed as i (i.key)}<li>{#if i.group}{rowTitle(i)}{:else}<span class="mech">{i.mechanism}</span> · {i.ruleTitle}{/if}<br /><span class="small muted">closed after {i.closedAt} (derived)</span></li>{/each}</ul>
       </details>
     {/if}
 
@@ -186,7 +194,7 @@
     {#if scheduleNote && !board.noSchedule}<p class="note">{scheduleNote}</p>{/if}
     <BoardRates {rates} />
   {:else if view === 'issue' && issue}
-    <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} onBack={back} onChange={onWrite ? (c) => change(issue, c) : undefined} onDebug={onWrite ? () => (view = 'debug') : undefined} />
+    <BoardIssueDetail {issue} {board} rate={rates.find((r) => r.rule === issue.rule)} {role} backLabel={groupKey && openKey !== groupKey ? 'Group' : 'Board'} onBack={backFromIssue} onOpen={openMember} onChange={onWrite ? (c) => change(issue, c) : undefined} onDebug={onWrite && !issue.group ? () => (view = 'debug') : undefined} />
   {:else if view === 'debug' && issue && onWrite}
     <DebugWorkspace title={rowTitle(issue)} rule={issue.rule} meaning={makerOf(issue.rule)?.meaning ?? issue.title} latest={issue.title} causes={makerOf(issue.rule)?.causes ?? []} likely={issue.latest?.likely} ruledOut={issue.latest?.ruledOut} evidence={issue.latest?.evidence}
       nextStep={issue.nextStep} marks={issue.causeMarks} {role} backLabel="Issue" onBack={() => (view = 'issue')} onChange={(c) => change(issue, c)} />
@@ -272,7 +280,7 @@
   .board :global(.hdr .mech) { font-weight: 700; }
   .board :global(.hdr-rate) { flex-basis: 100%; }
   .board :global(.cols) { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 0 1.5rem; }
-  @media (max-width: 860px) { .board :global(.cols) { grid-template-columns: 1fr; } .board :global(.row) { grid-template-columns: 4.6rem 1fr; } }
+  @media (max-width: 860px) { .board :global(.cols) { grid-template-columns: minmax(0, 1fr); } .board :global(.row) { grid-template-columns: 4.6rem 1fr; } }
   /* A phone (375 px): the priority and the status share the first line, the issue gets the full width under them, then the owner. */
   @media (max-width: 600px) {
     .board :global(.row) { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: 'sev status' 'main main' 'owner owner'; padding: 0.55rem 0.4rem; }

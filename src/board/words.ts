@@ -5,7 +5,15 @@ import { PRIORITY_WORDS, STATUS_WORDS } from './model.ts'
 /** "Workaround until Q51 · re-decide at Q51" for a live deferral (never "Deferred until … · Due …": students read that as "fix by"); else the status word. */
 export function statusLine(i: BoardIssue): string {
   if (i.status === 'deferred' && i.deferral) return `Workaround until ${i.deferral.point.until} · re-decide ${i.deferral.point.redecide}`
+  if (i.group?.mixed.status) return `Mixed: ${mixedStatuses(i.group.open)}`
   return STATUS_WORDS[i.status]
+}
+
+/** "2 Open, 1 Fixing": the open members' statuses, most first. */
+function mixedStatuses(members: readonly BoardIssue[]): string {
+  const n = new Map<string, number>()
+  for (const m of members) n.set(STATUS_WORDS[m.status], (n.get(STATUS_WORDS[m.status]) ?? 0) + 1)
+  return [...n].sort((a, b) => b[1] - a[1]).map(([w, k]) => `${k} ${w}`).join(', ')
 }
 
 /** "Due before Q41" for an issue that is not deferred; empty for a deferred one (its status line already says when). */
@@ -13,13 +21,16 @@ export const dueLine = (i: BoardIssue): string => (i.status === 'deferred' || i.
 
 export const changedLine = (i: BoardIssue): string => (i.lastChange ? `Last changed${i.lastChange.match ? ` ${i.lastChange.match}` : ''} by ${i.lastChange.role}` : 'Not changed yet')
 
-export const ownerText = (i: BoardIssue): string => i.owner ?? 'no owner yet'
+export const ownerText = (i: BoardIssue): string => (i.group?.mixed.owner ? 'mixed owners' : i.owner ?? 'no owner yet')
 
-/** "Drivetrain · Motors on one loop at different speeds (Front left)". */
-export const rowTitle = (i: BoardIssue): string => `${i.mechanism} · ${i.ruleTitle}${i.about && i.about !== i.mechanism ? ` (${i.about})` : ''}`
+/** "Drivetrain · Motors on one loop at different speeds (Front left)"; a group: "6 CAN devices dropped within 0.05 s · Q3 0:59 teleop". */
+export const rowTitle = (i: BoardIssue): string => (i.group ? `${i.group.head} · ${i.group.where}` : `${i.mechanism} · ${i.ruleTitle}${i.about && i.about !== i.mechanism ? ` (${i.about})` : ''}`)
 
 export const priorityWord = (i: BoardIssue): string => (i.grey ? 'Grey' : PRIORITY_WORDS[i.priority])
 export const priorityIcon = (i: BoardIssue): string => (i.grey ? '○' : i.priority === 'red' ? '●' : i.priority === 'amber' ? '▲' : '○')
+
+/** "1 device", "24 devices". */
+export const devicesText = (n: number): string => `${n} device${n === 1 ? '' : 's'}`
 
 /** Short tags beside a row. */
 export function tags(i: BoardIssue): string[] {

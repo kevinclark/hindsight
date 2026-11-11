@@ -3,7 +3,8 @@
  * "what must be done before our next match, and by whom?". Pure: the session (as the team's marks show it), the history,
  * the schedule and `now` come in; nothing is read from the page, the clock or the network.
  *
- * An issue is a finding's key, on the robot of the latest log it fired in (`boardKey`). What the team did about it is board
+ * An issue is a finding's key, on the robot of the latest log it fired in (`boardKey`). Issues whose latest sighting one parent
+ * (src/rules/parents.ts) explains in the same log are shown and counted as one group row; each stays its own issue underneath. What the team did about it is board
  * lines in the history (priority, status, deferral, workaround, owner, notes, queue ticks). "Closed" is never stored: it is
  * derived, after a fix (a `check` status line, or a fixed mark) from a later match of the same robot where the rule could be
  * checked and the issue did not fire. Firing again after a fix is "came back after a fix" and reopens it.
@@ -17,6 +18,8 @@ import type { RobotProfile } from '../profiles/types.ts'
 import { tickAt, type Tick } from './ticks.ts'
 import { cutOffState, readCutOff, type CutOff } from './freeze.ts'
 import { shortMatchLabel } from '../ui/match-label.ts'
+import { PARENTS } from '../rules/parents.ts'
+import { compactWhen } from '../report/titles.ts'
 import type { ScheduledMatch } from '../tba/schedule.ts'
 import { boardKey, boardState, compareEvents, eventNotes, type BoardEvent, type BoardRole, type BoardState, type CauseState, type HistoryEvent, type Triage } from '../triage/history.ts'
 import { matchRef, ruleOf, trackRecord, type Fire } from '../triage/track-record.ts'
@@ -104,6 +107,35 @@ export interface BoardIssue {
   /** After the playoff cut-off (ADR 7): the latest "still holds?" tick for this issue's live deferral, made after the deferral and in this event; `old` past the 90 minutes every tick has. Null: none. */
   holds: Tick | null
   merged: MergedFinding
+  /** Set on a group row only: the issues one event explains (src/rules/parents.ts), shown and counted as one. */
+  group?: BoardGroup
+}
+
+/**
+ * One event on the board: the issues whose latest sighting a parent explains (the devices that dropped off CAN together), directly
+ * or through one of them (an alert about a device that dropped). Every member stays its own issue with its own history; the group
+ * row is how the board shows and counts them, and a change made on it is a line for each open member (writes.ts boardLines).
+ */
+export interface BoardGroup {
+  /** The parent's rule id. */
+  parent: string
+  /** The parent's own name for the devices, as Match review heads the group: "6 CAN devices dropped within 0.05 s". */
+  head: string
+  /** "Q3 0:59 teleop": the match and the time of the event. */
+  where: string
+  /** The parent's meaning. */
+  meaning: string
+  /** Every member: the devices, then the findings about them. */
+  members: BoardIssue[]
+  /** The members not closed: what a change on the group writes to. */
+  open: BoardIssue[]
+  /** How many members are the parent's own findings (the devices), and how many are about them. */
+  devices: number
+  others: number
+  /** "and 5 robot-code alerts about them", or "" when there are none. */
+  also: string
+  /** The open members disagree on owner, status (deferred counts as one) or priority (the row says "mixed"; a save on the group writes the field to each). */
+  mixed: { owner: boolean; status: boolean; priority: boolean }
 }
 
 export interface Strip {
@@ -132,8 +164,11 @@ export interface Strip {
 
 export interface Board {
   tl: Timeline
+  /** Every issue, one per finding key: a group's members are here, the group rows are not. */
   issues: BoardIssue[]
-  /** Open rows in board order (class, reds first, due point). */
+  /** The group rows, open or closed (each also in `rows` or `closed`; a closed member of an open group is in `closed` on its own). */
+  groups: BoardIssue[]
+  /** Open rows in board order (class, reds first, due point): a group is one row, its members are not rows of their own. */
   rows: BoardIssue[]
   /** Above the line, and below it (after the RED_CAP-th red; never hidden). */
   visible: BoardIssue[]
@@ -321,6 +356,7 @@ export function buildBoard(input: BoardInput): Board {
   const order = new Map([...mergedMatches.keys(), ...mergedPit.keys()].map((k, i) => [k, i]))
 
   const issues: BoardIssue[] = []
+  const lastFire = new Map<string, Fired>()
   for (const key of keys) {
     const merged = mergedMatches.get(key) ?? { ...mergedPit.get(key)!, matches: [] as number[] }
     // Marked "not a real problem" in every match it fired in (and no pit sighting): filed, not on the board.
@@ -339,6 +375,12 @@ export function buildBoard(input: BoardInput): Board {
       ...pitFires.map(({ p, f }): Sighting => ({ kind: 'pit', label: 'Pit run', at: p.playedAt, severity: f!.severity, title: f!.title, logs: 1 })),
     ]
     const latest = latestFire?.f ?? latestPit?.f ?? null
+    // The latest sighting in time, match or pit run (a pit run with no clock counts as the latest, as pitIndex has it): it alone decides a group.
+    const fires = [...matchFires.map(({ m, i, f }) => ({ m, f: f!, label: labels[i] })), ...pitFires.map(({ p, f }) => ({ m: p, f: f!, label: 'Pit run' }))]
+    // A sighting marked "not a real problem" decides nothing while the issue has another one (it is on the board for that one).
+    const real = fires.filter((x) => !x.f.wrongMark)
+    const lastOne = (real.length ? real : fires).reduce<Fired | null>((a, x) => (!a || (x.m.playedAt ?? Infinity) >= (a.m.playedAt ?? Infinity) ? x : a), null)
+    if (lastOne) lastFire.set(key, lastOne)
 
     // Priority: the latest board line, else the severity (an error is red, a warning amber).
     const prioritySet = !!state?.priority && state.priority in FROM_BOARD
@@ -431,9 +473,18 @@ export function buildBoard(input: BoardInput): Board {
   }
   issues.sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0))
 
-  const isRed = (i: BoardIssue) => i.priority === 'red' && !i.grey
+  // One event, one row: members leave the list, their group row takes the place of the first of them.
+  const groups = groupRows(issues, lastFire, tl, labels)
+  const firstOf = new Map(groups.flatMap((g) => g.group!.members.map((m) => [m.key, g] as const)))
+  const entries: BoardIssue[] = []
+  for (const i of issues) {
+    const g = firstOf.get(i.key)
+    if (!g) entries.push(i)
+    else if (!entries.includes(g)) entries.push(g)
+  }
+
   const classRank: Record<RowClass, number> = { due: 0, new: 1, carried: 2, later: 3, grey: 4 }
-  const open = issues.filter((i) => i.open)
+  const open = entries.filter((i) => i.open)
   // Inside a class: reds first, then by due point; ties keep the findings' own order (worst first).
   const rows = [...open].sort((a, b) => classRank[a.cls] - classRank[b.cls] || Number(isRed(b)) - Number(isRed(a)) || a.due.pos - b.due.pos)
   const visible: BoardIssue[] = []
@@ -446,19 +497,19 @@ export function buildBoard(input: BoardInput): Board {
   }
 
   const cutOff = cutOffState(readCutOff(all.cutOff?.text), tl, session.matches)
-  const gate = rows.filter((i) => isGate(i, tl))
+  const counts = countRows(rows, tl)
   const nextGap = tl.named[0] ? `${gapText(tl.named[0])}${tl.named[0].minutes !== null ? ` (≈ ${durText(tl.named[0].minutes)}, est.)` : ''}` : null
   const strip: Strip = {
-    gate: gate.length, nextLabel: tl.next?.label ?? null, minutes: tl.next?.minutes ?? null,
+    gate: counts.gate, nextLabel: tl.next?.label ?? null, minutes: tl.next?.minutes ?? null,
     minutesWord: tl.next?.leftMinutes != null ? `≈ ${durText(tl.next.leftMinutes)} left (est.)` : tl.next?.minutes != null && tl.last ? `≈ ${durText(tl.next.minutes)} after ${tl.last.label} (est.)` : null,
-    deferralsDue: rows.filter((i) => i.cls === 'due').length, noOwner: rows.filter((i) => !i.grey && !i.awaitingClean && !i.owner).length,
-    reconfirm: cutOff.passed ? rows.filter((i) => i.status === 'deferred' && i.deferral && !i.deferral.expired && !(i.holds && !i.holds.old)).length : 0,
-    reds: rows.filter(isRed).length, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, awaitingReds: rows.filter((i) => isRed(i) && i.awaitingClean).length, nextGap, over: eventOver(tl),
+    deferralsDue: liveDeferrals(rows).filter((i) => i.cls === 'due').length, noOwner: counts.noOwner,
+    reconfirm: cutOff.passed ? liveDeferrals(rows).filter((i) => !(i.holds && !i.holds.old)).length : 0,
+    reds: counts.reds, deferredReds: rows.filter((i) => isRed(i) && i.status === 'deferred').length, awaitingReds: rows.filter((i) => isRed(i) && i.awaitingClean).length, nextGap, over: eventOver(tl),
   }
   const tickFor = tl.next?.label ?? `after ${tl.last?.label ?? 'now'}`
   const read = notes.handoffReads.at(-1)
   return {
-    tl, issues, rows, visible, below, closed: issues.filter((i) => !i.open), strip,
+    tl, issues, groups, rows, visible, below, closed: [...entries.filter((i) => !i.open), ...groups.filter((g) => g.open).flatMap((g) => g.group!.members.filter((m) => !m.open))], strip,
     noSchedule: tl.hasSchedule ? null : 'No schedule: due points say "the next match" and "the end of the event". A team number and a Blue Alliance read key add match numbers and gaps.',
     labels,
     pitLines: notes.pitChange.map((n) => ({ match: n.match, text: n.text, role: n.by.role, at: indexOfMatch(session, labels, n.match, n.when) })).sort((a, b) => a.at - b.at).map(({ match, text, role }) => ({ match, text, role })),
@@ -470,11 +521,178 @@ export function buildBoard(input: BoardInput): Board {
   }
 }
 
-/** A red due before the next match that is neither deferred, closed nor grey: what the queue sheet gates on. */
+/** A red due before the next match that is neither deferred, closed nor grey: what the queue sheet gates on. A group is in the gate when any open member is. */
 export function isGate(i: BoardIssue, tl: Timeline): boolean {
+  if (i.group) return i.group.open.some((m) => isGate(m, tl))
   // A grey red that was closed (status check) and has still not been seen for 3 matches is waiting for its clean match, not due: Close must not put it back in the gate.
   if (i.awaitingClean) return false
   return i.open && i.priority === 'red' && !i.grey && i.status !== 'deferred' && i.due.pos <= tl.nextPos
+}
+
+/** A red that is not grey; a group is red when any open member is. */
+export function isRed(i: BoardIssue): boolean {
+  return i.group ? i.group.open.some(isRed) : i.priority === 'red' && !i.grey
+}
+
+/** Counted in "with no owner": not grey, not waiting for a clean match, no owner. A group counts when any open member does. */
+export function needsOwner(i: BoardIssue): boolean {
+  return i.group ? i.group.open.some(needsOwner) : !i.grey && !i.awaitingClean && !i.owner
+}
+
+export interface BoardCounts {
+  /** Open rows: a group is one. */
+  open: number
+  reds: number
+  gate: number
+  noOwner: number
+  /** Where a red count is drawn: "one of them 6 CAN devices dropped within 0.05 s" when a red row is a group, else "". */
+  groupWords: string
+}
+
+/** The one count of the board's rows, which every screen that shows a number reads (the strip, Now, the sheets): a group is one issue. */
+export function countRows(rows: readonly BoardIssue[], tl: Timeline): BoardCounts {
+  const reds = rows.filter(isRed)
+  return { open: rows.length, reds: reds.length, gate: rows.filter((i) => isGate(i, tl)).length, noOwner: rows.filter(needsOwner).length, groupWords: groupWords(reds) }
+}
+
+/** Beside a count of these rows: "one of them 6 CAN devices dropped within 0.05 s" when one is a group, "2 of them groups: …" for more, else "". */
+export function groupWords(rows: readonly BoardIssue[]): string {
+  const heads = rows.filter((i) => i.group).map((i) => i.group!.head)
+  return heads.length === 1 ? `one of them ${heads[0]}` : heads.length > 1 ? `${heads.length} of them groups: ${heads.join('; ')}` : ''
+}
+export const boardCounts = (board: Pick<Board, 'rows' | 'tl'>): BoardCounts => countRows(board.rows, board.tl)
+
+// ---- groups: one event, one row ----
+
+type Fired = { m: MatchSummary; f: SummaryFinding; label: string }
+const PARENT_BY_ID = new Map(PARENTS.map((p) => [p.id, p]))
+const RANK: Record<Priority, number> = { red: 0, amber: 1, low: 2 }
+const SEV: Record<Finding['severity'], number> = { error: 0, warning: 1, info: 2 }
+
+/**
+ * The parent that explains a finding in its log, directly or through another finding of the same log that it explains (an
+ * alert linked to a device that dropped with the others), and the time it names; null when none does.
+ */
+function parentOf(f: SummaryFinding, m: MatchSummary, seen = new Set<SummaryFinding>()): { rule: string; time: number | null; via: SummaryFinding | null } | null {
+  const by = f.explainedBy
+  if (!by || seen.has(f)) return null
+  if (PARENT_BY_ID.has(by.rule)) return { rule: by.rule, time: by.time, via: null }
+  const cause = m.rules[by.rule]?.findings.find((c) => c.about === by.about && c.time === by.time)
+  if (!cause) return null
+  seen.add(f)
+  const p = parentOf(cause, m, seen)
+  return p && { ...p, via: cause }
+}
+
+/**
+ * The group rows: issues whose latest sighting one parent explains in the same log, at least two of them. A member that came back
+ * after a fix stays its own row (as the Match tab keeps it a headline), and one explained through another finding joins only when
+ * that finding's issue is a member too (its own latest sighting is the same log).
+ */
+function groupRows(issues: BoardIssue[], lastFire: Map<string, Fired>, tl: Timeline, labels: string[]): BoardIssue[] {
+  const by = new Map<string, { parent: string; members: BoardIssue[]; via: Map<string, string> }>()
+  for (const i of issues) {
+    const last = lastFire.get(i.key)
+    if (!last || i.cameBack) continue
+    const p = parentOf(last.f, last.m)
+    if (!p) continue
+    const id = `${last.m.fileName}|${p.rule}|${p.time}`
+    const g = by.get(id) ?? { parent: p.rule, members: [] as BoardIssue[], via: new Map<string, string>() }
+    by.set(id, g)
+    g.members.push(i)
+    if (p.via) g.via.set(i.key, p.via.key)
+  }
+  const out: BoardIssue[] = []
+  for (const g of by.values()) {
+    // Through a finding whose issue is not a member (its latest sighting is elsewhere, or it came back): not this event's. Repeated
+    // until nothing more leaves, so a chain through a member that left leaves too.
+    let members = g.members
+    for (let n = -1; n !== members.length;) {
+      n = members.length
+      const keys = new Set(members.map((m) => m.key))
+      members = members.filter((m) => !g.via.has(m.key) || keys.has(g.via.get(m.key)!))
+    }
+    if (members.length < 2) continue
+    out.push(groupRow(PARENT_BY_ID.get(g.parent)!, members, lastFire, tl, labels))
+  }
+  return out
+}
+
+function groupRow(parent: (typeof PARENTS)[number], all: BoardIssue[], lastFire: Map<string, Fired>, tl: Timeline, labels: string[]): BoardIssue {
+  const isDevice = (m: BoardIssue) => m.rule === parent.over && lastFire.get(m.key)!.f.explainedBy?.rule === parent.id
+  const deviceRows = all.filter(isDevice).sort((a, b) => (lastFire.get(a.key)!.f.time ?? 0) - (lastFire.get(b.key)!.f.time ?? 0))
+  const members = [...deviceRows, ...all.filter((m) => !isDevice(m))]
+  const lead = members[0]
+  const at = lastFire.get(lead.key)!
+  const others = members.length - deviceRows.length
+  const otherWord = members.slice(deviceRows.length).every((m) => m.rule.startsWith('alerts/')) ? 'robot-code alert' : 'other finding'
+  // The parent's own words for the devices (`name` reads their times only), as Match review heads the group.
+  const head = deviceRows.length >= 2 ? parent.name(deviceRows.map((m) => lastFire.get(m.key)!.f) as unknown as Finding[]) : parent.title
+  const open = members.filter((m) => m.open)
+  // What the group reads as: the open members that still ask for something (not grey, not waiting for a clean match), else every open one.
+  const asking = open.filter((m) => !m.grey && !m.awaitingClean)
+  const act = asking.length ? asking : open
+  const live = (m: BoardIssue) => m.status === 'deferred' && !!m.deferral && !m.deferral.expired
+  const deferredAll = act.length > 0 && act.every(live)
+  const notDeferred = act.filter((m) => !live(m))
+  const statuses = new Set(act.map((m) => (live(m) ? 'deferred' : m.status)))
+  const notDeferredStatuses = new Set(notDeferred.map((m) => m.status))
+  const owners = new Set(act.map((m) => m.owner))
+  // The worst priority of the open members that are not grey (one waiting for a clean match still counts red, as isRed has it).
+  const ranked = open.filter((m) => !m.grey).length ? open.filter((m) => !m.grey) : open
+  const priority = ranked.reduce<Priority>((p, m) => (RANK[m.priority] < RANK[p] ? m.priority : p), 'low')
+  const priorities = new Set(ranked.map((m) => m.priority))
+  const deferral = deferredAll ? act.map((m) => m.deferral!).sort((a, b) => a.point.pos - b.point.pos)[0] : null
+  const due = deferral ? deferral.point : (notDeferred.length ? notDeferred : act).map((m) => m.due).sort((a, b) => a.pos - b.pos)[0] ?? lead.due
+  const grey = open.length > 0 && open.every((m) => m.grey)
+  const awaitingClean = !grey && open.length > 0 && open.every((m) => m.awaitingClean)
+  const unchanged = open.length ? Math.min(...open.map((m) => m.unchanged)) : lead.unchanged
+  const isNew = open.some((m) => m.isNew)
+  const closedAt = open.length ? null : members.map((m) => m.closedAt!).sort((a, b) => labels.indexOf(b) - labels.indexOf(a))[0]
+  const status: Status = !open.length ? 'closed' : deferredAll ? 'deferred' : notDeferredStatuses.size === 1 ? [...notDeferredStatuses][0] : 'open'
+  const asked = new Set(act.map((m) => m.asked)).size === 1 ? act[0]?.asked ?? 'open' : 'open'
+  const holds = deferredAll && act.every((m) => m.holds) ? act.map((m) => m.holds!).sort((a, b) => a.when.localeCompare(b.when))[0] : null
+  const firedIn = [...new Set(members.flatMap((m) => m.firedIn))].sort((a, b) => a - b)
+  const lastChange = members.map((m) => m.lastChange).filter((c): c is NonNullable<typeof c> => !!c).sort((a, b) => b.when.localeCompare(a.when))[0] ?? null
+  const cls: RowClass = deferral && !deferral.expired ? (due.pos <= tl.nextPos ? 'due' : 'later') : grey ? 'grey' : isNew ? 'new' : 'carried'
+  return {
+    key: `group · ${parent.id} · ${at.m.fileName} · ${at.f.explainedBy?.time ?? lead.key}`, rule: parent.id, about: null, robot: lead.robot,
+    ruleTitle: parent.title, title: head, mechanism: familyOf(parent.over), byProfile: false,
+    severity: members.reduce<Finding['severity']>((s, m) => (SEV[m.severity] < SEV[s] ? m.severity : s), 'info'),
+    priority, prioritySet: act.some((m) => m.prioritySet), status, asked, owner: owners.size === 1 ? [...owners][0] : null,
+    cameBack: false, closedAt, deferral, due, open: open.length > 0, cls, grey, unchanged, sinceSeen: open.length ? Math.min(...open.map((m) => m.sinceSeen)) : lead.sinceSeen,
+    awaitingClean, seenIn: { n: firedIn.length, of: Math.max(...members.map((m) => m.seenIn.of)), pit: Math.max(...members.map((m) => m.seenIn.pit)) },
+    greyAsk: grey ? `Not seen for ${unchanged} matches: close it, or give it an owner?` : null, isNew, firedIn,
+    firstSeen: Math.min(...members.map((m) => m.firstSeen)), lastSeen: Math.max(...members.map((m) => m.lastSeen)), sightings: lead.sightings,
+    nextStep: parent.nextStep, latest: lead.latest, notes: [], lastChange, causeMarks: {},
+    checked: sharedTicks(open.map((m) => m.checked)), holds, merged: lead.merged,
+    group: {
+      parent: parent.id, head, where: [at.label, compactWhen(at.f.when)].filter(Boolean).join(' '), meaning: parent.meaning,
+      members, open, devices: deviceRows.length, others, also: others ? `and ${others} ${otherWord}${others === 1 ? '' : 's'} about them` : '',
+      mixed: { owner: owners.size > 1, status: statuses.size > 1, priority: priorities.size > 1 },
+    },
+  }
+}
+
+/**
+ * The ticks a group carries: for each match every open member has a tick for, the oldest of their latest ticks (the group is only
+ * as fresh as its stalest member).
+ */
+function sharedTicks(lists: BoardIssue['checked'][]): BoardIssue['checked'] {
+  if (!lists.length) return []
+  const out: BoardIssue['checked'] = []
+  for (const match of new Set(lists[0].map((c) => c.match))) {
+    const latest = lists.map((l) => l.filter((c) => c.match === match).at(-1))
+    if (latest.some((c) => !c)) continue
+    out.push(latest.sort((a, b) => a!.when.localeCompare(b!.when))[0]!)
+  }
+  return out
+}
+
+/** The live deferrals among rows: a deferred row, and the deferred members of a group that is only partly deferred (each with its own workaround and point). */
+export function liveDeferrals(rows: readonly BoardIssue[]): BoardIssue[] {
+  const live = (i: BoardIssue) => i.status === 'deferred' && !!i.deferral && !i.deferral.expired
+  return rows.flatMap((i) => (live(i) ? [i] : i.group ? i.group.open.filter(live) : []))
 }
 
 /** A tick for the match counts while it is fresh: 90 minutes, as Foresight's ticks (`tickAt`). With no clock (`now` null) it is not aged. */

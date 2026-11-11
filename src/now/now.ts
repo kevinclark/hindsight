@@ -7,7 +7,7 @@
  * only from the outside signal with no session of it loaded (`event-outside`), a practice day (`practice`), and no logs at all
  * (`no-logs`).
  */
-import { isGate, robotOf, type Board } from '../board/model.ts'
+import { boardCounts, groupWords, isGate, robotOf, type Board, type BoardIssue } from '../board/model.ts'
 import { minutesFromNow, posOf, scheduleLabel } from '../board/points.ts'
 import { startOf, type ScheduledMatch } from '../tba/schedule.ts'
 import type { NexusTimes } from '../nexus/times.ts'
@@ -92,7 +92,7 @@ export interface NowInput {
   /** Hub: the library holds on-field logs, so an earlier event's board can be opened. */
   earlierEvent?: boolean
   /** Practice day: the latest event's board, as `deferralSession` picks it. */
-  still: { event: string; open: number; red: number } | null
+  still: { event: string; open: number; red: number; groupWords?: string } | null
   now: number
   /** The clock time of a start ("3:35 PM"). Injected so a test does not depend on the laptop's locale. */
   clockText?: (ms: number) => string
@@ -103,15 +103,27 @@ const plural = (n: number, one: string, many: string = `${one}s`): string => `${
 const go = (place: Place): NowAction => ({ kind: 'go', place })
 
 /** The reds due before the next match: the board's gate, the number the queue sheet counts. */
-export const redsDue = (board: Pick<Board, 'tl' | 'rows'>): number => board.rows.filter((i) => isGate(i, board.tl)).length
+export const redsDue = (board: Pick<Board, 'tl' | 'rows'>): number => boardCounts(board).gate
+
+/** What a practice day's Now says the latest event's board still has open: the board's own count (a group is one issue; grey is not red). */
+export function stillOf(board: Pick<Board, 'tl' | 'rows'>, event: string): { event: string; open: number; red: number; groupWords: string } {
+  const c = boardCounts(board)
+  return { event, open: c.open, red: c.reds, groupWords: c.groupWords }
+}
 
 /**
  * The reds due before a match at position `pos` (src/board/points.ts), as the board would place them if that match were next:
  * an undeferred red is due at the next match, a deferred one when its point comes up. The board's own rows and points, no second model.
  */
 export function redsDueBefore(board: Pick<Board, 'rows'>, pos: number): number {
+  return rowsDueBefore(board, pos).length
+}
+
+/** The rows `redsDueBefore` counts (a group is one, due when any open member is). */
+function rowsDueBefore(board: Pick<Board, 'rows'>, pos: number): Board['rows'] {
   const before = pos - 0.5
-  return board.rows.filter((i) => i.open && i.priority === 'red' && !i.grey && !i.awaitingClean && (i.status === 'deferred' ? !!i.deferral && i.deferral.point.pos < before : i.due.pos <= before)).length
+  const due = (i: BoardIssue): boolean => (i.group ? i.group.open.some(due) : i.open && i.priority === 'red' && !i.grey && !i.awaitingClean && (i.status === 'deferred' ? !!i.deferral && i.deferral.point.pos < before : i.due.pos <= before))
+  return board.rows.filter(due)
 }
 
 /**
@@ -237,7 +249,7 @@ export function nowState(input: NowInput): NowState {
       : { id: 'runs', title: "Open today's logs", detail: 'Choose them; they open in the Session view.', done: false, button: 'Open logs…', action: { kind: 'open-logs' }, primary: false }
     const s = input.still
     const still: NowTask = s && s.open > 0
-      ? { id: 'still', title: `Still open: ${plural(s.open, 'issue')} on ${s.event}'s board`, detail: `${s.red ? `${s.red} red` : 'none red'} · in Session › Board`, done: false, button: 'Open the board', action: { kind: 'board' }, primary: false }
+      ? { id: 'still', title: `Still open: ${plural(s.open, 'issue')} on ${s.event}'s board`, detail: `${s.red ? `${s.red} red${s.groupWords ? ` (${s.groupWords})` : ''}` : 'none red'} · in Session › Board`, done: false, button: 'Open the board', action: { kind: 'board' }, primary: false }
       : s ? { id: 'still', title: 'Nothing open', detail: `${s.event}'s board has no open issue · in Session › Board`, done: true, button: 'Open the board', action: { kind: 'board' }, primary: false }
       // No board was built: that is not an all-clear. The library may hold an earlier event's logs.
       : input.earlierEvent ? { id: 'still', title: 'Event board not opened yet', detail: "Loads the newest event's logs · in Session › Board", done: false, button: 'Open the board', action: { kind: 'board', which: 'latest' }, primary: false }
@@ -281,10 +293,12 @@ export function nowState(input: NowInput): NowState {
     }
   } else {
     // Count at the match Now names (the board's gate counts at its own next match, which can be one already played).
-    const due = next ? redsDueBefore(board, next.pos) : redsDue(board)
+    const dueRows = next ? rowsDueBefore(board, next.pos) : board.rows.filter((i) => isGate(i, board.tl))
+    const due = dueRows.length
+    const words = groupWords(dueRows)
     triage = {
       id: 'triage', title: `Triage before ${matchName}`,
-      detail: `${due ? `${plural(due, 'red')} due before ${matchName}` : `No reds due before ${matchName}`} · in Session › Board`,
+      detail: `${due ? `${plural(due, 'red')} due before ${matchName}${words ? ` (${words})` : ''}` : `No reds due before ${matchName}`} · in Session › Board`,
       done: false, button: 'Open the board', action: { kind: 'board' }, primary: false,
     }
   }

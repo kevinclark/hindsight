@@ -8,7 +8,7 @@ import { boardStamp, type BoardEvent, type BoardOp, type BoardRole, type BoardUn
 import { matchRef } from '../triage/track-record.ts'
 import { lastOnField } from './points.ts'
 import { OWNER_ROLES } from './role.ts'
-import type { BoardIssue } from './model.ts'
+import { TO_BOARD, type BoardIssue, type Priority } from './model.ts'
 
 export interface Who { device: string; role: BoardRole }
 
@@ -23,14 +23,42 @@ export function atLatest(session: Pick<Session, 'matches'>): { match?: string; e
   return { match: ref.id, ...(ref.event ? { event: ref.event } : {}), ...(ref.played !== null ? { played: new Date(ref.played).toISOString() } : {}) }
 }
 
-/** The lines for a set of changes to one issue, stamped in order so they fold in order (one `when`, rising seq). */
-export function boardLines(history: HistoryEvent[], who: Who, now: Date, issue: Pick<BoardIssue, 'key' | 'robot'>, changes: Change[], at: ReturnType<typeof atLatest>): BoardEvent[] {
+/**
+ * The lines for a set of changes to one issue, stamped in order so they fold in order (one `when`, rising seq). On a group row
+ * (model.ts BoardGroup) they are the same lines for each open member, stamped against the lines already made so every seq is new;
+ * a note or a cause mark is about one device, so a group refuses it.
+ */
+export function boardLines(history: HistoryEvent[], who: Who, now: Date, issue: Pick<BoardIssue, 'key' | 'robot' | 'group'>, changes: Change[], at: ReturnType<typeof atLatest>): BoardEvent[] {
   const made: BoardEvent[] = []
+  if (issue.group) {
+    const one = changes.find((c) => c.op === 'note' || c.op === 'cause')
+    if (one) throw new Error(`A ${one.op} is per member: write it on one device's issue, not on the group`)
+    for (const m of issue.group.open) made.push(...boardLines([...history, ...made], who, now, m, changes, at))
+    return made
+  }
   for (const c of changes) {
     const stamp = boardStamp([...history, ...made], who.device, now)
     made.push({ type: 'board', v: 1, key: issue.key, robot: issue.robot, op: c.op, value: c.value, ...(c.until ? { until: c.until } : {}), ...(c.cause ? { cause: c.cause, ...(c.test ? { test: c.test } : {}), text: c.text ?? '' } : {}), ...at, by: { device: who.device, role: who.role }, ...stamp })
   }
   return made
+}
+
+/** The issue screen's three plain fields as the form holds them. */
+export interface Fields { priority: Priority; status: 'open' | 'fixing' | 'check'; owner: string }
+
+/**
+ * The changes a Save makes from the priority, status and owner fields. A field is written when it differs from what the
+ * screen showed; on a group whose members disagree on it ("mixed"), also when the person used that control, since the value
+ * shown is not what each member has. A field nobody touched is never written (a group of red devices and amber alerts is
+ * mixed on priority from the start: a Save of the owner alone must not make the alerts red).
+ */
+export function fieldChanges(issue: Pick<BoardIssue, 'priority' | 'asked' | 'owner' | 'status' | 'group'>, form: Fields, touched: Partial<Record<keyof Fields, boolean>>): Change[] {
+  const mixed = issue.group?.mixed
+  const out: Change[] = []
+  if (form.priority !== issue.priority || (mixed?.priority && touched.priority)) out.push({ op: 'priority', value: TO_BOARD[form.priority] })
+  if (issue.status !== 'deferred' && (form.status !== issue.asked || (mixed?.status && touched.status))) out.push({ op: 'status', value: form.status })
+  if (form.owner !== (issue.owner ?? '') || (mixed?.owner && touched.owner)) out.push({ op: 'owner', value: form.owner })
+  return out
 }
 
 /** An event-note line (what we changed in the pit, missed by Hindsight, a handoff read). */

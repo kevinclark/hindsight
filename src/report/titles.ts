@@ -18,7 +18,7 @@ export function cardTitle(title: string): string {
 }
 
 /** The closed row's time, compact: "2:38 into the match (teleop; robot time 507.1 s)" -> "2:38 teleop"; "0:12 into run 3 of 7 (teleop; …)" -> "run 3 · 0:12 teleop". */
-function compactWhen(when: string | null): string {
+export function compactWhen(when: string | null): string {
   if (!when) return ''
   const paren = /\(([^;)]*)/.exec(when)
   const head = when.replace(/\s*\(.*$/, '').trim()
