@@ -36,6 +36,7 @@ function world(opts: { signedIn?: boolean; folder?: TeamFolder; sheet?: 'ok' | '
     native, fetch: f,
     store: { getItem: (k) => kv.get(k) ?? null, setItem: (k, v) => { kv.set(k, v) }, removeItem: (k) => { kv.delete(k) } },
     install: (folder) => { log.push(`install ${folder.name}`) },
+    installSample: () => { log.push('sample') },
     clearCopies: async () => { log.push('clear copies') },
     reload: () => { log.push('reload') },
   }
@@ -129,5 +130,24 @@ describe('the events the phone offers', () => {
     expect(orderEvents(['2099mystery', '2099aaa', '2099zzz'], info)).toEqual(['2099zzz', '2099aaa', '2099mystery'])
     expect(eventLabel('2099zzz', info)).toBe('2099 Late Test')
     expect(eventLabel('2099mystery', info)).toBe('2099mystery')
+  })
+})
+
+describe('sample data', () => {
+  it('opens the invented event without signing in, touching neither the Keychain nor the folder', async () => {
+    const { PhoneSession } = await import('../src/phone/session.svelte.ts')
+    const log: string[] = []
+    const keychain = new Map<string, string>()
+    const native = { http: async () => { throw new Error('no') }, signIn: async () => { throw new Error('no sheet') }, secretGet: async ({ key }: { key: string }) => ({ value: keychain.get(key) ?? null }), secretSet: async () => { log.push('keychain write') }, secretDelete: async () => { log.push('keychain delete') } }
+    const s = new PhoneSession({ native: native as never, fetch: (async () => new Response('')) as typeof fetch, store: { getItem: () => null, setItem: () => { log.push('store write') }, removeItem: () => {} }, install: () => { log.push('install') }, installSample: async () => { await Promise.resolve(); log.push('sample') }, clearCopies: async () => {}, reload: () => { log.push('reload') } })
+    await s.begin()
+    expect(s.step).toBe('signed-out')
+    const trying = s.trySample()
+    expect(s.step).toBe('signed-out') // not before the sample hub is installed
+    await trying
+    expect([s.step, s.sample]).toEqual(['ready', true])
+    expect(log).toEqual(['sample'])
+    s.leaveSample()
+    expect(log).toEqual(['sample', 'reload'])
   })
 })

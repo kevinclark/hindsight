@@ -18,6 +18,8 @@ export interface SessionDeps {
   store: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
   /** Put the read-only hub over this folder (src/phone.ts `installPhone`). */
   install(folder: TeamFolder, token: (refresh?: boolean) => Promise<string>): void
+  /** Put the read-only hub over the invented sample event (src/phone-fixture.ts): no sign-in, nothing kept. */
+  installSample(): void | Promise<void>
   /** Forget the copies of the team's files this phone keeps (the IndexedDB cache). */
   clearCopies(): Promise<void>
   /** Start the pages over: what they hold came from the old folder or account. */
@@ -33,6 +35,8 @@ export class PhoneSession {
   busy = $state(false)
   /** Google stopped honouring the sign-in while the pages were up: they keep the last copy and offer a sign-in. */
   askAgain = $state(false)
+  /** Showing the invented sample event, not a team's Drive (a look around before signing in; App Review's way in). */
+  sample = $state(false)
   readonly reader: DriveReader
   private readonly deps: SessionDeps
   private readonly issued: (refresh?: boolean) => Promise<string>
@@ -76,6 +80,16 @@ export class PhoneSession {
     this.problem = null
     try { this.open(await chooseFolder(this.reader, text, this.deps.store)) } catch (e) { if (!(e instanceof SignInAgain)) this.problem = words(e) }
   }
+
+  /** The page is shown only once the sample hub is in place (it reads which hub it has when it starts). */
+  async trySample(): Promise<void> {
+    await this.deps.installSample()
+    this.sample = true
+    this.step = 'ready'
+  }
+
+  /** Back to the start (the sign-in screen): the sample event is not kept. */
+  leaveSample(): void { this.deps.reload() }
 
   changeFolder(): void {
     forgetFolder(this.deps.store)
