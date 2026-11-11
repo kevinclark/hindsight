@@ -9,6 +9,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { GitRepo, type GitDir } from './git.ts'
 import { GitHubRepo } from './github.ts'
+import { loadJavaFromDisk } from './check/node-java.ts'
 import type { CodeFolder, LimitLines } from './limit-lines.ts'
 import type { CodeFileEntry, CodeSource, Kept } from './source.ts'
 
@@ -31,7 +32,7 @@ export function nodeGitHub(repo: string, cacheFile = DEFAULT_CACHE): CodeFolder 
 }
 
 /** A code source with the cache file's kept answers (and GitHub file lists); `save()` writes them back if they changed. */
-function withCacheFile<S extends CodeSource>(cacheFile: string, source: (github: Kept<CodeFileEntry[] | string>) => S): { repo: S; cache: Kept<LimitLines>; save(): void } {
+function withCacheFile<S extends CodeSource>(cacheFile: string, source: (github: Kept<CodeFileEntry[] | string>) => S): CodeFolder & { repo: S; save(): void } {
   let kept: { answers: Record<string, LimitLines>; github: Record<string, CodeFileEntry[] | string> } = { answers: {}, github: {} }
   try {
     const file = JSON.parse(readFileSync(cacheFile, 'utf8'))
@@ -47,6 +48,7 @@ function withCacheFile<S extends CodeSource>(cacheFile: string, source: (github:
   return {
     repo: source(keep(kept.github)),
     cache: keep(kept.answers),
+    loadJava: loadJavaFromDisk,
     save() {
       if (!changed) return
       mkdirSync(dirname(cacheFile), { recursive: true })

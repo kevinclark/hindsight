@@ -84,6 +84,20 @@ Two terms, used only in these senses below:
   Why: one line per group and kind keeps a four-motor flywheel from filling the report with the same fault; the
   highest peak is what the student compares with the limit. Kind: behaviour.
 
+### Behaviour: the limit the log's own commit sets
+- **LN-17** The profile's limits are those of its own commit. When a log ran another commit, `limitLinesVsProfile`
+  says `same` (judged as the profile's, LN-11), or `different` and carries `ran`: the limits the log's commit sets for
+  the group, read by the profile builder's code model matched by CAN ID (every motor must agree; `src/code/limit-lines.ts`),
+  or why they can't be read. For each kind: if `ran` sets that kind's limit, the log is judged against it and its Enable
+  flag as LN-04 to LN-10 do for the profile (off: amber, `likely: limit-off`; on and exceeded: red, `not-saved` and
+  `default-limit` likely; no flag: red, none marked), and the title ends ` (as this log's commit <7 characters> sets it)`;
+  otherwise (lines `different` with `ran` unreadable or silent on the kind, `unknown`, or no code linked) the build's
+  limit is unknown: amber, title `<group> <kind> current reached <peak>; the limit this build set is unknown (the profile's
+  <limit> A[, on|off,] is as of <branch> <pin>; this log ran <ran>)`, judged against the profile's number, no cause
+  marked, next step LN-10. Why: the code the log ran decides the limit it ran under; the 2026 offseason flywheel
+  went from 40 A off to 55 A on mid-event, and the rule read every later log against the old line. Where the limit
+  can't be read, a truly switched-off limit is amber, not red: accepted by the owner (2026-11-11). Kind: behaviour.
+
 ### Behaviour: what the finding says
 - **LN-08** The title is, word for word, `<group> <kind> current reached <peak> against a <limit> A limit<off><code>`:
   `<peak>` is `amps(peak)` (whole amps, `toFixed(0)`, then ` A`), `<limit>` is the profile's number as JavaScript
@@ -91,13 +105,13 @@ Two terms, used only in these senses below:
   for that kind is `false`, else empty (a flag the profile leaves out is not known, so it is empty too), and `<code>`
   is from LN-11. Why: the title is what a student reads first; the wording is fixed so it reads the same in every
   report. Kind: behaviour.
-- **LN-09** Severity: amber (`warning`) when the limit is switched off (its flag `false`) and the log **ran the
-  profile's code**; otherwise the rule's red (`error`): a limit switched on and still exceeded, switched off in code
-  the profile wasn't copied from (lines `different`, `unknown`, or no comparison), or with no flag in the profile,
-  whatever code the log ran. Why: switched off in the code this log ran may be deliberate (the mechanism may not need
-  a limit); when the log ran other code, or the profile doesn't say, "off" isn't known for it. A flag left out is not
-  read as "on" either: Phoenix 6 defaults Enable to true, but a hand-written profile may simply not say. Kind:
-  behaviour.
+- **LN-09** Severity: amber (`warning`) when the limit is switched off (its flag `false`) in code the finding is read
+  from (the profile's, when the log **ran the profile's code**; the log's own commit's, LN-17); amber when the build's
+  limit is unknown (LN-17); otherwise the rule's red (`error`): a limit switched on and still exceeded, or with no flag
+  where it is read from. Why: switched off in the code this log ran may be deliberate (the mechanism may not need a
+  limit); when the log ran other code that can't be read, nothing says the profile's limit applied, so red would
+  claim more than is known. A flag left out is not read as "on" either: Phoenix 6 defaults Enable to true, but a
+  hand-written profile may simply not say. Kind: behaviour.
 - **LN-10** Causes and next step:
   - switched off (whatever code the log ran): `likely: ['limit-off']`, nothing ruled out, and the next step, word for
     word, `Switch the <kind> limit on in <where>, then measure the mechanism before and after. Off on purpose? Mark it
@@ -105,8 +119,8 @@ Two terms, used only in these senses below:
   - switched on, and the log **ran the profile's code** (the pinned commit, or another commit with `same` lines):
     `likely: ['not-saved', 'default-limit']`, `limit-off` ruled out with `the limit is switched on in the code`, and
     the rule's own next step.
-  - switched on, and the log did not run the profile's code: no cause marked likely, none ruled out, the rule's own
-    next step.
+  - the build's limit is unknown (LN-17): no cause marked likely, none ruled out, and the next step `Link the code this
+    log ran (This laptop… → GitHub source, or a robot-code folder) so Hindsight reads its limit.`
   - no flag for that kind in the profile (whatever code the log ran): the same, no cause marked likely, none ruled
     out, the rule's own next step.
   Why: off in code is the cause when it is off; on in the very code the log ran means the config probably didn't
@@ -118,7 +132,7 @@ Two terms, used only in these senses below:
   same as <pin> in <files, joined by ", "> (read from the robot code)`; - lines `different`: `<code>` is ` (as of
   <branch> <pin>; this log ran <ran>)`, lines evidence `different from <pin>: <lines, joined by "; ">`; - lines
   `unknown`: the same `<code>`, lines evidence `not compared: <why>`; - no comparison (no code folder): the same
-  `<code>`, and no lines evidence. Why: a student must see which code the "switched on/off" claim was read from
+  `<code>`, and no lines evidence. (Where lines differ, `unknown` or are missing, the title is LN-17's.) Why: a student must see which code the "switched on/off" claim was read from
   (`tests/limit-lines.test.ts`). Kind: behaviour.
 - **LN-12** The evidence, keys in this order: `worst motor` (its name); `peak <kind> current (A)` (the peak, 1
   decimal); `seconds over 120 % of the limit (worst motor)` (1 decimal); `share of enabled time over 110 % of the

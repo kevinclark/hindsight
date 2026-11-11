@@ -211,20 +211,22 @@ test('[LN-08] the finding\'s title, word for word, when the log ran the profile\
     .toBe('Roller stator current reached 151 A against a 60 A limit that is switched off in code (deliberate?)')
 })
 
-test('[LN-09] a limit switched on in code and still exceeded is red', () => {
+test('[LN-09] a limit switched on in the code the log ran and still exceeded is red; in code that may differ it is amber, unknown', () => {
   expect(only(leftSupply(90)).severity).toBe('error')
   expect(only({ ...leftSupply(90), ran: 'def5678' }, robot(), { verdict: 'same', files: ['RollerIO.java'] }).severity).toBe('error')
-  expect(only({ ...leftSupply(90), ran: 'def5678' }).severity).toBe('error')
+  expect(only({ ...leftSupply(90), ran: 'def5678' }).severity).toBe('warning')
 })
 
-test('[LN-09] a limit switched off in the code this log ran is amber; switched off in other code it stays red', () => {
+test('[LN-09] a limit switched off in the code this log ran is amber; switched off in other code is amber too, and unknown', () => {
   const off = robot({ supplyEnabled: false })
   expect(only(leftSupply(90), off).severity).toBe('warning')
   expect(only({ ...leftSupply(90), ran: 'def5678' }, off, { verdict: 'same', files: ['RollerIO.java'] }).severity).toBe('warning')
-  expect(only({ ...leftSupply(90), ran: 'def5678' }, off, { verdict: 'different', files: ['RollerIO.java'], lines: ['- RollerIO.java: x'] }).severity).toBe('error')
-  expect(only({ ...leftSupply(90), ran: 'def5678' }, off, { verdict: 'unknown', why: 'no folder' }).severity).toBe('error')
-  expect(only({ ...leftSupply(90), ran: 'def5678' }, off).severity).toBe('error')
-  expect(only({ ...leftSupply(90), ran: '' }, off).severity).toBe('error')
+  for (const lines of [{ verdict: 'different', files: ['RollerIO.java'], lines: ['- RollerIO.java: x'], ran: { why: 'no limits' } } as LimitLines, { verdict: 'unknown', why: 'no folder' } as LimitLines, undefined]) {
+    const f = only({ ...leftSupply(90), ran: 'def5678' }, off, lines)
+    expect(f.severity).toBe('warning')
+    expect(f.title).toContain('the limit this build set is unknown')
+  }
+  expect(only({ ...leftSupply(90), ran: '' }, off).title).toContain('this log ran unknown code')
 })
 
 test('[LN-09] the log ran the profile\'s commit when its commit starts with the profile\'s (a longer hash counts)', () => {
@@ -236,7 +238,7 @@ const causeView = (f: Finding) => f.causes.map((c) => [c.id, c.likely ?? false, 
 const OFF_STEP = 'Switch the supply limit on in RollerIO.java:12-15, then measure the mechanism before and after. Off on purpose? Mark it as a known issue.'
 
 test('[LN-10] switched off: the likely cause is limit-off, and the next step says where to switch it on, whatever code the log ran', () => {
-  for (const f of [only(leftSupply(90), robot({ supplyEnabled: false })), only({ ...leftSupply(90), ran: 'def5678' }, robot({ supplyEnabled: false }))]) {
+  for (const f of [only(leftSupply(90), robot({ supplyEnabled: false })), only({ ...leftSupply(90), ran: 'def5678' }, robot({ supplyEnabled: false }), { verdict: 'same', files: ['RollerIO.java'] })]) {
     expect(causeView(f)).toEqual([['limit-off', true, null], ['not-saved', false, null], ['default-limit', false, null], ['wrong-value', false, null]])
     expect(f.nextStep).toBe(OFF_STEP)
   }
@@ -249,10 +251,10 @@ test('[LN-10] switched on in the code the log ran: not-saved and default-limit a
   }
 })
 
-test('[LN-10] switched on in code the profile wasn\'t copied from: no cause is marked, and the rule\'s own next step', () => {
+test('[LN-10] a build whose limit is unknown: no cause is marked, and the next step is to link the code', () => {
   const f = only({ ...leftSupply(90), ran: 'def5678' })
   expect(causeView(f)).toEqual([['limit-off', false, null], ['not-saved', false, null], ['default-limit', false, null], ['wrong-value', false, null]])
-  expect(f.nextStep).toBe(limitNotApplied.nextStep)
+  expect(f.nextStep).toBe('Link the code this log ran (This laptop… → GitHub source, or a robot-code folder) so Hindsight reads its limit.')
 })
 
 /** The profile gives the supply limit's number but leaves its Enable flag out. */
@@ -260,17 +262,16 @@ const noFlag = () => robot({ supplyEnabled: undefined })
 
 test('[LN-08] a limit whose Enable flag the profile leaves out: the title doesn\'t say it is switched off', () => {
   expect(only(leftSupply(90), noFlag()).title).toBe('Roller supply current reached 90 A against a 40 A limit')
-  expect(only({ ...leftSupply(90), ran: 'def5678' }, noFlag()).title).toBe('Roller supply current reached 90 A against a 40 A limit (as of main abc1234; this log ran def5678)')
+  expect(only({ ...leftSupply(90), ran: 'def5678' }, noFlag(), { verdict: 'same', files: ['RollerIO.java'] }).title).toBe('Roller supply current reached 90 A against a 40 A limit (same current-limit lines as main abc1234; this log ran def5678)')
 })
 
-test('[LN-09] a limit whose Enable flag the profile leaves out is red, even when the log ran the profile\'s code', () => {
+test('[LN-09] a limit whose Enable flag the profile leaves out is red when the log ran the profile\'s code', () => {
   expect(only(leftSupply(90), noFlag()).severity).toBe('error')
   expect(only({ ...leftSupply(90), ran: 'def5678' }, noFlag(), { verdict: 'same', files: ['RollerIO.java'] }).severity).toBe('error')
-  expect(only({ ...leftSupply(90), ran: 'def5678' }, noFlag()).severity).toBe('error')
 })
 
-test('[LN-10] a limit whose Enable flag the profile leaves out: no cause is marked or ruled out, and the rule\'s own next step, whatever code the log ran', () => {
-  const runs = [only(leftSupply(90), noFlag()), only({ ...leftSupply(90), ran: 'def5678' }, noFlag(), { verdict: 'same', files: ['RollerIO.java'] }), only({ ...leftSupply(90), ran: 'def5678' }, noFlag())]
+test('[LN-10] a limit whose Enable flag the profile leaves out: no cause is marked or ruled out, and the rule\'s own next step, whenever it ran the profile\'s code', () => {
+  const runs = [only(leftSupply(90), noFlag()), only({ ...leftSupply(90), ran: 'def5678' }, noFlag(), { verdict: 'same', files: ['RollerIO.java'] })]
   for (const f of runs) {
     expect(causeView(f)).toEqual([['limit-off', false, null], ['not-saved', false, null], ['default-limit', false, null], ['wrong-value', false, null]])
     expect(f.nextStep).toBe(limitNotApplied.nextStep)
@@ -281,7 +282,7 @@ const LINES = "current-limit lines vs the profile's commit"
 const SWITCHED = 'limit switched on in code'
 
 test('[LN-11] the log ran the pinned commit: nothing is added to the title, and no lines comparison is shown or used', () => {
-  const f = only(leftSupply(90), robot(), { verdict: 'different', files: ['RollerIO.java'], lines: ['- RollerIO.java: x'] })
+  const f = only(leftSupply(90), robot(), { verdict: 'different', files: ['RollerIO.java'], lines: ['- RollerIO.java: x'], ran: { why: 'no limits' } })
   expect(f.title).toBe('Roller supply current reached 90 A against a 40 A limit')
   expect(f.evidence[SWITCHED]).toBe('yes')
   expect(f.evidence[LINES]).toBeUndefined()
@@ -295,22 +296,22 @@ test('[LN-11] another commit with the same limit lines: the title and evidence s
   expect(f.evidence[LINES]).toBe('the same as abc1234 in RollerIO.java, Constants.java (read from the robot code)')
 })
 
-test('[LN-11] another commit with different lines, lines not compared, or no code folder: "as of" the profile\'s commit', () => {
-  const asOf = ' (as of main abc1234; this log ran def5678)'
-  const different = only({ ...leftSupply(90), ran: 'def5678' }, robot(), { verdict: 'different', files: ['RollerIO.java'], lines: ['- RollerIO.java: a = 1;', '+ RollerIO.java: a = 2;'] })
-  expect(different.title).toBe(`Roller supply current reached 90 A against a 40 A limit${asOf}`)
-  expect(different.evidence[SWITCHED]).toBe(`yes${asOf}`)
-  expect(different.evidence[LINES]).toBe('different from abc1234: - RollerIO.java: a = 1;; + RollerIO.java: a = 2;')
+test('[LN-11] another commit with different lines, lines not compared, or no code folder: the build\'s limit is unknown, with the profile\'s commit named', () => {
+  const unknownTitle = "Roller supply current reached 90 A; the limit this build set is unknown (the profile's 40 A, on, is as of main abc1234; this log ran def5678)"
+  const different = only({ ...leftSupply(90), ran: 'def5678' }, robot(), { verdict: 'different', files: ['RollerIO.java'], lines: ['- RollerIO.java: a = 1;', '+ RollerIO.java: a = 2;'], ran: { why: 'the code gives its motors different limits' } })
+  expect(different.title).toBe(unknownTitle)
+  expect(different.evidence[SWITCHED]).toBe('yes (as of main abc1234; this log ran def5678)')
+  expect(different.evidence[LINES]).toBe("different from abc1234: - RollerIO.java: a = 1;; + RollerIO.java: a = 2;; the limits this log's commit sets couldn't be read: the code gives its motors different limits")
   const unknown = only({ ...leftSupply(90), ran: 'def5678' }, robot(), { verdict: 'unknown', why: "commit def5678 isn't in this code folder" })
-  expect(unknown.title).toBe(`Roller supply current reached 90 A against a 40 A limit${asOf}`)
+  expect(unknown.title).toBe(unknownTitle)
   expect(unknown.evidence[LINES]).toBe("not compared: commit def5678 isn't in this code folder")
   const none = only({ ...leftSupply(90), ran: 'def5678' })
-  expect(none.title).toBe(`Roller supply current reached 90 A against a 40 A limit${asOf}`)
+  expect(none.title).toBe(unknownTitle)
   expect(none.evidence[LINES]).toBeUndefined()
 })
 
 test('[LN-11] a log with no commit says "unknown code"', () => {
-  expect(only({ ...leftSupply(90), ran: '' }).title).toBe('Roller supply current reached 90 A against a 40 A limit (as of main abc1234; this log ran unknown code)')
+  expect(only({ ...leftSupply(90), ran: '' }).title).toBe("Roller supply current reached 90 A; the limit this build set is unknown (the profile's 40 A, on, is as of main abc1234; this log ran unknown code)")
 })
 
 test('[LN-12] the evidence: its keys in order, and each value', () => {
@@ -446,3 +447,74 @@ test('[LN-21] a Connected flag that flickers many times costs time in proportion
   for (let i = 0; i < 40; i++) flicker.push([20 + i * 0.2, false], [20.1 + i * 0.2, true])
   expect(only({ keys: { [L.supply]: [[0, 5], [15, 90], [16, 90], [17, 5]], [L.connected]: flicker } }).time).toBe(15)
 }, 5_000)
+
+// The limit the log's own commit sets (docs/contracts/limit-not-applied.md LN-17): when the CurrentLimit lines differ
+// from the profile's commit, the comparison also says what limits the log's commit sets (`ran`).
+const RAN = 'e54d756aaaa'
+const differs = (ran: Extract<LimitLines, { verdict: 'different' }>['ran']): LimitLines => ({ verdict: 'different', files: ['RollerIO.java'], lines: ['- RollerIO.java: x', '+ RollerIO.java: y'], ran })
+const sets = (limits: Partial<CurrentLimits>) => differs({ commit: RAN, limits: { where: 'RollerIO.java:30-31', ...limits } })
+const sustained = (amps: number): Log => ({ ...leftSupply(amps, 20, 21), ran: RAN })
+const UNKNOWN_STEP = 'Link the code this log ran (This laptop… → GitHub source, or a robot-code folder) so Hindsight reads its limit.'
+
+test('[LN-17] the log\'s commit sets 55 A, on: a peak under 120 % of 55 A is no finding, though it is over the profile\'s 40 A', () => {
+  expect(run(sustained(65), robot(), sets({ supplyA: 55, supplyEnabled: true })).findings).toEqual([])
+})
+
+test('[LN-17] the log\'s commit sets 55 A, on, and 80 A is sustained: red against 55 A, naming the log\'s commit as the source', () => {
+  const f = only(sustained(80), robot(), sets({ supplyA: 55, supplyEnabled: true }))
+  expect(f.title).toBe("Roller supply current reached 80 A against a 55 A limit (as this log's commit e54d756 sets it)")
+  expect(f.severity).toBe('error')
+  expect(f.evidence['configured limit (A)']).toBe(55)
+  expect(f.evidence[SWITCHED]).toBe("yes (as this log's commit e54d756 sets it)")
+  expect(f.measured).toEqual([{ label: 'peak supply current', value: 80, unit: 'A', threshold: 66 }])
+  expect(causeView(f)).toEqual([['not-saved', true, null], ['default-limit', true, null], ['wrong-value', false, null], ['limit-off', false, 'the limit is switched on in the code']])
+  expect(f.nextStep).toBe(limitNotApplied.nextStep)
+})
+
+test('[LN-17] the log\'s commit sets the limit off: amber, deliberate?, limit-off likely', () => {
+  const f = only(sustained(80), robot(), sets({ supplyA: 55, supplyEnabled: false }))
+  expect(f.title).toBe("Roller supply current reached 80 A against a 55 A limit that is switched off in code (deliberate?) (as this log's commit e54d756 sets it)")
+  expect(f.severity).toBe('warning')
+  expect(causeView(f)[0]).toEqual(['limit-off', true, null])
+  expect(f.nextStep).toBe(OFF_STEP.replace('RollerIO.java:12-15', 'RollerIO.java:30-31'))
+})
+
+test('[LN-17] the log\'s commit sets a limit but no Enable flag: red, no cause marked, as for a profile without the flag', () => {
+  const f = only(sustained(80), robot(), sets({ supplyA: 55 }))
+  expect(f.severity).toBe('error')
+  expect(f.evidence[SWITCHED]).toBe('not set in the code')
+  expect(causeView(f).map(([, likely]) => likely)).toEqual([false, false, false, false])
+})
+
+test('[LN-17] different lines and the log\'s limits unreadable: amber, the limit this build set is unknown, no cause marked', () => {
+  const f = only(sustained(80), robot({ supplyEnabled: false }), differs({ why: 'the code sets no current limits on it that the builder can read' }))
+  expect(f.title).toBe("Roller supply current reached 80 A; the limit this build set is unknown (the profile's 40 A, off, is as of main abc1234; this log ran e54d756)")
+  expect(f.severity).toBe('warning')
+  expect(causeView(f).map(([, likely]) => likely)).toEqual([false, false, false, false])
+  expect(f.nextStep).toBe(UNKNOWN_STEP)
+  expect(f.evidence[LINES]).toContain('the code sets no current limits on it that the builder can read')
+})
+
+test('[LN-17] another commit and no code linked, or lines not compared: amber and unknown, whatever the profile says', () => {
+  const asOf = "the limit this build set is unknown (the profile's 40 A, on, is as of main abc1234; this log ran e54d756)"
+  for (const lines of [undefined, { verdict: 'unknown', why: 'no folder' } as LimitLines]) {
+    const f = only(sustained(80), robot(), lines)
+    expect(f.title).toBe(`Roller supply current reached 80 A; ${asOf}`)
+    expect(f.severity).toBe('warning')
+    expect(f.nextStep).toBe(UNKNOWN_STEP)
+  }
+  // No flag in the profile: only the number.
+  expect(only(sustained(80), noFlag()).title).toBe("Roller supply current reached 80 A; the limit this build set is unknown (the profile's 40 A is as of main abc1234; this log ran e54d756)")
+  // The finding is still judged against the profile's number: 56 A is under 120 % of 55 A but over 120 % of 40 A.
+  expect(only(sustained(56)).about).toBe('Roller supply')
+})
+
+test('[LN-17] a kind the log\'s commit does not set is unknown, while a kind it sets is judged against it', () => {
+  const log: Log = { ran: RAN, keys: { [L.supply]: [[0, 5], [20, 80], [20.5, 80], [21, 5]], [R.stator]: [[0, 5], [30, 150], [30.5, 150], [31, 5]] } }
+  const { findings } = run(log, robot(), sets({ supplyA: 55, supplyEnabled: true }))
+  expect(findings.map((f) => [f.about, f.severity, f.title.includes('is unknown')])).toEqual([['Roller supply', 'error', false], ['Roller stator', 'warning', true]])
+})
+
+test('[LN-17] the same commit or the same lines still judge against the profile, whatever `ran` says', () => {
+  expect(only({ ...leftSupply(90), ran: PIN }, robot(), sets({ supplyA: 200, supplyEnabled: true })).title).toBe('Roller supply current reached 90 A against a 40 A limit')
+})

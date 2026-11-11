@@ -14,6 +14,7 @@ import { GitHubRepo } from '../src/code/github.ts'
 import type { CodeSource } from '../src/code/source.ts'
 import { compareLimitLines, limitFiles, type CodeFolder, type LimitLines } from '../src/code/limit-lines.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
+import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
 import { fakeGitHub, memoryKept } from './helpers/fake-github.ts'
@@ -46,23 +47,23 @@ const memoryCache = (): CodeFolder['cache'] & { kept: Map<string, LimitLines> } 
   const kept = new Map<string, LimitLines>()
   return { kept, get: (k) => kept.get(k), set: (k, v) => { kept.set(k, v) } }
 }
-const folder = (): CodeFolder => ({ repo: new GitRepo(nodeGitDir(dir)!), cache: memoryCache() })
+const folder = (): CodeFolder => ({ repo: new GitRepo(nodeGitDir(dir)!), cache: memoryCache(), loadJava: loadJavaFromDisk })
 
 /** A log that ran `sha`, with the flywheel's supply current at 90 A against the 40 A limit. */
-function flywheelLog(sha: string): Uint8Array {
+function flywheelLog(sha: string, peak = 90): Uint8Array {
   const amps = (key: string, a: number): FixtureEntry => ({ name: key, type: 'double', records: [[0, 0], [10, a], [20, a], [410, 0]] })
   return writeWpilog([
     { name: '/DriverStation/Enabled', type: 'boolean', records: [[0, false], [10, true], [410, false]] },
     { name: '/DriverStation/Autonomous', type: 'boolean', records: [[0, false]] },
     { name: '/SystemStats/BatteryVoltage', type: 'double', records: [[0, 12.5], [420, 12.3]] },
     { name: '/RealMetadata/GitSHA', type: 'string', records: [[0, sha]] },
-    ...flywheel.motors.flatMap((m) => [amps(m.supplyCurrent!, 90), amps(m.statorCurrent!, 10)]),
+    ...flywheel.motors.flatMap((m) => [amps(m.supplyCurrent!, peak), amps(m.statorCurrent!, 10)]),
   ])
 }
 
 /** The flywheel supply finding for that log. */
-async function flywheelFinding(sha: string, code: CodeFolder | null) {
-  const { analyses } = await analyzeFilesWithCode([{ name: 't.wpilog', bytes: flywheelLog(sha) }], code, profile)
+async function flywheelFinding(sha: string, code: CodeFolder | null, peak = 90, pin = profile) {
+  const { analyses } = await analyzeFilesWithCode([{ name: 't.wpilog', bytes: flywheelLog(sha, peak) }], code, pin)
   return analyses[0].report.findings.find((f) => f.rule === 'power/limit-not-applied' && f.title.startsWith('Flywheel supply'))!
 }
 const LINES = "current-limit lines vs the profile's commit"
@@ -119,19 +120,21 @@ describe('power/limit-not-applied with a code folder', () => {
     expect(f.about).toBe('Flywheel supply')
     expect(f.item).toBe('Flywheel')
   })
-  it('another commit with different limit lines: red, with the lines that differ', async () => {
+  it('another commit with different limit lines the code model can\'t read: amber, the limit this build set is unknown', async () => {
     const f = await flywheelFinding(limitChanged, folder())
-    expect(f.severity).toBe('error')
-    expect(f.evidence[LINES]).toMatch(/^different from [0-9a-f]{7}: - DrumSubsystem.java: .*= false;; \+ DrumSubsystem.java: .*= true;$/)
+    expect(f.severity).toBe('warning')
+    expect(f.title).toContain('the limit this build set is unknown')
+    expect(f.evidence[LINES]).toMatch(/^different from [0-9a-f]{7}: - DrumSubsystem.java: .*= false;; \+ DrumSubsystem.java: .*= true;/)
   })
-  it('a commit the folder doesn\'t have: red, saying why', async () => {
+  it('a commit the folder doesn\'t have: amber and unknown, saying why', async () => {
     const f = await flywheelFinding('abcdef1234567890abcdef1234567890abcdef12', folder())
-    expect(f.severity).toBe('error')
+    expect(f.severity).toBe('warning')
+    expect(f.title).toContain('the limit this build set is unknown')
     expect(f.evidence[LINES]).toMatch(/^not compared: commit abcdef1 isn't in this code folder/)
   })
   it('from GitHub: the same amber answer, and every motor group shares one file list per commit', async () => {
     const github = new GitHubRepo(GITHUB, memoryKept(), fakeGitHub(dir, GITHUB).fetch)
-    const f = await flywheelFinding(otherLinesChanged, { repo: github, cache: memoryCache() })
+    const f = await flywheelFinding(otherLinesChanged, { repo: github, cache: memoryCache(), loadJava: loadJavaFromDisk })
     expect(f.severity).toBe('warning')
     expect(f.evidence[LINES]).toBe(`the same as ${pinned.slice(0, 7)} in DrumSubsystem.java (read from the robot code)`)
     // The profile's short hash (1), then each commit's file list (2), for all the groups with limit files.
@@ -141,7 +144,7 @@ describe('power/limit-not-applied with a code folder', () => {
   it('a profile that pins no commit (read from a public log) asks nothing and says why', async () => {
     const fake = fakeGitHub(dir, GITHUB)
     const unpinned = { ...profile, code: { ...profile.code, sha: 'unknown' } }
-    const github: CodeFolder = { repo: new GitHubRepo(GITHUB, memoryKept(), fake.fetch), cache: memoryCache() }
+    const github: CodeFolder = { repo: new GitHubRepo(GITHUB, memoryKept(), fake.fetch), cache: memoryCache(), loadJava: loadJavaFromDisk }
     const { analyses } = await analyzeFilesWithCode([{ name: 't.wpilog', bytes: flywheelLog(otherLinesChanged) }], github, unpinned)
     expect(analyses[0].match.limitLines?.get('Flywheel')).toEqual({ verdict: 'unknown', why: 'the robot profile pins no commit to compare with' })
     expect(fake.asked).toEqual([])
@@ -150,8 +153,8 @@ describe('power/limit-not-applied with a code folder', () => {
     const file = { name: 't.wpilog', bytes: flywheelLog(otherLinesChanged) }
     const offline = new GitHubRepo(GITHUB, memoryKept(), (async () => { throw new TypeError('Failed to fetch') }) as typeof fetch)
     const online = new GitHubRepo(GITHUB, memoryKept(), fakeGitHub(dir, GITHUB).fetch)
-    expect((await summarizeLogWithCode(file, { repo: offline, cache: memoryCache() }, 'x (GitHub)', profile))?.codeFolder).toBeUndefined()
-    expect((await summarizeLogWithCode(file, { repo: online, cache: memoryCache() }, 'x (GitHub)', profile))?.codeFolder).toBe('x (GitHub)')
+    expect((await summarizeLogWithCode(file, { repo: offline, cache: memoryCache(), loadJava: loadJavaFromDisk }, 'x (GitHub)', profile))?.codeFolder).toBeUndefined()
+    expect((await summarizeLogWithCode(file, { repo: online, cache: memoryCache(), loadJava: loadJavaFromDisk }, 'x (GitHub)', profile))?.codeFolder).toBe('x (GitHub)')
   })
   it('the pinned commit itself needs no comparison', async () => {
     const f = await flywheelFinding(pinned, folder())
@@ -160,7 +163,8 @@ describe('power/limit-not-applied with a code folder', () => {
   })
   it('no code folder: exactly as analyzeFiles', async () => {
     const f = await flywheelFinding(otherLinesChanged, null)
-    expect(f.severity).toBe('error')
+    expect(f.severity).toBe('warning')
+    expect(f.title).toContain('the limit this build set is unknown')
     expect(f.evidence[LINES]).toBeUndefined()
     const sync = analyzeFiles([{ name: 't.wpilog', bytes: writeWpilog([]) }], profile)
     expect(sync.problems).toEqual((await analyzeFilesWithCode([{ name: 't.wpilog', bytes: writeWpilog([]) }], null, profile)).problems)
@@ -170,8 +174,59 @@ describe('power/limit-not-applied with a code folder', () => {
     await flywheelFinding(otherLinesChanged, code)
     await flywheelFinding('abcdef1234567890abcdef1234567890abcdef12', code)
     const kept = (code.cache as ReturnType<typeof memoryCache>).kept
-    expect([...kept.values()].map((a) => a.verdict)).toEqual(['same'])
-    const unreadable: CodeFolder = { repo: new GitRepo({ read: async () => { throw new Error('read') }, size: async () => null, list: async () => [] }), cache: code.cache }
+    expect(new Set([...kept.values()].map((a) => a.verdict))).toEqual(new Set(['same']))
+    const unreadable: CodeFolder = { repo: new GitRepo({ read: async () => { throw new Error('read') }, size: async () => null, list: async () => [] }), cache: code.cache, loadJava: loadJavaFromDisk }
     expect((await flywheelFinding(otherLinesChanged, unreadable)).severity).toBe('warning')
+  })
+})
+
+// The limit the log's own commit sets: Talon FX built and configured in code the model reads (CAN IDs 15-18, the
+// flywheel's), at a commit whose CurrentLimit lines differ from the profile's.
+describe('power/limit-not-applied judges a log against the limit its own commit sets', () => {
+  const drum = (limits: string[], ids = [15, 16, 17, 18]) => commit([
+    ...ids.map((id) => `    TalonFX m${id} = new TalonFX(${id});`),
+    '    void configure() {', '      var cfg = new TalonFXConfiguration();', ...limits.map((l) => `      ${l}`),
+    ...ids.map((id) => `      m${id}.getConfigurator().apply(cfg);`), '    }',
+  ])
+  const supply = (a: number, on: boolean) => [`cfg.CurrentLimits.SupplyCurrentLimit = ${a};`, `cfg.CurrentLimits.SupplyCurrentLimitEnable = ${on};`]
+  const base = drum(supply(40, false))
+  const sets55 = drum(supply(55, true))
+  const sets55off = drum(supply(55, false))
+  const noLimits = drum([])
+  const onlyThree = drum(supply(55, true), [15, 16, 17])
+  const real = { ...profile, code: { ...profile.code, sha: base.slice(0, 7) } }
+  const finding = (sha: string, code: CodeFolder | null, peak = 90) => flywheelFinding(sha, code, peak, real)
+
+  it('55 A on, 90 A sustained: red against 55 A, naming the log\'s commit', async () => {
+    const f = await finding(sets55, folder())
+    expect(f.severity).toBe('error')
+    expect(f.title).toBe(`Flywheel supply current reached 90 A against a 55 A limit (as this log's commit ${sets55.slice(0, 7)} sets it)`)
+  })
+  it('55 A on, 60 A: no finding, though it is over the profile\'s 40 A', async () => {
+    expect(await finding(sets55, folder(), 60)).toBeUndefined()
+  })
+  it('55 A, off: amber, deliberate?', async () => {
+    const f = await finding(sets55off, folder())
+    expect(f.severity).toBe('warning')
+    expect(f.title).toContain('against a 55 A limit that is switched off in code (deliberate?)')
+  })
+  it('the code sets no limits, or not for every motor: amber, unknown, and the lines evidence says why', async () => {
+    for (const sha of [noLimits, onlyThree]) {
+      const f = await finding(sha, folder())
+      expect(f.severity).toBe('warning')
+      expect(f.title).toContain('the limit this build set is unknown')
+    }
+    expect((await finding(noLimits, folder())).evidence[LINES]).toContain('the code sets no current limits on it that the builder can read')
+  })
+  it('from GitHub: the same answer', async () => {
+    const github: CodeFolder = { repo: new GitHubRepo(GITHUB, memoryKept(), fakeGitHub(dir, GITHUB).fetch), cache: memoryCache(), loadJava: loadJavaFromDisk }
+    expect((await finding(sets55, github)).title).toContain('against a 55 A limit (as this log\'s commit')
+  })
+  it('the answer is kept with the limits the log commit sets', async () => {
+    const code = folder()
+    await finding(sets55, code)
+    const kept = [...(code.cache as ReturnType<typeof memoryCache>).kept.values()]
+    expect(kept.length).toBeGreaterThan(0)
+    expect(kept.find((a) => a.verdict === 'different' && 'limits' in a.ran)).toMatchObject({ ran: { commit: sets55, limits: { supplyA: 55, supplyEnabled: true } } })
   })
 })
