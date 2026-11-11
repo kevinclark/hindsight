@@ -8,6 +8,8 @@
  *    one log, so ingest files it once).
  *  - A file still being written is skipped: modified in the last 30 s, or growing between two listings.
  *  - A log pulled before (same path, size and modified time) is not downloaded again.
+ *  - A log from a power-on with no Driver Station (AdvantageKit's `akit_<16 hex digits>.wpilog`, ADR 15) is left on the robot
+ *    unless the pull is told to include it; the pull says how many it left, and a skipped file is never marked seen.
  */
 import { createWriteStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
@@ -20,6 +22,7 @@ import { STALL_MS, Stalled, TRIES, atWords, secsWords, watchdog } from './transf
 import type { SourceFile, Watch } from './ingest.ts'
 import { kindOf } from './types.ts'
 export { notReached } from './robot-reach.ts'
+export { skippedWords } from './skip-words.ts'
 export { STALL_MS, Stalled, TRIES }
 
 export const ROBOT_LOG_ROOTS = ['/home/lvuser/logs', '/U/logs']
@@ -80,8 +83,21 @@ export function checkRobotIdle(address: string, options: { waitMs?: number; make
   })
 }
 
-/** Every log on the robot that is finished being written, as ingest sources (a download happens only when ingest must read one: never for a log seen before). */
-export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?: (ms: number) => Promise<void>; tempRoot?: string; cancelled?: () => boolean } = {}): Promise<{ files: SourceFile[]; stillWriting: string[] }> {
+/**
+ * AdvantageKit names a log `akit_<random hex>.wpilog` and renames it to a timestamp only once the Driver Station is attached
+ * and the clock valid for 5 s; a robot can't be enabled without a Driver Station, so a file still named so never was (ADR 15).
+ */
+export const noDriverStationName = (name: string): boolean => /^akit_[0-9a-f]{16}\.wpilog$/.test(name)
+
+/** Files a pull left on the robot because they are from a power-on with no Driver Station. */
+export interface SkippedFile { path: string; size: number }
+
+/**
+ * Every log on the robot that is finished being written, as ingest sources (a download happens only when ingest must read one: never for a log seen before).
+ * `includeNoDriverStation` pulls the hex-named logs too. `seen` (the pull's memory) tells which of them are already in the library:
+ * those stay in `files` (ingest says "already", downloading nothing) and are not counted as skipped.
+ */
+export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?: (ms: number) => Promise<void>; tempRoot?: string; cancelled?: () => boolean; includeNoDriverStation?: boolean; seen?: { get(key: string): string | undefined } } = {}): Promise<{ files: SourceFile[]; stillWriting: string[]; skipped: SkippedFile[] }> {
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   const walk = async (dir: string, depth: number, out: Map<string, RobotEntry>) => {
@@ -103,13 +119,17 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
   const second = await scan()
   const out: SourceFile[] = []
   const stillWriting: string[] = []
+  const skipped: SkippedFile[] = []
   for (const [path, e] of second) {
     // Still being written: changed since the first listing, or modified within 30 s of now by either clock (the robot's clock comes from the DS laptop and can be ahead of this one).
     if (first.get(path)?.size !== e.size || Math.abs(now() - e.mtimeMs) < RECENT_MS) { stillWriting.push(path); continue }
+    const cacheKey = `robot:${path}|${e.size}|${Math.round(e.mtimeMs)}`
+    // Left on the robot, and never offered to ingest, so never put in the seen memory: a later forced pull still gets it.
+    if (!deps.includeNoDriverStation && noDriverStationName(e.name) && deps.seen?.get(cacheKey) === undefined) { skipped.push({ path, size: e.size }); continue }
     out.push({
       name: e.name, where: `robot:${path}`, size: e.size, modifiedTime: Math.round(e.mtimeMs), from: 'robot',
       // A finished log seen before with the same path, size and modified time is not downloaded again (ingest's "seen" memory).
-      cacheKey: `robot:${path}|${e.size}|${Math.round(e.mtimeMs)}`,
+      cacheKey,
       open: async (watch) => {
         const dir = await mkdtemp(join(deps.tempRoot ?? tmpdir(), 'hindsight-robot-'))
         const local = join(dir, e.name)
@@ -123,7 +143,7 @@ export async function robotFiles(fs: RobotFs, deps: { now?: () => number; sleep?
       },
     })
   }
-  return { files: out.sort((a, b) => a.where.localeCompare(b.where)), stillWriting }
+  return { files: out.sort((a, b) => a.where.localeCompare(b.where)), stillWriting, skipped: skipped.sort((a, b) => a.path.localeCompare(b.path)) }
 }
 
 /** `host` or `host:port` (the port is for a test server; the robot's is 22). */

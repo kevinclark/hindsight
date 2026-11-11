@@ -9,12 +9,12 @@ import { ingest, localFolderFiles, planIngest, type IngestReport, type SourceFil
 import { checkPath } from '../src/hub/adapter.ts'
 import { DriveAdapter } from '../src/hub/drive-adapter.ts'
 import { driveFolderFiles, folderIdFrom } from '../src/hub/drive-source.ts'
-import { fetchLogs, planSync, syncWithTeam } from '../src/hub/sync.ts'
+import { fetchLogs, notUploadedWords, planSync, syncWithTeam } from '../src/hub/sync.ts'
 import { LiveShare, Lock, type ShareStatus } from '../src/hub/live-share.ts'
 import { isEventKey } from '../src/hub/event-file.ts'
 import { createHash } from 'node:crypto'
 import { SignInAgain, Stopped } from '../src/hub/adapter.ts'
-import { checkRobotIdle, connectRobotFs, robotFiles } from '../src/hub/robot.ts'
+import { checkRobotIdle, connectRobotFs, robotFiles, skippedWords } from '../src/hub/robot.ts'
 import { Updater, electronEnv } from './updater.ts'
 import { JobRunner, type JobHandle, type ProgressFn, type Work } from '../src/hub/jobs.ts'
 import { applyLinks } from '../src/hub/links.ts'
@@ -301,12 +301,13 @@ export function registerHub(window: () => BrowserWindow | null): void {
   ipcMain.handle('hub:driveIngestPlan', async (_e, text: string) => planIngest(await open(), await driveSource(text)))
   ipcMain.handle('hub:addFromDrive', async (_e, text: string) => runIngest('Reading Drive folder', await driveSource(text)))
 
-  ipcMain.handle('hub:syncPlan', async (): Promise<SyncPlan> => planSync(await open(), await teamStore()))
-  ipcMain.handle('hub:sync', async () => {
+  ipcMain.handle('hub:syncPlan', async (_e, options?: { includeNeverEnabled?: boolean }): Promise<SyncPlan> => planSync(await open(), await teamStore(), { includeNeverEnabled: options?.includeNeverEnabled === true }))
+  ipcMain.handle('hub:sync', async (_e, options?: { includeNeverEnabled?: boolean }) => {
     const lib = await open()
     const team = await teamStore()
     return job('Syncing', async (j, progress) => {
-      const report = await syncWithTeam(lib, team, { cancelled: () => j.cancelled, onProgress: progress, lock: ownFilesLock })
+      const report = await syncWithTeam(lib, team, { cancelled: () => j.cancelled, onProgress: progress, lock: ownFilesLock, includeNeverEnabled: options?.includeNeverEnabled === true })
+      if (report.neverEnabled.count) j.log(notUploadedWords(report.neverEnabled.count, report.neverEnabled.bytes))
       if (report.history.length) send('hub:historyChanged', null)
       await saveSettings({ lastSync: { at: Date.now(), paths: report.remotePaths } })
       return report
@@ -320,7 +321,7 @@ export function registerHub(window: () => BrowserWindow | null): void {
   })
 
   // ---- The robot ----
-  ipcMain.handle('hub:addFromRobot', async (_e, address: string): Promise<RobotResult> => {
+  ipcMain.handle('hub:addFromRobot', async (_e, address: string, options?: { includeNoDriverStation?: boolean }): Promise<RobotResult> => {
     const where = String(address).trim()
     if (!/^[\w.-]+$/.test(where)) throw new Error('That is not a robot address (use 10.TE.AM.2 or roboRIO-TEAM-FRC.local).')
     // One job from the first knock on the robot, so the bar and Stop show while it checks, connects and lists.
@@ -334,11 +335,15 @@ export function registerHub(window: () => BrowserWindow | null): void {
       try {
         step('Listing the logs on the robot (looks twice, 1.5 s apart, to skip one still being written)')
         let listed: Awaited<ReturnType<typeof robotFiles>>
-        try { listed = await robotFiles(fs, { tempRoot: app.getPath('temp'), cancelled: () => j.cancelled }) } catch (e) {
+        // The seen memory tells which hex-named logs are already in the library (they are not counted as skipped).
+        const seen = await openSeen(seenFile())
+        try { listed = await robotFiles(fs, { tempRoot: app.getPath('temp'), cancelled: () => j.cancelled, includeNoDriverStation: options?.includeNoDriverStation === true, seen }) } catch (e) {
           if (e instanceof Stopped) return { refused: 'Stopped: nothing was pulled off the robot.' }
           throw e
         }
-        return { report: await ingestWork(listed.files, j, progress), stillWriting: listed.stillWriting }
+        const skipped = { count: listed.skipped.length, bytes: listed.skipped.reduce((n, f) => n + f.size, 0) }
+        if (skipped.count) j.log(skippedWords(skipped.count, skipped.bytes))
+        return { report: await ingestWork(listed.files, j, progress), stillWriting: listed.stillWriting, skipped }
       } finally { fs.close() }
     })
   })

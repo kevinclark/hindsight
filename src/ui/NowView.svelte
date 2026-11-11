@@ -24,6 +24,7 @@
   import type { HistoryEvent, Triage } from '../triage/history.ts'
   import { eventSessionFor, nowState, stillSession, type NowAction, type NowLink, type Place } from '../now/now.ts'
   import { notReached } from '../hub/robot-reach.ts'
+  import { skippedWords } from '../hub/skip-words.ts'
   import ModeLine from './ModeLine.svelte'
   import NextMatchFields from './NextMatchFields.svelte'
   import SetupCard from './SetupCard.svelte'
@@ -139,14 +140,17 @@
     return `${bits.join(' · ')}.${r.lostLink ? ` ${r.lostLink}` : ''}`
   }
 
-  async function pull() {
+  /** Logs the last pull left on the robot (ADR 15), and the address that answered: "Pull them too" asks that robot again with them included. */
+  let skippedLeft = $state<string | null>(null)
+  async function pull(includeNoDriverStation = false, only?: string) {
     if (!api || busy) return
     failure = null
     note = ''
+    skippedLeft = null
     busy = 'pull'
     pulled = false
     stopPressed = false
-    const addresses = pullAddresses(tbaTeam())
+    const addresses = only ? pullAddresses(tbaTeam()).filter((a) => a.value === only) : pullAddresses(tbaTeam())
     const tried: string[] = []
     let reason = ''
     try {
@@ -154,9 +158,10 @@
       for (const a of addresses) {
         note = `Connecting to the robot over ${a.label} (${a.value})…`
         tried.push(a.label)
-        const r = await api.addFromRobot(a.value)
+        const r = await api.addFromRobot(a.value, includeNoDriverStation ? { includeNoDriverStation } : undefined)
         if ('refused' in r) { reason = r.refused; if (notReached(r.refused) && !stopPressed) continue; break }
-        note = `${reportText(r.report, 'the robot')}${r.stillWriting.length ? ` ${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written: pull again later.` : ''}`
+        note = `${reportText(r.report, 'the robot')}${r.stillWriting.length ? ` ${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written: pull again later.` : ''}${r.skipped.count ? ` ${skippedWords(r.skipped.count, r.skipped.bytes)}` : ''}`
+        if (r.skipped.count) skippedLeft = a.value
         await signal.readLibrary()
         await onAdded()
         return
@@ -249,7 +254,7 @@
       </li>
     {/each}
   </ol>
-  <p class="status" role="status" data-now-note>{busy === 'folder' && !note ? 'Adding logs…' : note}{#if pulled && note && !busy}{' '}<button type="button" class="link" onclick={showLog}>Show log</button>{/if}</p>
+  <p class="status" role="status" data-now-note>{busy === 'folder' && !note ? 'Adding logs…' : note}{#if skippedLeft && !busy}{' '}<button type="button" class="link" data-now-pull-skipped onclick={() => pull(true, skippedLeft!)}>Pull them too</button>{/if}{#if pulled && note && !busy}{' '}<button type="button" class="link" onclick={showLog}>Show log</button>{/if}</p>
   <!-- Only once the app sends progress: before that the folder dialog is open, or nothing has started that Stop could stop. -->
   {#if busy && progress}<JobBar {progress} onStop={stop} />{/if}
 
