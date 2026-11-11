@@ -9,6 +9,7 @@
   import ShareStatusLine from './ShareStatusLine.svelte'
   import { onMount } from 'svelte'
   import { notReached } from '../hub/robot-reach.ts'
+  import { notUploadedWords, skippedWords } from '../hub/skip-words.ts'
   import JobBar from './JobBar.svelte'
   import { size } from './job-bar.ts'
   import { hub, type DriveStatus, type LibrarySnapshot, type Progress, type SyncPlan } from '../hub/bridge.ts'
@@ -72,6 +73,7 @@
     if (!api || progress) return undefined
     problem = null
     pullFailed = null // the last pull's failure is old news once anything else is tried
+    skippedLeft = null
     progress = { job: label, done: 0, total: 0, current: '' }
     stoppable = false
     stoppedNote = null
@@ -110,6 +112,11 @@
     if (p.kind === 'ingest') { const r = await work('Reading Drive folder', () => api!.addFromDrive(p.folder)); if (r) report = r }
     else { const r = await work('Syncing', () => api!.sync()); if (r) syncReport = r }
   }
+  /** The logs the robot was never enabled in, which a sync keeps on this laptop unless asked (ADR 15). */
+  async function uploadHeld() {
+    const r = await work('Syncing', () => api!.sync({ includeNeverEnabled: true }))
+    if (r) syncReport = r
+  }
   async function download() {
     const paths = fetchable.map((r) => r.path)
     const r = await work('Downloading', () => api!.fetchLogs(paths))
@@ -117,16 +124,19 @@
   }
   /** A pull that never reached the robot (not a refusal because it is enabled or on the field): the words a student needs, and the real text kept under them. */
   let pullFailed = $state<{ address: string; detail: string } | null>(null)
-  async function addRobot(address: string = robotAddress) {
+  /** Logs the last pull left on the robot (power-ons with no Driver Station, ADR 15), and where to pull them from. */
+  let skippedLeft = $state<{ address: string; count: number; bytes: number } | null>(null)
+  async function addRobot(address: string = robotAddress, includeNoDriverStation = false) {
     try { localStorage.setItem('hindsight.robotAddress', robotAddress) } catch { /* private window */ }
     pullFailed = null
     // Only a refusal can mean the robot never answered: anything thrown came after the idle check reached it (SFTP, reading), so it keeps its own words.
-    const r = await work('Reading robot', () => api!.addFromRobot(address))
+    const r = await work('Reading robot', () => api!.addFromRobot(address, includeNoDriverStation ? { includeNoDriverStation } : undefined))
     if (!r) return
     // A refusal after Stop is the stop, not a robot that wasn't found.
     if ('refused' in r) { if (stopPressed) { stoppedNote = 'Stopped: nothing was pulled off the robot.'; return } if (notReached(r.refused)) pullFailed = { address, detail: r.refused }; else problem = r.refused }
     else {
       report = r.report
+      if (r.skipped.count) skippedLeft = { address, ...r.skipped }
       if (r.stillWriting.length) problem = `${r.stillWriting.length} file${r.stillWriting.length === 1 ? ' was' : 's were'} skipped as still being written (changed or modified in the last 30 s): ${r.stillWriting.slice(0, 3).join(', ')}${r.stillWriting.length > 3 ? '…' : ''}. Pull logs off the robot again later.`
     }
   }
@@ -414,6 +424,7 @@
 
 {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 {#if stoppedNote}<p class="meta" role="status">{stoppedNote}</p>{/if}
+{#if skippedLeft}<p class="meta" role="status" data-skipped-pull>{skippedWords(skippedLeft.count, skippedLeft.bytes)}{' '}<button type="button" class="link" disabled={!!progress} onclick={() => addRobot(skippedLeft!.address, true)}>Pull them too</button></p>{/if}
 {#if pullFailed}
   <section class="pullfail" role="alert" aria-label="Robot not found">
     <p class="lead">Robot not found. Is the cable in and the robot on?</p>
@@ -489,6 +500,7 @@
     <h2>{syncReport.stopped ? 'Stopped' : 'Synced'}: {syncReport.uploaded.length} uploaded · {syncReport.alreadyThere} already there · {syncReport.failed.length} failed{syncReport.stopped ? ` · ${syncReport.notTried} not tried` : ''}</h2>
     {#if syncReport.stopped}<p class="meta">You stopped the sync. What went up is shared; sync again to send the {syncReport.notTried} log{syncReport.notTried === 1 ? '' : 's'} left.</p>{/if}
     <p class="meta">{syncReport.manifests.length} teammate list{syncReport.manifests.length === 1 ? '' : 's'} brought in{syncReport.unrecorded.length ? ` · ${syncReport.unrecorded.length} file${syncReport.unrecorded.length === 1 ? '' : 's'} in the team folder that no list mentions` : ''}.</p>
+    {#if syncReport.neverEnabled.count}<p class="meta" data-not-uploaded>{notUploadedWords(syncReport.neverEnabled.count, syncReport.neverEnabled.bytes)}{' '}<button type="button" class="link" disabled={!!progress} onclick={uploadHeld}>Upload them too</button></p>{/if}
     {#each syncReport.problems as p (p)}<p class="problem">{p}</p>{/each}
     {#if syncReport.failed.length}<details open><summary>Failed ({syncReport.failed.length})</summary><ul class="rows">{#each syncReport.failed as f (f.path)}<li><code>{f.path}</code> <span class="problem">{f.reason}</span></li>{/each}</ul></details>{/if}
     <button class="link" onclick={() => (syncReport = null)}>Dismiss</button>

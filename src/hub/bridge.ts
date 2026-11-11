@@ -84,7 +84,8 @@ export interface DriveStatus {
 
 export type { SyncPlan }
 
-export type RobotResult = { refused: string } | { report: IngestReport; stillWriting: string[] }
+/** `skipped`: the logs a pull left on the robot (power-ons with no Driver Station, ADR 15); `includeNoDriverStation` on the next pull gets them. */
+export type RobotResult = { refused: string } | { report: IngestReport; stillWriting: string[]; skipped: { count: number; bytes: number } }
 
 export interface HubApi {
   info(): Promise<{ version: string; machineId: string; libraryDir: string }>
@@ -147,11 +148,12 @@ export interface HubApi {
   /** What bringing a Drive folder in would cost, before any file is downloaded. */
   driveIngestPlan(folderIdOrLink: string): Promise<IngestPlan>
   addFromDrive(folderIdOrLink: string): Promise<IngestReport>
-  syncPlan(): Promise<SyncPlan>
-  sync(): Promise<SyncReport>
+  syncPlan(options?: { includeNeverEnabled?: boolean }): Promise<SyncPlan>
+  /** `includeNeverEnabled` uploads the logs the robot was never enabled in too (ADR 15); the report counts the ones kept back. */
+  sync(options?: { includeNeverEnabled?: boolean }): Promise<SyncReport>
   /** Download logs the team has and this computer lacks (library paths). */
   fetchLogs(paths: string[]): Promise<FetchReport>
-  addFromRobot(address: string): Promise<RobotResult>
+  addFromRobot(address: string, options?: { includeNoDriverStation?: boolean }): Promise<RobotResult>
   /** Reveal the job log (`jobs.log`: what each job did, with times) in Finder or Explorer. */
   showJobLog(): Promise<void>
   /** The update chip's state (electron/updater.ts); changes arrive through `onUpdateState`. */

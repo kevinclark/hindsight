@@ -66,3 +66,9 @@ export const mbWords = (n: number) => (n / 2 ** 20).toFixed(1)
 export const secsWords = (ms: number) => `${+(ms / 1000).toFixed(1)} s`
 /** "at 41.2 of 88.0 MB" (or "at 41.2 MB" when the size isn't known). */
 export const atWords = (got: number, size?: number) => `at ${mbWords(got)}${size ? ` of ${mbWords(size)}` : ''} MB`
+
+/** A size for a line of words: "41 MB", "1.4 MB" (decimal megabytes, as the file manager and the robot's USB stick count). */
+export const sizeWords = (bytes: number): string => {
+  const mb = bytes / 1e6
+  return `${mb >= 10 ? Math.round(mb) : Number(mb.toFixed(1))} MB`
+}

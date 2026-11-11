@@ -14,6 +14,8 @@
  * not read back when its md5 is that of what this process last wrote.
  * The triage history (`history/<machine id>.jsonl`) travels the same way, by the same rule, in step 1b: teammates' files
  * down, this machine's up; a copy is replaced only by a longer one that starts with it, anything else is a problem.
+ * A log whose record says the robot was never enabled (`runs.count` 0, ADR 15) is not uploaded unless `includeNeverEnabled`;
+ * since a record is published only once its file is up, teammates simply never hear of it, and the report counts it.
  * Nothing is deleted or overwritten on either side.
  */
 import { createHash } from 'node:crypto'
@@ -24,6 +26,7 @@ import type { LocalLibrary } from './library-store.ts'
 import { fileSource } from './local-adapter.ts'
 import type { LogRecord } from './types.ts'
 import { parseManifest } from './types.ts'
+export { notUploadedWords } from './skip-words.ts'
 
 export interface SyncReport {
   /** Teammates' manifests brought down, with how many records each added. */
@@ -32,6 +35,8 @@ export interface SyncReport {
   failed: { path: string; reason: string }[]
   /** Logs the team store already had. */
   alreadyThere: number
+  /** Logs kept on this machine because the robot was never enabled in them (not counted in `notTried`, not failed). */
+  neverEnabled: { count: number; bytes: number }
   /** Own records now in the team's manifest. */
   published: number
   /** Files in the team's logs/ that no manifest mentions (a manifest write that failed, or files put there by hand). */
@@ -47,6 +52,9 @@ export interface SyncReport {
   stopped: boolean
   notTried: number
 }
+
+/** The robot was never enabled in this log (its record's runs say none; a record with no runs reading is not one). */
+export const neverEnabled = (r: LogRecord): boolean => r.runs?.count === 0
 
 /** The store holds this log: same size, and every checksum it reports agrees (a corrupted upload keeps its size). */
 function isThere(remote: FileInfo | undefined, r: LogRecord): boolean {
@@ -88,14 +96,16 @@ export interface SyncOptions {
   publishEveryMs?: number
   /** Taken around the history step: the same lock the push without a Sync takes (src/hub/live-share.ts), so they never interleave. */
   lock?: { run<T>(work: () => Promise<T>): Promise<T> }
+  /** Upload the logs the robot was never enabled in too (ADR 15). */
+  includeNeverEnabled?: boolean
 }
 
 /** What a sync would send: this machine's logs the team folder lacks, the same test as the sync's own. A log that came from
  * Drive is copied inside Drive (no bytes leave this computer), so it is counted apart from the uploads. */
 export interface SyncPlan { uploads: number; uploadBytes: number; copies: number }
-export async function planSync(lib: LocalLibrary, team: StorageAdapter): Promise<SyncPlan> {
+export async function planSync(lib: LocalLibrary, team: StorageAdapter, options: Pick<SyncOptions, 'includeNeverEnabled'> = {}): Promise<SyncPlan> {
   const remote = new Map((await team.list('logs')).map((f) => [f.path, f]))
-  const todo = lib.catalog.all().filter((r) => r.machine === lib.machine && !isThere(remote.get(r.path), r))
+  const todo = lib.catalog.all().filter((r) => r.machine === lib.machine && !isThere(remote.get(r.path), r) && (options.includeNeverEnabled || !neverEnabled(r)))
   const sent = todo.filter((r) => !(r.sourceId && team.copyInto))
   return { uploads: sent.length, uploadBytes: sent.reduce((n, r) => n + r.size, 0), copies: todo.length - sent.length }
 }
@@ -110,7 +120,7 @@ export async function syncWithTeam(lib: LocalLibrary, team: StorageAdapter, opti
 }
 
 async function syncSteps(lib: LocalLibrary, team: StorageAdapter, options: SyncOptions): Promise<SyncReport> {
-  const report: SyncReport = { manifests: [], history: [], historyPublished: 0, uploaded: [], failed: [], alreadyThere: 0, published: 0, unrecorded: [], problems: [], remotePaths: [], stopped: false, notTried: 0 }
+  const report: SyncReport = { manifests: [], history: [], historyPublished: 0, uploaded: [], failed: [], alreadyThere: 0, neverEnabled: { count: 0, bytes: 0 }, published: 0, unrecorded: [], problems: [], remotePaths: [], stopped: false, notTried: 0 }
   const own = lib.ownManifestPath
   const step = (words: string) => options.onProgress?.(0, 0, '', { step: words })
 
@@ -152,8 +162,11 @@ async function syncSteps(lib: LocalLibrary, team: StorageAdapter, options: SyncO
   // 3. Uploads: this machine's logs the team store lacks.
   const remote = new Map((await team.list('logs')).map((f) => [f.path, f]))
   const mine = lib.catalog.all().filter((r) => r.machine === lib.machine)
-  const todo = mine.filter((r) => !isThere(remote.get(r.path), r)).sort(matchesFirst)
-  report.alreadyThere = mine.length - todo.length
+  const missing = mine.filter((r) => !isThere(remote.get(r.path), r))
+  const held = options.includeNeverEnabled ? [] : missing.filter(neverEnabled)
+  const todo = missing.filter((r) => !held.includes(r)).sort(matchesFirst)
+  report.alreadyThere = mine.length - missing.length
+  report.neverEnabled = { count: held.length, bytes: held.reduce((n, r) => n + r.size, 0) }
   // Publishing: each publish appends the newly eligible lines to what was last published, never a recomputed order
   // (an adapter checks the old content is the start of the new, so a line slipped in between would be a ManifestConflict).
   const publishedLines = [...remoteLines]
