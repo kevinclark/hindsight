@@ -586,10 +586,12 @@
     <table>
       <thead>
         <tr>
-          <th scope="col">Time</th><th scope="col">Log file</th><th scope="col">Log type</th><th scope="col">Event or place</th><th scope="col">Battery</th><th scope="col">Robot</th><th scope="col">Driver</th><th scope="col" class="num">Size</th><th scope="col" title="A cloud mark means the log is not on this computer">Local</th><th scope="col"><span class="sr">Details</span></th>
+          <th scope="col">Time</th><th scope="col">Log file</th><th scope="col">Log type</th><th scope="col">Place</th><th scope="col">Battery</th><th scope="col">Robot</th><th scope="col" class="num">Size</th><th scope="col" title="A cloud mark means the log is not on this computer">Local</th><th scope="col"><span class="sr">Details</span></th><th scope="col">Driver</th>
         </tr>
       </thead>
     {#each days as [day, rows] (day)}
+      {@const dayHead = day === 'No date' ? null : dayHeader(wholeDays.get(day) ?? rows)}
+      {@const sameAsDay = (place: string) => !!dayHead && 'fixed' in dayHead && dayHead.fixed === place}
       <tbody>
       <tr class="dayrow"><td colspan="10">
       <div class="day">
@@ -615,9 +617,9 @@
                 <td></td>
                 <td></td>
                 <td></td>
-                <td></td>
                 <td class="num">{size(e.record.size)}</td>
                 <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
+                <td></td>
                 <td></td>
               </tr>
               {#if hootBusy === path || hootAsk[path] || hootWords[path]}
@@ -642,13 +644,13 @@
               <td class="time">{clock(e.record.playedAt)}</td>
               <td class="name">{#if e.local}<button class="link open" title={`Open ${e.record.path} in Match review`} onclick={() => openMatch(e)}><code>{baseName(e.record.path)}</code></button>{:else}<code title={e.record.path}>{baseName(e.record.path)}</code>{/if}</td>
               <td class="kind">{logTypeWords(e.record)}</td>
-              <td class="place" title={fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''}>{fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''}</td>
+              <td class="place" title={fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''}>{sameAsDay(fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? '') ? '' : fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
-              <td class="robotcell">{v.robot === 'Unknown robot' ? '' : v.robot}{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}{#if code}<span class="meta">{' · '}<a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}</td>
-              <td><input class="driver" aria-label="Driver for this log" value={e.tags.driver ?? ''} placeholder="driver" onchange={(ev) => tag({ log: e.record.sha256 }, 'driver', typed(ev))} /></td>
+              <td class="robotcell" title={v.robot === 'Unknown robot' ? '' : v.robot}>{v.robot === 'Unknown robot' ? '' : v.robot}{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}{#if code}<span class="meta">{' · '}<a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}</td>
               <td class="num">{size(e.record.size)}</td>
               <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
               <td><button class="link" aria-expanded={!!expanded[e.record.sha256]} onclick={() => (expanded[e.record.sha256] = !expanded[e.record.sha256])}>{expanded[e.record.sha256] ? 'less' : 'more'}</button></td>
+              <td><input class="driver" aria-label="Driver for this log" value={e.tags.driver ?? ''} placeholder="driver" onchange={(ev) => tag({ log: e.record.sha256 }, 'driver', typed(ev))} /></td>
             </tr>
             {#if expanded[e.record.sha256]}
               <tr class="more"><td></td><td colspan="9">
@@ -752,7 +754,8 @@
   .time, .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .num { text-align: right; }
   .kind, .robotcell { white-space: nowrap; }
-  .place { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .robotcell { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
+  .place { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name { max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .open { padding: 0; color: var(--fg); text-decoration-color: var(--border); }
   .open:hover { text-decoration-color: currentColor; }
