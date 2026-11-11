@@ -7,7 +7,7 @@ import { hootName, nameInstant } from '../src/hub/dates.ts'
 import { seasonOf } from '../src/hub/season.ts'
 import { describeLog } from '../src/hub/describe.ts'
 import { Catalog, filesToFetch } from '../src/hub/catalog.ts'
-import { countLabel, facetCounts, facetValues, filterEntries, robotLabels } from '../src/hub/facets.ts'
+import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, robotLabels } from '../src/hub/facets.ts'
 import { kindOf, parseManifest, serializeRecord, type LogRecord, type TagRecord } from '../src/hub/types.ts'
 import { robotLog } from './helpers/hub-logs.ts'
 
@@ -136,9 +136,9 @@ describe('tags and facets', () => {
   it('computes the seven facets; a typed battery or robot replaces the logged one; the field names the event', () => {
     const c = catalog([tag({ log: 'a2' }, 'battery', 'B77', 1), tag({ day }, 'place', 'Shop', 1), tag({ log: 'a2' }, 'robot', 'Practice bot', 1)])
     const v = Object.fromEntries(c.entries().map((e) => [e.record.sha256, facetValues(e, robotLabels(c.entries()))]))
-    expect(v.a1).toEqual({ schoolYear: '2026-2027', season: 'Off-season', place: 'TEST', matchType: 'Qualification', battery: 'B01', robot: 'Robot A', driver: 'No driver' })
-    expect(v.a2).toMatchObject({ place: 'Shop', matchType: 'Not a match', battery: 'B77', robot: 'Practice bot' })
-    expect(v.a3).toMatchObject({ schoolYear: '2026-2027', season: 'Season', matchType: 'Elimination' })
+    expect(v.a1).toEqual({ schoolYear: '2026-2027', season: 'Off-season', place: 'TEST', logType: 'Qualification', battery: 'B01', robot: 'Robot A', driver: 'No driver' })
+    expect(v.a2).toMatchObject({ place: 'Shop', logType: 'Off the field (not read)', battery: 'B77', robot: 'Practice bot' })
+    expect(v.a3).toMatchObject({ schoolYear: '2026-2027', season: 'Season', logType: 'Elimination' })
     expect(v.a4).toMatchObject({ schoolYear: 'No date', season: 'No date' })
   })
 
@@ -207,17 +207,28 @@ describe('tags and facets', () => {
     const entries = catalog().entries()
     const names = (sel: Parameters<typeof filterEntries>[1]) => filterEntries(entries, sel, robotLabels(entries)).map((e) => e.record.sha256).sort()
     expect(names({})).toEqual(['a1', 'a2', 'a3', 'a4'])
-    expect(names({ matchType: ['Qualification', 'Elimination'] })).toEqual(['a1', 'a3'])
-    expect(names({ matchType: ['Qualification', 'Elimination'], season: ['Season'] })).toEqual(['a3'])
+    expect(names({ logType: ['Qualification', 'Elimination'] })).toEqual(['a1', 'a3'])
+    expect(names({ logType: ['Qualification', 'Elimination'], season: ['Season'] })).toEqual(['a3'])
     expect(names({ robot: ['Robot A'], battery: ['B01', 'No battery'] })).toEqual(['a1', 'a2', 'a4'])
     expect(names({ schoolYear: ['No date'] })).toEqual(['a4'])
     expect(names({ driver: ['Nobody'] })).toEqual([])
   })
 
+  it('names every log by its type: match types on the field, on-check / not enabled / not read off it', () => {
+    const l = (sha256: string, over: Partial<LogRecord>) => log({ sha256, ...over })
+    const entries = Catalog.from([[
+      l('t1', { onField: true, matchType: 1, matchNumber: 1 }), l('t2', { onField: true, matchType: 2, matchNumber: 1 }), l('t3', { onField: true, matchType: 3, matchNumber: 1 }),
+      l('t4', { onField: true }), l('t5', { runs: { count: 1, seconds: [34] } }), l('t6', { runs: { count: 1, seconds: [0.3] } }), l('t7', {}),
+    ].map(serializeRecord).join('')]).entries()
+    const types = Object.fromEntries(entries.map((e) => [e.record.sha256, facetValues(e, robotLabels(entries)).logType]))
+    expect(types).toEqual({ t1: 'Practice match', t2: 'Qualification', t3: 'Elimination', t4: 'Not a match', t5: 'On-check', t6: 'Not enabled', t7: 'Off the field (not read)' })
+    expect(FACET_LABELS.logType).toBe('Log type')
+    expect(FACETS).not.toContain('matchType')
+  })
   it('counts a facet without its own picks, and keeps a picked value at zero', () => {
     const entries = catalog().entries()
-    const counts = facetCounts(entries, { matchType: ['Qualification'], robot: ['Robot B'] }, robotLabels(entries))
-    expect(Object.fromEntries(counts.matchType)).toEqual({ Elimination: 1, Qualification: 0 }) // robot B narrows it; Qualification stays listed
+    const counts = facetCounts(entries, { logType: ['Qualification'], robot: ['Robot B'] }, robotLabels(entries))
+    expect(Object.fromEntries(counts.logType)).toEqual({ Elimination: 1, Qualification: 0 }) // robot B narrows it; Qualification stays listed
     expect(Object.fromEntries(counts.robot)).toEqual({ 'Robot A': 1, 'Robot B': 0 })
   })
   it('lists events and practice places by when the team first logged there, oldest first, with no place last', () => {

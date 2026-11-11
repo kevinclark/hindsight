@@ -9,6 +9,7 @@ import { serializeRecord, type LogRecord } from './hub/types.ts'
 import { installPhoneOver } from './phone.ts'
 import fixture from '../fixtures/phone/event.json'
 import brownout from '../fixtures/brownout.json'
+import library from '../fixtures/phone/library.json'
 // Dev only (this file is imported only by the dev server and the fixture build): the test writer builds the log's bytes.
 import { writeWpilog, type Fixture } from '../tests/helpers/fixture-format.ts'
 
@@ -37,15 +38,31 @@ const shiftToToday = (): number => {
   return new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9).getTime() - START
 }
 
-/** The Library's manifest line for Q1 (what a laptop's manifests/ holds), played when its summary says. */
-async function q1Manifest(shift: number): Promise<string> {
-  const at = START + shift
-  const record = {
-    type: 'log', kind: 'wpilog', sha256: await sha256Hex(Q1.bytes), size: Q1.bytes.length, path: Q1.path, names: [Q1.name], modifiedTime: null,
-    from: 'folder', recordedAt: at + 150_000, machine: 'laptop-a', playedAt: at, dateSource: 'robot', wall: { start: at, end: at + 150_000 },
-    matchWindow: { start: at, end: at + 150_000 }, event: 'TEST', matchType: 2, matchNumber: 1, onField: true, batteryId: null, roboRio: null, edition: null, robot: null,
-  } as unknown as LogRecord
-  return serializeRecord(record)
+interface LibraryRow { day: number; minute: number; onField: boolean; matchType: number; matchNumber: number | null; event: boolean; wallSeconds: number; mb: number; runs?: number[] }
+
+/**
+ * The Library's manifest (what a laptop's manifests/ holds): fixtures/phone/library.json's rows, the shape of a real
+ * three-day event (matches with off-the-field logs between them), its last day moved to today. The first Q1 row is the
+ * one log the fixture can download (Q1's bytes, name and size, so its summary finds it); the rest have invented bytes.
+ */
+async function libraryManifest(shift: number): Promise<string> {
+  const lastDay = Math.max(...(library.rows as LibraryRow[]).map((r) => r.day))
+  let q1Taken = false
+  const lines = await Promise.all((library.rows as LibraryRow[]).map(async (r, i) => {
+    const at = START + shift + (r.day - lastDay) * 86_400_000 + (r.minute - 9 * 60) * 60_000
+    const isQ1 = !q1Taken && r.matchType === 2 && r.matchNumber === 1 && (q1Taken = true)
+    const name = isQ1 ? Q1.name : `test_${String(i + 1).padStart(2, '0')}.wpilog`
+    const day = new Date(at).toISOString().slice(0, 10)
+    const record = {
+      type: 'log', kind: 'wpilog', sha256: isQ1 ? await sha256Hex(Q1.bytes) : (i + 100).toString(16).padStart(64, '0'), size: isQ1 ? Q1.bytes.length : r.mb * 2 ** 20,
+      path: isQ1 ? Q1.path : `logs/2098-2099/${day}/${name}`, names: [name], modifiedTime: null, from: 'folder', recordedAt: at + r.wallSeconds * 1000, machine: 'laptop-a',
+      playedAt: at, dateSource: 'robot', wall: { start: at, end: at + r.wallSeconds * 1000 }, matchWindow: r.onField ? { start: at, end: at + 150_000 } : null,
+      event: r.event ? 'TEST' : '', matchType: r.matchType, matchNumber: r.matchNumber, onField: r.onField, batteryId: null, roboRio: null, edition: null, robot: null,
+      ...(r.runs ? { runs: { count: r.runs.length, seconds: r.runs } } : {}),
+    } as unknown as LogRecord
+    return serializeRecord(record)
+  }))
+  return lines.join('')
 }
 
 /** The invented event moved to today, with Q1's summary naming the size of the log the fixture can download. */
@@ -78,5 +95,5 @@ const media = {
 export async function installFixture(): Promise<void> {
   const shift = shiftToToday()
   const files = movedToToday((fixture as { files: Record<string, string> }).files, shift)
-  installPhoneOver(textStore({ ...files, 'manifests/laptop-a.jsonl': await q1Manifest(shift) }), media)
+  installPhoneOver(textStore({ ...files, 'manifests/laptop-a.jsonl': await libraryManifest(shift) }), media)
 }
