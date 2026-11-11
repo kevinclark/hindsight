@@ -239,3 +239,4 @@ npx vitest run tests/companion-keys.test.ts               # the key list, Hindsi
   exits 0 after an exception.
 - Fixtures in `tests/simrun.test.ts` are made-up harness lines. Runs against real robot code are 8033's backtest, not
   CI: Phoenix sim runs in real time.
+- The dev phone fixture (`?phone-fixture`, src/phone-fixture.ts) holds one log: Q1, a wpilog built from fixtures/brownout.json at load, with a manifest line and a `media` that serves it (~1.2 s fake download). Drive the phone's open paths (Library, Match review's Full review, kept-log auto-open, Stop) there in a browser at phone size. Its heading reads "Qualification 3" and "unnamed robot": that is the fixture's log, not a bug.
