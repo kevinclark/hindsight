@@ -4,7 +4,8 @@
  * the schedule and `now` come in; nothing is read from the page, the clock or the network.
  *
  * An issue is a finding's key, on the robot of the latest log it fired in (`boardKey`). Issues whose latest sighting one parent
- * (src/rules/parents.ts) explains in the same log are shown and counted as one group row; each stays its own issue underneath. What the team did about it is board
+ * (src/rules/parents.ts) explains in the same log are shown and counted as one group row; each stays its own issue underneath.
+ * One cut is one row, whether or not some of its issues came back after a fix. What the team did about it is board
  * lines in the history (priority, status, deferral, workaround, owner, notes, queue ticks). "Closed" is never stored: it is
  * derived, after a fix (a `check` status line, or a fixed mark) from a later match of the same robot where the rule could be
  * checked and the issue did not fire. Firing again after a fix is "came back after a fix" and reopens it.
@@ -134,6 +135,8 @@ export interface BoardGroup {
   others: number
   /** "and 5 robot-code alerts about them", or "" when there are none. */
   also: string
+  /** How many members came back after a fix (the row says "4 of 6 came back after a fix"). */
+  cameBack: number
   /** The open members disagree on owner, status (deferred counts as one) or priority (the row says "mixed"; a save on the group writes the field to each). */
   mixed: { owner: boolean; status: boolean; priority: boolean }
 }
@@ -585,15 +588,15 @@ function parentOf(f: SummaryFinding, m: MatchSummary, seen = new Set<SummaryFind
 }
 
 /**
- * The group rows: issues whose latest sighting one parent explains in the same log, at least two of them. A member that came back
- * after a fix stays its own row (as the Match tab keeps it a headline), and one explained through another finding joins only when
- * that finding's issue is a member too (its own latest sighting is the same log).
+ * The group rows: issues whose latest sighting one parent explains in the same log, at least two of them: one row per cut (Kevin,
+ * 2026-11-11), whether or not some of them came back after a fix (the row says how many did, and each member's own screen says
+ * which). One explained through another finding joins only when that finding's issue is a member too.
  */
 function groupRows(issues: BoardIssue[], lastFire: Map<string, Fired>, tl: Timeline, labels: string[]): BoardIssue[] {
   const by = new Map<string, { parent: string; members: BoardIssue[]; via: Map<string, string> }>()
   for (const i of issues) {
     const last = lastFire.get(i.key)
-    if (!last || i.cameBack) continue
+    if (!last) continue
     const p = parentOf(last.f, last.m)
     if (!p) continue
     const id = `${last.m.fileName}|${p.rule}|${p.time}`
@@ -604,7 +607,7 @@ function groupRows(issues: BoardIssue[], lastFire: Map<string, Fired>, tl: Timel
   }
   const out: BoardIssue[] = []
   for (const g of by.values()) {
-    // Through a finding whose issue is not a member (its latest sighting is elsewhere, or it came back): not this event's. Repeated
+    // Through a finding whose issue is not a member (its latest sighting is elsewhere): not this event's. Repeated
     // until nothing more leaves, so a chain through a member that left leaves too.
     let members = g.members
     for (let n = -1; n !== members.length;) {
@@ -656,11 +659,12 @@ function groupRow(parent: (typeof PARENTS)[number], all: BoardIssue[], lastFire:
   const lastChange = members.map((m) => m.lastChange).filter((c): c is NonNullable<typeof c> => !!c).sort((a, b) => b.when.localeCompare(a.when))[0] ?? null
   const cls: RowClass = deferral && !deferral.expired ? (due.pos <= tl.nextPos ? 'due' : 'later') : grey ? 'grey' : isNew ? 'new' : 'carried'
   return {
-    key: `group · ${parent.id} · ${at.m.fileName} · ${at.f.explainedBy?.time ?? lead.key}`, rule: parent.id, about: null, robot: lead.robot,
+    // Named by its first device: an issue is in one group at most, and the key survives any write to the group.
+    key: `group · ${parent.id} · ${at.m.fileName} · ${lead.key}`, rule: parent.id, about: null, robot: lead.robot,
     ruleTitle: parent.title, title: head, mechanism: familyOf(parent.over), byProfile: false,
     severity: members.reduce<Finding['severity']>((s, m) => (SEV[m.severity] < SEV[s] ? m.severity : s), 'info'),
     priority, prioritySet: act.some((m) => m.prioritySet), status, asked, owner: owners.size === 1 ? [...owners][0] : null,
-    cameBack: false, closedAt, deferral, due, open: open.length > 0, cls, grey, unchanged, sinceSeen: open.length ? Math.min(...open.map((m) => m.sinceSeen)) : lead.sinceSeen,
+    cameBack: members.some((m) => m.cameBack), closedAt, deferral, due, open: open.length > 0, cls, grey, unchanged, sinceSeen: open.length ? Math.min(...open.map((m) => m.sinceSeen)) : lead.sinceSeen,
     awaitingClean, seenIn: { n: firedIn.length, of: Math.max(...members.map((m) => m.seenIn.of)), pit: Math.max(...members.map((m) => m.seenIn.pit)) },
     greyAsk: grey ? `Not seen for ${unchanged} matches: close it, or give it an owner?` : null, isNew, firedIn,
     firstSeen: Math.min(...members.map((m) => m.firstSeen)), lastSeen: Math.max(...members.map((m) => m.lastSeen)), sightings: lead.sightings,
@@ -669,7 +673,7 @@ function groupRow(parent: (typeof PARENTS)[number], all: BoardIssue[], lastFire:
     group: {
       parent: parent.id, head, where: [at.label, compactWhen(at.f.when)].filter(Boolean).join(' '), meaning: parent.meaning,
       members, open, devices: deviceRows.length, others, also: others ? `and ${others} ${otherWord}${others === 1 ? '' : 's'} about them` : '',
-      mixed: { owner: owners.size > 1, status: statuses.size > 1, priority: priorities.size > 1 },
+      mixed: { owner: owners.size > 1, status: statuses.size > 1, priority: priorities.size > 1 }, cameBack: members.filter((m) => m.cameBack).length,
     },
   }
 }

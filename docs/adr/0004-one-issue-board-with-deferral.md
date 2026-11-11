@@ -29,8 +29,9 @@ fix everything at once.
 - One event, one row (amended 2026-11-11): issues whose latest sighting one parent (src/rules/parents.ts) explains in
   the same log, directly or through another of them, are one group row, counted once everywhere a count is drawn. Each
   stays its own issue with its own history; a change on the group (owner, status, priority, deferral, ticks) is one
-  board line per open member. Notes and cause marks stay per member. A member that came back after a fix, or whose
-  latest real sighting is elsewhere, is its own row.
+  board line per open member. Notes and cause marks stay per member. One cut is one row (Kevin, 2026-11-11), whether
+  or not some of its issues came back after a fix: the row says how many came back ("4 of 6 issues came back after a fix")
+  and each member's own row says which. An issue whose latest real sighting is elsewhere is its own row.
 
 ## Why
 

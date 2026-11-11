@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { boardCounts, buildBoard, groupWords, isGate, isRed, RED_CAP, type Board, type BoardIssue } from '../src/board/model.ts'
 import { handoff, queueSheet } from '../src/board/sheets.ts'
 import { boardLines, fieldChanges, greyTake } from '../src/board/writes.ts'
-import { ownerText, rowTitle, statusLine } from '../src/board/words.ts'
+import { ownerText, rowTitle, statusLine, tags } from '../src/board/words.ts'
 import { redsDueBefore, stillOf } from '../src/now/now.ts'
 import { openDeferrals, queueChecklist } from '../src/foresight/checklists.ts'
 import type { BoardEvent, HistoryEvent } from '../src/triage/history.ts'
@@ -374,12 +374,59 @@ describe('7 and 8: which sighting decides', () => {
     const shown = b.rows.flatMap((i) => (i.group ? i.group.members.map((m) => m.key) : [i.key]))
     expect(new Set(shown).size).toBe(shown.length)
   })
-  it('a member that came back after a fix stays its own row', () => {
+  it('a group fixed as a group whose cut comes back stays one group, tagged as come back (Kevin, 2026-11-11)', () => {
+    const s1 = session([plain(2), clusterMatch(3, { drops: 4, direct: 1 })])
+    const g = one(buildBoard(input(s1, [], SCHEDULE)))
+    const fix = boardLines([], { device: 'dev-a', role: 'pit' }, new Date(iso(65)), g, [{ op: 'status', value: 'check' }], { event: 'TEST', match: 'TEST Qualification 3', played: iso(60) })
+    const b = buildBoard(input(session([...s1.matches, clusterMatch(4, { drops: 4, direct: 1, t: 300 })]), fix, SCHEDULE))
+    const back = one(b)
+    expect(back.group!.members).toHaveLength(5)
+    expect(back.cameBack).toBe(true)
+    expect(tags(back)).toContain('Came back after a fix')
+    expect(rowTitle(back)).toMatch(/· Q4 /)
+    expect(b.rows).toHaveLength(1)
+  })
+  it('a came-back group keeps its key and its members through a status change, on the group or on one member', () => {
+    const s1 = session([plain(2), clusterMatch(3, { drops: 4 })])
+    const g = one(buildBoard(input(s1, [], SCHEDULE)))
+    const at = { event: 'TEST', match: 'TEST Qualification 3', played: iso(60) }
+    const fix = boardLines([], { device: 'dev-a', role: 'pit' }, new Date(iso(65)), g, [{ op: 'status', value: 'check' }], at)
+    const s2 = session([...s1.matches, clusterMatch(4, { drops: 4, t: 300 })])
+    const back = one(buildBoard(input(s2, fix, SCHEDULE)))
+    const at4 = { event: 'TEST', match: 'TEST Qualification 4', played: iso(80) }
+    const fixing = boardLines(fix, { device: 'dev-a', role: 'pit' }, new Date(iso(85)), back, [{ op: 'status', value: 'fixing' }], at4)
+    const after = one(buildBoard(input(s2, [...fix, ...fixing], SCHEDULE)))
+    expect(after.key).toBe(back.key)
+    expect(after.group!.members).toHaveLength(4)
+    const oneMember = boardLines(fix, { device: 'dev-a', role: 'pit' }, new Date(iso(85)), back.group!.open[0], [{ op: 'status', value: 'fixing' }], at4)
+    const b3 = buildBoard(input(s2, [...fix, ...oneMember], SCHEDULE))
+    expect(one(b3).group!.members).toHaveLength(4)
+    expect(statusLine(one(b3))).toBe('Mixed: 3 Open, 1 Fixing')
+    expect(b3.rows).toHaveLength(1)
+  })
+  it('one cut is one row when only some of it came back after a fix, saying how many (Kevin, 2026-11-11)', () => {
+    const fixed = [1, 2].map((n) => bl(`${DROP} · ${dev(n)}`, 'status', 'check', iso(30), { match: 'TEST Qualification 2', played: iso(40) }))
+    const b = buildBoard(input(session([plain(2), clusterMatch(3, { drops: 4 })]), fixed, SCHEDULE))
+    const g = one(b)
+    expect(g.group!.members).toHaveLength(4)
+    expect(g.group!.cameBack).toBe(2)
+    expect(tags(g)).toContain('2 of 4 issues came back after a fix')
+    expect(b.rows).toHaveLength(1)
+  })
+  it('a lone device whose fix did not hold is in its cut\'s row, and its own row says it came back', () => {
     const fixed = [bl(`${DROP} · ${dev(1)}`, 'status', 'check', iso(30), { match: 'TEST Qualification 2', played: iso(40) })]
-    const s = session([plain(2), clusterMatch(3, { drops: 4 })])
-    const b = buildBoard(input(s, fixed, SCHEDULE))
-    const back = b.rows.find((i) => i.key === `${DROP} · ${dev(1)}`)
-    expect(back?.cameBack).toBe(true)
-    expect(one(b).group!.members).toHaveLength(3)
+    const b = buildBoard(input(session([plain(2), clusterMatch(3, { drops: 4 })]), fixed, SCHEDULE))
+    const g = one(b)
+    expect(tags(g)).toContain('1 of 4 issues came back after a fix')
+    expect(tags(g.group!.members.find((m) => m.key === `${DROP} · ${dev(1)}`)!)).toContain('Came back after a fix')
+    expect(b.rows).toHaveLength(1)
+  })
+  it('a group fixed as a group whose cut comes back bigger is one row: "4 of 6 came back after a fix"', () => {
+    const s1 = session([plain(2), clusterMatch(3, { drops: 4 })])
+    const fix = boardLines([], { device: 'dev-a', role: 'pit' }, new Date(iso(65)), one(buildBoard(input(s1, [], SCHEDULE))), [{ op: 'status', value: 'check' }], { event: 'TEST', match: 'TEST Qualification 3', played: iso(60) })
+    const b = buildBoard(input(session([...s1.matches, clusterMatch(4, { drops: 6, t: 300 })]), fix, SCHEDULE))
+    expect(b.rows).toHaveLength(1)
+    expect(rowTitle(one(b))).toMatch(/^6 CAN devices dropped/)
+    expect(tags(one(b))).toContain('4 of 6 issues came back after a fix')
   })
 })

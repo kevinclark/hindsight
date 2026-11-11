@@ -35,7 +35,7 @@ export const devicesText = (n: number): string => `${n} device${n === 1 ? '' : '
 /** Short tags beside a row. */
 export function tags(i: BoardIssue): string[] {
   return [
-    ...(i.cameBack ? ['Came back after a fix'] : []),
+    ...(i.group?.cameBack && i.group.cameBack < i.group.members.length ? [`${i.group.cameBack} of ${i.group.members.length} issues came back after a fix`] : i.cameBack ? ['Came back after a fix'] : []),
     ...(i.deferral?.expired ? ['Deferral ended'] : []),
     ...(i.isNew ? ['New'] : []),
     ...(i.lastChange?.role === 'mentor' ? ['Last change by mentor'] : []),
