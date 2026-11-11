@@ -9,6 +9,7 @@
  */
 import type { WpilogFile } from '../readers/wpilog.ts'
 import type { CodeHints } from './code-hints.ts'
+import type { DeviceSetting, ReadField } from '../code/check/device-settings.ts'
 import { placeInLog, type CodeMotor, type PlacedCurrent } from './code-motors.ts'
 import { allMotors } from './draft.ts'
 import type { GroupJson, MotorJson, ProfileJson } from './json.ts'
@@ -101,12 +102,25 @@ function regroup(json: ProfileJson, codeOf: Map<MotorJson, CodeMotor>): void {
 function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: CodeHints): CurrentLimits | string {
   const each = g.motors.map((m) => {
     const c = codeOf.get(m)
-    return c && c.id !== null ? hints.settings.filter((s) => s.kind === 'TalonFX' && s.id === c.id && s.bus === c.bus && /Current/.test(s.field)) : null
+    return c && c.id !== null ? currentSettings(hints, c.id, c.bus) : null
   })
   if (each.some((s) => !s)) return 'the builder couldn\'t tell which motor in the code each one is, or its CAN ID'
-  if (each.some((s) => s!.length === 0)) return 'the code sets no current limits on it that the builder can read'
+  return agreedLimits(each as DeviceSetting<ReadField>[][])
+}
+
+/** The current-limit settings the code applies to the Talon FX with this CAN ID (on this bus, when it says which). */
+export function currentSettings(hints: CodeHints, id: number, bus?: string | null): DeviceSetting<ReadField>[] {
+  return hints.settings.filter((s) => s.kind === 'TalonFX' && s.id === id && (bus === undefined || s.bus === bus) && /Current/.test(s.field))
+}
+
+/**
+ * The limits the code gives every motor of a group, one list of settings per motor, when they all agree; otherwise why
+ * it gives none. Shared by the builder's draft and by power/limit-not-applied (the limits a log's own commit sets).
+ */
+export function agreedLimits(each: DeviceSetting<ReadField>[][]): CurrentLimits | string {
+  if (each.some((s) => s.length === 0)) return 'the code sets no current limits on it that the builder can read'
   const value = (f: string) => {
-    const values = each.map((s) => [...new Set(s!.filter((x) => x.field === f).map((x) => x.value))])
+    const values = each.map((s) => [...new Set(s.filter((x) => x.field === f).map((x) => x.value))])
     return values.every((v) => v.length === 1 && v[0] === values[0][0]) ? values[0][0] : values.every((v) => v.length === 0) ? undefined : null
   }
   const fields = {
@@ -115,11 +129,11 @@ function limitsFromCode(g: GroupJson, codeOf: Map<MotorJson, CodeMotor>, hints: 
   }
   if (Object.values(fields).includes(null)) {
     // One motor's CAN ID given two values of one field (another robot version's subsystem, say), or motors that differ.
-    const twoValues = each.some((s) => new Set(s!.map((x) => x.field)).size < new Set(s!.map((x) => `${x.field}=${x.value}`)).size)
+    const twoValues = each.some((s) => new Set(s.map((x) => x.field)).size < new Set(s.map((x) => `${x.field}=${x.value}`)).size)
     return twoValues ? 'the code sets different limits for its CAN ID in different places' : 'the code gives its motors different limits'
   }
-  const where = lines(each.flat().map((s) => s!.where))
-  const supplyLines = lines(each.flat().filter((s) => s!.field.startsWith('Supply')).map((s) => s!.where))
+  const where = lines(each.flat().map((s) => s.where))
+  const supplyLines = lines(each.flat().filter((s) => s.field.startsWith('Supply')).map((s) => s.where))
   return {
     ...(fields.supplyA !== undefined ? { supplyA: fields.supplyA as number } : {}),
     ...(fields.supplyEnabled !== undefined ? { supplyEnabled: fields.supplyEnabled as boolean } : {}),

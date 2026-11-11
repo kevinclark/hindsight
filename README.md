@@ -147,16 +147,21 @@ had different limits.
 
 **Choose code folder…** (Match review and Session view) takes your clone of the robot code. For a log that ran another
 commit than its profile's, power/limit-not-applied then reads each motor group's limit file at both commits straight
-from `.git` and compares the lines that mention `CurrentLimit` (as `git diff -G'CurrentLimit'` would; values are never
-parsed). The same lines: the log counts as the profile's code (a limit switched off in code is amber). Different: it
-stays red, and the evidence lists the lines. Can't tell (a shallow clone, a commit you haven't fetched, a worktree's
-`.git` file): red, with the reason. Without a folder nothing changes. Only the `.git` files needed are read; nothing is
-changed or uploaded. Chrome and Edge remember the folder between visits (a click allows it again); other browsers ask
-each visit. Each answer is kept per (repo, profile commit, log commit, files): in this browser, and for the scripts in
-`~/.cache/hindsight/limit-lines.json` (`scripts/golden.ts` and `scripts/report.ts` take `--code <folder>`). Only the
-lines in the files a group's `where` names are compared: a limit set through a name defined in another file
-(`= Constants.KICKER_LIMIT`) isn't followed, so a change there reads as "the same" (every CurrentLimit line in the
-2026 competition code is a literal).
+from `.git` and compares the lines that mention `CurrentLimit` (as `git diff -G'CurrentLimit'` would; the comparison
+itself never parses values). The same lines: the log counts as the profile's code (a limit switched off in code is
+amber). Different lines: Hindsight reads the limits the log's own commit sets (the profile builder's code model, the
+Talon FX matched by CAN ID, all of a group's motors must agree) and judges the log against them: switched off is amber,
+switched on and still exceeded is red, and the finding names the commit. Can't tell (a shallow clone, a commit you
+haven't fetched, a limit the code model can't read): amber, "the limit this build set is unknown", with the reason in
+the evidence. Without a folder, a log that ran another commit than the profile's is amber the same way, and the next
+step asks you to link the code. Only the `.git` files needed are read; nothing is changed or uploaded. Chrome and Edge
+remember the folder between visits (a click allows it again); other browsers ask each visit. Each answer is kept per
+(repo, profile commit, log commit, files, CAN IDs): in this browser, and for the scripts in
+`~/.cache/hindsight/limit-lines.json` (`scripts/golden.ts` and `scripts/report.ts` take `--code <folder>`). An answer
+whose limits couldn't be read isn't kept, so choosing a fuller clone reads it again. Only the lines in the files a
+group's `where` names are compared: a limit set through a name defined in another file (`= Constants.KICKER_LIMIT`)
+isn't followed, so a change there reads as "the same" (every CurrentLimit line in the 2026 competition code is a
+literal).
 
 **Use GitHub…** (beside it, and in Robot profile) reads the same code from a public GitHub repo instead of a folder:
 type `owner/repo@branch` (pre-filled from the robot profile's repo). The comparison still reads the profile's pinned
@@ -164,9 +169,11 @@ commit and each log's own commit; the branch only says where Robot profile start
 in and no token is sent, so a private repo answers "no public repo" and the folder is the way. GitHub allows **60
 lookups an hour per network** without signing in, and a venue's Wi-Fi may share them: each commit costs about one (its
 file list, kept in this browser by commit, so a second visit costs none), a branch name one more; file text comes from
-`raw.githubusercontent.com` and doesn't count. The 8 logs of one 2026 event took 9 lookups the first time, 0 after. When the
-hour's lookups are used up, or the laptop is offline, the finding says so (with the time it resets) and stays red: choose
-the folder. If the hourly limit ever runs out in real use, the planned fix is to read each commit's file list from
+`raw.githubusercontent.com` and doesn't count. The 8 logs of one 2026 event took 9 lookups the first time, 0 after.
+Reading the limits a log's commit sets costs, per new commit whose limit lines differ, one raw request per Java file
+(measured: about 47 files, 264 KB) and no extra lookups; the code read is kept in memory for the session, the limits found with the answer. When the
+hour's lookups are used up, or the laptop is offline, the finding says so (with the time it resets) and is amber with
+the limit unknown: choose the folder. If the hourly limit ever runs out in real use, the planned fix is to read each commit's file list from
 jsDelivr (`data.jsdelivr.com/v1/packages/gh/owner/repo@<full sha>?structure=flat`, which allows `file://` pages and
 listed the same 84 files at cb68b20 on 2026-10-20), leaving GitHub's API only to turn a branch name into a commit.
 jsDelivr can't resolve a branch and may serve a branch's files stale, so it would only ever be asked for full commit

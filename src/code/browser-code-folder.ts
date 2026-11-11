@@ -9,6 +9,7 @@
  */
 import { GitRepo, GitUnreadable, type GitDir } from './git.ts'
 import { GitHubRepo } from './github.ts'
+import { loadJavaInPage } from './check/browser-java.ts'
 import type { CodeFolder, LimitLines } from './limit-lines.ts'
 import type { CodeFileEntry, Kept } from './source.ts'
 
@@ -28,7 +29,7 @@ export function folderFromFiles(files: File[]): ChosenFolder {
   const name = files[0]?.webkitRelativePath.split('/')[0] || 'the folder'
   const repo = gitRepoOfFiles(files)
   if (!repo) return { name, code: null, problem: noGit(name, files.some((f) => /^[^/]+\/\.git$/.test(f.webkitRelativePath))) }
-  return { name, code: { repo, cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
+  return { name, code: { repo, cache: browserKept<LimitLines>(ANSWERS), loadJava: loadJavaInPage }, problem: null }
 }
 
 /** The .git among a folder input's files, or null when the folder has none. */
@@ -95,13 +96,13 @@ export async function folderFromHandle(handle: FileSystemDirectoryHandle): Promi
       }
     },
   }
-  return { name: handle.name, code: { repo: new GitRepo(dir), cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
+  return { name: handle.name, code: { repo: new GitRepo(dir), cache: browserKept<LimitLines>(ANSWERS), loadJava: loadJavaInPage }, problem: null }
 }
 
 /** A public GitHub repo ("owner/name"). Its name says GitHub, so a log read with a folder of the same name isn't
  * taken for one read with this; it leaves out the branch, which the comparison never reads. */
 export function githubSource(repo: string): ChosenFolder {
-  return { name: `${repo} (GitHub)`, code: { repo: browserGitHub(repo), cache: browserKept<LimitLines>(ANSWERS) }, problem: null }
+  return { name: `${repo} (GitHub)`, code: { repo: browserGitHub(repo), cache: browserKept<LimitLines>(ANSWERS), loadJava: loadJavaInPage }, problem: null }
 }
 
 /** A GitHub repo whose file lists are kept in this browser (the newest KEEP_GITHUB of them). */

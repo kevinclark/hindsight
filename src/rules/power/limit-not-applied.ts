@@ -5,10 +5,14 @@
  * for more than 0.2 s while enabled, with at least 2 records over the line (one record held across a logging gap says
  * nothing about how long the current stayed there; at 4 Hz that is at least 0.5 s). (Shorter bursts are the limiter
  * catching up: ≤ 0.21 s at the 2026 offseason event.) Says when the
- * limit is switched off in code: amber when the log ran the profile's commit, or another commit whose current-limit
- * lines a robot-code folder shows are the same (src/code/limit-lines.ts); red otherwise, as other code may differ. Only
- * the lines in the files `where` names are compared: a limit set through a name defined in another file isn't followed.
- * A profile that leaves a limit's Enable flag out doesn't say whether it is on: red, with no cause marked.
+ * limit is switched off in code. The profile's limits are those of the commit it was copied from; a log is judged
+ * against them (amber when off) when it ran that commit or another whose current-limit lines a robot-code folder shows
+ * are the same (src/code/limit-lines.ts). When the lines differ, it is judged against the limits the log's own commit
+ * sets, read from that code (`ran`: off → amber, on and exceeded → red, the finding names the commit). When neither is
+ * known (no code linked, the commit not there, or its limits unreadable) it is amber and says the build's limit is
+ * unknown; the profile's number still sets the line it is measured against. Only the lines in the files `where` names
+ * are compared: a limit set through a name defined in another file isn't followed.
+ * A limit whose Enable flag isn't known (the profile or the code leaves it out) doesn't say whether it is on: red, with no cause marked.
  * The share of enabled time over 110 % of the limit is evidence only: at the 2026 offseason event it is made of
  * 154–233 bursts per motor per match with a median of 0.02 s (one 50 Hz sample) and a longest of 0.26 s, the limiter
  * catching up at each acceleration, so on its own it does not mean the limit is failing.
@@ -51,51 +55,59 @@ export default rule({
     if (group.limits.supplyA === undefined && group.limits.statorA === undefined) {
       return match.couldNotCheck(`the robot profile has no current limits for ${group.name} (${group.limits.where})`)
     }
-    const kinds = [
-      { kind: 'supply', limit: group.limits.supplyA, isOn: group.limits.supplyEnabled },
-      { kind: 'stator', limit: group.limits.statorA, isOn: group.limits.statorEnabled },
-    ] as const
-
-    // The profile copies the limits from one commit of the robot code. A log that ran another commit counts as that
-    // code when the robot-code folder shows its current-limit lines are the same; otherwise say it ran other code.
+    // The profile copies the limits from one commit of the robot code. A log that ran another commit is judged against
+    // that code when the robot-code folder shows its current-limit lines are the same; when they differ, against the
+    // limits the log's own commit sets (`ran`); when neither is known, the build's limit is unknown.
     const ranPin = match.ranPinnedCommit()
     const compared = ranPin ? null : match.limitLinesVsProfile(group)
     const sameCode = ranPin || compared?.verdict === 'same'
-    const { asOf, linesWords } = codeWords(match, ranPin, compared)
+    const ranCode = compared?.verdict === 'different' && 'limits' in compared.ran ? compared.ran : null
+    const { asOf, stale, linesWords } = codeWords(match, ranPin, compared)
 
     const problems: Problem[] = []
-    for (const { kind, limit, isOn } of kinds) {
+    for (const kind of ['supply', 'stator'] as const) {
+      const profileLimit = group.limits[`${kind}A`], profileOn = group.limits[`${kind}Enabled`]
+      const ranLimit = ranCode?.limits[`${kind}A`]
+      // Whose limit this is: the profile's (the log ran its code), the log's own commit's, or nobody's we know.
+      const basis = sameCode ? 'profile' : ranLimit !== undefined ? 'log' : 'unknown'
+      const limit = basis === 'log' ? ranLimit : profileLimit
+      const isOn = basis === 'log' ? ranCode!.limits[`${kind}Enabled`] : profileOn
+      const where = basis === 'log' ? ranCode!.limits.where : group.limits.where
       if (limit === undefined) continue
       const worst = worstOverLimit(group, kind, limit, match)
       if (worst === null) continue
       const share = shareOverLimit(worst.motor, kind, limit, match)
       const off = isOn === false
+      const logsCommit = ranCode ? ` (as this log's commit ${ranCode.commit.slice(0, 7)} sets it)` : ''
+      const source = basis === 'log' ? logsCommit : asOf
 
-      // Switched off in code: that is the cause. Switched on (in the code the profile came from): the config likely
-      // didn't reach the motor. A profile with no Enable flag for this kind says neither, so no cause is marked.
+      // Switched off in code: that is the cause. Switched on (in code the log ran): the config likely didn't reach the
+      // motor. A flag nobody read says neither, and a build whose limit is unknown has no cause to mark.
       let likely: string[] | undefined
       let nextStep: string | undefined
       const ruledOut: Record<string, string> = {}
-      if (off) {
+      if (basis === 'unknown') {
+        nextStep = compared ? `Hindsight couldn't read this build's limit from the linked code (why in the evidence): check the limit in ${where} at ${match.build.sha.slice(0, 7) || 'the log\'s commit'}.` : LINK_CODE
+      } else if (off) {
         likely = ['limit-off']
-        nextStep = `Switch the ${kind} limit on in ${group.limits.where}, then measure the mechanism before and after. Off on purpose? Mark it as a known issue.`
-      } else if (isOn && sameCode) {
+        nextStep = `Switch the ${kind} limit on in ${where}, then measure the mechanism before and after. Off on purpose? Mark it as a known issue.`
+      } else if (isOn) {
         likely = ['not-saved', 'default-limit']
         ruledOut['limit-off'] = 'the limit is switched on in the code'
       }
-      const switchedOff = off ? ' that is switched off in code (deliberate?)' : ''
-      // Switched off in the code this log ran may be deliberate (the mechanism may not need a limit): a warning. When the
-      // log ran other code than the profile's, "off" is not known for this log, so it stays an error.
-      const offInThisCode = off && sameCode
-      // A flag the profile leaves out was read from no code, so no commit is named for it.
       const yesNo = isOn ? 'yes' : 'no'
-      const onInCode = isOn === undefined ? 'not set in the profile' : `${yesNo}${asOf}`
+      const onInCode = isOn === undefined ? (basis === 'log' ? 'not set in the code' : 'not set in the profile') : `${yesNo}${source}`
+      const message = basis === 'unknown'
+        ? `${group.name} ${kind} current reached ${amps(worst.peak)}; the limit this build set is unknown (the profile's ${limit} A${isOn === undefined ? '' : isOn ? ', on,' : ', off,'} is ${stale})`
+        : `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${off ? ' that is switched off in code (deliberate?)' : ''}${source}`
       problems.push({
-        severity: offInThisCode ? 'warning' : undefined,
+        // Switched off in code the log is known to have run may be deliberate (the mechanism may not need a limit): a
+        // warning. A limit whose value this build set is unknown is a warning too: the log may have run a different one.
+        severity: basis === 'unknown' || off ? 'warning' : undefined,
         likely,
         ruledOut,
         nextStep,
-        message: `${group.name} ${kind} current reached ${amps(worst.peak)} against a ${limit} A limit${switchedOff}${asOf}`,
+        message,
         at: worst.start,
         about: `${group.name} ${kind}`,
         evidence: {
@@ -105,8 +117,8 @@ export default rule({
           'share of enabled time over 110 % of the limit (worst motor) (%)': round(share, 1),
           'configured limit (A)': limit,
           'limit switched on in code': onInCode,
-          'set in': group.limits.where,
-          'current-limit lines vs the profile\'s commit': linesWords,
+          'set in': where,
+          'current-limit lines vs the profile\'s commit': basis === 'unknown' && ranCode ? `${linesWords}; the limits this log's commit sets include no ${kind} limit` : linesWords,
         },
         measured: [{ label: `peak ${kind} current`, value: round(worst.peak, 0), unit: 'A', threshold: round(limit * 1.2, 0) }],
         plot: {
@@ -119,21 +131,28 @@ export default rule({
   },
 })
 
+const LINK_CODE = 'Link the code this log ran (This laptop… → GitHub source, or a robot-code folder) so Hindsight reads its limit.'
+
 /** How the code this log ran compares with the profile's commit, for the message and the evidence. */
 function codeWords(match: MatchView, ranPin: boolean, compared: LimitLines | null) {
   const pin = match.profile.code
   const ran = match.build.sha.slice(0, 7) || 'unknown code'
-  if (ranPin) return { asOf: '', linesWords: undefined }
+  if (ranPin) return { asOf: '', stale: '', linesWords: undefined }
   if (compared?.verdict === 'same') {
     return {
       asOf: ` (same current-limit lines as ${pin.branch} ${pin.sha}; this log ran ${ran})`,
+      stale: '',
       linesWords: `the same as ${pin.sha} in ${compared.files.join(', ')} (read from the robot code)`,
     }
   }
   let linesWords: string | undefined
-  if (compared?.verdict === 'different') linesWords = `different from ${pin.sha}: ${compared.lines.join('; ')}`
+  if (compared?.verdict === 'different') {
+    linesWords = `different from ${pin.sha}: ${compared.lines.join('; ')}`
+    if ('why' in compared.ran) linesWords += `; the limits this log's commit sets couldn't be read: ${compared.ran.why}`
+  }
   if (compared?.verdict === 'unknown') linesWords = `not compared: ${compared.why}`
-  return { asOf: ` (as of ${pin.branch} ${pin.sha}; this log ran ${ran})`, linesWords }
+  const stale = `as of ${pin.branch} ${pin.sha}; this log ran ${ran}`
+  return { asOf: ` (${stale})`, stale, linesWords }
 }
 
 /**

@@ -152,7 +152,7 @@ export function summarizeLog(file: InputFile, profile?: RobotProfile, profiles?:
 export async function summarizeLogWithCode(file: InputFile, code: CodeFolder | null, codeName: string | null, profile?: RobotProfile, profiles?: RobotProfile[], history?: HistoryEvent[], beside: InputFile[] = []): Promise<MatchSummary | null> {
   const result = await analyzeFilesWithCode([file, ...beside], code, profile ? () => profile : undefined, profiles, history)
   const s = summaryOf(result, file)
-  const askAgain = [...(result.analyses[0]?.match.limitLines?.values() ?? [])].some((a) => a.verdict === 'unknown' && a.tryAgain)
+  const askAgain = [...(result.analyses[0]?.match.limitLines?.values() ?? [])].some((a) => (a.verdict === 'unknown' && a.tryAgain) || (a.verdict === 'different' && 'tryAgain' in a.ran))
   if (s && code && !askAgain) s.codeFolder = codeName
   return s
 }
