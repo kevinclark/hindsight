@@ -312,6 +312,10 @@ describe('Limits tab wording (presentation)', () => {
     const r = unlogged({ supplyA: 20, supplyEnabled: true, statorEnabled: true, supplyLowerA: 30, supplyLowerSeconds: 1, where: 'X.java:1' })
     expect(r.supply.note).toBe('capped at 20 A (the lower limit the code sets, 30 A, is above it)')
   })
+  it('says a lower limit equal to the supply limit is the same, never "above it" or a drop', () => {
+    const r = unlogged({ supplyA: 40, supplyEnabled: true, statorEnabled: true, where: 'X.java:1' })
+    expect(r.supply.note).toBe("capped at 40 A (Phoenix's default lower limit is the same, 40 A)")
+  })
   it('heads the "over" column with the limit it was measured against, never arithmetic on a dash', () => {
     expect(overHeader({ kind: 'stator', limitA: 120, on: true }, true)).toEqual({ text: 'over 120+5 A', measured: true })
     expect(overHeader({ kind: 'stator', limitA: null, on: true }, true)).toEqual({ text: "over 120+5 A (Phoenix's default)", measured: true })
