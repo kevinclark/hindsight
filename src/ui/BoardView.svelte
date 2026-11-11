@@ -136,7 +136,7 @@
     </div>
     {#if board.noSchedule && onWrite}<NextMatchFields {session} {scheduleNote} />{/if}
     <div class="toolbar">
-      {#if onWrite}<button type="button" class="primary" onclick={() => (view = 'queue')}>Queue sheet (print)</button>{/if}
+      {#if onWrite}<button type="button" onclick={() => (view = 'queue')}>Queue sheet (print)</button>{/if}
       <button type="button" onclick={() => (view = 'handoff')}>Handoff{board.handoff ? '' : ' (not read yet)'}</button>
       {#if onWrite}<button type="button" onclick={() => (view = 'missed')}>Missed by Hindsight</button>{/if}
       <span class="grow"></span>
