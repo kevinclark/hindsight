@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { checkPair } from '../src/limits/pair.ts'
 import { readFileSync } from 'node:fs'
 import { analyzeFiles } from '../src/analyze.ts'
-import { limitsReport, limitWords } from '../src/limits/limits-report.ts'
+import { limitsReport, limitWords, overHeader } from '../src/limits/limits-report.ts'
 import { PROFILES } from '../src/profiles/index.ts'
 import type { CurrentLimits } from '../src/profiles/types.ts'
 import { findSpinUps, modalBin, recommend, settingTookEffect } from '../src/limits/sweep.ts'
@@ -292,5 +292,31 @@ describe('an Enable flag the profile leaves out', () => {
     // With the flag set, it is worked out as before.
     expect(checkPair(offseason2026, flywheel, 60, 25, 1, ['Drive']).pinnedDrive).not.toBeNull()
     expect(drive.limits.statorEnabled).toBe(true)
+  })
+})
+
+describe('Limits tab wording (presentation)', () => {
+  const unlogged = (limits: CurrentLimits) => {
+    const profile = { ...offseason2026, motorGroups: offseason2026.motorGroups.map((g) => ({ ...g, limits, motors: g.motors.map(({ name }) => ({ name })) })) }
+    return limitsReport({ profile, enabled: [], logEnd: 0 } as unknown as Parameters<typeof limitsReport>[0])[0]
+  }
+  it('does not say the cap "drops" up to a lower limit that is above the supply limit', () => {
+    const r = unlogged({ supplyA: 20, supplyEnabled: true, statorEnabled: true, where: 'X.java:1' })
+    expect(r.supply.note).toBe("capped at 20 A (Phoenix's default lower limit, 40 A, is above it)")
+  })
+  it('still says it drops when the lower limit is below the supply limit', () => {
+    const r = unlogged({ supplyA: 60, supplyEnabled: true, statorEnabled: true, where: 'X.java:1' })
+    expect(r.supply.note).toBe("capped at 60 A; after 1 s at the cap it drops to 40 A (Phoenix defaults: the code doesn't set these)")
+  })
+  it('names a lower limit the code sets that is above the supply limit without the Phoenix default wording', () => {
+    const r = unlogged({ supplyA: 20, supplyEnabled: true, statorEnabled: true, supplyLowerA: 30, supplyLowerSeconds: 1, where: 'X.java:1' })
+    expect(r.supply.note).toBe('capped at 20 A (the lower limit the code sets, 30 A, is above it)')
+  })
+  it('heads the "over" column with the limit it was measured against, never arithmetic on a dash', () => {
+    expect(overHeader({ kind: 'stator', limitA: 120, on: true }, true)).toEqual({ text: 'over 120+5 A', measured: true })
+    expect(overHeader({ kind: 'stator', limitA: null, on: true }, true)).toEqual({ text: "over 120+5 A (Phoenix's default)", measured: true })
+    expect(overHeader({ kind: 'supply', limitA: null, on: true }, true)).toEqual({ text: "over 70+5 A (Phoenix's default)", measured: true })
+    expect(overHeader({ kind: 'stator', limitA: null, on: false }, true)).toEqual({ text: 'over: no limit set', measured: false })
+    expect(overHeader({ kind: 'stator', limitA: null, on: true }, false)).toEqual({ text: 'over: limit not known', measured: false })
   })
 })

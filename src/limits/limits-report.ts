@@ -47,6 +47,17 @@ export function limitWords(l: CurrentLimits, kind: 'supply' | 'stator'): string 
 export const lowerLimitOff = (l: CurrentLimits) => l.supplyLowerSeconds === 0
 
 export const OVER_MARGIN_A = 5
+/**
+ * Heading of the "over" column. A limit the code doesn't set is measured against Phoenix's default when that applies
+ * (the group's note says so); with no limit in force, or none known, the column says that and its cells show "—".
+ */
+export function overHeader(v: Pick<LimitView, 'kind' | 'limitA' | 'on'>, known: boolean): { text: string; measured: boolean } {
+  if (!known) return { text: 'over: limit not known', measured: false }
+  if (v.limitA !== null) return { text: `over ${v.limitA}+${OVER_MARGIN_A} A`, measured: true }
+  if (v.on === false) return { text: 'over: no limit set', measured: false }
+  return { text: `over ${v.kind === 'supply' ? PHOENIX_DEFAULTS.supplyA : PHOENIX_DEFAULTS.statorA}+${OVER_MARGIN_A} A (Phoenix's default)`, measured: true }
+}
+
 export const CATCH_UP_SECONDS = 0.2
 /** Within this fraction of the limit counts as "at the limit". */
 export const AT_LIMIT = 0.9
@@ -120,6 +131,7 @@ function groupLimits(match: Match, g: MotorGroup): GroupLimits {
     note: !known ? unknown : supplyOn === false ? off('supply', PHOENIX_DEFAULTS.supplyA) : supplyOn === null ? notSaid(supplyLimit, 'SupplyCurrentLimitEnable')
       : supplyLimit === null ? `not set: Phoenix's default ${PHOENIX_DEFAULTS.supplyA} A applies`
       : lowerLimitOff(L) ? `capped at ${supplyLimit} A; no lower limit (the code sets its time to 0)`
+      : lower.limitA >= supplyLimit ? `capped at ${supplyLimit} A (${L.supplyLowerA === undefined ? 'Phoenix\'s default lower limit' : 'the lower limit the code sets'}, ${lower.limitA} A, is above it)`
       : `capped at ${supplyLimit} A; after ${lower.seconds} s at the cap it drops to ${lower.limitA} A${lower.fromDefaults ? ' (Phoenix defaults: the code doesn\'t set these)' : ''}`,
     motors: g.motors.flatMap((m) => (m.supplyCurrent && has(match, m.supplyCurrent) ? [stats(match, m.name, num(match, m.supplyCurrent)!, known ? (supplyLimit ?? PHOENIX_DEFAULTS.supplyA) : Infinity)] : [])),
   }
