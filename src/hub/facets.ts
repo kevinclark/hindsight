@@ -6,7 +6,7 @@ import type { Entry } from './catalog.ts'
 import { schoolYear } from './layout.ts'
 import { seasonOf } from './season.ts'
 import { resolveEvent } from './events.ts'
-import { offFieldKind, type OffFieldKind } from './log-kind.ts'
+import { enabledSeconds, offFieldKind, type OffFieldKind } from './log-kind.ts'
 import type { LogMeta } from './types.ts'
 
 export const FACETS = ['schoolYear', 'season', 'place', 'logType', 'battery', 'robot', 'driver'] as const
@@ -29,6 +29,17 @@ function logType(r: Pick<LogMeta, 'kind' | 'onField' | 'runs' | 'matchType'>): s
   if (off) return OFF_FIELD_TYPES[off]
   return r.matchType !== null ? MATCH_TYPES[r.matchType] ?? UNKNOWN.logType : UNKNOWN.logType
 }
+
+/** A row's log type in the Log type facet's words: a match with its number ("Qualification 47"), an on-check with its enabled time, else the facet word. */
+export function logTypeWords(r: Pick<LogMeta, 'kind' | 'onField' | 'runs' | 'matchType' | 'matchNumber'>): string {
+  const type = logType(r)
+  if (offFieldKind(r) === 'on-check') return `${type} · ${Math.round(enabledSeconds(r))} s enabled`
+  return !offFieldKind(r) && r.matchType && r.matchNumber ? `${type} ${r.matchNumber}` : type
+}
+
+/** Newest first: the newest day, and within a day the newest log, first; logs with no date last; ties by path. */
+export const byNewest = (a: Entry, b: Entry): number =>
+  (a.record.playedAt === null ? 1 : 0) - (b.record.playedAt === null ? 1 : 0) || (b.record.playedAt ?? 0) - (a.record.playedAt ?? 0) || a.record.path.localeCompare(b.record.path)
 
 /** The event name the FMS gave a log, as people say it: the table's name for the code when it has one, else the FMS text. Null when the log is not on the field or names nothing. */
 export function fmsPlace(r: Pick<LogMeta, 'onField' | 'event' | 'playedAt'>): { name: string; resolved: boolean } | null {

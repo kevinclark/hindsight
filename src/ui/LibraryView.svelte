@@ -18,7 +18,7 @@
   import type { FetchReport, SyncReport } from '../hub/sync.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { IngestReport } from '../hub/ingest.ts'
-  import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, filterEntries, fmsPlace, robotIsGuess, robotLabels, type FacetId, type Places, type Selection } from '../hub/facets.ts'
+  import { FACETS, FACET_LABELS, countLabel, facetCounts, facetValues, byNewest, filterEntries, fmsPlace, logTypeWords, robotIsGuess, robotLabels, type FacetId, type Places, type Selection } from '../hub/facets.ts'
   import { eventPlaces } from '../hub/event-places.ts'
   import { REFUSED_WORDS, identifyEvents } from '../tba/identify.ts'
   import { nexusHasKey, saveNexusKey, setAppHasKey, setAppHasNexusKey, setupSaves, tbaGetter, tbaHasKey, tbaMissing } from './tba-setting.svelte.ts'
@@ -295,9 +295,7 @@
 
   const days = $derived.by(() => {
     const groups = new Map<string, Entry[]>()
-    const merged = hootRows.length
-      ? [...filtered, ...hootRows].sort((a, b) => (a.record.playedAt ?? Infinity) - (b.record.playedAt ?? Infinity) || a.record.path.localeCompare(b.record.path))
-      : filtered
+    const merged = [...filtered, ...hootRows].sort(byNewest)
     for (const e of merged) {
       const day = e.record.playedAt === null ? 'No date' : dayText(e.record.playedAt)
       groups.set(day, [...(groups.get(day) ?? []), e])
@@ -366,11 +364,6 @@
   }
 
   const clock = (ms: number | null) => (ms === null ? '' : new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-  const matchText = (e: Entry) => {
-    const r = e.record
-    const type = ['', 'Practice', 'Qual', 'Elim'][r.matchType ?? 0]
-    return type ? `${type}${r.matchNumber ? ` ${r.matchNumber}` : ''}` : ''
-  }
   const dayTarget = (day: string): TagTarget => ({ day })
   const typed = (e: Event) => (e.currentTarget as HTMLInputElement).value
   /**
@@ -553,25 +546,6 @@
   </section>
 {/if}
 
-{#if toProfile.length}
-  <section class="report" aria-label="Robots with no profile">
-    <h2>Robots with no profile</h2>
-    <p class="meta">The review reads a log's motors, currents and limits from its robot's profile. A draft from the robot's code at the commit a log ran marks where each value came from; nothing uses it until a student checks it and keeps it in the profile builder.</p>
-    <ul class="rows plain">
-      {#each toProfile as r (r.name)}
-        {@const code = r.source.kind === 'no code' ? null : describeCodeLink({ code: r.source.code, build: r.source.kind === 'draft' ? r.source.entry.record.build : null })}
-        <li data-robot={r.name}>
-          <strong>{r.name}</strong> · {r.logs} log{r.logs === 1 ? '' : 's'} ·
-          {#if code}code <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a>{/if}
-          {#if r.source.kind === 'draft'}
-            <button class="primary" onclick={() => draft(r)} title="Opens {baseName(r.source.entry.record.path)}, this robot's newest log linked to its code on this computer, in the profile builder with the code it ran ready to read from GitHub ({codeSpec({ code: r.source.code, build: r.source.entry.record.build })}). A session's offer may pick another commit: the one most of that session's logs ran.">Draft a profile from its code</button>
-          {:else if r.source.kind === 'not here'}<span class="meta">none of its logs linked to code is on this computer: download one to draft from</span>
-          {:else}<span class="meta">no code linked: set your GitHub organization under Your team</span>{/if}
-        </li>
-      {/each}
-    </ul>
-  </section>
-{/if}
 
 <datalist id="places">{#each counts.place as [value] (value)}{#if !all.some((e) => (fmsPlace(e.record)?.name ?? places.get(e.record.sha256)) === value)}<option {value}></option>{/if}{/each}</datalist>
 <div class="layout" class:bare={all.length === 0}>
@@ -607,7 +581,17 @@
     {:else if filtered.length === 0 && hootRows.length === 0}
       <p class="empty">No log matches these filters.</p>
     {/if}
+    {#if days.length}
+    <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Time</th><th scope="col">Log file</th><th scope="col">Log type</th><th scope="col">Event or place</th><th scope="col">Battery</th><th scope="col">Robot</th><th scope="col">Driver</th><th scope="col" class="num">Size</th><th scope="col" title="A cloud mark means the log is not on this computer">Local</th><th scope="col"><span class="sr">Details</span></th>
+        </tr>
+      </thead>
     {#each days as [day, rows] (day)}
+      <tbody>
+      <tr class="dayrow"><td colspan="10">
       <div class="day">
         <h3>{day}<span class="meta"> · {rows.length}</span></h3>
         {#if day !== 'No date'}
@@ -620,24 +604,24 @@
           <label class="tagfield">driver <input value={rows[0].tags.driver ?? ''} placeholder="for the day" onchange={(e) => tag(dayTarget(day), 'driver', typed(e))} /></label>
         {/if}
       </div>
-      <table>
-        <tbody>
+      </td></tr>
           {#each rows as e (e.record.sha256)}
             {#if hootPaths.has(e.record.path)}
               {@const path = e.record.path}
               <tr class:remote={!e.local}>
                 <td class="time">{clock(e.record.playedAt)}</td>
                 <td class="name">{#if e.local}<button class="link open" title={`Open ${path} in Match review: Hindsight reads it with CTRE's converter and shows its devices; no rule reads it`} disabled={hootBusy !== null} onclick={() => openHoot(e)}><code>{baseName(path)}</code></button>{:else}<code title={path}>{baseName(path)}</code>{/if}</td>
-                <td></td>
-                <td></td>
                 <td><span class="meta" title={e.attached.hoot.length ? `Also from this boot: ${e.attached.hoot.map((r) => baseName(r.path)).join(', ')}` : 'No robot log was found for this .hoot'}>Phoenix .hoot only</span></td>
+                <td></td>
+                <td></td>
+                <td></td>
                 <td></td>
                 <td class="num">{size(e.record.size)}</td>
                 <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
                 <td></td>
               </tr>
               {#if hootBusy === path || hootAsk[path] || hootWords[path]}
-                <tr class="more"><td></td><td colspan="8">
+                <tr class="more"><td></td><td colspan="9">
                   {#if hootBusy === path && hootProgress}<JobBar progress={hootProgress} onStop={() => void api.hootCancel()} />{/if}
                   {#if hootAsk[path]}
                     <HootAccess files={hootAsk[path].files.filter((f) => f.held)} canDownload={hootAsk[path].canDownload} busy={!!progress || !!hootProgress} onGetOwlet={(c) => getOwlet(e, c)} />
@@ -657,16 +641,17 @@
             <tr class:remote={!e.local}>
               <td class="time">{clock(e.record.playedAt)}</td>
               <td class="name">{#if e.local}<button class="link open" title={`Open ${e.record.path} in Match review`} onclick={() => openMatch(e)}><code>{baseName(e.record.path)}</code></button>{:else}<code title={e.record.path}>{baseName(e.record.path)}</code>{/if}</td>
-              <td>{fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''} {matchText(e)}</td>
+              <td class="kind">{logTypeWords(e.record)}</td>
+              <td class="place" title={fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''}>{fmsPlace(e.record)?.name ?? places.get(e.record.sha256) ?? ''}</td>
               <td>{v.battery === 'No battery' ? '' : v.battery}</td>
-              <td>{v.robot === 'Unknown robot' ? '' : v.robot}{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}{#if code}<span class="meta">{' · '}<a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}</td>
+              <td class="robotcell">{v.robot === 'Unknown robot' ? '' : v.robot}{#if profileMark === 'code name'}{' '}<span class="meta">(code name)</span>{/if}{#if guessWhy}{' '}<span class="meta" title={guessWhy}>(guess)</span>{/if}{#if code}<span class="meta">{' · '}<a href={code.url} target="_blank" rel="noreferrer">{code.text}</a></span>{/if}</td>
               <td><input class="driver" aria-label="Driver for this log" value={e.tags.driver ?? ''} placeholder="driver" onchange={(ev) => tag({ log: e.record.sha256 }, 'driver', typed(ev))} /></td>
               <td class="num">{size(e.record.size)}</td>
               <td class="flag" title={e.local ? 'On this computer' : 'Not on this computer'}>{e.local ? '' : '☁'}</td>
               <td><button class="link" aria-expanded={!!expanded[e.record.sha256]} onclick={() => (expanded[e.record.sha256] = !expanded[e.record.sha256])}>{expanded[e.record.sha256] ? 'less' : 'more'}</button></td>
             </tr>
             {#if expanded[e.record.sha256]}
-              <tr class="more"><td></td><td colspan="8">
+              <tr class="more"><td></td><td colspan="9">
                 <label class="tagfield">battery <input value={e.tags.battery ?? ''} placeholder={e.record.batteryId ?? 'not logged'} onchange={(ev) => tag({ log: e.record.sha256 }, 'battery', typed(ev))} /></label>
                 <label class="tagfield">robot <input value={e.tags.robot ?? ''} placeholder={e.record.robot?.name ?? 'unknown'} onchange={(ev) => tag({ log: e.record.sha256 }, 'robot', typed(ev))} /></label>
                 <p class="meta">
@@ -682,9 +667,30 @@
             {/if}
             {/if}
           {/each}
-        </tbody>
-      </table>
+      </tbody>
     {/each}
+    </table>
+    </div>
+    {/if}
+{#if toProfile.length}
+  <section class="report" aria-label="Robots with no profile">
+    <h2>Robots with no profile</h2>
+    <p class="meta">The review reads a log's motors, currents and limits from its robot's profile. A draft from the robot's code at the commit a log ran marks where each value came from; nothing uses it until a student checks it and keeps it in the profile builder.</p>
+    <ul class="rows plain">
+      {#each toProfile as r (r.name)}
+        {@const code = r.source.kind === 'no code' ? null : describeCodeLink({ code: r.source.code, build: r.source.kind === 'draft' ? r.source.entry.record.build : null })}
+        <li data-robot={r.name}>
+          <strong>{r.name}</strong> · {r.logs} log{r.logs === 1 ? '' : 's'} ·
+          {#if code}code <a href={code.url} target="_blank" rel="noreferrer">{code.text}</a>{/if}
+          {#if r.source.kind === 'draft'}
+            <button class="primary" onclick={() => draft(r)} title="Opens {baseName(r.source.entry.record.path)}, this robot's newest log linked to its code on this computer, in the profile builder with the code it ran ready to read from GitHub ({codeSpec({ code: r.source.code, build: r.source.entry.record.build })}). A session's offer may pick another commit: the one most of that session's logs ran.">Draft a profile from its code</button>
+          {:else if r.source.kind === 'not here'}<span class="meta">none of its logs linked to code is on this computer: download one to draft from</span>
+          {:else}<span class="meta">no code linked: set your GitHub organization under Your team</span>{/if}
+        </li>
+      {/each}
+    </ul>
+  </section>
+{/if}
   </section>
 </div>
 {/if}
@@ -720,6 +726,7 @@
   .plain li { min-height: 28px; }
   .layout { display: grid; grid-template-columns: 14rem 1fr; gap: 1.5rem; align-items: start; }
   .layout.bare { display: block; }
+  .list { min-width: 0; }
   @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
   aside { font-size: 0.85rem; }
   fieldset { border: none; padding: 0; margin: 0 0 0.9rem; }
@@ -731,6 +738,11 @@
   .summary { position: sticky; top: 0; background: var(--bg); padding: 0.4rem 0; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; z-index: 2; }
   .summary .primary { margin-left: auto; }
   .empty { color: var(--muted); max-width: 60ch; }
+  .scroll { overflow-x: auto; position: relative; }
+  .dayrow td { border-bottom: none; padding: 0; }
+  th { text-align: left; font-weight: 600; font-size: 0.75rem; color: var(--muted); padding: 0.15rem 0.4rem; border-bottom: 1px solid var(--border); }
+  th.num { text-align: right; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .day { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 1rem; margin-top: 1rem; }
   .day h3 { margin: 0; font-size: 0.95rem; }
   .tagfield { font-size: 0.8rem; color: var(--muted); display: inline-flex; align-items: baseline; gap: 0.3rem; margin-right: 0.75rem; }
@@ -739,6 +751,8 @@
   td { padding: 0.15rem 0.4rem; border-bottom: 1px solid var(--grid); vertical-align: baseline; }
   .time, .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .num { text-align: right; }
+  .kind, .robotcell { white-space: nowrap; }
+  .place { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name { max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .open { padding: 0; color: var(--fg); text-decoration-color: var(--border); }
   .open:hover { text-decoration-color: currentColor; }
