@@ -5,8 +5,8 @@ roboRIO. This run checks the parts only a real robot can: that the page connects
 publishes what Foresight reads under `/AdvantageKit`, and that the robot's clock and start time come through.
 
 **Where:** the pit, robot on its cart, tethered by USB (or Ethernet) to the **onchecks laptop**, the laptop the team
-runs onchecks from. Never the drive (DS) laptop: it only controls the robot at the field. Later it runs in the queue too,
-as part of the team's onchecks; this first run is in the pit. **Never on the field.** Nothing here moves the robot or
+runs onchecks from. Never the drive (DS) laptop: it only controls the robot at the field. At events it runs at the team's
+pit check before each match (ADR 9 as amended); this first run is in the pit too. **Never on the field.** Nothing here moves the robot or
 writes to it: Foresight only subscribes.
 
 ## Before you start
@@ -33,14 +33,15 @@ writes to it: Foresight only subscribes.
    library's 4 log-drive keys, which the robot code doesn't log yet), plus WPILib's `/FMSInfo/FMSControlData` for the field guard. Note both numbers. *Values received* should climb every second.
 4. **Check the clock.** *Robot time* should read `… s · code started at … s (from the metadata)`. Note whether it says
    *from the metadata* or *from the first value*, and whether the code-start time looks right (just after a reboot
-   the 2026 logs started at 11.8–12.2 s). From the metadata, a robot already on for 30 s skips the countdown.
+   the 2026 logs started at 11.8–12.2 s). From the metadata, a robot already on for 30 s skips the settle.
 5. **Compare three live values with the Driver Station:**
    - *Battery now* against the DS battery voltage (within 0.05 V);
    - *Controllers*: ports 0 and 1 both name a controller (unplug one: within a couple of seconds a "Controller
      missing" item appears; plug it back and it clears);
    - *Code*: the GitSHA and branch match what was deployed.
-6. **Wait for the verdict.** Until 30 s after the robot code started it shows a countdown, then GO, NO-GO or NOT
-   CHECKED with the findings. Note the verdict and any items. Two items say **Do: Hold an AprilTag up to Back_Left**
+6. **Wait for the verdict.** From the first second it judges build, devices, zeros, temperatures and the battery; until
+   30 s after the robot code started it reads NOT CHECKED ("start-up settling", the camera, alert, controller and gyro
+   checks still waiting), then GO, NO-GO or NOT CHECKED with the findings. Note the verdict and any items. Two items say **Do: Hold an AprilTag up to Back_Left**
    (and Back_Right): that is the next step, not a fault, and it never changes the verdict.
 7. **Show each camera a tag.** Hold the tag 0.5–2 m in front of Back_Left for a couple of seconds, then Back_Right.
    Each "Hold an AprilTag up to …" item should clear within a second or two of the camera seeing it, and the

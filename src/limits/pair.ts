@@ -50,7 +50,7 @@ export interface PairCheck {
  * The sustained cap per motor of a group as configured: its lower limit (Phoenix's default if unset), never above its
  * supply limit. NaN when the profile doesn't know its limits.
  */
-function sustainedPerMotor(g: MotorGroup): number {
+export function sustainedPerMotor(g: MotorGroup): number {
   const on = limitOn(g.limits, 'supply')
   if (!limitsKnown(g.limits) || on === null) return NaN // on: its lower limit; off: nothing. The profile doesn't say which
   if (on === false) return Infinity // no supply limit at all: nothing caps it

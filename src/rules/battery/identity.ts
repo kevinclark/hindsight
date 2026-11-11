@@ -1,8 +1,9 @@
 /**
  * Do we know which battery was in the robot?
  *
- * Checks: the FRC8033BatteryTracker keys (Battery/Id, Battery/IdSource) at the start of the match. Fires when the ID
- * is unknown, or came from the dashboard because the fuel gauge wasn't reporting.
+ * Checks: the FRC8033BatteryTracker keys (Battery/Id, Battery/IdSource) at the start of the match, or, for a robot that
+ * logs only its fuel gauge's battery name (the profile's battery.gaugeName), that name. Fires when the ID is unknown,
+ * or came from the dashboard because the fuel gauge wasn't reporting.
  * Why: One 2026 match browned out on a weak battery and nobody could say which one.
  */
 import { rule } from '../rule.ts'
@@ -14,6 +15,8 @@ export default rule({
   severity: 'warning',
   judges: 'performance',
   who: ['pit'],
+  // Which battery played a match: a log never enabled played none.
+  needsEnabled: true,
   meaning: 'Hindsight cannot tell which battery was in the robot, so a weak battery cannot be followed from match to match.',
   causes: [
     { id: 'gauge-unplugged', cause: 'The battery\'s fuel gauge is not plugged in, or is not powered', look: 'the gauge on the battery: is it connected to the robot\'s port, and does it light up? Log keys Battery/Id and Battery/IdSource' },
@@ -29,6 +32,18 @@ export default rule({
 
   check(match) {
     const at = match.autoStart ?? Infinity
+    // The gauge's own battery name counts as read from the gauge (src/match/battery-id.ts, as the Library and Session read it).
+    if (match.batteryAt(at)?.from === 'gauge') return
+    // A robot that logs only its gauge's name (no tracker ID): a blank name means the gauge was not answering.
+    const { id: idKey, gaugeName } = match.profile.battery
+    if (!(idKey && match.has(idKey)) && gaugeName && match.has(gaugeName)) {
+      const ruledOut: Record<string, string> = { code: 'the code logs the gauge\'s battery name (it was blank)', 'no-label': 'this robot names its battery only from the gauge' }
+      return {
+        message: 'Battery ID unknown for this match', at: match.autoStart, likely: ['gauge-unplugged'], ruledOut,
+        nextStep: 'Plug the battery\'s fuel gauge into the robot before the match: the robot names the battery only from it.',
+        evidence: { 'battery id': '(none)', 'id source': 'the fuel gauge\'s battery name (blank)' },
+      }
+    }
     const id = match.text(match.batteryKey('id')).at(at)
     const source = match.text(match.batteryKey('idSource')).at(at) || 'none'
     if (id && (source === 'gauge' || source === 'gauge-cached')) return

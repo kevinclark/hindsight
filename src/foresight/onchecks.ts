@@ -33,7 +33,7 @@ export interface OncheckLine {
 }
 
 export const ONCHECKS: OncheckLine[] = [
-  { section: 'Battery', line: 'Fresh battery installed', rules: ['power/rest-voltage', 'battery/identity', 'battery/gauge-capacity'], note: 'the team installs at 13.0 V on the PDH (13.3 V on the gauge); Foresight flags under 12.5 V at rest, measured at another moment' },
+  { section: 'Battery', line: 'Fresh battery installed', rules: ['power/rest-voltage', 'battery/identity', 'battery/gauge-capacity'], note: 'the team installs at 13.0 V on the PDH (13.3 V on the gauge); Foresight shows the battery in now under 12.5 V at rest as context, never red: pit checks run on a practice battery and a fresh one goes in at the queue' },
   { section: 'Controllers', line: 'Controllers plugged into the DS and working', rules: ['foresight/controllers'], note: 'plugged in on the right ports; whether they work is by eye' },
   { section: 'Controllers', line: 'Backup controller', byEye: true },
   { section: 'Software', line: 'All cameras on and detecting AprilTags', rules: ['vision/stale', 'vision/time-sync', 'foresight/camera-sees-tag'], assisted: ['foresight/camera-sees-tag'], note: 'connected, time-synced and each saw a tag' },
@@ -52,6 +52,21 @@ export const ONCHECKS: OncheckLine[] = [
   { section: 'Software', line: 'Gyro seems normal', rules: ['foresight/gyro-still-drift'], context: true, note: 'heading drift while still, as context: no line yet' },
   { section: 'Software', line: 'No undeployed changes', rules: ['build/dirty', 'foresight/commit-matches'] },
   { section: 'Software', line: 'No motors overheating', rules: ['foresight/motor-temperature'], group: 'devices', note: 'every motor at or under 60 °C (hotter than any ended a 2026 match)' },
+]
+
+/**
+ * The team's pit checklist section 8, "On checks": the students drive each mechanism by hand, robot enabled. Foresight
+ * grades what a signal can show over every enabled run since the robot code started, while it runs (engine.ts,
+ * `onCheck` rules); the rest is by eye (no fault case in the logs yet for an automatic line).
+ */
+export const ON_RUN_CHECKS: OncheckLine[] = [
+  // Foresight's graded line first, so it is on screen on a phone without scrolling past the by-eye lines.
+  { section: 'On checks', line: 'Motors on one shaft turn together', rules: ['mech/pair-decoupled'], note: 'Foresight\'s line, not on the team\'s list: each coupled pair (the kicker\'s two motors) within 4 % of each other on every enabled run since the robot code started; amber, never NO-GO, until it has caught a fault outside the logs it was set on' },
+  { section: 'On checks', line: 'Swerve steers and drives straight', byEye: true },
+  { section: 'On checks', line: 'Intake deploys', byEye: true },
+  { section: 'On checks', line: 'Hopper walls actuate', byEye: true },
+  { section: 'On checks', line: 'Spindexer feeds', byEye: true },
+  { section: 'On checks', line: 'Hood, turret, flywheel spin freely', byEye: true },
 ]
 
 /** Every check that asks a person to do something (its grey findings are a step, not context). */
@@ -97,7 +112,16 @@ const FROM_SNAPSHOT = new Set<string>(SNAPSHOT_RULES)
  * check ran over a robot snapshot (engine.ts); without one, the snapshot lines are never OK, even if nothing says so.
  */
 export function markOnchecks(current: { verdict: Verdict; report: Report; snapshotUsed?: boolean } | null): MarkedLine[] {
-  return ONCHECKS.map((l) => {
+  return markLines(ONCHECKS, current)
+}
+
+/** The section 8 lines, marked from the on-check grading (engine.ts OncheckResult), the robot enabled or not. */
+export function markOnRun(current: { verdict: Verdict; report: Report } | null): MarkedLine[] {
+  return markLines(ON_RUN_CHECKS, current)
+}
+
+function markLines(lines: OncheckLine[], current: { verdict: Verdict; report: Report; snapshotUsed?: boolean } | null): MarkedLine[] {
+  return lines.map((l) => {
     if (l.byEye) return { ...l, state: 'by eye', detail: 'check by eye' }
     if (!current) return { ...l, state: 'not checked', detail: 'no current check' }
     const rules = l.rules ?? []
@@ -122,7 +146,8 @@ export function markOnchecks(current: { verdict: Verdict; report: Report; snapsh
     if (skippedStep) return { ...l, state: 'not checked', detail: `${skippedStep.rule}: ${skippedStep.reason}` }
     const context = items.find((i) => i.level === 'grey')
     if (context && items.every((i) => i.level === 'grey') && rules.every((r) => r === context.finding.rule)) return { ...l, state: 'context', detail: context.finding.title }
-    return { ...l, state: 'ok', detail: l.note ?? 'OK' }
+    // A line whose check left a context note (the battery in now) shows it in place of its note.
+    return { ...l, state: 'ok', detail: context?.finding.title ?? l.note ?? 'OK' }
   })
 }
 

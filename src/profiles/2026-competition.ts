@@ -73,7 +73,7 @@ export const competition2026: RobotProfile = {
   },
 
   // No battery tracker in this code.
-  battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [] },
+  battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [], gaugeName: [] },
 
   power: {
     // As in the 2026 offseason profile: assumed, nothing on the robot measures it.

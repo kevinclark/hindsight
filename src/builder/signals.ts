@@ -51,6 +51,8 @@ const BATTERY_LEAVES: Record<keyof Battery, RegExp> = {
   ratedCapacityAh: /\/BatteryGauge\/RatedCapacityAh$/,
   remainingChargePct: /\/BatteryGauge\/RemainingChargePct$/,
   numCycles: /\/BatteryGauge\/NumCycles$/,
+  // A robot's own name for its gauge's battery-name key (no library convention to recognise): the profile author adds it.
+  gaugeName: /(?!)/,
 }
 
 /** Not motors or devices this builder reads: cameras are out of scope, and their connected flags belong to them. */

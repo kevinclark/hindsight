@@ -9,6 +9,8 @@ import { buildBoard } from '../src/board/model.ts'
 import { keepHistory } from '../src/triage/keeper.ts'
 import { triage, type HistoryEvent } from '../src/triage/history.ts'
 import { input, match, profile, session, SCHEDULE } from './helpers/board-scene.ts'
+import { mb, reviewTarget, sizeOf } from '../src/ui/phone-library.ts'
+import type { Entry } from '../src/hub/catalog.ts'
 
 const fires = [{ key: 'power/brownout' }, { key: 'mech/follower-mismatch · Flywheel', severity: 'warning' as const }]
 const s = session([match(2, { fires }), match(3, { fires })])
@@ -89,5 +91,49 @@ describe('read-only Match review of a whole log (the phone opens one from the Li
     expect(ro).toMatch(/power\/brownout|Brownout/i) // the findings themselves are there
     const rw = render(MatchTab, { props: ({ analysis, issues: new Map(), onMark: () => {}, debug: { marks: () => ({}), write: () => {}, role: null, setRole: () => {} } }) as never }).body
     expect(controls(rw).length).toBeGreaterThan(1)
+  })
+})
+
+describe('Match review on the phone offers the whole log when the Library has it and the phone has not kept it', () => {
+  const summary = { ...match(2, { fires }), fileName: 'q2.wpilog', fileSize: 12 * 2 ** 20 }
+  const entry = { names: ['q2.wpilog'], record: { sha256: 'a', size: 12 * 2 ** 20, names: ['q2.wpilog'] }, attached: { dslog: [{ sha256: 'b', size: 2 ** 20 }], dsevents: [], hoot: [] } } as unknown as Entry
+  const props = { summary, issues: new Map(), wrong: new Map(), real: new Map(), laptop: 'laptop-a', olderRead: null }
+
+  it('draws "Full review · N MB" (the log plus its DS logs) for a summary whose log is not kept, and not for one kept or not in the Library', () => {
+    const target = reviewTarget([entry], new Set(), summary)
+    expect(target?.kept).toBe(false)
+    const full = { size: mb(sizeOf(target!.entry)), onOpen: () => {}, progress: null, onStop: () => {}, problem: null }
+    const html = render(SummaryReview, { props: ({ ...props, full }) as never }).body
+    expect(html).toContain('Full review · 13 MB')
+    expect(html).toContain('Plots need the whole log: Full review, below.')
+    expect(html).not.toContain('Plots are on the laptop')
+    expect(html).not.toContain('<progress')
+    const plain = render(SummaryReview, { props: (props) as never }).body
+    expect(plain).not.toContain('Full review')
+    expect(plain).toContain('Plots are on the laptop: open the log there to see them.')
+    expect(reviewTarget([entry], new Set(['a', 'b']), summary)?.kept).toBe(true) // kept: it opens by itself, no button
+    expect(reviewTarget([], new Set(), summary)).toBeNull()
+  })
+
+  it('shows the download progress with Stop in place of the button, and a failure in words with the match name', () => {
+    const progress = { got: 2 ** 20, total: 13 * 2 ** 20 }
+    const html = render(SummaryReview, { props: ({ ...props, full: { size: '13', onOpen: () => {}, progress, onStop: () => {}, problem: null } }) as never }).body
+    expect(html).toContain('<progress')
+    expect(html).toContain('Downloading Qualification 2: 1.0 of 13 MB')
+    expect(html).toContain('>Stop<')
+    expect(html).not.toContain('Full review ·')
+    const failed = render(SummaryReview, { props: ({ ...props, full: { size: '13', onOpen: () => {}, progress: null, onStop: () => {}, problem: 'Could not open Qualification 2 (offline).' } }) as never }).body
+    expect(failed).toContain('Could not open Qualification 2 (offline).')
+    expect(failed).toContain('Full review · 13 MB')
+  })
+
+  it("a kept log keeps its button (\"on this phone\", no download) and its failure line, and a large one carries the Library's note", () => {
+    const kept = render(SummaryReview, { props: ({ ...props, full: { size: null, onOpen: () => {}, progress: null, onStop: () => {}, problem: 'Could not open Qualification 2 (damaged).' } }) as never }).body
+    expect(kept).toContain('Full review · on this phone')
+    expect(kept).not.toMatch(/Full review · [\d.]+ MB/)
+    expect(kept).toContain('Could not open Qualification 2 (damaged).')
+    expect(kept).not.toContain('Large:')
+    const large = render(SummaryReview, { props: ({ ...props, full: { size: '300', large: true, onOpen: () => {}, progress: null, onStop: () => {}, problem: null } }) as never }).body
+    expect(large).toContain('Large: may not open on older phones.')
   })
 })

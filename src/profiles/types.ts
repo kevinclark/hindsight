@@ -9,6 +9,11 @@ export interface Motor {
   supplyCurrent?: string
   statorCurrent?: string
   velocity?: string
+  /**
+   * The voltage the controller applied to the motor (Phoenix MotorVoltage, AdvantageKit's AppliedVolts), never the
+   * requested one. With velocity and stator current, Power -> Headroom fits how close the motor ran to its top speed.
+   */
+  appliedVolts?: string
   connected?: string
   /** The controller's temperature (°C), e.g. a TalonFX's DeviceTemp. */
   temperature?: string
@@ -43,6 +48,13 @@ export interface MotorGroup {
   limits: CurrentLimits
   /** True when every motor in the group runs on one control loop and should match speed (leader + followers). */
   sameLoop?: boolean
+  /**
+   * Two motors of this group that turn one shaft together (a leader and its follower on one roller), named by their
+   * `name`, each with a velocity key. `sameLoop` says the motors run on one control loop; this says these two are
+   * mechanically one, so a short stretch apart means one came free: mech/pair-decoupled checks it, during the pit
+   * on-check too (Foresight), with a line short enough for a pit run.
+   */
+  coupledPairs?: CoupledPair[]
   /** For the limits wizard: the group spins up to a speed (the first motor is the leader); its setpoint log key. */
   spinUp?: { setpoint?: string; appliedVolts?: string }
   /**
@@ -57,6 +69,16 @@ export interface MotorGroup {
    * stop at the setpoint.
    */
   setpoint?: { position: string; setpoint: string; toDegrees: number; where: string }
+}
+
+/** Two motors coupled to one shaft: what the mechanism is called, and the two motors' names in their group. */
+export interface CoupledPair {
+  /** What people call the mechanism: "Kicker". */
+  name: string
+  leader: string
+  follower: string
+  /** Where the code couples them, e.g. "IndexerIO.java:96-97". */
+  where: string
 }
 
 /**
@@ -207,6 +229,11 @@ export interface BatteryKeys {
   ratedCapacityAh: string
   remainingChargePct: string
   numCycles: string
+  /**
+   * The name the battery's fuel gauge reports for the battery it sits on, when the robot code logs it (for example once
+   * at start-up as AdvantageKit metadata). Names the battery when the tracker's `id` is not logged.
+   */
+  gaugeName: string
 }
 
 export type BatterySources = { [K in keyof BatteryKeys]: Source }

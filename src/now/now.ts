@@ -69,7 +69,7 @@ export interface NowState {
 }
 
 export interface NowInput {
-  /** 'phone': the read-only phone, whose logs are the laptops' published summaries: no pull, no queue check, no file to open. */
+  /** 'phone': the read-only phone, whose logs are the laptops' published summaries: no pull, no pre-match check, no file to open. */
   build: 'hub' | 'page' | 'phone'
   /** Today's mode (`todayMode`). */
   mode: Mode
@@ -268,7 +268,7 @@ export function nowState(input: NowInput): NowState {
     else if (next) big = `Next match: ${next.label}${next.startsAt !== null ? ` at ${clock(next.startsAt)}` : ''}${next.leftMinutes !== null ? ` · in ${next.leftMinutes} min` : ''}`
     else if (input.schedule?.length) big = 'Next match: none left on the team\'s schedule'
   }
-  const queue: NowTask = { id: 'queue', title: `Queue check for ${matchName}`, detail: 'Robot tethered, Driver Station connected, then Connect · in Robot check', done: false, button: 'Start the queue check', action: go('foresight'), primary: false }
+  const queue: NowTask = { id: 'queue', title: `Pre-match check for ${matchName}`, detail: 'Robot tethered in the pit, Driver Station connected, then Connect · in Robot check', done: false, button: 'Start the pre-match check', action: go('foresight'), primary: false }
   let triage: NowTask
   if (!board) {
     const n = input.libraryToday

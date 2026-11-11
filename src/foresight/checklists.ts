@@ -2,7 +2,7 @@
  * Foresight's two checklists (ADR 9), both read off the one engine (verdict.ts / onchecks.ts): nothing here judges a
  * signal, it only groups what the engine found.
  *
- * The queue checklist (event mode, do-confirm): the robot's systems, most critical first, each Go, Go with deferral or
+ * The pre-match checklist (event mode, do-confirm; run at the pit check before each match): the robot's systems, most critical first, each Go, Go with deferral or
  * No-go. A live red the board has deferred reads Go with deferral and names its workaround, never hidden (ADR 4: every
  * issue can be deferred); every other open deferral for the robot is listed too, seen live or not (the pre-match check
  * reads all open deferrals together). The overall word is NO-GO if any system is No-go, NOT CHECKED as before, GO WITH
@@ -11,15 +11,15 @@
  * The practice-start checklist (practice mode, read-do): the lines of the team's pit checklist in a fixed order, each
  * done or left, ending "Ready to drive" or "n left: …". It has no Go verdict at all.
  */
-import type { Verdict, VerdictItem } from './verdict.ts'
+import { SETTLING, type Verdict, type VerdictItem } from './verdict.ts'
 import type { MarkedLine } from './onchecks.ts'
 import type { RobotProfile } from '../profiles/types.ts'
 import { profileId } from '../profiles/index.ts'
 import { buildBoard, inScope, mechanismOf, robotOf, scopeOf, type Board, type BoardIssue } from '../board/model.ts'
 import { NEXT_EVENT } from '../board/points.ts'
 import type { CodeChangeFlag } from '../board/freeze.ts'
-import { FORESIGHT_RULES, makerOf } from '../rules/index.ts'
-import { ONCHECKS } from './onchecks.ts'
+import { FORESIGHT_RULES, makerOf, ruleById } from '../rules/index.ts'
+import { ONCHECKS, ON_RUN_CHECKS } from './onchecks.ts'
 import { SNAPSHOT_RULES } from './snapshot-checks.ts'
 import { goWithWord, rowTitle } from '../board/words.ts'
 import { sessionWithMarks } from '../triage/track-record.ts'
@@ -129,7 +129,7 @@ export function openDeferrals(board: Board, profile: RobotProfile, carriedFrom?:
     .map((i) => ({ key: i.key, system: systemOf(i.rule, i.about, profile), title: rowTitle(i), workaround: i.deferral.workaround, until: i.deferral.point.until, ...(carriedFrom !== undefined ? { carriedFrom } : {}) }))
 }
 
-// ---- the queue checklist ----
+// ---- the pre-match checklist ----
 
 export type SystemWord = 'Go' | 'Go with deferral' | 'No-go' | 'Not checked' | 'Check by hand'
 
@@ -200,7 +200,10 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     const fix = reds.filter((i) => !deferred(i))
     const seen = new Set(reds.filter(deferred).map((i) => i.finding.key))
     const deferrals = open.filter((d) => d.system === system).map((d) => ({ ...d, seenNow: seen.has(d.key) }))
-    const unjudged = !verdict || blind.some((s) => systemOf(s.rule, null, profile) === system)
+    // A check still in its start-up settle (engine.ts) leaves its system unjudged for now: "Not checked", never "Check by hand".
+    // Not a context-only check (gyro drift): it can never move the verdict, so it never holds a system back.
+    const settling = !!verdict && verdict.notChecked.some((s) => s.reason.startsWith(SETTLING) && ruleById(s.rule)?.severity !== 'info' && systemOf(s.rule, null, profile) === system)
+    const unjudged = !verdict || settling || blind.some((s) => systemOf(s.rule, null, profile) === system)
     const mine_rules = ALL_RULES.filter((r) => systemOf(r, null, profile) === system)
     // One meaning of "ran", the box's own ("n of 26 checks not fully run"): a check that ran only in part did not.
     const notRan = verdict ? new Set([...verdict.notChecked, ...verdict.crashed].map((x) => x.rule)) : null
@@ -216,7 +219,7 @@ export function queueChecklist(input: { verdict: Verdict | null; why: string; pr
     const text = word === 'No-go' ? `No-go: ${fix.map((i) => i.finding.title).join('; ')}`
       : word === 'Go with deferral' ? `Go with deferral: ${deferrals.map((d) => `${d.title} · workaround: ${d.workaround || 'none written'}`).join('; ')}`
       : word === 'Check by hand' ? `Check by hand: ${step ?? 'none of its checks ran; a person checks it'}`
-      : word === 'Not checked' ? (verdict ? 'Not checked: a check for this system could not read its signals' : 'Not checked') : 'Go'
+      : word === 'Not checked' ? (settling ? `Not checked: ${SETTLING}` : verdict ? 'Not checked: a check for this system could not read its signals' : 'Not checked') : 'Go'
     const tagStep = system === 'Vision' && !!verdict && verdict.items.some((i) => i.level === 'grey' && i.finding.rule === 'foresight/camera-sees-tag')
     return { system, word, fix, look: mine.filter((i) => i.level === 'amber'), deferrals, ran, note: tagStep ? 'tag not seen yet' : null, step, text }
   }).sort((a, b) => WORD_RANK[a.word] - WORD_RANK[b.word] || SYSTEMS.indexOf(a.system) - SYSTEMS.indexOf(b.system))
@@ -315,10 +318,12 @@ export function practiceChecklist(lines: MarkedLine[], uncovered: VerdictItem[] 
   const first = PRACTICE_FIRST.flatMap((g) => g.lines.map((name) => ({ group: g.group, line: counted.find((l) => l.line === name) })).filter((x): x is { group: string; line: MarkedLine } => !!x.line))
   const named = new Set(first.map((x) => x.line))
   const rest = counted.filter((l) => !named.has(l)).map((line) => ({ group: 'The rest', line }))
-  const extra = uncovered.map((i) => ({
-    group: 'Not on the checklist',
-    line: { section: '', line: `${makerOf(i.finding.rule)?.title ?? i.finding.title} (no checklist line)`, state: i.level === 'red' ? 'red' : 'amber', detail: i.finding.title } as MarkedLine,
-  }))
+  // A failing on-check finding has its line in the On checks block (ON_RUN_CHECKS), shown above: named by that line here.
+  const extra = uncovered.map((i) => {
+    const onRun = ON_RUN_CHECKS.find((l) => l.rules?.includes(i.finding.rule))
+    const name = onRun ? onRun.line : `${makerOf(i.finding.rule)?.title ?? i.finding.title} (no checklist line)`
+    return { group: onRun ? 'On checks' : 'Not on the checklist', line: { section: '', line: name, state: i.level === 'red' ? 'red' : 'amber', detail: i.finding.title } as MarkedLine }
+  })
   const items = [...first, ...rest, ...extra].map((x): PracticeItem => ({ ...x, done: x.line.state === 'ok' }))
   const left = items.filter((i) => !i.done)
   const actions: string[] = []

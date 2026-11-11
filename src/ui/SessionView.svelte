@@ -28,6 +28,7 @@
   import { saveForClaude } from './export-preview.svelte.ts'
   import { sessionWithMarks } from '../triage/track-record.ts'
   import Trends from './Trends.svelte'
+  import Batteries from './Batteries.svelte'
   import { shortMatchLabel } from './match-label.ts'
   import { loggingChanges, neverLogged, type StateRun } from '../coverage/coverage.ts'
   import { sessionUnlocks, unlockFix, unlockWords } from '../coverage/unlock.ts'
@@ -754,6 +755,9 @@
     </details>
   {/if}
   <Trends matches={trendInfo!.logs} unit={trendInfo!.unit} {typedBatteries} labels={trendInfo!.logs.map(shortLabel)} onOpen={open} />
+
+  <h3>Batteries</h3>
+  <Batteries matches={trendInfo!.logs} unit={trendInfo!.unit} {typedBatteries} onOpen={open} />
 
   <h3>Findings across the session</h3>
   <p class="hint">Consistent: fired in most {practice ? 'logs' : 'matches'} where it could be checked (3 or more). Intermittent: in some, or in every one of only 2 checked (too few to call consistent). Once: one {practice ? 'log' : 'match'} only, low confidence. The range is a 95 % confidence interval for how often it fires; "past the line" is how far the measured value went past the rule's threshold (median across {practice ? 'logs' : 'matches'}).</p>

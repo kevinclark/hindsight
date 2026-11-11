@@ -4,11 +4,12 @@
   import type { BrowserHub, OpenedFile } from '../hub/browser-hub.ts'
   import type { Entry } from '../hub/catalog.ts'
   import type { LogRecord } from '../hub/types.ts'
-  import { NO_EVENT, byDay, filterByEvent, isLarge, logLabel, onThisPhone } from './phone-library.ts'
+  import { NO_EVENT, byDay, filterByEvent, isLarge, logLabel, mb, onThisPhone, sizeOf } from './phone-library.ts'
+  import OpenProgress from './OpenProgress.svelte'
   import { KEEP_CHOICES, keepCap, setKeepCap } from '../phone/keep-setting.ts'
 
   /** `onOpening`: before a download starts, so the log held now can be let go first (one log in memory at a time). */
-  let { hub, onOpening, onOpen }: { hub: BrowserHub; onOpening: () => void; onOpen: (files: OpenedFile[]) => void } = $props()
+  let { hub, onOpening, onOpen, onBusy }: { hub: BrowserHub; onOpening: () => void; onOpen: (files: OpenedFile[]) => void; onBusy?: (busy: boolean) => void } = $props()
 
   const ALL = ''
 
@@ -31,6 +32,9 @@
   // held, progress never showed, and the line never cleared (seen on the phone, 2026-11-09).
   let opening = $state.raw<{ id: number; entry: Entry; got: number; total: number; stop: AbortController } | null>(null)
   let opens = 0
+  $effect(() => { onBusy?.(!!opening) })
+  /** Stop the download in flight, if any (Match review's own open is starting or a match was picked). */
+  export function stop() { opening?.stop.abort() }
 
   async function list() {
     problem = null
@@ -43,8 +47,6 @@
   let onlyHere = $state(false)
   const days = $derived(byDay(filterByEvent(onlyHere ? onThisPhone(entries ?? [], kept) : (entries ?? []), event)))
 
-  const mb = (n: number) => (n >= 10 * 2 ** 20 ? (n / 2 ** 20).toFixed(0) : (n / 2 ** 20).toFixed(1))
-  const sizeOf = (e: Entry) => [e.record, ...e.attached.dslog, ...e.attached.dsevents].reduce((n, r) => n + r.size, 0)
   const time = (r: LogRecord) => (r.playedAt === null ? '' : new Date(r.playedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
 
   /** Each step to the app's console (Xcode, `devicectl … launch --console`): a download that hangs shows where. */
@@ -75,11 +77,7 @@
   </select></label> <span class="meta">{mb(keptBytes)} MB kept</span>{#if keptBytes > 0}{' '}<button class="link" onclick={clearKept}>Clear</button>{/if}</p>
   {#if problem}<p class="problem" role="alert">{problem} <button class="link" onclick={list}>Try again</button></p>{/if}
   {#if opening}
-    <div class="opening" role="status">
-      <p>Downloading {opening.entry.record.names[0]}: {mb(opening.got)} of {mb(opening.total)} MB</p>
-      <progress max={opening.total} value={opening.got}></progress>
-      <button onclick={() => { say('Stop pressed'); opening?.stop.abort() }}>Stop</button>
-    </div>
+    <div class="sticky"><OpenProgress name={opening.entry.record.names[0]} got={opening.got} total={opening.total} onStop={() => { say('Stop pressed'); opening?.stop.abort() }} /></div>
   {/if}
   {#if entries === null}
     {#if !problem}<p class="meta">Reading the team's list of logs…</p>{/if}
@@ -121,11 +119,9 @@
   ul { list-style: none; padding: 0; margin: 0; }
   li { display: flex; gap: 0.75rem; align-items: center; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
   .what { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  .sticky { position: sticky; top: 0; z-index: 1; }
   .large { color: var(--warning); }
   button { font: inherit; color: var(--fg); background: none; border: 1px solid var(--focus); border-radius: 6px; padding: 0.3rem 0.7rem; white-space: nowrap; cursor: pointer; }
   button:disabled { border-color: var(--border); color: var(--muted); }
   .link { border: none; text-decoration: underline; padding: 0; }
-  .opening { position: sticky; top: 0; background: var(--bg); padding: 0.5rem 0; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; z-index: 1; }
-  .opening p { margin: 0; flex-basis: 100%; }
-  progress { flex: 1; }
 </style>

@@ -8,7 +8,7 @@ import { openWpilog } from '../readers/wpilog.ts'
 import { readDslog, dslogEndEpoch } from '../readers/dslog.ts'
 import { readDsevents, dseventsEndEpoch } from '../readers/dsevents.ts'
 import { buildMatch, has, num, values, type Match } from '../match/match.ts'
-import { heldAt } from '../match/series.ts'
+import { batteryAt } from '../match/battery-id.ts'
 import { chooseProfile, namesRobot, type ProfileChoice } from '../profiles/choose.ts'
 import { codeIdentity } from '../profiles/formats.ts'
 import type { RobotProfile } from '../profiles/types.ts'
@@ -59,15 +59,12 @@ function describeWpilog(name: string, bytes: Uint8Array): LogMeta {
   const [mStart, mEnd] = [match.matchStart === null ? null : wallOf(match.matchStart), match.matchEnd === null ? null : wallOf(match.matchEnd)]
   const type = last(num(match, match.profile.signals.matchType))
   const number = last(num(match, match.profile.signals.matchNumber))
-  const batteryKey = has(match, match.profile.battery.id) ? match.profile.battery.id : null
-  const ids = batteryKey ? values<string>(match, batteryKey) : null
-  const atStart = ids && match.matchStart !== null ? heldAt(ids, match.matchStart) : undefined
   return {
     ...NOTHING, kind: 'wpilog', ...dated,
     wall: start !== null && end !== null ? { start, end } : null,
     matchWindow: mStart !== null && mEnd !== null ? { start: mStart, end: mEnd } : null,
     event: match.event, matchType: type, matchNumber: number, onField: match.fms,
-    batteryId: atStart || null,
+    batteryId: match.matchStart === null ? null : batteryAt(match, match.matchStart)?.id ?? null,
     roboRio: firstText(match, ROBORIO_SERIAL), edition: profile.editionKey ? firstText(match, profile.editionKey) : null,
     robot: robotIdentity(profile, choice, codeIdentity(log).codebase),
     build: match.build.sha ? { sha: match.build.sha.slice(0, 7), branch: match.build.branch } : null,

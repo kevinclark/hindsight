@@ -23,7 +23,7 @@ function eventNow(over: Partial<NowInput> = {}, matches = [match(2), match(3)], 
 const task = (st: ReturnType<typeof nowState>, id: string) => st.tasks.find((t) => t.id === id)!
 
 describe('Now on an event day with the schedule', () => {
-  it('says the next match, its time and the minutes left; tasks run pull, triage, queue check', () => {
+  it('says the next match, its time and the minutes left; tasks run pull, triage, pre-match check', () => {
     const st = eventNow()
     expect(st.kind).toBe('event')
     expect(st.big).toBe(`Next match: Q5 at ${at(min(255))} · in 55 min`)
@@ -58,15 +58,15 @@ describe('Now on an event day with the schedule', () => {
     expect(three.detail).toBe('3 reds due before Q5 · in Session › Board')
     expect(task(eventNow({}, [red(2, ['a']), red(3, ['a'])]), 'triage').detail).toBe('1 red due before Q5 · in Session › Board')
   })
-  it('the queue check names the next match and goes to Foresight', () => {
-    expect(task(eventNow(), 'queue')).toMatchObject({ title: 'Queue check for Q5', button: 'Start the queue check', action: { kind: 'go', place: 'foresight' } })
+  it('the pre-match check names the next match and goes to Foresight', () => {
+    expect(task(eventNow(), 'queue')).toMatchObject({ title: 'Pre-match check for Q5', button: 'Start the pre-match check', action: { kind: 'go', place: 'foresight' } })
   })
   it('names the next match that has not started, even before the last match\'s log is in', () => {
     // Q3 is the latest log, Q4 and Q5 have both started (two logs missed): the next is Q6, and the pull is for Q5.
     const st = eventNow({}, [match(2), match(3)], min(270))
     expect(st.big).toBe(`Next match: Q6 at ${at(min(310))} · in 40 min`)
     expect(task(st, 'pull').title).toBe("Pull Q5's log")
-    expect(task(st, 'queue').title).toBe('Queue check for Q6')
+    expect(task(st, 'queue').title).toBe('Pre-match check for Q6')
   })
   it('with no match left on the schedule, says so', () => {
     const s = session([match(2), match(3)])
@@ -100,7 +100,7 @@ describe('Now on an event day with no schedule', () => {
     expect(st.kind).toBe('event-no-schedule')
     expect(st.big).toBe('Next match: not known yet')
     expect(st.keyLine).toEqual({ lead: 'Add The Blue Alliance read key in Set up this laptop, below', link: null, rest: ': it names the event and the schedule.' })
-    expect(st.tasks.map((t) => t.title)).toEqual(["Pull the last match's log", 'Triage before the next match', 'Queue check for the next match'])
+    expect(st.tasks.map((t) => t.title)).toEqual(["Pull the last match's log", 'Triage before the next match', 'Pre-match check for the next match'])
   })
   it('on the page the key is set in the Session view; a missing team number is named too', () => {
     const st = noSchedule({ build: 'page', libraryToday: null, have: { team: false, key: false } })
@@ -288,14 +288,14 @@ describe('the fix pass, verified', () => {
 })
 
 describe('a next match typed on this laptop (slice 2)', () => {
-  it('names the typed match in the headline, the triage and the queue check when there is no schedule', () => {
+  it('names the typed match in the headline, the triage and the pre-match check when there is no schedule', () => {
     const s = session([red(2, ['a']), match(3)])
     const board = buildBoard({ ...input(s, [], null), now: new Date(min(200)), typedNext: 41 })
     const st = nowState({ build: 'hub', mode: 'event', hasLogs: true, libraryToday: 2, event: board, have: { team: true, key: false }, scheduleNote: null, still: null, now: min(200), clockText: at, schedule: null })
     expect(st.kind).toBe('event-no-schedule')
     expect(st.big).toBe('Next match: Q41')
     expect(st.tasks.find((t) => t.id === 'triage')?.title).toBe('Triage before Q41')
-    expect(st.tasks.find((t) => t.id === 'queue')?.title).toBe('Queue check for Q41')
+    expect(st.tasks.find((t) => t.id === 'queue')?.title).toBe('Pre-match check for Q41')
   })
 })
 
@@ -336,7 +336,7 @@ describe('Now with Nexus times (ADR 12)', () => {
 })
 
 describe('Now on the phone (read only: the laptops publish the matches)', () => {
-  it('an event day: the same next match and triage, the pull task waits for a laptop with no button, and no queue check', () => {
+  it('an event day: the same next match and triage, the pull task waits for a laptop with no button, and no pre-match check', () => {
     const st = eventNow({ build: 'phone', libraryToday: null })
     expect(st.big).toBe(`Next match: Q5 at ${at(min(255))} · in 55 min`)
     expect(st.tasks.map((t) => t.id)).toEqual(['pull', 'triage'])

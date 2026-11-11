@@ -26,7 +26,7 @@ export const frc3602_2026: RobotProfile = {
     odometryPose: 'NT:/Elastic/Drive/Pose',
     alertGroups: ['NT:/SmartDashboard/Alerts'],
   },
-  battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [] },
+  battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [], gaugeName: [] },
   power: { otherLoadsAmps: 3, restVoltageMin: 12.5, marginVolts: 1.0, healthyResistanceMaxOhms: 0.020 },
   motorGroups: [],
   otherDevices: [],

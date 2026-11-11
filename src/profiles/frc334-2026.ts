@@ -22,7 +22,7 @@ export const frc334_2026: RobotProfile = {
     ...DOGLOG_SIGNALS,
     odometryPose: '/Robot/Swerve/Pose',
   },
-  battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [] },
+  battery: { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [], gaugeName: [] },
   power: { otherLoadsAmps: 3, restVoltageMin: 12.5, marginVolts: 1.0, healthyResistanceMaxOhms: 0.020 },
   powerDistribution: 'rev-pdh',
   motorGroups: [],

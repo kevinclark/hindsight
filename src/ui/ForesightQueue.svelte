@@ -1,5 +1,5 @@
 <!--
-  Foresight's queue checklist (ADR 9, event mode): do-confirm. The robot's systems, numbered, most critical first, each Go,
+  Foresight's pre-match checklist (ADR 9, event mode: run at the pit check before each match): do-confirm. The robot's systems, numbered, most critical first, each Go,
   Go with deferral (the issue and its workaround line named) or No-go; a tick with a role and a time confirms each one
   done, for 90 minutes. The overall word is above, in Foresight's verdict box. Colour only where something needs a look:
   No-go, Not checked and deferral rows; Go rows are plain grey. Shape and a word go with every state, never colour alone
@@ -29,8 +29,8 @@
   const unshown = $derived(checklist.deferrals.filter((d) => !checklist.rows.some((r) => r.deferrals.some((x) => x.key === d.key))))
 </script>
 
-<section class="queue" aria-label="Queue checklist">
-  <h3>Queue checklist <span class="muted">· {checklist.rows.length} systems, most critical first</span></h3>
+<section class="queue" aria-label="Pre-match checklist">
+  <h3>Pre-match checklist <span class="muted">· {checklist.rows.length} systems, most critical first</span></h3>
   {#if checklist.freeze}<p class="small freeze" data-freeze>{checklist.freeze.banner}</p>{/if}
   <p class="small">Do each item, then tick it for {forLabel}. A No-go is fixed or deferred on the board first. {filed ? 'Ticks are filed with the event.' : 'Ticks stay on this page.'}
     <label>You are on: <select aria-label="Your role" value={role ?? ''} onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; onRole(ROLES.includes(v as BoardRole) ? (v as BoardRole) : null) }}>

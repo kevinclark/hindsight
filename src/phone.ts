@@ -3,7 +3,7 @@
  * shell's (the iPhone app: src/phone/), so the token source is injected; nothing here knows how a token is got. No `node:`
  * imports.
  */
-import { BrowserHub } from './hub/browser-hub.ts'
+import { BrowserHub, type BrowserHubOptions } from './hub/browser-hub.ts'
 import { DriveReader } from './hub/drive-read.ts'
 import { indexedDbCache, type ReadStore } from './hub/phone-cache.ts'
 import { LogKeep, indexedDbKeepStore } from './hub/log-keep.ts'
@@ -44,7 +44,7 @@ export function installPhone(setup: PhoneSetup): BrowserHub {
 }
 
 /** The same over any read-only store (the demo fixture, tests). */
-export function installPhoneOver(store: ReadStore, media?: DriveReader): BrowserHub {
+export function installPhoneOver(store: ReadStore, media?: BrowserHubOptions['media']): BrowserHub {
   const hub = new BrowserHub({ store, cache: indexedDbCache(), version: VERSION, ...(media ? { media, keep: keptLogs() } : {}) })
   ;(globalThis as unknown as { hindsightPhone: BrowserHub }).hindsightPhone = hub
   return hub

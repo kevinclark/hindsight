@@ -6,7 +6,8 @@
  * The verdict screen says how many logs each check was proven on.
  *
  * Edit this table only from a backtest run, and record the run in docs/measurements.md ("Foresight backtest").
- * The proof covers a robot sitting disabled before any enable; after a drive, rest voltage stays amber (engine.ts).
+ * The proof covers a robot sitting disabled before any enable. Rest voltage is context in Foresight, never red, whatever
+ * its proof here (engine.ts CONTEXT_RULES: pit checks run on a practice battery).
  * Not here: foresight/camera-sees-tag (a step for a person, grey, never a verdict),
  * alerts/passthrough (one false red: another team's always-on "limelight name is invalid" alert),
  * the battery tracker checks, commit-matches and log-usb-stick (no log to judge them on yet: no log of ours has the

@@ -72,7 +72,7 @@ const EMPTY_SIGNALS: RobotProfile['signals'] = {
   gyroPitch: '', gyroRoll: '', accelX: '', accelY: '', odometryPose: '', emergencyStop: '', matchTimeLeft: '', autoChoice: '',
   joystickButtonCounts: [],
 }
-const EMPTY_BATTERY: RobotProfile['battery'] = { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [] }
+const EMPTY_BATTERY: RobotProfile['battery'] = { id: [], idSource: [], gaugeValid: [], effectiveCapacityAh: [], ratedCapacityAh: [], remainingChargePct: [], numCycles: [], gaugeName: [] }
 /** The assumptions every hand-written profile uses: nothing on a robot measures them. */
 export const DEFAULT_POWER: RobotProfile['power'] = { otherLoadsAmps: 3, restVoltageMin: 12.5, marginVolts: 1.0, healthyResistanceMaxOhms: 0.020 }
 

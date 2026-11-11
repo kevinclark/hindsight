@@ -7,14 +7,21 @@
   import type { MatchSummary } from '../session/summary.ts'
   import type { IssueEvent } from '../triage/history.ts'
   import { notChecked, reviewRows } from '../report/summary-review.ts'
+  import OpenProgress from './OpenProgress.svelte'
 
-  let { summary, issues, wrong, real, laptop, olderRead, mapStale = false, onBack }: {
+  let { summary, issues, wrong, real, laptop, olderRead, mapStale = false, onBack, full }: {
     summary: MatchSummary; issues: Map<string, IssueEvent>; wrong: Map<string, IssueEvent>; real: Map<string, IssueEvent>
     /** The laptop whose event file this summary came from, and the Hindsight version that read it when older than this one. */
     laptop: string | null; olderRead: string | null
     /** The pit changed the breakers after this log was read: its breaker warnings use the old settings. */
     mapStale?: boolean
     onBack?: () => void
+    /**
+     * The phone has this match's log in its Library: the button that reads it on the phone. `size` is the download in
+     * megabytes ("12", "1.4"), or null when the phone already keeps it (no download). `progress` while downloading;
+     * `problem` when the last try failed, in words; `large` when it may not open on older phones.
+     */
+    full?: { size: string | null; large?: boolean; onOpen: () => void; progress: { got: number; total: number } | null; onStop: () => void; problem: string | null }
   } = $props()
 
   const ICON = { error: '●', warning: '▲', info: '○' } as const
@@ -33,7 +40,14 @@
   {#if onBack}<p class="crumbs"><button type="button" class="link" onclick={onBack}>← Back</button></p>{/if}
   <h2>{summary.event ? `${summary.event} ` : ''}{summary.matchLabel || summary.fileName}</h2>
   <p class="meta">{played} · {summary.robot.name}{#if counts.length}{' · '}{counts.map(([s, n]) => `${n} ${s === 'info' ? 'info' : `${s}${n === 1 ? '' : 's'}`}`).join(', ')}{:else}{' · '}no findings{/if}</p>
-  <p class="meta">From {laptop ? `laptop ${laptop}'s` : 'a laptop\'s'} summary{olderRead ? `, read with Hindsight ${olderRead}` : ''}. Plots are on the laptop: open the log there to see them.</p>
+  <p class="meta">From {laptop ? `laptop ${laptop}'s` : 'a laptop\'s'} summary{olderRead ? `, read with Hindsight ${olderRead}` : ''}. {#if full}Plots need the whole log: Full review, below.{:else}Plots are on the laptop: open the log there to see them.{/if}</p>
+  {#if full}
+    <div class="full-review" data-full-review>
+      {#if full.progress}<OpenProgress name={summary.matchLabel || summary.fileName} got={full.progress.got} total={full.progress.total} onStop={full.onStop} />
+      {:else}<button type="button" onclick={full.onOpen}>Full review · {full.size === null ? 'on this phone' : `${full.size} MB`}</button> <span class="meta">Reads the whole log on this phone: the Power, Limits and Logging tabs.</span>{#if full.large}{' '}<span class="meta large">Large: may not open on older phones.</span>{/if}{/if}
+      {#if full.problem}<p class="problem" role="alert">{full.problem}</p>{/if}
+    </div>
+  {/if}
   {#if mapStale}<p class="meta" data-breaker-note>The breaker settings changed after this log was read: its breaker warnings use the old settings until a laptop reads it again.</p>{/if}
 
   {#if rows.length === 0}<p>No rule fired in this {summary.onField ? 'match' : 'log'}.</p>{/if}
@@ -93,6 +107,10 @@
   code { font-size: max(12px, 0.85em); }
   .meta { margin: 0.15rem 0; color: var(--muted); font-size: 0.85rem; }
   .crumbs { margin: 0; }
+  .full-review { margin: 0.5rem 0; }
+  .full-review button { font: inherit; color: var(--fg); background: none; border: 1px solid var(--focus); border-radius: 6px; padding: 0 0.9rem; min-height: 44px; cursor: pointer; }
+  .large { color: var(--warning); }
+  .problem { color: var(--error); margin: 0.25rem 0; }
   .link { border: none; background: none; color: var(--fg); text-decoration: underline; font: inherit; min-height: 44px; padding: 0 0.25rem; cursor: pointer; }
   .findings { list-style: none; padding: 0; margin: 0.75rem 0 0; }
   .finding { border-left: 4px solid var(--border); margin: 0 0 0.4rem; }

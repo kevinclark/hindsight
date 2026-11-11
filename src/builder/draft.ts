@@ -137,7 +137,7 @@ export function draftProfile(input: { logs: DraftLog[]; snapshot?: Snapshot; hin
   const { log, fileName } = logs.find((l) => l.log.entries.has('/DriverStation/Enabled') || l.log.entries.has('DS:enabled')) ?? logs[0]
   const found = mergeMotors(logs.map((l) => motorsFromLog(l.log)))
   const groups = groupMotors(found.motors)
-  const motorKeys = new Set(found.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.current, m.velocity, m.connected, m.temperature].filter((k): k is string => !!k)))
+  const motorKeys = new Set(found.motors.flatMap((m) => [m.supplyCurrent, m.statorCurrent, m.current, m.velocity, m.appliedVolts, m.connected, m.temperature].filter((k): k is string => !!k)))
   const own = signalsFromLog(log, motorKeys)
   const sig = mergeSignals([own, ...logs.filter((l) => l.log !== log).map((l) => signalsFromLog(l.log, motorKeys))])
   sig.code = own.code
@@ -156,6 +156,7 @@ export function draftProfile(input: { logs: DraftLog[]; snapshot?: Snapshot; hin
         ...(motor.statorCurrent ? { statorCurrent: motor.statorCurrent } : {}),
         ...(motor.current ? { current: motor.current } : {}),
         ...(motor.velocity ? { velocity: motor.velocity } : {}),
+        ...(motor.appliedVolts ? { appliedVolts: motor.appliedVolts } : {}),
         ...(motor.connected ? { connected: motor.connected } : {}),
         ...(motor.temperature ? { temperature: motor.temperature } : {}),
         ...(id !== undefined ? { canId: id, canIdFrom: 'log' as const } : {}),

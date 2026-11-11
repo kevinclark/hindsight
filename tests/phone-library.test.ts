@@ -8,6 +8,9 @@ import { DriveReader } from '../src/hub/drive-read.ts'
 import { memoryCache } from '../src/hub/phone-cache.ts'
 import { serializeRecord, type LogRecord } from '../src/hub/types.ts'
 import { FakeDrive } from './helpers/fake-drive.ts'
+import { entryForSummary, moreInSummary, readHereLine, reviewTarget, sizeOf, mb, LARGE_BYTES } from '../src/ui/phone-library.ts'
+import type { Entry } from '../src/hub/catalog.ts'
+import { match } from './helpers/board-scene.ts'
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex')
 const bytes = (n: number, seed: number) => Uint8Array.from({ length: n }, (_, i) => (i * 31 + seed) & 255)
@@ -220,5 +223,88 @@ describe('On this phone', () => {
     const e = (sha: string, ds: string[] = []) => ({ record: { sha256: sha }, attached: { dslog: ds.map((s) => ({ sha256: s })), dsevents: [], hoot: [] } }) as unknown as import('../src/hub/catalog.ts').Entry
     const list = [e('a'), e('b', ['bd']), e('c', ['cd'])]
     expect(onThisPhone(list, new Set(['a', 'b', 'bd', 'c'])).map((x) => x.record.sha256)).toEqual(['a', 'b'])
+  })
+})
+
+// Match review on the phone: which Library log a summary came from, what to do about it, and what the phone's own read lacks.
+const entryOf = (names: string[], size: number, sha: string, ds: number[] = []): Entry => ({
+  record: { type: 'log', kind: 'wpilog', sha256: sha, size, path: `logs/${names[0]}`, names } as unknown as LogRecord,
+  names,
+  attached: { dslog: ds.map((n, i) => ({ type: 'log', kind: 'dslog', sha256: `${sha}d${i}`, size: n, path: `logs/${i}.dslog`, names: [`${i}.dslog`] }) as unknown as LogRecord), dsevents: [], hoot: [] },
+}) as unknown as Entry
+
+describe('entryForSummary', () => {
+  const q1 = entryOf(['q1.wpilog'], 1000, 'a')
+  const q2 = entryOf(['q2.wpilog', 'q2-copy.wpilog'], 2000, 'b')
+  it('finds the log whose names include the file name and whose size matches', () => {
+    expect(entryForSummary([q1, q2], { fileName: 'q1.wpilog', fileSize: 1000 })).toBe(q1)
+    expect(entryForSummary([q1, q2], { fileName: 'q2-copy.wpilog', fileSize: 2000 })).toBe(q2) // any name the content was seen under
+  })
+  it("reads the entry's own names, not the first record's", () => {
+    const merged = { ...entryOf(['first.wpilog'], 1000, 'm'), names: ['first.wpilog', 'later.wpilog'] } as Entry
+    expect(entryForSummary([merged], { fileName: 'later.wpilog', fileSize: 1000 })).toBe(merged)
+  })
+  it('is null for the same name at another size, and for a name no log has', () => {
+    expect(entryForSummary([q1, q2], { fileName: 'q1.wpilog', fileSize: 1001 })).toBeNull()
+    expect(entryForSummary([q1, q2], { fileName: 'q3.wpilog', fileSize: 1000 })).toBeNull()
+    expect(entryForSummary([], { fileName: 'q1.wpilog', fileSize: 1000 })).toBeNull()
+  })
+  it('is null when two logs fit (never a guess)', () => {
+    expect(entryForSummary([q1, entryOf(['q1.wpilog'], 1000, 'c')], { fileName: 'q1.wpilog', fileSize: 1000 })).toBeNull()
+  })
+  it('prefers the sha-256 the event line carries, and falls back to name and size when no entry has it', () => {
+    const twin = entryOf(['q1.wpilog'], 1000, 'c')
+    expect(entryForSummary([q1, twin], { fileName: 'q1.wpilog', fileSize: 1000, sha256: 'c' })).toBe(twin)
+    expect(entryForSummary([q1], { fileName: 'q1.wpilog', fileSize: 1000, sha256: 'unknown' })).toBe(q1)
+  })
+  it('gives a match recorded in several logs the summary only', () => {
+    expect(entryForSummary([q1], { fileName: 'q1.wpilog', fileSize: 1000, pieces: ['q1.wpilog', 'q1b.wpilog'] })).toBeNull()
+  })
+})
+
+describe('reviewTarget', () => {
+  const withDs = entryOf(['q1.wpilog'], 1000, 'a', [300])
+  const summary = { fileName: 'q1.wpilog', fileSize: 1000 }
+  it('says kept only when the log and its DS logs are all kept; size is the log plus its DS logs', () => {
+    expect(reviewTarget([withDs], new Set(['a']), summary)).toMatchObject({ entry: withDs, kept: false, auto: false })
+    expect(reviewTarget([withDs], new Set(['a', 'ad0']), summary)).toMatchObject({ entry: withDs, kept: true, auto: true })
+    expect(sizeOf(withDs)).toBe(1300)
+    expect(mb(12 * 2 ** 20)).toBe('12')
+  })
+  it('opens by itself only below the large size: a big kept log waits for a button press', () => {
+    const big = entryOf(['big.wpilog'], LARGE_BYTES + 1, 'z')
+    expect(reviewTarget([big], new Set(['z']), { fileName: 'big.wpilog', fileSize: LARGE_BYTES + 1 })).toMatchObject({ kept: true, large: true, auto: false })
+    const edge = entryOf(['edge.wpilog'], LARGE_BYTES, 'y')
+    expect(reviewTarget([edge], new Set(['y']), { fileName: 'edge.wpilog', fileSize: LARGE_BYTES })).toMatchObject({ large: false, auto: true })
+  })
+  it('is null with no list (a failed read), no summary, or no such log', () => {
+    expect(reviewTarget(null, new Set(['a']), summary)).toBeNull()
+    expect(reviewTarget([withDs], new Set(), null)).toBeNull()
+    expect(reviewTarget([withDs], new Set(), { fileName: 'other.wpilog', fileSize: 1000 })).toBeNull()
+  })
+})
+
+describe("what the phone's read lacks against the laptop's summary", () => {
+  const summary = match(2, { fires: [{ key: 'limits/not-applied' }, { key: 'power/brownout' }, { key: 'power/brownout' }] })
+  const rules = Object.fromEntries(Object.entries(summary.rules).filter(([, r]) => r.findings.length).map(([id, r]) => [id, r.findings.length]))
+  const here = (counts: Record<string, number>) => Object.entries(counts).flatMap(([rule, n]) => Array.from({ length: n }, () => ({ rule })))
+  it('compares findings per rule id, by count', () => {
+    expect(moreInSummary(summary, here(rules))).toEqual([])
+    const [first] = Object.keys(rules)
+    expect(moreInSummary(summary, here({ ...rules, [first]: rules[first] - 1 }))).toEqual([{ rule: first, more: 1 }])
+    expect(moreInSummary(summary, here({ ...rules, 'code/other': 3 }))).toEqual([]) // more on the phone is not a gap
+  })
+  it('says only "Read on this phone." when nothing differs, whatever the laptop had', () => {
+    expect(readHereLine(summary, here(rules))).toBe('Read on this phone.')
+    expect(readHereLine({ ...summary, codeFolder: 'robot-code' }, here(rules))).toBe('Read on this phone.')
+  })
+  it('names the rules the laptop found more for, and says the laptop had the code folder only when its summary names one', () => {
+    const ids = Object.keys(rules)
+    const lacking = here(Object.fromEntries(ids.map((id) => [id, 0])))
+    const total = Object.values(rules).reduce((a, b) => a + b, 0)
+    const base = `Read on this phone. The laptop's read found ${total} more (${ids.join(', ')}).`
+    expect(readHereLine(summary, lacking)).toBe(base)
+    expect(readHereLine({ ...summary, codeFolder: null }, lacking)).toBe(base)
+    expect(readHereLine({ ...summary, codeFolder: 'robot-code' }, lacking)).toBe(`${base} It had the robot code folder; this phone has none.`)
   })
 })

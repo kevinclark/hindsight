@@ -24,6 +24,8 @@ export interface LogMotor {
   /** A current key that doesn't say supply or stator: the student says which. */
   current?: string
   velocity?: string
+  /** The applied voltage (`AppliedVolts`, `Voltage`, `MotorVoltage`; a TalonFX struct's motorVoltage), never a requested one. */
+  appliedVolts?: string
   connected?: string
   temperature?: string
   /** How it was found. */
@@ -72,7 +74,7 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
     const key = (f: string) => (has(f) ? `${base}${f}` : undefined)
     motors.push(clean({
       path: base.slice(0, -1), from: 'struct:TalonFX',
-      supplyCurrent: key('supplyCurrent'), statorCurrent: key('statorCurrent'), velocity: key('velocity'), temperature: key('deviceTemp'),
+      supplyCurrent: key('supplyCurrent'), statorCurrent: key('statorCurrent'), velocity: key('velocity'), appliedVolts: key('motorVoltage'), temperature: key('deviceTemp'),
     }))
   }
 
@@ -142,6 +144,10 @@ export function motorsFromLog(log: WpilogFile): LogMotors {
       path, from: 'keys',
       supplyCurrent: find('supply'), statorCurrent: find('stator'), current: find('current'),
       velocity: pick(/Velocity|Speed/, NUMERIC, /Target|Setpoint|Goal|Desired|Reference|Requested|Command/),
+      // Only the voltage itself after the motor's name (`AppliedVolts`, `Voltage`): `Requested Voltage`, `SupplyVoltage`
+      // or a tuning `FeedVoltage` is not what the motor got.
+      // A named one (`AppliedVolts`) before a bare `Voltage`: pick takes the shortest key, which would prefer the bare one.
+      appliedVolts: pick(/^(Applied|Motor|Output)Volt(s|age)?$/, NUMERIC) ?? pick(/^Volt(s|age)?$/, NUMERIC),
       connected: pick(/Connected$/, new Set(['boolean'])),
       temperature: pick(/Temp/, NUMERIC),
       element: s.element && { of: path.slice(0, path.lastIndexOf('[')), ...s.element },

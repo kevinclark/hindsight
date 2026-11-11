@@ -13,11 +13,17 @@ import { homedir } from 'node:os'
  *   event2026        the folder of that 2026 event's logs; event2026Files names the ones tests pick out
  *   event2025        the folder of the 2025 robot's event logs; event2025Files names the ones tests pick out
  *   robot2023, robot2024  one log from each of those robots
+ *   pitEvent2026     the folder of a 2026 event's pit runs and matches; pitEvent2026Files names the ones tests pick out:
+ *                    kickerApart (a pit run with the kicker's two motors apart all run), kickerApartThenFine (a pit run,
+ *                    apart in its first enable and together in its last), kickerApartMatch (a match played with them
+ *                    apart), healthyPit, healthyPitEndsEnabled (a healthy pit run powered off while enabled), healthyMatch
  */
 export type TeamLogs = {
   logA?: string; logADslog?: string; logB?: string; logC?: string
   event2026?: string; event2026Files?: Record<string, string>; event2025?: string; event2025Files?: Record<string, string | string[]>
   robot2023?: string; robot2024?: string
+  pitEvent2026?: string
+  pitEvent2026Files?: Partial<Record<'kickerApart' | 'kickerApartThenFine' | 'kickerApartMatch' | 'healthyPit' | 'healthyPitEndsEnabled' | 'healthyMatch', string>>
 }
 
 export const TEAM_LOGS_FILE = process.env.HINDSIGHT_TEAM_LOGS ?? `${homedir()}/.hindsight/team-logs.json`

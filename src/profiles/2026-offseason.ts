@@ -13,7 +13,20 @@
 
 import { ADVANTAGEKIT_SIGNALS } from './advantagekit.ts'
 import { onOneBus } from './connected.ts'
-import type { MotorGroup, RobotProfile } from './types.ts'
+import type { Motor, MotorGroup, RobotProfile } from './types.ts'
+
+/** One of the indexer subsystem's motors, from its key prefix (IndexerIO.java logs every motor the same way). */
+const indexerMotor = (m: { name: string; prefix: string; canId: number }): Motor => ({
+  name: m.name,
+  canId: m.canId,
+  supplyCurrent: `${m.prefix}SupplyCurrentAmp`,
+  statorCurrent: `${m.prefix}StatorCurrentAmp`,
+  appliedVolts: `${m.prefix}Voltage`,
+  velocity: `${m.prefix}VelocityRotationsPerSec`,
+  connected: `${m.prefix}Connected`,
+  temperature: `${m.prefix}TempC`,
+  updating: `${m.prefix}StatorCurrentAmp`,
+})
 
 const swerveModules = ['Front Left', 'Front Right', 'Back Left', 'Back Right']
 
@@ -64,6 +77,9 @@ const robot: RobotProfile = {
     ratedCapacityAh: ['/BatteryGauge/RatedCapacityAh', '/RealOutputs/BatteryGauge/RatedCapacityAh'],
     remainingChargePct: ['/BatteryGauge/RemainingChargePct', '/RealOutputs/BatteryGauge/RemainingChargePct'],
     numCycles: ['/BatteryGauge/NumCycles', '/RealOutputs/BatteryGauge/NumCycles'],
+    // The robot's own fuel-gauge code (from ee681a7) writes the gauge's battery name once at start-up as metadata; the
+    // tracker library's keys above are not in its logs.
+    gaugeName: ['/RealMetadata/BFG Name'],
   },
 
   power: {
@@ -83,6 +99,7 @@ const robot: RobotProfile = {
         canId: swerveCanIds[m].drive,
         supplyCurrent: `/Swerve/${m} Module/DriveSupplyCurrentAmps`,
         statorCurrent: `/Swerve/${m} Module/DriveStatorCurrentAmps`,
+        appliedVolts: `/Swerve/${m} Module/DriveAppliedVolts`,
         connected: `/Swerve/${m} Module/DriveConnected`,
         temperature: `/Swerve/${m} Module/DriveTempC`,
         updating: `/Swerve/${m} Module/DriveStatorCurrentAmps`,
@@ -96,6 +113,7 @@ const robot: RobotProfile = {
         canId: swerveCanIds[m].steer,
         supplyCurrent: `/Swerve/${m} Module/TurnSupplyCurrentAmps`,
         statorCurrent: `/Swerve/${m} Module/TurnStatorCurrentAmps`,
+        appliedVolts: `/Swerve/${m} Module/TurnAppliedVolts`,
         connected: `/Swerve/${m} Module/TurnConnected`,
         temperature: `/Swerve/${m} Module/TurnTempC`,
         updating: `/Swerve/${m} Module/TurnStatorCurrentAmps`,
@@ -112,6 +130,7 @@ const robot: RobotProfile = {
           supplyCurrent: '/Drum/Flywheel/Leader/SupplyCurrentAmps',
           statorCurrent: '/Drum/Flywheel/Leader/StatorCurrentAmps',
           velocity: '/Drum/Flywheel/Leader/VelocityRotPerSec',
+          appliedVolts: '/Drum/Flywheel/Leader/Voltage',
           connected: '/Drum/Flywheel/Leader/Connected',
           temperature: '/Drum/Flywheel/Leader/TempC',
           // No `updating`: at rest every flywheel signal sits unchanged for minutes (stator current too).
@@ -123,6 +142,7 @@ const robot: RobotProfile = {
           supplyCurrent: `/Drum/Flywheel/Follower ${i}/SupplyCurrentAmps`,
           statorCurrent: `/Drum/Flywheel/Follower ${i}/StatorCurrentAmps`,
           velocity: `/Drum/Flywheel/Follower ${i}/VelocityRotPerSec`,
+          appliedVolts: `/Drum/Flywheel/Follower ${i}/Voltage`,
           connected: `/Drum/Flywheel/Follower ${i}/Connected`,
           temperature: `/Drum/Flywheel/Follower ${i}/TempC`,
         })),
@@ -139,6 +159,7 @@ const robot: RobotProfile = {
         canId: 14, // HoodIO.java:51
         supplyCurrent: '/Drum/Hood/SupplyCurrentAmps',
         statorCurrent: '/Drum/Hood/StatorCurrentAmps',
+        appliedVolts: '/Drum/Hood/Voltage',
         connected: '/Drum/Hood/Connected',
         temperature: '/Drum/Hood/TempC',
         updating: '/Drum/Hood/StatorCurrentAmps',
@@ -152,6 +173,7 @@ const robot: RobotProfile = {
         canId: 8, // Robot.java:74
         supplyCurrent: '/Intake/Pivot/SupplyCurrentAmps',
         statorCurrent: '/Intake/Pivot/StatorCurrentAmps',
+        appliedVolts: '/Intake/Pivot/Voltage',
         connected: '/Intake/Pivot/Connected',
         temperature: '/Intake/Pivot/TempC',
         updating: '/Intake/Pivot/StatorCurrentAmps',
@@ -164,14 +186,15 @@ const robot: RobotProfile = {
       // Leader 9 (Robot.java:76), follower 10 (SlapdownSubsystem.java:86).
       // The two rollers name their temperature and velocity differently in the log.
       motors: [
-        { m: 'Leader', canId: 9, temp: 'TemperatureCelsius', velocity: 'VelocityRotsPerSec' },
-        { m: 'Follower', canId: 10, temp: 'TempC', velocity: 'VelocityRotPerSec' },
-      ].map(({ m, canId, temp, velocity }) => ({
+        { m: 'Leader', canId: 9, temp: 'TemperatureCelsius', velocity: 'VelocityRotsPerSec', volts: 'AppliedVoltage' },
+        { m: 'Follower', canId: 10, temp: 'TempC', velocity: 'VelocityRotPerSec', volts: 'Voltage' },
+      ].map(({ m, canId, temp, velocity, volts }) => ({
         name: `Intake roller ${m.toLowerCase()}`,
         canId,
         supplyCurrent: `/Intake/Roller ${m}/SupplyCurrentAmps`,
         statorCurrent: `/Intake/Roller ${m}/StatorCurrentAmps`,
         velocity: `/Intake/Roller ${m}/${velocity}`,
+        appliedVolts: `/Intake/Roller ${m}/${volts}`,
         connected: `/Intake/Roller ${m}/Connected`,
         temperature: `/Intake/Roller ${m}/${temp}`,
         updating: `/Intake/Roller ${m}/StatorCurrentAmps`,
@@ -181,20 +204,25 @@ const robot: RobotProfile = {
     {
       name: 'Indexer',
       motors: [
-        // IndexerIO.java:86, 89, 92.
+        // IndexerIO.java:86.
         { name: 'Indexer', prefix: '/Indexer/Indexer', canId: 11 },
+      ].map(indexerMotor),
+      limits: { supplyA: 40, supplyEnabled: true, statorA: 60, statorEnabled: true, where: 'IndexerIO.java:170' },
+    },
+    {
+      name: 'Kicker',
+      // The leader runs VoltageOut and the follower Follower(..., Opposed) (IndexerSubsystem.java, IndexerIO.java), so
+      // the two should turn at the same speed.
+      sameLoop: true,
+      motors: [
+        // IndexerIO.java:89, 92.
         { name: 'Kicker leader', prefix: '/Indexer/KickerLeader', canId: 12 },
         { name: 'Kicker follower', prefix: '/Indexer/KickerFollower', canId: 13 },
-      ].map((m) => ({
-        name: m.name,
-        canId: m.canId,
-        supplyCurrent: `${m.prefix}SupplyCurrentAmp`,
-        statorCurrent: `${m.prefix}StatorCurrentAmp`,
-        connected: `${m.prefix}Connected`,
-        temperature: `${m.prefix}TempC`,
-        updating: `${m.prefix}StatorCurrentAmp`,
-      })),
+      ].map(indexerMotor),
+      // The same configuration as the indexer feed motor (IndexerIO.java:170).
       limits: { supplyA: 40, supplyEnabled: true, statorA: 60, statorEnabled: true, where: 'IndexerIO.java:170' },
+      // The follower copies the leader, turning the opposite way, on one kicker roller (IndexerIO.java:96-97, Opposed).
+      coupledPairs: [{ name: 'Kicker', leader: 'Kicker leader', follower: 'Kicker follower', where: 'IndexerIO.java:96-97' }],
     },
   ],
 
@@ -308,7 +336,7 @@ export const offseason2026: RobotProfile = onOneBus('CANivore', robot)
  * d339f29 (2026-10-18 10:21 PDT, "reduce supply current indexer"). The event logs came from 45e3eba, fb5f9b7 and
  * 123eec6, all ancestors of this head; later commits are 96479a0 and d339f29. Compared with main cb68b20:
  *  - The kickers' supply limit is 30 A, not 40 A (IndexerIO.java:198, commit d339f29). The indexer feed motor
- *    stays at 40 A, so the old "Indexer" group is split in two.
+ *    stays at 40 A.
  *  - Every other current limit, CAN ID and logged motor/camera key is the same as main. The CAN IDs were checked at
  *    d339f29: the same values, with three moved lines (Robot.java:75 pivot, Robot.java:77 roller leader,
  *    SlapdownSubsystem.java:95 roller follower); the bus is still `new CANBus("*")` (Robot.java:62).
@@ -319,14 +347,6 @@ export const offseason2026: RobotProfile = onOneBus('CANivore', robot)
  *  - The Pigeon acceleration keys (accelX / accelY) are only logged by the event code, not by main cb68b20.
  * Flywheel supply limit: still 40 A with the enable flag false at this head (DrumSubsystem.java:317-318).
  */
-function eventGroup(name: string): MotorGroup {
-  const group = offseason2026.motorGroups.find((g) => g.name === name)
-  if (!group) throw new Error(`offseason2026 has no motor group "${name}"`)
-  return group
-}
-
-const mainIndexerMotors = eventGroup('Indexer').motors
-
 export const offseason2026Event: RobotProfile = onOneBus('CANivore', {
   ...offseason2026,
   // event-calgames-new-autos was merged into event-calgames (at 123eec6), so its logs ran this code too.
@@ -342,12 +362,11 @@ export const offseason2026Event: RobotProfile = onOneBus('CANivore', {
         return [{ ...group, limits: { ...group.limits, where: 'SlapdownSubsystem.java:286' } }]
       case 'Intake rollers':
         return [{ ...group, limits: { ...group.limits, where: 'SlapdownSubsystem.java:314' } }]
+      // Two configs in IndexerIO.java: the indexer feed motor (line 170) and the two kickers (line 196).
       case 'Indexer':
-        // Two configs in IndexerIO.java: the indexer feed motor (line 170) and the two kickers (line 196).
-        return [
-          { name: 'Indexer', motors: mainIndexerMotors.filter((m) => !m.name.startsWith('Kicker')), limits: { ...group.limits, where: 'IndexerIO.java:170-173' } },
-          { name: 'Kicker', motors: mainIndexerMotors.filter((m) => m.name.startsWith('Kicker')), limits: { ...group.limits, supplyA: 30, where: 'IndexerIO.java:196-199' } },
-        ]
+        return [{ ...group, limits: { ...group.limits, where: 'IndexerIO.java:170-173' } }]
+      case 'Kicker':
+        return [{ ...group, limits: { ...group.limits, supplyA: 30, where: 'IndexerIO.java:196-199' } }]
       default:
         return [group]
     }
