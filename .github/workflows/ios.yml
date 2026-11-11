@@ -1,14 +1,19 @@
-# Builds the iPhone app (the phone build of the page in its Capacitor shell), signed for the App Store, and on main
-# uploads it to TestFlight as version 0.1.<commit count>, the same number as the desktop release. A branch push builds and
-# signs without uploading. Signing: the IOS_DIST_* and IOS_APPSTORE_PROFILE secrets (scripts/hindsight-ios-secrets.sh
-# in the team's admin repo); upload: the App Store Connect key the Mac notarization uses. Steps: scripts/ios-testflight.sh.
+# Builds the iPhone app (the phone build of the page in its Capacitor shell), signed for the App Store, and uploads it to
+# TestFlight as version 0.1, build <commit count>: nightly when the app changed in the last day, or when run by hand from
+# main (Actions > ios > Run workflow). Not on every push: main gets about ten releases a day, Apple limits uploads per app
+# per day, and each upload would wait for TestFlight. A push to the claude/ios-* branches builds and asks App Store Connect
+# to validate without uploading. The tests run first, as the desktop release's do.
+# Signing: the IOS_DIST_* and IOS_APPSTORE_PROFILE secrets (scripts/hindsight-ios-secrets.sh in the team's admin repo);
+# upload: the App Store Connect key the Mac notarization uses. Steps: scripts/ios-testflight.sh.
 name: ios
 
 on:
+  schedule:
+    - cron: '0 10 * * *' # 02:00/03:00 Pacific
+  workflow_dispatch:
   push:
     branches:
-      - main
-      - claude/ios-app
+      - 'claude/ios-*'
     paths:
       - src/**
       - ios/**
@@ -16,9 +21,10 @@ on:
       - phone.html
       - vite*.ts
       - capacitor.config.ts
+      - svelte.config.js
+      - tsconfig.json
       - scripts/ios-*.sh
       - .github/workflows/ios.yml
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,20 +37,38 @@ jobs:
   testflight:
     # macos-26: Xcode 26.6 by default (Capacitor 8 needs Xcode 26).
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0 # the build number is the commit count
+      # Nightly: only when something the app is built from changed in the last 25 hours.
+      - name: Anything new for the phone?
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" != schedule ] || [ -n "$(git log --since='25 hours ago' --format=%H -- src ios package.json package-lock.json phone.html capacitor.config.ts 'vite*.ts')" ]; then
+            echo "go=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "nothing changed for the phone in the last day: no build"
+          fi
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.changed.outputs.go == '1'
         with:
           node-version: '24'
-      # No install scripts: the phone build needs neither Electron's download nor a native module.
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: xcodebuild -version
-      - name: Build, sign and (on main) upload to TestFlight
+      # No install scripts: neither the tests nor the phone build need Electron's download or a native module.
+      - if: steps.changed.outputs.go == '1'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Tests
+        if: steps.changed.outputs.go == '1'
+        run: npx vitest run && npm run check
+      - name: The page and the icon (no secrets in this step)
+        if: steps.changed.outputs.go == '1'
+        run: sh scripts/ios-icon.sh && npm run build:phone && npx cap sync ios && xcodebuild -version
+      - name: Sign, then upload (main) or validate (a branch)
+        if: steps.changed.outputs.go == '1'
         env:
+          BUILD_PAGE: '0'
           IOS_DIST_P12: ${{ secrets.IOS_DIST_P12 }}
           IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
           IOS_APPSTORE_PROFILE: ${{ secrets.IOS_APPSTORE_PROFILE }}
@@ -52,4 +76,5 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           UPLOAD: ${{ github.ref == 'refs/heads/main' && '1' || '0' }}
-        run: sh scripts/ios-testflight.sh
+          VALIDATE: ${{ github.ref != 'refs/heads/main' && '1' || '0' }}
+        run: bash scripts/ios-testflight.sh

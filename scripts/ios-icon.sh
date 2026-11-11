@@ -12,3 +12,4 @@ sips -s format jpeg -s formatOptions best "$tmp/icon.png" --out "$tmp/icon.jpg" 
 sips -s format png "$tmp/icon.jpg" --out "$out" >/dev/null
 rm -rf "$tmp"
 sips -g pixelWidth -g hasAlpha "$out" | tail -2
+sips -g hasAlpha "$out" | grep -q 'hasAlpha: no' || { echo "the icon still has an alpha channel: App Store Connect would refuse it"; exit 1; }
