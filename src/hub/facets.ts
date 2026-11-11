@@ -6,20 +6,29 @@ import type { Entry } from './catalog.ts'
 import { schoolYear } from './layout.ts'
 import { seasonOf } from './season.ts'
 import { resolveEvent } from './events.ts'
+import { offFieldKind, type OffFieldKind } from './log-kind.ts'
 import type { LogMeta } from './types.ts'
 
-export const FACETS = ['schoolYear', 'season', 'place', 'matchType', 'battery', 'robot', 'driver'] as const
+export const FACETS = ['schoolYear', 'season', 'place', 'logType', 'battery', 'robot', 'driver'] as const
 export type FacetId = (typeof FACETS)[number]
 
 export const FACET_LABELS: Record<FacetId, string> = {
-  schoolYear: 'School year', season: 'Season', place: 'Event or practice place', matchType: 'Match type', battery: 'Battery', robot: 'Robot', driver: 'Driver',
+  schoolYear: 'School year', season: 'Season', place: 'Event or practice place', logType: 'Log type', battery: 'Battery', robot: 'Robot', driver: 'Driver',
 }
 
 export const UNKNOWN: Record<FacetId, string> = {
-  schoolYear: 'No date', season: 'No date', place: 'No place', matchType: 'Not a match', battery: 'No battery', robot: 'Unknown robot', driver: 'No driver',
+  schoolYear: 'No date', season: 'No date', place: 'No place', logType: 'Not a match', battery: 'No battery', robot: 'Unknown robot', driver: 'No driver',
 }
 
 const MATCH_TYPES = ['Not a match', 'Practice match', 'Qualification', 'Elimination']
+const OFF_FIELD_TYPES: Record<OffFieldKind, string> = { 'on-check': 'On-check', 'not-enabled': 'Not enabled', unread: 'Off the field (not read)' }
+
+/** The log type facet's value: the match type on the field, and off it what the log's runs say (src/hub/log-kind.ts). */
+function logType(r: Pick<LogMeta, 'kind' | 'onField' | 'runs' | 'matchType'>): string {
+  const off = offFieldKind(r)
+  if (off) return OFF_FIELD_TYPES[off]
+  return r.matchType !== null ? MATCH_TYPES[r.matchType] ?? UNKNOWN.logType : UNKNOWN.logType
+}
 
 /** The event name the FMS gave a log, as people say it: the table's name for the code when it has one, else the FMS text. Null when the log is not on the field or names nothing. */
 export function fmsPlace(r: Pick<LogMeta, 'onField' | 'event' | 'playedAt'>): { name: string; resolved: boolean } | null {
@@ -99,7 +108,7 @@ export function facetValues(e: Entry, labels: RobotLabels, places?: Places): Rec
     season: r.playedAt === null ? UNKNOWN.season : seasonOf(r.playedAt) === 'season' ? 'Season' : 'Off-season',
     // On the field the FMS names the event; anywhere else a person types where the practice was.
     place: fmsPlace(r)?.name ?? places?.get(r.sha256) ?? e.tags.place ?? UNKNOWN.place,
-    matchType: r.matchType !== null ? MATCH_TYPES[r.matchType] ?? UNKNOWN.matchType : UNKNOWN.matchType,
+    logType: logType(r),
     battery: e.tags.battery ?? r.batteryId ?? UNKNOWN.battery,
     robot: labels.get(r.sha256)?.label ?? UNKNOWN.robot,
     driver: e.tags.driver ?? UNKNOWN.driver,
