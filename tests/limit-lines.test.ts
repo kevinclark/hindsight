@@ -14,6 +14,7 @@ import { GitHubRepo } from '../src/code/github.ts'
 import type { CodeSource } from '../src/code/source.ts'
 import { compareLimitLines, limitFiles, type CodeFolder, type LimitLines } from '../src/code/limit-lines.ts'
 import { nodeGitDir } from '../src/code/node-git-dir.ts'
+import { TryAgain } from '../src/code/git.ts'
 import { loadJavaFromDisk } from '../src/code/check/node-java.ts'
 import { offseason2026 } from '../src/profiles/2026-offseason.ts'
 import { writeWpilog, type FixtureEntry } from './helpers/fixture-format.ts'
@@ -228,5 +229,25 @@ describe('power/limit-not-applied judges a log against the limit its own commit 
     const kept = [...(code.cache as ReturnType<typeof memoryCache>).kept.values()]
     expect(kept.length).toBeGreaterThan(0)
     expect(kept.find((a) => a.verdict === 'different' && 'limits' in a.ran)).toMatchObject({ ran: { commit: sets55, limits: { supplyA: 55, supplyEnabled: true } } })
+  })
+  it('a failed read of the log\'s code is not kept: amber now, red against the log\'s limit once a source can read it', async () => {
+    const code = folder()
+    const broken: CodeFolder = { ...code, loadJava: async () => { throw new Error('no parser') } }
+    const first = await finding(sets55, broken)
+    expect(first.severity).toBe('warning')
+    expect(first.title).toContain('the limit this build set is unknown')
+    expect(first.evidence[LINES]).toContain('no parser')
+    expect([...(code.cache as ReturnType<typeof memoryCache>).kept.values()].filter((a) => a.verdict === 'different')).toEqual([])
+    const second = await finding(sets55, code)
+    expect(second.severity).toBe('error')
+    expect(second.title).toContain('against a 55 A limit (as this log\'s commit')
+  })
+  it('GitHub unable to answer while the code is read keeps the differing lines, asks again, and keeps nothing', async () => {
+    const code = folder()
+    const busy: CodeFolder = { ...code, loadJava: async () => { throw new TryAgain('GitHub is busy') } }
+    const f = await finding(sets55, busy)
+    expect(f.evidence[LINES]).toMatch(/^different from [0-9a-f]{7}: - DrumSubsystem.java: .*; the limits this log's commit sets couldn't be read: GitHub is busy$/)
+    expect(f.severity).toBe('warning')
+    expect([...(code.cache as ReturnType<typeof memoryCache>).kept.values()]).toEqual([])
   })
 })

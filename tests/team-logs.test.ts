@@ -93,16 +93,18 @@ describe.skipIf(!haveLogs)('the team\'s 2026 logs A, B and C', () => {
     expect(b.evidence['lowest battery voltage in the 0.5 s before each drop (V)']).toBe('5.86, 6.20, 6.31, 5.85, 6.10, 6.02, 5.96')
   })
 
-  it('links: A and C read as one story each, B\'s camera alerts sit under the camera, red headlines 6 → 3, 5 → 2, 4 → 4', () => {
+  it('links: A and C read as one story each, B\'s camera alerts sit under the camera, red headlines 5 → 2, 4 → 1, 3 → 3', () => {
     const links = (name: 'a' | 'b' | 'c') => byName(name).report.findings.filter((f) => f.explainedBy).map((f) => `${f.rule}${f.about ? ` ${f.about}` : ''} ← ${f.explainedBy!.rule}`)
     expect(links('a')).toEqual(['auto/early-disable ← collision/tilt', 'collision/tilt Pitch ← mech/zero-not-completed', 'comms/ds-log-truncated ← comms/loss'])
     expect(links('c')).toEqual(['power/brownout ← power/battery-collapse', 'can/device-dropout Flywheel follower 16 ← power/brownout', 'alerts/passthrough Flywheel Follower Disconnected ← can/device-dropout', 'power/margin ← power/brownout'])
     expect(links('b')).toEqual(['alerts/passthrough Back_Right Camera Disconnected! ← vision/stale', "alerts/passthrough PhotonCamera 'Back_Right' is disconnected. ← vision/stale"])
     // Headlines as the Match tab lists them: B's red alert stays one, since its camera finding is only amber.
     const redHeadlines = (name: 'a' | 'b' | 'c') => { const m = reviewModel(byName(name), new Map()); return [m.errors.length, m.headlines.filter((n) => n.finding.severity === 'error').length] }
-    expect([redHeadlines('a'), redHeadlines('c'), redHeadlines('b')]).toEqual([[6, 3], [5, 2], [4, 4]])
+    // No robot code is linked here, so power/limit-not-applied's reds on a log that ran another commit than the profile's
+    // are ambers ("the limit this build set is unknown"): A 6 → 5 errors, C 5 → 4, B 4 → 3 (the golden no-code diff over these logs moved only that rule).
+    expect([redHeadlines('a'), redHeadlines('c'), redHeadlines('b')]).toEqual([[5, 2], [4, 1], [3, 3]])
     const cModel = reviewModel(logC(), new Map())
-    expect(cModel.bottomLine).toMatch(/^5 errors, .*Worst: Battery fell 2\.4 V below a healthy battery/)
+    expect(cModel.bottomLine).toMatch(/^4 errors, .*Worst: Battery fell 2\.4 V below a healthy battery/)
     // The printed report's section counts: C's margin warning is listed under the collapse, in the Errors section.
     expect([listedAbove(cModel, 'warning'), listedAbove(cModel, 'info')]).toEqual([1, 0])
     expect(reviewCard(cModel).items[0].number).toMatch(/explains 3 errors, 1 warning$/)

@@ -20,7 +20,7 @@ import { CommitMissing, GitUnreadable, TryAgain } from './git.ts'
 import { filesNamed, type CodeSource, type Kept } from './source.ts'
 
 /** What the log's own commit sets for a group: its limits (read from the code), or why they can't be read. */
-export type RanLimits = { commit: string; limits: CurrentLimits } | { why: string }
+export type RanLimits = { commit: string; limits: CurrentLimits } | { why: string; tryAgain?: true }
 
 /** What comparing two commits' lines says; a `different` one gets `ran` before it is kept (`LimitLines`). */
 type Comparison =
@@ -59,7 +59,7 @@ export function ranPinnedCommit(match: Match): boolean {
   return match.build.sha.startsWith(match.profile.code.sha)
 }
 
-/** One kept answer's key. `v2`: answers kept before `ran` existed have no limits for the log's commit, so aren't reused. */
+/** One kept answer's key. Bump the version when `ran` (code-hints, `agreedLimits`) changes what it reads: `v2` is the first with `ran`. */
 export function limitLinesKey(repo: string, pin: string, logSha: string, files: string[], canIds: (number | undefined)[] = []): string {
   return ['v2', repo, pin, logSha.toLowerCase(), [...files].sort().join(','), canIds.join(',')].join('|')
 }
@@ -83,7 +83,8 @@ export async function compareMatchLimits(match: Match, code: CodeFolder): Promis
     if (!answer) {
       const compared = await compareLimitLines(code.repo, pin.sha, logSha, files, pin.repo)
       answer = compared.verdict === 'different' ? await withRanLimits(compared, code, logSha, group) : compared
-      if (answer.verdict !== 'unknown') code.cache.set(key, answer)
+      // An answer whose `ran` is a reason isn't kept: a fuller clone, or GitHub answering later, may read it.
+      if (answer.verdict !== 'unknown' && !(answer.verdict === 'different' && 'why' in answer.ran)) code.cache.set(key, answer)
     }
     answers.set(group.name, answer)
   }
@@ -97,7 +98,7 @@ async function withRanLimits(answer: Extract<Comparison, { verdict: 'different' 
     const commit = await code.repo.resolve(logSha)
     return { ...answer, ran: ranLimits(await hintsAtCommit(code.repo, commit), commit, group) }
   } catch (error) {
-    if (error instanceof TryAgain) return { verdict: 'unknown', why: error.message, tryAgain: true }
+    if (error instanceof TryAgain) return { ...answer, ran: { why: error.message, tryAgain: true } }
     if (error instanceof GitUnreadable) return { ...answer, ran: { why: error.message } }
     return { ...answer, ran: { why: `the code at ${logSha.slice(0, 7)} couldn't be read (${error instanceof Error ? error.message : error})` } }
   }

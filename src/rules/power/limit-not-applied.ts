@@ -87,7 +87,7 @@ export default rule({
       let nextStep: string | undefined
       const ruledOut: Record<string, string> = {}
       if (basis === 'unknown') {
-        nextStep = LINK_CODE
+        nextStep = compared ? `Hindsight couldn't read this build's limit from the linked code (why in the evidence): check the limit in ${where} at ${match.build.sha.slice(0, 7) || 'the log\'s commit'}.` : LINK_CODE
       } else if (off) {
         likely = ['limit-off']
         nextStep = `Switch the ${kind} limit on in ${where}, then measure the mechanism before and after. Off on purpose? Mark it as a known issue.`
@@ -118,7 +118,7 @@ export default rule({
           'configured limit (A)': limit,
           'limit switched on in code': onInCode,
           'set in': where,
-          'current-limit lines vs the profile\'s commit': linesWords,
+          'current-limit lines vs the profile\'s commit': basis === 'unknown' && ranCode ? `${linesWords}; the limits this log's commit sets include no ${kind} limit` : linesWords,
         },
         measured: [{ label: `peak ${kind} current`, value: round(worst.peak, 0), unit: 'A', threshold: round(limit * 1.2, 0) }],
         plot: {
