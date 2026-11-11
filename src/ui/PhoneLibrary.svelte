@@ -9,7 +9,7 @@
   import { KEEP_CHOICES, keepCap, setKeepCap } from '../phone/keep-setting.ts'
 
   /** `onOpening`: before a download starts, so the log held now can be let go first (one log in memory at a time). */
-  let { hub, onOpening, onOpen }: { hub: BrowserHub; onOpening: () => void; onOpen: (files: OpenedFile[]) => void } = $props()
+  let { hub, onOpening, onOpen, onBusy }: { hub: BrowserHub; onOpening: () => void; onOpen: (files: OpenedFile[]) => void; onBusy?: (busy: boolean) => void } = $props()
 
   const ALL = ''
 
@@ -32,6 +32,9 @@
   // held, progress never showed, and the line never cleared (seen on the phone, 2026-11-09).
   let opening = $state.raw<{ id: number; entry: Entry; got: number; total: number; stop: AbortController } | null>(null)
   let opens = 0
+  $effect(() => { onBusy?.(!!opening) })
+  /** Stop the download in flight, if any (Match review's own open is starting or a match was picked). */
+  export function stop() { opening?.stop.abort() }
 
   async function list() {
     problem = null
@@ -74,7 +77,7 @@
   </select></label> <span class="meta">{mb(keptBytes)} MB kept</span>{#if keptBytes > 0}{' '}<button class="link" onclick={clearKept}>Clear</button>{/if}</p>
   {#if problem}<p class="problem" role="alert">{problem} <button class="link" onclick={list}>Try again</button></p>{/if}
   {#if opening}
-    <OpenProgress name={opening.entry.record.names[0]} got={opening.got} total={opening.total} onStop={() => { say('Stop pressed'); opening?.stop.abort() }} />
+    <div class="sticky"><OpenProgress name={opening.entry.record.names[0]} got={opening.got} total={opening.total} onStop={() => { say('Stop pressed'); opening?.stop.abort() }} /></div>
   {/if}
   {#if entries === null}
     {#if !problem}<p class="meta">Reading the team's list of logs…</p>{/if}
@@ -116,6 +119,7 @@
   ul { list-style: none; padding: 0; margin: 0; }
   li { display: flex; gap: 0.75rem; align-items: center; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
   .what { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  .sticky { position: sticky; top: 0; z-index: 1; }
   .large { color: var(--warning); }
   button { font: inherit; color: var(--fg); background: none; border: 1px solid var(--focus); border-radius: 6px; padding: 0.3rem 0.7rem; white-space: nowrap; cursor: pointer; }
   button:disabled { border-color: var(--border); color: var(--muted); }

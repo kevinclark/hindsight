@@ -1,7 +1,7 @@
 /**
  * The hub as the phone has it: read-only, straight from the team's Drive folder. For the event it reads each laptop's
  * `history/<machine>.jsonl` (triage marks) and `events/<key>--<machine>.jsonl` (match summaries) through a cache that
- * fetches only what grew. Its Library reads the laptops' `manifests/` (about 2 MB each, the same cache) only when asked,
+ * fetches only what grew. Its Library reads the laptops' `manifests/` (about 2 MB each, the same cache) only when asked (the Library, and Match review finding a match's log),
  * and opens a log by downloading it whole through `media` (or reading it from `keep`, the logs kept on this phone). It has no method that writes.
  *
  * No `node:` imports.

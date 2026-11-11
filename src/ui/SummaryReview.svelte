@@ -17,10 +17,11 @@
     mapStale?: boolean
     onBack?: () => void
     /**
-     * The phone has this match's log in its Library but not kept: the button that downloads it and reads it on the phone
-     * (`size` is "12" or "1.4", megabytes). `progress` while downloading; `problem` when the last try failed, in words.
+     * The phone has this match's log in its Library: the button that reads it on the phone. `size` is the download in
+     * megabytes ("12", "1.4"), or null when the phone already keeps it (no download). `progress` while downloading;
+     * `problem` when the last try failed, in words; `large` when it may not open on older phones.
      */
-    full?: { size: string; onOpen: () => void; progress: { got: number; total: number } | null; onStop: () => void; problem: string | null }
+    full?: { size: string | null; large?: boolean; onOpen: () => void; progress: { got: number; total: number } | null; onStop: () => void; problem: string | null }
   } = $props()
 
   const ICON = { error: '●', warning: '▲', info: '○' } as const
@@ -39,11 +40,11 @@
   {#if onBack}<p class="crumbs"><button type="button" class="link" onclick={onBack}>← Back</button></p>{/if}
   <h2>{summary.event ? `${summary.event} ` : ''}{summary.matchLabel || summary.fileName}</h2>
   <p class="meta">{played} · {summary.robot.name}{#if counts.length}{' · '}{counts.map(([s, n]) => `${n} ${s === 'info' ? 'info' : `${s}${n === 1 ? '' : 's'}`}`).join(', ')}{:else}{' · '}no findings{/if}</p>
-  <p class="meta">From {laptop ? `laptop ${laptop}'s` : 'a laptop\'s'} summary{olderRead ? `, read with Hindsight ${olderRead}` : ''}. Plots are on the laptop: open the log there to see them.</p>
+  <p class="meta">From {laptop ? `laptop ${laptop}'s` : 'a laptop\'s'} summary{olderRead ? `, read with Hindsight ${olderRead}` : ''}. {#if full}Plots need the whole log: Full review, below.{:else}Plots are on the laptop: open the log there to see them.{/if}</p>
   {#if full}
     <div class="full-review" data-full-review>
       {#if full.progress}<OpenProgress name={summary.matchLabel || summary.fileName} got={full.progress.got} total={full.progress.total} onStop={full.onStop} />
-      {:else}<button type="button" onclick={full.onOpen}>Full review · {full.size} MB</button> <span class="meta">Reads the whole log on this phone: the Power, Limits and Logging tabs.</span>{/if}
+      {:else}<button type="button" onclick={full.onOpen}>Full review · {full.size === null ? 'on this phone' : `${full.size} MB`}</button> <span class="meta">Reads the whole log on this phone: the Power, Limits and Logging tabs.</span>{#if full.large}{' '}<span class="meta large">Large: may not open on older phones.</span>{/if}{/if}
       {#if full.problem}<p class="problem" role="alert">{full.problem}</p>{/if}
     </div>
   {/if}
@@ -108,6 +109,7 @@
   .crumbs { margin: 0; }
   .full-review { margin: 0.5rem 0; }
   .full-review button { font: inherit; color: var(--fg); background: none; border: 1px solid var(--focus); border-radius: 6px; padding: 0 0.9rem; min-height: 44px; cursor: pointer; }
+  .large { color: var(--warning); }
   .problem { color: var(--error); margin: 0.25rem 0; }
   .link { border: none; background: none; color: var(--fg); text-decoration: underline; font: inherit; min-height: 44px; padding: 0 0.25rem; cursor: pointer; }
   .findings { list-style: none; padding: 0; margin: 0.75rem 0 0; }
