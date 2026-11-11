@@ -58,8 +58,12 @@ Or `npx cap open ios` and Run in Xcode.
 
 Signing files (`.p8`, `.p12`, provisioning profiles) never go in this repository; `.gitignore` refuses them.
 
-## Not yet
+## TestFlight
 
-- TestFlight and a CI build (Apple Distribution signing, App Store Connect).
-- App icon and launch image: the template's placeholder images are kept out of the repository (text only); a real icon
-  comes with the TestFlight build. Without them the app builds (4 warnings) with no icon.
+`.github/workflows/ios.yml` builds the app on a Mac runner (Xcode 26) with `scripts/ios-testflight.sh`: the icon is rendered
+from `ios/App/AppIcon.svg` (`scripts/ios-icon.sh`; the repository keeps text only), the page is built, and the archive is
+signed with the team's Apple Distribution certificate and App Store profile (secrets `IOS_DIST_P12`,
+`IOS_DIST_P12_PASSWORD`, `IOS_APPSTORE_PROFILE`, both valid to 2027-11-11) and, on main, uploaded with the App Store
+Connect key the Mac notarization uses, as version 0.1.<commit count>. A branch push builds and signs without uploading.
+On a Mac, `sh scripts/ios-icon.sh` before `npm run phone` gives the app its icon; without it the app builds with a blank
+icon (a warning). The launch screen's placeholder images are not in the repository; the launch screen is plain.

@@ -1,0 +1,55 @@
+# Builds the iPhone app (the phone build of the page in its Capacitor shell), signed for the App Store, and on main
+# uploads it to TestFlight as version 0.1.<commit count>, the same number as the desktop release. A branch push builds and
+# signs without uploading. Signing: the IOS_DIST_* and IOS_APPSTORE_PROFILE secrets (scripts/hindsight-ios-secrets.sh
+# in the team's admin repo); upload: the App Store Connect key the Mac notarization uses. Steps: scripts/ios-testflight.sh.
+name: ios
+
+on:
+  push:
+    branches:
+      - main
+      - claude/ios-app
+    paths:
+      - src/**
+      - ios/**
+      - package*.json
+      - phone.html
+      - vite*.ts
+      - capacitor.config.ts
+      - scripts/ios-*.sh
+      - .github/workflows/ios.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    # macos-26: Xcode 26.6 by default (Capacitor 8 needs Xcode 26).
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the build number is the commit count
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      # No install scripts: the phone build needs neither Electron's download nor a native module.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: xcodebuild -version
+      - name: Build, sign and (on main) upload to TestFlight
+        env:
+          IOS_DIST_P12: ${{ secrets.IOS_DIST_P12 }}
+          IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          IOS_APPSTORE_PROFILE: ${{ secrets.IOS_APPSTORE_PROFILE }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          UPLOAD: ${{ github.ref == 'refs/heads/main' && '1' || '0' }}
+        run: sh scripts/ios-testflight.sh
