@@ -39,5 +39,9 @@ describe('a log with no Enabled signal', () => {
     expect(r.runs ?? null).toBeNull()
     expect(neverEnabled(r)).toBe(false)
     expect((await LocalLibrary.open(join(work, 'library'), 'm1')).catalog.all()[0].runs ?? null).toBeNull() // and after a reopen
+    // A later build reads it again: the latest meta replaces the one that cleared it, so it must clear it again.
+    await redescribe(lib, { describer: '9.9.10+test', describe: describeFile })
+    expect(lib.catalog.all()[0].runs ?? null).toBeNull()
+    expect(neverEnabled(lib.catalog.all()[0])).toBe(false)
   })
 })

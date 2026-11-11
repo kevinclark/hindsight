@@ -55,7 +55,8 @@ export async function redescribe(lib: LocalLibrary, options: RedescribeOptions):
       if (read.sha256 !== r.sha256) { report.failed.push({ path: r.path, reason: 'the file on disk is not the one the library recorded (its sha-256 differs)' }); continue }
       const meta = describable(read.meta)
       // A log that records no Enabled signal has no runs reading; an earlier build's "0 runs" must not outlast this reading (the overlay only adds keys).
-      if (!('runs' in meta) && r.runs) meta.runs = null
+      // `!== undefined`, not truthiness: once cleared the record holds null, and every later reading must clear it again (the catalog keeps only the latest meta).
+      if (!('runs' in meta) && r.runs !== undefined) meta.runs = null
       const same = Object.entries(meta).every(([k, v]) => isDeepStrictEqual(v, (r as unknown as Record<string, unknown>)[k]))
       // The whole reading, not only the differences: the catalog keeps the latest meta record per log, whole. A code link
       // is not something reading a log can find, so it is carried over from what the library shows now.
