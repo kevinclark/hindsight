@@ -38,6 +38,24 @@
   const limitText = (g: GroupLimits, l: LimitView) => (g.verdict === 'limits not known' ? 'not known' : l.limitA === null ? (l.on === false ? 'OFF' : 'not set') : `${l.limitA} A, ${onWord(l)}`)
 </script>
 
+<section class="kinds" aria-label="Stator and supply limits">
+  <dl>
+    <div><dt>Stator limit</dt><dd>Caps the current through the motor's windings. That current is torque and heat, so this
+      limit sets how hard a mechanism can push or accelerate, how hot the motor runs, and how much force reaches wheels,
+      belts and pulleys. Too high, it can let drive wheels slip, belts and pulleys strip, and motors overheat.</dd></div>
+    <div><dt>Supply limit</dt><dd>Caps the current the motor takes from the battery. That current pulls the battery voltage
+      down and heats the breakers, so this limit guards against brownouts and breaker trips, and costs spin-up and
+      acceleration time when it is reached. Too high or off: the voltage sags when several mechanisms draw at once. A weak battery or poor wiring sags the same way: check those first.</dd></div>
+  </dl>
+  <p class="why">
+    The two differ most at low speed. Supply ≈ stator × duty cycle (applied volts ÷ battery volts), so supply never
+    exceeds stator. While a mechanism starts or pushes, its stator current is well above its supply current and the
+    stator limit is usually the one reached; as it speeds up the supply limit takes over, and near the motor's top speed
+    on that battery the two are about equal. With the supply limit off, only the stator limit caps battery draw. Bursts
+    over a limit of {CATCH_UP_SECONDS} s or less are the limiter catching up, not a limit that doesn't hold.
+  </p>
+</section>
+
 <table class="summary" aria-label="Summary of the groups below">
   <thead><tr><th>group</th><th>verdict</th><th>share of enabled time at the limit</th><th>battery draw capped at</th></tr></thead>
   <tbody>
@@ -52,15 +70,6 @@
   </tbody>
 </table>
 
-<details class="read">
-  <summary>How to read this</summary>
-  <p class="why">
-    <strong>Stator</strong> current flows through the motor (torque, heat); <strong>supply</strong> current is what it
-    draws from the battery. Supply ≈ stator × duty cycle, so supply can't exceed stator: with the supply limit off, the
-    stator limit is what caps battery draw. Bursts over a limit of {CATCH_UP_SECONDS} s or less are the limiter catching
-    up, not a limit that doesn't hold.
-  </p>
-</details>
 
 {#each groups as g (g.group)}
   <section class="group">
@@ -165,8 +174,10 @@
   .summary .share { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .summary .cap { color: var(--muted); font-size: 0.85rem; }
   .summary .cap.off { color: var(--error); font-weight: 600; }
-  .read { margin: 0.25rem 0; font-size: 0.85rem; }
-  .read summary { cursor: pointer; color: var(--muted); min-height: 24px; line-height: 24px; }
+  .kinds { margin: 0 0 0.75rem; }
+  .kinds dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.5rem 1.25rem; margin: 0 0 0.25rem; max-width: 100ch; }
+  .kinds dt { font-weight: 600; font-size: 0.9rem; }
+  .kinds dd { margin: 0; font-size: 0.85rem; }
   .why, .note { font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
   .group { margin: 1.25rem 0; padding-top: 0.75rem; border-top: 1px solid var(--border); }
   h3 { font-size: 1rem; margin: 0 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }

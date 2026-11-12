@@ -203,6 +203,7 @@
     {:else}
       <p class="note">Nothing ran at top speed with torque to spare, and no setpoint asked for more than the battery had.</p>
     {/if}
+    <p class="note"><strong>At stator limit</strong>: at or near its cap on current through the motor (torque, heat). <strong>At supply cap</strong>: at or near its sustained cap on current from the battery (battery voltage, breakers); where the code sets a higher burst limit, this includes time the motor is not held back. The Limits tab explains the two kinds of limit; its shares are of enabled time, so they differ from these.</p>
     <table class="headroom">
       <thead><tr><th>Group</th><th>Ran (s)</th><th>At stator limit</th><th>At supply cap</th><th>Share of top speed: typical / high</th><th>Within 10 % of top</th><th>Current there</th></tr></thead>
       <tbody>
@@ -218,7 +219,7 @@
       {@const sp = h.setpoint!}
       <p class="sp">{h.group} setpoint: needs {sp.needsVolts.toFixed(1)} V (median); held {sp.seconds.toFixed(0)} s; the battery was under that {ratio(sp.pastTop)} of it{#if sp.shortWhenPastTop !== null}, and the wheel was under 95 % of the setpoint {ratio(sp.shortWhenPastTop)} of that time{/if}{#if sp.shortOtherwise !== null}, {ratio(sp.shortOtherwise)} the rest{/if}.</p>
     {/each}
-    <p class="note">Shares are of the time a motor ran: enabled, on CAN, drawing 5 A or driven with 1 V or more. A limit share is the time at 93 % of the limit or more; the supply cap is what the motor is held to after a second (its lower limit, Phoenix's 40 A if the code sets none). "—" in a limit column: no such limit, or the profile doesn't know it. Top speed is the speed the motor could reach on the battery voltage of that moment, from a fit of this log's applied volts against speed and current, so no gear ratio is needed; typical is the median, high the 90th percentile; "—" where the motor logs no speed or the fit can't be trusted. A setpoint counts once the wheel reached it or after 1.5 s at it. A mechanism told to run at full voltage sits near top speed by design. Verdicts need 30 s of running.</p>
+    <p class="note">Shares are of the time a motor ran: enabled, on CAN, drawing 5 A or driven with 1 V or more. A limit share is the time at 93 % of the limit or more; the supply cap is what the motor is held to after a second at its supply limit (its lower limit, Phoenix's 40 A if the code sets none). "—" in a limit column: no such limit, or the profile doesn't know it. Top speed is the speed the motor could reach on the battery voltage of that moment, from a fit of this log's applied volts against speed and current, so no gear ratio is needed; typical is the median, high the 90th percentile; "—" where the motor logs no speed or the fit can't be trusted. A setpoint counts once the wheel reached it or after 1.5 s at it. A mechanism told to run at full voltage sits near top speed by design. Verdicts need 30 s of running.</p>
   {:else if headroomWhyNot}
     <h3>Headroom: how much more each mechanism had</h3>
     <p class="note">{headroomWhyNot}</p>
