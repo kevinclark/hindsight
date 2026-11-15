@@ -80,9 +80,9 @@ const only = (log: Log = {}, profile = robot(), limitLines?: LimitLines): Findin
 const leftSupply = (amps: number, from = 20, to = 21): Log => ({ keys: { [L.supply]: [[0, 5], [from, amps], [(from + to) / 2, amps], [to, 5]] } })
 
 test('[LN-01] the rule\'s id, title, severity, kind and cause ids are the ones already live', () => {
-  const { id, title, severity, judges, who, forEach, causes } = limitNotApplied
-  expect({ id, title, severity, judges, who, forEach }).toEqual({
-    id: 'power/limit-not-applied', title: 'Current limit not holding', severity: 'error', judges: 'fault', who: ['software'], forEach: 'motorGroup',
+  const { id, title, severity, judges, who, forEach, needsEnabled, causes } = limitNotApplied
+  expect({ id, title, severity, judges, who, forEach, needsEnabled }).toEqual({
+    id: 'power/limit-not-applied', title: 'Current limit not holding', severity: 'error', judges: 'fault', who: ['software'], forEach: 'motorGroup', needsEnabled: true,
   })
   expect(causes.map((c) => c.id)).toEqual(['limit-off', 'not-saved', 'default-limit', 'wrong-value'])
   expect(only(leftSupply(90)).key).toBe('power/limit-not-applied · Roller supply')

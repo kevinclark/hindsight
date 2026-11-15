@@ -45,11 +45,12 @@ Two terms, used only in these senses below:
 
 ### Compatibility: what is already live
 - **LN-01** The descriptor has `id: 'power/limit-not-applied'`, `title: 'Current limit not holding'`, `severity:
-  'error'`, `judges: 'fault'`, `who: ['software']`, `forEach: 'motorGroup'`, and causes with ids `limit-off`,
+  'error'`, `judges: 'fault'`, `who: ['software']`, `forEach: 'motorGroup'`, `needsEnabled: true`, and causes with ids `limit-off`,
   `not-saved`, `default-limit`, `wrong-value` in that order; a finding's `about` is `<group> <kind>`, so its key is
   `power/limit-not-applied · Roller supply`. Why: the id and the key are what saved session summaries, the issue
-  board and known issues match on; `likely` and `ruledOut` name the cause ids. Kind: compatibility. Proof: frozen
-  value.
+  board and known issues match on; `likely` and `ruledOut` name the cause ids; `needsEnabled` makes a log that was
+  never enabled "not checked" (the runner, `run.ts`), where a session would otherwise count it as a clean match.
+  Kind: compatibility. Proof: frozen value.
 
 ### Behaviour: when it fires
 - **LN-02** A group whose profile gives neither a supply nor a stator limit (no number for either) is not checked:
