@@ -63,11 +63,15 @@ try {
     await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1400, deviceScaleFactor: 1, mobile: false }, sessionId)
     await send('Page.navigate', { url: page }, sessionId)
     await sleep(1000)
+    // The app opens on Now: go to Match review first, then use its own drop input (the visible view's).
+    await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText.trim() === 'Match review').click()`)
     const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
-    const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog,.dslog,.jsonl"]' }, sessionId)
+    const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '#app > div:not([hidden]) > section.drop input[type=file][accept]' }, sessionId)
+    if (!nodeId) throw new Error('the Match review log input was not found in hindsight.html')
     await send('DOM.setFileInputFiles', { nodeId, files }, sessionId)
     let heading = ''
-    for (let i = 0; i < 600 && !heading; i++) { await sleep(100); heading = await evalIn(sessionId, `document.querySelector('.match-head h2')?.innerText || ''`) }
+    for (let i = 0; i < 600 && !heading; i++) { await sleep(100); heading = await evalIn(sessionId, `document.querySelector('.match-head h2')?.innerText || document.querySelector('.problem')?.innerText || ''`) }
+    if (!(await evalIn(sessionId, `!!document.querySelector('.match-head h2')`))) throw new Error(`${files.join(' ')}: ${heading || 'timed out'}`)
     await sleep(500)
     const shot = async (name: string) => {
       const { result } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId)

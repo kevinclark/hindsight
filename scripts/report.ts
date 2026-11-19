@@ -21,7 +21,8 @@
  * saved back to --code-cache (default ~/.cache/hindsight/limit-lines.json), as golden.ts keeps them.
  * --github <owner/repo>[@ref] uses that public GitHub repo instead ("Use GitHub…", input[data-code-github]); GitHub's
  * file lists are seeded from and saved back to --code-cache too, as golden.ts --github keeps them.
- * The log input is selected by its accept list: input[type=file] alone also matches the Snapshot view's .json input.
+ * The app opens on Now, so a single-log run clicks Match review first and uses that view's own drop input (the visible
+ * view's: input[type=file] alone also matches the Snapshot view's .json input, and the accept list has grown).
  */
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -30,6 +31,7 @@ import { dirname, resolve } from 'node:path'
 import { DEFAULT_CACHE } from '../src/code/node-git-dir.ts'
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const LOG_INPUT = '#app > div:not([hidden]) > section.drop input[type=file][accept]'
 const args = process.argv.slice(2)
 const option = (name: string) => {
   const i = args.indexOf(name)
@@ -137,19 +139,23 @@ try {
     const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '[data-session-view] input[type=file][multiple][accept=".wpilog"]' }, sessionId)
     if (!nodeId) throw new Error('the Session view log input was not found in hindsight.html')
     await send('DOM.setFileInputFiles', { nodeId, files }, sessionId)
-    // Done when the progress line says "N of N logs" and a session is listed.
+    // Done when the progress line says "N of N logs" and a session is listed, or, at an event, when the log chooser
+    // (progress line and session list too) has folded away to its one line, which it does only once nothing is loading.
     let ready = false
     for (let i = 0; i < 1800 && !ready; i++) {
       await sleep(100)
-      ready = await evalIn(sessionId, `(() => { const m = /^\\s*(\\d+) of (\\d+) logs/.exec(document.querySelector('.progress')?.innerText || ''); return !!m && m[1] === m[2] && !!document.querySelector('.sessions button') })()`)
+      ready = await evalIn(sessionId, `(() => { const m = /^\\s*(\\d+) of (\\d+) logs/.exec(document.querySelector('.progress')?.innerText || ''); return (!!m && m[1] === m[2] && !!document.querySelector('.sessions button')) || !!document.querySelector('[data-folded]') })()`)
     }
     if (!ready) throw new Error(`the Session view did not finish loading: ${await evalIn(sessionId, `document.querySelector('.progress')?.innerText || document.querySelector('.problem')?.innerText || 'nothing'`)}`)
     const sessions: { id: string; label: string; matches: number }[] = await evalIn(sessionId, 'hindsight.sessionList()')
     for (const s of sessions) {
       await evalIn(sessionId, `hindsight.selectSession(${JSON.stringify(s.id)})`)
       await sleep(300)
+      // An event session opens on its Board; the heading, "Save for Slack" and the merged findings are on the other tab.
+      await evalIn(sessionId, `[...document.querySelectorAll('[data-session-view] [role=tab]')].find(b => b.innerText.trim() === 'Findings, grid and trends')?.click()`)
+      await sleep(300)
       const base: string = await evalIn(sessionId, 'hindsight.sessionBase()')
-      if (!(await evalIn(sessionId, `document.querySelector('.head h2')?.innerText.startsWith(${JSON.stringify(s.label)})`))) throw new Error(`session "${s.label}" did not come up on screen`)
+      if (!(await evalIn(sessionId, `document.querySelector('[data-session-view] .head h2')?.innerText.startsWith(${JSON.stringify(s.label)})`))) throw new Error(`session "${s.label}" did not come up on screen`)
       writeFileSync(`${outDir}/${base}.session-findings.json`, await evalIn(sessionId, 'hindsight.sessionFindingsJson()'))
       const png: string = await evalIn(sessionId, 'hindsight.sessionCardPng()')
       writeFileSync(`${outDir}/${base}.session-card.png`, Buffer.from(png.split(',')[1], 'base64'))
@@ -173,9 +179,11 @@ try {
     if (flags.has('--dark')) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, sessionId)
     await send('Page.navigate', { url: page }, sessionId)
     await sleep(1000)
+    // The app opens on Now: go to Match review first.
+    await evalIn(sessionId, `[...document.querySelectorAll('.modes button')].find(b => b.innerText.trim() === 'Match review').click()`)
     await useCodeFolder(sessionId)
     const { result: { root } } = await send('DOM.getDocument', {}, sessionId)
-    const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file][accept=".wpilog,.dslog,.jsonl"]' }, sessionId)
+    const { result: { nodeId } } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: LOG_INPUT }, sessionId)
     if (!nodeId) throw new Error('the log file input was not found in hindsight.html')
     await send('DOM.setFileInputFiles', { nodeId, files }, sessionId)
     let state = ''

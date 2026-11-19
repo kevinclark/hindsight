@@ -30,6 +30,8 @@ import { startReplayServer } from '../tests/helpers/nt4-replay-server.ts'
 import { LOGS } from '../tests/helpers/load.ts'
 import { writeWpilog, type FixtureEntry } from '../tests/helpers/fixture-format.ts'
 import { makeSnapshotJson, type FakeTalon } from '../tests/helpers/make-snapshot.ts'
+import { openWpilog, readRaw } from '../src/readers/wpilog.ts'
+import { AFTER_DISABLE_SECONDS } from '../src/foresight/engine.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CHROME = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -123,11 +125,11 @@ class Tab {
     if (!ok) throw new Error(`no ${selector} with text "${text}"`)
     await sleep(300)
   }
-  /** A tool behind the Tools menu: open the menu, choose the item. */
+  /** A tool behind the Tools menu: open the menu, choose the item by its label (the item's text also holds its hint). */
   async openTool(text: string) {
     await this.eval(`document.querySelector('.modes .menu-button').click()`)
     await sleep(150)
-    await this.clickText('.modes [role=menuitem]', text)
+    await this.clickText('.modes [role=menuitem] > span', text)
   }
   /** Poll `expression` until it is truthy, up to `seconds`. */
   async waitFor(expression: string, seconds: number, what: string) {
@@ -294,8 +296,15 @@ async function sessionView() {
     await tab.clickText('.modes button', 'Session')
     const files = allLogs.map(logPath)
     await tab.setFiles('input[type=file][accept=".wpilog"][multiple]:not([webkitdirectory])', files)
-    await tab.waitFor(`/^${files.length} of ${files.length} logs/.test(document.querySelector('.progress')?.innerText ?? '')`, 300, 'every log to be read')
+    // Done when the progress line says "N of N logs", or, at an event, when the log chooser (progress line and all) has
+    // folded away to its one line, which it does only once nothing is loading (SessionView's `folded`).
+    await tab.waitFor(`/^${files.length} of ${files.length} logs/.test(document.querySelector('.progress')?.innerText ?? '') || document.querySelector('[data-folded]') !== null`, 300, 'every log to be read')
     await sleep(800)
+    // At an event the view opens on the Board; the findings, grid and trends are its other tab.
+    const findingsTab = `[...document.querySelectorAll('[data-session-view] [role=tab]')].find((b) => b.innerText.trim() === 'Findings, grid and trends')`
+    const atEvent: boolean = await tab.eval(`!!${findingsTab}`)
+    if (atEvent) await shootBoth(tab, 14, 'session-board', `Session view, ${files.length} logs: Board (as loaded)`, 'all-logs')
+    if (atEvent) { await tab.eval(`${findingsTab}.click()`); await sleep(500) }
     await shootBoth(tab, 14, 'session', `Session view, ${files.length} logs`, 'all-logs')
     await shootBoth(tab, 15, 'session-trends', 'Session view: Per match trends', 'all-logs', 'table.trends')
   } finally { await tab.close() }
@@ -363,22 +372,47 @@ async function builderView() {
   } finally { await tab.close() }
 }
 
+// Speeds leave ~5 s between the check after the last enable and the replay's end (A at 30x left 1.6 s on 2026-11-19).
 const FORESIGHT = [
   { id: 'c', slot: 20, file: MATCHES[1].file!, pit: true, speed: 10, mode: 'tethered in the pit' },
-  { id: 'a', slot: 21, file: MATCHES[0].file!, pit: true, speed: 30, mode: 'tethered in the pit' },
+  { id: 'a', slot: 21, file: MATCHES[0].file!, pit: true, speed: 20, mode: 'tethered in the pit' },
   { id: 'b-field', slot: 22, file: MATCHES[2].file!, pit: false, speed: 5, mode: 'field' },
 ]
 
-/** Foresight: the log replayed as the robot's NT4 stream; shots once there is a verdict (pit) or the field view. */
+/**
+ * Robot time from which the pit check graded after the log's last enable can show: that disable plus the engine's
+ * battery-recovery wait. Null when the log never enables (the first verdict is then the only one).
+ */
+function checkAfterLastEnable(bytes: Uint8Array): { first: number; at: number | null; last: number } {
+  const log = openWpilog(bytes)
+  const raw = readRaw(log, '/DriverStation/Enabled')
+  let on = false
+  let disabledAt: number | null = null
+  raw?.t.forEach((t, i) => { const now = raw.payload[i][0] !== 0; if (on && !now) disabledAt = t; on = now })
+  return { first: log.firstTime, at: disabledAt === null ? null : disabledAt + AFTER_DISABLE_SECONDS, last: log.lastTime }
+}
+
+/** Foresight: the log replayed as the robot's NT4 stream; shots once the pit check after its last enable is in (pit), or the field view. */
 async function foresightView(c: (typeof FORESIGHT)[number]) {
-  const server = await startReplayServer({ bytes: new Uint8Array(readFileSync(logPath(c.file))), pit: c.pit, speed: c.speed })
+  const bytes = new Uint8Array(readFileSync(logPath(c.file)))
+  const timing = checkAfterLastEnable(bytes)
+  const server = await startReplayServer({ bytes, pit: c.pit, speed: c.speed })
+  const wallAt = (robotTime: number) => Date.now() + ((robotTime - timing.first) / c.speed) * 1000 // the replay clock starts at the log's first record
+  const checkFrom = timing.at === null ? Date.now() : wallAt(timing.at)
+  const replayEnds = wallAt(timing.last)
   const tab = await freshPage()
   try {
     await tab.clickText('.modes button', 'Robot check')
     await tab.eval(`(() => { const i = document.querySelector('.connect input'); i.value = ${JSON.stringify(`127.0.0.1:${server.port}`)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
     await tab.clickText('.connect button', 'Connect')
-    const ready = c.pit ? `['GO', 'NO-GO'].includes(document.querySelector('.verdict .big')?.innerText ?? '')` : `document.querySelector('.field') !== null`
-    await tab.waitFor(ready, 60, 'a Foresight verdict')
+    // A pit check with no next match is practice: the box ends "Ready to drive" or "N left", never GO (ForesightView's
+    // shownWord). The first such word comes before the robot is enabled ("never enabled" on the on checks), and while
+    // it is enabled or recovering the box says NOT CHECKED: wait for the word that grades the log's last enable.
+    const verdict = `!['', 'NOT CHECKED'].includes(document.querySelector('.verdict .big')?.innerText.split(':')[0] ?? '')`
+    if (c.pit) {
+      await sleep(Math.max(0, checkFrom - Date.now()) + 500) // and half a second for the page to take the next reading
+      await tab.waitFor(verdict, 30, 'a Foresight verdict after the last enable')
+    } else await tab.waitFor(`document.querySelector('.field') !== null`, 60, 'the field view')
     await sleep(1200) // as chrome-foresight-report-check.ts: one more second of updates, so the readings have settled
     await shootBoth(tab, c.slot, 'foresight', `Foresight live view, ${c.id.replace('-field', '').toUpperCase()} replayed as NT4, ${c.mode}`, c.id)
     if (c.pit) {
@@ -387,6 +421,8 @@ async function foresightView(c: (typeof FORESIGHT)[number]) {
       const png: string | null = await tab.eval('hindsight.foresightCardPng()')
       if (!png) throw new Error('hindsight.foresightCardPng() returned nothing')
       saveCard(slot + 1, 'foresight-card', `Foresight phone card (PNG): ${c.id.toUpperCase()}`, c.id, png, tab)
+      // Once the replay runs out the page reads a silent robot ("reading the robot…"): the shots must all come before.
+      if (Date.now() > replayEnds) throw new Error(`the replay ended before the shots were done: lower this log's speed (${c.speed}x)`)
     }
   } finally { await tab.close(); await server.close() }
 }
