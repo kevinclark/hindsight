@@ -70,7 +70,7 @@ try {
     if (!nodeId) throw new Error('the Match review log input was not found in hindsight.html')
     await send('DOM.setFileInputFiles', { nodeId, files }, sessionId)
     let heading = ''
-    for (let i = 0; i < 600 && !heading; i++) { await sleep(100); heading = await evalIn(sessionId, `document.querySelector('.match-head h2')?.innerText || document.querySelector('.problem')?.innerText || ''`) }
+    for (let i = 0; i < 600 && !heading; i++) { await sleep(100); heading = await evalIn(sessionId, `document.querySelector('.match-head h2')?.innerText || document.querySelector('#app > div:not([hidden]) .problem')?.innerText || ''`) }
     if (!(await evalIn(sessionId, `!!document.querySelector('.match-head h2')`))) throw new Error(`${files.join(' ')}: ${heading || 'timed out'}`)
     await sleep(500)
     const shot = async (name: string) => {

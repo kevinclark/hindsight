@@ -146,7 +146,7 @@ try {
       await sleep(100)
       ready = await evalIn(sessionId, `(() => { const m = /^\\s*(\\d+) of (\\d+) logs/.exec(document.querySelector('.progress')?.innerText || ''); return (!!m && m[1] === m[2] && !!document.querySelector('.sessions button')) || !!document.querySelector('[data-folded]') })()`)
     }
-    if (!ready) throw new Error(`the Session view did not finish loading: ${await evalIn(sessionId, `document.querySelector('.progress')?.innerText || document.querySelector('.problem')?.innerText || 'nothing'`)}`)
+    if (!ready) throw new Error(`the Session view did not finish loading: ${await evalIn(sessionId, `document.querySelector('.progress')?.innerText || document.querySelector('#app > div:not([hidden]) .problem')?.innerText || 'nothing'`)}`)
     const sessions: { id: string; label: string; matches: number }[] = await evalIn(sessionId, 'hindsight.sessionList()')
     for (const s of sessions) {
       await evalIn(sessionId, `hindsight.selectSession(${JSON.stringify(s.id)})`)
@@ -187,7 +187,7 @@ try {
     if (!nodeId) throw new Error('the log file input was not found in hindsight.html')
     await send('DOM.setFileInputFiles', { nodeId, files }, sessionId)
     let state = ''
-    for (let i = 0; i < 600 && !state; i++) { await sleep(100); state = await evalIn(sessionId, `document.querySelector('.match-head h2')?.innerText || document.querySelector('.problem')?.innerText || ''`) }
+    for (let i = 0; i < 600 && !state; i++) { await sleep(100); state = await evalIn(sessionId, `document.querySelector('.match-head h2')?.innerText || document.querySelector('#app > div:not([hidden]) .problem')?.innerText || ''`) }
     if (!(await evalIn(sessionId, `!!document.querySelector('.match-head h2')`))) throw new Error(`${files.join(' ')}: ${state || 'timed out'}`)
     await sleep(300)
     const jsonName: string = await evalIn(sessionId, 'hindsight.findingsFile()')
