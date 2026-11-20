@@ -49,11 +49,19 @@ const overflow = () => evalIn(sid, 'document.documentElement.scrollWidth - docum
 await size(1000)
 await send('Page.navigate', { url: `file://${resolve('hindsight.html')}` }, sid)
 await sleep(1000)
-await send('DOM.setFileInputFiles', { nodeId: await fileInput('input[type=file][accept=".wpilog,.dslog,.jsonl"]'), files: [resolve(matchLog)] }, sid)
+// The app opens on Now: go to Match review first, then use its own drop input (the visible view's: the accept list has
+// grown, and input[type=file] alone also matches other views' inputs).
+await click('.modes button', 'Match review')
+await sleep(300)
+const logInput = await fileInput('#app > div:not([hidden]) > section.drop input[type=file][accept]')
+if (!logInput) throw new Error('the Match review log input was not found in hindsight.html')
+await send('DOM.setFileInputFiles', { nodeId: logInput, files: [resolve(matchLog)] }, sid)
 let heading = ''
-for (let i = 0; i < 600 && !heading; i++) { await sleep(100); heading = await evalIn(sid, `document.querySelector('.match-head h2')?.innerText || document.querySelector('.problem')?.innerText || ''`) }
+for (let i = 0; i < 600 && !heading; i++) { await sleep(100); heading = await evalIn(sid, `document.querySelector('.match-head h2')?.innerText || document.querySelector('#app > div:not([hidden]) .problem')?.innerText || ''`) }
+if (!(await evalIn(sid, `!!document.querySelector('.match-head h2')`))) throw new Error(`${matchLog}: ${heading || 'timed out'}`)
 await click('.tabs button', 'Logging')
 await sleep(500)
+if (!(await evalIn(sid, `document.querySelector('.tabs button.active')?.innerText.trim() === 'Logging'`))) throw new Error('the Logging tab did not open')
 const name = matchLog.split('/').pop()!.replace(/\.wpilog$/, '')
 await shot(`logging-${name}`)
 const tab = await evalIn(sid, `document.querySelector('main').innerText`)
@@ -68,19 +76,28 @@ if (sessionLogs.length) {
   await click('.modes button', 'Session')
   await sleep(300)
   const files = sessionLogs.map((f) => resolve(f))
-  await send('DOM.setFileInputFiles', { nodeId: await fileInput('input[type=file][accept=".wpilog"]'), files }, sid)
-  for (let i = 0; i < 3000; i++) {
+  const sessionInput = await fileInput('[data-session-view] input[type=file][multiple][accept=".wpilog"]')
+  if (!sessionInput) throw new Error('the Session view log input was not found in hindsight.html')
+  await send('DOM.setFileInputFiles', { nodeId: sessionInput, files }, sid)
+  // Done when the progress line says "N of N logs", or, at an event, when the log chooser (progress line and all) has
+  // folded away to its one line, which it does only once nothing is loading (SessionView's `folded`).
+  let ready = false
+  for (let i = 0; i < 3000 && !ready; i++) {
     await sleep(200)
-    const progress = await evalIn(sid, `document.querySelector('.progress')?.innerText ?? ''`)
-    if (new RegExp(`^${files.length} of ${files.length} logs`).test(progress)) break
+    ready = await evalIn(sid, `new RegExp(${JSON.stringify(`^${files.length} of ${files.length} logs`)}).test(document.querySelector('.progress')?.innerText ?? '') || !!document.querySelector('[data-folded]')`)
   }
+  if (!ready) throw new Error(`the Session view did not finish loading: ${await evalIn(sid, `document.querySelector('.progress')?.innerText || document.querySelector('#app > div:not([hidden]) .problem')?.innerText || 'nothing'`)}`)
   await sleep(800)
+  // An event session opens on its Board; "Logging across the session" is on the other tab.
+  await evalIn(sid, `[...document.querySelectorAll('[data-session-view] [role=tab]')].find(b => b.innerText.trim() === 'Findings, grid and trends')?.click()`)
+  await sleep(500)
   const section = await evalIn(sid, `(() => {
     const h = [...document.querySelectorAll('h3')].find((x) => x.innerText === 'Logging across the session')
     const out = []
     for (let n = h?.nextElementSibling; n && n.tagName !== 'H3'; n = n.nextElementSibling) out.push(n.innerText)
     return out.join('\\n')
   })()`)
+  if (!section) throw new Error('the Session view shows no "Logging across the session" section')
   await evalIn(sid, `[...document.querySelectorAll('h3')].find((x) => x.innerText === 'Logging across the session')?.scrollIntoView()`)
   await shot(`logging-session-${files.length}`)
   session = { logs: files.length, section }

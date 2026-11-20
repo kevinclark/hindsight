@@ -39,7 +39,8 @@ await send('Page.navigate', { url: `file://${resolve(page)}` }, sessionId)
 await sleep(1000)
 await evalIn(sessionId, `document.querySelector('.modes .menu-button').click()`)
 await sleep(200)
-await evalIn(sessionId, `[...document.querySelectorAll('.modes [role=menuitem]')].find(b => b.innerText.trim() === 'Robot snapshot').click()`)
+// A Tools menu item's text also holds its hint: match the label, the item's first span.
+if (!(await evalIn(sessionId, `(() => { const s = [...document.querySelectorAll('.modes [role=menuitem] > span')].find(b => b.innerText.trim() === 'Robot snapshot'); s?.click(); return !!s })()`))) throw new Error('no "Robot snapshot" item in the Tools menu')
 await sleep(200)
 
 async function setFiles(files: string[]) {
