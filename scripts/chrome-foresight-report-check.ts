@@ -17,8 +17,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { startReplayServer } from '../tests/helpers/nt4-replay-server.ts'
 import { LOGS } from '../tests/helpers/load.ts'
-import { openWpilog, readRaw } from '../src/readers/wpilog.ts'
-import { AFTER_DISABLE_SECONDS } from '../src/foresight/engine.ts'
+import { checkAfterLastEnable } from '../tests/helpers/foresight-timing.ts'
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const args = process.argv.slice(2)
@@ -56,25 +55,6 @@ const evalIn = async (sessionId: string, expression: string) => {
   return r?.result?.value
 }
 
-/**
- * Robot time from which the pit check graded after the log's last enable can show: that disable plus the engine's
- * battery-recovery wait. Null when the log never enables (the first verdict is then the only one). A log this can't
- * time (no Enabled entry, ends enabled, or ends before the check) is refused, so the report never shows the wrong check.
- * The same timing as scripts/ux-shots.ts's Foresight shots.
- */
-function checkAfterLastEnable(bytes: Uint8Array, name: string): { first: number; at: number | null; last: number } {
-  const log = openWpilog(bytes)
-  const raw = readRaw(log, '/DriverStation/Enabled')
-  if (!raw) throw new Error(`log ${name} has no /DriverStation/Enabled entry, so the check after its last enable can't be timed`)
-  let on = false
-  let disabledAt: number | null = null
-  raw.t.forEach((t, i) => { const now = raw.payload[i][0] !== 0; if (on && !now) disabledAt = t; on = now })
-  if (on) throw new Error(`log ${name} ends with the robot enabled, so the replay never shows a check after its last enable`)
-  const at = disabledAt === null ? null : disabledAt + AFTER_DISABLE_SECONDS
-  if (at !== null && at > log.lastTime) throw new Error(`log ${name} ends ${(at - log.lastTime).toFixed(1)} s before the check after its last enable can show`)
-  return { first: log.firstTime, at, last: log.lastTime }
-}
-
 const cases = [
   { name: 'c', file: 'c' as const, speed: 10, undeployed: true },
   { name: 'a', file: 'a' as const, speed: 20, undeployed: false },
@@ -86,7 +66,7 @@ try {
   await start()
   for (const c of cases) {
     const bytes = new Uint8Array(readFileSync(log(c.file)))
-    const timing = checkAfterLastEnable(bytes, c.name.toUpperCase())
+    const timing = checkAfterLastEnable(bytes, `log ${c.name.toUpperCase()}`)
     const server = await startReplayServer({ bytes, pit: true, speed: c.speed })
     const wallAt = (robotTime: number) => Date.now() + ((robotTime - timing.first) / c.speed) * 1000 // the replay clock starts at the log's first record
     const checkFrom = timing.at === null ? Date.now() : wallAt(timing.at)

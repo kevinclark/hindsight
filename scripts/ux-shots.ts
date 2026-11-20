@@ -30,8 +30,7 @@ import { startReplayServer } from '../tests/helpers/nt4-replay-server.ts'
 import { LOGS } from '../tests/helpers/load.ts'
 import { writeWpilog, type FixtureEntry } from '../tests/helpers/fixture-format.ts'
 import { makeSnapshotJson, type FakeTalon } from '../tests/helpers/make-snapshot.ts'
-import { openWpilog, readRaw } from '../src/readers/wpilog.ts'
-import { AFTER_DISABLE_SECONDS } from '../src/foresight/engine.ts'
+import { checkAfterLastEnable } from '../tests/helpers/foresight-timing.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CHROME = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -382,24 +381,6 @@ const FORESIGHT = [
   { id: 'a', slot: 21, file: MATCHES[0].file!, pit: true, speed: 20, mode: 'tethered in the pit' },
   { id: 'b-field', slot: 22, file: MATCHES[2].file!, pit: false, speed: 5, mode: 'field' },
 ]
-
-/**
- * Robot time from which the pit check graded after the log's last enable can show: that disable plus the engine's
- * battery-recovery wait. Null when the log never enables (the first verdict is then the only one). A log this can't
- * time (no Enabled entry, ends enabled, or ends before the check) is refused, so the shots never show the wrong check.
- */
-function checkAfterLastEnable(bytes: Uint8Array, name: string): { first: number; at: number | null; last: number } {
-  const log = openWpilog(bytes)
-  const raw = readRaw(log, '/DriverStation/Enabled')
-  if (!raw) throw new Error(`${name} has no /DriverStation/Enabled entry, so the check after its last enable can't be timed`)
-  let on = false
-  let disabledAt: number | null = null
-  raw.t.forEach((t, i) => { const now = raw.payload[i][0] !== 0; if (on && !now) disabledAt = t; on = now })
-  if (on) throw new Error(`${name} ends with the robot enabled, so the replay never shows a check after its last enable`)
-  const at = disabledAt === null ? null : disabledAt + AFTER_DISABLE_SECONDS
-  if (at !== null && at > log.lastTime) throw new Error(`${name} ends ${(at - log.lastTime).toFixed(1)} s before the check after its last enable can show`)
-  return { first: log.firstTime, at, last: log.lastTime }
-}
 
 /** Foresight: the log replayed as the robot's NT4 stream; shots once the pit check after its last enable is in (pit), or the field view. */
 async function foresightView(c: (typeof FORESIGHT)[number]) {
