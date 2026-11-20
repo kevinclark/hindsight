@@ -6,8 +6,10 @@
  *   npm run build
  *   node --experimental-strip-types scripts/chrome-foresight-report-check.ts <out-dir> [--dark]
  *
- * Replays log C (expect NO-GO: uncommitted code) and log A (expect GO), each tethered in the pit. Writes
- * foresight-<name>.report.pdf and foresight-<name>.card.png, and prints the verdict seen on screen.
+ * Replays log C (uncommitted code) and log A (committed), each tethered in the pit with no next match, so the box shows
+ * the practice-start list's end ("Ready to drive" or "N left"), never GO or NO-GO. Expect C's open items to include
+ * "No undeployed changes" (build/dirty) and A's not to. Writes foresight-<name>.report.pdf and
+ * foresight-<name>.card.png, prints the word and open items seen on screen, and exits 1 if a case differs.
  */
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -15,6 +17,8 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { startReplayServer } from '../tests/helpers/nt4-replay-server.ts'
 import { LOGS } from '../tests/helpers/load.ts'
+import { openWpilog, readRaw } from '../src/readers/wpilog.ts'
+import { AFTER_DISABLE_SECONDS } from '../src/foresight/engine.ts'
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const args = process.argv.slice(2)
@@ -52,15 +56,41 @@ const evalIn = async (sessionId: string, expression: string) => {
   return r?.result?.value
 }
 
+/**
+ * Robot time from which the pit check graded after the log's last enable can show: that disable plus the engine's
+ * battery-recovery wait. Null when the log never enables (the first verdict is then the only one). A log this can't
+ * time (no Enabled entry, ends enabled, or ends before the check) is refused, so the report never shows the wrong check.
+ * The same timing as scripts/ux-shots.ts's Foresight shots.
+ */
+function checkAfterLastEnable(bytes: Uint8Array, name: string): { first: number; at: number | null; last: number } {
+  const log = openWpilog(bytes)
+  const raw = readRaw(log, '/DriverStation/Enabled')
+  if (!raw) throw new Error(`log ${name} has no /DriverStation/Enabled entry, so the check after its last enable can't be timed`)
+  let on = false
+  let disabledAt: number | null = null
+  raw.t.forEach((t, i) => { const now = raw.payload[i][0] !== 0; if (on && !now) disabledAt = t; on = now })
+  if (on) throw new Error(`log ${name} ends with the robot enabled, so the replay never shows a check after its last enable`)
+  const at = disabledAt === null ? null : disabledAt + AFTER_DISABLE_SECONDS
+  if (at !== null && at > log.lastTime) throw new Error(`log ${name} ends ${(at - log.lastTime).toFixed(1)} s before the check after its last enable can show`)
+  return { first: log.firstTime, at, last: log.lastTime }
+}
+
 const cases = [
-  { name: 'c', file: 'c' as const, speed: 10, expect: 'NO-GO' },
-  { name: 'a', file: 'a' as const, speed: 30, expect: 'GO' },
+  { name: 'c', file: 'c' as const, speed: 10, undeployed: true },
+  { name: 'a', file: 'a' as const, speed: 20, undeployed: false },
 ]
+const UNDEPLOYED = 'No undeployed changes' // the practice-start line build/dirty leaves open (src/foresight/onchecks.ts)
+const PRACTICE_END = /^(Ready to drive|\d+ left)$/
 const results: object[] = []
 try {
   await start()
   for (const c of cases) {
-    const server = await startReplayServer({ bytes: new Uint8Array(readFileSync(log(c.file))), pit: true, speed: c.speed })
+    const bytes = new Uint8Array(readFileSync(log(c.file)))
+    const timing = checkAfterLastEnable(bytes, c.name.toUpperCase())
+    const server = await startReplayServer({ bytes, pit: true, speed: c.speed })
+    const wallAt = (robotTime: number) => Date.now() + ((robotTime - timing.first) / c.speed) * 1000 // the replay clock starts at the log's first record
+    const checkFrom = timing.at === null ? Date.now() : wallAt(timing.at)
+    const replayEnds = wallAt(timing.last)
     const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
     const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Page.enable', {}, sessionId)
@@ -71,11 +101,18 @@ try {
     await sleep(200)
     await evalIn(sessionId, `(() => { const i = document.querySelector('.connect input'); i.value = ${JSON.stringify(`127.0.0.1:${server.port}`)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
     await evalIn(sessionId, `[...document.querySelectorAll('.connect button')].find(b => b.innerText === 'Connect').click()`)
+    // A pit check with no next match is practice: the box ends "Ready to drive" or "N left", never GO (ForesightView's
+    // shownWord). The first such word comes before the robot is enabled, and while it is enabled or recovering the box
+    // says NOT CHECKED: wait for the word that grades the log's last enable, plus one check interval
+    // (src/foresight/live.ts, 1 s) for the page to take the next reading.
+    const wait = Math.max(0, checkFrom - Date.now()) + 1100
+    console.error(`foresight ${c.name}: waiting ${(wait / 1000).toFixed(1)} s for the check after the log's last enable`)
+    await sleep(wait)
     let verdict = ''
-    for (let i = 0; i < 80; i++) { // up to 40 s for a verdict (not "NOT CHECKED")
-      await sleep(500)
+    for (let i = 0; i < 60; i++) { // then up to 30 s for a word other than NOT CHECKED
       verdict = await evalIn(sessionId, `document.querySelector('.verdict .big')?.innerText ?? ''`)
-      if (verdict === 'GO' || verdict === 'NO-GO') break
+      if (!['', 'NOT CHECKED'].includes(verdict.split(':')[0])) break
+      await sleep(500)
     }
     await sleep(1200) // one more second of updates, so the report is stamped with a settled reading
     const button = await evalIn(sessionId, `[...document.querySelectorAll('.readings button')].map(b => b.innerText)`)
@@ -83,11 +120,17 @@ try {
     writeFileSync(`${outDir}/foresight-${c.name}.report.pdf`, Buffer.from(pdf.data, 'base64'))
     const png: string | null = await evalIn(sessionId, 'hindsight.foresightCardPng()')
     if (png) writeFileSync(`${outDir}/foresight-${c.name}.card.png`, Buffer.from(png.split(',')[1], 'base64'))
-    results.push({ case: c.name, expected: c.expect, seen: verdict, ok: verdict === c.expect, buttons: button, card: !!png })
+    // Once the replay runs out the page reads a silent robot ("reading the robot…"): the report must come before.
+    const inTime = Date.now() <= replayEnds
+    if (!inTime) console.error(`foresight ${c.name}: the replay ended before the report was saved: lower this log's speed (${c.speed}x)`)
+    const open: string = await evalIn(sessionId, `document.querySelector('.verdict .big')?.nextElementSibling?.innerText ?? ''`)
+    const ok = PRACTICE_END.test(verdict) && open.includes(UNDEPLOYED) === c.undeployed && inTime && !!png
+    results.push({ case: c.name, expected: `${c.undeployed ? '' : 'no '}"${UNDEPLOYED}" open`, seen: verdict, open, ok, buttons: button, card: !!png })
     await send('Target.closeTarget', { targetId })
     await server.close()
   }
   console.log(JSON.stringify({ page, chrome: execSync(`"${CHROME}" --version`).toString().trim(), results }, null, 1))
+  if (results.some((r) => !(r as { ok: boolean }).ok)) process.exitCode = 1
 } finally {
   ws?.close()
   chrome?.kill()
